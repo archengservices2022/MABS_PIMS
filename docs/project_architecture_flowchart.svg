@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="980" viewBox="0 0 1500 980">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+      .page { fill: #f8fafc; }
+      .title { font: 800 28px Segoe UI, Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 600 14px Segoe UI, Arial, sans-serif; fill: #475569; }
+      .section-title { font: 800 16px Segoe UI, Arial, sans-serif; fill: #0f172a; }
+      .box-title { font: 800 15px Segoe UI, Arial, sans-serif; fill: #0f172a; }
+      .box-text { font: 600 12px Segoe UI, Arial, sans-serif; fill: #475569; }
+      .small-text { font: 600 11px Segoe UI, Arial, sans-serif; fill: #64748b; }
+      .line { stroke: #334155; stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
+      .soft-line { stroke: #94a3b8; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .panel { fill: #ffffff; stroke: #d8e2ec; stroke-width: 2; rx: 18; }
+      .login { fill: #e0f2fe; stroke: #38bdf8; stroke-width: 2; rx: 12; }
+      .role { fill: #fef3c7; stroke: #f59e0b; stroke-width: 2; rx: 12; }
+      .ui { fill: #ecfdf5; stroke: #10b981; stroke-width: 2; rx: 12; }
+      .invoice { fill: #eef2ff; stroke: #6366f1; stroke-width: 2; rx: 12; }
+      .payment { fill: #fff1f2; stroke: #f43f5e; stroke-width: 2; rx: 12; }
+      .data { fill: #f1f5f9; stroke: #64748b; stroke-width: 2; rx: 12; }
+      .calc { fill: #f0fdfa; stroke: #14b8a6; stroke-width: 2; rx: 12; }
+    </style>
+  </defs>
+
+  <rect class="page" x="0" y="0" width="1500" height="980"/>
+
+  <text class="title" x="60" y="58">MABS Project, Invoice, and Payment Architecture</text>
+  <text class="subtitle" x="60" y="86">How login access, project list, invoices, payments, and remaining balance connect inside the desktop app.</text>
+
+  <rect class="panel" x="40" y="120" width="1420" height="230"/>
+  <text class="section-title" x="70" y="152">1. Login and Role Access</text>
+
+  <rect class="login" x="80" y="190" width="180" height="72"/>
+  <text class="box-title" x="124" y="220">Open App</text>
+  <text class="box-text" x="106" y="244">main.py starts PyQt</text>
+
+  <rect class="login" x="320" y="190" width="190" height="72"/>
+  <text class="box-title" x="370" y="220">Login Screen</text>
+  <text class="box-text" x="344" y="244">Email and password</text>
+
+  <rect class="role" x="570" y="182" width="180" height="88"/>
+  <text class="box-title" x="619" y="214">Role Check</text>
+  <text class="box-text" x="600" y="238">Admin, Sales, Finance</text>
+
+  <rect class="ui" x="835" y="150" width="185" height="70"/>
+  <text class="box-title" x="877" y="180">Admin User</text>
+  <text class="box-text" x="861" y="203">Access to all tabs</text>
+
+  <rect class="ui" x="835" y="245" width="185" height="70"/>
+  <text class="box-title" x="878" y="275">Sales User</text>
+  <text class="box-text" x="856" y="298">Quotes tab only</text>
+
+  <rect class="ui" x="1085" y="196" width="235" height="72"/>
+  <text class="box-title" x="1136" y="226">Main Window</text>
+  <text class="box-text" x="1115" y="250">Sidebar shows allowed tabs</text>
+
+  <path class="line" d="M260 226 H320"/>
+  <path class="line" d="M510 226 H570"/>
+  <path class="line" d="M750 220 C785 195, 795 184, 835 184"/>
+  <path class="line" d="M750 234 C790 260, 795 280, 835 280"/>
+  <path class="line" d="M1020 184 C1050 184, 1055 232, 1085 232"/>
+  <path class="line" d="M1020 280 C1050 280, 1055 232, 1085 232"/>
+
+  <rect class="panel" x="40" y="380" width="1420" height="330"/>
+  <text class="section-title" x="70" y="412">2. Project to Invoice to Payment Workflow</text>
+
+  <rect class="ui" x="80" y="455" width="205" height="84"/>
+  <text class="box-title" x="125" y="485">Project List</text>
+  <text class="box-text" x="102" y="509">Project # is the main key</text>
+  <text class="small-text" x="116" y="528">Shows remaining due</text>
+
+  <rect class="ui" x="80" y="585" width="205" height="70"/>
+  <text class="box-title" x="122" y="615">Project Details</text>
+  <text class="box-text" x="109" y="639">Click Project # to view</text>
+
+  <rect class="invoice" x="365" y="430" width="210" height="78"/>
+  <text class="box-title" x="411" y="461">Create Invoice</text>
+  <text class="box-text" x="389" y="485">Same project can repeat</text>
+
+  <rect class="invoice" x="645" y="430" width="250" height="78"/>
+  <text class="box-title" x="710" y="461">Line Items</text>
+  <text class="box-text" x="673" y="485">Project #, amount, description</text>
+
+  <rect class="invoice" x="965" y="430" width="270" height="116"/>
+  <text class="box-title" x="1020" y="462">Payment Stage</text>
+  <text class="box-text" x="998" y="488">Deposit, Term 2, Term 3</text>
+  <text class="box-text" x="1003" y="511">Term 4, Final, Full</text>
+
+  <rect class="data" x="1290" y="445" width="135" height="86"/>
+  <text class="box-title" x="1322" y="476">Invoices</text>
+  <text class="box-text" x="1310" y="500">Firebase data</text>
+
+  <rect class="payment" x="365" y="585" width="210" height="78"/>
+  <text class="box-title" x="411" y="616">Payment History</text>
+  <text class="box-text" x="390" y="640">All payments by project</text>
+
+  <rect class="payment" x="645" y="585" width="250" height="78"/>
+  <text class="box-title" x="709" y="616">Add Payment</text>
+  <text class="box-text" x="671" y="640">Choose invoice or term</text>
+
+  <rect class="data" x="965" y="585" width="270" height="78"/>
+  <text class="box-title" x="1034" y="616">payments.json</text>
+  <text class="box-text" x="995" y="640">Amount, date, method, notes</text>
+
+  <rect class="calc" x="1290" y="585" width="135" height="78"/>
+  <text class="box-title" x="1310" y="616">Balance</text>
+  <text class="box-text" x="1306" y="640">Total minus paid</text>
+
+  <path class="line" d="M285 497 H365"/>
+  <path class="line" d="M575 469 H645"/>
+  <path class="line" d="M895 469 H965"/>
+  <path class="line" d="M1235 488 H1290"/>
+
+  <path class="line" d="M182 539 V585"/>
+  <path class="line" d="M285 620 H365"/>
+  <path class="line" d="M575 624 H645"/>
+  <path class="line" d="M895 624 H965"/>
+  <path class="line" d="M1235 624 H1290"/>
+  <path class="soft-line" d="M1358 585 V555 C1358 530, 1325 520, 1290 508"/>
+  <path class="line" d="M1358 663 C1358 690, 180 690, 180 540"/>
+
+  <rect class="panel" x="40" y="740" width="1420" height="190"/>
+  <text class="section-title" x="70" y="772">3. Example: One Project With Four Payments</text>
+
+  <rect class="invoice" x="80" y="815" width="185" height="64"/>
+  <text class="box-title" x="128" y="841">Invoice 1</text>
+  <text class="box-text" x="122" y="862">Deposit $100</text>
+
+  <rect class="invoice" x="335" y="815" width="185" height="64"/>
+  <text class="box-title" x="383" y="841">Invoice 2</text>
+  <text class="box-text" x="383" y="862">Term 2 $150</text>
+
+  <rect class="invoice" x="590" y="815" width="185" height="64"/>
+  <text class="box-title" x="638" y="841">Invoice 3</text>
+  <text class="box-text" x="638" y="862">Term 3 $150</text>
+
+  <rect class="invoice" x="845" y="815" width="185" height="64"/>
+  <text class="box-title" x="893" y="841">Invoice 4</text>
+  <text class="box-text" x="895" y="862">Final $100</text>
+
+  <rect class="calc" x="1115" y="805" width="285" height="86"/>
+  <text class="box-title" x="1178" y="835">Project List Result</text>
+  <text class="box-text" x="1160" y="859">Paid total: $500.00</text>
+  <text class="box-text" x="1160" y="878">Remaining due: $0.00</text>
+
+  <path class="line" d="M265 847 H335"/>
+  <path class="line" d="M520 847 H590"/>
+  <path class="line" d="M775 847 H845"/>
+  <path class="line" d="M1030 847 H1115"/>
+</svg>

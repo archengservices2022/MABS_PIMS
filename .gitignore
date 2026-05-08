@@ -1,0 +1,48 @@
+# Credentials & secrets — NEVER commit these
+servicekey.json
+**/servicekey.json
+*.env
+.env.*
+secrets.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.spec.bak
+
+# PyInstaller output
+dist/
+build/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+logs/
+*.log
+
+# Temp files
+*.tmp
+*.bak
+exports/
+invoices/
+
+# Local data (not to be versioned)
+data/
+**/data/invoice_counter.json
+**/data/invoices/
+**/data/settings.json
+**/data/clients.json
+**/data/projects.json
