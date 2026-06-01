@@ -2,6 +2,7 @@
 import logging
 import re
 import sys
+from pathlib import Path
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import pyqtSignal
 
@@ -9,9 +10,10 @@ log = logging.getLogger("pims.login")
 
 
 def _firebase():
-    m = sys.modules.get("main")
+    # In a compiled .exe the entry module is "__main__", not "main"
+    m = sys.modules.get("main") or sys.modules.get("__main__")
     if m:
-        return m.FirebaseManager, m.FIREBASE_AVAILABLE
+        return getattr(m, "FirebaseManager", None), getattr(m, "FIREBASE_AVAILABLE", False)
     return None, False
 
 
@@ -42,8 +44,11 @@ class LoginWindow(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._pw_visible = False
-        self.setWindowTitle("MABS Engineering - Sign In")
-        
+        self.setWindowTitle("Sign In")
+        _icon_path = Path(__file__).resolve().parent / "assets" / "icons" / "icon.png"
+        if _icon_path.exists():
+            self.setWindowIcon(QtGui.QIcon(str(_icon_path)))
+
         # Dynamic sizing based on screen
         screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
         win_w = max(900, min(1100, int(screen.width() * 0.65)))
@@ -93,6 +98,7 @@ class LoginWindow(QtWidgets.QWidget):
             log.debug(f"Could not load company name: {e}")
             name = "MABS Engineering LLC"
 
+        self.setWindowTitle(f"{name} - Sign In")
         co = QtWidgets.QLabel(name)
         co.setWordWrap(True)
         co.setStyleSheet(
@@ -124,7 +130,7 @@ class LoginWindow(QtWidgets.QWidget):
             ll.addSpacing(6)
 
         ll.addSpacing(16)
-        ver = QtWidgets.QLabel("v2.1   2025 MABS Engineering LLC")
+        ver = QtWidgets.QLabel(f"v2.1   2025 {name}")
         ver.setStyleSheet(
             "color:rgba(255,255,255,0.28);font-size:10px;"
             "background:transparent;border:none;")

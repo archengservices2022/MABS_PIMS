@@ -28,13 +28,13 @@ class AccessControlTests(unittest.TestCase):
         self.assertTrue(can_access_page("admin", PAGE_SETTINGS))
 
     def test_sales_only_lands_on_and_accesses_quote_forms(self):
-        self.assertEqual(allowed_page_keys_for_role("sales"), ["quotes"])
+        self.assertEqual(allowed_page_keys_for_role("sales"), ["quotes", "settings"])
         self.assertEqual(allowed_stack_pages_for_role("sales"), [PAGE_QUOTES])
         self.assertEqual(first_allowed_stack_page("sales"), PAGE_QUOTES)
         self.assertTrue(can_access_page("sales", PAGE_QUOTES))
         self.assertFalse(can_access_page("sales", PAGE_PROJECTS))
         self.assertFalse(can_access_page("sales", PAGE_FINANCIAL))
-        self.assertFalse(can_access_page("sales", PAGE_SETTINGS))
+        self.assertTrue(can_access_page("sales", PAGE_SETTINGS))
 
     def test_actions_are_separate_from_page_visibility(self):
         self.assertTrue(can_perform_action("sales", ACTION_CREATE_EDIT_QUOTES))

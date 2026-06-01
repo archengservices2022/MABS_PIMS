@@ -1,14 +1,48 @@
 """Executive dashboard for project, invoice, quote, and finance activity."""
 from __future__ import annotations
 
+import json
 import logging
+import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from PyQt5 import QtWidgets, QtCore, QtGui
 from app_theme import add_shadow
 
 log = logging.getLogger("pims.dashboard")
+
+
+def _dashboard_cache_path() -> Path:
+    try:
+        from main import Config
+        return Config.DATA_DIR / "dashboard_cache.json"
+    except Exception:
+        return Path.home() / ".pims_dashboard_cache.json"
+
+
+def _save_dashboard_cache(data: dict) -> None:
+    """Persist dashboard data to disk so next startup can render instantly."""
+    try:
+        path = _dashboard_cache_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, default=str, ensure_ascii=False)
+    except Exception as exc:
+        log.debug("dashboard cache save failed: %s", exc)
+
+
+def _load_dashboard_cache() -> dict | None:
+    """Return last-saved dashboard data, or None if no cache exists."""
+    try:
+        path = _dashboard_cache_path()
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as fh:
+                return json.load(fh)
+    except Exception as exc:
+        log.debug("dashboard cache load failed: %s", exc)
+    return None
 
 
 class _LoaderSignals(QtCore.QObject):
@@ -226,7 +260,7 @@ class BarChart(QtWidgets.QWidget):
             return
 
         width, height = self.width(), self.height()
-        pl, pr, pt, pb = 18, 18, 12, 36
+        pl, pr, pt, pb = 72, 18, 22, 36
         chart_h = height - pt - pb
         chart_w = width - pl - pr
         max_val = max(self._rev + self._exp) or 1
@@ -238,6 +272,11 @@ class BarChart(QtWidgets.QWidget):
         for idx in range(1, 5):
             y = pt + chart_h - int(chart_h * idx / 4)
             painter.drawLine(pl, y, width - pr, y)
+            value = max_val * idx / 4
+            painter.setPen(QtGui.QColor(S500))
+            painter.setFont(QtGui.QFont("Inter", 8, QtGui.QFont.Bold))
+            painter.drawText(QtCore.QRect(0, y - 9, pl - 8, 18), QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter, f"${value:,.0f}")
+            painter.setPen(QtGui.QPen(QtGui.QColor(S200), 1, QtCore.Qt.DashLine))
 
         for idx, label in enumerate(self._labels):
             x = pl + idx * group_w + gap
@@ -253,6 +292,11 @@ class BarChart(QtWidgets.QWidget):
                 grad.setColorAt(0, QtGui.QColor(color0))
                 grad.setColorAt(1, QtGui.QColor(color1))
                 painter.fillPath(path, grad)
+                if value:
+                    painter.setPen(QtGui.QColor(S800))
+                    painter.setFont(QtGui.QFont("Inter", 8, QtGui.QFont.Bold))
+                    label_rect = QtCore.QRectF(x + offset - 18, pt + chart_h - bar_h - 18, bar_w + 36, 16)
+                    painter.drawText(label_rect, QtCore.Qt.AlignCenter, f"${value:,.0f}")
 
             painter.setPen(QtGui.QColor(S500))
             painter.setFont(QtGui.QFont("Inter", 10))
@@ -262,8 +306,11 @@ class BarChart(QtWidgets.QWidget):
 
 
 class ActivityItem(QtWidgets.QFrame):
-    def __init__(self, badge, title, detail, ts, dot_color, parent=None):
+    def __init__(self, badge, title, detail, ts, dot_color, on_click=None, parent=None):
         super().__init__(parent)
+        self._on_click = on_click
+        if on_click:
+            self.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
         self.setStyleSheet(f"""
             QFrame {{ background:{WHITE}; border:none; border-bottom:1px solid {S100}; }}
             QFrame:hover {{ background:{S50}; }}
@@ -308,30 +355,52 @@ class ActivityItem(QtWidgets.QFrame):
         """)
         lay.addWidget(badge_label)
 
+    def mousePressEvent(self, event):
+        if self._on_click and event.button() == QtCore.Qt.LeftButton:
+            self._on_click()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
 
 class InsightPill(QtWidgets.QFrame):
     def __init__(self, title, detail, color, parent=None):
         super().__init__(parent)
+        self.setObjectName("InsightPill")
         self.setStyleSheet(f"""
-            QFrame {{
+            QFrame#InsightPill {{
                 background:{WHITE};
                 border:1px solid {S200};
                 border-left:4px solid {color};
                 border-radius:10px;
             }}
         """)
+        self.setMinimumHeight(62)
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Minimum,
+        )
         lay = QtWidgets.QVBoxLayout(self)
         lay.setContentsMargins(14, 11, 14, 11)
         lay.setSpacing(3)
         lay.addWidget(_lbl(title, 12, 800, S800))
-        lay.addWidget(_lbl(detail, 11, 500, S500, wrap=True))
+        detail_lbl = _lbl(detail, 11, 500, S500, wrap=True)
+        detail_lbl.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Preferred,
+        )
+        lay.addWidget(detail_lbl)
 
 
 class DashboardTab(QtWidgets.QWidget):
     open_quotes = QtCore.pyqtSignal()
     open_invoices = QtCore.pyqtSignal()
+    open_overdue_invoices = QtCore.pyqtSignal()
     open_projects = QtCore.pyqtSignal()
     open_expenses = QtCore.pyqtSignal()
+    open_project_record = QtCore.pyqtSignal(object)
+    open_invoice_record = QtCore.pyqtSignal(object)  # emitted when user clicks a specific invoice
+    data_ready = QtCore.pyqtSignal()  # emitted once after first data load completes
 
     def __init__(self, main_window, firebase_available=False, parent=None):
         super().__init__(parent)
@@ -341,9 +410,10 @@ class DashboardTab(QtWidgets.QWidget):
         self._quotes = []
         self._projects = []
         self._revenue_records = []
+        self._data_ready_emitted = False
         self.setStyleSheet(f"background:{PAGE}; border:none;")
         self._build()
-        QtCore.QTimer.singleShot(1500, self.refresh)
+        QtCore.QTimer.singleShot(0, self._initial_load)
 
     def _build(self):
         outer = QtWidgets.QVBoxLayout(self)
@@ -393,10 +463,10 @@ class DashboardTab(QtWidgets.QWidget):
             action_row.addWidget(_action_btn(text, bg, hover, signal))
         actions_lay.addLayout(action_row)
 
-        refresh_btn = QtWidgets.QPushButton("Refresh")
-        refresh_btn.setFixedSize(96, 36)
-        refresh_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        refresh_btn.setStyleSheet(f"""
+        self.refresh_btn = QtWidgets.QPushButton("Refresh")
+        self.refresh_btn.setFixedSize(96, 36)
+        self.refresh_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self._refresh_btn_style = f"""
             QPushButton {{
                 background:{WHITE};
                 color:{INDIGO};
@@ -407,9 +477,21 @@ class DashboardTab(QtWidgets.QWidget):
                 font-family:'Inter','Segoe UI';
             }}
             QPushButton:hover {{ background:{INDIGO_L}; }}
-        """)
-        refresh_btn.clicked.connect(self.refresh)
-        actions_lay.addWidget(refresh_btn)
+        """
+        self._refresh_btn_busy_style = f"""
+            QPushButton {{
+                background:{INDIGO_L};
+                color:{INDIGO};
+                border:1.5px solid {INDIGO};
+                border-radius:8px;
+                font-size:12px;
+                font-weight:800;
+                font-family:'Inter','Segoe UI';
+            }}
+        """
+        self.refresh_btn.setStyleSheet(self._refresh_btn_style)
+        self.refresh_btn.clicked.connect(lambda: self.refresh(force_firebase=True))
+        actions_lay.addWidget(self.refresh_btn)
         body_lay.addWidget(actions)
 
         kpi_row = QtWidgets.QHBoxLayout()
@@ -477,6 +559,11 @@ class DashboardTab(QtWidgets.QWidget):
         body_lay.addLayout(main_row)
 
         self._insights_card = _card(12)
+        self._insights_card.setMinimumHeight(140)
+        self._insights_card.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Minimum,
+        )
         insights_lay = QtWidgets.QVBoxLayout(self._insights_card)
         insights_lay.setContentsMargins(22, 18, 22, 20)
         insights_lay.setSpacing(12)
@@ -518,7 +605,7 @@ class DashboardTab(QtWidgets.QWidget):
             }}
             QPushButton:hover {{ background:#E11D48; }}
         """)
-        view_btn.clicked.connect(self.open_invoices.emit)
+        view_btn.clicked.connect(self.open_overdue_invoices.emit)
         ov_lay.addWidget(view_btn)
         self._ov.setVisible(False)
         body_lay.addWidget(self._ov)
@@ -541,6 +628,11 @@ class DashboardTab(QtWidgets.QWidget):
         Firebase fetch only when force_firebase=True (manual/auto refresh)."""
         if force_firebase:
             self._sub_lbl.setText("Refreshing...")
+            if hasattr(self, "refresh_btn"):
+                self.refresh_btn.setEnabled(False)
+                self.refresh_btn.setText("Refreshing...")
+                self.refresh_btn.setStyleSheet(self._refresh_btn_busy_style)
+            QtWidgets.QApplication.processEvents()
             worker = _DashboardLoader(self.main_window)
             worker.signals.done.connect(self._on_data_loaded)
             QtCore.QThreadPool.globalInstance().start(worker)
@@ -549,53 +641,58 @@ class DashboardTab(QtWidgets.QWidget):
             self._render()
 
     def _load_from_cache(self):
-        """Read data already loaded by individual tabs — no extra Firebase calls."""
+        """Read data already loaded by individual tabs — no Firebase calls."""
         mw = self.main_window
         cutoff = datetime.now() - timedelta(days=30)
 
-        # Invoices
+        # Invoices — from FirebaseManager in-memory cache (no new network request)
         try:
             from main import FirebaseManager
-            self._invoices = FirebaseManager.load_invoices() or []
+            cache = FirebaseManager._invoices_cache
+            if cache is not None:  # None means never fetched; keep existing self._invoices
+                self._invoices = list(cache)
         except Exception:
-            self._invoices = []
+            pass
 
-        # Projects (from tab cache)
+        # Projects — from project tab cache only
         all_projects = list(getattr(getattr(mw, "project_tab", None), "generated_projects", None) or [])
-        if not all_projects:
-            try:
-                from main import FirebaseManager
-                all_projects = FirebaseManager.load_projects() or []
-            except Exception:
-                pass
+        self._all_projects = all_projects
         self._projects = [
             p for p in all_projects
             if self._within_30_days(p.get("created_at") or p.get("updated_at", ""), cutoff)
         ]
 
-        # Revenue — always load directly so the value is consistent across logins
+        # Revenue — from balance_sheet_tab cache only
         try:
-            from balance_sheet_tab import BalanceSheetFirebaseManager
-            self._revenue_records = BalanceSheetFirebaseManager.load_revenue() or []
+            bst = getattr(mw, "balance_sheet_tab", None)
+            self._revenue_records = list(getattr(bst, "revenue_data", None) or [])
         except Exception:
+            self._revenue_records = []
+        if not self._revenue_records:
             self._revenue_records = [inv.get("meta", inv) for inv in self._invoices]
 
-        # Quotes — try tab cache first, fall back to Firebase if empty
+        # Quotes — from tab cache only
         jt = getattr(mw, "job_form_tab", None)
         self._quotes = list(getattr(jt, "job_forms", None) or [])
-        if not self._quotes:
-            try:
-                from main import FirebaseManager
-                self._quotes = FirebaseManager.load_job_forms() or []
-                log.info("Dashboard quotes: loaded %d from Firebase (cache was empty)", len(self._quotes))
-            except Exception as e:
-                log.warning("Dashboard quotes fallback load failed: %s", e)
 
-    def _on_data_loaded(self, data: dict):
+    def _initial_load(self):
+        """Show last-session cache instantly, then silently refresh from Firebase."""
+        cached = _load_dashboard_cache()
+        if cached:
+            # Render previous session's data right now — zero network wait
+            self._on_data_loaded(cached, _save=False)
+        # Fetch fresh Firebase data in background; updates display when it arrives
+        worker = _DashboardLoader(self.main_window)
+        worker.signals.done.connect(self._on_data_loaded)
+        QtCore.QThreadPool.globalInstance().start(worker)
+
+    def _on_data_loaded(self, data: dict, *, _save: bool = True):
         """Receives results from background Firebase thread and updates UI."""
         cutoff = datetime.now() - timedelta(days=30)
         self._invoices = data.get("invoices", [])
         all_projects = data.get("projects", [])
+        # Keep all projects for KPI count; use 30-day window only for recent activity feed
+        self._all_projects = all_projects
         self._projects = [
             p for p in all_projects
             if self._within_30_days(p.get("created_at") or p.get("updated_at", ""), cutoff)
@@ -606,6 +703,11 @@ class DashboardTab(QtWidgets.QWidget):
             jt = getattr(self.main_window, "job_form_tab", None)
             self._quotes = list(getattr(jt, "job_forms", None) or [])
         self._render()
+        if not self._data_ready_emitted:
+            self._data_ready_emitted = True
+            self.data_ready.emit()
+        if _save and (self._invoices or self._projects or self._revenue_records or self._quotes):
+            threading.Thread(target=_save_dashboard_cache, args=(data,), daemon=True).start()
 
     def _render(self):
         self._update_kpis()
@@ -614,13 +716,19 @@ class DashboardTab(QtWidgets.QWidget):
         self._update_overdue()
         self._update_insights()
         self._sub_lbl.setText(f"Last updated {datetime.now().strftime('%I:%M %p')}")
+        if hasattr(self, "refresh_btn"):
+            self.refresh_btn.setEnabled(True)
+            self.refresh_btn.setText("Refresh")
+            self.refresh_btn.setStyleSheet(self._refresh_btn_style)
 
     def _within_30_days(self, ts: str, cutoff: datetime) -> bool:
         """Return True if the ISO timestamp string is on or after cutoff."""
         if not ts:
             return False
         try:
-            return datetime.fromisoformat(str(ts)[:19]) >= cutoff
+            dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            dt_naive = dt.replace(tzinfo=None) if dt.tzinfo else dt
+            return dt_naive >= cutoff
         except Exception:
             return False
 
@@ -687,21 +795,26 @@ class DashboardTab(QtWidgets.QWidget):
         outstanding = 0
         for record in self._current_revenue_records():
             date = self._record_date(record)
+            status = record.get("status", "")
+            if status in ("Unpaid", "Overdue", "Pending"):
+                continue
             if date and date.month == now.month and date.year == now.year:
                 revenue += self._record_amount(record)
 
+        from status_enums import InvoiceStatus
         for inv in self._invoices:
             meta = inv.get("meta", inv)
-            if meta.get("status", "Unpaid") in ("Unpaid", "Overdue", "Pending", "Partially Paid"):
+            if meta.get("status", InvoiceStatus.UNPAID) in InvoiceStatus.OPEN:
                 outstanding += 1
 
-        from status_enums import QuoteStatus
+        from status_enums import QuoteStatus, ProjectStatus
         active_quotes = len([q for q in self._quotes if q.get("status") not in QuoteStatus.INACTIVE])
-        active_projects = len([p for p in self._projects if p.get("status") not in ("Completed", "Cancelled", "Cancel")])
+        _all_proj = getattr(self, "_all_projects", self._projects)
+        active_projects = len([p for p in _all_proj if p.get("status") not in ProjectStatus.INACTIVE])
         self._kpis[0].update_value(f"${revenue:,.0f}", f"Month of {now.strftime('%B %Y')}")
         self._kpis[1].update_value(str(outstanding), "Need follow-up")
         self._kpis[2].update_value(str(active_quotes), f"{len(self._quotes)} total")
-        self._kpis[3].update_value(str(active_projects), f"{len(self._projects)} total")
+        self._kpis[3].update_value(str(active_projects), f"{len(_all_proj)} total")
 
     def _update_chart(self):
         now = datetime.now()
@@ -741,18 +854,18 @@ class DashboardTab(QtWidgets.QWidget):
             ts = quote.get("updated_at") or quote.get("created_at", "")
             if ts:
                 events.append((ts, "Q", INDIGO, f"Quote {quote.get('job_number', '')}",
-                               f"{quote.get('project_name', '-')} - {quote.get('client', '-')}"))
+                               f"{quote.get('project_name', '-')} - {quote.get('client', '-')}", quote))
         for inv in self._invoices:
             meta = inv.get("meta", inv)
             ts = meta.get("updated_at") or meta.get("created_at", "")
             if ts:
                 events.append((ts, "I", EMERALD, f"Invoice {meta.get('invoice_number', '')}",
-                               f"{meta.get('client_name', '-')} - {meta.get('status', '-')}"))
+                               f"{meta.get('client_name', '-')} - {meta.get('status', '-')}", inv))
         for project in self._projects:
             ts = project.get("updated_at") or project.get("created_at", "")
             if ts:
                 events.append((ts, "P", VIOLET, f"Project {project.get('project_number', '')}",
-                               f"{project.get('project_name', '-')} - {project.get('status', '-')}"))
+                               f"{project.get('project_name', '-')} - {project.get('status', '-')}", project))
 
         events.sort(key=lambda item: item[0], reverse=True)
         if not events:
@@ -762,8 +875,18 @@ class DashboardTab(QtWidgets.QWidget):
             self._act_lay.insertWidget(0, empty)
             return
 
-        for ts, badge, color, title, detail in events[:10]:
-            self._act_lay.insertWidget(self._act_lay.count() - 1, ActivityItem(badge, title, detail, self._fmt(ts), color))
+        for ts, badge, color, title, detail, record in events[:10]:
+            on_click = None
+            if badge == "P":
+                on_click = lambda rec=record: self.open_project_record.emit(rec)
+            elif badge == "Q":
+                on_click = self.open_quotes.emit
+            elif badge == "I":
+                on_click = lambda rec=record: self.open_invoice_record.emit(rec)
+            self._act_lay.insertWidget(
+                self._act_lay.count() - 1,
+                ActivityItem(badge, title, detail, self._fmt(ts), color, on_click),
+            )
 
     def _update_overdue(self):
         overdue = [inv for inv in self._invoices if inv.get("meta", inv).get("status") == "Overdue"]
@@ -776,10 +899,12 @@ class DashboardTab(QtWidgets.QWidget):
     def _update_insights(self):
         while self._insights_lay.count():
             item = self._insights_lay.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            w = item.widget() if item else None
+            if w:
+                w.setParent(None)
+                w.deleteLater()
 
-        from status_enums import InvoiceStatus, QuoteStatus
+        from status_enums import InvoiceStatus, QuoteStatus, ProjectStatus
         now = datetime.now()
         stale_cutoff = now.timestamp() - QuoteStatus.STALE_DAYS * 86400
 
@@ -797,11 +922,12 @@ class DashboardTab(QtWidgets.QWidget):
             except Exception:
                 pass  # If no valid date, skip from stale list
 
-        active_projects = [p for p in self._projects if p.get("status") not in ("Completed", "Cancelled", "Cancel")]
+        _all_proj = getattr(self, "_all_projects", self._projects)
+        active_projects = [p for p in _all_proj if p.get("status") not in ProjectStatus.INACTIVE]
 
         insights = []
         if outstanding:
-            amount = sum(float(inv.get("meta", inv).get("total_amount", 0) or 0) for inv in outstanding)
+            amount = sum(self._record_amount(inv.get("meta", inv)) for inv in outstanding)
             insights.append(("Collect faster", f"{len(outstanding)} open invoice(s), about ${amount:,.0f} outstanding.", ROSE))
         if stale_quotes:
             insights.append(("Convert quotes", f"{len(stale_quotes)} quote(s) haven't moved in 30+ days. Follow up before they go cold.", INDIGO))
@@ -812,12 +938,19 @@ class DashboardTab(QtWidgets.QWidget):
 
         for title, detail, color in insights[:3]:
             self._insights_lay.addWidget(InsightPill(title, detail, color))
+        self._insights_card.updateGeometry()
 
     @staticmethod
     def _fmt(ts):
         try:
-            dt = datetime.fromisoformat(str(ts).replace("Z", ""))
+            dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            if dt.tzinfo:
+                dt = dt.astimezone().replace(tzinfo=None)
             delta = datetime.now() - dt
+            if delta.total_seconds() < 0:
+                if delta.total_seconds() > -300:
+                    return "Just now"
+                return dt.strftime("%b %d")
             if delta.days == 0:
                 minutes = int(delta.seconds / 60)
                 if minutes < 1:

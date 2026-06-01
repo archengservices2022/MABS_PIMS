@@ -6,3 +6,4 @@ Pillow>=10.0.0
 firebase-admin>=6.2.0
 requests>=2.31.0
 packaging>=23.1.0
+codex>=1.12.0

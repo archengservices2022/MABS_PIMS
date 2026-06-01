@@ -5,7 +5,7 @@ Automated notifications for quotes, projects, invoices, and payments
 
 import json
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from PyQt5 import QtWidgets, QtCore, QtGui
 from collections import defaultdict
@@ -85,7 +85,7 @@ class ReminderSystem:
             'due_date': due_date,
             'priority': priority,
             'status': 'pending',
-            'created_at': datetime.now().isoformat(),
+            'created_at': datetime.now(timezone.utc).isoformat(),
             'sent_notifications': []
         }
         
@@ -227,7 +227,7 @@ class ReminderSystem:
         if reminder_id in self.reminders:
             self.reminders[reminder_id]['sent_notifications'].append({
                 'type': notification_type,
-                'sent_at': datetime.now().isoformat()
+                'sent_at': datetime.now(timezone.utc).isoformat()
             })
             self._save_reminders()
     
@@ -235,7 +235,7 @@ class ReminderSystem:
         """Mark a reminder as completed"""
         if reminder_id in self.reminders:
             self.reminders[reminder_id]['status'] = 'completed'
-            self.reminders[reminder_id]['completed_at'] = datetime.now().isoformat()
+            self.reminders[reminder_id]['completed_at'] = datetime.now(timezone.utc).isoformat()
             self._save_reminders()
     
     def get_reminder_summary(self) -> Dict:

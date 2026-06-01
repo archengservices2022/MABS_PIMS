@@ -43,46 +43,148 @@ SLATE_800  = "#1E293B"
 SLATE_900  = "#0F172A"
 
 WHITE      = "#FFFFFF"
+
+
+def make_filter_icon(color="#64748B", size=22):
+    """Return a compact funnel icon used by filter entry buttons."""
+    from PyQt5 import QtCore, QtGui
+
+    pixmap = QtGui.QPixmap(size, size)
+    pixmap.fill(QtCore.Qt.transparent)
+    painter = QtGui.QPainter(pixmap)
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+    scale = size / 22.0
+    pen = QtGui.QPen(QtGui.QColor(color))
+    pen.setWidthF(max(1.8, 2.0 * scale))
+    pen.setJoinStyle(QtCore.Qt.RoundJoin)
+    pen.setCapStyle(QtCore.Qt.RoundCap)
+    painter.setPen(pen)
+    painter.setBrush(QtCore.Qt.NoBrush)
+
+    path = QtGui.QPainterPath()
+    path.moveTo(4 * scale, 5 * scale)
+    path.lineTo(18 * scale, 5 * scale)
+    path.lineTo(13 * scale, 11 * scale)
+    path.lineTo(13 * scale, 17 * scale)
+    path.lineTo(9 * scale, 19 * scale)
+    path.lineTo(9 * scale, 11 * scale)
+    path.closeSubpath()
+    painter.drawPath(path)
+    painter.end()
+    return QtGui.QIcon(pixmap)
+
+
+def filter_button_stylesheet(active=False):
+    border = "#99F6E4" if active else "#E2E8F0"
+    bg = "#F0FDFA" if active else "#FFFFFF"
+    fg = "#0F766E" if active else "#475569"
+    hover_border = "#5EEAD4" if active else "#CBD5E1"
+    hover_bg = "#CCFBF1" if active else "#F8FAFC"
+    return f"""
+        QPushButton {{
+            background: {bg};
+            color: {fg};
+            border: 1.5px solid {border};
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 800;
+            padding: 0px 16px;
+            text-align: left;
+        }}
+        QPushButton:hover {{
+            background: {hover_bg};
+            border-color: {hover_border};
+        }}
+        QPushButton:pressed {{
+            background: #ECFEFF;
+            border-color: #2DD4BF;
+        }}
+    """
+
+
+def configure_filter_button(button, text="Filter", active=False, height=42):
+    """Apply the shared filter-button visual treatment in place."""
+    from PyQt5 import QtCore, QtGui
+
+    button.setText(text)
+    button.setIcon(make_filter_icon("#0F766E" if active else "#64748B", 22))
+    button.setIconSize(QtCore.QSize(22, 22))
+    button.setMinimumHeight(height)
+    button.setMinimumWidth(126)
+    button.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+    button.setStyleSheet(filter_button_stylesheet(active))
+    return button
+_CURRENT_FONT_SIZE = 13   # updated at startup based on screen width
+
+
+def set_font_size(size: int) -> None:
+    global _CURRENT_FONT_SIZE
+    _CURRENT_FONT_SIZE = size
+
+
 PAGE_BG    = "#F6F8FB"    # neutral enterprise background
 CHEVRON_URL = (Path(__file__).resolve().parent / "assets" / "icons" / "chevron-down.svg").as_posix()
 CHEVRON_WHITE_URL = (Path(__file__).resolve().parent / "assets" / "icons" / "chevron-down-white.svg").as_posix()
+CALENDAR_URL = (Path(__file__).resolve().parent / "assets" / "icons" / "calendar.svg").as_posix()
 
 
 def clean_dropdown_stylesheet() -> str:
     """Shared clean dropdown and spinner styling."""
     return f"""
 QComboBox, QDateEdit {{
-    padding-right: 44px;
+    background: {WHITE};
+    color: {SLATE_800};
+    border: 1.5px solid {SLATE_200};
+    border-radius: 8px;
+    padding: 7px 22px 7px 12px;
+    min-height: 24px;
+    selection-background-color: {INDIGO_L};
+    selection-color: {INDIGO_D};
+}}
+QComboBox:hover, QDateEdit:hover {{
+    border-color: {SLATE_300};
+    background: {WHITE};
+}}
+QComboBox:focus, QDateEdit:focus {{
+    border: 1.5px solid #7C3AED;
+    background: {WHITE};
 }}
 QComboBox::drop-down, QDateEdit::drop-down {{
     subcontrol-origin: padding;
     subcontrol-position: top right;
-    width: 38px;
+    width: 18px;
     border: none;
-    border-left: 1px solid #0B6B66;
+    border-left: none;
     border-top-right-radius: 8px;
     border-bottom-right-radius: 8px;
-    background: {INDIGO};
+    background: transparent;
 }}
 QComboBox::drop-down:hover, QDateEdit::drop-down:hover {{
-    background: {INDIGO_D};
-    border-left: 1px solid {INDIGO_D};
+    background: transparent;
+    border-left: none;
 }}
 QComboBox::down-arrow, QDateEdit::down-arrow {{
-    image: url("{CHEVRON_WHITE_URL}");
-    width: 12px;
-    height: 12px;
-    margin-right: 13px;
+    image: url("{CHEVRON_URL}");
+    width: 14px;
+    height: 14px;
+    margin-right: 2px;
+}}
+QDateEdit::down-arrow {{
+    image: url("{CALENDAR_URL}");
+    width: 15px;
+    height: 15px;
+    margin-right: 1px;
 }}
 QComboBox::down-arrow:on, QDateEdit::down-arrow:on {{
-    top: 1px;
+    top: 0px;
 }}
 QComboBox QAbstractItemView {{
     background: {WHITE};
     color: {SLATE_800};
-    border: 1px solid #BFD7D5;
+    border: 1px solid {SLATE_200};
     border-radius: 10px;
-    selection-background-color: #DDF7F3;
+    selection-background-color: #F3EEFF;
     selection-color: {SLATE_900};
     padding: 8px;
     outline: none;
@@ -93,12 +195,12 @@ QComboBox QAbstractItemView::item {{
     border-radius: 7px;
 }}
 QComboBox QAbstractItemView::item:hover {{
-    background: {SLATE_100};
+    background: #F8F6FF;
     color: {SLATE_900};
 }}
 QComboBox QAbstractItemView::item:selected {{
-    background: #DDF7F3;
-    color: {INDIGO_D};
+    background: #F3EEFF;
+    color: #6D28D9;
     font-weight: 800;
 }}
 QSpinBox::up-button, QDoubleSpinBox::up-button,
@@ -158,7 +260,7 @@ def install_clean_dropdown_style_patch() -> None:
                 QListView {{
                     background: {WHITE};
                     color: {SLATE_800};
-                    border: 1px solid #8FC5BF;
+                    border: 1px solid {SLATE_200};
                     border-radius: 12px;
                     padding: 7px;
                     outline: none;
@@ -173,12 +275,12 @@ def install_clean_dropdown_style_patch() -> None:
                     color: {SLATE_800};
                 }}
                 QListView::item:hover {{
-                    background: #F1F8F7;
+                    background: #F8F6FF;
                     color: {SLATE_900};
                 }}
                 QListView::item:selected {{
-                    background: #DDF7F3;
-                    color: {INDIGO_D};
+                    background: #F3EEFF;
+                    color: #6D28D9;
                     font-weight: 800;
                     border: none;
                 }}
@@ -188,12 +290,12 @@ def install_clean_dropdown_style_patch() -> None:
                     margin: 8px 2px 8px 0;
                 }}
                 QScrollBar::handle:vertical {{
-                    background: #9BCBC6;
+                    background: {SLATE_300};
                     border-radius: 4px;
                     min-height: 24px;
                 }}
                 QScrollBar::handle:vertical:hover {{
-                    background: {INDIGO};
+                    background: #7C3AED;
                 }}
                 QScrollBar::add-line:vertical,
                 QScrollBar::sub-line:vertical {{
@@ -210,6 +312,9 @@ def install_clean_dropdown_style_patch() -> None:
 
 
 def get_stylesheet() -> str:
+    fs = _CURRENT_FONT_SIZE          # e.g. 13 (normal) or 11 (small screen)
+    fs_sm = max(9, fs - 2)           # table header / calendar header
+    fs_tip = max(10, fs - 1)         # tooltip
     return f"""
 
 /* ══ FOUNDATION ══ */
@@ -218,7 +323,7 @@ def get_stylesheet() -> str:
 QMainWindow, QDialog, QWidget {{
     background: {PAGE_BG};
     color: {SLATE_800};
-    font-size: 13px;
+    font-size: {fs}px;
 }}
 
 /* ══ NESTED TABS ══ */
@@ -233,7 +338,7 @@ QTabBar::tab {{
     border: none;
     border-bottom: 2px solid transparent;
     padding: 11px 22px;
-    font-size: 13px;
+    font-size: {fs}px;
     font-weight: 500;
     min-width: 120px;
 }}
@@ -255,7 +360,7 @@ QPushButton {{
     border: none;
     border-radius: 8px;
     padding: 8px 18px;
-    font-size: 13px;
+    font-size: {fs}px;
     font-weight: 600;
     min-height: 24px;
 }}
@@ -301,7 +406,7 @@ QLineEdit, QPlainTextEdit, QTextEdit {{
     border: 1.5px solid {SLATE_200};
     border-radius: 8px;
     padding: 8px 12px;
-    font-size: 13px;
+    font-size: {fs}px;
     selection-background-color: {INDIGO_L};
     selection-color: {INDIGO};
 }}
@@ -320,7 +425,7 @@ QSpinBox, QDoubleSpinBox, QDateEdit {{
     border: 1.5px solid {SLATE_200};
     border-radius: 8px;
     padding: 7px 10px;
-    font-size: 13px;
+    font-size: {fs}px;
 }}
 QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus {{
     border: 1.5px solid {INDIGO};
@@ -333,16 +438,17 @@ QComboBox {{
     border: 1.5px solid {SLATE_200};
     border-radius: 8px;
     padding: 7px 12px;
-    font-size: 13px;
+    font-size: {fs}px;
     min-height: 24px;
 }}
 QComboBox:focus {{ border-color: {INDIGO}; }}
 QComboBox::drop-down {{ border: none; width: 24px; }}
 QComboBox::down-arrow {{
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 5px solid {SLATE_400};
-    margin-right: 6px;
+    image: url("{CHEVRON_URL}");
+    border: none;
+    width: 14px;
+    height: 14px;
+    margin-right: 4px;
 }}
 QComboBox QAbstractItemView {{
     background: {WHITE};
@@ -361,7 +467,7 @@ QComboBox QAbstractItemView {{
 QLabel {{
     color: {SLATE_800};
     background: transparent;
-    font-size: 13px;
+    font-size: {fs}px;
     border: none;
 }}
 
@@ -373,7 +479,7 @@ QGroupBox {{
     margin-top: 16px;
     padding: 18px 14px 14px 14px;
     font-weight: 700;
-    font-size: 13px;
+    font-size: {fs}px;
     color: {SLATE_700};
 }}
 QGroupBox::title {{
@@ -392,7 +498,7 @@ QTableWidget, QTableView {{
     alternate-background-color: {SLATE_50};
     selection-background-color: {INDIGO_L};
     selection-color: {SLATE_800};
-    font-size: 13px;
+    font-size: {fs}px;
     color: {SLATE_800};
 }}
 QTableWidget::item, QTableView::item {{
@@ -413,7 +519,7 @@ QHeaderView::section {{
     padding: 12px 14px;
     border: none;
     border-right: 1px solid rgba(255,255,255,0.08);
-    font-size: 11px;
+    font-size: {fs_sm}px;
     font-weight: 700;
     letter-spacing: 0.6px;
     text-transform: uppercase;
@@ -447,14 +553,14 @@ QMenu {{
     border: 1px solid {SLATE_200};
     border-radius: 10px;
     padding: 6px 0;
-    font-size: 13px;
+    font-size: {fs}px;
 }}
 QMenu::item {{ padding: 9px 20px; background: transparent; border-radius: 5px; }}
 QMenu::item:selected {{ background: {INDIGO_L}; color: {INDIGO}; }}
 QMenu::separator {{ height: 1px; background: {SLATE_100}; margin: 4px 10px; }}
 
 /* ══ CHECKBOX ══ */
-QCheckBox, QRadioButton {{ color: {SLATE_800}; spacing: 8px; font-size: 13px; }}
+QCheckBox, QRadioButton {{ color: {SLATE_800}; spacing: 8px; font-size: {fs}px; }}
 QCheckBox::indicator, QRadioButton::indicator {{
     width: 16px; height: 16px;
     border: 1.5px solid {SLATE_300};
@@ -473,7 +579,7 @@ QToolTip {{
     border: 1px solid #CBD5E1;
     border-radius: 6px;
     padding: 6px 12px;
-    font-size: 12px;
+    font-size: {fs_tip}px;
     font-weight: 600;
 }}
 
@@ -481,36 +587,66 @@ QToolTip {{
 QCalendarWidget {{
     background: {WHITE};
     color: {SLATE_800};
+    border: 1px solid {SLATE_200};
+    border-radius: 10px;
 }}
 QCalendarWidget QWidget {{
     background: {WHITE};
     color: {SLATE_800};
-    alternate-background-color: #F8FAFC;
+    alternate-background-color: {SLATE_50};
+}}
+/* Navigation bar (month/year row) */
+QCalendarWidget QWidget#qt_calendar_navigationbar {{
+    background: {INDIGO};
+    border-radius: 8px 8px 0 0;
+    padding: 4px;
 }}
 QCalendarWidget QToolButton {{
-    color: {SLATE_900};
-    background: {WHITE};
+    color: {WHITE};
+    background: transparent;
     border: none;
+    border-radius: 6px;
     font-weight: 700;
+    font-size: {fs}px;
+    padding: 4px 8px;
+    min-width: 28px;
 }}
 QCalendarWidget QToolButton:hover {{
-    background: #F1F5F9;
-    border-radius: 6px;
+    background: {INDIGO_D};
 }}
 QCalendarWidget QSpinBox {{
-    color: {SLATE_900};
-    background: {WHITE};
-    border: 1px solid #E2E8F0;
-    border-radius: 4px;
+    color: {WHITE};
+    background: transparent;
+    border: none;
+    font-weight: 700;
+    font-size: {fs}px;
 }}
-QCalendarWidget QAbstractItemView {{
+QCalendarWidget QSpinBox::up-button,
+QCalendarWidget QSpinBox::down-button {{
+    width: 0;
+}}
+/* Day-of-week header row — override the global dark QHeaderView::section rule */
+QCalendarWidget QHeaderView::section {{
+    background: {SLATE_100};
+    color: {SLATE_600};
+    border: none;
+    border-bottom: 1px solid {SLATE_200};
+    padding: 6px 0;
+    font-size: {fs_sm}px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+}}
+/* Date cells */
+QCalendarWidget QAbstractItemView:enabled {{
     background: {WHITE};
-    color: {SLATE_900};
-    selection-background-color: #0F766E;
+    color: {SLATE_800};
+    selection-background-color: {INDIGO};
     selection-color: {WHITE};
+    outline: none;
+    font-size: {fs}px;
 }}
 QCalendarWidget QAbstractItemView:disabled {{
-    color: #94A3B8;
+    color: {SLATE_300};
 }}
 
 /* ══ PROGRESS BAR ══ */
@@ -525,7 +661,7 @@ QProgressBar::chunk {{
 /* ══ LIST ══ */
 QListWidget {{
     background: {WHITE}; border: 1px solid {SLATE_200};
-    border-radius: 10px; font-size: 13px; color: {SLATE_800}; outline: none;
+    border-radius: 10px; font-size: {fs}px; color: {SLATE_800}; outline: none;
 }}
 QListWidget::item {{ padding: 9px 12px; border-radius: 6px; }}
 QListWidget::item:selected {{ background: {INDIGO_L}; color: {INDIGO}; }}
@@ -533,7 +669,7 @@ QListWidget::item:hover {{ background: {SLATE_50}; }}
 
 /* ══ MESSAGE BOX ══ */
 QMessageBox {{ background: {WHITE}; }}
-QMessageBox QLabel {{ color: {SLATE_800}; font-size: 13px; min-width: 280px; }}
+QMessageBox QLabel {{ color: {SLATE_800}; font-size: {fs}px; min-width: 280px; }}
 QMessageBox QPushButton {{
     background: {WHITE};
     color: {SLATE_900};
@@ -542,7 +678,7 @@ QMessageBox QPushButton {{
     padding: 8px 20px;
     min-width: 74px;
     min-height: 28px;
-    font-size: 13px;
+    font-size: {fs}px;
     font-weight: 800;
 }}
 QMessageBox QPushButton:hover {{
@@ -564,6 +700,135 @@ QMessageBox QPushButton:disabled {{
 QScrollArea {{ background: {PAGE_BG}; border: none; }}
 QScrollArea > QWidget > QWidget {{ background: {PAGE_BG}; }}
 """
+
+
+def _calendar_local_css() -> str:
+    """Local stylesheet applied directly on QCalendarWidget instances.
+    Local stylesheets beat the global app stylesheet, so plain (un-prefixed)
+    selectors here correctly override PAGE_BG / SLATE_900 global rules."""
+    return f"""
+QCalendarWidget {{
+    background: {WHITE};
+    border: 1px solid {SLATE_200};
+    border-radius: 10px;
+}}
+QWidget {{
+    background: {WHITE};
+    color: {SLATE_800};
+    alternate-background-color: {WHITE};
+}}
+QWidget#qt_calendar_navigationbar {{
+    background: {INDIGO};
+    border-radius: 8px 8px 0 0;
+    padding: 4px;
+}}
+QToolButton {{
+    color: {WHITE};
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 13px;
+    padding: 4px 8px;
+    min-width: 28px;
+}}
+QToolButton:hover {{
+    background: {INDIGO_D};
+}}
+QSpinBox {{
+    color: {WHITE};
+    background: transparent;
+    border: none;
+    font-weight: 700;
+    font-size: 13px;
+}}
+QSpinBox::up-button, QSpinBox::down-button {{ width: 0; }}
+QHeaderView {{
+    background: {SLATE_100};
+}}
+QHeaderView::section {{
+    background: {SLATE_100};
+    color: {SLATE_600};
+    border: none;
+    border-bottom: 1px solid {SLATE_200};
+    padding: 6px 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+}}
+QAbstractItemView {{
+    background: {WHITE};
+    color: {SLATE_800};
+    selection-background-color: {INDIGO};
+    selection-color: {WHITE};
+    alternate-background-color: {WHITE};
+    outline: none;
+    font-size: 13px;
+}}
+QAbstractItemView:disabled {{
+    color: {SLATE_300};
+}}
+"""
+
+
+class _CalendarStyleFilter:
+    """Application-level event filter that styles every QCalendarWidget on show."""
+
+    def __init__(self, css: str):
+        self._css = css
+
+    def eventFilter(self, obj, event):
+        from PyQt5 import QtCore, QtWidgets
+        if (
+            event.type() == QtCore.QEvent.Show
+            and isinstance(obj, QtWidgets.QCalendarWidget)
+        ):
+            obj.setStyleSheet(self._css)
+            # Force the internal grid view with explicit selectors
+            view = obj.findChild(QtWidgets.QAbstractItemView)
+            if view:
+                view.setStyleSheet(
+                    f"QAbstractItemView {{ background:{WHITE}; color:{SLATE_800};"
+                    f" alternate-background-color:{WHITE};"
+                    f" selection-background-color:{INDIGO};"
+                    f" selection-color:{WHITE}; }}"
+                    f"QAbstractItemView:disabled {{ color:{SLATE_300}; }}"
+                )
+                vp = view.viewport()
+                if vp:
+                    vp.setStyleSheet(f"background:{WHITE};")
+            # Force the day-of-week header to override the global dark QHeaderView rule
+            header = obj.findChild(QtWidgets.QHeaderView)
+            if header:
+                header.setStyleSheet(
+                    f"QHeaderView {{ background:{SLATE_100}; }}"
+                    f"QHeaderView::section {{ background:{SLATE_100}; color:{SLATE_600};"
+                    f" border:none; border-bottom:1px solid {SLATE_200};"
+                    f" padding:6px 0; font-size:11px; font-weight:700; }}"
+                )
+        return False
+
+
+_cal_filter_instance = None  # keep a reference so it isn't GC'd
+
+
+def install_calendar_style_filter(app) -> None:
+    """Call once after QApplication is created. Styles all calendar popups."""
+    from PyQt5 import QtCore
+
+    global _cal_filter_instance
+
+    class _QObjFilter(QtCore.QObject):
+        def __init__(self, delegate):
+            super().__init__()
+            self._d = delegate
+
+        def eventFilter(self, obj, event):
+            self._d.eventFilter(obj, event)
+            return False  # never consume the event
+
+    _cal_filter_instance = _QObjFilter(_CalendarStyleFilter(_calendar_local_css()))
+    app.installEventFilter(_cal_filter_instance)
 
 
 def add_shadow(widget, blur=24, x=0, y=4, color=(67, 97, 238, 20)):

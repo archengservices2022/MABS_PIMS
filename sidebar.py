@@ -1,4 +1,5 @@
 """Premium sidebar navigation for the PIMS workspace."""
+from pathlib import Path
 from PyQt5 import QtWidgets, QtCore, QtGui
 
 SB_TOP = "#111827"
@@ -15,7 +16,7 @@ NAV_ITEMS = [
     ("projects",  "P", "Project & Invoice"),
     ("finance",   "$", "Financial"),
 ]
-BOTTOM_ITEMS = [("settings", "S", "Settings")]
+SETTINGS_ICON = Path(__file__).resolve().parent / "assets" / "icons" / "settings.svg"
 
 
 class _NavBtn(QtWidgets.QAbstractButton):
@@ -56,11 +57,12 @@ class _NavBtn(QtWidgets.QAbstractButton):
         painter.setPen(QtCore.Qt.NoPen)
         painter.drawRoundedRect(icon_rect, 8, 8)
 
-        painter.setFont(QtGui.QFont("Inter", 11, QtGui.QFont.Bold))
+        _app_pt = QtWidgets.QApplication.font().pointSize()
+        painter.setFont(QtGui.QFont("Inter", max(9, _app_pt - 2), QtGui.QFont.Bold))
         painter.setPen(QtGui.QColor("#FFFFFF") if self._active else QtGui.QColor(255, 255, 255, 130))
         painter.drawText(icon_rect, QtCore.Qt.AlignCenter, self._icon)
 
-        painter.setFont(QtGui.QFont("Inter", 13, QtGui.QFont.DemiBold if self._active else QtGui.QFont.Normal))
+        painter.setFont(QtGui.QFont("Inter", _app_pt, QtGui.QFont.DemiBold if self._active else QtGui.QFont.Normal))
         painter.setPen(QtGui.QColor(255, 255, 255, 240 if self._active else 135))
         painter.drawText(QtCore.QRect(58, 0, width - 66, height), QtCore.Qt.AlignVCenter, self._label)
         painter.end()
@@ -82,7 +84,8 @@ class Sidebar(QtWidgets.QWidget):
         self._company = company_name
         self._name_lbl = None
         self._buttons = []  # This is our list of _NavBtn objects
-        self._settings_btn = None  # Store reference to settings button
+        self._settings_btn = None
+        self._settings_wrap = None
         self.setFixedWidth(252)
         self._build()
 
@@ -97,6 +100,7 @@ class Sidebar(QtWidgets.QWidget):
         painter.end()
 
     def _build(self):
+        self.setStyleSheet("")
         root = QtWidgets.QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
@@ -147,19 +151,17 @@ class Sidebar(QtWidgets.QWidget):
         root.addWidget(self._div())
         root.addSpacing(4)
 
-        for _key, icon, label in BOTTOM_ITEMS:
-            btn = _NavBtn(icon, label, accent="#94A3B8")
-            btn.clicked.connect(lambda: self.page_changed.emit(99))
-            self._buttons.append(btn)  # Also add settings to buttons list
-            self._settings_btn = btn  # Store reference to settings button
-            root.addWidget(btn)
+        self._settings_btn = _NavBtn("⚙", "Settings", accent=ACCENT)
+        self._settings_btn.clicked.connect(lambda: self.page_changed.emit(99))
+        root.addWidget(self._settings_btn)
+        self._settings_wrap = self._settings_btn  # alias kept for role-based methods
 
-        footer = QtWidgets.QLabel("MABS Engineering LLC")
-        footer.setFixedHeight(28)
-        footer.setStyleSheet(
+        self._footer_lbl = QtWidgets.QLabel(self._company)
+        self._footer_lbl.setFixedHeight(28)
+        self._footer_lbl.setStyleSheet(
             "color:rgba(255,255,255,0.24); font-size:9px;"
             " font-family:'Inter','Segoe UI'; background:transparent; padding-left:18px;")
-        root.addWidget(footer)
+        root.addWidget(self._footer_lbl)
         root.addSpacing(6)
 
         self._select(0, emit=False)
@@ -187,6 +189,8 @@ class Sidebar(QtWidgets.QWidget):
         self._company = name
         if self._name_lbl:
             self._name_lbl.setText("PIMS")
+        if hasattr(self, '_footer_lbl') and self._footer_lbl:
+            self._footer_lbl.setText(name or "MABS Engineering LLC")
         self.update()
 
     # ========== NEW METHODS FOR ROLE-BASED ACCESS CONTROL ==========
@@ -210,11 +214,10 @@ class Sidebar(QtWidgets.QWidget):
                     # Change accent to gray for disabled state
                     btn._accent = "#4B5563"
                     btn.update()  # Force repaint with new color
-            else:
-                # Settings button (index 4)
-                btn.setEnabled(False)
-                btn._accent = "#4B5563"
-                btn.update()
+        if self._settings_btn:
+            self._settings_btn.setEnabled(False)
+        if self._settings_wrap:
+            self._settings_wrap.setVisible(True)
     
     def set_visible_pages(self, visible_indices):
         """
@@ -234,16 +237,13 @@ class Sidebar(QtWidgets.QWidget):
                 else:
                     btn.setVisible(False)
                     btn.setEnabled(False)
-            else:
-                # Settings button - only show if specifically requested or if admin
-                if 99 in visible_indices:
-                    btn.setVisible(True)
-                    btn.setEnabled(True)
-                    btn._accent = "#94A3B8"
-                else:
-                    btn.setVisible(False)
-                    btn.setEnabled(False)
-        
+        if self._settings_btn:
+            settings_visible = 99 in visible_indices
+            self._settings_btn.setVisible(settings_visible)
+            self._settings_btn.setEnabled(settings_visible)
+            if self._settings_wrap:
+                self._settings_wrap.setVisible(settings_visible)
+
         # Force repaint for all buttons
         for btn in self._buttons:
             btn.update()
@@ -257,12 +257,11 @@ class Sidebar(QtWidgets.QWidget):
                 # Restore original accent
                 btn._accent = ITEM_ACCENTS[idx % len(ITEM_ACCENTS)]
                 btn.update()
-            else:
-                # Settings button
-                btn.setEnabled(True)
-                btn.setVisible(True)
-                btn._accent = "#94A3B8"
-                btn.update()
+        if self._settings_btn:
+            self._settings_btn.setEnabled(True)
+            self._settings_btn.setVisible(True)
+        if self._settings_wrap:
+            self._settings_wrap.setVisible(True)
     
     def get_current_selection(self) -> int:
         """Return the currently selected page index"""
@@ -273,4 +272,4 @@ class Sidebar(QtWidgets.QWidget):
     
     def get_nav_buttons(self):
         """Return the list of navigation buttons (for compatibility)"""
-        return self._buttons
+        return self._buttons + ([self._settings_btn] if self._settings_btn else [])

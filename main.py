@@ -1,6 +1,7 @@
 ﻿# arch_invoice_generator.py
 import sys
 import os
+import csv
 import json
 import subprocess
 import platform
@@ -8,7 +9,7 @@ import shutil
 import traceback
 import base64
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
@@ -114,9 +115,11 @@ def cleanup_update_leftovers():
 
         app_dir = Path(sys.executable).parent
 
+        exe = Path(sys.executable)
         targets = [
             app_dir / "invoice_updater.exe",
-            app_dir / "main.bak"
+            app_dir / "main.bak",
+            exe.with_suffix(".bak"),   # e.g. MABS_Invoice.bak
         ]
 
         for file in targets:
@@ -242,10 +245,14 @@ class Config:
     LOGO_FILE = ASSETS_DIR / "logo.png"
     ZELLE_QR_FILE = ASSETS_DIR / "payment.jpeg"
     PRIVATE_SERVICE_ACCOUNT_FILE = Path.home() / ".mabs" / "servicekey.json"
+    # When running as a PyInstaller .exe, bundled files land in sys._MEIPASS
+    _MEIPASS_KEY = Path(getattr(sys, "_MEIPASS", "")) / "data" / "servicekey.json"
     SERVICE_ACCOUNT_FILE = Path(
         os.environ.get(
             "MABS_FIREBASE_SERVICE_ACCOUNT",
-            PRIVATE_SERVICE_ACCOUNT_FILE if PRIVATE_SERVICE_ACCOUNT_FILE.exists() else DATA_DIR / "servicekey.json",
+            str(PRIVATE_SERVICE_ACCOUNT_FILE) if PRIVATE_SERVICE_ACCOUNT_FILE.exists()
+            else str(_MEIPASS_KEY) if _MEIPASS_KEY.exists()
+            else str(DATA_DIR / "servicekey.json"),
         )
     ).expanduser()
 
@@ -272,6 +279,10 @@ class Config:
                     data = json.load(f)
                 if "company" in data:
                     cls.COMPANY.update(data["company"])
+                    # Keep DEFAULT_TERMS in sync with the saved preference
+                    dt = (data["company"].get("default_terms") or "").strip()
+                    if dt:
+                        cls.DEFAULT_TERMS = dt
                 if "users" in data:
                     cls.USERS = data["users"]
                 log.info("Settings loaded from %s", cls.SETTINGS_FILE)
@@ -291,6 +302,25 @@ class Config:
         if cls.LOGO_FILE.exists():
             return cls.LOGO_FILE
         return None
+
+    @classmethod
+    def overlay_from_firebase(cls) -> bool:
+        """Overlay Config with live Firebase settings (source of truth).
+        Called after Firebase is connected, so FirebaseManager is available."""
+        try:
+            fb = FirebaseManager.load_settings_from_firebase()
+            if not fb:
+                return False
+            if fb.get("company"):
+                cls.COMPANY.update(fb["company"])
+                dt = (fb["company"].get("default_terms") or "").strip()
+                if dt:
+                    cls.DEFAULT_TERMS = dt
+            log.info("Config overlaid from Firebase /settings")
+            return True
+        except Exception as exc:
+            log.warning("overlay_from_firebase failed: %s", exc)
+            return False
 
     @classmethod
     def setup_directories(cls) -> None:
@@ -352,6 +382,7 @@ class FirebaseManager:
     """Handles Firebase Authentication and Realtime Database operations"""
     last_auth_error = ""
     last_auth_message = ""
+    _invoices_cache = None  # None = never loaded; list = populated by load_invoices()
 
     @staticmethod
     def _set_auth_error(code: str = "", message: str = "") -> None:
@@ -392,8 +423,8 @@ class FirebaseManager:
                         'email': admin_email,
                         'role': 'admin',
                         'active': True,
-                        'created_at': datetime.now().isoformat(),
-                        'updated_at': datetime.now().isoformat(),
+                        'created_at': datetime.now(timezone.utc).isoformat(),
+                        'updated_at': datetime.now(timezone.utc).isoformat(),
                         'firebase_uid': user.uid
                     }
                     
@@ -510,8 +541,8 @@ class FirebaseManager:
                 'role': normalized_role,
                 'active': True,
                 'firebase_uid': user.uid,
-                'created_at': datetime.now().isoformat(),
-                'updated_at': datetime.now().isoformat(),
+                'created_at': datetime.now(timezone.utc).isoformat(),
+                'updated_at': datetime.now(timezone.utc).isoformat(),
                 'reset_token': None,
                 'reset_token_expiry': None
             }
@@ -824,8 +855,8 @@ class FirebaseManager:
             if user:
                 ref = db.reference(f'/users/{user.uid}')
                 ref.update({
-                    'reset_requested_at': datetime.now().isoformat(),
-                    'updated_at': datetime.now().isoformat()
+                    'reset_requested_at': datetime.now(timezone.utc).isoformat(),
+                    'updated_at': datetime.now(timezone.utc).isoformat()
                 })
             
             # Return a token (for compatibility, though Firebase handles it)
@@ -854,7 +885,7 @@ class FirebaseManager:
             # Update timestamp in Database
             ref = db.reference(f'/users/{user["firebase_uid"]}')
             ref.update({
-                'updated_at': datetime.now().isoformat()
+                'updated_at': datetime.now(timezone.utc).isoformat()
             })
             
             log.info(f"Password updated for {username}")
@@ -878,7 +909,7 @@ class FirebaseManager:
             ref = db.reference(f'/users/{user["firebase_uid"]}')
             ref.update({
                 'role': normalize_role(new_role),
-                'updated_at': datetime.now().isoformat()
+                'updated_at': datetime.now(timezone.utc).isoformat()
             })
             
             log.info(f"Updated role for {username} to {new_role}")
@@ -952,7 +983,7 @@ class FirebaseManager:
             if existing_projects:
                 # Update existing project
                 project_id = list(existing_projects.keys())[0]
-                project_data['updated_at'] = datetime.now().isoformat()
+                project_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                 ref.child(project_id).update(project_data)
                 log.info("Project updated in Firebase: %s", project_data['project_number'])
                 return True
@@ -960,8 +991,8 @@ class FirebaseManager:
                 # Create new project
                 new_project_ref = ref.push()
                 project_data['firebase_id'] = new_project_ref.key
-                project_data['created_at'] = datetime.now().isoformat()
-                project_data['updated_at'] = datetime.now().isoformat()
+                project_data['created_at'] = datetime.now(timezone.utc).isoformat()
+                project_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                 new_project_ref.set(project_data)
                 log.info("Project saved to Firebase with ID: %s", new_project_ref.key)
                 return True
@@ -1001,7 +1032,7 @@ class FirebaseManager:
             if existing_invoices:
                 # Update existing invoice
                 invoice_id = list(existing_invoices.keys())[0]
-                invoice_data['meta']['updated_at'] = datetime.now().isoformat()
+                invoice_data['meta']['updated_at'] = datetime.now(timezone.utc).isoformat()
                 ref.child(invoice_id).update(invoice_data)
                 log.info("Invoice updated in Firebase: %s", invoice_data['meta']['invoice_number'])
                 return True
@@ -1009,8 +1040,8 @@ class FirebaseManager:
                 # Create new invoice
                 new_invoice_ref = ref.push()
                 invoice_data['firebase_id'] = new_invoice_ref.key
-                invoice_data['meta']['created_at'] = datetime.now().isoformat()
-                invoice_data['meta']['updated_at'] = datetime.now().isoformat()
+                invoice_data['meta']['created_at'] = datetime.now(timezone.utc).isoformat()
+                invoice_data['meta']['updated_at'] = datetime.now(timezone.utc).isoformat()
                 new_invoice_ref.set(invoice_data)
                 log.info("Invoice saved to Firebase with ID: %s", new_invoice_ref.key)
                 return True
@@ -1130,7 +1161,7 @@ class FirebaseManager:
                         loaded = json.load(f)
                         if isinstance(loaded, dict):
                             clients = loaded
-                client_data['updated_at'] = datetime.now().isoformat()
+                client_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                 clients[client_name] = client_data
                 with open(Config.CLIENTS_FILE, "w", encoding="utf-8") as f:
                     json.dump(clients, f, indent=2, ensure_ascii=False)
@@ -1142,7 +1173,7 @@ class FirebaseManager:
             
         try:
             ref = db.reference('/clients')
-            client_data['updated_at'] = datetime.now().isoformat()
+            client_data['updated_at'] = datetime.now(timezone.utc).isoformat()
             ref.child(client_name).set(client_data)
             log.info("Client saved to Firebase: %s", client_name)
             return True
@@ -1226,7 +1257,7 @@ class FirebaseManager:
                 idx = _STAGES.index(current)
                 if idx < len(_STAGES) - 1:
                     next_stage = _STAGES[idx + 1]
-                    updates = {'payment_category': next_stage, 'updated_at': datetime.now().isoformat()}
+                    updates = {'payment_category': next_stage, 'updated_at': datetime.now(timezone.utc).isoformat()}
                     db.reference(f'/projects/{project_id}').update(updates)
                     log.info("Project %s advanced to %s", project_number, next_stage)
                     return True
@@ -1246,7 +1277,7 @@ class FirebaseManager:
             ref = db.reference(f'/projects/{project_id}')
             ref.update({
                 'status': new_status,
-                'updated_at': datetime.now().isoformat()
+                'updated_at': datetime.now(timezone.utc).isoformat()
             })
             log.info("Project status updated in Firebase: %s -> %s", project_id, new_status)
             return True
@@ -1271,8 +1302,10 @@ class FirebaseManager:
                         invoice_data['firebase_id'] = invoice_id
                         invoices.append(invoice_data)
                 log.info("Loaded %s invoices from Firebase", len(invoices))
+                FirebaseManager._invoices_cache = invoices
                 return invoices
             log.info("No invoices found in Firebase")
+            FirebaseManager._invoices_cache = []
             return []  # Return empty list, not None
         except Exception as e:
             log.warning("Error loading invoices from Firebase: %s", e)
@@ -1302,7 +1335,7 @@ class FirebaseManager:
                 'job_number': job_number,
                 'pdf_base64': pdf_base64,
                 'file_name': f"{job_number}_job_form.pdf",
-                'created_at': datetime.now().isoformat(),
+                'created_at': datetime.now(timezone.utc).isoformat(),
                 'size_bytes': len(pdf_data)
             }
             
@@ -1408,14 +1441,14 @@ class FirebaseManager:
             existing = ref.order_by_child('job_number').equal_to(job_data['job_number']).get()
             if existing:
                 job_id = list(existing.keys())[0]
-                job_data['updated_at'] = datetime.now().isoformat()
+                job_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                 ref.child(job_id).update(job_data)
                 _log.info("Quote form updated: %s", job_data['job_number'])
             else:
                 new_ref = ref.push()
                 job_data['firebase_id'] = new_ref.key
-                job_data['created_at'] = datetime.now().isoformat()
-                job_data['updated_at'] = datetime.now().isoformat()
+                job_data['created_at'] = datetime.now(timezone.utc).isoformat()
+                job_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                 new_ref.set(job_data)
                 _log.info("Quote form saved: %s", job_data['job_number'])
             return True
@@ -1478,7 +1511,7 @@ class FirebaseManager:
                     status_ref = db.reference(f'/invoices/{invoice_id}/meta')
                     status_ref.update({
                         "status": new_status,
-                        "updated_at": datetime.now().isoformat()
+                        "updated_at": datetime.now(timezone.utc).isoformat()
                     })
 
                     log.info("Status updated successfully: %s -> %s", invoice_number, new_status)
@@ -1534,7 +1567,7 @@ class FirebaseManager:
                 if due_date < today:
                     ref.child(invoice_id).child('meta').update({
                         'status': InvoiceStatus.OVERDUE,
-                        'updated_at': datetime.now().isoformat(),
+                        'updated_at': datetime.now(timezone.utc).isoformat(),
                     })
                     log.info("Auto-marked overdue: %s (due %s)", meta.get('invoice_number', invoice_id), due_raw)
                     updated += 1
@@ -1575,6 +1608,9 @@ class FirebaseManager:
             for project in projects:
                 pnum = project.get('project_number', '')
                 if not pnum:
+                    continue
+                # Never auto-override a status the user set manually
+                if project.get('status_manual'):
                     continue
                 if project.get('status') in ProjectStatus.INACTIVE:
                     continue
@@ -1633,7 +1669,7 @@ class FirebaseManager:
                 if due_date < today:
                     ref.child(form_id).update({
                         'status': 'Expired',
-                        'updated_at': datetime.now().isoformat(),
+                        'updated_at': datetime.now(timezone.utc).isoformat(),
                     })
                     log.info("Auto-expired quote %s (due %s)", form_data.get('job_number', form_id), due_raw)
                     updated += 1
@@ -1668,7 +1704,7 @@ class FirebaseManager:
                 'invoice_number': invoice_number,
                 'pdf_base64': pdf_base64,
                 'file_name': f"{invoice_number}.pdf",
-                'created_at': datetime.now().isoformat(),
+                'created_at': datetime.now(timezone.utc).isoformat(),
                 'size_bytes': len(pdf_data)
             }
             
@@ -1819,7 +1855,69 @@ class FirebaseManager:
         except Exception as e:
             log.warning("Error saving expense to Firebase: %s", e)
             return False
-            
+
+    @staticmethod
+    def save_settings_to_firebase(data: dict) -> bool:
+        """Save company info and preferences to /settings in Firebase."""
+        if not FIREBASE_AVAILABLE:
+            return False
+        try:
+            import base64 as _b64
+            company = dict(data.get("company") or {})
+            payload: dict = {
+                "company": {k: v for k, v in company.items() if k != "logo_path"},
+                "app":     dict(data.get("app") or {}),
+                "github":  dict(data.get("github") or {}),
+            }
+            # Store logo as base64 so it syncs across devices
+            logo_str = (company.get("logo_path") or "").strip()
+            if logo_str:
+                lp = Path(logo_str)
+                if lp.exists():
+                    try:
+                        payload["logo_base64"] = _b64.b64encode(lp.read_bytes()).decode("utf-8")
+                        payload["logo_ext"] = lp.suffix.lower() or ".png"
+                    except Exception:
+                        pass
+            db.reference("/settings").set(payload)
+            log.info("Settings saved to Firebase")
+            return True
+        except Exception as exc:
+            log.warning("Failed to save settings to Firebase: %s", exc)
+            return False
+
+    @staticmethod
+    def load_settings_from_firebase() -> dict:
+        """Load company info and preferences from /settings in Firebase. Returns {} on failure."""
+        if not FIREBASE_AVAILABLE:
+            return {}
+        try:
+            import base64 as _b64
+            raw = db.reference("/settings").get()
+            if not raw or not isinstance(raw, dict):
+                return {}
+            result: dict = {}
+            if "company" in raw:
+                result["company"] = dict(raw["company"])
+            if "app" in raw:
+                result["app"] = dict(raw["app"])
+            if "github" in raw:
+                result["github"] = dict(raw["github"])
+            # Restore logo from base64 to a local cache file
+            logo_b64 = (raw.get("logo_base64") or "").strip()
+            logo_ext = raw.get("logo_ext") or ".png"
+            if logo_b64:
+                try:
+                    logo_cache = Config.DATA_DIR / f"company_logo{logo_ext}"
+                    logo_cache.write_bytes(_b64.b64decode(logo_b64))
+                    result.setdefault("company", {})["logo_path"] = str(logo_cache)
+                except Exception as exc:
+                    log.warning("Failed to restore logo from Firebase: %s", exc)
+            return result
+        except Exception as exc:
+            log.warning("Failed to load settings from Firebase: %s", exc)
+            return {}
+
 # ---------- Utility Classes ----------
 class DecimalEncoder(json.JSONEncoder):
     """Custom JSON encoder for Decimal objects"""
@@ -2050,6 +2148,7 @@ class PDFGenerator:
             # Custom styles
             styles.add(ParagraphStyle(name='CenteredBold20', alignment=1, fontName='Helvetica-Bold', fontSize=20, leading=24))
             styles.add(ParagraphStyle(name='Centered10', alignment=1, fontName='Helvetica', fontSize=10, leading=12))
+            styles.add(ParagraphStyle(name='Centered8',  alignment=1, fontName='Helvetica', fontSize=8,  leading=10))
             styles.add(ParagraphStyle(name='LeftBold16', alignment=0, fontName='Helvetica-Bold', fontSize=16, leading=18))
             styles.add(ParagraphStyle(name='LeftBold12', alignment=0, fontName='Helvetica-Bold', fontSize=12, leading=14))
             styles.add(ParagraphStyle(name='Left10', alignment=0, fontName='Helvetica', fontSize=10, leading=12))
@@ -2058,10 +2157,11 @@ class PDFGenerator:
             styles.add(ParagraphStyle(name='RightBold10', alignment=2, fontName='Helvetica-Bold', fontSize=10, leading=12))
             styles.add(ParagraphStyle(name='Left9', alignment=0, fontName='Helvetica', fontSize=9, leading=11))
             styles.add(ParagraphStyle(name='Left8', alignment=0, fontName='Helvetica', fontSize=8, leading=10))
+            styles.add(ParagraphStyle(name='CenterBold16', alignment=1, fontName='Helvetica-Bold', fontSize=16, leading=18))
             styles.add(ParagraphStyle(name='CenterBold12', alignment=1, fontName='Helvetica-Bold', fontSize=12, leading=14))
             styles.add(ParagraphStyle(name='CenterBold10', alignment=1, fontName='Helvetica-Bold', fontSize=10, leading=12))
             styles.add(ParagraphStyle(name='Center9', parent=styles['Normal'], alignment=1, fontSize=9, leading=11))
-            styles.add(ParagraphStyle(name='ProjectNumberCell', alignment=1, fontName='Helvetica', fontSize=8, leading=8, splitLongWords=0, wordWrap='CJK'))
+            styles.add(ParagraphStyle(name='ProjectNumberCell', alignment=1, fontName='Helvetica', fontSize=9, leading=11))
             # Add this line with your other style definitions
             styles.add(ParagraphStyle(name='Left14', alignment=0, fontName='Helvetica', fontSize=14, leading=16))
             if 'CenterBoldHeader10' not in styles:
@@ -2083,49 +2183,54 @@ class PDFGenerator:
                         logo_path = None
 
 
-                    # INCREASED LOGO SIZE TO 30x30mm
+                    _logo_w = 30 * mm
                     logo_img = Image(str(logo_path), width=27*mm, height=27*mm)
 
-                    # Create company info HTML with proper spacing
-                    # --- Company Info (with individual line movement) ---
-                    line1 = Paragraph(f"<b>{Config.COMPANY['name']}</b>", styles['LeftBold16'])
-                    line2 = Paragraph("15455 Manchester Rd, PO Box 1144", styles['Left10'])
-                    line3 = Paragraph("Manchester, MO 63011", styles['Left10'])
-                    line4 = Paragraph("Phone:314-303-0004 a  admin@habbengineering.com a  www.mabs-engineeringg.com", styles['Left10'])
-                    # Mini-table inside the right cell to control each line independently
+                    # Company info — centered across the full page width
+                    _addr_lines = Config.COMPANY.get('address', '').split('\n')
+                    _addr1 = _addr_lines[0].strip() if _addr_lines else ''
+                    _addr2 = _addr_lines[1].strip() if len(_addr_lines) > 1 else ''
+                    _phone = Config.COMPANY.get('phone', '')
+                    _email = Config.COMPANY.get('email', '')
+                    _website = Config.COMPANY.get('website', '')
+                    _phone_str = f"Phone:{_phone}" if _phone else ''
+                    _contact = '  •  '.join(p for p in [_phone_str, _email, _website] if p)
+
+                    _mid_w = doc.width - 2 * _logo_w
+                    line1 = Paragraph(f"<b>{Config.COMPANY.get('name', '')}</b>", styles['CenteredBold20'])
+                    line2 = Paragraph(_addr1, styles['Centered10'])
+                    line3 = Paragraph(_addr2, styles['Centered10'])
+                    line4 = Paragraph(_contact, styles['Centered8'])
+
                     company_info_table = Table(
                         [[line1], [line2], [line3], [line4]],
-                        colWidths=[doc.width - 30*mm - 10],
+                        colWidths=[_mid_w],
                         style=TableStyle([
-                            # -------- Horizontal positioning --------
-                            ('LEFTPADDING', (0,0), (0,0), 105),  # Company name
-                            ('LEFTPADDING', (0,1), (0,1), 110),  # Address line 1
-                            ('LEFTPADDING', (0,2), (0,2), 140),  # Address line 2
-                            ('LEFTPADDING', (0,3), (0,3), 45),   # Phone / Email
-
-                            # -------- Vertical spacing (THIS IS THE KEY) --------
-                            ('BOTTOMPADDING', (0,0), (0,0), 4),  # After company name
-                            ('BOTTOMPADDING', (0,1), (0,1), 2),  # After address line 1
-                            ('BOTTOMPADDING', (0,2), (0,2), 4),  # After address line 2
-                            ('BOTTOMPADDING', (0,3), (0,3), 4),  # After phone/email
-                            ('BOTTOMPADDING', (0,4), (0,4), 0),  # Last line  -  no gap
-
-                            ('TOPPADDING', (0,0), (-1,-1), 0),
-                            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                            ('ALIGN',   (0,0), (-1,-1), 'CENTER'),
+                            ('VALIGN',  (0,0), (-1,-1), 'MIDDLE'),
+                            ('TOPPADDING',    (0,0), (-1,-1), 0),
+                            ('BOTTOMPADDING', (0,0), (0,0), 4),
+                            ('BOTTOMPADDING', (0,1), (0,1), 2),
+                            ('BOTTOMPADDING', (0,2), (0,2), 4),
+                            ('BOTTOMPADDING', (0,3), (0,3), 0),
+                            ('LEFTPADDING',  (0,0), (-1,-1), 0),
+                            ('RIGHTPADDING', (0,0), (-1,-1), 0),
                         ])
                     )
 
-
-                    # Final header table (Logo + company-info-table)
+                    # 3-column layout: logo | centered text | equal spacer
+                    # The equal spacer on the right makes the middle column
+                    # truly centred over the full page width.
                     header_table = Table(
-                        [[logo_img, company_info_table]],
-                        colWidths=[30*mm, doc.width - 30*mm]
+                        [[logo_img, company_info_table, '']],
+                        colWidths=[_logo_w, _mid_w, _logo_w]
                     )
-
                     header_table.setStyle(TableStyle([
-                        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                        ('LEFTPADDING', (1,0), (1,0), 0),
-                        ('RIGHTPADDING', (1,0), (1,0), 0),
+                        ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
+                        ('LEFTPADDING',   (0,0), (-1,-1), 0),
+                        ('RIGHTPADDING',  (0,0), (-1,-1), 0),
+                        ('TOPPADDING',    (0,0), (-1,-1), 0),
+                        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
                     ]))
 
                     
@@ -2134,16 +2239,20 @@ class PDFGenerator:
                 except Exception as e:
                     log.warning("Logo loading error: %s", e)
                     # Fallback: show company info without logo (centered)
-                    story.append(Paragraph(Config.COMPANY["name"], styles['CenteredBold20']))
-                    for line in Config.COMPANY["address"].split('\n'):
+                    story.append(Paragraph(Config.COMPANY.get("name", ""), styles['CenteredBold20']))
+                    for line in Config.COMPANY.get("address", "").split('\n'):
                         story.append(Paragraph(line, styles['Centered10']))
-                    story.append(Paragraph(f"{Config.COMPANY['phone']} a  {Config.COMPANY['email']} a  {Config.COMPANY['website']}", styles['Centered10']))
+                    _fb_ph = f"Phone:{Config.COMPANY.get('phone','')}" if Config.COMPANY.get('phone') else ''
+                    _fb_ct = '  •  '.join(p for p in [_fb_ph, Config.COMPANY.get('email',''), Config.COMPANY.get('website','')] if p)
+                    story.append(Paragraph(_fb_ct, styles['Centered8']))
             else:
                 # No logo - just show company info centered
-                story.append(Paragraph(Config.COMPANY["name"], styles['CenteredBold20']))
-                for line in Config.COMPANY["address"].split('\n'):
+                story.append(Paragraph(Config.COMPANY.get("name", ""), styles['CenteredBold20']))
+                for line in Config.COMPANY.get("address", "").split('\n'):
                     story.append(Paragraph(line, styles['Centered10']))
-                story.append(Paragraph(f"{Config.COMPANY['phone']} a  {Config.COMPANY['email']} a  {Config.COMPANY['website']}", styles['Centered10']))
+                _nl_ph = f"Phone:{Config.COMPANY.get('phone','')}" if Config.COMPANY.get('phone') else ''
+                _nl_ct = '  •  '.join(p for p in [_nl_ph, Config.COMPANY.get('email',''), Config.COMPANY.get('website','')] if p)
+                story.append(Paragraph(_nl_ct, styles['Centered8']))
                 
             # Separator line - thinner and closer to header
             story.append(Table(
@@ -2207,39 +2316,38 @@ class PDFGenerator:
             # Updated headers with light gray color
             item_data = [[
                 Paragraph("<b>Project</b>", styles['CenterBoldHeader10']),
-                Paragraph("<b>Description</b>", styles['CenterBoldHeader10']), 
+                Paragraph("<b>Project Name</b>", styles['CenterBoldHeader10']),
                 Paragraph("<b>Plant</b>", styles['CenterBoldHeader10']),
                 Paragraph("<b>Qty</b>", styles['CenterBoldHeader10']),
                 Paragraph("<b>Unit Price</b>", styles['CenterBoldHeader10']),
-                Paragraph("<b>Down Payment</b>", styles['CenterBoldHeader10']),
+                Paragraph("<b>Payment Stage</b>", styles['CenterBoldHeader10']),
                 Paragraph("<b>Payment Due</b>", styles['CenterBoldHeader10'])
             ]]
-            
+
             for item in invoice.items:
-                # Format all amounts as whole numbers (no decimals)
                 unit_price_whole = Currency.format_whole(item.unit_price)
-                down_payment_whole = Currency.format_whole(item.down_payment)
                 payment_due_whole = Currency.format_whole(item.payment_due)
-                
+                stage_label = (item.payment_category or "").strip() or "—"
+
                 item_data.append([
-                    Paragraph((item.project_number or "").replace("-", "-<br/>"), styles['ProjectNumberCell']),
+                    Paragraph(item.project_number or "", styles['ProjectNumberCell']),
                     Paragraph(truncate_text(item.description, max_chars=45), styles['Center9']),
                     Paragraph(item.plant or "", styles['Center9']),
                     Paragraph(str(item.quantity), styles['Center9']),
                     Paragraph(unit_price_whole, styles['Center9']),
-                    Paragraph(down_payment_whole, styles['Center9']),
+                    Paragraph(stage_label, styles['Center9']),
                     Paragraph(payment_due_whole, styles['Center9'])
                 ])
             
-            # Calculate column widths with INCREASED Project column width
+            # Column widths — Project Number wide enough to fit on one line
             available_width = doc.width
             item_table = Table(item_data, colWidths=[
-                available_width * 0.18,  # Project Number
+                available_width * 0.21,  # Project Number
                 available_width * 0.21,  # Description
                 available_width * 0.11,  # Plant
-                available_width * 0.08,  # Quantity
+                available_width * 0.09,  # Quantity
                 available_width * 0.11,  # Unit Price
-                available_width * 0.16,  # Down Payment
+                available_width * 0.12,  # Payment Stage
                 available_width * 0.15   # Payment Due
             ])
 
@@ -2269,17 +2377,14 @@ class PDFGenerator:
             story.append(item_table)
             story.append(Spacer(1, 5*mm))
 
-            # Calculate total down payments
-            total_down_payments = sum(item.down_payment for item in invoice.items)
-
-            # Create totals table with SAME STYLE as items table
+            # Create totals table — Deposit Received removed; unit_price is already the stage amount
             totals_data = [
                 [Paragraph("<b>Total:</b>", styles['RightBold10']),
-                Paragraph(f"{Currency.format(invoice.subtotal)}", styles['RightBold10'])],
-                [Paragraph("<b>Deposit Received:</b>", styles['RightBold10']),
-                Paragraph(f"{Currency.format(total_down_payments)}", styles['RightBold10'])],
-                [Paragraph(f"<b>Tax ({invoice.tax_rate}%):</b>", styles['RightBold10']), Paragraph(f"{Currency.format(invoice.tax_amount)}", styles['RightBold10'])],
-                [Paragraph("<b>TOTAL AMOUNT DUE:</b>", styles['RightBold10']), Paragraph(f"{Currency.format(invoice.total)}", styles['RightBold10'])]
+                 Paragraph(f"{Currency.format(invoice.subtotal)}", styles['RightBold10'])],
+                [Paragraph(f"<b>Tax ({invoice.tax_rate}%):</b>", styles['RightBold10']),
+                 Paragraph(f"{Currency.format(invoice.tax_amount)}", styles['RightBold10'])],
+                [Paragraph("<b>TOTAL AMOUNT DUE:</b>", styles['RightBold10']),
+                 Paragraph(f"{Currency.format(invoice.total)}", styles['RightBold10'])],
             ]
 
             # Calculate column widths
@@ -2298,8 +2403,8 @@ class PDFGenerator:
                 ('TOPPADDING', (0,0), (-1,-1), 4),
                 ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
                 ('LINEBELOW', (0,0), (-1,0), 0, colors.white),
-                ('LINEAFTER', (0,3), (0,3), 0, colors.white),
-                ('BACKGROUND', (0,3), (-1,3), colors.HexColor('#D9D9D9')),
+                ('LINEAFTER', (0,2), (0,2), 0, colors.white),
+                ('BACKGROUND', (0,2), (-1,2), colors.HexColor('#D9D9D9')),
             ]))
 
             story.append(totals_table)
@@ -2332,25 +2437,22 @@ class PDFGenerator:
                 # Option 1 content
                 Table(
                     [[Paragraph(
-                        f"<para align='left' leading='11' color='black'>"
-                        f"<font size='10'>Payable to: {Config.COMPANY['name']}<br/>"
-                        f"Mailing Address:<br/>{Config.COMPANY['address'].replace(chr(10), '<br/>')}</font>"
+                        f"<para align='left' leading='14' color='black'>"
+                        f"<font size='10'><b>Payable to:</b> {Config.COMPANY['name']}<br/>"
+                        f"<b>Mailing Address:</b> {Config.COMPANY['address'].replace(chr(10), '<br/>')}</font>"
                         f"</para>",
                         styles['Left9']
                     )]],
                     colWidths=[available_width * 0.60],
-                    rowHeights=[45],
                     style=TableStyle([
                         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                         ('LEFTPADDING', (0, 0), (-1, -1), 8),
                         ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-                        ('TOPPADDING', (0, 0), (-1, -1), 10),
-                        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                        ('TOPPADDING', (0, 0), (-1, -1), 6),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
                     ])
                 ),
-
-                Spacer(1, 5*mm),
 
                 # Option 3 Header
                 Table(
@@ -2373,7 +2475,7 @@ class PDFGenerator:
                 Table(
                     [[Paragraph(
                         f"<para align='center' leading='11' color='black'>"
-                        "<font size='10'>Please contact MABS Admin to get our bank information for ACH transfers.</font>"
+                        f"<font size='10'>Please contact {Config.COMPANY.get('name', 'MABS Engineering LLC').split()[0]} Admin to get our bank information for ACH transfers.</font>"
                         "</para>",
                         styles['Left9']
                     )]],
@@ -2439,13 +2541,12 @@ class PDFGenerator:
             story.append(payment_table)
             story.append(Spacer(1, 5*mm))
 
-            # --- Footer (Notes) ---
-            if invoice.notes and invoice.notes.strip() and invoice.notes != Config.DEFAULT_TERMS:
-                story.append(Spacer(1, 2*mm))
-                story.append(Paragraph(f"<b>Note:</b> {invoice.notes.strip()}", styles['Left9']))
-            else:
-                story.append(Spacer(1, 3*mm))
-                story.append(Paragraph("Thank you for your business! Best regards, MABS Engineering LLC", styles['CenterBold10']))
+            # --- Footer (Notes/Terms) ---
+            _terms = Config.DEFAULT_TERMS
+            if invoice.notes and invoice.notes.strip() and invoice.notes.strip() != _terms.strip():
+                _terms = invoice.notes.strip()
+            story.append(Spacer(1, 2*mm))
+            story.append(Paragraph(f"<b>Note:</b> {_terms}", styles['Left9']))
 
             doc.build(story)
             return True
@@ -2475,7 +2576,7 @@ class InvoiceItem:
         
         # Store down payment as provided
         self.down_payment = Currency.quantize(down_payment_decimal)
-        
+
         # Calculate payment due based on down payment
         total_amount = quantity_decimal * unit_price_decimal
         self.payment_due = Currency.quantize(total_amount - self.down_payment)
@@ -2613,15 +2714,32 @@ class Invoice:
         invoice.items = []
         for item_data in data.get("items", []):
             try:
+                raw_unit_price = item_data.get("unit_price", 0.0)
+                raw_down_payment = item_data.get("down_payment", 0.0)
+                raw_payment_category = item_data.get("payment_category", "")
+
+                # Fix legacy invoices where "Down Payment (50%)" was mistakenly applied
+                # to a stage amount (e.g. $50 stage → down_payment=$25, payment_due=$25).
+                # Detect: down_payment == unit_price * 0.5 for a "Down Payment" category item.
+                try:
+                    _up = Decimal(str(raw_unit_price))
+                    _dp = Decimal(str(raw_down_payment))
+                    _cat_lo = (raw_payment_category or "").lower()
+                    _is_deposit_cat = "down payment" in _cat_lo or "deposit" in _cat_lo
+                    if _is_deposit_cat and _dp > 0 and abs(_dp - _up * Decimal("0.5")) < Decimal("0.01"):
+                        raw_down_payment = 0.0
+                except Exception:
+                    pass
+
                 item = InvoiceItem(
                     project_number=item_data.get("project_number", ""),
                     description=item_data.get("description", ""),
                     plant=item_data.get("plant", ""),
                     quantity=item_data.get("quantity", 1),
-                    unit_price=item_data.get("unit_price", 0.0),
-                    down_payment=item_data.get("down_payment", 0.0),
+                    unit_price=raw_unit_price,
+                    down_payment=raw_down_payment,
                     payment_due=item_data.get("payment_due", 0.0),
-                    payment_category=item_data.get("payment_category", "")  # ADD THIS LINE
+                    payment_category=raw_payment_category,
                 )
                 invoice.items.append(item)
             except Exception as e:
@@ -2862,6 +2980,7 @@ class ProjectLookupDialog(QtWidgets.QDialog):
         hh.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
         hh.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
         hh.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
+        self._table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self._table.setStyleSheet("""
             QTableWidget {
                 background: #ffffff;
@@ -3194,6 +3313,7 @@ class ItemRowWidget(QtWidgets.QWidget):
         self.total_label = None
         self.remove_btn = None
         self.item_number_label = None
+        self._stage_locked = False  # True when loaded from a project payment stage
         self.init_ui()
 
     @classmethod
@@ -3207,8 +3327,8 @@ class ItemRowWidget(QtWidgets.QWidget):
         layout.setVerticalSpacing(8)
         self.setStyleSheet("""
             ItemRowWidget {
-                background: #f8fbfd;
-                border: 1px solid #e5edf5;
+                background: #ffffff;
+                border: 1px solid #ffffff;
                 border-radius: 10px;
             }
         """)
@@ -3217,6 +3337,7 @@ class ItemRowWidget(QtWidgets.QWidget):
         self.project_number_edit = QtWidgets.QLineEdit(self.item.project_number)
         self.project_number_edit.setPlaceholderText("Project #")
         self.project_number_edit.setMinimumHeight(35)
+        self.project_number_edit.setMinimumWidth(110)
         self.project_number_edit.setAlignment(QtCore.Qt.AlignCenter)
         self.project_number_edit.editingFinished.connect(
             lambda: self.on_project_number_changed(self.project_number_edit.text())
@@ -3233,7 +3354,7 @@ class ItemRowWidget(QtWidgets.QWidget):
         )
         _pn_lay = QtWidgets.QHBoxLayout(self._pn_container)
         _pn_lay.setContentsMargins(0, 0, 0, 0)
-        _pn_lay.setSpacing(4)
+        _pn_lay.setSpacing(6)
         _pn_lay.addWidget(self.project_number_edit)
 
         self._lookup_btn = QtWidgets.QPushButton("⊕")
@@ -3257,7 +3378,7 @@ class ItemRowWidget(QtWidgets.QWidget):
 
         # Description - DECREASED WIDTH and center aligned
         self.desc_edit = QtWidgets.QLineEdit(self.item.description)
-        self.desc_edit.setPlaceholderText("Description (PO & Address)")
+        self.desc_edit.setPlaceholderText("Project Name")
         self.desc_edit.setMinimumHeight(35)
         self.desc_edit.setAlignment(QtCore.Qt.AlignCenter)
         
@@ -3438,7 +3559,7 @@ class ItemRowWidget(QtWidgets.QWidget):
             layout.addWidget(widget, row + 1, col, 1, colspan)
 
         add_field(1, 0, "Project #", self._pn_container)
-        add_field(1, 1, "Description", self.desc_edit)
+        add_field(1, 1, "Project Name", self.desc_edit)
         add_field(1, 2, "Plant", self.plant_edit)
         add_field(1, 3, "Qty", self.qty_spin)
         add_field(1, 4, "Unit Price", self.price_edit)
@@ -3447,7 +3568,7 @@ class ItemRowWidget(QtWidgets.QWidget):
         add_field(1, 7, "Total", self.total_label)
         add_field(1, 8, "Action", self.remove_btn)
 
-        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(0, 2)
         layout.setColumnStretch(1, 4)
         layout.setColumnStretch(2, 1)
         layout.setColumnStretch(3, 1)
@@ -3540,6 +3661,52 @@ class ItemRowWidget(QtWidgets.QWidget):
                 }
             """)
         
+    def lock_to_stage(self, label: str):
+        """Lock this row to a single project payment stage — replaces the full dropdown."""
+        self._stage_locked = True
+        self.down_payment_combo.blockSignals(True)
+        self.down_payment_combo.clear()
+        self.down_payment_combo.addItem(label)
+        self.down_payment_combo.setCurrentIndex(0)
+        self.down_payment_combo.setEnabled(False)
+        self.down_payment_combo.setStyleSheet("""
+            QComboBox {
+                text-align: center;
+                color: #0f766e;
+                font-weight: 800;
+                background: #f0fdf9;
+                border: 1.5px solid #99f6e4;
+                border-radius: 7px;
+                padding: 4px 8px;
+            }
+            QComboBox::drop-down { width: 0px; border: none; }
+            QComboBox::down-arrow { image: none; }
+        """)
+        self.down_payment_combo.blockSignals(False)
+
+        # Make project name read-only so it always reflects the loaded project
+        if self.desc_edit is not None:
+            self.desc_edit.setReadOnly(True)
+            self.desc_edit.setStyleSheet(
+                self.desc_edit.styleSheet() +
+                "QLineEdit { background: #f0fdf9; color: #0f766e; font-weight: 600; }"
+            )
+        # Also lock amount and project number
+        self.lock_project_fields()
+
+    def lock_project_fields(self):
+        """Lock project number and amount so they cannot be changed after loading from a project."""
+        _locked_style = "QLineEdit { background: #f0fdf9; color: #0f766e; font-weight: 600; border: 1.5px solid #99f6e4; }"
+        if self.project_number_edit is not None:
+            self.project_number_edit.setReadOnly(True)
+            self.project_number_edit.setStyleSheet(self.project_number_edit.styleSheet() + _locked_style)
+        if self.price_edit is not None:
+            self.price_edit.setReadOnly(True)
+            self.price_edit.setStyleSheet(self.price_edit.styleSheet() + _locked_style)
+        if hasattr(self, "_lookup_btn") and self._lookup_btn is not None:
+            self._lookup_btn.setEnabled(False)
+            self._lookup_btn.setToolTip("Project number is locked after loading from project")
+
     def validate_price_input(self):
         """Validate price input to accept only numbers and automatically add $ prefix"""
         # Block signals to prevent recursive calls
@@ -3618,19 +3785,14 @@ class ItemRowWidget(QtWidgets.QWidget):
 
     def update_total(self):
         try:
-            # Skip calculation if placeholder is selected
-            if self.down_payment_combo.currentIndex() == 0:
-                # Placeholder selected, don't calculate
+            # Skip calculation if placeholder is selected (index 0 = unselected)
+            # but NOT when locked to a project stage — there index 0 IS the valid label
+            if self.down_payment_combo.currentIndex() == 0 and not self._stage_locked:
                 self.item.down_payment = Currency.quantize(Decimal('0.0'))
                 self.item.payment_due = Currency.quantize(Decimal('0.0'))
-                
-                # IMPORTANT: Still save the category even if placeholder?
-                # Actually, don't save placeholder - but we need to handle this case
-                self.item.payment_category = ""  # Empty for placeholder
-                
+                self.item.payment_category = ""
                 if hasattr(self, 'payment_due_spin') and self.payment_due_spin is not None:
                     self.payment_due_spin.setValue(0.0)
-                
                 if self.total_label is not None:
                     self.total_label.setText("$0.00")
                 self.update_item()
@@ -3655,16 +3817,10 @@ class ItemRowWidget(QtWidgets.QWidget):
             payment_category = self.down_payment_combo.currentText()
             self.item.payment_category = payment_category
 
-            # Calculate down payment based on selection
-            if self.is_deposit_payment(payment_category):
-                # 50% down payment
-                self.item.down_payment = Currency.quantize(total_amount * Decimal("0.5"))
-            else:
-                # Final payment or full amount due - 0% deposit
-                self.item.down_payment = Currency.quantize(Decimal('0.0'))
-            
-            # Calculate payment due as remaining amount (total - down_payment)
-            self.item.payment_due = Currency.quantize(total_amount - self.item.down_payment)
+            # The payment category is a label only — the entered unit_price IS the full
+            # amount due for this invoice stage. Never re-apply a percentage here.
+            self.item.down_payment = Currency.quantize(Decimal('0.0'))
+            self.item.payment_due = Currency.quantize(total_amount)
             
             # Check if payment_due_spin exists before setting value
             if hasattr(self, "payment_due_spin") and self.payment_due_spin is not None:
@@ -3713,18 +3869,10 @@ class ItemRowWidget(QtWidgets.QWidget):
         total_amount = Decimal(str(self.item.quantity)) * self.item.unit_price
         
         # Parse the selection text to determine payment calculation
-        if self.is_deposit_payment(payment_category):
-            # 50% down payment
-            down_payment = Currency.quantize(total_amount * Decimal("0.5"))
-            payment_due = Currency.quantize(total_amount - down_payment)
-        elif payment_category in (self.FINAL_PAYMENT_LABEL, self.FULL_AMOUNT_LABEL):
-            # Final payment - no down payment, full amount due
-            down_payment = Currency.quantize(Decimal('0.0'))
-            payment_due = Currency.quantize(total_amount)
-        else:
-            # Default to full amount due if unknown (should not happen with proper validation)
-            down_payment = Currency.quantize(Decimal('0.0'))
-            payment_due = Currency.quantize(total_amount)
+        # Payment category is a label only — the entered unit_price IS the full amount
+        # due for this invoice stage. Never re-apply a percentage to the stage amount.
+        down_payment = Currency.quantize(Decimal('0.0'))
+        payment_due = Currency.quantize(total_amount)
         
         # Update the item's down payment and payment due
         self.item.down_payment = down_payment
@@ -4200,6 +4348,13 @@ class PDFWorker(QtCore.QThread):
 
 class MainWindow(QtWidgets.QMainWindow):
     logout_requested = QtCore.pyqtSignal()
+    window_ready = QtCore.pyqtSignal()  # emitted once after first show
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._initialization_complete:
+            self._initialization_complete = True
+            QtCore.QTimer.singleShot(0, self.window_ready.emit)
 
     def __init__(self, username="", role="", parent=None):
         super().__init__(parent)
@@ -4242,10 +4397,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.sidebar.set_visible_pages(allowed_pages_for_role(self.current_role))
 
-        if hasattr(self, 'topbar') and hasattr(self.topbar, 'settings_btn'):
-            settings_allowed = can_access_page(self.current_role, PAGE_SETTINGS)
-            self.topbar.settings_btn.setVisible(settings_allowed)
-            self.topbar.settings_btn.setEnabled(settings_allowed)
+        if hasattr(self, 'topbar'):
+            self.topbar.set_role(self.current_role)
+            if hasattr(self.topbar, 'settings_btn'):
+                self.topbar.settings_btn.setVisible(True)
+                self.topbar.settings_btn.setEnabled(True)
 
         # Map 5-button access list to 4-page stack indices
         stack_visible = set()
@@ -4286,11 +4442,19 @@ class MainWindow(QtWidgets.QMainWindow):
                     
     def on_tab_changed(self, index):
         """Called whenever the active page changes (stack index)."""
-        # No inner tab locks needed anymore - handled by role-based access
-        pass
+        # When navigating TO the Financial page, refresh the balance sheet if it's
+        # the active inner tab — currentChanged on finance_inner_tabs won't fire
+        # because the inner tab index hasn't changed.
+        if index == 3 and hasattr(self, 'finance_inner_tabs') and hasattr(self, 'balance_sheet_tab'):
+            if self.finance_inner_tabs.currentIndex() == 2:
+                self.balance_sheet_tab.refresh_on_tab_show()
 
     def init_ui(self):
-        self.setWindowTitle("MABS Engineering - Project & Invoice Management")
+        self.setWindowTitle(f"{Config.COMPANY.get('name', 'MABS Engineering LLC')} - Project & Invoice Management")
+        # Set application icon
+        icon_path = Path(__file__).resolve().parent / "assets" / "icons" / "icon.png"
+        if icon_path.exists():
+            self.setWindowIcon(QtGui.QIcon(str(icon_path)))
         self.setMinimumSize(1024, 640)
 
         central = QtWidgets.QWidget()
@@ -4321,6 +4485,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.topbar.settings_clicked.connect(self.open_settings)
         self.topbar.logout_clicked.connect(self.request_logout)
         self.topbar.refresh_clicked.connect(self.refresh_workspace)
+        self.topbar.search_submitted.connect(self.handle_global_search)
+        self.topbar.search_text_changed.connect(self._queue_global_search)
 
         # update indicator a ' plug into topbar
         self.update_indicator = UpdateIndicator(self)
@@ -4391,7 +4557,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.project_invoice_inner_tabs.addTab(self.project_tab,      "Projects")
         self.project_invoice_inner_tabs.addTab(self.create_tab,      "Invoice Management")
         self.project_invoice_inner_tabs.addTab(self.client_info_tab, "Client Information")
-        self.project_invoice_inner_tabs.addTab(self.client_list_tab, "Client List")
         self.project_invoice_inner_tabs.addTab(self.history_tab,     "Invoice History")
         self.project_invoice_inner_tabs.tabBar().setVisible(True)
         pi_lay.addWidget(self.project_invoice_inner_tabs)
@@ -4436,6 +4601,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.finance_inner_tabs.addTab(self.balance_sheet_tab,"Balance Sheet")
         fin_lay.addWidget(self.finance_inner_tabs)
 
+        # Refresh balance sheet whenever the user switches to it
+        self.finance_inner_tabs.currentChanged.connect(self._on_finance_tab_changed)
+
         # Stack: 4 pages. Projects & Invoicing share one page, switching via inner tab.
         self.stack.addWidget(self.dashboard_tab)   # 0 - Dashboard
         self.stack.addWidget(self.job_form_tab)    # 1 - Quote Forms
@@ -4443,10 +4611,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stack.addWidget(fin_widget)           # 3 - Financial
 
         # Dashboard quick-action signals
-        self.dashboard_tab.open_quotes.connect(   lambda: self._nav_to(1))
-        self.dashboard_tab.open_invoices.connect( lambda: self._nav_to(2))
-        self.dashboard_tab.open_projects.connect( lambda: self._nav_to(2))
-        self.dashboard_tab.open_expenses.connect( lambda: self._nav_to(3))
+        self.dashboard_tab.open_quotes.connect(self.open_dashboard_new_quote)
+        self.dashboard_tab.open_invoices.connect(self.open_dashboard_new_invoice)
+        self.dashboard_tab.open_overdue_invoices.connect(self.open_dashboard_invoice_history)
+        self.dashboard_tab.open_projects.connect(self.open_dashboard_projects)
+        self.dashboard_tab.open_expenses.connect(self.open_dashboard_expenses)
+        self.dashboard_tab.open_project_record.connect(self.open_dashboard_project_record)
+        self.dashboard_tab.open_invoice_record.connect(self.open_dashboard_invoice_record)
 
         # Quote → Invoice / Project conversion
         self.job_form_tab.convert_to_invoice.connect(self.prefill_invoice_from_quote)
@@ -4465,6 +4636,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tax_spin.valueChanged.connect(self.update_totals)
         if hasattr(self, 'date_edit'):
             self.date_edit.dateChanged.connect(self.update_invoice_preview)
+        if hasattr(self, 'due_date_edit'):
+            self.due_date_edit.dateChanged.connect(self._on_due_date_changed)
         self.update_totals()
         self.update_invoice_preview()
 
@@ -4511,6 +4684,74 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self, 'project_invoice_inner_tabs'):
             self.project_invoice_inner_tabs.setCurrentIndex(tab_index)
 
+    def open_dashboard_new_quote(self):
+        if self._nav_to(1) and hasattr(self.job_form_tab, "workflow_tabs"):
+            self.job_form_tab.workflow_tabs.setCurrentIndex(1)
+
+    def open_dashboard_new_invoice(self):
+        if self._nav_to(2) and hasattr(self, "project_invoice_inner_tabs"):
+            self.project_invoice_inner_tabs.setCurrentIndex(1)
+
+    def open_dashboard_projects(self):
+        if self._nav_to(2) and hasattr(self, "project_invoice_inner_tabs"):
+            self.project_invoice_inner_tabs.setCurrentIndex(0)
+
+    def open_dashboard_invoice_history(self):
+        if self._nav_to(2) and hasattr(self, "project_invoice_inner_tabs"):
+            self.project_invoice_inner_tabs.setCurrentIndex(3)
+
+    def _on_finance_tab_changed(self, index: int):
+        """Refresh balance sheet data whenever the user switches to the Balance Sheet tab."""
+        if index == 2 and hasattr(self, "balance_sheet_tab"):
+            self.balance_sheet_tab.refresh_on_tab_show()
+
+    def open_dashboard_expenses(self):
+        if self._nav_to(3) and hasattr(self, "finance_inner_tabs"):
+            self.finance_inner_tabs.setCurrentIndex(1)
+
+    def open_dashboard_project_record(self, project_data):
+        if not isinstance(project_data, dict):
+            return
+        project_number = project_data.get("project_number", "")
+        if not self._nav_to(2):
+            return
+        if hasattr(self, "project_invoice_inner_tabs"):
+            self.project_invoice_inner_tabs.setCurrentIndex(0)
+        project_tab = getattr(self, "project_tab", None)
+        if not project_tab:
+            return
+
+        projects = (
+            list(getattr(project_tab, "generated_projects", None) or [])
+            or list(getattr(project_tab, "cached_projects", None) or [])
+        )
+        match = next(
+            (p for p in projects if p.get("project_number") == project_number),
+            project_data,
+        )
+        if hasattr(project_tab, "search_edit"):
+            project_tab.search_edit.setText(project_number)
+        if hasattr(project_tab, "filter_projects"):
+            project_tab.filter_projects()
+        if hasattr(project_tab, "show_project_workspace"):
+            QtCore.QTimer.singleShot(0, lambda p=match: project_tab.show_project_workspace(p))
+        if hasattr(self, "topbar") and project_number:
+            self.topbar.set_status(f"Opened {project_number}", "success")
+
+    def open_dashboard_invoice_record(self, invoice_data):
+        if not isinstance(invoice_data, dict):
+            return
+        meta = invoice_data.get("meta", invoice_data)
+        client_name = meta.get("client_name", "")
+        invoice_number = meta.get("invoice_number", "")
+        if not client_name or not self._nav_to(2):
+            return
+        if hasattr(self, "project_invoice_inner_tabs"):
+            self.project_invoice_inner_tabs.setCurrentIndex(3)
+        if hasattr(self, "history_tab"):
+            self.history_tab.navigate_to_invoice(client_name, invoice_number)
+        if hasattr(self, "topbar") and invoice_number:
+            self.topbar.set_status(f"Invoice {invoice_number}", "success")
 
     def _open_search_result(self, kind: str, tab_idx: int, popup=None):
         if not self._nav_to(tab_idx):
@@ -4522,25 +4763,437 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.project_invoice_inner_tabs.setCurrentIndex(0)
         if popup is not None:
             popup.close()
+
+    def _normalize_global_search(self, value):
+        return "".join(ch for ch in str(value or "").lower() if ch.isalnum())
+
+    def _queue_global_search(self, query):
+        self._pending_global_search = (query or "").strip()
+        if not hasattr(self, "_search_debounce"):
+            return
+        if len(self._pending_global_search) >= 2:
+            self._search_debounce.start(280)
+        else:
+            self._search_debounce.stop()
+            self._hide_global_search_menu()
+            if hasattr(self, "topbar") and hasattr(self.topbar, "clear_status"):
+                self.topbar.clear_status()
+
+    def _run_pending_global_search(self):
+        query = getattr(self, "_pending_global_search", "")
+        if len((query or "").strip()) >= 2:
+            self._show_global_search_menu(query)
+
+    def handle_global_search(self, query):
+        """Open the best result from the top-bar advanced search."""
+        query = (query or "").strip()
+        if not query:
+            return
+
+        try:
+            results = self._collect_global_search_results(query, limit=1)
+            if results:
+                self._hide_global_search_menu()
+                self._open_global_search_result(results[0])
+                return
+            if hasattr(self, "topbar"):
+                self.topbar.set_status(f"No match found for {query}", "warning")
+        except Exception as exc:
+            log.warning("Global search failed for %s: %s", query, exc)
+            if hasattr(self, "topbar"):
+                self.topbar.set_status("Search failed", "warning")
+
+    def _hide_global_search_menu(self):
+        panel = getattr(self, "_global_search_menu", None)
+        if panel is not None:
+            try:
+                panel.hide()
+            except RuntimeError:
+                pass
+            self._global_search_menu = None
+        # Disconnect focus watcher
+        conn = getattr(self, '_search_focus_conn', None)
+        if conn is not None:
+            try:
+                QtWidgets.QApplication.instance().focusChanged.disconnect(conn)
+            except Exception:
+                pass
+            self._search_focus_conn = None
+
+    def _result_matches_query(self, query, fields):
+        q = (query or "").strip().lower()
+        q_norm = self._normalize_global_search(q)
+        haystack = " ".join(str(field or "") for field in fields).lower()
+        haystack_norm = self._normalize_global_search(haystack)
+        return q in haystack or (q_norm and q_norm in haystack_norm)
+
+    def _collect_global_search_results(self, query, limit=8):
+        results = []
+
+        try:
+            quotes = list(getattr(getattr(self, "job_form_tab", None), "job_forms", None) or [])
+            if not quotes:
+                quotes = FirebaseManager.load_job_forms() or []
+            for quote in quotes:
+                if not isinstance(quote, dict):
+                    continue
+                fields = [
+                    quote.get("job_number", ""),
+                    quote.get("client", ""),
+                    quote.get("project_name", ""),
+                    quote.get("job_title", ""),
+                    quote.get("status", ""),
+                    quote.get("sales", ""),
+                ]
+                if self._result_matches_query(query, fields):
+                    results.append({
+                        "kind": "Quote",
+                        "title": quote.get("job_number", "Quote"),
+                        "subtitle": " | ".join(part for part in [
+                            quote.get("client", ""),
+                            quote.get("project_name", "") or quote.get("job_title", ""),
+                            quote.get("status", ""),
+                        ] if part),
+                        "data": quote,
+                    })
+                    if len(results) >= limit:
+                        return results
+        except Exception as exc:
+            log.warning("Quote advanced search failed: %s", exc)
+
+        try:
+            # Use already-loaded in-memory invoices — avoids a synchronous Firebase call
+            history_tab = getattr(self, 'history_tab', None)
+            _raw_invoices = []
+            if history_tab:
+                _src = (getattr(history_tab, '_ih_all_displayed', None)
+                        or getattr(history_tab, 'invoices', []) or [])
+                for _item in _src:
+                    if isinstance(_item, tuple) and _item:
+                        inv_obj = _item[0]
+                        _raw_invoices.append(inv_obj.to_dict() if hasattr(inv_obj, 'to_dict') else {})
+                    elif isinstance(_item, dict):
+                        _raw_invoices.append(_item)
+            if not _raw_invoices:
+                _raw_invoices = FirebaseManager.load_invoices() or []
+            for invoice in _raw_invoices:
+                if not isinstance(invoice, dict):
+                    continue
+                meta = invoice.get("meta", invoice)
+                fields = [
+                    meta.get("invoice_number", ""),
+                    meta.get("client_name", ""),
+                    meta.get("status", ""),
+                    meta.get("date", ""),
+                    str(meta.get("total", "")),
+                ]
+                if self._result_matches_query(query, fields):
+                    results.append({
+                        "kind": "Invoice",
+                        "title": meta.get("invoice_number", "Invoice"),
+                        "subtitle": " | ".join(part for part in [
+                            meta.get("client_name", ""),
+                            meta.get("status", ""),
+                            str(meta.get("total", "")),
+                        ] if part),
+                        "data": invoice,
+                    })
+                    if len(results) >= limit:
+                        return results
+        except Exception as exc:
+            log.warning("Invoice advanced search failed: %s", exc)
+
+        try:
+            projects = list(getattr(getattr(self, "project_tab", None), "generated_projects", None) or [])
+            if not projects:
+                projects = FirebaseManager.load_projects() or []
+            for project in projects:
+                if not isinstance(project, dict):
+                    continue
+                fields = [
+                    project.get("project_number", ""),
+                    project.get("project_name", ""),
+                    project.get("company", ""),
+                    project.get("status", ""),
+                    project.get("payment_category", ""),
+                ]
+                if self._result_matches_query(query, fields):
+                    results.append({
+                        "kind": "Project",
+                        "title": project.get("project_number", "Project"),
+                        "subtitle": " | ".join(part for part in [
+                            project.get("company", ""),
+                            project.get("project_name", ""),
+                            project.get("status", ""),
+                        ] if part),
+                        "data": project,
+                    })
+                    if len(results) >= limit:
+                        return results
+        except Exception as exc:
+            log.warning("Project advanced search failed: %s", exc)
+
+        return results
+
+    def _show_global_search_menu(self, query):
+        results = self._collect_global_search_results(query)
+        search_widget = self.topbar.get_search_widget() if hasattr(self, "topbar") else None
+        if not search_widget:
+            return
+
+        self._hide_global_search_menu()
+
+        # ── frameless panel — WA_ShowWithoutActivating keeps focus on search bar ──
+        panel = QtWidgets.QFrame(None)
+        panel.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)
+        panel.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
+        panel.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+        sw_parent = search_widget.parent()
+        panel.setFixedWidth(sw_parent.width() if sw_parent else 460)
+        panel.setStyleSheet("""
+            QFrame {
+                background: #ffffff;
+                border: 1px solid #cbd5e1;
+                border-radius: 12px;
+            }
+        """)
+        # Drop shadow
+        shadow = QtWidgets.QGraphicsDropShadowEffect(panel)
+        shadow.setBlurRadius(20)
+        shadow.setOffset(0, 6)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 40))
+        panel.setGraphicsEffect(shadow)
+
+        outer = QtWidgets.QVBoxLayout(panel)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(1)
+
+        _KIND_ICONS = {"Quote": "💼", "Invoice": "📄", "Project": "⚙"}
+        _LABEL_CSS = ("color:#94a3b8;font-size:11px;font-weight:700;padding:6px 10px 2px;"
+                      "background:transparent;border:none;font-family:'Inter','Segoe UI';")
+        _SEP_CSS   = "background:#e2e8f0;border:none;"
+        _BTN_CSS   = """
+            QPushButton {
+                text-align:left; padding:0; border:none; border-radius:8px;
+                background:transparent; font-family:'Inter','Segoe UI';
+            }
+            QPushButton:hover { background:#ecfdf5; }
+        """
+
+        if not results:
+            lbl = QtWidgets.QLabel(f"  No results for \"{query}\"")
+            lbl.setStyleSheet("color:#94a3b8;font-size:13px;padding:10px 8px;"
+                              "background:transparent;border:none;font-family:'Inter','Segoe UI';")
+            lbl.setFocusPolicy(QtCore.Qt.NoFocus)
+            outer.addWidget(lbl)
+        else:
+            last_kind = None
+            for result in results:
+                if result["kind"] != last_kind:
+                    if last_kind is not None:
+                        sep = QtWidgets.QFrame()
+                        sep.setFrameShape(QtWidgets.QFrame.HLine)
+                        sep.setFixedHeight(1)
+                        sep.setStyleSheet(_SEP_CSS)
+                        sep.setFocusPolicy(QtCore.Qt.NoFocus)
+                        outer.addWidget(sep)
+                    cat = QtWidgets.QLabel(
+                        f"  {_KIND_ICONS.get(result['kind'],'')}  {result['kind']}s")
+                    cat.setStyleSheet(_LABEL_CSS)
+                    cat.setFocusPolicy(QtCore.Qt.NoFocus)
+                    outer.addWidget(cat)
+                    last_kind = result["kind"]
+
+                # Each result: full-width button with title + subtitle rows
+                btn_wrap = QtWidgets.QFrame()
+                btn_wrap.setStyleSheet(
+                    "QFrame{background:transparent;border:none;border-radius:8px;}"
+                    "QFrame:hover{background:#ecfdf5;}")
+                btn_wrap.setFocusPolicy(QtCore.Qt.NoFocus)
+                btn_wrap.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+                blay = QtWidgets.QVBoxLayout(btn_wrap)
+                blay.setContentsMargins(12, 7, 12, 7)
+                blay.setSpacing(2)
+
+                t_lbl = QtWidgets.QLabel(result["title"])
+                t_lbl.setStyleSheet("font-size:13px;font-weight:700;color:#0f172a;"
+                                    "background:transparent;border:none;"
+                                    "font-family:'Inter','Segoe UI';")
+                t_lbl.setFocusPolicy(QtCore.Qt.NoFocus)
+                blay.addWidget(t_lbl)
+
+                if result.get("subtitle"):
+                    s_lbl = QtWidgets.QLabel(result["subtitle"])
+                    s_lbl.setStyleSheet("font-size:11px;color:#64748b;"
+                                        "background:transparent;border:none;"
+                                        "font-family:'Inter','Segoe UI';")
+                    s_lbl.setFocusPolicy(QtCore.Qt.NoFocus)
+                    blay.addWidget(s_lbl)
+
+                def _click(ev, r=result, p=panel):
+                    if ev.button() == QtCore.Qt.LeftButton:
+                        p.hide()
+                        QtCore.QTimer.singleShot(0, lambda _r=r: self._open_global_search_result(_r))
+                btn_wrap.mousePressEvent = _click
+                outer.addWidget(btn_wrap)
+
+        # ── position below the search wrap ──────────────────────────────────
+        pos = (sw_parent.mapToGlobal(QtCore.QPoint(0, sw_parent.height() + 4))
+               if sw_parent else
+               search_widget.mapToGlobal(QtCore.QPoint(0, search_widget.height() + 4)))
+        panel.adjustSize()
+        panel.move(pos)
+        panel.show()
+        self._global_search_menu = panel
+
+        # Close panel when search bar loses focus (but not when clicking results)
+        def _on_focus_change(old_w, new_w, _p=panel, _sw=search_widget):
+            if new_w is None:
+                return
+            if new_w is _sw:
+                return
+            try:
+                is_inside = any(new_w is child or _p.isAncestorOf(new_w)
+                                for child in _p.findChildren(QtWidgets.QWidget))
+            except RuntimeError:
+                is_inside = False
+            if not is_inside:
+                self._hide_global_search_menu()
+
+        self._search_focus_conn = (
+            QtWidgets.QApplication.instance().focusChanged.connect(_on_focus_change))
+
+    def _open_global_search_result(self, result):
+        kind = result.get("kind")
+        data = result.get("data") or {}
+        self._hide_global_search_menu()
+        if kind == "Quote":
+            self._open_quote_search_result(data)
+        elif kind == "Invoice":
+            self._open_invoice_search_result(data)
+        elif kind == "Project":
+            self._open_project_search_result(data)
+
+    def _open_invoice_search_result(self, invoice_data):
+        meta = invoice_data.get("meta", invoice_data) if isinstance(invoice_data, dict) else {}
+        invoice_number = meta.get("invoice_number", "")
+        client_name = meta.get("client_name", "")
+        if client_name and self._nav_to(2):
+            if hasattr(self, "project_invoice_inner_tabs"):
+                self.project_invoice_inner_tabs.setCurrentIndex(3)
+            if hasattr(self, "history_tab"):
+                self.history_tab.show_invoice_history(client_name)
+                current = self.history_tab.stacked_widget.currentWidget()
+                if hasattr(current, "date_range_widget"):
+                    current.date_range_widget.search_bar.clear()
+            if hasattr(self, "topbar"):
+                self.topbar.set_status(f"Showing {client_name} invoices", "success")
+
+    def _open_project_search_result(self, project):
+        project_number = project.get("project_number", "")
+        if not self._nav_to(2):
+            return
+        if hasattr(self, "project_invoice_inner_tabs"):
+            self.project_invoice_inner_tabs.setCurrentIndex(0)
+        tab = getattr(self, "project_tab", None)
+        if tab:
+            if hasattr(tab, "search_edit"):
+                tab.search_edit.setText(project_number)
+            if hasattr(tab, "filter_projects"):
+                tab.filter_projects()
+        if hasattr(self, "topbar"):
+            self.topbar.set_status(f"Found {project_number}", "success")
+
+    def _find_quote_by_query(self, query, query_norm):
+        try:
+            quotes = []
+            if hasattr(self, "job_form_tab"):
+                quotes = list(getattr(self.job_form_tab, "job_forms", None) or [])
+            if not quotes:
+                quotes = FirebaseManager.load_job_forms() or []
+
+            for quote in quotes:
+                if not isinstance(quote, dict):
+                    continue
+                quote_number = quote.get("job_number", "")
+                quote_norm = self._normalize_global_search(quote_number)
+                if not quote_norm:
+                    continue
+                if query_norm == quote_norm or query.lower() in str(quote_number).lower():
+                    return quote
+        except Exception as exc:
+            log.warning("Quote search failed for %s: %s", query, exc)
+        return None
+
+    def _open_quote_search_result(self, quote):
+        quote_number = quote.get("job_number", "")
+        client_name = quote.get("client", "")
+        if not self._nav_to(1):
+            return
+        tab = getattr(self, "job_form_tab", None)
+        if tab:
+            if hasattr(tab, "workflow_tabs"):
+                tab.workflow_tabs.setCurrentIndex(0)
+            if hasattr(tab, "status_filter_combo"):
+                tab.status_filter_combo.setCurrentText("All Status")
+            if hasattr(tab, "year_filter_combo"):
+                tab.year_filter_combo.setCurrentIndex(0)
+            if hasattr(tab, "month_filter_combo"):
+                tab.month_filter_combo.setCurrentIndex(0)
+            if hasattr(tab, "date_filter_active_chk"):
+                tab.date_filter_active_chk.setChecked(False)
+            if hasattr(tab, "search_edit"):
+                tab.search_edit.clear()
+            if client_name and hasattr(tab, "apply_client_filter"):
+                tab.apply_client_filter(client_name)
+            elif hasattr(tab, "filter_job_forms"):
+                if hasattr(tab, "selected_client_filter"):
+                    tab.selected_client_filter = "All Clients"
+                tab.filter_job_forms()
+        if hasattr(self, "topbar"):
+            if client_name:
+                self.topbar.set_status(f"Showing {client_name} quotes", "success")
+            else:
+                self.topbar.set_status(f"Found {quote_number}", "success")
         
     def _setup_automation(self):
         """Wire up workspace automation: shortcuts, debounced search, and auto-refresh."""
         self._search_debounce = QtCore.QTimer(self)
         self._search_debounce.setSingleShot(True)
+        self._search_debounce.timeout.connect(self._run_pending_global_search)
+
+        # Escape key on the search bar closes the dropdown without losing focus
+        class _SearchKeyFilter(QtCore.QObject):
+            def __init__(self, main_win):
+                super().__init__(main_win)
+                self._mw = main_win
+            def eventFilter(self, obj, event):
+                if event.type() == QtCore.QEvent.KeyPress:
+                    if event.key() == QtCore.Qt.Key_Escape:
+                        self._mw._hide_global_search_menu()
+                        return True
+                return False
+        if hasattr(self, "topbar"):
+            self._search_key_filter = _SearchKeyFilter(self)
+            self.topbar.search_edit.installEventFilter(self._search_key_filter)
 
         QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+R"), self, activated=self.refresh_workspace)
         QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+N"), self, activated=lambda: self._nav_to(1))
+        QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+K"), self, activated=self._focus_global_search)
 
-        self._auto_refresh_timer = QtCore.QTimer(self)
-        self._auto_refresh_timer.setInterval(5 * 60 * 1000)  # 5 minutes
-        self._auto_refresh_timer.timeout.connect(lambda: self.refresh_workspace(auto=True))
-        self._auto_refresh_timer.start()
+
+    def _focus_global_search(self):
+        if hasattr(self, "topbar"):
+            search = self.topbar.get_search_widget()
+            search.setFocus()
+            search.selectAll()
 
     def refresh_workspace(self, auto=False):
         """Refresh visible workspace data and dashboard summaries."""
         try:
             if hasattr(self, 'topbar'):
                 self.topbar.set_status("Syncing", "busy")
+                QtWidgets.QApplication.processEvents()
             if hasattr(self, 'dashboard_tab'):
                 self.dashboard_tab.refresh(force_firebase=True)
             if hasattr(self, 'project_tab') and hasattr(self.project_tab, 'load_projects'):
@@ -4565,30 +5218,37 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.topbar.set_status("Refresh failed", "warning")
 
     def open_settings(self):
-        """Open the Settings dialog."""
-        if self.current_role != "admin":
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Access Denied",
-                "Only administrators can open Settings."
-            )
-            if hasattr(self, 'topbar'):
-                self.topbar.set_status("Settings restricted", "warning")
-            return
+        """Admin → full Settings dialog. All other roles → Software Updates only."""
+        if self.current_role == "admin":
+            from settings_dialog import SettingsDialog
+            dlg = SettingsDialog(self, role=self.current_role)
+            dlg.settingsSaved.connect(self._on_settings_saved)
+            dlg.exec_()
+        else:
+            from settings_dialog import SoftwareUpdatesDialog
+            SoftwareUpdatesDialog(self).exec_()
 
-        from settings_dialog import SettingsDialog
-        dlg = SettingsDialog(self)
-        dlg.settingsSaved.connect(self._on_settings_saved)
-        dlg.exec_()
+    def _apply_company_to_ui(self):
+        """Push current Config.COMPANY values to every UI element that shows them."""
+        name = Config.COMPANY.get("name", "MABS Engineering LLC")
+        logo = Config.get_logo_path()
+        self.setWindowTitle(f"{name} - Project & Invoice Management")
+        if hasattr(self, 'sidebar'):
+            self.sidebar.update_company(name)
+        if hasattr(self, 'topbar'):
+            self.topbar.set_company(name)
+            self.topbar.set_logo(logo)
+        if hasattr(self, 'tax_spin'):
+            self.tax_spin.setValue(float(Config.COMPANY.get("default_tax_rate", 0.0)))
+        if hasattr(self, 'notes_edit'):
+            self.notes_edit.setPlainText(Config.DEFAULT_TERMS)
 
     def _on_settings_saved(self):
         """Reload config after settings are saved so changes take effect immediately."""
         Config.load()
-        if hasattr(self, 'sidebar'):
-            self.sidebar.update_company(Config.COMPANY.get("name", "MABS Engineering"))
-        if hasattr(self, 'topbar'):
-            self.topbar.set_company(Config.COMPANY.get("name", "MABS Engineering LLC"))
-            self.topbar.set_logo(Config.get_logo_path())
+        # Do NOT call overlay_from_firebase() here — Firebase save is still in flight
+        # so it still holds the old values and would overwrite the freshly saved config.
+        self._apply_company_to_ui()
         if hasattr(self, 'dashboard_tab'):
             self.dashboard_tab.refresh(force_firebase=True)
         if hasattr(self, 'topbar'):
@@ -4675,18 +5335,273 @@ class MainWindow(QtWidgets.QMainWindow):
             index = self.project_invoice_inner_tabs.indexOf(self.client_info_tab)
             if index >= 0:
                 self.project_invoice_inner_tabs.setCurrentIndex(index)
-        if hasattr(self, "client_combo"):
+        if hasattr(self, "client_combo") and getattr(self, "client_editor_panel", None) and self.client_editor_panel.isVisible():
             self.client_combo.setFocus()
+
+    def show_client_editor_panel(self):
+        """Reveal the inline client editor only when the user asks to manage a record."""
+        if hasattr(self, "client_editor_panel"):
+            self.client_editor_panel.setVisible(True)
 
     def prepare_new_client_inline(self):
         """Start a new client record without opening a separate window."""
         self.show_client_information_tab()
+        self.show_client_editor_panel()
         self.clear_client_information()
         self.editing_client_name = None
         if hasattr(self, "save_client_btn"):
             self.save_client_btn.setEnabled(True)
         if hasattr(self, "client_combo") and self.client_combo.lineEdit():
             self.client_combo.lineEdit().setFocus()
+
+    def open_new_client_popup_dialog(self):
+        """Open popup to add a new client (no pre-populated name)."""
+        self.open_client_popup_dialog(client_name=None)
+
+    def _switch_and_open_new_client_popup(self):
+        """Switch to Client tab, then open an empty New Client popup."""
+        self.show_client_information_tab()
+        QtCore.QTimer.singleShot(150, lambda: self.open_client_popup_dialog(client_name=None))
+
+    def edit_current_client_popup(self):
+        """Switch to Client tab, then open the edit popup for the selected client."""
+        client_name = ""
+        if hasattr(self, "line_items_client_combo"):
+            client_name = self.line_items_client_combo.currentText().strip()
+        if not client_name and hasattr(self, "client_combo"):
+            client_name = self.client_combo.currentText().strip()
+        self.show_client_information_tab()
+        QtCore.QTimer.singleShot(
+            150,
+            lambda cn=client_name: self.open_client_popup_dialog(client_name=cn or None),
+        )
+
+    def open_client_popup_dialog(self, client_name=None, navigate_after=False):
+        """Open a modal popup dialog to add or edit a client."""
+        is_edit = client_name is not None
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Edit Client" if is_edit else "New Client")
+        dialog.setModal(True)
+        dialog.resize(620, 520)
+        dialog.setMinimumWidth(560)
+        dialog.setMinimumHeight(460)
+        dialog.setStyleSheet("QDialog { background: #f5f8fb; }")
+
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Header
+        header = QtWidgets.QFrame()
+        header.setStyleSheet("QFrame { background: #ffffff; border-bottom: 1px solid #d8e2ec; }")
+        header_lay = QtWidgets.QVBoxLayout(header)
+        header_lay.setContentsMargins(24, 16, 24, 14)
+        header_lay.setSpacing(3)
+        title_lbl = QtWidgets.QLabel("Edit Client" if is_edit else "New Client")
+        title_lbl.setStyleSheet("font-size: 20px; font-weight: 900; color: #0f172a; font-family:'Inter','Segoe UI';")
+        sub_lbl = QtWidgets.QLabel(
+            f"Editing details for {client_name}." if is_edit else "Fill in the client details below."
+        )
+        sub_lbl.setStyleSheet("font-size: 12px; font-weight: 600; color: #53657d; font-family:'Inter','Segoe UI';")
+        header_lay.addWidget(title_lbl)
+        header_lay.addWidget(sub_lbl)
+        layout.addWidget(header)
+
+        # Scrollable form area
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { border: none; background: #f5f8fb; }")
+        form_widget = QtWidgets.QWidget()
+        form_widget.setStyleSheet("background: #f5f8fb;")
+        form_lay = QtWidgets.QVBoxLayout(form_widget)
+        form_lay.setContentsMargins(24, 20, 24, 20)
+        form_lay.setSpacing(12)
+
+        _lbl_style = "font-size: 12px; font-weight: 700; color: #314155; font-family:'Inter','Segoe UI';"
+        _field_style = """
+            QLineEdit {
+                background: #ffffff; border: 1.5px solid #d8e2ec; border-radius: 7px;
+                padding: 7px 10px; font-size: 13px; color: #0f172a;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+            }
+            QLineEdit:focus { border-color: #00756f; }
+        """
+
+        def _field(placeholder):
+            w = QtWidgets.QLineEdit()
+            w.setMinimumHeight(38)
+            w.setPlaceholderText(placeholder)
+            w.setStyleSheet(_field_style)
+            return w
+
+        def _pair(lbl1, w1, lbl2, w2):
+            row = QtWidgets.QHBoxLayout()
+            row.setSpacing(16)
+            for lbl_txt, widget in ((lbl1, w1), (lbl2, w2)):
+                col = QtWidgets.QVBoxLayout()
+                col.setSpacing(4)
+                lbl = QtWidgets.QLabel(lbl_txt)
+                lbl.setStyleSheet(_lbl_style)
+                col.addWidget(lbl)
+                col.addWidget(widget)
+                row.addLayout(col, 1)
+            form_lay.addLayout(row)
+
+        # Row 1 — Client Name (full width)
+        lbl_name = QtWidgets.QLabel("Client / Company Name *")
+        lbl_name.setStyleSheet(_lbl_style)
+        d_client_name = QtWidgets.QLineEdit()
+        d_client_name.setMinimumHeight(40)
+        d_client_name.setPlaceholderText("Enter client / company name...")
+        d_client_name.setStyleSheet(_field_style)
+        if is_edit:
+            d_client_name.setText(client_name)
+        form_lay.addWidget(lbl_name)
+        form_lay.addWidget(d_client_name)
+
+        # Row 2 — Contact | Phone
+        d_contact = _field("Primary contact person")
+        d_phone   = _field("(xxx) xxx-xxxx")
+        _pair("Contact Person", d_contact, "Phone", d_phone)
+
+        # Row 3 — Primary Email | Company Email
+        d_primary_email = _field("primary@example.com")
+        d_company_email = _field("company@example.com")
+        _pair("Primary Email", d_primary_email, "Company Email", d_company_email)
+
+        # Row 4 — Address (full width)
+        addr_lbl = QtWidgets.QLabel("Address")
+        addr_lbl.setStyleSheet(_lbl_style)
+        d_address = QtWidgets.QTextEdit()
+        d_address.setMinimumHeight(68)
+        d_address.setMaximumHeight(80)
+        d_address.setPlaceholderText("Street Address, City, State ZIP")
+        d_address.setStyleSheet("""
+            QTextEdit {
+                background: #ffffff; border: 1.5px solid #d8e2ec; border-radius: 7px;
+                padding: 7px 10px; font-size: 13px; color: #0f172a;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+            }
+            QTextEdit:focus { border-color: #00756f; }
+        """)
+        form_lay.addWidget(addr_lbl)
+        form_lay.addWidget(d_address)
+
+        # Pre-populate fields when editing
+        if is_edit:
+            _, client_data = self._find_client_record(client_name)
+            if client_data:
+                d_contact.setText(client_data.get("contact_person", ""))
+                d_phone.setText(client_data.get("phone", ""))
+                d_primary_email.setText(client_data.get("email", ""))
+                d_company_email.setText(client_data.get("company_email", ""))
+                d_address.setPlainText(client_data.get("address", ""))
+
+        scroll.setWidget(form_widget)
+        layout.addWidget(scroll, 1)
+
+        # Footer buttons
+        footer = QtWidgets.QFrame()
+        footer.setStyleSheet("QFrame { background: #ffffff; border-top: 1px solid #d8e2ec; }")
+        footer_lay = QtWidgets.QHBoxLayout(footer)
+        footer_lay.setContentsMargins(24, 14, 24, 14)
+        footer_lay.setSpacing(10)
+
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        cancel_btn.setFixedHeight(40)
+        cancel_btn.setMinimumWidth(100)
+        cancel_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        cancel_btn.setStyleSheet("""
+            QPushButton { background: #f1f5f9; color: #334155; border: 1.5px solid #d8e2ec;
+                          border-radius: 8px; font-size: 13px; font-weight: 700;
+                          font-family:'Inter','Segoe UI'; padding: 0 16px; }
+            QPushButton:hover { background: #e2e8f0; }
+        """)
+        cancel_btn.clicked.connect(dialog.reject)
+
+        save_btn = QtWidgets.QPushButton("Save Client")
+        save_btn.setFixedHeight(40)
+        save_btn.setMinimumWidth(130)
+        save_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        save_btn.setStyleSheet("""
+            QPushButton { background: #00756f; color: #ffffff; border: none;
+                          border-radius: 8px; font-size: 13px; font-weight: 900;
+                          font-family:'Inter','Segoe UI'; padding: 0 16px; }
+            QPushButton:hover { background: #00645f; }
+            QPushButton:disabled { background: #cbd5e1; color: #64748b; }
+        """)
+
+        # --- Enter / Tab key navigation between fields ---
+        nav_fields = [d_client_name, d_contact, d_phone, d_primary_email, d_company_email, d_address]
+
+        class _FieldNav(QtCore.QObject):
+            def eventFilter(self_inner, source, event):
+                if event.type() == QtCore.QEvent.KeyPress:
+                    key = event.key()
+                    is_enter = key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter)
+                    is_tab = key == QtCore.Qt.Key_Tab
+                    is_back = key == QtCore.Qt.Key_Backtab or (
+                        is_tab and bool(event.modifiers() & QtCore.Qt.ShiftModifier)
+                    )
+                    if is_enter or is_tab:
+                        step = -1 if is_back else 1
+                        for i, w in enumerate(nav_fields):
+                            if source is w or (isinstance(w, QtWidgets.QTextEdit) and source is w):
+                                next_i = i + step
+                                if 0 <= next_i < len(nav_fields):
+                                    nw = nav_fields[next_i]
+                                    nw.setFocus()
+                                    if isinstance(nw, QtWidgets.QLineEdit):
+                                        QtCore.QTimer.singleShot(0, nw.selectAll)
+                                    return True
+                                elif is_enter and i == len(nav_fields) - 1:
+                                    save_btn.click()
+                                    return True
+                return False
+
+        nav = _FieldNav(dialog)
+        for w in nav_fields:
+            w.installEventFilter(nav)
+
+        def _do_save():
+            new_name = d_client_name.text().strip()
+            if not new_name:
+                QtWidgets.QMessageBox.warning(dialog, "Save Client", "Client name is required.")
+                d_client_name.setFocus()
+                return
+            # Push values into main window's client form fields then delegate to save_client
+            if hasattr(self, "client_combo"):
+                if self.client_combo.findText(new_name) == -1:
+                    self.client_combo.addItem(new_name)
+                self.client_combo.blockSignals(True)
+                self.client_combo.setEditText(new_name)
+                self.client_combo.blockSignals(False)
+            if hasattr(self, "client_contact_edit"):
+                self.client_contact_edit.setText(d_contact.text().strip())
+            if hasattr(self, "client_phone_edit"):
+                self.client_phone_edit.setText(d_phone.text().strip())
+            if hasattr(self, "client_primary_email_edit"):
+                self.client_primary_email_edit.setText(d_primary_email.text().strip())
+            if hasattr(self, "client_email_edit"):
+                self.client_email_edit.setText(d_company_email.text().strip())
+            if hasattr(self, "client_address_edit"):
+                self.client_address_edit.setPlainText(d_address.toPlainText().strip())
+            self.editing_client_name = client_name if is_edit else None
+            if hasattr(self, "save_client_btn"):
+                self.save_client_btn.setEnabled(True)
+            self.save_client()
+            dialog.accept()
+
+        save_btn.clicked.connect(_do_save)
+
+        footer_lay.addStretch()
+        footer_lay.addWidget(cancel_btn)
+        footer_lay.addWidget(save_btn)
+        layout.addWidget(footer)
+
+        QtCore.QTimer.singleShot(100, d_client_name.setFocus)
+        dialog.exec_()
 
     def load_client_details(self, client_name):
         """Load client details from saved clients"""
@@ -4861,6 +5776,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.date_edit.setFixedWidth(200)
         self.date_edit.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         self.date_edit.setStyleSheet(_date_style)
+        self.date_edit.wheelEvent = lambda event: event.ignore()
+        self.date_edit.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self.date_edit.stepBy = lambda x: None
 
         self.due_date_edit = QtWidgets.QDateEdit(QtCore.QDate.currentDate().addDays(30))
         self.due_date_edit.setCalendarPopup(True)
@@ -4869,10 +5787,52 @@ class MainWindow(QtWidgets.QMainWindow):
         self.due_date_edit.setFixedWidth(200)
         self.due_date_edit.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         self.due_date_edit.setStyleSheet(_date_style)
-        
+        self.due_date_edit.wheelEvent = lambda event: event.ignore()
+        self.due_date_edit.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self.due_date_edit.stepBy = lambda x: None
+        # Keep due date >= invoice date at all times
+        self.due_date_edit.setMinimumDate(self.date_edit.date())
+
+        # Gray out disabled (before-invoice) dates in the calendar popup
+        _due_cal = self.due_date_edit.calendarWidget()
+        if _due_cal:
+            _due_cal.setStyleSheet("""
+                QCalendarWidget QAbstractItemView {
+                    selection-background-color: #00756f;
+                    selection-color: white;
+                }
+                QCalendarWidget QAbstractItemView:disabled {
+                    color: #c8c8c8;
+                }
+            """)
+
+            def _apply_due_cal_grays(cal, min_date):
+                # Clear previously set formats then re-gray dates before min_date
+                cal.setDateTextFormat(QtCore.QDate(), QtGui.QTextCharFormat())
+                gray_fmt = QtGui.QTextCharFormat()
+                gray_fmt.setForeground(QtGui.QBrush(QtGui.QColor("#c8c8c8")))
+                d = min_date.addYears(-5)
+                end = min_date.addDays(-1)
+                while d <= end:
+                    cal.setDateTextFormat(d, gray_fmt)
+                    d = d.addDays(1)
+
+            _apply_due_cal_grays(_due_cal, self.date_edit.date())
+
+            self.date_edit.dateChanged.connect(
+                lambda d, cal=_due_cal: (
+                    self.due_date_edit.setMinimumDate(d),
+                    _apply_due_cal_grays(cal, d)
+                )
+            )
+        else:
+            self.date_edit.dateChanged.connect(
+                lambda d: self.due_date_edit.setMinimumDate(d)
+            )
+
         invoice_number_label = QtWidgets.QLabel("Invoice Number:")
         invoice_date_label = QtWidgets.QLabel("Invoice Date:")
-        due_date_label = QtWidgets.QLabel("Due Date:")
+        due_date_label = QtWidgets.QLabel("Due Date (Payment Deadline):")
         for label in (invoice_number_label, invoice_date_label, due_date_label):
             label.setStyleSheet(form_label_style)
 
@@ -4942,6 +5902,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Placeholder
         self.client_combo.lineEdit().setPlaceholderText("Select or type client name...")
+        # Prevent scroll wheel and arrow keys from changing client selection
+        self.client_combo.wheelEvent = lambda event: event.ignore()
+        _cc_orig_key = self.client_combo.keyPressEvent
+        def _cc_key(event, _orig=_cc_orig_key):
+            if event.key() in (QtCore.Qt.Key_Up, QtCore.Qt.Key_Down):
+                return
+            _orig(event)
+        self.client_combo.keyPressEvent = _cc_key
 
         # Only this signal is needed
         self.client_combo.currentTextChanged.connect(self.on_client_changed)
@@ -4976,10 +5944,9 @@ class MainWindow(QtWidgets.QMainWindow):
         company_name_layout.addWidget(self.add_client_btn)
 
         client_layout.addRow(company_name_label, company_name_layout)
-        # Hidden — client is selected via the selector above the line items table
-        company_name_label.setVisible(False)
-        self.client_combo.setVisible(False)
-        self.add_client_btn.setVisible(False)
+        company_name_label.setVisible(True)
+        self.client_combo.setVisible(True)
+        self.add_client_btn.setVisible(True)
 
         _lbl_style = "font-size: 13px; font-weight: 700; color: #314155; background: transparent; border: none; font-family: 'Inter', 'Segoe UI', sans-serif;"
         _field_no_autofill = """
@@ -5058,22 +6025,7 @@ class MainWindow(QtWidgets.QMainWindow):
         client_page_layout.setContentsMargins(20, 18, 20, 20)
         client_page_layout.setSpacing(14)
 
-        client_header = QtWidgets.QFrame()
-        client_header.setStyleSheet("""
-            QFrame {
-                background: #ffffff;
-                border: 1px solid #d8e2ec;
-                border-radius: 8px;
-            }
-        """)
-        client_header_layout = QtWidgets.QVBoxLayout(client_header)
-        client_header_layout.setContentsMargins(22, 18, 22, 18)
-        client_title = QtWidgets.QLabel("Client Information")
-        client_title.setStyleSheet("font-size: 22px; font-weight: 900; color: #0f172a; background: transparent; border: none; font-family: 'Inter', 'Segoe UI', sans-serif;")
-        client_subtitle = QtWidgets.QLabel("Select an existing client or enter client details for the invoice.")
-        client_subtitle.setStyleSheet("font-size: 13px; font-weight: 600; color: #53657d; background: transparent; border: none; font-family: 'Inter', 'Segoe UI', sans-serif;")
-        client_header_layout.addWidget(client_title)
-        client_header_layout.addWidget(client_subtitle)
+        self.setup_client_information_directory(client_page_layout)
 
         client_actions = QtWidgets.QHBoxLayout()
         client_actions.setSpacing(10)
@@ -5132,9 +6084,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.client_email_edit.textEdited.connect(lambda _text: self.save_client_btn.setEnabled(True))
         self.client_address_edit.textChanged.connect(lambda: self.save_client_btn.setEnabled(True))
 
-        client_page_layout.addWidget(client_header)
-        client_page_layout.addWidget(client_group)
-        client_page_layout.addLayout(client_actions)
+        self.client_editor_panel = QtWidgets.QWidget()
+        self.client_editor_panel.setVisible(False)
+        client_editor_layout = QtWidgets.QVBoxLayout(self.client_editor_panel)
+        client_editor_layout.setContentsMargins(0, 0, 0, 0)
+        client_editor_layout.setSpacing(12)
+        client_editor_layout.addWidget(client_group)
+        client_editor_layout.addLayout(client_actions)
+        client_page_layout.addWidget(self.client_editor_panel)
         client_page_layout.addStretch()
 
         self.setup_inline_client_list_tab()
@@ -5149,8 +6106,8 @@ class MainWindow(QtWidgets.QMainWindow):
         client_select_frame = QtWidgets.QFrame()
         client_select_frame.setStyleSheet("""
             QFrame {
-                background: #f8fbfd;
-                border: 1px solid #d8e2ec;
+                background: transparent;
+                border: none;
                 border-radius: 8px;
             }
             QLabel {
@@ -5185,6 +6142,14 @@ class MainWindow(QtWidgets.QMainWindow):
             }
         """)
         self.line_items_client_combo.lineEdit().setPlaceholderText("Select or type client name before generating invoice...")
+        # Prevent scroll wheel and arrow keys from changing client selection
+        self.line_items_client_combo.wheelEvent = lambda event: event.ignore()
+        _lic_orig_key = self.line_items_client_combo.keyPressEvent
+        def _lic_key(event, _orig=_lic_orig_key):
+            if event.key() in (QtCore.Qt.Key_Up, QtCore.Qt.Key_Down):
+                return
+            _orig(event)
+        self.line_items_client_combo.keyPressEvent = _lic_key
         self.line_items_client_combo.currentTextChanged.connect(self.on_client_changed)
 
         new_client_btn = QtWidgets.QPushButton("+ New Client")
@@ -5202,7 +6167,7 @@ class MainWindow(QtWidgets.QMainWindow):
             }
             QPushButton:hover { background: #1f2937; }
         """)
-        new_client_btn.clicked.connect(self.prepare_new_client_inline)
+        new_client_btn.clicked.connect(self._switch_and_open_new_client_popup)
 
         manage_client_btn = QtWidgets.QPushButton("Edit Client")
         manage_client_btn.setFixedHeight(40)
@@ -5219,7 +6184,7 @@ class MainWindow(QtWidgets.QMainWindow):
             }
             QPushButton:hover { background: #0d625c; }
         """)
-        manage_client_btn.clicked.connect(self.show_client_information_tab)
+        manage_client_btn.clicked.connect(self.edit_current_client_popup)
 
         client_select_layout.addWidget(select_client_label)
         client_select_layout.addWidget(self.line_items_client_combo, 1)
@@ -5230,8 +6195,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.invoice_client_info_frame = QtWidgets.QFrame()
         self.invoice_client_info_frame.setStyleSheet("""
             QFrame {
-                background: #ffffff;
-                border: 1px solid #d8e2ec;
+                background: transparent;
+                border: none;
                 border-radius: 8px;
             }
             QLabel {
@@ -5327,11 +6292,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tax_spin.setRange(0, 100)
         self.tax_spin.setDecimals(2)
         self.tax_spin.setSuffix(" %")
-        self.tax_spin.setValue(0.0)
+        self.tax_spin.setValue(float(Config.COMPANY.get("default_tax_rate", 0.0)))
         self.tax_spin.setFixedHeight(36)
         self.tax_spin.setMaximumWidth(170)
         self.tax_spin.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         self.tax_spin.setStyleSheet(field_style)
+        # Prevent scroll and arrow keys from accidentally changing tax rate
+        self.tax_spin.wheelEvent = lambda event: event.ignore()
+        _tax_orig_key = self.tax_spin.keyPressEvent
+        def _tax_key(event, _orig=_tax_orig_key):
+            if event.key() in (QtCore.Qt.Key_Up, QtCore.Qt.Key_Down):
+                return
+            _orig(event)
+        self.tax_spin.keyPressEvent = _tax_key
         
         tax_rate_label = QtWidgets.QLabel("Tax Rate:")
         tax_rate_label.setStyleSheet(form_label_style)
@@ -5401,7 +6374,6 @@ class MainWindow(QtWidgets.QMainWindow):
         """)
 
         totals_layout.addRow(total_label_title, self.total_label)
-        totals_layout.addRow(down_payments_title, self.down_payments_label)
         totals_layout.addRow(tax_amount_title, self.tax_label)
         totals_layout.addRow(total_due_title, self.total_amount_due_label)
         totals_layout.addRow(payment_status_title, self.payment_status_label)
@@ -5449,6 +6421,10 @@ class MainWindow(QtWidgets.QMainWindow):
         """)
 
         self.generate_pdf_btn.clicked.connect(self.generate_pdf)
+        # Wire client name changes to re-evaluate button state
+        self.client_combo.editTextChanged.connect(self._update_pdf_btn_state)
+        # Initial state — disabled until a client is entered
+        QtCore.QTimer.singleShot(0, self._update_pdf_btn_state)
 
         actions_layout.addStretch(1)
         self.save_invoice_btn = QtWidgets.QPushButton("Save Invoice")
@@ -5570,9 +6546,8 @@ class MainWindow(QtWidgets.QMainWindow):
             traceback.print_exc()
         
     def on_update_available(self):
-        """Called when an update is available"""
-        log.info("Update available!")
-        self.show_notification("Update Available", "A new version is available. Click the download button to update.")
+        """Called when UpdateIndicator detects an update — dialog is shown by UpdateChecker."""
+        log.info("Update available signal received.")
 
     def show_notification(self, title, message):
         """Show a notification message"""
@@ -5667,9 +6642,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self, 'project_tab'):
             self.refresh_project_tab_clients()
         
-        # Logo check
-        if Config.LOGO_FILE.exists():
-            log.info("Logo file found: %s", Config.LOGO_FILE.name)
+        # Overlay Firebase settings (source of truth) and refresh all UI elements
+        if Config.overlay_from_firebase():
+            self._apply_company_to_ui()
 
         # Run automation sweeps 3 s after startup so the UI is fully painted first
         QtCore.QTimer.singleShot(3000, self._run_startup_automation)
@@ -5710,9 +6685,6 @@ class MainWindow(QtWidgets.QMainWindow):
             expired_quotes = FirebaseManager.auto_expire_quotes()
             
             if overdue_count or completed_count or expired_quotes:
-                if hasattr(self, 'dashboard_tab'):
-                    # Refresh without showing any messages
-                    self.dashboard_tab.refresh(force_firebase=True)
                 if hasattr(self, 'history_tab') and hasattr(self.history_tab, 'refresh_invoices_immediately'):
                     self.history_tab.refresh_invoices_immediately()
                 if expired_quotes and hasattr(self, 'job_form_tab'):
@@ -5779,6 +6751,22 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Create Project", "This quote has no quote number.")
             return
 
+        # Fast-path: quote status already marked Converted — warn before navigating away
+        if job_data.get('status') == 'Converted':
+            linked_proj = job_data.get('project_number', 'N/A')
+            msg = QtWidgets.QMessageBox(self)
+            msg.setWindowTitle("Project Already Created")
+            msg.setIcon(QtWidgets.QMessageBox.Warning)
+            msg.setText("<b>This quote has already been converted to a project.</b>")
+            msg.setInformativeText(
+                f"Quote <b>{job_number}</b> was already pushed to:<br><br>"
+                f"&nbsp;&nbsp;Project #: <b>{linked_proj}</b><br><br>"
+                f"To make changes, open that project directly."
+            )
+            msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
+            msg.exec_()
+            return
+
         if not self._nav_to(PAGE_PROJECTS):
             return
         if hasattr(self, 'project_invoice_inner_tabs'):
@@ -5791,12 +6779,21 @@ class MainWindow(QtWidgets.QMainWindow):
         if existing_project:
             if job_data.get('status') != 'Converted' or job_data.get('project_number') != existing_project.get('project_number'):
                 self.mark_quote_converted_to_project(job_data, existing_project)
-            QtWidgets.QMessageBox.information(
-                self,
-                "Project Already Exists",
-                f"Quote {job_number} is already linked to project "
-                f"{existing_project.get('project_number', 'N/A')}."
+            proj_num  = existing_project.get('project_number', 'N/A')
+            proj_name = existing_project.get('project_name', '') or existing_project.get('project_name', 'Untitled')
+            msg = QtWidgets.QMessageBox(self)
+            msg.setWindowTitle("Project Already Created")
+            msg.setIcon(QtWidgets.QMessageBox.Warning)
+            msg.setText(f"<b>This quote has already been converted to a project.</b>")
+            msg.setInformativeText(
+                f"Quote <b>{job_number}</b> was already pushed to:<br><br>"
+                f"&nbsp;&nbsp;Project #: <b>{proj_num}</b><br>"
+                f"&nbsp;&nbsp;Name: <b>{proj_name}</b><br><br>"
+                f"To make changes, open that project directly."
             )
+            msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
+            msg.setDefaultButton(QtWidgets.QMessageBox.Ok)
+            msg.exec_()
             return
 
         from project_number_generator import ProjectDialog
@@ -5808,10 +6805,16 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         dialog.job_number_edit.setText(job_number)
         dialog.load_job_details()
-
-        # Auto-fill price and sales directly from quote data
         try:
-            price_raw = job_data.get('engineering_costs', '') or job_data.get('project_amount', '')
+            dialog.job_number_edit.setReadOnly(True)
+            if hasattr(dialog, "_apply_locked_identifier_style"):
+                dialog._apply_locked_identifier_style(dialog.job_number_edit)
+        except Exception:
+            pass
+
+        # Auto-fill price from quote — prefer project_amount (already includes expedite premium)
+        try:
+            price_raw = job_data.get('project_amount', '') or job_data.get('engineering_costs', '')
             if price_raw:
                 price_val = float(str(price_raw).replace('$', '').replace(',', ''))
                 dialog.project_amount_edit.setText(f"${price_val:,.2f}")
@@ -5830,6 +6833,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
             project_data = dialog.collect_project_data()
+            project_data['job_number'] = job_number
+            project_data.setdefault('quote_number', job_number)
             self.mark_quote_converted_to_project(job_data, project_data)
             if hasattr(self, 'project_tab') and hasattr(self.project_tab, 'load_projects'):
                 self.project_tab.load_projects()
@@ -5871,8 +6876,8 @@ class MainWindow(QtWidgets.QMainWindow):
         updates = {
             'status': 'Converted',
             'project_number': project_number,
-            'converted_at': datetime.now().isoformat(),
-            'updated_at': datetime.now().isoformat(),
+            'converted_at': datetime.now(timezone.utc).isoformat(),
+            'updated_at': datetime.now(timezone.utc).isoformat(),
         }
         job_data.update(updates)
 
@@ -6012,7 +7017,7 @@ class MainWindow(QtWidgets.QMainWindow):
             history_window.addToolBar(toolbar)
             
             # Close action
-            close_action = QtWidgets.QAction("a * Close", history_window)
+            close_action = QtWidgets.QAction("✕ Close", history_window)
             close_action.setShortcut("Esc")
             close_action.triggered.connect(history_window.close)
             toolbar.addAction(close_action)
@@ -6051,7 +7056,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             # Store project name separately
             row.item.project_name = project.get("project_name", "")
-            
+
             # Description can be a combination or just the project name
             row.desc_edit.setText(project.get("project_name", ""))
 
@@ -6071,6 +7076,21 @@ class MainWindow(QtWidgets.QMainWindow):
             row.plant_edit.blockSignals(False)
             row.price_edit.blockSignals(False)
             row.down_payment_combo.blockSignals(False)
+
+        # Determine status badge based on project payment stage
+        project_status = (project.get("status", "") or "").lower().strip()
+        pay_cat = row.normalize_payment_label(project.get("payment_category", "") or "")
+        _FIRST_STAGES = {ItemRowWidget.DEPOSIT_LABEL, ItemRowWidget.FULL_AMOUNT_LABEL,
+                         ItemRowWidget.INSTALLMENT_1_LABEL, ""}
+        _PAID_PROJECT_STATUSES = {"paid", "completed", "closed", "invoiced"}
+        if project_status in _PAID_PROJECT_STATUSES:
+            self._ps_base_status = "Paid"   # update_totals will flip to Partially Paid if tax > 0
+        elif pay_cat not in _FIRST_STAGES:
+            # A previous stage was already billed/paid → partial
+            self._ps_base_status = "Partially Paid"
+        else:
+            # First stage or unknown → Unpaid (update_totals will flip to Overdue if past due)
+            self._ps_base_status = "Unpaid"
 
         # Force recalculation
         row.update_total()
@@ -6124,7 +7144,13 @@ class MainWindow(QtWidgets.QMainWindow):
         row.qty_spin.valueChanged.connect(self.update_totals)
         row.price_edit.textChanged.connect(self.update_totals)
         row.down_payment_combo.currentTextChanged.connect(self.update_totals)
-        
+
+        # Connect required-field signals so PDF button reacts immediately
+        row.project_number_edit.textChanged.connect(self._update_pdf_btn_state)
+        row.desc_edit.textChanged.connect(self._update_pdf_btn_state)
+        row.price_edit.textChanged.connect(self._update_pdf_btn_state)
+        row.down_payment_combo.currentIndexChanged.connect(self._update_pdf_btn_state)
+
         # Connect project number changed signal to auto-fill method
         row.project_changed.connect(self.auto_fill_project_details)
         
@@ -6142,7 +7168,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     row.down_payment_combo.setCurrentText(row.FINAL_PAYMENT_LABEL)
         
         self.update_totals()
-    
+        self._update_pdf_btn_state()
+
     def remove_item_row(self, row):
         """Remove an item row from the form"""
         if row in self.item_rows:
@@ -6150,6 +7177,7 @@ class MainWindow(QtWidgets.QMainWindow):
             row.setParent(None)
             self.renumber_item_rows()
             self.update_totals()
+            self._update_pdf_btn_state()
 
     def renumber_item_rows(self):
         """Keep visible line item labels in the same order as the form."""
@@ -6164,42 +7192,67 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Calculate totals from the actual invoice items
         total_amount = sum(item.total for item in self.invoice.items)
-        total_down_payments = sum(item.down_payment for item in self.invoice.items)
         total_payment_due = sum(item.payment_due for item in self.invoice.items)
-        
-        # Calculate tax on the TOTAL amount (payment due + down payments)
+
         tax_amount = total_amount * (self.invoice.tax_rate / Decimal("100"))
-        
-        # Total Amount Due = (sum of payment_due from all items) + tax on total amount
-        # This gives us: (Total - Down Payments) + Tax on Total Amount
         total_amount_due = total_payment_due + tax_amount
-        
+
         # Update UI labels
         if self.total_label:
             self.total_label.setText(Currency.format(total_amount))
-        
-        if self.down_payments_label:
-            self.down_payments_label.setText(Currency.format(total_down_payments))
-        
+
         if self.tax_label:
             self.tax_label.setText(Currency.format(tax_amount))
-        
+
         if self.total_amount_due_label:
             self.total_amount_due_label.setText(Currency.format(total_amount_due))
 
         if hasattr(self, "payment_status_label") and self.payment_status_label:
-            if total_amount == 0:
-                status_text = "Not Started"
-                status_css = "color: #42526e; background-color: #f2f6fa; border-color: #d8e2ec;"
-            elif total_down_payments > 0 and total_amount_due > 0:
-                status_text = "Partially Paid"
-                status_css = "color: #805500; background-color: #fff7df; border-color: #f2c96b;"
-            elif total_amount_due <= 0:
-                status_text = "Paid"
-                status_css = "color: #00756f; background-color: #e9fbf7; border-color: #8edbd2;"
+            _ps_base = getattr(self, "_ps_base_status", None)
+            if _ps_base is not None:
+                status_text = _ps_base
+                if getattr(self, '_editing_existing_invoice', False):
+                    # Dynamic recalculation: compare stored paid amount against current total
+                    _paid = getattr(self, '_editing_invoice_paid_amount', None)
+                    if _paid is not None and _paid > 0:
+                        _current_total = float(total_amount + tax_amount)
+                        if _current_total > 0 and _paid >= _current_total:
+                            status_text = "Paid"
+                        else:
+                            status_text = "Partially Paid"
+                elif _ps_base == "Paid" and tax_amount > 0:
+                    # Project marked Paid but tax not yet settled → partially paid.
+                    status_text = "Partially Paid"
+                # Recheck overdue against current due date when status is unpaid/overdue
+                if status_text in ("Unpaid", "Overdue") and hasattr(self, "due_date_edit"):
+                    try:
+                        from PyQt5.QtCore import QDate
+                        due_qdate = self.due_date_edit.date()
+                        today = QDate.currentDate()
+                        if status_text == "Unpaid" and due_qdate < today:
+                            status_text = "Overdue"
+                        elif status_text == "Overdue" and due_qdate >= today:
+                            status_text = "Unpaid"
+                    except Exception:
+                        pass
+                _status_styles = {
+                    "Paid":           "color:#00756f;background-color:#e9fbf7;border-color:#8edbd2;",
+                    "Partially Paid": "color:#1e40af;background-color:#dbeafe;border-color:#93c5fd;",
+                    "Overdue":        "color:#9d174d;background-color:#fce7f3;border-color:#f9a8d4;",
+                    "Unpaid":         "color:#7a1f1f;background-color:#fff1f0;border-color:#f0b4b4;",
+                    "Not Started":    "color:#42526e;background-color:#f2f6fa;border-color:#d8e2ec;",
+                }
+                status_css = _status_styles.get(status_text, _status_styles["Unpaid"])
             else:
-                status_text = "Unpaid"
-                status_css = "color: #7a1f1f; background-color: #fff1f0; border-color: #f0b4b4;"
+                if total_amount == 0:
+                    status_text = "Not Started"
+                    status_css = "color: #42526e; background-color: #f2f6fa; border-color: #d8e2ec;"
+                elif total_amount_due <= 0:
+                    status_text = "Paid"
+                    status_css = "color: #00756f; background-color: #e9fbf7; border-color: #8edbd2;"
+                else:
+                    status_text = "Unpaid"
+                    status_css = "color: #7a1f1f; background-color: #fff1f0; border-color: #f0b4b4;"
             self.payment_status_label.setText(status_text)
             self.payment_status_label.setStyleSheet(f"""
                 QLabel {{
@@ -6215,14 +7268,32 @@ class MainWindow(QtWidgets.QMainWindow):
         # Debug output to verify calculation
         log.info("  Totals Calculation:")
         log.info("   Total Amount: %s", Currency.format(total_amount))
-        log.info("   Deposit Received: %s", Currency.format(total_down_payments))
+        log.info("   Payment Due: %s", Currency.format(total_payment_due))
         log.info("   Payment Due (before tax): %s", Currency.format(total_payment_due))
         log.info("   Tax Rate: %s%%", self.invoice.tax_rate)
         log.info("   Tax Amount (on total): %s", Currency.format(tax_amount))
         log.info("   Total Amount Due: %s", Currency.format(total_amount_due))
         
+    def _on_due_date_changed(self):
+        """Recompute Overdue/Unpaid status when the due date is edited by the user."""
+        _ps_base = getattr(self, "_ps_base_status", None)
+        if _ps_base not in ("Unpaid", "Overdue"):
+            self.update_totals()
+            return
+        try:
+            from PyQt5.QtCore import QDate
+            due_qdate = self.due_date_edit.date()
+            today = QDate.currentDate()
+            self._ps_base_status = "Overdue" if due_qdate < today else "Unpaid"
+        except Exception:
+            pass
+        self.update_totals()
+
     def clear_all_items(self):
         """Clear all invoice items without adding an empty row back"""
+        self._ps_base_status = None  # reset so update_totals reverts to default logic
+        self._editing_existing_invoice = False
+        self._editing_invoice_paid_amount = None
         for row in self.item_rows[:]:
             self.remove_item_row(row)
     
@@ -6386,7 +7457,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "contact_person": current_contact,
             "phone": current_phone,
             "company_email": current_company_email,
-            "updated_at": datetime.now().isoformat()
+            "updated_at": datetime.now(timezone.utc).isoformat()
         }
         
         is_new_client = not original_client_name and client_name not in self.clients
@@ -6486,6 +7557,465 @@ class MainWindow(QtWidgets.QMainWindow):
             if new_client and new_client not in current_clients:
                 log.info("Client not found in dropdown, retrying refresh...")
                 self.project_tab.refresh_clients_immediately()
+
+    def setup_client_information_directory(self, layout):
+        """Build the polished client directory shown at the top of Client Information."""
+        directory = QtWidgets.QFrame()
+        directory.setStyleSheet("""
+            QFrame {
+                background: transparent;
+                border: none;
+                border-radius: 9px;
+            }
+        """)
+        outer = QtWidgets.QVBoxLayout(directory)
+        outer.setContentsMargins(0, 0, 0, 14)
+        outer.setSpacing(0)
+
+        header = QtWidgets.QFrame()
+        header.setStyleSheet("""
+            QFrame {
+                background: transparent;
+                border: none;
+                border-bottom: 1px solid #e6edf5;
+                border-top-left-radius: 10px;
+                border-top-right-radius: 10px;
+            }
+        """)
+        header_lay = QtWidgets.QHBoxLayout(header)
+        header_lay.setContentsMargins(18, 16, 16, 16)
+        header_lay.setSpacing(14)
+
+        title_col = QtWidgets.QVBoxLayout()
+        title_col.setContentsMargins(0, 0, 0, 0)
+        title_col.setSpacing(4)
+        title = QtWidgets.QLabel("Client Information")
+        title.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                border: none;
+                color: #0f172a;
+                font-size: 19px;
+                font-weight: 900;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+            }
+        """)
+        subtitle = QtWidgets.QLabel("Manage your client details and contact information.")
+        subtitle.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                border: none;
+                color: #53657d;
+                font-size: 12px;
+                font-weight: 700;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+            }
+        """)
+        title_col.addWidget(title)
+        title_col.addWidget(subtitle)
+        header_lay.addLayout(title_col, 1)
+
+        export_btn = QtWidgets.QPushButton("Export")
+        export_btn.setFixedSize(100, 42)
+        export_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        export_btn.setStyleSheet("""
+            QPushButton {
+                background: #ffffff;
+                color: #334155;
+                border: 1px solid #dfe7f0;
+                border-radius: 7px;
+                font-size: 13px;
+                font-weight: 800;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+            }
+            QPushButton:hover {
+                background: #ffffff;
+                border-color: #cbd5e1;
+            }
+        """)
+        export_btn.clicked.connect(self.export_clients_csv)
+        header_lay.addWidget(export_btn)
+
+        new_btn = QtWidgets.QPushButton("+  New Client")
+        new_btn.setFixedSize(126, 42)
+        new_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        new_btn.setStyleSheet("""
+            QPushButton {
+                background: #00756f;
+                color: #ffffff;
+                border: none;
+                border-radius: 7px;
+                font-size: 13px;
+                font-weight: 900;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+            }
+            QPushButton:hover { background: #00645f; }
+        """)
+        new_btn.clicked.connect(self.open_new_client_popup_dialog)
+        header_lay.addWidget(new_btn)
+        outer.addWidget(header)
+
+        toolbar = QtWidgets.QFrame()
+        toolbar.setStyleSheet("QFrame { background:transparent; border:none; }")
+        toolbar_lay = QtWidgets.QHBoxLayout(toolbar)
+        toolbar_lay.setContentsMargins(18, 14, 16, 12)
+        toolbar_lay.setSpacing(12)
+
+        self.client_info_search = QtWidgets.QLineEdit()
+        self.client_info_search.setPlaceholderText("Search by client name, contact, phone, or email...")
+        self.client_info_search.setFixedHeight(38)
+        self.client_info_search.setMinimumWidth(360)
+        self.client_info_search.setStyleSheet("""
+            QLineEdit {
+                background: #ffffff;
+                border: 1.5px solid #d8e2ec;
+                border-radius: 7px;
+                padding: 0 12px;
+                font-size: 13px;
+                color: #0f172a;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+            }
+            QLineEdit:focus {
+                border-color: #00756f;
+            }
+        """)
+        self._client_search_timer = QtCore.QTimer(self)
+        self._client_search_timer.setSingleShot(True)
+        self._client_search_timer.setInterval(200)
+        self._client_search_timer.timeout.connect(self.refresh_client_information_directory)
+        self.client_info_search.textChanged.connect(self._client_search_timer.start)
+        toolbar_lay.addWidget(self.client_info_search, 1)
+
+        self.client_count_lbl = QtWidgets.QLabel("Clients: 0")
+        self.client_count_lbl.setStyleSheet("""
+            QLabel {
+                background: #f1f5f9;
+                border: 1px solid #e2e8f0;
+                border-radius: 7px;
+                color: #475569;
+                font-size: 13px;
+                font-weight: 700;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+                padding: 0 14px;
+            }
+        """)
+        self.client_count_lbl.setFixedHeight(38)
+        self.client_count_lbl.setMinimumWidth(90)
+        toolbar_lay.addWidget(self.client_count_lbl)
+        outer.addWidget(toolbar)
+
+        self.client_info_table = QtWidgets.QTableWidget()
+        self.client_info_table.setColumnCount(7)
+        self.client_info_table.setHorizontalHeaderLabels([
+            "Client", "Contact Person", "Phone", "Email", "Company Email", "Address", "Actions"
+        ])
+        self.client_info_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.client_info_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.client_info_table.verticalHeader().setVisible(False)
+        self.client_info_table.setAlternatingRowColors(False)
+        self.client_info_table.setShowGrid(False)
+        self.client_info_table.setMinimumHeight(640)
+        self.client_info_table.setStyleSheet("""
+            QTableWidget {
+                background: #ffffff;
+                border: 1px solid #e6edf5;
+                border-radius: 7px;
+                gridline-color: #edf2f7;
+                font-size: 13px;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+            }
+            QTableWidget::item {
+                padding: 8px 10px;
+                color: #10213a;
+                border-bottom: 1px solid #edf2f7;
+                border-right: 1px solid #edf2f7;
+            }
+            QHeaderView::section {
+                background: #ffffff;
+                color: #53657d;
+                border: none;
+                border-bottom: 1px solid #dfe7f0;
+                border-right: 1px solid #dfe7f0;
+                padding: 9px 10px;
+                font-size: 11px;
+                font-weight: 900;
+                text-transform: uppercase;
+            }
+        """)
+        header_view = self.client_info_table.horizontalHeader()
+        for col in range(6):
+            header_view.setSectionResizeMode(col, QtWidgets.QHeaderView.Stretch)
+        header_view.setSectionResizeMode(6, QtWidgets.QHeaderView.Fixed)
+        self.client_info_table.setColumnWidth(6, 156)
+        outer.addWidget(self.client_info_table)
+
+        footer = QtWidgets.QHBoxLayout()
+        footer.setContentsMargins(18, 12, 16, 0)
+        footer.setSpacing(10)
+        self.client_info_footer = QtWidgets.QLabel("Showing 0 of 0 clients")
+        self.client_info_footer.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                border: none;
+                color: #53657d;
+                font-size: 12px;
+                font-weight: 700;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+            }
+        """)
+        footer.addWidget(self.client_info_footer, 1)
+
+        for text in ("<", "1", ">"):
+            pager = QtWidgets.QPushButton(text)
+            pager.setFixedSize(34, 34)
+            pager.setEnabled(text == "1")
+            pager.setStyleSheet("""
+                QPushButton {
+                    background: #ffffff;
+                    color: #64748b;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 7px;
+                    font-size: 13px;
+                    font-weight: 900;
+                }
+                QPushButton:enabled {
+                    color: #ffffff;
+                    background: #00756f;
+                    border-color: #00756f;
+                }
+            """)
+            footer.addWidget(pager)
+        outer.addLayout(footer)
+
+        layout.addWidget(directory)
+        self.refresh_client_information_directory()
+
+    def _filtered_clients(self, search_text=""):
+        self.clients = FirebaseManager.load_clients()
+        query = (search_text or "").strip().lower()
+        records = []
+        for client_name, client_data in getattr(self, "clients", {}).items():
+            searchable = " ".join([
+                client_name,
+                client_data.get("contact_person", ""),
+                client_data.get("phone", ""),
+                client_data.get("email", ""),
+                client_data.get("company_email", ""),
+                client_data.get("address", "")
+            ]).lower()
+            if query and query not in searchable:
+                continue
+            records.append((client_name, client_data))
+        records.sort(key=lambda item: item[0].lower())
+        return records, len(getattr(self, "clients", {}))
+
+    def _client_manage_widget(self, client_name):
+        actions = QtWidgets.QWidget()
+        actions_layout = QtWidgets.QHBoxLayout(actions)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(8)
+        actions_layout.setAlignment(QtCore.Qt.AlignCenter)
+
+        manage_btn = QtWidgets.QToolButton()
+        manage_btn.setText("Manage")
+        manage_btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        manage_btn.setFixedSize(84, 30)
+        manage_btn.setStyleSheet("""
+            QToolButton {
+                background: #ffffff;
+                color: #0f766e;
+                border: 1px solid #d6e4e7;
+                border-radius: 5px;
+                font-size: 11px;
+                font-weight: 900;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+            }
+            QToolButton:hover {
+                border-color: #00756f;
+                background: #f0fdfa;
+            }
+            QToolButton::menu-indicator {
+                image: none;
+                width: 0px;
+            }
+        """)
+
+        menu = QtWidgets.QMenu(manage_btn)
+        menu.setStyleSheet("""
+            QMenu {
+                background: #ffffff;
+                border: 1px solid #d8e2ec;
+                border-radius: 8px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 8px 24px;
+                color: #0f172a;
+                font-weight: 700;
+            }
+            QMenu::item:selected {
+                background: #eefaf8;
+                color: #00756f;
+            }
+        """)
+        edit_action = menu.addAction("Edit")
+        delete_action = menu.addAction("Delete")
+        edit_action.triggered.connect(lambda checked=False, name=client_name: self.edit_inline_client(name))
+        delete_action.triggered.connect(lambda checked=False, name=client_name: self.delete_inline_client(name))
+        manage_btn.setMenu(menu)
+
+        actions_layout.addWidget(manage_btn)
+        return actions
+
+    def _client_identity_widget(self, client_name):
+        wrap = QtWidgets.QWidget()
+        lay = QtWidgets.QHBoxLayout(wrap)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(10)
+
+        initials = "".join(part[:1] for part in client_name.split()[:2]).upper() or "C"
+        color_sets = [
+            ("#d1fae5", "#0f766e"),
+            ("#dbeafe", "#2563eb"),
+            ("#fef3c7", "#d97706"),
+            ("#ede9fe", "#7c3aed"),
+            ("#fce7f3", "#db2777"),
+        ]
+        bg, fg = color_sets[sum(ord(ch) for ch in client_name) % len(color_sets)]
+
+        badge = QtWidgets.QLabel(initials)
+        badge.setFixedSize(34, 34)
+        badge.setAlignment(QtCore.Qt.AlignCenter)
+        badge.setStyleSheet(f"""
+            QLabel {{
+                background: {bg};
+                color: {fg};
+                border: none;
+                border-radius: 17px;
+                font-size: 11px;
+                font-weight: 900;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+            }}
+        """)
+        lay.addWidget(badge)
+
+        name = QtWidgets.QLabel(client_name)
+        name.setWordWrap(True)
+        name.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                border: none;
+                color: #10213a;
+                font-size: 12px;
+                font-weight: 900;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+            }
+        """)
+        lay.addWidget(name, 1)
+        return wrap
+
+    def _populate_client_table(self, table, clients_list):
+        table.setUpdatesEnabled(False)
+        table.blockSignals(True)
+        table.setRowCount(len(clients_list))
+        table.setColumnWidth(6, 156 if table is getattr(self, "client_info_table", None) else 170)
+        for row, (client_name, client_data) in enumerate(clients_list):
+            values = [
+                client_data.get("contact_person", "") or "-",
+                client_data.get("phone", "") or "-",
+                client_data.get("email", "") or "-",
+                client_data.get("company_email", "") or "-",
+                (client_data.get("address", "") or "-").replace("\n", ", "),
+            ]
+            table.setCellWidget(row, 0, self._client_identity_widget(client_name))
+            for col, value in enumerate(values, start=1):
+                item = QtWidgets.QTableWidgetItem(value)
+                item.setTextAlignment(QtCore.Qt.AlignCenter)
+                table.setItem(row, col, item)
+            table.setCellWidget(row, 6, self._client_manage_widget(client_name))
+            table.setRowHeight(row, 58 if table is getattr(self, "client_info_table", None) else 52)
+        table.blockSignals(False)
+        table.setUpdatesEnabled(True)
+
+    def refresh_client_information_directory(self):
+        """Refresh the Client Information directory panel."""
+        if not hasattr(self, "client_info_table"):
+            return
+        search = self.client_info_search.text() if hasattr(self, "client_info_search") else ""
+        clients_list, total = self._filtered_clients(search)
+        shown = len(clients_list)
+        self._populate_client_table(self.client_info_table, clients_list)
+        if hasattr(self, "client_info_count_btn"):
+            self.client_info_count_btn.setText(f"{total} Client{'s' if total != 1 else ''}")
+        if hasattr(self, "client_info_footer"):
+            self.client_info_footer.setText(f"Showing {shown} of {total} client{'s' if total != 1 else ''}")
+        if hasattr(self, "client_count_lbl"):
+            self.client_count_lbl.setText(f"Clients: {total}")
+
+    def export_clients_csv(self):
+        """Export the currently visible client directory rows to Excel."""
+        search = self.client_info_search.text() if hasattr(self, "client_info_search") else ""
+        clients_list, _total = self._filtered_clients(search)
+        export_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export Clients",
+            "clients_export.xlsx",
+            "Excel Files (*.xlsx)"
+        )
+        if not export_path:
+            return
+        try:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Clients"
+
+            ws.merge_cells('A1:G1')
+            ws['A1'] = f"{Config.COMPANY.get('name', 'MABS Engineering LLC').upper()} - CLIENT DIRECTORY"
+            ws['A1'].font = Font(size=16, bold=True)
+            ws['A1'].alignment = Alignment(horizontal='center')
+
+            ws['A2'] = f"Generated: {__import__('datetime').datetime.now().strftime('%m-%d-%Y')}"
+            ws['A2'].font = Font(bold=True)
+
+            headers = ["S.No.", "Client", "Contact Person", "Phone", "Email", "Company Email", "Address"]
+            for col, header in enumerate(headers, 1):
+                cell = ws.cell(row=4, column=col, value=header)
+                cell.font = Font(bold=True)
+                cell.fill = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
+                cell.alignment = Alignment(horizontal='center')
+
+            for row_idx, (client_name, client_data) in enumerate(clients_list, 5):
+                data = [
+                    row_idx - 4,
+                    client_name,
+                    client_data.get("contact_person", ""),
+                    client_data.get("phone", ""),
+                    client_data.get("email", ""),
+                    client_data.get("company_email", ""),
+                    (client_data.get("address", "") or "").replace("\n", ", "),
+                ]
+                for col, value in enumerate(data, 1):
+                    cell = ws.cell(row=row_idx, column=col, value=value)
+                    cell.alignment = Alignment(horizontal='center', wrap_text=True)
+                    if col == 1:
+                        cell.font = Font(bold=True)
+
+            column_widths = {1: 8, 2: 35, 3: 25, 4: 16, 5: 35, 6: 35, 7: 45}
+            for col_idx, width in column_widths.items():
+                ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = width
+
+            for row in range(5, ws.max_row + 1):
+                if row % 2 == 0:
+                    for col in range(1, len(headers) + 1):
+                        cell = ws.cell(row=row, column=col)
+                        if cell.fill.start_color.index == '00000000':
+                            cell.fill = PatternFill(start_color="F9F9F9", end_color="F9F9F9", fill_type="solid")
+
+            wb.save(export_path)
+            QtWidgets.QMessageBox.information(self, "Export Clients", "Client export completed successfully.")
+        except Exception as exc:
+            log.warning("Client Excel export failed: %s", exc)
+            QtWidgets.QMessageBox.critical(self, "Export Clients", f"Failed to export clients: {exc}")
 
     def setup_inline_client_list_tab(self):
         """Build the inline saved-client list tab."""
@@ -6611,8 +8141,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.inline_clients_table.setAlternatingRowColors(True)
         self.inline_clients_table.setStyleSheet("""
             QTableWidget {
-                background: #ffffff;
-                border: 1px solid #d8e2ec;
+                background: transparent;
+                border: none;
                 border-radius: 8px;
                 gridline-color: #e5edf5;
                 font-size: 13px;
@@ -6748,14 +8278,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.inline_clients_table.setCellWidget(row, 6, actions)
             self.inline_clients_table.setRowHeight(row, 52)
 
+        self.refresh_client_information_directory()
+
     def edit_inline_client(self, client_name):
-        """Load a saved client into the inline client form."""
-        self.show_client_information_tab()
-        self.editing_client_name = client_name
-        self.client_combo.setCurrentText(client_name)
-        self.load_client_details(client_name)
-        if hasattr(self, "save_client_btn"):
-            self.save_client_btn.setEnabled(False)
+        """Edit a saved client via the popup dialog."""
+        self.open_client_popup_dialog(client_name=client_name)
 
     def delete_inline_client(self, client_name):
         """Delete a saved client from the inline list."""
@@ -6815,6 +8342,64 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as e:
             log.warning("Error refreshing project tab clients: %s", e)
                
+    def _update_pdf_btn_state(self, *_):
+        """Enable Generate PDF only when every item row has project number, project name,
+        a valid amount (> 0), and a payment category selected."""
+        if not hasattr(self, 'generate_pdf_btn'):
+            return
+        # Always enable when editing an existing invoice
+        if getattr(self, '_editing_existing_invoice', False):
+            self.generate_pdf_btn.setEnabled(True)
+            self.generate_pdf_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #00756f; color: white; border: none;
+                    border-radius: 10px; padding: 0 20px; font-weight: 800;
+                    font-size: 17px; min-height: 52px; max-height: 52px;
+                }
+                QPushButton:hover  { background-color: #00645f; }
+                QPushButton:pressed{ background-color: #00514d; }
+            """)
+            return
+        rows = getattr(self, 'item_rows', [])
+        enabled = False
+        if rows:
+            enabled = True
+            for row in rows:
+                # Skip locked stage rows — their values are pre-filled and immutable
+                if getattr(row, '_stage_locked', False):
+                    continue
+                project_number = row.project_number_edit.text().strip() if row.project_number_edit else ""
+                project_name   = row.desc_edit.text().strip()           if row.desc_edit            else ""
+                payment_cat_ok = row.down_payment_combo.currentIndex() != 0 if row.down_payment_combo else False
+                amount_raw     = row.price_edit.text().replace("$", "").replace(",", "").strip() if row.price_edit else ""
+                try:
+                    amount_ok = float(amount_raw) > 0 if amount_raw else False
+                except ValueError:
+                    amount_ok = False
+                if not (project_number and project_name and amount_ok and payment_cat_ok):
+                    enabled = False
+                    break
+
+        self.generate_pdf_btn.setEnabled(enabled)
+        if enabled:
+            self.generate_pdf_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #00756f; color: white; border: none;
+                    border-radius: 10px; padding: 0 20px; font-weight: 800;
+                    font-size: 17px; min-height: 52px; max-height: 52px;
+                }
+                QPushButton:hover  { background-color: #00645f; }
+                QPushButton:pressed{ background-color: #00514d; }
+            """)
+        else:
+            self.generate_pdf_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #94a3b8; color: #e2e8f0; border: none;
+                    border-radius: 10px; padding: 0 20px; font-weight: 800;
+                    font-size: 17px; min-height: 52px; max-height: 52px;
+                }
+            """)
+
     def generate_pdf(self):
         """Generate PDF invoice and save to Firebase only - ADD revenue tracking"""
         self.update_invoice_from_form()
@@ -6829,20 +8414,30 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Validation Error", "At least one invoice item is required.")
             return
         
-        # NEW: Validate that all items have a valid payment category selected (not placeholder)
+        # Validate due date is not before invoice date
+        if hasattr(self, 'due_date_edit') and hasattr(self, 'date_edit'):
+            if self.due_date_edit.date() < self.date_edit.date():
+                QtWidgets.QMessageBox.warning(
+                    self, "Validation Error",
+                    "Due date cannot be before the invoice date."
+                )
+                self.due_date_edit.setFocus()
+                return
+
+        # Validate that all items have a valid payment category selected (not placeholder)
         for i, row in enumerate(self.item_rows, 1):
-            payment_category = row.down_payment_combo.currentText()
-            # Check if placeholder is selected (index 0 is placeholder)
+            # Locked rows have a single stage label at index 0 — that IS valid
+            if getattr(row, "_stage_locked", False):
+                continue
             if row.down_payment_combo.currentIndex() == 0:
                 QtWidgets.QMessageBox.warning(
-                    self, 
-                    "Validation Error", 
-                    "Please select a payment category (Deposit Received, Final Payment Due, or Full Amount Due) for all items."
+                    self,
+                    "Validation Error",
+                    "Please select a payment category for all items."
                 )
-                # Focus on the problematic row's payment category dropdown
                 row.down_payment_combo.setFocus()
                 return
-        
+
         # Auto-save new client if needed
         if client_name not in self.clients:
             email = self.client_email_edit.text().strip()
@@ -6877,94 +8472,108 @@ class MainWindow(QtWidgets.QMainWindow):
         temp_dir = Path(tempfile.gettempdir()) / "mabs_invoices_temp"
         temp_dir.mkdir(parents=True, exist_ok=True)
         pdf_path = temp_dir / f"{self.invoice.invoice_number}.pdf"
-        
+
         try:
             logo_path = Config.get_logo_path()
-            
-            # Show progress dialog
-            progress_dialog = QtWidgets.QProgressDialog("Generating PDF...", "Cancel", 0, 100, self)
-            progress_dialog.setWindowTitle("PDF Generation")
-            progress_dialog.setWindowModality(QtCore.Qt.WindowModal)
-            progress_dialog.show()
-            
-            for i in range(0, 101, 20):
-                progress_dialog.setValue(i)
-                QtWidgets.QApplication.processEvents()
-                QtCore.QThread.msleep(100)
-            
-            success = PDFGenerator.generate(self.invoice, pdf_path, logo_path)
-            progress_dialog.setValue(100)
-            
+
+            # Generate PDF locally — fast, no network needed; show wait cursor only
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+            QtWidgets.QApplication.processEvents()
+            try:
+                success = PDFGenerator.generate(self.invoice, pdf_path, logo_path)
+            finally:
+                QtWidgets.QApplication.restoreOverrideCursor()
+
             if success:
-                # Save invoice data to Firebase
+                _saved_inv_number = self.invoice.invoice_number
+                _saved_inv_items  = list(self.invoice.items)
+
+                # Snapshot invoice data as a dict BEFORE clearing the form.
+                # Use Invoice.from_dict() to get a proper independent copy — NOT a
+                # reference to self.invoice which will be cleared below.
                 invoice_data = self.invoice.to_dict()
-                invoice_data['meta']['status'] = 'Unpaid'  # Set initial status as Unpaid
-                invoice_data['meta']['received_date'] = 'N/A'  # Add received date field
-                invoice_saved = FirebaseManager.save_invoice(invoice_data)
-                
-                # Save PDF to Firebase
-                pdf_saved = FirebaseManager.save_pdf_to_firebase(self.invoice.invoice_number, pdf_path)
-                
-                # NEW: Save invoice as revenue in balance sheet
-                self.save_invoice_as_revenue(self.invoice)
-                
-                progress_dialog.close()
-                
-                # Reset tax percentage
-                self.tax_spin.setValue(0.0)
-                
-                # Show success message
-                message = f"<div style='text-align: center;'>"
-                message += f"<h3 style='color: #28a745; margin-bottom: 15px;'>a ... Invoice Generated Successfully!</h3>"
-                message += f"<p style='font-size: 14px; color: #495057; line-height: 1.6;'>"
-                message += f"  Invoice Number:</b> {self.invoice.invoice_number}<br>"
-                message += f"<b>  '  Client:</b> {client_name}<br>"
-                message += f"<b>  '  Amount:</b> {Currency.format(self.invoice.total)}<br>"
-                message += f"  Status:</b> Unpaid (Will appear in Balance Sheet as Unpaid Revenue)"
-                message += f"</p></div>"
-                
+                # For new invoices start as Unpaid; for edits preserve the existing status
+                if not getattr(self, '_editing_existing_invoice', False):
+                    invoice_data['meta']['status'] = 'Unpaid'
+                    invoice_data['meta']['received_date'] = 'N/A'
+                _inv_total_fmt = Currency.format(self.invoice.total)
+                # Reconstruct a fully independent Invoice object for background use
+                _inv_copy = Invoice.from_dict(invoice_data)
+
+                # Reset tax percentage and clear form immediately
+                self.tax_spin.setValue(float(Config.COMPANY.get("default_tax_rate", 0.0)))
+                self.notes_edit.setPlainText(Config.DEFAULT_TERMS)
+                self.clear_all_items()
+                self.clear_client_information()
+                self.invoice.invoice_number = ""
+                self.invoice_no_edit.setText("")
+
+                # Show success — user sees this instantly, Firebase saves run in background
+                message = (
+                    f"<div style='text-align:center;'>"
+                    f"<h3 style='color:#28a745;margin-bottom:15px;'>Invoice Generated Successfully!</h3>"
+                    f"<p style='font-size:14px;color:#495057;line-height:1.6;'>"
+                    f"<b>Invoice Number:</b> {_saved_inv_number}<br>"
+                    f"<b>Client:</b> {client_name}<br>"
+                    f"<b>Amount:</b> {_inv_total_fmt}"
+                    f"</p></div>"
+                )
                 msg_box = QtWidgets.QMessageBox(self)
                 msg_box.setWindowTitle("Success")
                 msg_box.setTextFormat(QtCore.Qt.RichText)
                 msg_box.setText(message)
                 msg_box.setIcon(QtWidgets.QMessageBox.Information)
-                
                 open_btn = QtWidgets.QPushButton("  Open PDF")
                 ok_btn = QtWidgets.QPushButton("OK")
                 msg_box.addButton(ok_btn, QtWidgets.QMessageBox.AcceptRole)
                 msg_box.addButton(open_btn, QtWidgets.QMessageBox.ActionRole)
                 msg_box.setDefaultButton(ok_btn)
                 msg_box.setEscapeButton(ok_btn)
-                
                 msg_box.exec_()
-                
+
                 if msg_box.clickedButton() == open_btn:
                     FileManager.open_file(pdf_path)
-                
-                # Clear form
-                self.clear_all_items()
-                self.clear_client_information()
-                
-                # Refresh invoice history and balance sheet
-                if hasattr(self, 'history_tab'):
-                    self.history_tab.refresh_invoices_immediately()
-                
-                if hasattr(self, 'balance_sheet_tab'):
-                    self.balance_sheet_tab.load_invoice_revenues()
-                    self.balance_sheet_tab.update_annual_summary()
-                
+
+                # Background: Firebase saves only (no Qt calls allowed here).
+                # _inv_copy is an independent Invoice object; _skip_ui_refresh=True
+                # prevents save_invoice_as_revenue from touching Qt widgets.
+                def _bg_save(inv_data=invoice_data, inv_num=_saved_inv_number,
+                              inv_copy=_inv_copy, _pdf_path=pdf_path):
+                    try:
+                        FirebaseManager.save_invoice(inv_data)
+                    except Exception as _e:
+                        log.warning("bg save_invoice error: %s", _e)
+                    try:
+                        FirebaseManager.save_pdf_to_firebase(inv_num, _pdf_path)
+                    except Exception as _e:
+                        log.warning("bg save_pdf_to_firebase error: %s", _e)
+                    try:
+                        self.save_invoice_as_revenue(inv_copy, _skip_ui_refresh=True)
+                    except Exception as _e:
+                        log.warning("bg save_invoice_as_revenue error: %s", _e)
+
+                import threading as _threading
+                _threading.Thread(target=_bg_save, daemon=True).start()
+
+                # Post-save payment sync and UI refresh (timers — main thread only)
+                self._trigger_post_save_payment_sync(_saved_inv_number, _saved_inv_items)
+
                 self.update_invoice_preview()
-                QtCore.QTimer.singleShot(5000, lambda: self.cleanup_temp_file(pdf_path))
-                    
+                if hasattr(self, 'history_tab'):
+                    QtCore.QTimer.singleShot(800, self.history_tab.refresh_invoices_immediately)
+                if hasattr(self, 'balance_sheet_tab'):
+                    QtCore.QTimer.singleShot(1500, self.balance_sheet_tab.load_invoice_revenues)
+                    QtCore.QTimer.singleShot(1500, self.balance_sheet_tab.update_annual_summary)
+                QtCore.QTimer.singleShot(8000, lambda: self.cleanup_temp_file(pdf_path))
+
             else:
-                progress_dialog.close()
                 QtWidgets.QMessageBox.critical(self, "PDF Generation Error", "Failed to generate PDF.")
         
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "PDF Generation Error", f"Failed to generate PDF: {str(e)}")
 
     def save_invoice(self):
-        """Save the invoice record without generating a PDF."""
+        """Save invoice record and silently generate PDF in background."""
         self.update_invoice_from_form()
 
         client_name = self.invoice.client_name.strip()
@@ -6976,11 +8585,21 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Validation Error", "At least one invoice item is required.")
             return
 
+        if hasattr(self, 'due_date_edit') and hasattr(self, 'date_edit'):
+            if self.due_date_edit.date() < self.date_edit.date():
+                QtWidgets.QMessageBox.warning(
+                    self, "Validation Error",
+                    "Due date cannot be before the invoice date."
+                )
+                self.due_date_edit.setFocus()
+                return
+
         for row in self.item_rows:
+            if getattr(row, "_stage_locked", False):
+                continue
             if row.down_payment_combo.currentIndex() == 0:
                 QtWidgets.QMessageBox.warning(
-                    self,
-                    "Validation Error",
+                    self, "Validation Error",
                     "Please select a payment category for all items before saving the invoice."
                 )
                 row.down_payment_combo.setFocus()
@@ -6997,25 +8616,253 @@ class MainWindow(QtWidgets.QMainWindow):
             self.invoice_no_edit.setText(self.invoice.invoice_number)
 
         invoice_data = self.invoice.to_dict()
-        invoice_data['meta']['status'] = 'Draft'
+        # Preserve existing status when editing; new invoices start as Unpaid
+        if not getattr(self, '_editing_existing_invoice', False):
+            invoice_data['meta']['status'] = 'Unpaid'
         invoice_data['meta']['received_date'] = self.invoice.received_date or 'N/A'
 
-        if FirebaseManager.save_invoice(invoice_data):
-            QtWidgets.QMessageBox.information(
-                self,
-                "Invoice Saved",
-                f"Invoice {self.invoice.invoice_number} saved successfully."
-            )
-            if hasattr(self, 'history_tab'):
-                self.history_tab.refresh_invoices_immediately()
-        else:
+        saved_number = self.invoice.invoice_number
+        saved_items  = list(self.invoice.items)
+        invoice_snapshot = Invoice.from_dict(invoice_data)
+
+        if not FirebaseManager.save_invoice(invoice_data):
             QtWidgets.QMessageBox.critical(
-                self,
-                "Save Failed",
+                self, "Save Failed",
                 "Could not save the invoice. Please check Firebase connection and try again."
             )
+            return
 
-    def save_invoice_as_revenue(self, invoice: Invoice):
+        # Silently generate PDF (wait cursor, no success dialog for PDF step)
+        temp_dir = Path(tempfile.gettempdir()) / "mabs_invoices_temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        pdf_path = temp_dir / f"{saved_number}.pdf"
+        pdf_ok = False
+        try:
+            logo_path = Config.get_logo_path()
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+            QtWidgets.QApplication.processEvents()
+            try:
+                pdf_ok = PDFGenerator.generate(invoice_snapshot, pdf_path, logo_path)
+            finally:
+                QtWidgets.QApplication.restoreOverrideCursor()
+        except Exception as _pdf_e:
+            log.warning("save_invoice: silent PDF generation error: %s", _pdf_e)
+
+        # Show only "Saved" popup — no Open PDF button
+        QtWidgets.QMessageBox.information(
+            self, "Invoice Saved",
+            f"Invoice {saved_number} saved successfully.\n\n"
+            "You can download the PDF from Invoice History."
+        )
+
+        # Background: upload PDF + sync revenue
+        def _bg_save(inv_num=saved_number, _pdf_path=pdf_path,
+                     inv_copy=invoice_snapshot, _pdf_ok=pdf_ok):
+            if _pdf_ok:
+                try:
+                    FirebaseManager.save_pdf_to_firebase(inv_num, _pdf_path)
+                except Exception as _e:
+                    log.warning("bg save_pdf_to_firebase error: %s", _e)
+            try:
+                self.save_invoice_as_revenue(inv_copy, _skip_ui_refresh=True)
+            except Exception as _e:
+                log.warning("bg save_invoice_as_revenue error: %s", _e)
+
+        import threading as _threading
+        _threading.Thread(target=_bg_save, daemon=True).start()
+
+        if hasattr(self, 'history_tab'):
+            QtCore.QTimer.singleShot(800, self.history_tab.refresh_invoices_immediately)
+        if hasattr(self, 'balance_sheet_tab'):
+            QtCore.QTimer.singleShot(1500, self.balance_sheet_tab.load_invoice_revenues)
+            QtCore.QTimer.singleShot(1500, self.balance_sheet_tab.update_annual_summary)
+        if pdf_ok:
+            QtCore.QTimer.singleShot(8000, lambda: self.cleanup_temp_file(pdf_path))
+
+        self._trigger_post_save_payment_sync(saved_number, saved_items)
+
+    def edit_invoice_by_number(self, invoice_number: str):
+        """Find invoice in Firebase and load it into the Invoice Management form.
+        Called from balance_sheet_tab so all Firebase/Invoice access stays in main.py."""
+        if not invoice_number:
+            return
+
+        # Navigate to Invoice Management tab
+        self._nav_to(2)
+        if hasattr(self, "project_invoice_inner_tabs"):
+            self.project_invoice_inner_tabs.setCurrentIndex(1)
+
+        # Load invoice from Firebase
+        invoice_obj = None
+        try:
+            raw = FirebaseManager.load_invoices() or []
+            for inv_data in raw:
+                meta = inv_data.get('meta', {})
+                stored = str(meta.get('invoice_number', '') or '').strip()
+                if stored == invoice_number.strip():
+                    invoice_obj = Invoice.from_dict(inv_data)
+                    break
+        except Exception as e:
+            log.warning("edit_invoice_by_number load error: %s", e)
+
+        if invoice_obj is None:
+            QtWidgets.QMessageBox.warning(
+                self, "Invoice Not Found",
+                f"Invoice {invoice_number} could not be loaded.\n"
+                "Please edit it directly from Invoice History.",
+            )
+            return
+
+        # Populate the form — same steps as InvoiceHistoryViewWidget.edit_invoice
+        self.clear_all_items()
+        self.clear_client_information()
+
+        for combo_name in ('client_combo', 'line_items_client_combo'):
+            if hasattr(self, combo_name):
+                c = getattr(self, combo_name)
+                c.blockSignals(True)
+                idx = c.findText(invoice_obj.client_name)
+                if idx >= 0:
+                    c.setCurrentIndex(idx)
+                else:
+                    c.setEditText(invoice_obj.client_name)
+                c.blockSignals(False)
+
+        if hasattr(self, 'client_email_edit'):
+            self.client_email_edit.setText(invoice_obj.client_email)
+        if hasattr(self, 'client_address_edit'):
+            self.client_address_edit.setPlainText(invoice_obj.client_address)
+        self.update_invoice_client_summary(
+            invoice_obj.client_name, invoice_obj.client_email, invoice_obj.client_address)
+
+        try:
+            inv_date = QtCore.QDate.fromString(invoice_obj.date, "MM-dd-yyyy")
+            due_date = QtCore.QDate.fromString(invoice_obj.due_date, "MM-dd-yyyy")
+            if inv_date.isValid() and hasattr(self, 'date_edit'):
+                self.date_edit.setDate(inv_date)
+            if due_date.isValid() and hasattr(self, 'due_date_edit'):
+                self.due_date_edit.setDate(due_date)
+        except Exception:
+            pass
+
+        self.invoice.invoice_number = invoice_obj.invoice_number
+        self.invoice_no_edit.setText(invoice_obj.invoice_number)
+        # Preserve the existing invoice status so Payment Status label shows correctly
+        self.invoice.status        = invoice_obj.status or 'Unpaid'
+        self.invoice.received_date = invoice_obj.received_date or 'N/A'
+        self._ps_base_status       = invoice_obj.status or 'Unpaid'
+        # Store paid amount so update_totals can recalculate dynamically if amounts change
+        if (invoice_obj.status or '').strip() == 'Paid':
+            self._editing_invoice_paid_amount = float(invoice_obj.total)
+        else:
+            self._editing_invoice_paid_amount = 0.0
+
+        if hasattr(self, 'tax_spin'):
+            self.tax_spin.setValue(float(invoice_obj.tax_rate))
+        if hasattr(self, 'notes_edit'):
+            self.notes_edit.setPlainText(invoice_obj.notes or "")
+
+        for item in invoice_obj.items:
+            inv_item = InvoiceItem(
+                project_number=item.project_number,
+                description=item.description,
+                plant=item.plant,
+                quantity=item.quantity,
+                unit_price=float(item.unit_price),
+                down_payment=float(item.down_payment),
+                payment_category=item.payment_category,
+            )
+            self.add_item_row(inv_item)
+            last_row = self.item_rows[-1] if getattr(self, "item_rows", None) else None
+            if last_row and item.payment_category:
+                stage = ItemRowWidget.normalize_payment_label(item.payment_category) or item.payment_category
+                if hasattr(last_row, "lock_to_stage"):
+                    last_row.lock_to_stage(stage)
+                if hasattr(last_row, "update_total"):
+                    last_row.update_total()
+
+        self.update_totals()
+        # Mark as editing so Generate PDF is always enabled for existing invoices
+        self._editing_existing_invoice = True
+        QtCore.QTimer.singleShot(150, self._update_pdf_btn_state)
+        if hasattr(self, 'statusBar'):
+            self.statusBar().showMessage(
+                f"Editing invoice {invoice_obj.invoice_number} — modify and click Generate PDF or Save Invoice.",
+                8000,
+            )
+
+    def _sync_invoice_revenue_after_save(self, invoice_snapshot: 'Invoice'):
+        """Update the balance sheet revenue entry for a saved/edited invoice."""
+        try:
+            self.save_invoice_as_revenue(invoice_snapshot)
+        except Exception as e:
+            log.warning("_sync_invoice_revenue_after_save error: %s", e)
+            self.refresh_balance_sheet_after_invoice()
+
+    def _link_unlinked_payments_to_invoice(
+            self, invoice_number: str, project_numbers: list):
+        """Bind every payment-tracker record that has no invoice_number yet
+        (for the given projects) to this invoice, then sync each one to the
+        balance sheet as an is_payment=True revenue entry.
+
+        Called immediately when a new invoice is saved so that payments that
+        were recorded before the invoice was created are correctly reflected
+        in the annual financial summary without needing stage-label matching.
+        """
+        try:
+            from payment_tracker import get_payment_tracker
+            tracker = get_payment_tracker()
+            tracker._load_payments()
+            linked = 0
+            for pn in project_numbers:
+                for pay in tracker.get_project_payments(pn):
+                    if not (pay.invoice_number or '').strip():
+                        tracker.update_payment(
+                            pay.payment_id, invoice_number=invoice_number)
+                        linked += 1
+            if linked:
+                log.info(
+                    "Linked %d pre-invoice payment(s) to invoice %s",
+                    linked, invoice_number)
+        except Exception as e:
+            log.warning("_link_unlinked_payments_to_invoice error: %s", e)
+
+    def _trigger_post_save_payment_sync(self, invoice_number: str, items: list):
+        """After an invoice is saved, link any pre-existing project payments to it
+        and recalculate only THAT invoice's status via _auto_sync_invoice_statuses.
+
+        Passing target_invoice ensures old invoices for the same projects are
+        never touched — only the freshly saved invoice is processed.
+        """
+        try:
+            project_numbers = list({
+                str(it.project_number).strip()
+                for it in items
+                if getattr(it, "project_number", "")
+            })
+            if not project_numbers:
+                return
+            # Immediately link all unlinked payments for these projects to this
+            # invoice so that _auto_sync_invoice_statuses (500 ms later) finds
+            # them already bound and correctly updates paid_amount / status.
+            self._link_unlinked_payments_to_invoice(invoice_number, project_numbers)
+            project_tab = getattr(self, "project_tab", None)
+            if project_tab and hasattr(project_tab, "_auto_sync_invoice_statuses"):
+                for pn in project_numbers:
+                    QtCore.QTimer.singleShot(
+                        500,
+                        lambda p=pn, inv=invoice_number: project_tab._auto_sync_invoice_statuses(
+                            p, target_invoice=inv
+                        ),
+                    )
+            # Refresh the balance sheet AFTER _auto_sync_invoice_statuses (500 ms)
+            # has written the updated paid_amount / status / has_payment_entries
+            # back to Firebase so the UI reads the correct values.
+            QtCore.QTimer.singleShot(750, self.refresh_balance_sheet_after_invoice)
+        except Exception as e:
+            log.warning("_trigger_post_save_payment_sync error: %s", e)
+
+    def save_invoice_as_revenue(self, invoice: Invoice, _skip_ui_refresh: bool = False):
         """Save invoice as revenue entry in balance sheet with due date"""
         try:
             log.info("  Attempting to save invoice %s as revenue...", invoice.invoice_number)
@@ -7065,10 +8912,73 @@ class MainWindow(QtWidgets.QMainWindow):
                             break
             
             total_down_payments = sum(item.down_payment for item in invoice.items)
-            paid_amount = Currency.quantize(total_down_payments)
-            unpaid_amount = Currency.quantize(invoice.total)
-            revenue_status = "Partially Paid" if paid_amount > 0 and unpaid_amount > 0 else "Unpaid"
-            down_payment_received_date = invoice.date if paid_amount > 0 else "N/A"
+            paid_amount_dp = Currency.quantize(total_down_payments)
+
+            # Check payment tracker for pre-existing payments for this invoice's
+            # projects — payments recorded before the invoice was created are
+            # already in memory and give us the true paid amount + received date.
+            _tracker_paid = Decimal('0')
+            _tracker_received_date = "N/A"
+            try:
+                from payment_tracker import get_payment_tracker as _get_pt
+                _pt = _get_pt()
+                _date_fmts = ("%Y-%m-%d", "%m-%d-%Y", "%m/%d/%Y")
+                _best_dt = None
+                _best_ds = "N/A"
+                for _item in invoice.items:
+                    _pn = str(getattr(_item, 'project_number', '') or '').strip()
+                    if not _pn:
+                        continue
+                    for _pay in _pt.get_project_payments(_pn):
+                        if (_pay.payment_stage or '').strip().lower() == 'tax':
+                            continue
+                        # Only count payments linked to THIS invoice or unlinked payments.
+                        # Payments for other invoices on the same project must not inflate
+                        # this invoice's paid amount and falsely mark it as "Paid".
+                        _pay_inv = (getattr(_pay, 'invoice_number', '') or '').strip()
+                        if _pay_inv and _pay_inv != invoice.invoice_number:
+                            continue
+                        _tracker_paid += _pay.amount
+                        _d = _pay.payment_date or ''
+                        for _fmt in _date_fmts:
+                            try:
+                                _dt = datetime.strptime(_d, _fmt)
+                                if _best_dt is None or _dt > _best_dt:
+                                    _best_dt = _dt
+                                    _best_ds = _d
+                                break
+                            except (ValueError, TypeError):
+                                pass
+                _tracker_received_date = _best_ds
+            except Exception as _pe:
+                log.warning("save_invoice_as_revenue: payment lookup error: %s", _pe)
+
+            # Use the larger of invoice down-payments or tracker payments
+            paid_amount = max(paid_amount_dp, Currency.quantize(float(_tracker_paid)))
+            unpaid_amount = max(Currency.quantize(invoice.total) - paid_amount, Decimal('0'))
+            invoice_total_d = Currency.quantize(invoice.total)
+
+            if paid_amount >= invoice_total_d > 0:
+                revenue_status = "Paid"
+                received_date = _tracker_received_date if _tracker_received_date != "N/A" else invoice.date
+            elif paid_amount > 0:
+                revenue_status = "Partially Paid"
+                received_date = _tracker_received_date if _tracker_received_date != "N/A" else invoice.date
+            else:
+                revenue_status = "Unpaid"
+                received_date = "N/A"
+
+            # When UPDATING an existing revenue entry that was already "Paid", preserve
+            # that status only if the stored paid amount still covers the new invoice total.
+            # If the user raised the total above what was paid, downgrade to "Partially Paid".
+            if existing_revenue and existing_revenue.get('status') == 'Paid' and revenue_status != 'Paid':
+                _ex_paid = float(existing_revenue.get('paid_amount', 0) or 0)
+                _new_total = float(invoice.total)
+                if _ex_paid >= _new_total > 0:
+                    revenue_status = 'Paid'
+                    received_date = existing_revenue.get('received_date', invoice.date) or invoice.date
+
+            down_payment_received_date = received_date
 
             # CRITICAL: Create revenue entry with DUE DATE from invoice
             revenue_entry = {
@@ -7080,18 +8990,18 @@ class MainWindow(QtWidgets.QMainWindow):
                 'down_payment_amount': str(float(paid_amount)),
                 'down_payment_received_date': down_payment_received_date,
                 'date': invoice.date,
-                'due_date': invoice.due_date,  # <<<=== ADD THIS LINE - Save due date
+                'due_date': invoice.due_date,
                 'invoice_number': invoice.invoice_number,
                 'status': revenue_status,
-                'received_date': getattr(invoice, 'received_date', 'N/A'),
+                'received_date': received_date,
                 'is_invoice': True,
                 'year': year,
-                'updated_at': datetime.now().isoformat()
+                'updated_at': datetime.now(timezone.utc).isoformat()
             }
             
             if existing_revenue:
                 # Update existing revenue
-                revenue_entry['created_at'] = existing_revenue.get('created_at', datetime.now().isoformat())
+                revenue_entry['created_at'] = existing_revenue.get('created_at', datetime.now(timezone.utc).isoformat())
                 revenue_entry['firebase_id'] = existing_revenue_id
                 
                 from firebase_admin import db
@@ -7100,7 +9010,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 log.info("UPDATED revenue entry for invoice %s", invoice.invoice_number)
             else:
                 # Create new revenue entry
-                revenue_entry['created_at'] = datetime.now().isoformat()
+                revenue_entry['created_at'] = datetime.now(timezone.utc).isoformat()
                 from balance_sheet_tab import BalanceSheetFirebaseManager
                 success = BalanceSheetFirebaseManager.save_revenue(revenue_entry)
                 
@@ -7120,8 +9030,10 @@ class MainWindow(QtWidgets.QMainWindow):
             log.info("  - Due Date: %s", invoice.due_date)
             log.info("  - Year: %s", year)
             
-            # Refresh the balance sheet data immediately
-            self.refresh_balance_sheet_after_invoice()
+            # Refresh the balance sheet data immediately (skip when called from a
+            # background thread — Qt UI must only be updated from the main thread)
+            if not _skip_ui_refresh:
+                self.refresh_balance_sheet_after_invoice()
             return True
             
         except Exception as e:
@@ -7131,38 +9043,21 @@ class MainWindow(QtWidgets.QMainWindow):
             return False
             
     def refresh_balance_sheet_after_invoice(self):
-        """Force refresh balance sheet data after invoice creation or status change"""
+        """Refresh balance sheet after invoice creation — runs Firebase fetch in background."""
         try:
             if not hasattr(self, 'balance_sheet_tab'):
                 return
-            
             balance_tab = self.balance_sheet_tab
-            
-            # Reload ALL financial data from Firebase
-            balance_tab.load_all_financial_data()
-            
-            # Reload annual summary data for current year
-            balance_tab.load_annual_summary_data_for_year(balance_tab.annual_summary_year)
-            
-            # Also reload for the transaction table year if different
-            if balance_tab.current_year != balance_tab.annual_summary_year:
-                balance_tab.load_annual_summary_data_for_year(balance_tab.current_year)
-            
-            # Update the annual summary table
-            balance_tab.update_annual_summary()
-            
-            # Refresh the current transaction table view
-            balance_tab.on_category_changed(balance_tab.current_category)
-            
-            # Update stats cards
-            balance_tab.update_stats_cards()
-            
-            log.info("Balance sheet fully refreshed after invoice operation")
-            
+            import threading as _threading
+            def _bg():
+                try:
+                    balance_tab._fetch_data_background()
+                except Exception as _e:
+                    log.warning("bg balance sheet fetch error: %s", _e)
+                QtCore.QTimer.singleShot(0, balance_tab._apply_fetched_data_ui)
+            _threading.Thread(target=_bg, daemon=True).start()
         except Exception as e:
             log.warning("Error refreshing balance sheet: %s", e)
-            import traceback
-            traceback.print_exc()
 
     def clear_client_information(self):
         """Clear all client information fields"""
@@ -7251,8 +9146,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 "contact_person": "",
                 "phone": "",
                 "company_email": "",
-                "created_at": datetime.now().isoformat(),
-                "updated_at": datetime.now().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
                 "auto_saved": True
             }
             
@@ -7383,18 +9278,14 @@ class MainWindow(QtWidgets.QMainWindow):
         return dlg.exec_() == QtWidgets.QDialog.Accepted
 
     def closeEvent(self, event):
-        """Handle application close with confirmation"""
+        """Show confirmation popup; if user confirms, exit immediately."""
         if getattr(self, "_logging_out", False):
             event.accept()
             return
-
-        # Show professional confirmation dialog
         if self.confirm_close():
-            # User confirmed exit
-            log.info("Exiting PIMS...")
-            event.accept()
+            import os as _os
+            _os._exit(0)
         else:
-            # User cancelled exit
             event.ignore()
 
 # ====================================================================
@@ -7410,8 +9301,88 @@ def create_main_window(username: str, role: str):
     window = MainWindow(username=username, role=role)
     return window
 
+def _make_app_icon() -> QtGui.QIcon:
+    """Build a crisp 256×256 app icon: teal rounded-rect background,
+    white invoice document with fold, horizontal content lines, and a
+    small teal checkmark badge — all drawn with QPainter, no files needed."""
+    SIZE = 256
+    px = QtGui.QPixmap(SIZE, SIZE)
+    px.fill(QtCore.Qt.transparent)
+
+    p = QtGui.QPainter(px)
+    p.setRenderHint(QtGui.QPainter.Antialiasing)
+
+    # ── background ────────────────────────────────────────────────────────
+    grad = QtGui.QLinearGradient(0, 0, 0, SIZE)
+    grad.setColorAt(0.0, QtGui.QColor("#0F766E"))
+    grad.setColorAt(1.0, QtGui.QColor("#065F46"))
+    p.setBrush(QtGui.QBrush(grad))
+    p.setPen(QtCore.Qt.NoPen)
+    p.drawRoundedRect(0, 0, SIZE, SIZE, 48, 48)
+
+    # ── document body ──────────────────────────────────────────────────────
+    DX, DY, DW, DH = 62, 44, 132, 162          # document rect
+    FOLD = 32                                    # fold-corner size
+    doc_path = QtGui.QPainterPath()
+    doc_path.moveTo(DX, DY)
+    doc_path.lineTo(DX + DW - FOLD, DY)         # top edge → fold start
+    doc_path.lineTo(DX + DW, DY + FOLD)         # fold diagonal
+    doc_path.lineTo(DX + DW, DY + DH)           # right edge down
+    doc_path.lineTo(DX, DY + DH)                # bottom edge
+    doc_path.closeSubpath()
+    p.setBrush(QtGui.QColor(255, 255, 255, 245))
+    p.setPen(QtCore.Qt.NoPen)
+    p.drawPath(doc_path)
+
+    # fold triangle (slightly darker white)
+    fold_path = QtGui.QPainterPath()
+    fold_path.moveTo(DX + DW - FOLD, DY)
+    fold_path.lineTo(DX + DW - FOLD, DY + FOLD)
+    fold_path.lineTo(DX + DW, DY + FOLD)
+    fold_path.closeSubpath()
+    p.setBrush(QtGui.QColor(200, 230, 228))
+    p.drawPath(fold_path)
+
+    # ── invoice lines ──────────────────────────────────────────────────────
+    line_pen = QtGui.QPen(QtGui.QColor("#0F766E"), 7, QtCore.Qt.SolidLine, QtCore.Qt.RoundCap)
+    p.setPen(line_pen)
+    short_pen = QtGui.QPen(QtGui.QColor("#CBD5E1"), 7, QtCore.Qt.SolidLine, QtCore.Qt.RoundCap)
+
+    line_x1, line_x2_long, line_x2_short = DX + 18, DX + DW - 20, DX + DW - 58
+    for i, y in enumerate([DY + 54, DY + 76, DY + 98, DY + 120]):
+        pen = line_pen if i == 0 else short_pen
+        x2  = line_x2_long if i % 2 == 0 else line_x2_short
+        p.setPen(pen)
+        p.drawLine(line_x1, y, x2, y)
+
+    # amount line (bold, full width)
+    amt_pen = QtGui.QPen(QtGui.QColor("#0F766E"), 9, QtCore.Qt.SolidLine, QtCore.Qt.RoundCap)
+    p.setPen(amt_pen)
+    p.drawLine(line_x1, DY + 142, line_x2_long, DY + 142)
+
+    # ── checkmark badge (bottom-right) ─────────────────────────────────────
+    BX, BY, BR = SIZE - 68, SIZE - 68, 34       # badge centre x, y, radius
+    p.setBrush(QtGui.QColor("#10B981"))
+    p.setPen(QtCore.Qt.NoPen)
+    p.drawEllipse(QtCore.QPoint(BX, BY), BR, BR)
+
+    ck = QtGui.QPen(QtGui.QColor(255, 255, 255), 10, QtCore.Qt.SolidLine,
+                    QtCore.Qt.RoundCap, QtCore.Qt.RoundJoin)
+    p.setPen(ck)
+    p.drawPolyline(QtGui.QPolygon([
+        QtCore.QPoint(BX - 16, BY),
+        QtCore.QPoint(BX - 4,  BY + 13),
+        QtCore.QPoint(BX + 18, BY - 14),
+    ]))
+
+    p.end()
+    return QtGui.QIcon(px)
+
+
 def main():
     Config.setup_directories()
+    cleanup_old_backup()   # delete MABS_Invoice.bak left by the previous update
+    cleanup_temp_backups()
 
     global FIREBASE_AVAILABLE
 
@@ -7419,17 +9390,28 @@ def main():
         log.info("Firebase integration: ENABLED")
 
     app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationName("MABS Engineering - Project & Invoice Management")
+
+    # Remove the "?" (What's This) button from every dialog globally
+    _orig_qdialog_init = QtWidgets.QDialog.__init__
+    def _no_help_btn_init(self, *args, **kwargs):
+        _orig_qdialog_init(self, *args, **kwargs)
+        self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowContextHelpButtonHint)
+    QtWidgets.QDialog.__init__ = _no_help_btn_init
+
+    _co = Config.COMPANY.get("name", "MABS Engineering LLC")
+    app.setApplicationName(f"{_co} - Project & Invoice Management")
     app.setApplicationVersion("2.1")
     app.setStyle('Fusion')
+    app.setWindowIcon(_make_app_icon())
 
     from font_loader import apply_font
     FONT_FAMILY = apply_font(app)
     log.info("UI font: %s", FONT_FAMILY)
 
-    from app_theme import get_stylesheet, install_clean_dropdown_style_patch
+    from app_theme import get_stylesheet, install_clean_dropdown_style_patch, install_calendar_style_filter
     install_clean_dropdown_style_patch()
     app.setStyleSheet(get_stylesheet())
+    install_calendar_style_filter(app)
 
     # a"a" Initialize default admin ONCE here, silently, before UI a"a"
     if FIREBASE_AVAILABLE:
@@ -7472,8 +9454,39 @@ def main():
                 self.main_win = main_win
                 main_win.logout_requested.connect(self.on_logout_requested)
                 main_win.destroyed.connect(lambda _=None, window=main_win: self.on_main_closed(window))
-                main_win.showMaximized()
-                login_win.close()
+                # Wire update popup BEFORE show so window_ready signal is never missed
+                self.update_checker = UpdateChecker(parent=main_win)
+                main_win.window_ready.connect(
+                    lambda: QtCore.QTimer.singleShot(
+                        30000,
+                        lambda: self.update_checker.check_for_updates(silent=True)
+                    )
+                )
+
+                def _do_show():
+                    main_win.showMaximized()
+                    main_win.raise_()
+                    main_win.activateWindow()
+                    login_win.close()
+
+                dashboard = getattr(main_win, 'dashboard_tab', None)
+                if dashboard is not None:
+                    _shown = [False]
+                    # Fallback: open the window after 8 s even if Firebase is unreachable
+                    _fallback = QtCore.QTimer(main_win)
+                    _fallback.setSingleShot(True)
+
+                    def _do_show_once():
+                        if not _shown[0]:
+                            _shown[0] = True
+                            _fallback.stop()
+                            _do_show()
+
+                    _fallback.timeout.connect(_do_show_once)
+                    _fallback.start(8000)
+                    dashboard.data_ready.connect(_do_show_once)
+                else:
+                    _do_show()
 
             QtCore.QTimer.singleShot(0, _create_main)
 
@@ -7507,9 +9520,8 @@ def main():
 
     session = AppSession()
     session.show_login()
-    sys.exit(app.exec_())
+    exit_code = app.exec_()
+    os._exit(exit_code)
     
 if __name__ == "__main__":
     main()
-
-

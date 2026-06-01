@@ -1,10 +1,11 @@
-from PyQt5 import QtWidgets, QtCore, QtGui
+﻿from PyQt5 import QtWidgets, QtCore, QtGui
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import re
 import tempfile
 import os
+import threading
 from decimal import Decimal, ROUND_HALF_UP
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill
@@ -14,6 +15,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import inch
 from app_logger import get_logger
+from app_theme import CALENDAR_URL, CHEVRON_URL, configure_filter_button
 from template_manager import TemplateManager, TemplateDialog
 from client_intelligence import ClientIntelligence, ClientSuggestionWidget
 
@@ -48,6 +50,21 @@ def _save_local_sales_people(people: list) -> bool:
     except Exception as exc:
         _log.warning("Could not save local sales people: %s", exc)
     return False
+
+
+def _xlsx_color(hex_color: str) -> str:
+    """Return an openpyxl-safe ARGB color string."""
+    value = str(hex_color or "").strip().lstrip("#")
+    if len(value) == 6:
+        return f"FF{value.upper()}"
+    if len(value) == 8:
+        return value.upper()
+    return "FFFFFFFF"
+
+
+def _xlsx_fill(hex_color: str) -> PatternFill:
+    color = _xlsx_color(hex_color)
+    return PatternFill(start_color=color, end_color=color, fill_type="solid")
 
 
 def _load_local_clients() -> dict:
@@ -400,7 +417,10 @@ class JobFormTab(QtWidgets.QWidget):
         self.FIREBASE_AVAILABLE = firebase_available
         self.job_forms = []
         self._date_filter_active = False
-        
+        self._qf_page = 1
+        self._qf_per_page = 10
+        self._qf_all_items = []
+
         # Initialize template manager
         self.template_manager = TemplateManager()
         self.template_manager.initialize_default_templates()
@@ -611,7 +631,11 @@ class JobFormTab(QtWidgets.QWidget):
                         # Ensure plant field exists
                         if 'plant' not in job_data:
                             job_data['plant'] = ''
-                        
+
+                        # Ensure client and job_number always exist
+                        job_data.setdefault('client', '')
+                        job_data.setdefault('job_number', '')
+
                         # Check if quote number starts with Quote
                         job_num = job_data.get('job_number', '').upper()
                         if not job_num.startswith('QUOTE'):
@@ -804,7 +828,7 @@ class JobFormTab(QtWidgets.QWidget):
             if 'firebase_id' in job_data and job_data['firebase_id']:
                 # Update existing job using firebase_id
                 job_id = job_data['firebase_id']
-                job_data['updated_at'] = datetime.now().isoformat()
+                job_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                 ref.child(job_id).update(job_data)
                 _log.info("Quote form UPDATED in Firebase: %s (ID: %s)", job_data['job_number'], job_id)
                 return True
@@ -815,7 +839,7 @@ class JobFormTab(QtWidgets.QWidget):
                 if existing_jobs:
                     # Update existing job found by job_number
                     job_id = list(existing_jobs.keys())[0]
-                    job_data['updated_at'] = datetime.now().isoformat()
+                    job_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                     ref.child(job_id).update(job_data)
                     _log.info("Quote form UPDATED in Firebase by quote number: %s", job_data['job_number'])
                     return True
@@ -823,8 +847,8 @@ class JobFormTab(QtWidgets.QWidget):
                     # Create new job
                     new_job_ref = ref.push()
                     job_data['firebase_id'] = new_job_ref.key
-                    job_data['created_at'] = datetime.now().isoformat()
-                    job_data['updated_at'] = datetime.now().isoformat()
+                    job_data['created_at'] = datetime.now(timezone.utc).isoformat()
+                    job_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                     new_job_ref.set(job_data)
                     _log.info("✓Quote form CREATED in Firebase with ID: %s", new_job_ref.key)
                     return True
@@ -882,15 +906,15 @@ class JobFormTab(QtWidgets.QWidget):
                 if job.get("job_number", "").upper() == job_number.upper():
                     merged = dict(job)
                     merged.update(job_data)
-                    merged["updated_at"] = datetime.now().isoformat()
+                    merged["updated_at"] = datetime.now(timezone.utc).isoformat()
                     jobs[idx] = merged
                     saved = True
                     break
 
             if not saved:
                 local_job = dict(job_data)
-                local_job.setdefault("created_at", datetime.now().isoformat())
-                local_job["updated_at"] = datetime.now().isoformat()
+                local_job.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+                local_job["updated_at"] = datetime.now(timezone.utc).isoformat()
                 local_job["local_id"] = f"local_{job_number}"
                 jobs.append(local_job)
 
@@ -999,33 +1023,16 @@ class JobFormTab(QtWidgets.QWidget):
         self.filter_job_forms()
         
     def init_ui(self):
-        """Initialize improved professional layout with integrated search and filter"""
-        # OUTER layout (nothing is added directly into the tab)
+        """Initialize layout — no outer scroll; the table handles its own scrolling."""
         outer_layout = QtWidgets.QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
-
-        # SCROLL AREA covering the entire tab
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-
-        # SCROLL CONTAINER (this will hold all your UI)
-        container = QtWidgets.QWidget()
-        scroll.setWidget(container)
-
-        # MAIN LAYOUT inside scroll area
-        main_layout = QtWidgets.QVBoxLayout(container)
-        main_layout.setContentsMargins(24, 22, 24, 24)
-        main_layout.setSpacing(18)
-
-        # Add scroll area to the tab
-        outer_layout.addWidget(scroll)
+        outer_layout.setSpacing(0)
 
         self.workflow_tabs = QtWidgets.QTabWidget()
         self.workflow_tabs.setStyleSheet("""
             QTabWidget::pane {
                 border: none;
-                background: transparent;
+                background: #F8FAFC;
                 top: -1px;
             }
             QTabBar::tab {
@@ -1052,22 +1059,39 @@ class JobFormTab(QtWidgets.QWidget):
                 background: #F8FAFC;
             }
         """)
-        main_layout.addWidget(self.workflow_tabs)
+        outer_layout.addWidget(self.workflow_tabs)
 
+        # All Quotes tab — wrapped in a scroll area so all content is reachable
         self.all_quotes_tab = QtWidgets.QWidget()
-        self.all_quotes_layout = QtWidgets.QVBoxLayout(self.all_quotes_tab)
-        self.all_quotes_layout.setContentsMargins(0, 0, 0, 0)
-        self.all_quotes_layout.setSpacing(18)
+        _aq_outer = QtWidgets.QVBoxLayout(self.all_quotes_tab)
+        _aq_outer.setContentsMargins(0, 0, 0, 0)
+        _aq_outer.setSpacing(0)
+        _aq_scroll = QtWidgets.QScrollArea()
+        _aq_scroll.setWidgetResizable(True)
+        _aq_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        _aq_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        _aq_scroll.setStyleSheet(
+            "QScrollArea { background: #F6F8FB; border: none; }"
+            "QScrollBar:vertical { width: 8px; background: #F1F5F9; border-radius: 4px; }"
+            "QScrollBar::handle:vertical { background: #CBD5E1; border-radius: 4px; min-height: 30px; }"
+            "QScrollBar::handle:vertical:hover { background: #94A3B8; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }"
+        )
+        _aq_inner = QtWidgets.QWidget()
+        _aq_inner.setStyleSheet("background: #F6F8FB;")
+        self.all_quotes_layout = QtWidgets.QVBoxLayout(_aq_inner)
+        self.all_quotes_layout.setContentsMargins(18, 14, 18, 14)
+        self.all_quotes_layout.setSpacing(12)
+        _aq_scroll.setWidget(_aq_inner)
+        _aq_outer.addWidget(_aq_scroll)
+
         self.workflow_tabs.addTab(self.all_quotes_tab, "All Quotes")
         self.workflow_tabs.addTab(self._build_new_quote_tab(), "New Quote")
         self.workflow_tabs.addTab(self._build_sales_people_tab(), "Sales People")
         self.workflow_tabs.addTab(self._build_export_tab(), "Export")
         self.workflow_tabs.currentChanged.connect(self._on_workflow_tab_changed)
 
-        # Compact actions and metrics. The app top bar already shows the page title.
         self.create_stats_section(self.all_quotes_layout)
-
-        # Quote forms Table Section (Below search/filter)
         self.create_job_forms_table_section(self.all_quotes_layout)
 
     def _on_workflow_tab_changed(self, index: int):
@@ -1083,6 +1107,24 @@ class JobFormTab(QtWidgets.QWidget):
             reload_sales = getattr(self, "_reload_sales_people", None)
             if callable(reload_sales):
                 reload_sales()
+        elif label == "Export":
+            exp_dlg = getattr(self, "embedded_export", None)
+            if exp_dlg:
+                # Scroll back to top
+                p = exp_dlg.parent()
+                if isinstance(p, QtWidgets.QScrollArea):
+                    p.verticalScrollBar().setValue(0)
+                # Refresh record counts and recent exports
+                try:
+                    exp_dlg.refresh_recent_exports()
+                    exp_dlg._refresh_export_filter_options("pdf")
+                    exp_dlg._refresh_export_filter_options("excel")
+                    if hasattr(exp_dlg, '_excel_rec_lbl'):
+                        exp_dlg._excel_rec_lbl.setText(f"{len(self.job_forms or [])} Quotes")
+                    if hasattr(exp_dlg, '_pdf_rec_lbl'):
+                        exp_dlg._pdf_rec_lbl.setText(f"{len(self.job_forms or [])} Quotes")
+                except Exception:
+                    pass
 
     def create_header_section(self, layout):
         header_frame = QtWidgets.QFrame()
@@ -1282,7 +1324,7 @@ class JobFormTab(QtWidgets.QWidget):
         def after_saved():
             self.load_job_forms_from_firebase()
             self.workflow_tabs.setCurrentIndex(0)
-            QtCore.QTimer.singleShot(100, self._rebuild_full_quote_form)
+            QtCore.QTimer.singleShot(400, self._rebuild_full_quote_form)
 
         form.accept = after_saved
         try:
@@ -1316,319 +1358,526 @@ class JobFormTab(QtWidgets.QWidget):
         layout.addWidget(self.embedded_quote_form)
 
     def _build_sales_people_tab(self):
-        page = QtWidgets.QFrame()
-        page.setStyleSheet("""
-            QFrame {
-                background: #FFFFFF;
-                border: 1px solid #DCE4EC;
-                border-radius: 10px;
-            }
-        """)
-        layout = QtWidgets.QVBoxLayout(page)
-        layout.setContentsMargins(24, 22, 24, 24)
-        layout.setSpacing(14)
+        _AVATAR_PAL = [
+            ("#3B82F6", "#FFFFFF"), ("#10B981", "#FFFFFF"), ("#6366F1", "#FFFFFF"),
+            ("#F59E0B", "#FFFFFF"), ("#EF4444", "#FFFFFF"), ("#8B5CF6", "#FFFFFF"),
+            ("#EC4899", "#FFFFFF"), ("#14B8A6", "#FFFFFF"),
+        ]
 
-        header = QtWidgets.QLabel("Sales People")
-        header.setStyleSheet("font-size:20px; font-weight:900; color:#111827; background:transparent; border:none;")
-        layout.addWidget(header)
+        def _av_color(name):
+            return _AVATAR_PAL[hash(name or "?") % len(_AVATAR_PAL)]
 
-        form = QtWidgets.QHBoxLayout()
-        form.setSpacing(10)
-        name_edit = QtWidgets.QLineEdit()
-        phone_edit = QtWidgets.QLineEdit()
-        email_edit = QtWidgets.QLineEdit()
-        for edit, placeholder in [
-            (name_edit, "Name"),
-            (phone_edit, "Phone"),
-            (email_edit, "Email"),
-        ]:
-            edit.setPlaceholderText(placeholder)
-            edit.setMinimumHeight(38)
-            edit.setStyleSheet("""
-                QLineEdit {
-                    background: #FFFFFF;
-                    border: 1.5px solid #DCE4EC;
-                    border-radius: 8px;
-                    padding: 8px 12px;
-                    font-size: 13px;
-                }
-                QLineEdit:focus { border-color: #0F766E; }
-            """)
-            form.addWidget(edit, 1)
+        def _initials(name):
+            parts = str(name or "").split()
+            return (parts[0][0] + parts[-1][0]).upper() if len(parts) >= 2 else str(name or "?")[:2].upper()
 
-        save_btn = QtWidgets.QPushButton("Save")
-        save_btn.setFixedSize(100, 38)
-        save_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        save_btn.setStyleSheet("""
+        page = QtWidgets.QWidget()
+        page.setStyleSheet("QWidget { background: #F8FAFC; }")
+        outer = QtWidgets.QVBoxLayout(page)
+        outer.setContentsMargins(32, 24, 32, 24)
+        outer.setSpacing(18)
+
+        # ── Header ────────────────────────────────────────────────
+        hdr = QtWidgets.QHBoxLayout()
+        tc = QtWidgets.QVBoxLayout()
+        tc.setSpacing(3)
+        t1 = QtWidgets.QLabel("Sales People")
+        t1.setStyleSheet(
+            "font-size:22px; font-weight:900; color:#111827;"
+            " background:transparent; border:none; font-family:'Inter','Segoe UI';"
+        )
+        t2 = QtWidgets.QLabel("Manage your sales team and their contact information")
+        t2.setStyleSheet(
+            "font-size:13px; color:#6B7280; background:transparent; border:none;"
+            " font-family:'Inter','Segoe UI';"
+        )
+        tc.addWidget(t1)
+        tc.addWidget(t2)
+        add_btn = QtWidgets.QPushButton("+ Add Sales Person")
+        add_btn.setFixedHeight(40)
+        add_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        add_btn.setStyleSheet("""
             QPushButton {
-                background:#0F766E;
-                color:white;
-                border:none;
-                border-radius:8px;
-                font-size:13px;
-                font-weight:800;
+                background:#0F766E; color:white; border:none; border-radius:8px;
+                font-size:13px; font-weight:800; padding:0 20px;
+                font-family:'Inter','Segoe UI';
             }
             QPushButton:hover { background:#115E59; }
         """)
+        hdr.addLayout(tc)
+        hdr.addStretch()
+        hdr.addWidget(add_btn)
+        outer.addLayout(hdr)
 
-        cancel_edit_btn = QtWidgets.QPushButton("Cancel")
-        cancel_edit_btn.setFixedSize(80, 38)
-        cancel_edit_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        cancel_edit_btn.setVisible(False)
-        cancel_edit_btn.setStyleSheet("""
-            QPushButton {
-                background:#F1F5F9;
-                color:#475569;
-                border:1.5px solid #CBD5E1;
-                border-radius:8px;
-                font-size:13px;
-                font-weight:700;
+        # ── Search bar ────────────────────────────────────────────
+        scard = QtWidgets.QFrame()
+        scard.setStyleSheet(
+            "QFrame { background:white; border:1px solid #E2E8F0; border-radius:10px; }"
+        )
+        sl = QtWidgets.QHBoxLayout(scard)
+        sl.setContentsMargins(16, 10, 16, 10)
+        sl.setSpacing(10)
+
+        unified_search = QtWidgets.QLineEdit()
+        unified_search.setPlaceholderText("🔍  Search by name, phone, or email...")
+        unified_search.setMinimumHeight(40)
+        unified_search.setStyleSheet("""
+            QLineEdit {
+                background:white; border:1.5px solid #E2E8F0; border-radius:8px;
+                padding:9px 12px; font-size:13px; color:#374151;
+                font-family:'Inter','Segoe UI';
             }
-            QPushButton:hover { background:#E2E8F0; }
+            QLineEdit:focus { border-color:#0F766E; }
         """)
 
-        form.addWidget(save_btn)
-        form.addWidget(cancel_edit_btn)
-        layout.addLayout(form)
+        sp_count_lbl = QtWidgets.QLabel("0 Sales")
+        sp_count_lbl.setFixedHeight(40)
+        sp_count_lbl.setMinimumWidth(90)
+        sp_count_lbl.setStyleSheet("""
+            QLabel {
+                background:#F1F5F9; border:1px solid #E2E8F0; border-radius:7px;
+                color:#475569; font-size:12px; font-weight:700;
+                font-family:'Inter','Segoe UI'; padding:0 14px;
+            }
+        """)
 
-        _editing = {"person": None}  # mutable dict so nested functions can write to it
+        sl.addWidget(unified_search, 1)
+        sl.addWidget(sp_count_lbl)
+        outer.addWidget(scard)
 
+        # ── Table ─────────────────────────────────────────────────
         table = QtWidgets.QTableWidget()
         table.setColumnCount(4)
-        table.setHorizontalHeaderLabels(["Name", "Phone", "Email", "Actions"])
+        table.setHorizontalHeaderLabels(["NAME", "PHONE", "EMAIL", "ACTIONS"])
         table.verticalHeader().setVisible(False)
         table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        table.setFocusPolicy(QtCore.Qt.NoFocus)
         table.setStyleSheet("""
             QTableWidget {
-                background:#FFFFFF;
-                border:1px solid #E2E8F0;
-                border-radius:10px;
-                gridline-color:#EEF2F6;
-                font-size:13px;
+                background:white; border:1px solid #E2E8F0; border-radius:10px;
+                gridline-color:#F1F5F9; font-size:13px; font-family:'Inter','Segoe UI';
             }
-            QTableWidget::item { padding:8px 10px; }
+            QTableWidget::item { padding:0; color:#1E293B; border-bottom:1px solid #F1F5F9; }
+            QTableWidget::item:selected { background:#F0FDF9; color:#111827; }
             QHeaderView::section {
-                background:#1F2937;
-                color:white;
-                padding:10px;
-                border:none;
-                font-weight:800;
+                background:#F8FAFC; color:#6B7280; padding:10px 16px;
+                border:none; border-bottom:1px solid #E2E8F0;
+                font-weight:700; font-size:12px; font-family:'Inter','Segoe UI';
             }
         """)
-        # Set all columns Fixed first (same pattern as quotes table), then Stretch 0-2
-        for _c in range(4):
-            table.horizontalHeader().setSectionResizeMode(_c, QtWidgets.QHeaderView.Fixed)
-        table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-        table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
-        table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
+        for c in range(3):
+            table.horizontalHeader().setSectionResizeMode(c, QtWidgets.QHeaderView.Stretch)
+        table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.Fixed)
         table.setColumnWidth(3, 160)
-        table.verticalHeader().setDefaultSectionSize(56)
-        layout.addWidget(table, 1)
+        table.verticalHeader().setDefaultSectionSize(64)
+        outer.addWidget(table, 1)
         self.sales_people_table = table
 
+        # ── Footer ────────────────────────────────────────────────
+        ftr = QtWidgets.QHBoxLayout()
+        count_lbl = QtWidgets.QLabel("Showing 0 entries")
+        count_lbl.setStyleSheet(
+            "font-size:13px; color:#6B7280; background:transparent; border:none;"
+            " font-family:'Inter','Segoe UI';"
+        )
+        _pg_s = """
+            QPushButton {
+                background:white; color:#374151; border:1px solid #E2E8F0;
+                border-radius:6px; font-size:13px; font-weight:700;
+            }
+            QPushButton:hover { background:#F8FAFC; }
+            QPushButton:disabled { color:#D1D5DB; background:#F9FAFB; }
+        """
+        prev_btn = QtWidgets.QPushButton("<")
+        prev_btn.setFixedSize(32, 32)
+        prev_btn.setStyleSheet(_pg_s)
+        prev_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        _sp_page_btns_w = QtWidgets.QWidget()
+        _sp_page_btns_w.setStyleSheet("background:transparent;")
+        self._sp_page_btns_layout = QtWidgets.QHBoxLayout(_sp_page_btns_w)
+        self._sp_page_btns_layout.setContentsMargins(0, 0, 0, 0)
+        self._sp_page_btns_layout.setSpacing(4)
+        next_btn = QtWidgets.QPushButton(">")
+        next_btn.setFixedSize(32, 32)
+        next_btn.setStyleSheet(_pg_s)
+        next_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        ftr.addWidget(count_lbl)
+        ftr.addStretch()
+        ftr.addWidget(prev_btn)
+        ftr.addWidget(_sp_page_btns_w)
+        ftr.addWidget(next_btn)
+        outer.addLayout(ftr)
+
+        # ── State ─────────────────────────────────────────────────
         self._sales_people = []
+        self._sp_filtered = []
+        self._sp_page = 0
+        _PER_PAGE = 10
 
-        def load_sales():
-            self._sales_people = []
-            if self.FIREBASE_AVAILABLE:
-                try:
-                    from main import FirebaseManager
-                    self._sales_people = FirebaseManager.load_sales_people()
-                except Exception as exc:
-                    _log.warning("Error loading sales people: %s", exc)
-            else:
-                self._sales_people = _load_local_sales_people()
-            self._sales_people.sort(key=lambda p: p.get("name", "").lower())
-            table.setRowCount(len(self._sales_people))
-            for row, person in enumerate(self._sales_people):
-                table.setRowHeight(row, 56)
-                for col, key in enumerate(("name", "phone", "email")):
-                    item = QtWidgets.QTableWidgetItem(person.get(key, "") or "-")
-                    item.setTextAlignment(QtCore.Qt.AlignCenter)
-                    table.setItem(row, col, item)
-                action_cell = QtWidgets.QWidget()
-                action_layout = QtWidgets.QHBoxLayout(action_cell)
-                action_layout.setContentsMargins(8, 4, 8, 4)
-                action_layout.setAlignment(QtCore.Qt.AlignCenter)
+        # ── Render page ───────────────────────────────────────────
+        def render_page(filtered, page_no=0):
+            self._sp_filtered = filtered
+            self._sp_page = page_no
+            total = len(filtered)
+            start = page_no * _PER_PAGE
+            end = min(start + _PER_PAGE, total)
+            visible = filtered[start:end]
+            table.setRowCount(len(visible))
 
-                actions_btn = QtWidgets.QPushButton("Actions  ▾")
-                actions_btn.setFixedSize(110, 30)
-                actions_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-                actions_btn.setStyleSheet("""
+            for row, person in enumerate(visible):
+                table.setRowHeight(row, 64)
+                name = person.get("name", "") or ""
+                phone = person.get("phone", "") or ""
+                email = person.get("email", "") or ""
+
+                # Col 0: Avatar + Name
+                cw0 = QtWidgets.QWidget()
+                cw0.setStyleSheet("background:transparent;")
+                cl0 = QtWidgets.QHBoxLayout(cw0)
+                cl0.setContentsMargins(12, 0, 12, 0)
+                cl0.setSpacing(10)
+                bg, fg = _av_color(name)
+                av = QtWidgets.QLabel(_initials(name))
+                av.setFixedSize(38, 38)
+                av.setAlignment(QtCore.Qt.AlignCenter)
+                av.setStyleSheet(
+                    f"background:{bg}; color:{fg}; border-radius:19px;"
+                    " font-size:13px; font-weight:900; font-family:'Inter','Segoe UI';"
+                )
+                nm = QtWidgets.QLabel(name)
+                nm.setStyleSheet(
+                    "font-size:13px; font-weight:600; color:#111827;"
+                    " background:transparent; border:none; font-family:'Inter','Segoe UI';"
+                )
+                cl0.addWidget(av)
+                cl0.addWidget(nm)
+                cl0.addStretch()
+                table.setCellWidget(row, 0, cw0)
+
+                # Col 1: Phone
+                cw1 = QtWidgets.QWidget()
+                cw1.setStyleSheet("background:transparent;")
+                cl1 = QtWidgets.QHBoxLayout(cw1)
+                cl1.setContentsMargins(16, 0, 16, 0)
+                cl1.setSpacing(6)
+                pi = QtWidgets.QLabel("✆")
+                pi.setStyleSheet("color:#10B981; font-size:14px; background:transparent; border:none;")
+                pl = QtWidgets.QLabel(phone if phone and phone != "-" else "—")
+                pl.setStyleSheet(
+                    "font-size:13px; color:#374151; background:transparent;"
+                    " border:none; font-family:'Inter','Segoe UI';"
+                )
+                cl1.addWidget(pi)
+                cl1.addWidget(pl)
+                cl1.addStretch()
+                table.setCellWidget(row, 1, cw1)
+
+                # Col 2: Email
+                cw2 = QtWidgets.QWidget()
+                cw2.setStyleSheet("background:transparent;")
+                cl2 = QtWidgets.QHBoxLayout(cw2)
+                cl2.setContentsMargins(16, 0, 16, 0)
+                cl2.setSpacing(6)
+                ei = QtWidgets.QLabel("✉")
+                ei.setStyleSheet("color:#6B7280; font-size:14px; background:transparent; border:none;")
+                el = QtWidgets.QLabel(email or "—")
+                el.setStyleSheet(
+                    "font-size:13px; color:#374151; background:transparent;"
+                    " border:none; font-family:'Inter','Segoe UI';"
+                )
+                cl2.addWidget(ei)
+                cl2.addWidget(el)
+                cl2.addStretch()
+                table.setCellWidget(row, 2, cw2)
+
+                # Col 3: Actions button
+                cw3 = QtWidgets.QWidget()
+                cw3.setStyleSheet("background:transparent;")
+                cl3 = QtWidgets.QHBoxLayout(cw3)
+                cl3.setContentsMargins(16, 0, 16, 0)
+                cl3.setAlignment(QtCore.Qt.AlignCenter)
+                ab = QtWidgets.QPushButton("Actions  ▾")
+                ab.setFixedSize(110, 32)
+                ab.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+                ab.setStyleSheet("""
                     QPushButton {
-                        background:#F8FAFC;
-                        color:#1E293B;
-                        border:1.5px solid #E2E8F0;
-                        border-radius:7px;
-                        font-size:12px;
-                        font-weight:700;
-                        font-family:'Inter','Segoe UI';
-                        padding: 0 8px;
+                        background:white; color:#1E293B; border:1.5px solid #E2E8F0;
+                        border-radius:7px; font-size:12px; font-weight:700;
+                        font-family:'Inter','Segoe UI'; padding:0 8px;
                     }
                     QPushButton:hover { background:#F1F5F9; border-color:#CBD5E1; }
                 """)
 
-                def _show_menu(checked=False, b=actions_btn, p=person):
-                    menu = QtWidgets.QMenu(b)
-                    menu.setStyleSheet("""
-                        QMenu {
-                            background:white; border:1px solid #E2E8F0;
-                            border-radius:8px; padding:4px 0;
-                            font-family:'Inter','Segoe UI'; font-size:13px;
-                        }
+                def _menu(checked=False, b=ab, p=person):
+                    m = QtWidgets.QMenu(b)
+                    m.setStyleSheet("""
+                        QMenu { background:white; border:1px solid #E2E8F0; border-radius:8px;
+                                padding:4px 0; font-family:'Inter','Segoe UI'; font-size:13px; }
                         QMenu::item { padding:9px 20px; color:#1E293B; }
                         QMenu::item:selected { background:#EFF6FF; color:#1D4ED8; }
                         QMenu::separator { height:1px; background:#EEF2F6; margin:3px 8px; }
                     """)
-                    edit_a = QtWidgets.QAction("✏️  Edit", menu)
-                    edit_a.triggered.connect(lambda: start_edit(p))
-                    del_a  = QtWidgets.QAction("🗑️  Delete", menu)
-                    del_a.triggered.connect(lambda: delete_sales(p))
-                    menu.addAction(edit_a)
-                    menu.addSeparator()
+                    ea = QtWidgets.QAction("✏️  Edit", m)
+                    ea.triggered.connect(lambda: open_dialog(p))
+                    da = QtWidgets.QAction("🗑️  Delete", m)
+                    da.triggered.connect(lambda: delete_sp(p))
+                    m.addAction(ea)
+                    m.addSeparator()
                     if p.get("user_uid") and not p.get("firebase_id"):
-                        edit_a.setEnabled(False)
-                        edit_a.setText("Edit in Settings")
-                        del_a.setEnabled(False)
-                        del_a.setText("Delete in Settings")
-                    menu.addAction(del_a)
-                    menu.exec_(b.mapToGlobal(QtCore.QPoint(0, b.height())))
+                        ea.setEnabled(False)
+                        da.setEnabled(False)
+                    m.addAction(da)
+                    m.exec_(b.mapToGlobal(QtCore.QPoint(0, b.height())))
 
-                actions_btn.clicked.connect(_show_menu)
-                action_layout.addWidget(actions_btn)
-                table.setCellWidget(row, 3, action_cell)
+                ab.clicked.connect(_menu)
+                cl3.addWidget(ab)
+                table.setCellWidget(row, 3, cw3)
 
-            for widget in (
+            if total == 0:
+                count_lbl.setText("No entries found")
+            else:
+                count_lbl.setText(f"Showing {start + 1} to {end} of {total} entries")
+            while self._sp_page_btns_layout.count():
+                _it = self._sp_page_btns_layout.takeAt(0)
+                if _it.widget():
+                    _it.widget().deleteLater()
+            _max_pg = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+            _pg_num = page_no + 1
+            _win_start = max(1, min(_pg_num, _max_pg - 2))
+            for _p in range(_win_start, min(_win_start + 3, _max_pg + 1)):
+                _pb = QtWidgets.QPushButton(str(_p))
+                _pb.setFixedSize(32, 32)
+                _pb.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+                if _p == _pg_num:
+                    _pb.setStyleSheet("""QPushButton {
+                        background:#0F766E; color:white; border:none; border-radius:6px;
+                        font-size:13px; font-weight:800;
+                    }
+                    QPushButton:hover { background:#115E59; color:white; }""")
+                else:
+                    _pb.setStyleSheet(_pg_s)
+                    _pb.clicked.connect(lambda _, pg=_p: render_page(self._sp_filtered, pg - 1))
+                self._sp_page_btns_layout.addWidget(_pb)
+            prev_btn.setEnabled(page_no > 0)
+            next_btn.setEnabled(end < total)
+
+        # ── Search ────────────────────────────────────────────────
+        def apply_search():
+            q = unified_search.text().strip().lower()
+            filtered = [
+                sp for sp in self._sales_people
+                if (not q
+                    or q in (sp.get("name", "") or "").lower()
+                    or q in (sp.get("phone", "") or "").lower()
+                    or q in (sp.get("email", "") or "").lower())
+            ]
+            total = len(filtered)
+            sp_count_lbl.setText(f"{total} Sale{'s' if total != 1 else ''}")
+            render_page(filtered, 0)
+
+        unified_search.textChanged.connect(apply_search)
+
+        # ── Load ──────────────────────────────────────────────────
+        def load_sales():
+            try:
+                if self.FIREBASE_AVAILABLE:
+                    from main import FirebaseManager
+                    data = FirebaseManager.load_sales_people()
+                else:
+                    data = _load_local_sales_people()
+            except Exception as exc:
+                _log.warning("Error loading sales people: %s", exc)
+                data = list(getattr(self, '_sales_people', None) or [])
+            self._sales_people = sorted(
+                data, key=lambda sp: (sp.get("name", "") or "").lower())
+            apply_search()
+            for wid in (
                 getattr(self, "embedded_quote_form", None),
                 getattr(getattr(self, "main_window", None), "project_tab", None),
             ):
-                if widget and hasattr(widget, "load_sales_persons"):
-                    widget.load_sales_persons()
+                if wid and hasattr(wid, "load_sales_persons"):
+                    wid.load_sales_persons()
 
-        def start_edit(person):
-            """Populate the form with existing person data for editing."""
-            _editing["person"] = person
-            name_edit.setText(person.get("name", ""))
-            phone_edit.setText(person.get("phone", "") or "")
-            email_edit.setText(person.get("email", "") or "")
-            save_btn.setText("Update")
-            save_btn.setStyleSheet("""
-                QPushButton {
-                    background:#2563EB;
-                    color:white;
-                    border:none;
-                    border-radius:8px;
-                    font-size:13px;
-                    font-weight:800;
+        # ── Add / Edit dialog ─────────────────────────────────────
+        def open_dialog(person=None):
+            dlg = QtWidgets.QDialog(self)
+            dlg.setWindowTitle("Edit Sales Person" if person else "Add Sales Person")
+            dlg.setMinimumWidth(420)
+            dlg.setModal(True)
+            dlg.setStyleSheet("QDialog { background:white; }")
+            vl = QtWidgets.QVBoxLayout(dlg)
+            vl.setContentsMargins(24, 20, 24, 20)
+            vl.setSpacing(14)
+            ttl = QtWidgets.QLabel("Edit Sales Person" if person else "Add Sales Person")
+            ttl.setStyleSheet(
+                "font-size:17px; font-weight:900; color:#111827;"
+                " font-family:'Inter','Segoe UI';"
+            )
+            vl.addWidget(ttl)
+            _FLD = """
+                QLineEdit {
+                    background:white; border:1.5px solid #E2E8F0; border-radius:8px;
+                    padding:9px 12px; font-size:13px; color:#374151;
+                    font-family:'Inter','Segoe UI';
                 }
-                QPushButton:hover { background:#1D4ED8; }
+                QLineEdit:focus { border-color:#0F766E; }
+            """
+
+            def _row(lbl_t, ph, val=""):
+                rw = QtWidgets.QWidget()
+                rw.setStyleSheet("background:transparent;")
+                rl = QtWidgets.QVBoxLayout(rw)
+                rl.setContentsMargins(0, 0, 0, 0)
+                rl.setSpacing(4)
+                l = QtWidgets.QLabel(lbl_t)
+                l.setStyleSheet(
+                    "font-size:12px; font-weight:700; color:#374151; background:transparent;"
+                )
+                e = QtWidgets.QLineEdit()
+                e.setPlaceholderText(ph)
+                e.setText(val)
+                e.setMinimumHeight(40)
+                e.setStyleSheet(_FLD)
+                rl.addWidget(l)
+                rl.addWidget(e)
+                return rw, e
+
+            nrw, ne = _row("Name *", "Enter full name", person.get("name", "") if person else "")
+            prw, pe = _row("Phone", "Enter phone number", (person.get("phone", "") or "") if person else "")
+            erw, ee = _row("Email", "Enter email address", person.get("email", "") if person else "")
+            vl.addWidget(nrw)
+            vl.addWidget(prw)
+            vl.addWidget(erw)
+
+            _dlg_fields = [ne, pe, ee]
+
+            def _dlg_ef(obj, event):
+                if event.type() == QtCore.QEvent.KeyPress and event.key() in (
+                    QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter
+                ):
+                    if obj in _dlg_fields:
+                        nxt = _dlg_fields[(_dlg_fields.index(obj) + 1) % len(_dlg_fields)]
+                        nxt.setFocus()
+                        nxt.selectAll()
+                        return True
+                return False
+
+            for _w in _dlg_fields:
+                _w.installEventFilter(dlg)
+            dlg.eventFilter = _dlg_ef
+
+            br = QtWidgets.QHBoxLayout()
+            c_btn = QtWidgets.QPushButton("Cancel")
+            c_btn.setFixedHeight(38)
+            c_btn.setStyleSheet("""
+                QPushButton { background:#F1F5F9; color:#475569; border:1.5px solid #CBD5E1;
+                              border-radius:8px; font-size:13px; font-weight:700; padding:0 20px; }
+                QPushButton:hover { background:#E2E8F0; }
             """)
-            cancel_edit_btn.setVisible(True)
-            name_edit.setFocus()
-
-        def cancel_edit():
-            """Reset form back to add-new mode."""
-            _editing["person"] = None
-            name_edit.clear()
-            phone_edit.clear()
-            email_edit.clear()
-            save_btn.setText("Save")
-            save_btn.setStyleSheet("""
-                QPushButton {
-                    background:#0F766E;
-                    color:white;
-                    border:none;
-                    border-radius:8px;
-                    font-size:13px;
-                    font-weight:800;
-                }
+            c_btn.clicked.connect(dlg.reject)
+            s_btn = QtWidgets.QPushButton("Update" if person else "Save")
+            s_btn.setFixedHeight(38)
+            s_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+            s_btn.setStyleSheet("""
+                QPushButton { background:#0F766E; color:white; border:none; border-radius:8px;
+                              font-size:13px; font-weight:800; padding:0 20px; }
                 QPushButton:hover { background:#115E59; }
             """)
-            cancel_edit_btn.setVisible(False)
 
-        cancel_edit_btn.clicked.connect(cancel_edit)
-
-        def save_sales():
-            name = name_edit.text().strip()
-            if not name:
-                QtWidgets.QMessageBox.warning(self, "Sales People", "Name is required.")
-                return
-
-            person_data = {
-                "name": name,
-                "phone": phone_edit.text().strip() or "-",
-                "email": email_edit.text().strip(),
-                "updated_at": datetime.now().isoformat(),
-            }
-
-            if self.FIREBASE_AVAILABLE:
-                try:
-                    from main import db
-                    editing = _editing["person"]
-                    if editing and editing.get("firebase_id"):
-                        # Update existing record
-                        db.reference(f'/sales_persons/{editing["firebase_id"]}').update(person_data)
-                    else:
-                        # Create new record
-                        ref = db.reference('/sales_persons').push()
-                        person_data["firebase_id"] = ref.key
-                        person_data["created_at"] = datetime.now().isoformat()
-                        ref.set(person_data)
-                except Exception as exc:
-                    _log.warning("Error saving sales person: %s", exc)
-                    QtWidgets.QMessageBox.critical(self, "Sales People", f"Could not save: {exc}")
+            def do_save():
+                name = ne.text().strip()
+                if not name:
+                    QtWidgets.QMessageBox.warning(dlg, "Sales People", "Name is required.")
                     return
-            else:
-                people = _load_local_sales_people()
-                editing = _editing["person"]
-                if editing and editing.get("local_id"):
-                    person_data["local_id"] = editing["local_id"]
-                    person_data["created_at"] = editing.get("created_at", person_data["updated_at"])
-                    people = [
-                        person_data if person.get("local_id") == editing["local_id"] else person
-                        for person in people
-                    ]
+                pd_data = {
+                    "name": name,
+                    "phone": pe.text().strip() or "-",
+                    "email": ee.text().strip(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+                if self.FIREBASE_AVAILABLE:
+                    try:
+                        from main import db
+                        if person and person.get("firebase_id"):
+                            db.reference(f'/sales_persons/{person["firebase_id"]}').update(pd_data)
+                        else:
+                            ref = db.reference('/sales_persons').push()
+                            pd_data["firebase_id"] = ref.key
+                            pd_data["created_at"] = datetime.now(timezone.utc).isoformat()
+                            ref.set(pd_data)
+                    except Exception as exc:
+                        QtWidgets.QMessageBox.critical(dlg, "Sales People", f"Could not save: {exc}")
+                        return
                 else:
-                    person_data["local_id"] = datetime.now().strftime("%Y%m%d%H%M%S%f")
-                    person_data["created_at"] = person_data["updated_at"]
-                    people.append(person_data)
-                if not _save_local_sales_people(people):
-                    QtWidgets.QMessageBox.critical(self, "Sales People", "Could not save local sales people file.")
-                    return
+                    people = _load_local_sales_people()
+                    if person and person.get("local_id"):
+                        pd_data["local_id"] = person["local_id"]
+                        pd_data["created_at"] = person.get("created_at", pd_data["updated_at"])
+                        people = [
+                            pd_data if p.get("local_id") == person["local_id"] else p
+                            for p in people
+                        ]
+                    else:
+                        pd_data["local_id"] = datetime.now().strftime("%Y%m%d%H%M%S%f")
+                        pd_data["created_at"] = pd_data["updated_at"]
+                        people.append(pd_data)
+                    if not _save_local_sales_people(people):
+                        QtWidgets.QMessageBox.critical(dlg, "Sales People", "Could not save local file.")
+                        return
+                dlg.accept()
+                load_sales()
 
-            cancel_edit()
-            load_sales()
+            s_btn.clicked.connect(do_save)
+            br.addStretch()
+            br.addWidget(c_btn)
+            br.addWidget(s_btn)
+            vl.addLayout(br)
+            dlg.exec_()
 
-        def delete_sales(person):
+        # ── Delete ────────────────────────────────────────────────
+        def delete_sp(person):
             if self.FIREBASE_AVAILABLE and person.get("firebase_id"):
                 try:
                     from main import db
                     db.reference(f'/sales_persons/{person["firebase_id"]}').delete()
                 except Exception as exc:
-                    _log.warning("Error deleting sales person: %s", exc)
                     QtWidgets.QMessageBox.critical(self, "Sales People", f"Could not delete: {exc}")
                     return
             elif person.get("local_id"):
                 people = [
-                    item for item in _load_local_sales_people()
-                    if item.get("local_id") != person.get("local_id")
+                    i for i in _load_local_sales_people()
+                    if i.get("local_id") != person.get("local_id")
                 ]
                 if not _save_local_sales_people(people):
-                    QtWidgets.QMessageBox.critical(self, "Sales People", "Could not update local sales people file.")
+                    QtWidgets.QMessageBox.critical(self, "Sales People", "Could not update local file.")
                     return
             load_sales()
 
-        save_btn.clicked.connect(save_sales)
+        # ── Wire up ───────────────────────────────────────────────
+        add_btn.clicked.connect(lambda: open_dialog())
+        prev_btn.clicked.connect(lambda: render_page(self._sp_filtered, self._sp_page - 1))
+        next_btn.clicked.connect(lambda: render_page(self._sp_filtered, self._sp_page + 1))
+
         self._reload_sales_people = load_sales
         QtCore.QTimer.singleShot(0, load_sales)
         return page
 
     def _build_export_tab(self):
-        page = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        # Use a scroll area so the export dialog always fills from the top
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                background: #F8FAFC;
+                border: none;
+            }
+            QScrollArea > QWidget > QWidget {
+                background: #F8FAFC;
+            }
+        """)
 
         self.embedded_export = JobFormsExportDialog(self, [])
         self.embedded_export.setWindowFlags(QtCore.Qt.Widget)
@@ -1637,6 +1886,8 @@ class JobFormTab(QtWidgets.QWidget):
             QtWidgets.QSizePolicy.Expanding,
             QtWidgets.QSizePolicy.Expanding,
         )
+        self.embedded_export.setMinimumHeight(820)
+        scroll.setWidget(self.embedded_export)
 
         def run_embedded_export():
             params = getattr(self.embedded_export, "_export_params", None)
@@ -1657,8 +1908,7 @@ class JobFormTab(QtWidgets.QWidget):
         self.embedded_export.cancel_btn.setText("Back to Quotes")
         self.embedded_export.cancel_btn.clicked.connect(lambda: self.workflow_tabs.setCurrentIndex(0))
 
-        layout.addWidget(self.embedded_export)
-        return page
+        return scroll
 
     def perform_job_forms_excel_export(self, export_params):
         """Perform Excel export for quote forms - LOWEST TO HIGHEST ORDER"""
@@ -1727,6 +1977,14 @@ class JobFormTab(QtWidgets.QWidget):
                         year = export_params["year"]
                         if job_datetime.year == year:
                             include_job = True
+
+                    if include_job:
+                        status_filter = export_params.get("status", "All Status")
+                        client_filter = export_params.get("client", "All Clients")
+                        if status_filter != "All Status" and job.get("status", "Not Started") != status_filter:
+                            include_job = False
+                        if client_filter != "All Clients" and job.get("client", "") != client_filter:
+                            include_job = False
                     
                     if include_job:
                         jobs_to_export.append(job)
@@ -1841,13 +2099,22 @@ class JobFormTab(QtWidgets.QWidget):
                     num3_value        # 0-999
                 )
             
-            # Sort using the key function (LOWEST to HIGHEST)
-            jobs_to_export.sort(key=job_number_sort_key_low_to_high)
-            
+            def _received_date_sort_key(job):
+                for field in ('start_date', 'created_at'):
+                    raw = job.get(field, '') or ''
+                    date_part = raw.split('T')[0] if 'T' in raw else raw
+                    for fmt in ("%m-%d-%Y", "%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y"):
+                        try:
+                            return datetime.strptime(date_part, fmt)
+                        except ValueError:
+                            continue
+                return datetime.min
+
+            jobs_to_export.sort(key=_received_date_sort_key)
+
             _log.debug("Excel export order (first 10): %s",
                        [j.get('job_number') for j in jobs_to_export[:10]])
 
-            # Generate the combined Excel with LOWEST to HIGHEST order
             self.generate_job_forms_combined_excel(jobs_to_export, export_params)
                 
         except Exception as e:
@@ -1955,15 +2222,15 @@ class JobFormTab(QtWidgets.QWidget):
                 if 'firebase_id' in person_data and person_data['firebase_id']:
                     # Update existing
                     person_id = person_data['firebase_id']
-                    person_data['updated_at'] = datetime.now().isoformat()
+                    person_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                     ref.child(person_id).update(person_data)
                     _log.info("Sales person updated in Firebase: %s", person_data.get('name'))
                 else:
                     # Create new
                     new_ref = ref.push()
                     person_data['firebase_id'] = new_ref.key
-                    person_data['created_at'] = datetime.now().isoformat()
-                    person_data['updated_at'] = datetime.now().isoformat()
+                    person_data['created_at'] = datetime.now(timezone.utc).isoformat()
+                    person_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                     new_ref.set(person_data)
                     _log.info("Sales person created in Firebase: %s", person_data.get('name'))
                 
@@ -2036,23 +2303,9 @@ class JobFormTab(QtWidgets.QWidget):
         form_layout.addRow("Email:", email_edit)
         
         add_layout.addWidget(form_group)
-        
-        # Store input widgets for Enter key navigation loop
+
         input_widgets = [name_edit, phone_edit, email_edit]
 
-        def handle_enter_navigation():
-            for i in range(len(input_widgets)):
-                current = input_widgets[i]
-                next_widget = input_widgets[(i + 1) % len(input_widgets)]  # LOOP
-                
-                def move_next(w=next_widget):
-                    w.setFocus()
-                    w.selectAll()
-                
-                current.returnPressed.connect(move_next)
-
-        handle_enter_navigation()
-        
         # Button layout
         button_layout = QHBoxLayout()
         button_layout.setSpacing(8)
@@ -2144,11 +2397,27 @@ class JobFormTab(QtWidgets.QWidget):
                 border-color: #3498db;
             }
         """)
-        search_edit.setFixedWidth(300)
+        search_edit.setMinimumHeight(38)
+
+        sales_count_lbl = QtWidgets.QLabel("0 Sales")
+        sales_count_lbl.setStyleSheet("""
+            QLabel {
+                background: #f1f5f9;
+                border: 1px solid #e2e8f0;
+                border-radius: 7px;
+                color: #475569;
+                font-size: 12px;
+                font-weight: 700;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+                padding: 0 14px;
+            }
+        """)
+        sales_count_lbl.setFixedHeight(38)
+        sales_count_lbl.setMinimumWidth(80)
 
         search_layout = QHBoxLayout()
-        search_layout.addWidget(search_edit)
-        search_layout.addStretch()
+        search_layout.addWidget(search_edit, 1)
+        search_layout.addWidget(sales_count_lbl)
         view_layout.addLayout(search_layout)
         
         # Table with action buttons
@@ -2225,6 +2494,8 @@ class JobFormTab(QtWidgets.QWidget):
             """Display sales persons in table"""
             persons = list(reversed(persons))
             table.setRowCount(len(persons))
+            n = len(persons)
+            sales_count_lbl.setText(f"{n} Sale{'s' if n != 1 else ''}")
             
             for row, person in enumerate(persons):
                 name_item = QTableWidgetItem(person.get('name', '-') if person.get('name') else "-")
@@ -2512,14 +2783,15 @@ class JobFormTab(QtWidgets.QWidget):
 
             # Header information - CLEAN VERSION WITHOUT STATISTICS
             ws.merge_cells('A1:I1')  # Changed to I1 for 9 columns
-            ws['A1'] = "MABS ENGINEERING LLC - QUOTE FORMS REPORT"
+            try:
+                from main import Config as _Cfg
+                _co_name = _Cfg.COMPANY.get('name', 'MABS Engineering LLC').upper()
+            except Exception:
+                _co_name = 'MABS ENGINEERING LLC'
+            ws['A1'] = f"{_co_name} - QUOTE FORMS REPORT"
             ws['A1'].font = Font(size=16, bold=True)
             ws['A1'].alignment = Alignment(horizontal='center')
 
-            # Date info only
-            generated_date = datetime.now().strftime("%m-%d-%Y")  # Changed to MM-dd-YYYY
-            ws['A2'] = f"Generated: {generated_date}"
-            
             # Export range info
             if export_params["range"] == "all":
                 export_range_text = "All Quote Forms"
@@ -2536,19 +2808,19 @@ class JobFormTab(QtWidgets.QWidget):
                 year = export_params["year"]
                 export_range_text = f"Year {year}"
             
-            ws['A3'] = f"Period: {export_range_text}"
+            ws['A2'] = f"Period: {export_range_text}"
 
-            # Table headers - start at row 5 (leaving space after header)
+            # Table headers - start at row 4 (one row closer after removing Generated line)
             # Added Sales column (9 columns total)
-            headers = ["S.No.", "Quote Number", "Project Name", "Client", "Sales", "Start Date", "Due Date", "Cost", "Status"]  # Changed "Start Date" to "Created Date"
+            headers = ["S.No.", "Quote Number", "Project Name", "Client", "Sales", "Start Date", "Due Date", "Cost", "Status"]
             for col, header in enumerate(headers, 1):
-                cell = ws.cell(row=5, column=col, value=header)
+                cell = ws.cell(row=4, column=col, value=header)
                 cell.font = Font(bold=True)
-                cell.fill = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
+                cell.fill = _xlsx_fill("D9D9D9")
                 cell.alignment = Alignment(horizontal='center')
 
             # Job data
-            for row_idx, job in enumerate(jobs, 6):  # Start at row 6 (after headers)
+            for row_idx, job in enumerate(jobs, 5):  # Start at row 5 (after headers)
                 # Parse creation date
                 # Parse start date
                 start_date = job.get('start_date', '')
@@ -2576,7 +2848,7 @@ class JobFormTab(QtWidgets.QWidget):
                         due_date_formatted = due_date
                 
                 data = [
-                    row_idx - 5,  # Sequential number
+                    row_idx - 4,  # Sequential number
                     job.get('job_number', ''),
                     job.get('project_name', ''),  # Changed from job_title to project_name
                     job.get('client', ''),
@@ -2594,17 +2866,17 @@ class JobFormTab(QtWidgets.QWidget):
                     # Style for sequential number column - SMALLER WIDTH
                     if col == 1:
                         cell.font = Font(bold=True)
-                        cell.fill = PatternFill(start_color="#F0F8FF", end_color="#F0F8FF", fill_type="solid")  # Light blue
+                        cell.fill = _xlsx_fill("F0F8FF")  # Light blue
                     
                     # Style for status column
                     if col == 9:  # Status column (now column 9)
                         status = str(value).lower()
                         if 'completed' in status:
-                            cell.fill = PatternFill(start_color="#E8F5E9", end_color="#E8F5E9", fill_type="solid")  # Light green
+                            cell.fill = _xlsx_fill("E8F5E9")  # Light green
                         elif 'urgent' in status or 'high' in status:
-                            cell.fill = PatternFill(start_color="#FFEBEE", end_color="#FFEBEE", fill_type="solid")  # Light red
+                            cell.fill = _xlsx_fill("FFEBEE")  # Light red
                         elif 'cancel' in status:
-                            cell.fill = PatternFill(start_color="#F5F5F5", end_color="#F5F5F5", fill_type="solid")  # Light gray
+                            cell.fill = _xlsx_fill("F5F5F5")  # Light gray
 
             # Auto-adjust column widths - with specific width for S.No. column
             column_widths = {
@@ -2645,27 +2917,44 @@ class JobFormTab(QtWidgets.QWidget):
                         cell = ws.cell(row=row, column=col)
                         # Don't override existing fills
                         if cell.fill.start_color.index == '00000000':  # Default fill
-                            cell.fill = PatternFill(start_color="#F9F9F9", end_color="#F9F9F9", fill_type="solid")
+                            cell.fill = _xlsx_fill("F9F9F9")
 
             # Save the workbook
             wb.save(str(excel_path))
 
             # Open the Excel file
             if self.open_job_form_pdf_file(excel_path):
-                QtWidgets.QMessageBox.information(self, "Export Success", 
+                QtWidgets.QMessageBox.information(self, "Export Success",
                                                 f"✅ Excel exported successfully!\n\n"
                                                 f"File saved to: {excel_path}\n"
                                                 f"The Excel file has been opened automatically.")
             else:
-                QtWidgets.QMessageBox.information(self, "Export Success", 
+                QtWidgets.QMessageBox.information(self, "Export Success",
                                                 f"✅ Excel exported successfully!\n\n"
                                                 f"File saved to: {excel_path}\n"
                                                 f"Could not open automatically. Please open manually.")
-                    
+
+            # Save to export history and refresh dialog
+            try:
+                exp_dlg = getattr(self, 'embedded_export', None)
+                if exp_dlg:
+                    scope_map = {"all": "All Quote Forms", "date_range": "Date Range",
+                                 "month": "By Month", "year": "By Year"}
+                    scope = scope_map.get(export_params.get("range", "all"), "All Quote Forms")
+                    if export_params.get("range") == "date_range":
+                        fd = export_params.get("from_date")
+                        td = export_params.get("to_date")
+                        if fd and td:
+                            scope = f"Date Range ({fd.strftime('%b %d, %Y')} - {td.strftime('%b %d, %Y')})"
+                    exp_dlg._save_export_entry("Excel", scope, len(jobs_to_export), str(excel_path))
+                    exp_dlg.refresh_recent_exports()
+            except Exception:
+                pass
+
         except Exception as e:
             _log.warning("Error generating combined Excel: %s", e)
             _log.exception("Traceback:")
-            QtWidgets.QMessageBox.critical(self, "Excel Generation Error", 
+            QtWidgets.QMessageBox.critical(self, "Excel Generation Error",
                                         f"Error generating Excel: {str(e)}")
             
     def perform_job_forms_pdf_export(self, export_params):
@@ -2735,6 +3024,14 @@ class JobFormTab(QtWidgets.QWidget):
                         year = export_params["year"]
                         if job_datetime.year == year:
                             include_job = True
+
+                    if include_job:
+                        status_filter = export_params.get("status", "All Status")
+                        client_filter = export_params.get("client", "All Clients")
+                        if status_filter != "All Status" and job.get("status", "Not Started") != status_filter:
+                            include_job = False
+                        if client_filter != "All Clients" and job.get("client", "") != client_filter:
+                            include_job = False
                     
                     if include_job:
                         jobs_to_export.append(job)
@@ -2842,13 +3139,22 @@ class JobFormTab(QtWidgets.QWidget):
                     num3_value
                 )
             
-            # Sort using the key function (LOWEST to HIGHEST)
-            jobs_to_export.sort(key=job_number_sort_key_low_to_high)
-            
+            def _received_date_sort_key(job):
+                for field in ('start_date', 'created_at'):
+                    raw = job.get(field, '') or ''
+                    date_part = raw.split('T')[0] if 'T' in raw else raw
+                    for fmt in ("%m-%d-%Y", "%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y"):
+                        try:
+                            return datetime.strptime(date_part, fmt)
+                        except ValueError:
+                            continue
+                return datetime.min
+
+            jobs_to_export.sort(key=_received_date_sort_key)
+
             _log.debug("PDF export order (first 10): %s",
                        [j.get('job_number') for j in jobs_to_export[:10]])
 
-            # Generate the combined PDF with LOWEST to HIGHEST order
             self.generate_job_forms_combined_pdf(jobs_to_export, export_params)
                     
         except Exception as e:
@@ -2887,15 +3193,15 @@ class JobFormTab(QtWidgets.QWidget):
             pdf_path = export_dir / filename
 
             # Create PDF document
-            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.pagesizes import landscape, A4
             from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
             from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
             from reportlab.lib import colors
             from reportlab.lib.units import inch
-            
-            doc = SimpleDocTemplate(str(pdf_path), pagesize=A4, 
+
+            doc = SimpleDocTemplate(str(pdf_path), pagesize=landscape(A4),
                                 topMargin=0.2*inch, bottomMargin=0.2*inch,
-                                leftMargin=1.5*inch, rightMargin=1.5*inch)
+                                leftMargin=0.3*inch, rightMargin=0.3*inch)
             elements = []
 
             # Get styles
@@ -2946,21 +3252,22 @@ class JobFormTab(QtWidgets.QWidget):
                 fontName='Helvetica-Bold'
             )
 
-            # 1. Header table with MABS Engineering LLC (centered) and Date (right)
-            generated_date = datetime.now().strftime("%m/%d/%Y")
-            header_data = [
-                [Paragraph("MABS Engineering LLC", mabs_header_style), 
-                Paragraph(f"{generated_date}", date_style)]
-            ]
-
-            header_table = Table(header_data, colWidths=[6.5*inch, 1.5*inch])
+            # 1. Company name — full-width centered so short or long names stay balanced
+            try:
+                from main import Config as _Cfg
+                _co_display = _Cfg.COMPANY.get('name', 'MABS Engineering LLC')
+            except Exception:
+                _co_display = 'MABS Engineering LLC'
+            avail_w = 9.5*inch + 1.59*inch  # total usable width
+            header_table = Table(
+                [[Paragraph(_co_display, mabs_header_style)]],
+                colWidths=[avail_w]
+            )
             header_table.setStyle(TableStyle([
-                ('ALIGN', (0, 0), (0, 0), 'CENTER'),
-                ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
                 ('TOPPADDING', (0, 0), (-1, -1), 5),
-                ('LEFTPADDING', (0,0), (0,0), 93),
             ]))
 
             elements.append(header_table)
@@ -3011,7 +3318,7 @@ class JobFormTab(QtWidgets.QWidget):
             
             info_data = [[Paragraph(f"{export_range_text}", info_style)]]
 
-            info_table = Table(info_data, colWidths=[7.5 * inch])
+            info_table = Table(info_data, colWidths=[11.09 * inch])
             info_table.setStyle(TableStyle([
                 ('ALIGN', (0, 0), (0, 0), 'LEFT'),
                 ('LEFTPADDING', (0, 0), (0, 0), 0),
@@ -3024,28 +3331,33 @@ class JobFormTab(QtWidgets.QWidget):
 
             # 5. Quote Forms Table with sequential numbers in ASCENDING order (LOWEST to HIGHEST)
             if jobs:
-                table_data = [["S.No.", "Quote Number", "Project Name", "Client", "Cost", "Status"]]
-                
+                table_data = [["S.No.", "Quote Number", "Project Name", "Client", "Sales", "Cost", "Status"]]
+
+                cell_s = ParagraphStyle('CellS', parent=styles['Normal'],
+                    fontName='Helvetica', fontSize=7, leading=9, alignment=1,
+                    textColor=colors.HexColor('#2c3e50'))
+
                 # Add sequential numbers for FIFO order clarity (already sorted LOWEST to HIGHEST)
                 for idx, job in enumerate(jobs, 1):
-                    # Add row with sequential number
                     table_data.append([
-                        str(idx),  # Sequential number
-                        job.get('job_number', ''),
-                        job.get('project_name', '')[:35] + "..." if len(job.get('project_name', '')) > 35 else job.get('project_name', ''),
-                        job.get('client', '')[:30] + "..." if len(job.get('client', '')) > 30 else job.get('client', ''),
-                        job.get('engineering_costs', ''),
-                        job.get('status', '')
+                        Paragraph(str(idx), cell_s),
+                        Paragraph(str(job.get('job_number', '') or ''), cell_s),
+                        Paragraph(str(job.get('project_name', '') or ''), cell_s),
+                        Paragraph(str(job.get('client', '') or ''), cell_s),
+                        Paragraph(str(job.get('sales', '') or ''), cell_s),
+                        Paragraph(str(job.get('engineering_costs', '') or ''), cell_s),
+                        Paragraph(str(job.get('status', '') or ''), cell_s),
                     ])
                 
-                # Create table with optimized column widths for better space utilization
+                # Column widths for landscape A4 (available ~11.09 inches)
                 col_widths = [
                     0.4*inch,   # S.No.
                     1.2*inch,   # Quote Number
-                    2.0*inch,   # Job Title (more space)
-                    1.8*inch,   # Client (more space)
-                    0.9*inch,   # Cost
-                    1.1*inch    # Status
+                    2.5*inch,   # Project Name
+                    2.0*inch,   # Client
+                    1.8*inch,   # Sales
+                    1.0*inch,   # Cost
+                    1.5*inch,   # Status
                 ]
                 
                 job_table = Table(table_data, colWidths=col_widths)
@@ -3093,20 +3405,37 @@ class JobFormTab(QtWidgets.QWidget):
 
             # Open the PDF file
             if self.open_job_form_pdf_file(pdf_path):
-                QtWidgets.QMessageBox.information(self, "Export Success", 
+                QtWidgets.QMessageBox.information(self, "Export Success",
                                                 f"✅ PDF exported successfully!\n\n"
                                                 f"File saved to: {pdf_path}\n"
                                                 f"The PDF has been opened automatically.")
             else:
-                QtWidgets.QMessageBox.information(self, "Export Success", 
+                QtWidgets.QMessageBox.information(self, "Export Success",
                                                 f"✅ PDF exported successfully!\n\n"
                                                 f"File saved to: {pdf_path}\n"
                                                 f"Could not open automatically. Please open manually.")
-                        
+
+            # Save to export history and refresh dialog
+            try:
+                exp_dlg = getattr(self, 'embedded_export', None)
+                if exp_dlg:
+                    scope_map = {"all": "All Quote Forms", "date_range": "Date Range",
+                                 "month": "By Month", "year": "By Year"}
+                    scope = scope_map.get(export_params.get("range", "all"), "All Quote Forms")
+                    if export_params.get("range") == "date_range":
+                        fd = export_params.get("from_date")
+                        td = export_params.get("to_date")
+                        if fd and td:
+                            scope = f"Date Range ({fd.strftime('%b %d, %Y')} - {td.strftime('%b %d, %Y')})"
+                    exp_dlg._save_export_entry("PDF", scope, len(jobs_to_export), str(pdf_path))
+                    exp_dlg.refresh_recent_exports()
+            except Exception:
+                pass
+
         except Exception as e:
             _log.warning("Error generating combined PDF: %s", e)
             _log.exception("Traceback:")
-            QtWidgets.QMessageBox.critical(self, "PDF Generation Error", 
+            QtWidgets.QMessageBox.critical(self, "PDF Generation Error",
                                         f"Error generating PDF: {str(e)}")
         
     def open_job_form_pdf_file(self, file_path):
@@ -3139,8 +3468,8 @@ class JobFormTab(QtWidgets.QWidget):
         """)
 
         main_layout = QtWidgets.QHBoxLayout(stats_frame)
-        main_layout.setContentsMargins(18, 14, 18, 14)
-        main_layout.setSpacing(12)
+        main_layout.setContentsMargins(20, 16, 18, 16)
+        main_layout.setSpacing(16)
         main_layout.setAlignment(QtCore.Qt.AlignVCenter)
 
         title_col = QtWidgets.QVBoxLayout()
@@ -3199,7 +3528,7 @@ class JobFormTab(QtWidgets.QWidget):
         cards_layout = QtWidgets.QHBoxLayout()
         cards_layout.setSpacing(10)
         for title, val, color in [
-            ("Total Jobs",    str(total_jobs),                           "#2563EB"),
+            ("Total Quotes",  str(total_jobs),                           "#2563EB"),
             ("High Priority", str(high_priority_count),                  "#B45309"),
             ("Completed",     str(completed_count),                      "#0F766E"),
             ("Total Value",   f"${total_value:,.0f}",                    "#7C3AED"),
@@ -3207,7 +3536,7 @@ class JobFormTab(QtWidgets.QWidget):
         ]:
             card = self.create_invoice_style_stat_card(title, val, color)
             value_label = getattr(card, "value_label", None)
-            if title == "Total Jobs":
+            if title == "Total Quotes":
                 self.total_jobs_label = value_label
             elif title == "High Priority":
                 self.high_priority_label = value_label
@@ -3218,15 +3547,18 @@ class JobFormTab(QtWidgets.QWidget):
             elif title == "Win Rate":
                 self.win_rate_label = value_label
             cards_layout.addWidget(card)
-        main_layout.addLayout(cards_layout)
+        main_layout.addLayout(cards_layout, 1)
 
         self.new_quote_tab_btn = _stat_btn("New Quote", "#0F766E", "#115E59")
         self.new_quote_tab_btn.clicked.connect(lambda: self.workflow_tabs.setCurrentIndex(1))
-        main_layout.addWidget(self.new_quote_tab_btn)
-
         self.export_tab_btn = _stat_btn("Export", "#475569", "#334155")
         self.export_tab_btn.clicked.connect(lambda: self.workflow_tabs.setCurrentIndex(3))
-        main_layout.addWidget(self.export_tab_btn)
+        action_stack = QtWidgets.QVBoxLayout()
+        action_stack.setContentsMargins(0, 0, 0, 0)
+        action_stack.setSpacing(10)
+        action_stack.addWidget(self.new_quote_tab_btn)
+        action_stack.addWidget(self.export_tab_btn)
+        main_layout.addLayout(action_stack)
 
         layout.addWidget(stats_frame)
                 
@@ -3236,14 +3568,42 @@ class JobFormTab(QtWidgets.QWidget):
             pos = event.pos()
             row = self.job_forms_table.rowAt(pos.y())
             col = self.job_forms_table.columnAt(pos.x())
-            
-            if row >= 0 and col == 7:  # Actions column
+            if row >= 0:
                 job_data = self.get_job_data_from_row(row)
                 if job_data:
-                    self.show_actions_context_menu(pos, job_data)
+                    if col == 0:
+                        self._show_copy_quote_menu(pos, job_data)
+                    else:
+                        self.show_actions_context_menu(pos, job_data)
                     return True
-        
+
         return super().eventFilter(obj, event)
+
+    def _show_copy_quote_menu(self, pos, job_data):
+        """Show copy-only context menu for the Quote # column"""
+        menu = QtWidgets.QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background: #ffffff;
+                border: 1px solid #e2e8f0;
+                border-radius: 7px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 7px 20px;
+                font-size: 13px;
+                color: #0f172a;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+                border-radius: 5px;
+            }
+            QMenu::item:selected {
+                background: #e6f6f4;
+                color: #00756f;
+            }
+        """)
+        copy_action = menu.addAction("Copy Quote Number")
+        copy_action.triggered.connect(lambda: self.copy_job_number(job_data))
+        menu.exec_(self.job_forms_table.viewport().mapToGlobal(pos))
     
     def show_actions_context_menu(self, pos, job_data):
         """Show context menu for actions"""
@@ -3266,7 +3626,7 @@ class JobFormTab(QtWidgets.QWidget):
         
         
         menu.exec_(self.job_forms_table.viewport().mapToGlobal(pos))
-    
+
     def get_job_data_from_row(self, row):
         """Get job data from table row"""
         if row < 0 or row >= len(self.job_forms):
@@ -3282,12 +3642,11 @@ class JobFormTab(QtWidgets.QWidget):
     def create_invoice_style_stat_card(self, title, value, color):
         """Stat card — white with coloured left accent bar."""
         card = QtWidgets.QFrame()
-        card.setFixedSize(130, 62)
+        card.setFixedSize(152, 72)
         card.setStyleSheet(f"""
             QFrame {{
                 background: white;
                 border: 1px solid #E2E8F0;
-                border-left: 4px solid {color};
                 border-radius: 8px;
             }}
             QFrame:hover {{
@@ -3295,14 +3654,38 @@ class JobFormTab(QtWidgets.QWidget):
                 border-color: #CBD5E1;
             }}
         """)
-        layout = QtWidgets.QVBoxLayout(card)
-        layout.setContentsMargins(12, 6, 12, 7)
-        layout.setSpacing(1)
+        layout = QtWidgets.QHBoxLayout(card)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(10)
+
+        icon = QtWidgets.QLabel()
+        icon.setFixedSize(34, 34)
+        icon.setAlignment(QtCore.Qt.AlignCenter)
+        icon.setStyleSheet(f"""
+            QLabel {{
+                background: white;
+                border: 1px solid #E2E8F0;
+                border-radius: 8px;
+                color: {color};
+                font-size: 18px;
+                font-weight: 900;
+            }}
+        """)
+        if title == "Total Quotes":
+            icon.setPixmap(self._make_briefcase_icon().pixmap(22, 22))
+        else:
+            icon_map = {
+                "High Priority": "☆",
+                "Completed": "✓",
+                "Total Value": "$",
+                "Win Rate": "↗",
+            }
+            icon.setText(icon_map.get(title, "•"))
 
         value_label = QtWidgets.QLabel(value)
         value_label.setStyleSheet(f"""
             QLabel {{
-                font-size: 21px;
+                font-size: 18px;
                 font-weight: 900;
                 color: {color};
                 font-family: 'Inter', 'Segoe UI', sans-serif;
@@ -3310,13 +3693,12 @@ class JobFormTab(QtWidgets.QWidget):
                 border: none;
             }}
         """)
-        value_label.setAlignment(QtCore.Qt.AlignCenter)
         card.value_label = value_label
 
         desc_label = QtWidgets.QLabel(title)
         desc_label.setStyleSheet("""
             QLabel {
-                font-size: 12px;
+                font-size: 11px;
                 color: #64748B;
                 font-weight: 700;
                 font-family: 'Inter', 'Segoe UI', sans-serif;
@@ -3324,10 +3706,13 @@ class JobFormTab(QtWidgets.QWidget):
                 border: none;
             }
         """)
-        desc_label.setAlignment(QtCore.Qt.AlignCenter)
+        text_col = QtWidgets.QVBoxLayout()
+        text_col.setSpacing(2)
+        text_col.addWidget(value_label)
+        text_col.addWidget(desc_label)
 
-        layout.addWidget(value_label)
-        layout.addWidget(desc_label)
+        layout.addWidget(icon)
+        layout.addLayout(text_col, 1)
         return card
     
     def show_date_range_dialog(self):
@@ -3378,11 +3763,12 @@ class JobFormTab(QtWidgets.QWidget):
                     current_to_date = QtCore.QDate.currentDate()
         
         # From Date - set display format to MM-dd-yyyy for user selection
-        self.from_date_edit = QtWidgets.QDateEdit()
-        self.from_date_edit.setDate(current_from_date)
-        self.from_date_edit.setCalendarPopup(True)
-        self.from_date_edit.setDisplayFormat("MM-dd-yyyy")
-        self.from_date_edit.setStyleSheet("""
+        # Use local variables to avoid overwriting the inline filter bar's self.from_date_edit
+        _dlg_from_date_edit = QtWidgets.QDateEdit()
+        _dlg_from_date_edit.setDate(current_from_date)
+        _dlg_from_date_edit.setCalendarPopup(True)
+        _dlg_from_date_edit.setDisplayFormat("MM-dd-yyyy")
+        _dlg_from_date_edit.setStyleSheet("""
             QDateEdit {
                 padding: 8px 12px;
                 border: 1.5px solid #e1e8ed;
@@ -3392,13 +3778,13 @@ class JobFormTab(QtWidgets.QWidget):
             }
             QDateEdit:focus { border-color: #3498db; }
         """)
-        
+
         # To Date - set display format to MM-dd-yyyy for user selection
-        self.to_date_edit = QtWidgets.QDateEdit()
-        self.to_date_edit.setDate(current_to_date)
-        self.to_date_edit.setCalendarPopup(True)
-        self.to_date_edit.setDisplayFormat("MM-dd-yyyy")
-        self.to_date_edit.setStyleSheet("""
+        _dlg_to_date_edit = QtWidgets.QDateEdit()
+        _dlg_to_date_edit.setDate(current_to_date)
+        _dlg_to_date_edit.setCalendarPopup(True)
+        _dlg_to_date_edit.setDisplayFormat("MM-dd-yyyy")
+        _dlg_to_date_edit.setStyleSheet("""
             QDateEdit {
                 padding: 8px 12px;
                 border: 1.5px solid #e1e8ed;
@@ -3408,9 +3794,9 @@ class JobFormTab(QtWidgets.QWidget):
             }
             QDateEdit:focus { border-color: #3498db; }
         """)
-        
-        form_layout.addRow("From Date:", self.from_date_edit)
-        form_layout.addRow("To Date:", self.to_date_edit)
+
+        form_layout.addRow("From Date:", _dlg_from_date_edit)
+        form_layout.addRow("To Date:", _dlg_to_date_edit)
         
         layout.addLayout(form_layout)
         
@@ -3457,10 +3843,13 @@ class JobFormTab(QtWidgets.QWidget):
         
         # Connect signals
         def apply_filter():
-            # Clear search text only, keep client and status filters
-            self.apply_date_range_filter()
+            # Pass dates from the dialog's local widgets directly so we don't
+            # need to store them on self (which would overwrite the inline filter widgets).
+            self.apply_date_range_filter(
+                _dlg_from_date_edit.date(), _dlg_to_date_edit.date()
+            )
             dialog.accept()
-        
+
         def clear_filter():
             self.clear_date_range_filter()
             dialog.accept()
@@ -3470,10 +3859,12 @@ class JobFormTab(QtWidgets.QWidget):
         
         dialog.exec_()
             
-    def apply_date_range_filter(self):
+    def apply_date_range_filter(self, from_date_qdate=None, to_date_qdate=None):
         """Apply date range filter to quote forms - displays dates in MM-DD-YY format"""
-        from_date_qdate = self.from_date_edit.date()
-        to_date_qdate = self.to_date_edit.date()
+        if from_date_qdate is None:
+            from_date_qdate = self.from_date_edit.date()
+        if to_date_qdate is None:
+            to_date_qdate = self.to_date_edit.date()
         
         # Store the actual QDate objects for later use
         self.current_from_date = from_date_qdate
@@ -3547,32 +3938,69 @@ class JobFormTab(QtWidgets.QWidget):
         
         # ✅ UPDATE CLIENT FILTER MENU
         self.update_client_filter_menu()
+
+    @staticmethod
+    def _make_filter_icon() -> QtGui.QIcon:
+        """Create a compact outlined funnel icon for the filter button."""
+        pixmap = QtGui.QPixmap(20, 20)
+        pixmap.fill(QtCore.Qt.transparent)
+
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        pen = QtGui.QPen(QtGui.QColor("#64748B"))
+        pen.setWidthF(2.2)
+        pen.setJoinStyle(QtCore.Qt.RoundJoin)
+        pen.setCapStyle(QtCore.Qt.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.NoBrush)
+
+        path = QtGui.QPainterPath()
+        path.moveTo(3.0, 4.0)
+        path.lineTo(17.0, 4.0)
+        path.lineTo(12.0, 10.0)
+        path.lineTo(12.0, 15.0)
+        path.lineTo(8.0, 17.0)
+        path.lineTo(8.0, 10.0)
+        path.closeSubpath()
+        painter.drawPath(path)
+        painter.end()
+
+        return QtGui.QIcon(pixmap)
+
+    @staticmethod
+    def _make_briefcase_icon() -> QtGui.QIcon:
+        """Create the outlined briefcase-style icon used for Total Quotes."""
+        pixmap = QtGui.QPixmap(24, 24)
+        pixmap.fill(QtCore.Qt.transparent)
+
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        pen = QtGui.QPen(QtGui.QColor("#2563EB"))
+        pen.setWidthF(2.2)
+        pen.setJoinStyle(QtCore.Qt.RoundJoin)
+        pen.setCapStyle(QtCore.Qt.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.NoBrush)
+
+        body = QtCore.QRectF(4.0, 8.0, 16.0, 11.0)
+        painter.drawRoundedRect(body, 1.8, 1.8)
+        painter.drawLine(QtCore.QPointF(4.0, 11.0), QtCore.QPointF(20.0, 11.0))
+
+        handle = QtGui.QPainterPath()
+        handle.moveTo(9.0, 8.0)
+        handle.lineTo(9.0, 6.0)
+        handle.lineTo(15.0, 6.0)
+        handle.lineTo(15.0, 8.0)
+        painter.drawPath(handle)
+        painter.end()
+
+        return QtGui.QIcon(pixmap)
         
     def create_job_forms_table_section(self, layout):
         """Create quote forms table section below stats cards, with date filter, search, and status filter"""
-        table_group = QtWidgets.QGroupBox("📊 Quote Forms Overview")
-        table_group.setTitle("Quotes")
-        table_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: 800;
-                font-size: 16px;
-                color: #1E293B;
-                border: 1px solid #DCE4EC;
-                border-radius: 10px;
-                margin-top: 14px;
-                padding-top: 18px;
-                background: white;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 20px;
-                padding: 0 10px 0 10px;
-                color: #1E293B;
-            }
-        """)
-        table_layout = QtWidgets.QVBoxLayout(table_group)
-        table_layout.setContentsMargins(24, 22, 24, 24)
-        table_layout.setSpacing(14)
+        # Work directly with the passed layout — no extra GroupBox wrapper
+        table_layout = layout
+        table_layout.setSpacing(12)
 
         # 🔍 Integrated Search + Filters Section
         search_filter_frame = QtWidgets.QFrame()
@@ -3624,49 +4052,62 @@ class JobFormTab(QtWidgets.QWidget):
             "Rejected", "Expired", "Cancelled",
         ])
         self.status_filter_combo.setMinimumHeight(38)
-        self.status_filter_combo.setStyleSheet("""
-            QComboBox {
-                padding: 6px 32px 6px 12px;
-                border: 1.5px solid #e1e8ed;
-                border-radius: 9px;
-                background: white;
-                min-width: 150px;
-                font-size: 13px;
+        self.status_filter_combo.setStyleSheet(f"""
+            QComboBox {{
+                padding: 6px 38px 6px 14px;
+                border: 1.5px solid #D9E2EC;
+                border-radius: 10px;
+                background: #FFFFFF;
+                min-width: 176px;
+                font-size: 14px;
                 font-family: 'Inter', 'Segoe UI', sans-serif;
-                font-weight: 600;
-                color: #1e293b;
+                font-weight: 800;
+                color: #0F172A;
                 margin-right: 2px;
-            }
-            QComboBox:hover  { border-color: #94a3b8; }
-            QComboBox:focus  { border-color: #0F766E; }
-            QComboBox::drop-down {
+            }}
+            QComboBox:hover  {{
+                border-color: #CBD5E1;
+                background: #F8FAFC;
+            }}
+            QComboBox:focus  {{
+                border-color: #0F766E;
+                background: #FFFFFF;
+            }}
+            QComboBox::drop-down {{
                 subcontrol-origin: padding;
                 subcontrol-position: top right;
-                width: 28px;
-                border-left: 1px solid #e1e8ed;
-                border-top-right-radius: 9px;
-                border-bottom-right-radius: 9px;
-                background: #f8fafc;
-            }
-            QComboBox::down-arrow {
-                image: none;
-                width: 0; height: 0;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 6px solid #64748b;
-            }
-            QComboBox QAbstractItemView {
-                border: 1px solid #e1e8ed;
-                border-radius: 6px;
-                background: white;
-                selection-background-color: #f0fdf4;
+                width: 34px;
+                border-left: none;
+                border-top-right-radius: 10px;
+                border-bottom-right-radius: 10px;
+                background: transparent;
+            }}
+            QComboBox::down-arrow {{
+                image: url("{CHEVRON_URL}");
+                width: 14px;
+                height: 14px;
+                margin-right: 8px;
+            }}
+            QComboBox QAbstractItemView {{
+                border: 1px solid #D9E2EC;
+                border-radius: 10px;
+                background: #FFFFFF;
+                selection-background-color: #ECFDF5;
                 selection-color: #0F766E;
                 font-family: 'Inter', 'Segoe UI', sans-serif;
                 font-size: 13px;
-                padding: 4px;
-            }
+                padding: 6px;
+            }}
         """)
         self.status_filter_combo.currentTextChanged.connect(self.on_status_filter_changed)
+        self.status_filter_combo.wheelEvent = lambda e: e.ignore()
+        self.status_filter_combo.keyPressEvent = lambda e, c=self.status_filter_combo: (
+            QtWidgets.QComboBox.keyPressEvent(c, e)
+            if e.key() not in (QtCore.Qt.Key_Up, QtCore.Qt.Key_Down) or c.view().isVisible()
+            else e.ignore()
+        )
+        self.status_filter_combo.currentIndexChanged.connect(
+            lambda: QtCore.QTimer.singleShot(0, self.status_filter_combo.clearFocus))
         filters_container.addWidget(self.status_filter_combo)
 
         # Client filter button
@@ -3728,10 +4169,10 @@ class JobFormTab(QtWidgets.QWidget):
         # ── Year / Month filter bar ───────────────────────────────────────────
         ym_frame = QtWidgets.QFrame()
         ym_frame.setStyleSheet(
-            "QFrame { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; }")
+            "QFrame { background:transparent; border:none; }")
         ym_layout = QtWidgets.QHBoxLayout(ym_frame)
-        ym_layout.setContentsMargins(14, 5, 14, 5)
-        ym_layout.setSpacing(10)
+        ym_layout.setContentsMargins(0, 6, 0, 6)
+        ym_layout.setSpacing(12)
 
         ym_lbl = QtWidgets.QLabel("📆  Period:")
         ym_lbl.setStyleSheet(
@@ -3755,24 +4196,40 @@ class JobFormTab(QtWidgets.QWidget):
         self.year_filter_combo = QtWidgets.QComboBox()
         self.year_filter_combo.addItems(
             ["All Years"] + [str(y) for y in range(current_year, current_year - 7, -1)])
-        self.year_filter_combo.setFixedHeight(34)
+        self.year_filter_combo.setFixedHeight(40)
         self.year_filter_combo.setMinimumWidth(115)
         self.year_filter_combo.setStyleSheet(_combo_qss)
         self.year_filter_combo.currentTextChanged.connect(self.filter_job_forms)
+        self.year_filter_combo.wheelEvent = lambda e: e.ignore()
+        self.year_filter_combo.keyPressEvent = lambda e, c=self.year_filter_combo: (
+            QtWidgets.QComboBox.keyPressEvent(c, e)
+            if e.key() not in (QtCore.Qt.Key_Up, QtCore.Qt.Key_Down) or c.view().isVisible()
+            else e.ignore()
+        )
+        self.year_filter_combo.currentIndexChanged.connect(
+            lambda: QtCore.QTimer.singleShot(0, self.year_filter_combo.clearFocus))
         ym_layout.addWidget(self.year_filter_combo)
 
         self.month_filter_combo = QtWidgets.QComboBox()
         self.month_filter_combo.addItems([
             "All Months", "January", "February", "March", "April", "May", "June",
             "July", "August", "September", "October", "November", "December"])
-        self.month_filter_combo.setFixedHeight(34)
+        self.month_filter_combo.setFixedHeight(40)
         self.month_filter_combo.setMinimumWidth(135)
         self.month_filter_combo.setStyleSheet(_combo_qss)
         self.month_filter_combo.currentTextChanged.connect(self.filter_job_forms)
+        self.month_filter_combo.wheelEvent = lambda e: e.ignore()
+        self.month_filter_combo.keyPressEvent = lambda e, c=self.month_filter_combo: (
+            QtWidgets.QComboBox.keyPressEvent(c, e)
+            if e.key() not in (QtCore.Qt.Key_Up, QtCore.Qt.Key_Down) or c.view().isVisible()
+            else e.ignore()
+        )
+        self.month_filter_combo.currentIndexChanged.connect(
+            lambda: QtCore.QTimer.singleShot(0, self.month_filter_combo.clearFocus))
         ym_layout.addWidget(self.month_filter_combo)
 
         clear_period_btn = QtWidgets.QPushButton("✕ Clear")
-        clear_period_btn.setFixedSize(85, 34)
+        clear_period_btn.setFixedSize(92, 40)
         clear_period_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
         clear_period_btn.setStyleSheet(
             "QPushButton { background:transparent; border:1px solid #cbd5e1;"
@@ -3807,7 +4264,7 @@ class JobFormTab(QtWidgets.QWidget):
         self.from_date_edit.setDate(QtCore.QDate.currentDate().addMonths(-1))
         self.from_date_edit.setDisplayFormat("MM/dd/yyyy")
         self.from_date_edit.setMinimumWidth(175)
-        self.from_date_edit.setFixedHeight(34)
+        self.from_date_edit.setFixedHeight(40)
         self.from_date_edit.setStyleSheet(_date_qss)
         ym_layout.addWidget(self.from_date_edit)
 
@@ -3820,22 +4277,35 @@ class JobFormTab(QtWidgets.QWidget):
         self.to_date_edit.setDate(QtCore.QDate.currentDate())
         self.to_date_edit.setDisplayFormat("MM/dd/yyyy")
         self.to_date_edit.setMinimumWidth(175)
-        self.to_date_edit.setFixedHeight(34)
+        self.to_date_edit.setFixedHeight(40)
         self.to_date_edit.setStyleSheet(_date_qss)
         ym_layout.addWidget(self.to_date_edit)
 
-        self.date_filter_active_chk = QtWidgets.QCheckBox("Filter")
-        self.date_filter_active_chk.setStyleSheet(
-            "QCheckBox { font-size:12px; font-weight:700; color:#334155;"
-            " background:transparent; border:none; spacing:5px; }"
-            "QCheckBox::indicator { width:15px; height:15px; border:1.5px solid #cbd5e1;"
-            " border-radius:3px; background:white; }"
-            "QCheckBox::indicator:checked { background:#0F766E; border-color:#0F766E; }")
-        self.date_filter_active_chk.stateChanged.connect(self.filter_job_forms)
+        self.date_filter_active_chk = configure_filter_button(
+            QtWidgets.QPushButton(),
+            height=40,
+        )
+        self.date_filter_active_chk.setCheckable(True)
+
+        def _toggle_inline_date_filter(checked):
+            configure_filter_button(
+                self.date_filter_active_chk,
+                "Filter",
+                active=checked,
+                height=40,
+            )
+            self.date_filter_active_chk.setChecked(checked)
+            self.filter_job_forms()
+
+        self.date_filter_active_chk.toggled.connect(_toggle_inline_date_filter)
         self.from_date_edit.dateChanged.connect(
             lambda: self.date_filter_active_chk.isChecked() and self.filter_job_forms())
         self.to_date_edit.dateChanged.connect(
             lambda: self.date_filter_active_chk.isChecked() and self.filter_job_forms())
+        self.from_date_edit.wheelEvent = lambda e: e.ignore()
+        self.from_date_edit.stepBy = lambda x: None
+        self.to_date_edit.wheelEvent = lambda e: e.ignore()
+        self.to_date_edit.stepBy = lambda x: None
         ym_layout.addWidget(self.date_filter_active_chk)
 
         ym_layout.addStretch()
@@ -3866,14 +4336,12 @@ class JobFormTab(QtWidgets.QWidget):
         }
         QTableWidget::item {
             padding: 10px 12px;
-            color: #0f172a;
             font-size: 13px;
             font-family: 'Inter', 'Segoe UI', sans-serif;
             border-bottom: 1px solid #f1f5f9;
         }
         QTableWidget::item:selected {
             background: #f0fdf4;
-            color: #0f172a;
         }
         QTableWidget::item:hover {
             background: #f8fafc;
@@ -3904,7 +4372,7 @@ class JobFormTab(QtWidgets.QWidget):
         self.job_forms_table.setAlternatingRowColors(True)
         
         self.job_forms_table.verticalHeader().setVisible(False)
-        self.job_forms_table.installEventFilter(self)
+        self.job_forms_table.viewport().installEventFilter(self)
         
         # Header properties
         header= self.job_forms_table.horizontalHeader()
@@ -3919,47 +4387,86 @@ class JobFormTab(QtWidgets.QWidget):
 
         self.job_forms_table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.job_forms_table.setColumnWidth(0, 170)   # Quote Number
-        self.job_forms_table.setColumnWidth(1, 145)   # Sales
+        self.job_forms_table.setColumnWidth(1, 220)   # Sales
         self.job_forms_table.setColumnWidth(3, 320)   # Client (fixed)
         self.job_forms_table.setColumnWidth(4, 210)   # Status
-        self.job_forms_table.setColumnWidth(5, 125)   # Cost
+        self.job_forms_table.setColumnWidth(5, 180)   # Cost
+        self.job_forms_table.setTextElideMode(QtCore.Qt.ElideNone)
         self.job_forms_table.verticalHeader().setDefaultSectionSize(58)
         self.job_forms_table.setWordWrap(True)
         self.job_forms_table.cellClicked.connect(self._on_table_cell_clicked)
 
-        table_layout.addWidget(self.job_forms_table)
-        layout.addWidget(table_group)
+        table_layout.addWidget(self.job_forms_table, 1)  # stretch=1 so table fills remaining height
 
+        # ── Quotes pagination bar ──────────────────────────────────────────────
+        self._qf_pg_s = """
+            QPushButton {
+                background:white; color:#374151; border:1px solid #E2E8F0;
+                border-radius:6px; font-size:12px; font-weight:700;
+                min-width:32px; min-height:28px; padding:0 8px;
+            }
+            QPushButton:hover { background:#F8FAFC; }
+            QPushButton:disabled { color:#D1D5DB; background:#F9FAFB; }
+        """
+        qf_ftr = QtWidgets.QHBoxLayout()
+        qf_ftr.setContentsMargins(0, 6, 0, 0)
+        self.qf_count_lbl = QtWidgets.QLabel("Showing 0 entries")
+        self.qf_count_lbl.setStyleSheet(
+            "font-size:13px; color:#6B7280; background:transparent; border:none;"
+        )
+        self._qf_prev_btn = QtWidgets.QPushButton("<")
+        self._qf_prev_btn.setFixedSize(32, 28)
+        self._qf_prev_btn.setStyleSheet(self._qf_pg_s)
+        self._qf_prev_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self._qf_prev_btn.clicked.connect(self._qf_go_prev)
+        _qf_page_btns_w = QtWidgets.QWidget()
+        _qf_page_btns_w.setStyleSheet("background:transparent;")
+        self._qf_page_btns_layout = QtWidgets.QHBoxLayout(_qf_page_btns_w)
+        self._qf_page_btns_layout.setContentsMargins(0, 0, 0, 0)
+        self._qf_page_btns_layout.setSpacing(4)
+        self._qf_next_btn = QtWidgets.QPushButton(">")
+        self._qf_next_btn.setFixedSize(32, 28)
+        self._qf_next_btn.setStyleSheet(self._qf_pg_s)
+        self._qf_next_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self._qf_next_btn.clicked.connect(self._qf_go_next)
+        qf_ftr.addWidget(self.qf_count_lbl)
+        qf_ftr.addStretch()
+        qf_ftr.addWidget(self._qf_prev_btn)
+        qf_ftr.addWidget(_qf_page_btns_w)
+        qf_ftr.addWidget(self._qf_next_btn)
+        table_layout.addLayout(qf_ftr)
 
     def display_filtered_forms(self, forms):
-        """Display filtered forms in the table with enhanced styling"""
-        self.job_forms_table.setRowCount(len(forms))
-        
-        # Store current displayed forms for context menu access
-        self.current_displayed_forms = forms
-        
-        # Center-align all table cells
-        for row in range(self.job_forms_table.rowCount()):
-            for col in range(self.job_forms_table.columnCount()):
-                item = self.job_forms_table.item(row, col)
-                if item:
-                    item.setTextAlignment(QtCore.Qt.AlignCenter)
+        self._qf_all_items = forms
+        self._qf_page = 1
+        self._qf_render_page()
 
-        
+    def _qf_render_page(self):
+        all_items = self._qf_all_items
+        per = self._qf_per_page
+        page = self._qf_page
+        total = len(all_items)
+        start_i = (page - 1) * per
+        end_i = min(start_i + per, total)
+        forms = all_items[start_i:end_i]
+
+        self.job_forms_table.setRowCount(len(forms))
+        self.current_displayed_forms = forms
+
         for row, job in enumerate(forms):
-            # Quote Number — clickable link style; job data stored for detail window
-            job_number_item = QtWidgets.QTableWidgetItem(job['job_number'])
-            job_number_item.setForeground(QtGui.QColor('#0f766e'))
+          try:
+            job_number = job.get('job_number', '')
+            job_number_item = QtWidgets.QTableWidgetItem(job_number)
+            job_number_item.setForeground(QtGui.QColor('#2563EB'))
             f = QtGui.QFont("Inter", 11, QtGui.QFont.Bold)
             f.setUnderline(True)
             job_number_item.setFont(f)
             job_number_item.setTextAlignment(QtCore.Qt.AlignCenter)
-            job_number_item.setBackground(QtGui.QColor('#f0fdf4'))
-            job_number_item.setToolTip(f"Click {job['job_number']} to open full quote details")
+            job_number_item.setBackground(QtGui.QColor('#EFF6FF'))
+            job_number_item.setToolTip(f"Click {job_number} to open full quote details")
             job_number_item.setData(QtCore.Qt.UserRole, job)
             self.job_forms_table.setItem(row, 0, job_number_item)
-            
-            # Project Name — with age sub-line as tooltip and display suffix
+
             project_name = job.get('project_name', '')
             age_str = ""
             try:
@@ -3976,62 +4483,47 @@ class JobFormTab(QtWidgets.QWidget):
             except Exception:
                 pass
 
-            display_name = f"{project_name}\n{age_str}" if age_str else project_name
-            project_name_item = QtWidgets.QTableWidgetItem(display_name)
-            
-            # Color coding for time indicators
-            if age_str:
-                if age_str == "Today":
-                    project_name_item.setForeground(QtGui.QColor('#27ae60'))  # Green for today
-                elif age_str == "1 day ago":
-                    project_name_item.setForeground(QtGui.QColor('#3498db'))  # Blue for yesterday
-                elif "d ago" in age_str:
-                    days = int(age_str.split("d")[0])
-                    if days <= 3:
-                        project_name_item.setForeground(QtGui.QColor('#9b59b6'))  # Purple for recent (2-3 days)
-                    elif days <= 7:
-                        project_name_item.setForeground(QtGui.QColor('#f39c12'))  # Orange for this week
-                    else:
-                        project_name_item.setForeground(QtGui.QColor('#95a5a6'))  # Gray for older
-                else:
-                    project_name_item.setForeground(QtGui.QColor('#2c3e50'))  # Default color
-            else:
-                project_name_item.setForeground(QtGui.QColor('#2c3e50'))  # Default color
-            
+            project_name_item = QtWidgets.QTableWidgetItem(project_name)
+            project_name_item.setForeground(QtGui.QColor('#0f172a'))
             project_name_item.setFont(QtGui.QFont("Inter", 11))
             project_name_item.setTextAlignment(QtCore.Qt.AlignCenter)
             if age_str:
                 project_name_item.setToolTip(f"{project_name} — created {age_str}")
-            # project_name_item is placed at col 3 below (after Sales & Status)
 
-            # Sales — col 1
             sales_val = job.get("sales", "")
             sales_item = QtWidgets.QTableWidgetItem(sales_val)
             sales_item.setFont(QtGui.QFont("Inter", 11))
             sales_item.setForeground(QtGui.QColor("#334155"))
+            if sales_val:
+                sales_item.setToolTip(sales_val)
             sales_item.setTextAlignment(QtCore.Qt.AlignCenter)
             self.job_forms_table.setItem(row, 1, sales_item)
 
-            # Project Name — col 2 (stretch)
             self.job_forms_table.setItem(row, 2, project_name_item)
 
-            # Client — col 3 (stretch)
-            client_item = QtWidgets.QTableWidgetItem(job['client'])
+            client_val = job.get('client', '')
+            client_item = QtWidgets.QTableWidgetItem(client_val)
             client_item.setForeground(QtGui.QColor('#0f172a'))
             client_item.setFont(QtGui.QFont("Inter", 11))
             client_item.setTextAlignment(QtCore.Qt.AlignCenter)
-            client_item.setToolTip(job['client'])
+            client_item.setToolTip(client_val)
             self.job_forms_table.setItem(row, 3, client_item)
 
-            # Status pill badge — col 4
             current_status = job.get('status', 'Not Started')
             status_badge = self.create_status_badge(current_status, job, row)
             self.job_forms_table.setCellWidget(row, 4, status_badge)
 
-            # Cost — col 5
             cost = job.get('engineering_costs', 'N/A')
-            cost_item = QtWidgets.QTableWidgetItem(cost)
-            if cost != 'N/A' and '$' in str(cost):
+            display_cost = cost
+            is_expedited = job.get('expedite') is True
+            if is_expedited and cost and cost != 'N/A':
+                try:
+                    base_val = float(str(cost).replace('$', '').replace(',', '').strip())
+                    display_cost = f"${base_val * 1.5:,.2f} (Exp.)"
+                except Exception:
+                    display_cost = cost
+            cost_item = QtWidgets.QTableWidgetItem(display_cost)
+            if display_cost != 'N/A' and '$' in str(display_cost):
                 cost_item.setForeground(QtGui.QColor('#047857'))
                 cost_item.setFont(QtGui.QFont("Inter", 11, QtGui.QFont.Bold))
             else:
@@ -4039,27 +4531,74 @@ class JobFormTab(QtWidgets.QWidget):
                 cost_item.setFont(QtGui.QFont("Inter", 11))
             cost_item.setTextAlignment(QtCore.Qt.AlignCenter)
             self.job_forms_table.setItem(row, 5, cost_item)
-        
+
+          except Exception as e:
+            _log.warning("_qf_render_page: skipped row %d (%s): %s",
+                         row, job.get('job_number', '?'), e)
+
         for row in range(self.job_forms_table.rowCount()):
             self.job_forms_table.setRowHeight(row, 58)
-        
-        # Update results label
-        if hasattr(self, 'results_label'):
-            self.results_label.setText(f"📋 Showing {len(forms)} of {len(self.job_forms)} quote forms")
-        
+
+        if hasattr(self, 'qf_count_lbl'):
+            if total == 0:
+                self.qf_count_lbl.setText("No entries found")
+            else:
+                self.qf_count_lbl.setText(f"Showing {start_i + 1} to {end_i} of {total} entries")
+
         self.job_forms_table.viewport().update()
-        # === AUTO RESIZE TABLE HEIGHT AFTER ROWS ARE ADDED ===
-        min_height = 400
-        row_height = 62
-        header_height = 48
-
-        dynamic_height = header_height + (self.job_forms_table.rowCount() * row_height)
-        final_height = max(min_height, min(dynamic_height, 870))
-
+        dynamic_height = 48 + (self.job_forms_table.rowCount() * 62)
+        final_height = max(400, min(dynamic_height, 870))
         self.job_forms_table.setMinimumHeight(final_height)
         self.job_forms_table.setMaximumHeight(16777215)
 
-            
+        self._qf_rebuild_pagination()
+
+    def _qf_rebuild_pagination(self):
+        if not hasattr(self, '_qf_page_btns_layout'):
+            return
+        while self._qf_page_btns_layout.count():
+            _it = self._qf_page_btns_layout.takeAt(0)
+            if _it.widget():
+                _it.widget().deleteLater()
+        total = len(self._qf_all_items)
+        max_page = max(1, (total + self._qf_per_page - 1) // self._qf_per_page)
+        page_num = self._qf_page
+        self._qf_prev_btn.setEnabled(page_num > 1)
+        self._qf_next_btn.setEnabled(page_num < max_page)
+        _win_start = max(1, min(page_num, max_page - 2))
+        for p in range(_win_start, min(_win_start + 3, max_page + 1)):
+            btn = QtWidgets.QPushButton(str(p))
+            btn.setFixedSize(32, 28)
+            btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+            if p == page_num:
+                btn.setStyleSheet("""QPushButton {
+                    background-color: #00756f; color: #ffffff;
+                    border: 1px solid #00756f; border-radius: 6px;
+                    font-size: 12px; font-weight: 700;
+                    min-width: 32px; min-height: 28px; padding: 0 8px;
+                }
+                QPushButton:hover { background-color: #005f5a; color: #ffffff; }""")
+            else:
+                btn.setStyleSheet(self._qf_pg_s)
+                btn.clicked.connect(lambda _, pg=p: self._qf_go_to(pg))
+            self._qf_page_btns_layout.addWidget(btn)
+
+    def _qf_go_prev(self):
+        if self._qf_page > 1:
+            self._qf_page -= 1
+            self._qf_render_page()
+
+    def _qf_go_next(self):
+        total = len(self._qf_all_items)
+        max_page = max(1, (total + self._qf_per_page - 1) // self._qf_per_page)
+        if self._qf_page < max_page:
+            self._qf_page += 1
+            self._qf_render_page()
+
+    def _qf_go_to(self, p):
+        self._qf_page = p
+        self._qf_render_page()
+
     # ── status palette: (background, text, border) ───────────────────────────
     STATUS_PALETTE = {
         # bg, fg, border  (used by table badge buttons)
@@ -4152,7 +4691,7 @@ class JobFormTab(QtWidgets.QWidget):
         lay.setContentsMargins(0, 2, 0, 2)
         lay.setSpacing(0)
         lay.addStretch(1)
-        badge = QtWidgets.QPushButton(f"{status} ▾")
+        badge = QtWidgets.QPushButton(status)
         badge.setFixedSize(178, 34)
         badge.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
         badge.setStyleSheet(f"""
@@ -4164,52 +4703,56 @@ class JobFormTab(QtWidgets.QWidget):
                 font-size: 13px;
                 font-weight: 800;
                 font-family: 'Inter', 'Segoe UI', sans-serif;
-                padding: 0;
-                text-align: center;
+                padding: 0 30px 0 14px;
+                text-align: left;
             }}
             QPushButton:hover {{
                 border-width: 1.5px;
                 opacity: 0.9;
             }}
+            QPushButton::menu-indicator {{
+                image: url("{CHEVRON_URL}");
+                width: 14px;
+                height: 14px;
+                subcontrol-origin: padding;
+                subcontrol-position: center right;
+                right: 12px;
+            }}
         """)
 
-        def show_status_menu(checked=False, b=badge, j=job_data, r=row):
-            from PyQt5.QtWidgets import QMenu, QAction
-            menu = QMenu(b)
-            menu.setStyleSheet("""
-                QMenu {
-                    background: white;
-                    border: 1px solid #d0d7de;
-                    border-radius: 8px;
-                    padding: 4px 0;
-                    font-family: 'Inter', 'Segoe UI', sans-serif;
-                    font-size: 12px;
-                }
-                QMenu::item { padding: 7px 20px; color: #24292f; }
-                QMenu::item:selected { background: #f6f8fa; color: #0969da; }
-                QMenu::separator { height:1px; background:#e5e7eb; margin:3px 0; }
-            """)
-            groups = [
-                ["Draft", "Sent", "In Review"],
-                ["Approved", "On Hold"],
-                ["Completed", "Converted"],
-                ["Rejected", "Expired", "Cancelled"],
-            ]
-            first = True
-            for grp in groups:
-                if not first:
-                    menu.addSeparator()
-                first = False
-                for s in grp:
-                    a = QAction(s, menu)
-                    a.triggered.connect(
-                        lambda _, st=s, bref=b, jref=j, rref=r:
-                            self._apply_status_badge(st, bref, jref, rref))
-                    menu.addAction(a)
-            
-            menu.exec_(b.mapToGlobal(QtCore.QPoint(0, b.height())))
-
-        badge.clicked.connect(show_status_menu)
+        from PyQt5.QtWidgets import QMenu, QAction
+        menu = QMenu(badge)
+        menu.setStyleSheet("""
+            QMenu {
+                background: white;
+                border: 1px solid #d0d7de;
+                border-radius: 8px;
+                padding: 4px 0;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+                font-size: 12px;
+            }
+            QMenu::item { padding: 7px 20px; color: #24292f; }
+            QMenu::item:selected { background: #f6f8fa; color: #0969da; }
+            QMenu::separator { height:1px; background:#e5e7eb; margin:3px 0; }
+        """)
+        groups = [
+            ["Draft", "Sent", "In Review"],
+            ["Approved", "On Hold"],
+            ["Completed", "Converted"],
+            ["Rejected", "Expired", "Cancelled"],
+        ]
+        first = True
+        for grp in groups:
+            if not first:
+                menu.addSeparator()
+            first = False
+            for s in grp:
+                a = QAction(s, menu)
+                a.triggered.connect(
+                    lambda _, st=s, bref=badge, jref=job_data, rref=row:
+                        self._apply_status_badge(st, bref, jref, rref))
+                menu.addAction(a)
+        badge.setMenu(menu)
         lay.addWidget(badge)
         lay.addStretch(1)
         return container
@@ -4219,7 +4762,7 @@ class JobFormTab(QtWidgets.QWidget):
         """Update badge colour + persist status change."""
         bg, fg, border = self.STATUS_PALETTE.get(
             new_status, ("#f9fafb", "#6b7280", "#e5e7eb"))
-        badge_btn.setText(f"{new_status} ▾")
+        badge_btn.setText(new_status)
         badge_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {bg};
@@ -4229,15 +4772,31 @@ class JobFormTab(QtWidgets.QWidget):
                 font-size: 13px;
                 font-weight: 800;
                 font-family: 'Inter', 'Segoe UI', sans-serif;
-                padding: 0 10px;
+                padding: 0 30px 0 14px;
+                text-align: left;
             }}
             QPushButton:hover {{ border-width: 1.5px; }}
+            QPushButton::menu-indicator {{
+                image: url("{CHEVRON_URL}");
+                width: 14px;
+                height: 14px;
+                subcontrol-origin: padding;
+                subcontrol-position: center right;
+                right: 12px;
+            }}
         """)
         job_data['status'] = new_status
         for job in self.job_forms:
             if job.get('job_number') == job_data.get('job_number'):
                 job['status'] = new_status
                 break
+        # Explicitly update the item stored data so reopening the popup reflects the change.
+        item = self.job_forms_table.item(row, 0)
+        if item:
+            stored = item.data(QtCore.Qt.UserRole)
+            if isinstance(stored, dict):
+                stored['status'] = new_status
+                item.setData(QtCore.Qt.UserRole, stored)
         if self.FIREBASE_AVAILABLE:
             self.update_job_status_in_firebase(job_data, new_status)
         self.update_filtered_stats(self.job_forms)
@@ -4285,7 +4844,21 @@ class JobFormTab(QtWidgets.QWidget):
         amount = enhanced_data.get('engineering_costs', '0')
         try:
             amount_float = float(str(amount).replace('$', '').replace(',', ''))
-            enhanced_data['project_amount'] = amount  # Store clean amount for project
+            # Include expedite premium in project amount
+            if enhanced_data.get('expedite') is True:
+                exp_str = str(enhanced_data.get('expedite_amount', '50%')).strip()
+                try:
+                    if '%' in exp_str:
+                        pct = float(exp_str.replace('%', '').strip())
+                        amount_float = amount_float * (1 + pct / 100)
+                    elif '$' in exp_str:
+                        extra = float(exp_str.replace('$', '').replace(',', '').strip())
+                        amount_float = amount_float + extra
+                    else:
+                        amount_float = amount_float * 1.5
+                except Exception:
+                    amount_float = amount_float * 1.5
+            enhanced_data['project_amount'] = amount_float  # Store total (with expedite) for project
             
             # Auto-detect payment category
             if amount_float < 5000:
@@ -4342,7 +4915,7 @@ class JobFormTab(QtWidgets.QWidget):
             enhanced_data['mailing_address'] = enhanced_data['client_address']
         
         # Auto-set created date
-        enhanced_data['created_at'] = datetime.now().isoformat()
+        enhanced_data['created_at'] = datetime.now(timezone.utc).isoformat()
         
         # Auto-detect services from scope
         scope = enhanced_data.get('scope_of_work', '').lower()
@@ -4463,7 +5036,7 @@ class JobFormTab(QtWidgets.QWidget):
             self.client_intelligence.update_client_activity(
                 client_name, 
                 'quote_started', 
-                {'timestamp': datetime.now().isoformat()}
+                {'timestamp': datetime.now(timezone.utc).isoformat()}
             )
 
     def toggle_client_intelligence(self):
@@ -4691,7 +5264,7 @@ class JobFormTab(QtWidgets.QWidget):
                 ref = db.reference(f'/job_forms/{job_data["firebase_id"]}')
                 ref.update({
                     'status': new_status,
-                    'updated_at': datetime.now().isoformat()
+                    'updated_at': datetime.now(timezone.utc).isoformat()
                 })
                 _log.info("Status updated in Firebase: %s -> %s", job_data['job_number'], new_status)
                 return True
@@ -4861,16 +5434,26 @@ class JobFormTab(QtWidgets.QWidget):
                     matches_period = False
 
             # Date range filter — based on created_at
+            # Two separate mechanisms: inline checkbox filter and the 📅 Date dialog filter.
             matches_date_range = True
-            if hasattr(self, 'date_filter_active_chk') and self.date_filter_active_chk.isChecked():
+            _inline_active = hasattr(self, 'date_filter_active_chk') and self.date_filter_active_chk.isChecked()
+            _dialog_active = (getattr(self, '_date_filter_active', False)
+                              and hasattr(self, 'current_from_date')
+                              and hasattr(self, 'current_to_date'))
+            if _inline_active or _dialog_active:
                 try:
                     created_raw = job.get('created_at', '')
                     if created_raw:
                         created_dt = datetime.fromisoformat(str(created_raw).replace("Z", ""))
                         created_qdate = QtCore.QDate(created_dt.year, created_dt.month, created_dt.day)
-                        matches_date_range = (
-                            self.from_date_edit.date() <= created_qdate <= self.to_date_edit.date()
-                        )
+                        if _dialog_active:
+                            matches_date_range = (
+                                self.current_from_date <= created_qdate <= self.current_to_date
+                            )
+                        else:
+                            matches_date_range = (
+                                self.from_date_edit.date() <= created_qdate <= self.to_date_edit.date()
+                            )
                     else:
                         matches_date_range = False
                 except Exception:
@@ -5234,11 +5817,30 @@ class JobFormTab(QtWidgets.QWidget):
                     f"Failed to delete quote form:\n{str(e)}"
                 )
 
+class _WheelBlocker(QtCore.QObject):
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.Wheel:
+            return True
+        return False
+
+class _NoScrollComboBox(QtWidgets.QComboBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._wb = _WheelBlocker(self)
+        self.installEventFilter(self._wb)
+
+class _NoScrollDateEdit(QtWidgets.QDateEdit):
+    def stepBy(self, steps):
+        pass  # block scroll wheel and arrow-key stepping; use calendar popup to change date
+
+
 class JobFormsExportDialog(QtWidgets.QDialog):
     """Professional PDF/Excel Export Dialog for Quote Forms with Tabs"""
-    
+
     def __init__(self, parent=None, available_dates=None):
         super().__init__(parent)
+        self._owner_tab = parent  # keep reference before any reparenting
+        self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowContextHelpButtonHint)
         self.available_dates = available_dates or []
         self.export_range = "all"  # Default export range
         self.selected_dates = []
@@ -5247,869 +5849,2033 @@ class JobFormsExportDialog(QtWidgets.QDialog):
         self.init_ui()
     
     def init_ui(self):
-        self.setWindowTitle("📊 Export Quote Forms")
-        self.setFixedSize(700, 750)
-        self.setStyleSheet("""
-            JobFormsExportDialog {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #f8fafc, stop:1 #e2e8f0);
-            }
-        """)
-        
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setSpacing(15)
-        
-        # Header
-        header = QtWidgets.QLabel("📤 Export Manager - Quote Forms")
-        header.setStyleSheet("""
-            QLabel {
-                font-size: 24px;
-                font-weight: bold;
-                color: #2c3e50;
-                padding: 15px;
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #3498db, stop:1 #2c3e50);
-                color: white;
-                border-radius: 10px;
-                text-align: center;
-            }
-        """)
-        header.setAlignment(QtCore.Qt.AlignCenter)
-        layout.addWidget(header)
-        
-        # Export Type Tabs
+        self.setWindowTitle("Export Quote Forms")
+        self.setMinimumSize(1280, 700)
+        self.resize(1360, 760)
+        self.setStyleSheet("JobFormsExportDialog { background: white; }")
+
+        root = QtWidgets.QVBoxLayout(self)
+        root.setSpacing(0)
+        root.setContentsMargins(0, 0, 0, 0)
+
+        # ── Teal header bar ─────────────────────────────────
+        # ── Body ─────────────────────────────────────────────
+        header_bar = QtWidgets.QFrame()
+        header_bar.setFixedHeight(44)
+        header_bar.setStyleSheet(
+            "QFrame { background: #0F766E; border-bottom: 1px solid #0B5F59; }"
+        )
+        hb = QtWidgets.QHBoxLayout(header_bar)
+        hb.setContentsMargins(18, 0, 18, 0)
+        hb.setSpacing(10)
+        title_icon = QtWidgets.QLabel("▣")
+        title_icon.setStyleSheet(
+            "font-size: 13px; font-weight: 900; color: #E6FFFB;"
+            " background: transparent; border: none;"
+        )
+        title_lbl = QtWidgets.QLabel("Export Manager - Quote Forms")
+        title_lbl.setStyleSheet(
+            "font-size: 13px; font-weight: 800; color: white;"
+            " background: transparent; border: none;"
+        )
+        hb.addWidget(title_icon)
+        hb.addWidget(title_lbl)
+        hb.addStretch()
+        header_bar.setVisible(False)
+        root.addWidget(header_bar)
+
+        body = QtWidgets.QWidget()
+        body.setStyleSheet("QWidget { background: #F8FAFC; }")
+        body_layout = QtWidgets.QVBoxLayout(body)
+        body_layout.setContentsMargins(20, 14, 20, 14)
+        body_layout.setSpacing(10)
+
+        body_layout.addWidget(self._build_export_intro())
+        body_layout.addWidget(self._build_format_selector())
+
+        # PDF / Excel sub-window tabs
         self.tab_widget = QtWidgets.QTabWidget()
         self.tab_widget.setStyleSheet("""
             QTabWidget::pane {
-                border: 2px solid #bdc3c7;
-                border-radius: 8px;
-                background-color: white;
+                border: 1px solid #E2E8F0;
+                border-radius: 0px;
+                background: white;
+                top: -1px;
             }
             QTabBar::tab {
-                background-color: #ecf0f1;
-                color: #2c3e50;
-                padding: 12px 20px;
-                margin-right: 2px;
+                background: #F1F5F9;
+                color: #64748B;
+                border: 1.5px solid #E2E8F0;
+                border-bottom: none;
+                padding: 10px 26px;
+                margin-right: 4px;
                 border-top-left-radius: 8px;
                 border-top-right-radius: 8px;
-                font-weight: bold;
-                font-size: 14px;
+                font-size: 13px;
+                font-weight: 700;
+                font-family: 'Segoe UI Emoji', 'Segoe UI', 'Inter', sans-serif;
             }
             QTabBar::tab:selected {
-                background-color: #3498db;
-                color: white;
+                background: white;
+                color: #0F766E;
+                border-bottom: 2px solid white;
             }
-            QTabBar::tab:hover {
-                background-color: #d5dbdb;
+            QTabBar::tab:hover:!selected {
+                background: #E2E8F0;
+                color: #334155;
             }
         """)
-        
-        # PDF Export Tab
+
         self.pdf_tab = QtWidgets.QWidget()
+        self.pdf_tab.setStyleSheet("QWidget { background: white; }")
         self.setup_pdf_tab()
-        self.tab_widget.addTab(self.pdf_tab, "📄 PDF Export")
-        
-        # Excel Export Tab
+        self.tab_widget.addTab(self.pdf_tab, "📄  PDF Export")
+
         self.excel_tab = QtWidgets.QWidget()
+        self.excel_tab.setStyleSheet("QWidget { background: white; }")
         self.setup_excel_tab()
-        self.tab_widget.addTab(self.excel_tab, "📊 Excel Export")
-        
-        layout.addWidget(self.tab_widget)
-        
-        # Connect tab change signal
+        self.tab_widget.addTab(self.excel_tab, "📊  Excel Export")
+        self.tab_widget.tabBar().hide()
+        self.tab_widget.setCurrentIndex(0)
+        self.export_type = "pdf"
+        self._sync_format_card_state(0)
+
+        body_layout.addWidget(self.tab_widget, 1)
         self.tab_widget.currentChanged.connect(self.on_tab_changed)
-        
-        # Progress Bar
+
+        # Progress bar (thin, hidden by default)
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setVisible(False)
+        self.progress_bar.setFixedHeight(5)
+        self.progress_bar.setTextVisible(False)
         self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                border: 2px solid #bdc3c7;
-                border-radius: 5px;
-                text-align: center;
-                background-color: #ecf0f1;
-            }
-            QProgressBar::chunk {
-                background-color: #27ae60;
-                border-radius: 3px;
-            }
+            QProgressBar { background: #E2E8F0; border: none; border-radius: 3px; }
+            QProgressBar::chunk { background: #0F766E; border-radius: 3px; }
         """)
-        layout.addWidget(self.progress_bar)
-        
-        # Action Buttons
-        button_layout = QtWidgets.QHBoxLayout()
-        
-        self.export_btn = QtWidgets.QPushButton("🚀 Export PDF")
-        self.export_btn.setFixedHeight(45)
-        self.export_btn.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #27ae60, stop:1 #2ecc71);
-                color: white;
-                border: none;
-                padding: 12px 25px;
-                border-radius: 8px;
-                font-weight: bold;
-                font-size: 14px;
-                min-width: 150px;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #229954, stop:1 #27ae60);
-            }
-            QPushButton:disabled {
-                background: #bdc3c7;
-                color: #7f8c8d;
-            }
-        """)
-        self.export_btn.clicked.connect(self.start_export)
-        
-        self.cancel_btn = QtWidgets.QPushButton("❌ Cancel")
-        self.cancel_btn.setFixedHeight(45)
+        body_layout.addWidget(self.progress_bar)
+
+        # ── Back to Quotes button row ─────────────────────────────
+        self.cancel_btn = QtWidgets.QPushButton("Back to Quotes")
+        self.cancel_btn.setVisible(False)
+        self.cancel_btn.setFixedSize(130, 32)
         self.cancel_btn.setStyleSheet("""
             QPushButton {
-                background: #e74c3c;
-                color: white;
-                border: none;
-                padding: 12px 25px;
-                border-radius: 8px;
-                font-weight: bold;
-                font-size: 14px;
-                min-width: 120px;
+                background: white;
+                color: #475569;
+                border: 1px solid #CBD5E1;
+                border-radius: 6px;
+                font-size: 11px;
+                font-weight: 700;
+                padding: 0 14px;
             }
-            QPushButton:hover {
-                background: #c0392b;
-            }
+            QPushButton:hover { background: #F8FAFC; border-color: #94A3B8; }
         """)
         self.cancel_btn.clicked.connect(self.reject)
-        
-        button_layout.addWidget(self.cancel_btn)
-        button_layout.addStretch()
-        button_layout.addWidget(self.export_btn)
-        
-        layout.addLayout(button_layout)
-    
-    def setup_pdf_tab(self):
-        """Setup the PDF export tab"""
-        layout = QtWidgets.QVBoxLayout(self.pdf_tab)
-        layout.setSpacing(15)
-        
-        # Export Options Card
-        options_card = QtWidgets.QGroupBox("🎯 PDF Export Options")
-        options_card.setStyleSheet("""
-            QGroupBox {
-                font-size: 14px;
-                font-weight: bold;
-                color: #2c3e50;
-                border: 2px solid #bdc3c7;
-                border-radius: 8px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 8px 0 8px;
-            }
-        """)
-        options_layout = QtWidgets.QVBoxLayout(options_card)
-        
-        # Export Range Selection
-        range_group = QtWidgets.QButtonGroup(self)
-        
-        self.all_radio = QtWidgets.QRadioButton("📋 Export All Quote Forms")
-        self.all_radio.setChecked(True)
-        self.all_radio.toggled.connect(lambda: self.on_range_changed("all"))
-        
-        self.date_range_radio = QtWidgets.QRadioButton("📅 Export by Date Range")
-        self.date_range_radio.toggled.connect(lambda: self.on_range_changed("date_range"))
-        
-        self.month_radio = QtWidgets.QRadioButton("🗓️ Export by Month")
-        self.month_radio.toggled.connect(lambda: self.on_range_changed("month"))
-        
-        self.year_radio = QtWidgets.QRadioButton("📊 Export by Year")
-        self.year_radio.toggled.connect(lambda: self.on_range_changed("year"))
-        
-        options_layout.addWidget(self.all_radio)
-        options_layout.addWidget(self.date_range_radio)
-        options_layout.addWidget(self.month_radio)
-        options_layout.addWidget(self.year_radio)
-        
-        range_group.addButton(self.all_radio)
-        range_group.addButton(self.date_range_radio)
-        range_group.addButton(self.month_radio)
-        range_group.addButton(self.year_radio)
-        
-        layout.addWidget(options_card)
-        
-        # Date Selection Container
-        self.date_selection_container = QtWidgets.QWidget()
-        self.date_selection_layout = QtWidgets.QVBoxLayout(self.date_selection_container)
-        self.date_selection_layout.setSpacing(15)
-        self.date_selection_layout.setContentsMargins(10, 10, 10, 10)
-        
-        # Date Range Selector
-        self.date_range_group = QtWidgets.QGroupBox("📅 Select Date Range")
-        self.date_range_group.setMinimumHeight(120)
-        self.date_range_group.setStyleSheet("""
-            QGroupBox {
-                font-size: 14px;
-                font-weight: bold;
-                color: #2c3e50;
-                border: 2px solid #3498db;
-                border-radius: 8px;
-                margin-top: 8px;
-                padding-top: 12px;
-                background-color: #f8f9fa;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 8px 0 8px;
-                color: #2c3e50;
-            }
-        """)
-        date_range_layout = QtWidgets.QHBoxLayout(self.date_range_group)
-        date_range_layout.setSpacing(20)
+        back_row = QtWidgets.QHBoxLayout()
+        back_row.setContentsMargins(0, 4, 0, 0)
+        back_row.addWidget(self.cancel_btn)
+        back_row.addStretch()
+        body_layout.addLayout(back_row)
 
-        # From date section
-        from_layout = QtWidgets.QVBoxLayout()
-        from_label = QtWidgets.QLabel("From Date:")
-        from_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
-        from_layout.addWidget(from_label)
-        self.from_date = QtWidgets.QDateEdit()
+        root.addWidget(body, 1)
+
+    # ── shared helpers used by both tab builders ─────────────
+    @staticmethod
+    def _field_lbl(text):
+        lbl = QtWidgets.QLabel(text)
+        lbl.setStyleSheet(
+            "font-size: 11px; font-weight: 800; color: #64748B;"
+            " letter-spacing: 0.5px; background: transparent; border: none;")
+        return lbl
+
+    def _build_export_intro(self):
+        frame = QtWidgets.QFrame()
+        frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+            }
+        """)
+        row = QtWidgets.QHBoxLayout(frame)
+        row.setContentsMargins(18, 14, 18, 14)
+        row.setSpacing(12)
+
+        text_col = QtWidgets.QVBoxLayout()
+        text_col.setSpacing(3)
+        title = QtWidgets.QLabel("Export Quote Forms")
+        title.setStyleSheet(
+            "font-size: 18px; font-weight: 900; color: #0F172A;"
+            " background: transparent; border: none;"
+        )
+        subtitle = QtWidgets.QLabel(
+            "Export your quote forms data in PDF or Excel format with flexible date range and filters."
+        )
+        subtitle.setStyleSheet(
+            "font-size: 12px; font-weight: 600; color: #64748B;"
+            " background: transparent; border: none;"
+        )
+        text_col.addWidget(title)
+        text_col.addWidget(subtitle)
+
+        help_btn = QtWidgets.QPushButton("?  How export works?")
+        help_btn.setFixedSize(150, 34)
+        help_btn.setEnabled(False)
+        help_btn.setStyleSheet("""
+            QPushButton {
+                background: white;
+                color: #64748B;
+                border: 1px solid #DCE4EC;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: 800;
+            }
+        """)
+
+        row.addLayout(text_col, 1)
+        row.addWidget(help_btn)
+        return frame
+
+    def _build_format_selector(self):
+        frame = QtWidgets.QFrame()
+        frame.setMinimumHeight(166)
+        frame.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Minimum,
+        )
+        frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+            }
+        """)
+        layout = QtWidgets.QVBoxLayout(frame)
+        layout.setContentsMargins(18, 14, 18, 16)
+        layout.setSpacing(10)
+
+        title = QtWidgets.QLabel("1   Select Export Format")
+        title.setStyleSheet(
+            "font-size: 13px; font-weight: 900; color: #0F172A;"
+            " background: transparent; border: none;"
+        )
+        layout.addWidget(title)
+
+        row = QtWidgets.QHBoxLayout()
+        row.setSpacing(14)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.pdf_format_btn, self.pdf_format_indicator = self._make_format_card(
+            "PDF Export", "Best for printing and sharing", "pdf", 0
+        )
+        self.excel_format_btn, self.excel_format_indicator = self._make_format_card(
+            "Excel Export", "Best for data analysis", "excel", 1
+        )
+        row.addWidget(self.pdf_format_btn, 1)
+        row.addWidget(self.excel_format_btn, 1)
+        row_holder = QtWidgets.QWidget()
+        row_holder.setMinimumHeight(110)
+        row_holder.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Fixed,
+        )
+        row_holder.setLayout(row)
+        layout.addWidget(row_holder)
+        return frame
+
+    @staticmethod
+    def _format_card_qss(selected):
+        border = "#0F766E" if selected else "#E2E8F0"
+        bg = "#F0FDFA" if selected else "#FFFFFF"
+        fg = "#0F172A"
+        return f"""
+            QPushButton {{
+                background: {bg};
+                color: {fg};
+                border: 1.5px solid {border};
+                border-radius: 10px;
+                font-size: 13px;
+                font-weight: 800;
+                text-align: left;
+                padding: 0px;
+            }}
+            QPushButton:hover {{
+                border-color: #0F766E;
+                background: #F8FFFD;
+            }}
+        """
+
+    def _make_format_card(self, title, subtitle, kind, index):
+        btn = QtWidgets.QPushButton()
+        btn.setCheckable(True)
+        btn.setFixedHeight(110)
+        btn.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Fixed,
+        )
+        btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        btn.setStyleSheet(self._format_card_qss(False))
+        btn.clicked.connect(lambda: self._select_export_format(index))
+
+        content = QtWidgets.QHBoxLayout(btn)
+        content.setContentsMargins(22, 18, 18, 18)
+        content.setSpacing(18)
+
+        icon = QtWidgets.QLabel()
+        icon.setFixedSize(58, 58)
+        icon.setPixmap(self._make_export_format_icon(kind).pixmap(58, 58))
+
+        text_col = QtWidgets.QVBoxLayout()
+        text_col.setSpacing(5)
+        title_lbl = QtWidgets.QLabel(title)
+        title_lbl.setStyleSheet(
+            "font-size: 14px; font-weight: 900; color: #0F172A;"
+            " border: none; background: transparent;"
+        )
+        subtitle_lbl = QtWidgets.QLabel(subtitle)
+        subtitle_lbl.setStyleSheet(
+            "font-size: 12px; font-weight: 600; color: #64748B;"
+            " border: none; background: transparent;"
+        )
+        text_col.addWidget(title_lbl)
+        text_col.addWidget(subtitle_lbl)
+
+        indicator = QtWidgets.QLabel()
+        indicator.setFixedSize(18, 18)
+        indicator.setAlignment(QtCore.Qt.AlignCenter)
+        indicator.setStyleSheet("""
+            QLabel {
+                background: white;
+                border: 1.5px solid #CBD5E1;
+                border-radius: 9px;
+                color: transparent;
+                font-size: 11px;
+                font-weight: 900;
+            }
+        """)
+
+        content.addWidget(icon)
+        content.addLayout(text_col, 1)
+        content.addWidget(indicator)
+        return btn, indicator
+
+    def _select_export_format(self, index):
+        self.tab_widget.setCurrentIndex(index)
+        self._sync_format_card_state(index)
+
+    def _sync_format_card_state(self, index):
+        self.pdf_format_btn.setChecked(index == 0)
+        self.excel_format_btn.setChecked(index == 1)
+        self.pdf_format_btn.setStyleSheet(self._format_card_qss(index == 0))
+        self.excel_format_btn.setStyleSheet(self._format_card_qss(index == 1))
+        self._set_format_indicator(self.pdf_format_indicator, index == 0)
+        self._set_format_indicator(self.excel_format_indicator, index == 1)
+
+    @staticmethod
+    def _set_format_indicator(label, selected):
+        if selected:
+            label.setText("✓")
+            label.setStyleSheet("""
+                QLabel {
+                background: #0F766E;
+                border: 1.5px solid #0F766E;
+                border-radius: 8px;
+                    color: white;
+                    font-size: 11px;
+                    font-weight: 900;
+                }
+            """)
+        else:
+            label.setText("")
+            label.setStyleSheet("""
+                QLabel {
+                background: white;
+                border: 1.5px solid #CBD5E1;
+                border-radius: 8px;
+                    color: transparent;
+                    font-size: 11px;
+                    font-weight: 900;
+                }
+            """)
+
+    @staticmethod
+    def _make_export_format_icon(kind):
+        pixmap = QtGui.QPixmap(58, 58)
+        pixmap.fill(QtCore.Qt.transparent)
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+        if kind == "pdf":
+            bg = QtGui.QColor("#FEE2E2")
+            fg = QtGui.QColor("#DC2626")
+            text = "PDF"
+        else:
+            bg = QtGui.QColor("#DCFCE7")
+            fg = QtGui.QColor("#15803D")
+            text = "X"
+
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(bg)
+        painter.drawRoundedRect(QtCore.QRectF(1, 1, 56, 56), 12, 12)
+
+        painter.setBrush(fg)
+        painter.drawRoundedRect(QtCore.QRectF(16, 13, 26, 32), 5, 5)
+
+        painter.setPen(QtGui.QPen(QtGui.QColor("white")))
+        font = QtGui.QFont("Inter", 9 if kind == "pdf" else 14, QtGui.QFont.Bold)
+        painter.setFont(font)
+        painter.drawText(QtCore.QRectF(16, 13, 26, 32), QtCore.Qt.AlignCenter, text)
+        painter.end()
+        return QtGui.QIcon(pixmap)
+
+    _CARD = """
+        QGroupBox {
+            background: #F8FAFC;
+            border: 1.5px solid #E2E8F0;
+            border-radius: 10px;
+            margin-top: 6px;
+            padding-top: 6px;
+            font-size: 12px;
+            font-weight: 800;
+            color: #334155;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 12px;
+            padding: 0 6px;
+            color: #0F766E;
+        }
+    """
+    _DATE = """
+        QDateEdit {
+            padding: 5px 8px;
+            border: 1.5px solid #CBD5E1;
+            border-radius: 7px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #1E293B;
+            background: white;
+        }
+        QDateEdit:focus { border-color: #0F766E; }
+        QDateEdit:hover { border-color: #94A3B8; }
+    """
+    _YEAR_BTN = """
+        QPushButton {
+            background: #0F766E; color: white;
+            border: none; border-radius: 7px; font-size: 15px;
+            font-family: 'Segoe UI Emoji', 'Segoe UI', sans-serif;
+        }
+        QPushButton:hover { background: #115E59; }
+        QPushButton:pressed { background: #0C4A45; }
+    """
+    _YEAR_FIELD = """
+        QLineEdit {
+            padding: 5px 10px;
+            border: 1.5px solid #CBD5E1;
+            border-radius: 7px;
+            font-size: 13px; font-weight: 700;
+            color: #1E293B; background: white;
+        }
+    """
+    _PILL = """
+        QRadioButton {
+            background: #F8FAFC;
+            border: 1.5px solid #CBD5E1;
+            border-radius: 8px;
+            padding: 10px 24px;
+            min-height: 20px;
+            min-width: 108px;
+            font-size: 13px; font-weight: 800;
+            color: #334155;
+            spacing: 0px;
+        }
+        QRadioButton:checked {
+            background: #ECFDF5;
+            border: 2px solid #0F766E;
+            color: #0F766E;
+        }
+        QRadioButton:hover:!checked {
+            background: white;
+            border-color: #94A3B8;
+            color: #1E293B;
+        }
+        QRadioButton::indicator {
+            width: 0px;
+            height: 0px;
+            margin: 0px;
+            padding: 0px;
+            border: none;
+            background: transparent;
+        }
+    """
+
+    def _build_range_row(self, all_r, dr_r, month_r, year_r, rg):
+        """Build a pill-button row for range selection and add to a QButtonGroup."""
+        for btn in (all_r, dr_r, month_r, year_r):
+            btn.setStyleSheet(self._PILL)
+            btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+            rg.addButton(btn)
+        row = QtWidgets.QHBoxLayout()
+        row.setSpacing(10)
+        for btn in (all_r, dr_r, month_r, year_r):
+            row.addWidget(btn)
+        row.addStretch()
+        return row
+
+    def _build_year_row(self, year_edit, cal_btn):
+        """Return an HBoxLayout containing a year line-edit + calendar button."""
+        row = QtWidgets.QHBoxLayout()
+        row.setSpacing(6)
+        year_edit.setFixedSize(110, 34)
+        year_edit.setStyleSheet(self._YEAR_FIELD)
+        cal_btn.setFixedSize(34, 34)
+        cal_btn.setStyleSheet(self._YEAR_BTN)
+        cal_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        row.addWidget(year_edit)
+        row.addWidget(cal_btn)
+        return row
+
+    def _build_preview_bar(self, label_widget, accent="#0F766E"):
+        bar = QtWidgets.QFrame()
+        bar.setStyleSheet(
+            f"QFrame {{ background: #ECFDF5; border: 1.5px solid #6EE7B7;"
+            f" border-radius: 8px; }}")
+        bl = QtWidgets.QHBoxLayout(bar)
+        bl.setContentsMargins(12, 7, 12, 7)
+        bl.setSpacing(8)
+        icon = QtWidgets.QLabel("👁")
+        icon.setStyleSheet("font-size: 15px; background: transparent; border: none;")
+        label_widget.setStyleSheet(
+            "font-size: 12px; font-weight: 700; color: #065F46;"
+            " background: transparent; border: none;")
+        label_widget.setWordWrap(True)
+        bl.addWidget(icon)
+        bl.addWidget(label_widget, 1)
+        return bar
+
+    # ── Export history helpers ────────────────────────────────────
+    def _export_history_path(self):
+        return Path(__file__).resolve().parent / "data" / "export_history.json"
+
+    def _load_export_history(self):
+        try:
+            p = self._export_history_path()
+            if p.exists():
+                with open(p, encoding="utf-8") as f:
+                    data = json.load(f)
+                return data if isinstance(data, list) else []
+        except Exception:
+            pass
+        return []
+
+    def _save_export_entry(self, export_type, scope, records, file_path=""):
+        try:
+            history = self._load_export_history()
+            try:
+                mw = getattr(self._owner_tab, 'main_window', None)
+                username = getattr(mw, 'current_username', '') or getattr(mw, 'current_user', '') or 'You'
+                initials = ''.join(w[0].upper() for w in str(username).split() if w)[:2] or 'ME'
+            except Exception:
+                username, initials = 'You', 'ME'
+            history.insert(0, {
+                "type": export_type,
+                "scope": scope,
+                "records": records,
+                "exported_by_initials": initials,
+                "exported_by_name": "You",
+                "datetime": datetime.now().isoformat(),
+                "status": "Completed",
+                "file_path": str(file_path),
+            })
+            history = history[:10]
+            p = self._export_history_path()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(history, f, indent=2, ensure_ascii=False)
+        except Exception as exc:
+            _log.warning("Could not save export history: %s", exc)
+
+    def _get_scope_label(self, tab="excel"):
+        if tab == "excel":
+            r = getattr(self, 'excel_export_range', 'all')
+            if r == "all":
+                return "All Quote Forms"
+            elif r == "date_range":
+                fd = self.excel_from_date.date().toString("MMM d, yyyy")
+                td = self.excel_to_date.date().toString("MMM d, yyyy")
+                return f"Date Range ({fd} - {td})"
+            elif r == "month":
+                return f"{self.excel_month_combo.currentText()} {self.excel_year_edit_month.text()}"
+            elif r == "year":
+                return self.excel_year_edit.text()
+        else:
+            r = getattr(self, 'export_range', 'all')
+            if r == "all":
+                return "All Quote Forms"
+            elif r == "date_range":
+                fd = self.from_date.date().toString("MMM d, yyyy")
+                td = self.to_date.date().toString("MMM d, yyyy")
+                return f"Date Range ({fd} - {td})"
+            elif r == "month":
+                return f"{self.month_combo.currentText()} {self.year_edit_month.text()}"
+            elif r == "year":
+                return self.year_edit.text()
+        return "All Quote Forms"
+
+    def _get_total_count(self):
+        return len(getattr(self._owner_tab, 'job_forms', None) or [])
+
+    def _build_status_bar(self, label_widget):
+        bar = QtWidgets.QFrame()
+        bar.setStyleSheet(
+            "QFrame { background: #ECFDF5; border: 1.5px solid #6EE7B7; border-radius: 8px; }")
+        bl = QtWidgets.QHBoxLayout(bar)
+        bl.setContentsMargins(12, 8, 12, 8)
+        bl.setSpacing(8)
+        icon = QtWidgets.QLabel("✓")
+        icon.setStyleSheet(
+            "font-size: 16px; font-weight: 900; color: #059669;"
+            " background: transparent; border: none;")
+        label_widget.setStyleSheet(
+            "font-size: 13px; font-weight: 700; color: #065F46;"
+            " background: transparent; border: none;")
+        label_widget.setWordWrap(True)
+        bl.addWidget(icon)
+        bl.addWidget(label_widget, 1)
+        return bar
+
+    def _build_export_summary_card(self, export_type="Excel"):
+        card = QtWidgets.QFrame()
+        card.setStyleSheet("""
+            QFrame {
+                background: white;
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+            }
+        """)
+        card_layout = QtWidgets.QVBoxLayout(card)
+        card_layout.setContentsMargins(34, 22, 34, 24)
+        card_layout.setSpacing(18)
+
+        summary_title = QtWidgets.QLabel("Export Summary")
+        summary_title.setStyleSheet(
+            "font-size: 24px; font-weight: 900; color: #111827;"
+            " background: transparent; border: none;")
+        card_layout.addWidget(summary_title)
+
+        row_wrap = QtWidgets.QWidget()
+        row_wrap.setStyleSheet("background: transparent; border: none;")
+        row = QtWidgets.QHBoxLayout(row_wrap)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+
+        # Type icon
+        icon_lbl = QtWidgets.QLabel("X\nLS" if export_type == "Excel" else "PDF")
+        if export_type == "Excel":
+            icon_lbl.setText("XLS")
+            icon_lbl.setStyleSheet("""
+                QLabel {
+                    background: #1E6B3E; color: white;
+                    font-size: 17px; font-weight: 900;
+                    border-radius: 12px; padding: 14px 10px;
+                    min-width: 72px; max-width: 72px;
+                    min-height: 72px; max-height: 72px;
+                }
+            """)
+        else:
+            icon_lbl.setStyleSheet("""
+                QLabel {
+                    background: #DC2626; color: white;
+                    font-size: 16px; font-weight: 900;
+                    border-radius: 12px; padding: 14px 10px;
+                    min-width: 72px; max-width: 72px;
+                    min-height: 72px; max-height: 72px;
+                }
+            """)
+        icon_lbl.setAlignment(QtCore.Qt.AlignCenter)
+        row.addWidget(icon_lbl)
+        row.addSpacing(28)
+
+        def _vdiv():
+            d = QtWidgets.QFrame()
+            d.setFrameShape(QtWidgets.QFrame.VLine)
+            d.setFixedHeight(66)
+            d.setStyleSheet("color: #E2E8F0; background: #E2E8F0; min-width: 1px; max-width: 1px;")
+            return d
+
+        def _stat_col(title_text, value_text, value_color="#0F766E"):
+            col = QtWidgets.QVBoxLayout()
+            col.setSpacing(3)
+            t = QtWidgets.QLabel(title_text)
+            t.setStyleSheet("font-size: 13px; color: #94A3B8; font-weight: 700;"
+                           " background: transparent; border: none;")
+            v = QtWidgets.QLabel(value_text)
+            v.setStyleSheet(f"font-size: 18px; color: {value_color}; font-weight: 900;"
+                           " background: transparent; border: none;")
+            col.addWidget(t)
+            col.addWidget(v)
+            return col, v
+
+        # Export Type
+        c, _ = _stat_col("Export Type", export_type)
+        row.addLayout(c)
+        row.addSpacing(42)
+        row.addWidget(_vdiv())
+        row.addSpacing(42)
+
+        # Export Scope
+        c, scope_v = _stat_col("Export Scope", "All Quote Forms")
+        row.addLayout(c)
+        row.addSpacing(42)
+        row.addWidget(_vdiv())
+        row.addSpacing(42)
+
+        # Records to Export
+        total = self._get_total_count()
+        c, rec_v = _stat_col("Records to Export", f"{total} Quotes")
+        row.addLayout(c)
+        row.addSpacing(42)
+        row.addWidget(_vdiv())
+        row.addSpacing(42)
+
+        # Last Exported
+        history = self._load_export_history()
+        last_time = "—"
+        for entry in history:
+            if entry.get("type", "").lower() == export_type.lower():
+                try:
+                    dt = datetime.fromisoformat(entry["datetime"])
+                    now = datetime.now()
+                    if dt.date() == now.date():
+                        last_time = f"Today, {dt.strftime('%I:%M %p')}"
+                    else:
+                        last_time = dt.strftime("%b %d, %I:%M %p")
+                except Exception:
+                    pass
+                break
+        c, last_v = _stat_col("Last Exported", last_time, "#1E293B")
+        row.addLayout(c)
+        row.addStretch()
+        card_layout.addWidget(row_wrap)
+
+        if export_type == "Excel":
+            self._excel_scope_lbl = scope_v
+            self._excel_rec_lbl = rec_v
+            self._excel_last_lbl = last_v
+        else:
+            self._pdf_scope_lbl = scope_v
+            self._pdf_rec_lbl = rec_v
+            self._pdf_last_lbl = last_v
+
+        return card
+
+    def _build_recent_exports_widget(self, export_type="Excel"):
+        container = QtWidgets.QFrame()
+        container.setStyleSheet("""
+            QFrame {
+                background: white;
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+            }
+        """)
+        v = QtWidgets.QVBoxLayout(container)
+        v.setContentsMargins(16, 12, 16, 12)
+        v.setSpacing(6)
+
+        title = QtWidgets.QLabel("Recent Exports")
+        title.setStyleSheet("font-size: 14px; font-weight: 800; color: #1E293B;"
+                           " background: transparent; border: none;")
+        v.addWidget(title)
+
+        # Header row
+        hdr = QtWidgets.QWidget()
+        hdr.setStyleSheet("background: #F8FAFC; border-radius: 6px;")
+        hr = QtWidgets.QHBoxLayout(hdr)
+        hr.setContentsMargins(8, 5, 8, 5)
+        hr.setSpacing(0)
+        for txt, stretch in [("Export Type", 2), ("Scope", 4), ("Records", 2),
+                              ("Exported By", 2), ("Date & Time", 3), ("Status", 2), ("", 1)]:
+            lbl = QtWidgets.QLabel(txt)
+            lbl.setStyleSheet("font-size: 11px; font-weight: 800; color: #94A3B8;"
+                             " background: transparent; border: none;")
+            hr.addWidget(lbl, stretch)
+        v.addWidget(hdr)
+
+        history = self._load_export_history()
+        relevant = history[:5]
+
+        if not relevant:
+            empty = QtWidgets.QLabel("No recent exports yet.")
+            empty.setStyleSheet("color: #94A3B8; font-size: 13px; padding: 12px;"
+                               " background: transparent; border: none;")
+            empty.setAlignment(QtCore.Qt.AlignCenter)
+            v.addWidget(empty)
+        else:
+            for i, entry in enumerate(relevant):
+                row_w = QtWidgets.QWidget()
+                row_w.setStyleSheet("background: transparent;")
+                rh = QtWidgets.QHBoxLayout(row_w)
+                rh.setContentsMargins(8, 6, 8, 6)
+                rh.setSpacing(0)
+
+                t = entry.get("type", "Excel")
+                icon_txt = "📊" if t == "Excel" else "📄"
+                type_lbl = QtWidgets.QLabel(f"{icon_txt}  {t}")
+                type_lbl.setStyleSheet("font-size: 13px; color: #1E293B;"
+                                      " background: transparent; border: none;"
+                                      " font-family: 'Segoe UI Emoji', 'Segoe UI', sans-serif;")
+                rh.addWidget(type_lbl, 2)
+
+                scope_lbl = QtWidgets.QLabel(entry.get("scope", "All Quote Forms"))
+                scope_lbl.setStyleSheet("font-size: 12px; color: #475569;"
+                                       " background: transparent; border: none;")
+                scope_lbl.setWordWrap(True)
+                rh.addWidget(scope_lbl, 4)
+
+                rec_lbl = QtWidgets.QLabel(f"{entry.get('records', 0)} Quotes")
+                rec_lbl.setStyleSheet("font-size: 12px; color: #475569;"
+                                     " background: transparent; border: none;")
+                rh.addWidget(rec_lbl, 2)
+
+                initials = entry.get("exported_by_initials", "ME")
+                by_w = QtWidgets.QWidget()
+                by_w.setStyleSheet("background: transparent;")
+                by_l = QtWidgets.QHBoxLayout(by_w)
+                by_l.setContentsMargins(0, 0, 0, 0)
+                by_l.setSpacing(6)
+                avatar = QtWidgets.QLabel(initials)
+                avatar.setFixedSize(26, 26)
+                avatar.setAlignment(QtCore.Qt.AlignCenter)
+                avatar.setStyleSheet("background: #0F766E; color: white; border-radius: 13px;"
+                                    " font-size: 10px; font-weight: 800;")
+                name_lbl = QtWidgets.QLabel(entry.get("exported_by_name", "You"))
+                name_lbl.setStyleSheet("font-size: 12px; color: #475569;"
+                                      " background: transparent; border: none;")
+                by_l.addWidget(avatar)
+                by_l.addWidget(name_lbl)
+                by_l.addStretch()
+                rh.addWidget(by_w, 2)
+
+                try:
+                    dt = datetime.fromisoformat(entry["datetime"])
+                    now = datetime.now()
+                    if dt.date() == now.date():
+                        dt_str = f"Today, {dt.strftime('%I:%M %p')}"
+                    else:
+                        dt_str = dt.strftime("%b %d, %Y %I:%M %p")
+                except Exception:
+                    dt_str = entry.get("datetime", "—")
+                dt_lbl = QtWidgets.QLabel(dt_str)
+                dt_lbl.setStyleSheet("font-size: 12px; color: #475569;"
+                                    " background: transparent; border: none;")
+                rh.addWidget(dt_lbl, 3)
+
+                status_lbl = QtWidgets.QLabel("✓  Completed")
+                status_lbl.setStyleSheet("""
+                    QLabel {
+                        background: #DCFCE7; color: #15803D;
+                        border-radius: 10px; padding: 2px 10px;
+                        font-size: 11px; font-weight: 700;
+                    }
+                """)
+                rh.addWidget(status_lbl, 2)
+
+                dl_btn = QtWidgets.QPushButton("↓")
+                dl_btn.setFixedSize(26, 26)
+                dl_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+                dl_btn.setStyleSheet("""
+                    QPushButton {
+                        background: transparent; color: #2563EB;
+                        border: none; border-radius: 13px;
+                        font-size: 16px; font-weight: 800;
+                    }
+                    QPushButton:hover { background: #EFF6FF; }
+                    QPushButton:disabled { color: #CBD5E1; }
+                """)
+                fp = entry.get("file_path", "")
+                if fp:
+                    dl_btn.clicked.connect(lambda checked=False, p=fp: self._open_file(p))
+                else:
+                    dl_btn.setEnabled(False)
+                rh.addWidget(dl_btn, 1)
+
+                v.addWidget(row_w)
+                if i < len(relevant) - 1:
+                    sep = QtWidgets.QFrame()
+                    sep.setFrameShape(QtWidgets.QFrame.HLine)
+                    sep.setStyleSheet("color: #F1F5F9; background: #F1F5F9;"
+                                     " min-height: 1px; max-height: 1px;")
+                    v.addWidget(sep)
+
+        return container
+
+    def _open_file(self, file_path):
+        try:
+            import subprocess
+            subprocess.Popen(f'start "" "{file_path}"', shell=True)
+        except Exception:
+            pass
+
+    def refresh_recent_exports(self):
+        """Rebuild and refresh both Recent Exports sections."""
+        for attr, export_type in [('_excel_recent_container', 'Excel'),
+                                   ('_pdf_recent_container', 'PDF')]:
+            old = getattr(self, attr, None)
+            if old is None:
+                continue
+            parent_layout = old.parentWidget().layout() if old.parentWidget() else None
+            if parent_layout is None:
+                continue
+            idx = parent_layout.indexOf(old)
+            if idx < 0:
+                continue
+            new_w = self._build_recent_exports_widget(export_type)
+            parent_layout.insertWidget(idx, new_w)
+            parent_layout.removeWidget(old)
+            old.deleteLater()
+            setattr(self, attr, new_w)
+
+        # Refresh Last Exported labels in summary cards
+        for export_type, last_attr in [('Excel', '_excel_last_lbl'), ('PDF', '_pdf_last_lbl')]:
+            lbl = getattr(self, last_attr, None)
+            if lbl is None:
+                continue
+            history = self._load_export_history()
+            last_time = "—"
+            for entry in history:
+                if entry.get("type", "").lower() == export_type.lower():
+                    try:
+                        dt = datetime.fromisoformat(entry["datetime"])
+                        now = datetime.now()
+                        if dt.date() == now.date():
+                            last_time = f"Today, {dt.strftime('%I:%M %p')}"
+                        else:
+                            last_time = dt.strftime("%b %d, %I:%M %p")
+                    except Exception:
+                        pass
+                    break
+            lbl.setText(last_time)
+
+    def _trigger_excel_export(self):
+        self._active_export_btn = getattr(self, 'excel_export_btn', None)
+        self.export_type = "excel"
+        self.start_export()
+
+    def _trigger_pdf_export(self):
+        self._active_export_btn = getattr(self, 'pdf_export_btn', None)
+        self.export_type = "pdf"
+        self.start_export()
+
+    def _export_filter_button_style(self, active=False):
+        border = "#0F766E" if active else "#DCE4EC"
+        color = "#0F766E" if active else "#334155"
+        background = "#F0FDFA" if active else "#FFFFFF"
+        return f"""
+            QPushButton {{
+                background: {background};
+                color: {color};
+                border: 1px solid {border};
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: 800;
+                padding: 0 12px;
+            }}
+            QPushButton:hover {{
+                background: #F8FAFC;
+                border-color: #0F766E;
+                color: #0F766E;
+            }}
+        """
+
+    def _export_combo_style(self):
+        return f"""
+            QComboBox {{
+                padding: 5px 30px 5px 10px;
+                border: 1.5px solid #CBD5E1;
+                border-radius: 7px;
+                font-size: 13px;
+                font-weight: 700;
+                color: #1E293B;
+                background: white;
+            }}
+            QComboBox:hover {{ border-color: #94A3B8; }}
+            QComboBox:focus {{ border-color: #0F766E; }}
+            QComboBox::drop-down {{
+                width: 24px;
+                border: none;
+                background: transparent;
+            }}
+            QComboBox::down-arrow {{
+                image: url("{CHEVRON_URL}");
+                width: 14px;
+                height: 14px;
+                margin-right: 2px;
+            }}
+            QComboBox QAbstractItemView {{
+                background: white;
+                border: 1px solid #E2E8F0;
+                selection-background-color: #F0FDF4;
+                selection-color: #0F766E;
+                padding: 4px;
+            }}
+        """
+
+    def _parse_job_export_datetime(self, job):
+        created_at_str = job.get('created_at', '')
+        if not created_at_str:
+            return None
+        date_part = created_at_str.split('T')[0] if 'T' in created_at_str else created_at_str
+        for date_format in ("%Y-%m-%d", "%m-%d-%Y", "%Y/%m/%d", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(date_part, date_format)
+            except ValueError:
+                continue
+        return None
+
+    def _export_filter_values(self, export_type):
+        prefix = "excel_" if export_type == "excel" else ""
+        status_combo = getattr(self, f"{prefix}status_combo", None)
+        client_combo = getattr(self, f"{prefix}client_combo", None)
+        return {
+            "status": status_combo.currentText() if status_combo else "All Status",
+            "client": client_combo.currentText() if client_combo else "All Clients",
+        }
+
+    def _export_filtered_records(self, export_type):
+        prefix = "excel_" if export_type == "excel" else ""
+        range_type = getattr(self, "excel_export_range" if export_type == "excel" else "export_range", "all")
+        filters = self._export_filter_values(export_type)
+        records = []
+
+        for job in getattr(self._owner_tab, 'job_forms', None) or []:
+            job_datetime = self._parse_job_export_datetime(job)
+            include_job = range_type == "all"
+
+            if range_type == "date_range" and job_datetime:
+                from_date = getattr(self, f"{prefix}from_date").date().toPyDate()
+                to_date = getattr(self, f"{prefix}to_date").date().toPyDate()
+                include_job = from_date <= job_datetime.date() <= to_date
+            elif range_type == "month" and job_datetime:
+                month_combo = getattr(self, f"{prefix}month_combo")
+                year_edit = getattr(self, f"{prefix}year_edit_month")
+                include_job = (
+                    job_datetime.month == month_combo.currentIndex() + 1
+                    and job_datetime.year == int(year_edit.text())
+                )
+            elif range_type == "year" and job_datetime:
+                year_edit = getattr(self, f"{prefix}year_edit")
+                include_job = job_datetime.year == int(year_edit.text())
+
+            if not include_job:
+                continue
+            if filters["status"] != "All Status" and job.get("status", "Not Started") != filters["status"]:
+                continue
+            if filters["client"] != "All Clients" and job.get("client", "") != filters["client"]:
+                continue
+            records.append(job)
+
+        return records
+
+    def _refresh_export_filter_options(self, export_type):
+        prefix = "excel_" if export_type == "excel" else ""
+        status_combo = getattr(self, f"{prefix}status_combo", None)
+        client_combo = getattr(self, f"{prefix}client_combo", None)
+        if not status_combo or not client_combo:
+            return
+
+        status_current = status_combo.currentText()
+        client_current = client_combo.currentText()
+        jobs = getattr(self._owner_tab, 'job_forms', None) or []
+        default_statuses = {
+            "Draft", "Sent", "In Review", "Approved", "On Hold",
+            "Completed", "Converted", "Rejected", "Expired", "Cancelled",
+            "Not Started", "High", "Urgent",
+        }
+        statuses = ["All Status"] + sorted(default_statuses | {
+            str(job.get("status", "Not Started")).strip()
+            for job in jobs
+            if str(job.get("status", "Not Started")).strip()
+        })
+        clients = ["All Clients"] + sorted({
+            str(job.get("client", "")).strip()
+            for job in jobs
+            if str(job.get("client", "")).strip()
+        }, key=str.lower)
+
+        status_combo.blockSignals(True)
+        client_combo.blockSignals(True)
+        status_combo.clear()
+        client_combo.clear()
+        status_combo.addItems(statuses)
+        client_combo.addItems(clients)
+        status_combo.setCurrentText(status_current if status_current in statuses else "All Status")
+        client_combo.setCurrentText(client_current if client_current in clients else "All Clients")
+        status_combo.blockSignals(False)
+        client_combo.blockSignals(False)
+
+    def _setup_reference_export_task(self, host, export_type):
+        is_excel = export_type == "excel"
+        prefix = "excel_" if is_excel else ""
+        title_text = "Excel" if is_excel else "PDF"
+
+        layout = QtWidgets.QVBoxLayout(host)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+        layout.setAlignment(QtCore.Qt.AlignTop)
+
+        filters_card = QtWidgets.QFrame()
+        filters_card.setStyleSheet("""
+            QFrame {
+                background: white;
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+            }
+        """)
+        filters_layout = QtWidgets.QVBoxLayout(filters_card)
+        filters_layout.setContentsMargins(18, 14, 18, 16)
+        filters_layout.setSpacing(12)
+        filters_title = QtWidgets.QLabel("2   Choose Filters")
+        filters_title.setStyleSheet(
+            "font-size: 13px; font-weight: 900; color: #0F172A;"
+            " background: transparent; border: none;"
+        )
+        filters_layout.addWidget(filters_title)
+
+        top_row = QtWidgets.QHBoxLayout()
+        top_row.setSpacing(14)
+
+        def _field(label_text):
+            wrap = QtWidgets.QVBoxLayout()
+            wrap.setSpacing(5)
+            label = QtWidgets.QLabel(label_text)
+            label.setStyleSheet(
+                "font-size: 11px; font-weight: 800; color: #334155;"
+                " background: transparent; border: none;"
+            )
+            wrap.addWidget(label)
+            return wrap
+
+        from_date = QtWidgets.QDateEdit()
+        from_date.setCalendarPopup(True)
+        from_date.setDate(QtCore.QDate.currentDate().addMonths(-1))
+        from_date.setDisplayFormat("MM/dd/yyyy")
+        from_date.setFixedSize(146, 36)
+        from_date.setStyleSheet(self._DATE)
+        to_date = QtWidgets.QDateEdit()
+        to_date.setCalendarPopup(True)
+        to_date.setDate(QtCore.QDate.currentDate())
+        to_date.setDisplayFormat("MM/dd/yyyy")
+        to_date.setFixedSize(146, 36)
+        to_date.setStyleSheet(self._DATE)
+        arrow = QtWidgets.QLabel("→")
+        arrow.setStyleSheet("font-size: 14px; color: #64748B; border: none; background: transparent;")
+        date_range_wrap = QtWidgets.QFrame()
+        date_range_wrap.setStyleSheet("""
+            QFrame {
+                background: #F0F9FF;
+                border: 1.5px solid #7DD3FC;
+                border-radius: 10px;
+            }
+        """)
+        drw_lay = QtWidgets.QVBoxLayout(date_range_wrap)
+        drw_lay.setContentsMargins(14, 10, 14, 12)
+        drw_lay.setSpacing(8)
+        drw_hdr = QtWidgets.QHBoxLayout()
+        drw_icon = QtWidgets.QLabel("📅")
+        drw_icon.setStyleSheet("background: transparent; border: none; font-size: 15px;")
+        drw_title = QtWidgets.QLabel("Filter by Date Range")
+        drw_title.setStyleSheet(
+            "background: transparent; border: none; font-size: 12px;"
+            " font-weight: 900; color: #0369A1;")
+        drw_hdr.addWidget(drw_icon)
+        drw_hdr.addWidget(drw_title)
+        drw_hdr.addStretch()
+        drw_lay.addLayout(drw_hdr)
+        date_row = QtWidgets.QHBoxLayout()
+        date_row.setSpacing(8)
+        date_row.addWidget(from_date)
+        date_row.addWidget(arrow)
+        date_row.addWidget(to_date)
+        date_row.addStretch()
+        drw_lay.addLayout(date_row)
+        date_range_wrap.setVisible(False)
+
+        range_col = _field("Quick Range")
+        quick_range = QtWidgets.QComboBox()
+        quick_range.addItem("All Quote Forms", "all")
+        quick_range.addItem("Today", "today")
+        quick_range.addItem("Last 7 Days", "last_7")
+        quick_range.addItem("Last 30 Days", "last_30")
+        quick_range.addItem("This Month", "this_month")
+        quick_range.addItem("This Year", "this_year")
+        quick_range.addItem("Custom Date Range", "date_range")
+        quick_range.addItem("Select Month", "month")
+        quick_range.addItem("Select Year", "year")
+        quick_range.setFixedSize(220, 36)
+        quick_range.setStyleSheet(self._export_combo_style())
+        range_col.addWidget(quick_range)
+        top_row.addLayout(range_col)
+
+        status_col = _field("Status")
+        status_combo = QtWidgets.QComboBox()
+        status_combo.addItem("All Status")
+        status_combo.setFixedSize(210, 36)
+        status_combo.setStyleSheet(self._export_combo_style())
+        status_col.addWidget(status_combo)
+        top_row.addLayout(status_col)
+
+        client_col = _field("Client")
+        client_combo = QtWidgets.QComboBox()
+        client_combo.addItem("All Clients")
+        client_combo.setFixedSize(210, 36)
+        client_combo.setStyleSheet(self._export_combo_style())
+        client_col.addWidget(client_combo)
+        top_row.addLayout(client_col)
+        top_row.addStretch()
+        filters_layout.addLayout(top_row)
+
+        more_row = QtWidgets.QHBoxLayout()
+        clear_btn = QtWidgets.QPushButton("↻  Clear All")
+        clear_btn.setFixedSize(118, 36)
+        clear_btn.setStyleSheet(self._export_filter_button_style(False))
+        more_row.addStretch()
+        more_row.addWidget(clear_btn)
+        filters_layout.addLayout(more_row)
+        layout.addWidget(filters_card)
+
+        # ── "More Filters" expandable panel ──────────────────────────
+        hidden_wrap = QtWidgets.QWidget()
+        hidden_wrap.setStyleSheet("background: transparent;")
+        hidden_layout = QtWidgets.QHBoxLayout(hidden_wrap)
+        hidden_layout.setContentsMargins(0, 8, 0, 0)
+        hidden_layout.setSpacing(12)
+
+        date_group = QtWidgets.QWidget()  # kept for compat; unused
+
+        # ── Month card ────────────────────────────────────────────
+        month_group = QtWidgets.QFrame()
+        month_group.setStyleSheet("""
+            QFrame {
+                background: #F0FDF4;
+                border: 1.5px solid #6EE7B7;
+                border-radius: 10px;
+            }
+        """)
+        mg_lay = QtWidgets.QVBoxLayout(month_group)
+        mg_lay.setContentsMargins(14, 10, 14, 12)
+        mg_lay.setSpacing(8)
+
+        mg_hdr = QtWidgets.QHBoxLayout()
+        mg_icon = QtWidgets.QLabel("📅")
+        mg_icon.setStyleSheet("background: transparent; border: none; font-size: 15px;")
+        mg_title = QtWidgets.QLabel("Filter by Month")
+        mg_title.setStyleSheet(
+            "background: transparent; border: none; font-size: 12px;"
+            " font-weight: 900; color: #065F46;"
+        )
+        mg_hdr.addWidget(mg_icon)
+        mg_hdr.addWidget(mg_title)
+        mg_hdr.addStretch()
+        mg_lay.addLayout(mg_hdr)
+
+        mg_fields = QtWidgets.QHBoxLayout()
+        mg_fields.setSpacing(8)
+
+        month_combo = QtWidgets.QComboBox()
+        months = ["January", "February", "March", "April", "May", "June",
+                  "July", "August", "September", "October", "November", "December"]
+        month_combo.addItems(months)
+        month_combo.setCurrentIndex(datetime.now().month - 1)
+        month_combo.setFixedHeight(34)
+        month_combo.setMinimumWidth(140)
+        month_combo.setStyleSheet("""
+            QComboBox {
+                padding: 4px 28px 4px 10px; border: 1.5px solid #6EE7B7;
+                border-radius: 7px; font-size: 13px; font-weight: 700;
+                color: #065F46; background: white;
+            }
+            QComboBox:hover { border-color: #34D399; }
+            QComboBox::drop-down { width: 22px; border: none; background: transparent; }
+            QComboBox::down-arrow { image: url("%s"); width: 12px; height: 12px; }
+            QComboBox QAbstractItemView { background: white; border: 1px solid #6EE7B7;
+                selection-background-color: #D1FAE5; selection-color: #065F46; padding: 4px; }
+        """ % CHEVRON_URL)
+        month_combo.wheelEvent = lambda e: e.ignore()
+
+        year_month_edit = QtWidgets.QLineEdit(str(datetime.now().year))
+        year_month_edit.setFixedSize(80, 34)
+        year_month_edit.setReadOnly(True)
+        year_month_edit.setStyleSheet("""
+            QLineEdit { padding: 4px 8px; border: 1.5px solid #6EE7B7; border-radius: 7px;
+                font-size: 13px; font-weight: 700; color: #065F46; background: white; }
+        """)
+        month_year_btn = QtWidgets.QPushButton("Select")
+        month_year_btn.setFixedSize(76, 34)
+        month_year_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        month_year_btn.setStyleSheet("""
+            QPushButton {
+                background: #f9fafb; color: #374151;
+                border: 1px solid #d1d5db; border-radius: 8px;
+                font-size: 12px; font-weight: 600; font-family: 'Inter','Segoe UI';
+            }
+            QPushButton:hover { background: #f3f4f6; border-color: #9ca3af; }
+            QPushButton:pressed { background: #e5e7eb; }
+        """)
+        month_year_btn.clicked.connect(lambda: self.show_year_popup_for_month_excel() if is_excel else self.show_year_popup_for_month())
+        mg_fields.addWidget(month_combo)
+        mg_fields.addWidget(year_month_edit)
+        mg_fields.addWidget(month_year_btn)
+        mg_fields.addStretch()
+        mg_lay.addLayout(mg_fields)
+
+        # ── Year card ─────────────────────────────────────────────
+        year_group = QtWidgets.QFrame()
+        year_group.setStyleSheet("""
+            QFrame {
+                background: #EFF6FF;
+                border: 1.5px solid #93C5FD;
+                border-radius: 10px;
+            }
+        """)
+        yg_lay = QtWidgets.QVBoxLayout(year_group)
+        yg_lay.setContentsMargins(14, 10, 14, 12)
+        yg_lay.setSpacing(8)
+
+        yg_hdr = QtWidgets.QHBoxLayout()
+        yg_icon = QtWidgets.QLabel("📆")
+        yg_icon.setStyleSheet("background: transparent; border: none; font-size: 15px;")
+        yg_title = QtWidgets.QLabel("Filter by Year")
+        yg_title.setStyleSheet(
+            "background: transparent; border: none; font-size: 12px;"
+            " font-weight: 900; color: #1D4ED8;"
+        )
+        yg_hdr.addWidget(yg_icon)
+        yg_hdr.addWidget(yg_title)
+        yg_hdr.addStretch()
+        yg_lay.addLayout(yg_hdr)
+
+        yg_fields = QtWidgets.QHBoxLayout()
+        yg_fields.setSpacing(8)
+
+        year_edit = QtWidgets.QLineEdit(str(datetime.now().year))
+        year_edit.setFixedSize(80, 34)
+        year_edit.setReadOnly(True)
+        year_edit.setStyleSheet("""
+            QLineEdit { padding: 4px 8px; border: 1.5px solid #93C5FD; border-radius: 7px;
+                font-size: 13px; font-weight: 700; color: #1D4ED8; background: white; }
+        """)
+        year_btn = QtWidgets.QPushButton("Select")
+        year_btn.setFixedSize(76, 34)
+        year_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        year_btn.setStyleSheet("""
+            QPushButton {
+                background: #f9fafb; color: #374151;
+                border: 1px solid #d1d5db; border-radius: 8px;
+                font-size: 12px; font-weight: 600; font-family: 'Inter','Segoe UI';
+            }
+            QPushButton:hover { background: #f3f4f6; border-color: #9ca3af; }
+            QPushButton:pressed { background: #e5e7eb; }
+        """)
+        year_btn.clicked.connect(lambda: self.show_year_popup_excel() if is_excel else self.show_year_popup())
+        yg_fields.addWidget(year_edit)
+        yg_fields.addWidget(year_btn)
+        yg_fields.addStretch()
+        yg_lay.addLayout(yg_fields)
+
+        hidden_layout.addWidget(date_range_wrap, 1)
+        hidden_layout.addWidget(month_group, 1)
+        hidden_layout.addWidget(year_group, 1)
+        hidden_wrap.setVisible(False)
+        date_range_wrap.setVisible(False)
+        month_group.setVisible(False)
+        year_group.setVisible(False)
+        filters_layout.addWidget(hidden_wrap)
+
+        setattr(self, f"{prefix}from_date", from_date)
+        setattr(self, f"{prefix}to_date", to_date)
+        setattr(self, f"{prefix}month_combo", month_combo)
+        setattr(self, f"{prefix}year_edit_month", year_month_edit)
+        setattr(self, f"{prefix}year_edit", year_edit)
+        setattr(self, f"{prefix}date_range_group", date_group)
+        setattr(self, f"{prefix}date_range_wrap", date_range_wrap)
+        setattr(self, f"{prefix}month_group", month_group)
+        setattr(self, f"{prefix}year_group", year_group)
+        setattr(self, f"{prefix}date_selection_container", hidden_wrap)
+        setattr(self, f"{prefix}quick_range_combo", quick_range)
+        setattr(self, f"{prefix}status_combo", status_combo)
+        setattr(self, f"{prefix}client_combo", client_combo)
+        def _lock_combo(cb):
+            """Prevent wheel and arrow keys from changing combo value; clear focus on select."""
+            cb.wheelEvent = lambda e: e.ignore()
+            def _kp(event, _cb=cb):
+                if event.key() in (QtCore.Qt.Key_Up, QtCore.Qt.Key_Down) \
+                        and not _cb.view().isVisible():
+                    event.ignore()
+                    return
+                QtWidgets.QComboBox.keyPressEvent(_cb, event)
+            cb.keyPressEvent = _kp
+            cb.currentIndexChanged.connect(
+                lambda: QtCore.QTimer.singleShot(0, cb.clearFocus))
+
+        def _lock_date(de):
+            de.wheelEvent = lambda e: e.ignore()
+            de.stepBy = lambda x: None
+
+        _lock_date(from_date)
+        _lock_date(to_date)
+        _lock_combo(quick_range)
+        _lock_combo(status_combo)
+        _lock_combo(client_combo)
+        _lock_combo(month_combo)
+        self._refresh_export_filter_options(export_type)
+
+        summary_card = self._build_reference_summary_card(title_text)
+        setattr(self, f"{prefix}summary_reference_card", summary_card)
+        layout.addWidget(summary_card)
+
+        action_row = QtWidgets.QHBoxLayout()
+        action_row.addStretch()
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        cancel_btn.setFixedSize(120, 40)
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background: white; color: #475569; border: 1px solid #DCE4EC;
+                border-radius: 8px; font-size: 13px; font-weight: 800;
+            }
+        """)
+        cancel_btn.clicked.connect(self.reject)
+        export_btn = QtWidgets.QPushButton(f"↓  Export {title_text}")
+        export_btn.setFixedSize(150, 40)
+        export_btn.setStyleSheet("""
+            QPushButton {
+                background: #0F766E; color: white; border: none;
+                border-radius: 8px; font-size: 13px; font-weight: 900;
+            }
+            QPushButton:hover { background: #115E59; }
+        """)
+        if is_excel:
+            self.excel_export_btn = export_btn
+            export_btn.clicked.connect(self._trigger_excel_export)
+        else:
+            self.pdf_export_btn = export_btn
+            export_btn.clicked.connect(self._trigger_pdf_export)
+        action_row.addWidget(cancel_btn)
+        action_row.addSpacing(10)
+        action_row.addWidget(export_btn)
+        layout.addLayout(action_row)
+        layout.addStretch()
+
+        preview_label = QtWidgets.QLabel()
+        if is_excel:
+            self.excel_preview_label = preview_label
+        else:
+            self.preview_label = preview_label
+
+        def _scroll_preserve(fn):
+            """Run fn() then restore parent scroll position to avoid jarring jumps."""
+            sa = self.parentWidget()
+            while sa and not isinstance(sa, QtWidgets.QScrollArea):
+                sa = sa.parentWidget()
+            saved = sa.verticalScrollBar().value() if sa else 0
+            fn()
+            if sa:
+                QtCore.QTimer.singleShot(0, lambda: sa.verticalScrollBar().setValue(saved))
+
+        def _apply_quick_range():
+            selected = quick_range.currentData()
+            today = QtCore.QDate.currentDate()
+            if selected == "today":
+                from_date.setDate(today)
+                to_date.setDate(today)
+                selected = "date_range"
+            elif selected == "last_7":
+                from_date.setDate(today.addDays(-6))
+                to_date.setDate(today)
+                selected = "date_range"
+            elif selected == "last_30":
+                from_date.setDate(today.addDays(-29))
+                to_date.setDate(today)
+                selected = "date_range"
+            elif selected == "this_month":
+                month_combo.setCurrentIndex(today.month() - 1)
+                year_month_edit.setText(str(today.year()))
+                selected = "month"
+            elif selected == "this_year":
+                year_edit.setText(str(today.year()))
+                selected = "year"
+
+            def _do_visibility():
+                if selected == "date_range":
+                    hidden_wrap.setVisible(True)
+                    date_range_wrap.setVisible(True)
+                    month_group.setVisible(False)
+                    year_group.setVisible(False)
+                elif selected in ("month", "this_month"):
+                    hidden_wrap.setVisible(True)
+                    date_range_wrap.setVisible(False)
+                    month_group.setVisible(True)
+                    year_group.setVisible(False)
+                elif selected in ("year", "this_year"):
+                    hidden_wrap.setVisible(True)
+                    date_range_wrap.setVisible(False)
+                    month_group.setVisible(False)
+                    year_group.setVisible(True)
+                else:
+                    hidden_wrap.setVisible(False)
+                    date_range_wrap.setVisible(False)
+                    month_group.setVisible(False)
+                    year_group.setVisible(False)
+            _scroll_preserve(_do_visibility)
+
+            if is_excel:
+                self.on_excel_range_changed(selected)
+            else:
+                self.on_range_changed(selected)
+
+        def _clear_filters():
+            def _do_clear():
+                quick_range.setCurrentIndex(0)
+                from_date.setDate(QtCore.QDate.currentDate().addMonths(-1))
+                to_date.setDate(QtCore.QDate.currentDate())
+                month_combo.setCurrentIndex(datetime.now().month - 1)
+                year_month_edit.setText(str(datetime.now().year))
+                year_edit.setText(str(datetime.now().year))
+                status_combo.setCurrentText("All Status")
+                client_combo.setCurrentText("All Clients")
+                date_range_wrap.setVisible(False)
+                hidden_wrap.setVisible(False)
+                month_group.setVisible(False)
+                year_group.setVisible(False)
+            _scroll_preserve(_do_clear)
+            if is_excel:
+                self.on_excel_range_changed("all")
+            else:
+                self.on_range_changed("all")
+
+        def _range_changed():
+            _apply_quick_range()
+
+        quick_range.currentIndexChanged.connect(_range_changed)
+        from_date.dateChanged.connect(self.update_excel_preview if is_excel else self.update_preview)
+        to_date.dateChanged.connect(self.update_excel_preview if is_excel else self.update_preview)
+        month_combo.currentTextChanged.connect(self.update_excel_preview if is_excel else self.update_preview)
+        year_month_edit.textChanged.connect(self.update_excel_preview if is_excel else self.update_preview)
+        year_edit.textChanged.connect(self.update_excel_preview if is_excel else self.update_preview)
+        status_combo.currentTextChanged.connect(self.update_excel_preview if is_excel else self.update_preview)
+        client_combo.currentTextChanged.connect(self.update_excel_preview if is_excel else self.update_preview)
+        clear_btn.clicked.connect(_clear_filters)
+        quick_range.setCurrentIndex(0)
+        _range_changed()
+
+    def _build_reference_summary_card(self, export_label):
+        card = QtWidgets.QFrame()
+        card.setStyleSheet("""
+            QFrame { background: white; border: 1px solid #E2E8F0; border-radius: 10px; }
+        """)
+        layout = QtWidgets.QVBoxLayout(card)
+        layout.setContentsMargins(18, 14, 18, 16)
+        layout.setSpacing(12)
+        title = QtWidgets.QLabel("3   Export Summary")
+        title.setStyleSheet("font-size: 13px; font-weight: 900; color: #0F172A; border: none;")
+        layout.addWidget(title)
+        cards = QtWidgets.QHBoxLayout()
+        cards.setSpacing(12)
+        total = self._get_total_count()
+        total_card, total_lbl = self._mini_summary_card("Total Quotes", str(total), "#2563EB", "doc")
+        filtered_card, filtered_lbl = self._mini_summary_card("Filtered Quotes", str(total), "#059669", "check")
+        clients_card, clients_lbl = self._mini_summary_card("Clients Included", "—", "#7C3AED", "users")
+        scope_card, scope_lbl = self._mini_summary_card("Date Range", "All Quote Forms", "#D97706", "calendar")
+        for widget in (total_card, filtered_card, clients_card, scope_card):
+            cards.addWidget(widget, 1)
+        layout.addLayout(cards)
+        info = QtWidgets.QLabel(f"ⓘ  You are about to export {total} quote form(s) in {export_label} format.")
+        info.setStyleSheet("""
+            QLabel {
+                background: #EFF6FF; color: #2563EB; border: 1px solid #DBEAFE;
+                border-radius: 8px; font-size: 12px; font-weight: 700; padding: 12px 14px;
+            }
+        """)
+        layout.addWidget(info)
+        key = export_label.lower()
+        setattr(self, f"_{key}_filtered_summary_lbl", filtered_lbl)
+        setattr(self, f"_{key}_clients_summary_lbl", clients_lbl)
+        setattr(self, f"_{key}_scope_summary_lbl", scope_lbl)
+        setattr(self, f"_{key}_info_summary_lbl", info)
+        return card
+
+    def _mini_summary_card(self, title, value, color, icon_kind):
+        card = QtWidgets.QFrame()
+        card.setStyleSheet("QFrame { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; }")
+        layout = QtWidgets.QHBoxLayout(card)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(10)
+        icon = QtWidgets.QLabel()
+        icon.setFixedSize(42, 42)
+        icon.setAlignment(QtCore.Qt.AlignCenter)
+        icon.setPixmap(self._make_summary_icon(icon_kind, color).pixmap(38, 38))
+        t = QtWidgets.QLabel(title)
+        t.setStyleSheet("font-size: 11px; font-weight: 800; color: #64748B; border: none;")
+        v = QtWidgets.QLabel(value)
+        v.setStyleSheet(f"font-size: 18px; font-weight: 900; color: {color}; border: none;")
+        text_col = QtWidgets.QVBoxLayout()
+        text_col.setSpacing(4)
+        text_col.addWidget(t)
+        text_col.addWidget(v)
+        layout.addWidget(icon)
+        layout.addLayout(text_col, 1)
+        return card, v
+
+    @staticmethod
+    def _make_summary_icon(kind, color):
+        pixmap = QtGui.QPixmap(42, 42)
+        pixmap.fill(QtCore.Qt.transparent)
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        accent = QtGui.QColor(color)
+        bg = QtGui.QColor(accent)
+        bg.setAlpha(28)
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(bg)
+        painter.drawRoundedRect(QtCore.QRectF(1, 1, 40, 40), 9, 9)
+        pen = QtGui.QPen(accent)
+        pen.setWidthF(2.0)
+        pen.setJoinStyle(QtCore.Qt.RoundJoin)
+        pen.setCapStyle(QtCore.Qt.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.NoBrush)
+        if kind == "doc":
+            painter.drawRoundedRect(QtCore.QRectF(14, 10, 14, 20), 2, 2)
+            painter.drawLine(17, 16, 25, 16)
+            painter.drawLine(17, 21, 25, 21)
+        elif kind == "check":
+            painter.drawEllipse(QtCore.QRectF(11, 11, 20, 20))
+            path = QtGui.QPainterPath()
+            path.moveTo(16, 21)
+            path.lineTo(20, 25)
+            path.lineTo(27, 16)
+            painter.drawPath(path)
+        elif kind == "users":
+            painter.drawEllipse(QtCore.QRectF(17, 11, 8, 8))
+            painter.drawRoundedRect(QtCore.QRectF(13, 22, 16, 8), 4, 4)
+        else:
+            painter.drawRoundedRect(QtCore.QRectF(12, 12, 18, 18), 3, 3)
+            painter.drawLine(16, 9, 16, 15)
+            painter.drawLine(26, 9, 26, 15)
+            painter.drawLine(12, 18, 30, 18)
+        painter.end()
+        return QtGui.QIcon(pixmap)
+
+    @staticmethod
+    def _make_calendar_icon(color="#0F766E", size=28):
+        pixmap = QtGui.QPixmap(size, size)
+        pixmap.fill(QtCore.Qt.transparent)
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+        accent = QtGui.QColor(color)
+        bg = QtGui.QColor(accent)
+        bg.setAlpha(24)
+
+        outer = QtCore.QRectF(1, 1, size - 2, size - 2)
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(bg)
+        painter.drawRoundedRect(outer, 6, 6)
+
+        scale = size / 28.0
+        pen = QtGui.QPen(accent)
+        pen.setWidthF(max(1.6, 1.8 * scale))
+        pen.setJoinStyle(QtCore.Qt.RoundJoin)
+        pen.setCapStyle(QtCore.Qt.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.drawRoundedRect(
+            QtCore.QRectF(7 * scale, 7 * scale, 14 * scale, 14 * scale),
+            2.5 * scale,
+            2.5 * scale,
+        )
+        painter.drawLine(
+            QtCore.QPointF(10 * scale, 5 * scale),
+            QtCore.QPointF(10 * scale, 10 * scale),
+        )
+        painter.drawLine(
+            QtCore.QPointF(18 * scale, 5 * scale),
+            QtCore.QPointF(18 * scale, 10 * scale),
+        )
+        painter.drawLine(
+            QtCore.QPointF(7 * scale, 12 * scale),
+            QtCore.QPointF(21 * scale, 12 * scale),
+        )
+        painter.end()
+        return QtGui.QIcon(pixmap)
+
+    def setup_pdf_tab(self):
+        """Setup the PDF export sub-window."""
+        self._setup_reference_export_task(self.pdf_tab, "pdf")
+        return
+        layout = QtWidgets.QVBoxLayout(self.pdf_tab)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+        layout.setAlignment(QtCore.Qt.AlignTop)
+
+        # ── Range label ──────────────────────────────────────
+        layout.addWidget(self._field_lbl("EXPORT RANGE"))
+
+        # ── Pill buttons ─────────────────────────────────────
+        rg = QtWidgets.QButtonGroup(self)
+        self.all_radio        = QtWidgets.QRadioButton("All Quote Forms")
+        self.date_range_radio = QtWidgets.QRadioButton("Date Range")
+        self.month_radio      = QtWidgets.QRadioButton("By Month")
+        self.year_radio       = QtWidgets.QRadioButton("By Year")
+        self.all_radio.setChecked(True)
+        self.all_radio.toggled.connect(       lambda: self.on_range_changed("all"))
+        self.date_range_radio.toggled.connect(lambda: self.on_range_changed("date_range"))
+        self.month_radio.toggled.connect(     lambda: self.on_range_changed("month"))
+        self.year_radio.toggled.connect(      lambda: self.on_range_changed("year"))
+        layout.addLayout(self._build_range_row(
+            self.all_radio, self.date_range_radio,
+            self.month_radio, self.year_radio, rg))
+
+        # ── Date selection container ─────────────────────────
+        self.date_selection_container = QtWidgets.QWidget()
+        self.date_selection_container.setStyleSheet("QWidget { background: transparent; }")
+        self.date_selection_layout = QtWidgets.QVBoxLayout(self.date_selection_container)
+        self.date_selection_layout.setContentsMargins(0, 0, 0, 0)
+        self.date_selection_layout.setSpacing(8)
+
+        # Date Range card
+        self.date_range_group = QtWidgets.QGroupBox("Date Range")
+        self.date_range_group.setStyleSheet(self._CARD)
+        dr = QtWidgets.QHBoxLayout(self.date_range_group)
+        dr.setContentsMargins(14, 8, 14, 10)
+        dr.setSpacing(16)
+
+        from_col = QtWidgets.QVBoxLayout()
+        from_col.setSpacing(4)
+        from_col.addWidget(self._field_lbl("FROM DATE"))
+        self.from_date = _NoScrollDateEdit()
         self.from_date.setDisplayFormat("MM-dd-yyyy")
         self.from_date.setDate(QtCore.QDate.currentDate().addMonths(-1))
         self.from_date.setCalendarPopup(True)
-        self.from_date.setFixedSize(160, 45)
-        self.from_date.setStyleSheet("""
-            QDateEdit {
-                padding: 12px;
-                border: 2px solid #bdc3c7;
-                border-radius: 8px;
-                font-size: 14px;
-                background-color: white;
-            }
-            QDateEdit:hover {
-                border-color: #3498db;
-            }
-        """)
-        from_layout.addWidget(self.from_date)
-        date_range_layout.addLayout(from_layout)
+        self.from_date.setFixedSize(200, 34)
+        self.from_date.setStyleSheet(self._DATE)
+        from_col.addWidget(self.from_date)
+        dr.addLayout(from_col)
 
-        # To date section
-        to_layout = QtWidgets.QVBoxLayout()
-        to_label = QtWidgets.QLabel("To Date:")
-        to_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
-        to_layout.addWidget(to_label)
-        self.to_date = QtWidgets.QDateEdit()
+        arrow = QtWidgets.QLabel("→")
+        arrow.setStyleSheet(
+            "font-size: 16px; color: #94A3B8; background: transparent;"
+            " border: none; padding-top: 20px;")
+        dr.addWidget(arrow)
+
+        to_col = QtWidgets.QVBoxLayout()
+        to_col.setSpacing(4)
+        to_col.addWidget(self._field_lbl("TO DATE"))
+        self.to_date = _NoScrollDateEdit()
         self.to_date.setDisplayFormat("MM-dd-yyyy")
         self.to_date.setDate(QtCore.QDate.currentDate())
         self.to_date.setCalendarPopup(True)
-        self.to_date.setFixedSize(160, 45)
-        self.to_date.setStyleSheet("""
-            QDateEdit {
-                padding: 12px;
-                border: 2px solid #bdc3c7;
-                border-radius: 8px;
-                font-size: 14px;
-                background-color: white;
-            }
-            QDateEdit:hover {
-                border-color: #3498db;
-            }
-        """)
-        to_layout.addWidget(self.to_date)
-        date_range_layout.addLayout(to_layout)
-
-        date_range_layout.addStretch()
+        self.to_date.setFixedSize(200, 34)
+        self.to_date.setStyleSheet(self._DATE)
+        to_col.addWidget(self.to_date)
+        dr.addLayout(to_col)
+        dr.addStretch()
         self.date_selection_layout.addWidget(self.date_range_group)
 
-        # Month Selector
-        self.month_group = QtWidgets.QGroupBox("🗓️ Select Month and Year")
-        self.month_group.setMinimumHeight(150)
-        self.month_group.setStyleSheet("""
-            QGroupBox {
-                font-size: 14px;
-                font-weight: bold;
-                color: #2c3e50;
-                border: 2px solid #3498db;
-                border-radius: 8px;
-                margin-top: 8px;
-                padding-top: 12px;
-                background-color: #f8f9fa;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 8px 0 8px;
-                color: #2c3e50;
-            }
-        """)
-        month_layout = QtWidgets.QVBoxLayout(self.month_group)
-        month_layout.setSpacing(15)
+        # Month & Year card
+        self.month_group = QtWidgets.QGroupBox("Month && Year")
+        self.month_group.setStyleSheet(self._CARD)
+        mg = QtWidgets.QHBoxLayout(self.month_group)
+        mg.setContentsMargins(14, 8, 14, 10)
+        mg.setSpacing(30)
 
-        # Month and Year selection in one row
-        month_year_row_layout = QtWidgets.QHBoxLayout()
-        month_year_row_layout.setSpacing(15)
-
-        # Month selection
-        month_container = QtWidgets.QHBoxLayout()
-        month_label = QtWidgets.QLabel("Select Month:")
-        month_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
-        month_container.addWidget(month_label)
-        self.month_combo = QtWidgets.QComboBox()
-        self.month_combo.setFixedSize(200, 45)
-        self.month_combo.setStyleSheet("""
-            QComboBox {
-                padding: 12px;
-                border: 2px solid #bdc3c7;
-                border-radius: 8px;
-                font-size: 14px;
-                background-color: white;
-            }
-            QComboBox:hover {
-                border-color: #3498db;
-            }
-        """)
+        m_col = QtWidgets.QVBoxLayout()
+        m_col.setSpacing(4)
+        m_col.addWidget(self._field_lbl("MONTH"))
+        self.month_combo = _NoScrollComboBox()
+        self.month_combo.setFixedSize(175, 34)
+        self.month_combo.setStyleSheet(
+            "QComboBox { padding: 5px 10px; border: 1.5px solid #CBD5E1;"
+            " border-radius: 7px; font-size: 13px; font-weight: 600;"
+            " color: #1E293B; background: white; }"
+            "QComboBox:focus { border-color: #0F766E; }")
         self.populate_months()
-        month_container.addWidget(self.month_combo)
-        month_year_row_layout.addLayout(month_container)
+        m_col.addWidget(self.month_combo)
+        mg.addLayout(m_col)
 
-        # Year selection for month export
-        year_container = QtWidgets.QHBoxLayout()
-        year_label_month = QtWidgets.QLabel("Select Year:")
-        year_label_month.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
-        year_container.addWidget(year_label_month)
-
-        # Year field
+        ym_col = QtWidgets.QVBoxLayout()
+        ym_col.setSpacing(4)
+        ym_col.addWidget(self._field_lbl("YEAR"))
         self.year_edit_month = QtWidgets.QLineEdit(str(datetime.now().year))
-        self.year_edit_month.setFixedSize(150, 45)
         self.year_edit_month.setReadOnly(True)
-        self.year_edit_month.setStyleSheet("""
-            QLineEdit {
-                padding: 12px;
-                border: 2px solid #bdc3c7;
-                border-radius: 8px;
-                font-size: 14px;
-                background-color: white;
-                color: #2c3e50;
-                font-weight: bold;
-            }
-        """)
-
-        # Calendar button
         self.year_calendar_btn_month = QtWidgets.QPushButton("📅")
-        self.year_calendar_btn_month.setFixedSize(50, 45)
-        self.year_calendar_btn_month.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        self.year_calendar_btn_month.setStyleSheet("""
-            QPushButton {
-                background: #3498db;
-                color: white;
-                border: 2px solid #2980b9;
-                border-radius: 8px;
-                font-size: 18px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #2980b9;
-                border-color: #21618c;
-            }
-            QPushButton:pressed {
-                background: #21618c;
-            }
-        """)
         self.year_calendar_btn_month.clicked.connect(self.show_year_popup_for_month)
-
-        year_container.addWidget(self.year_edit_month)
-        year_container.addWidget(self.year_calendar_btn_month)
-        month_year_row_layout.addLayout(year_container)
-
-        month_year_row_layout.addStretch()
-        month_layout.addLayout(month_year_row_layout)
+        ym_col.addLayout(self._build_year_row(
+            self.year_edit_month, self.year_calendar_btn_month))
+        mg.addLayout(ym_col)
+        mg.addStretch()
         self.date_selection_layout.addWidget(self.month_group)
 
-        # Year Selector
-        self.year_group = QtWidgets.QGroupBox("📊 Select Year")
-        self.year_group.setMinimumHeight(120)
-        self.year_group.setStyleSheet("""
-            QGroupBox {
-                font-size: 14px;
-                font-weight: bold;
-                color: #2c3e50;
-                border: 2px solid #3498db;
-                border-radius: 8px;
-                margin-top: 8px;
-                padding-top: 12px;
-                background-color: #f8f9fa;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 8px 0 8px;
-                color: #2c3e50;
-            }
-        """)
-        year_layout = QtWidgets.QVBoxLayout(self.year_group)
-        year_layout.setSpacing(15)
+        # Year card
+        self.year_group = QtWidgets.QGroupBox("Year")
+        self.year_group.setStyleSheet(self._CARD)
+        yg = QtWidgets.QHBoxLayout(self.year_group)
+        yg.setContentsMargins(14, 8, 14, 10)
+        yg.setSpacing(6)
 
-        # Year selection row
-        year_row_layout = QtWidgets.QHBoxLayout()
-        year_label = QtWidgets.QLabel("Select Year:")
-        year_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
-        year_row_layout.addWidget(year_label)
-        
-        # Year field
+        y_col = QtWidgets.QVBoxLayout()
+        y_col.setSpacing(4)
+        y_col.addWidget(self._field_lbl("YEAR"))
         self.year_edit = QtWidgets.QLineEdit(str(datetime.now().year))
-        self.year_edit.setFixedSize(150, 45)
         self.year_edit.setReadOnly(True)
-        self.year_edit.setStyleSheet("""
-            QLineEdit {
-                padding: 12px;
-                border: 2px solid #bdc3c7;
-                border-radius: 8px;
-                font-size: 14px;
-                background-color: white;
-                color: #2c3e50;
-                font-weight: bold;
-            }
-        """)
-        
-        # Calendar button
         self.year_calendar_btn = QtWidgets.QPushButton("📅")
-        self.year_calendar_btn.setFixedSize(50, 45)
-        self.year_calendar_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        self.year_calendar_btn.setStyleSheet("""
-            QPushButton {
-                background: #3498db;
-                color: white;
-                border: 2px solid #2980b9;
-                border-radius: 8px;
-                font-size: 18px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #2980b9;
-                border-color: #21618c;
-            }
-            QPushButton:pressed {
-                background: #21618c;
-            }
-        """)
         self.year_calendar_btn.clicked.connect(self.show_year_popup)
-        
-        year_row_layout.addWidget(self.year_edit)
-        year_row_layout.addWidget(self.year_calendar_btn)
-        year_row_layout.addStretch()
-        year_layout.addLayout(year_row_layout)
-
+        y_col.addLayout(self._build_year_row(self.year_edit, self.year_calendar_btn))
+        yg.addLayout(y_col)
+        yg.addStretch()
         self.date_selection_layout.addWidget(self.year_group)
 
         layout.addWidget(self.date_selection_container)
 
-        # Initially hide all date selection components
         self.date_selection_container.setVisible(False)
         self.date_range_group.setVisible(False)
         self.month_group.setVisible(False)
         self.year_group.setVisible(False)
-        
-        # Preview Section
-        preview_card = QtWidgets.QGroupBox("👁️ PDF Export Preview")
-        preview_card.setStyleSheet("""
-            QGroupBox {
+
+        # ── Status bar ──────────────────────────────────────────
+        self.preview_label = QtWidgets.QLabel("Will export ALL quote forms as PDF")
+        _pdf_preview = self._build_status_bar(self.preview_label)
+        layout.addWidget(_pdf_preview)
+
+        # ── Export Summary card ──────────────────────────────────
+        self.pdf_summary_card = self._build_export_summary_card("PDF")
+        layout.addWidget(self.pdf_summary_card)
+
+        # ── Large Export PDF button ──────────────────────────────
+        self.pdf_export_btn = QtWidgets.QPushButton("  Export PDF")
+        self.pdf_export_btn.setFixedSize(240, 40)
+        self.pdf_export_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.pdf_export_btn.setStyleSheet("""
+            QPushButton {
+                background: #0F766E;
+                color: white;
+                border: none;
+                border-radius: 10px;
                 font-size: 14px;
-                font-weight: bold;
-                color: #2c3e50;
-                border: 2px solid #27ae60;
-                border-radius: 8px;
-                margin-top: 10px;
-                padding-top: 10px;
+                font-weight: 800;
+                font-family: 'Inter', 'Segoe UI';
             }
+            QPushButton:hover { background: #115E59; }
+            QPushButton:disabled { background: #CBD5E1; color: #94A3B8; }
         """)
-        preview_layout = QtWidgets.QVBoxLayout(preview_card)
-        
-        self.preview_label = QtWidgets.QLabel("Ready to export all quote forms as PDF")
-        self.preview_label.setStyleSheet("""
-            QLabel {
-                font-size: 12px;
-                color: #7f8c8d;
-                padding: 10px;
-                background-color: #ecf0f1;
-                border-radius: 5px;
-            }
-        """)
-        self.preview_label.setWordWrap(True)
-        preview_layout.addWidget(self.preview_label)
-        
-        layout.addWidget(preview_card)
-        
-        # Connect signals for live preview updates
+        self.pdf_export_btn.clicked.connect(self._trigger_pdf_export)
+        pdf_btn_row = QtWidgets.QHBoxLayout()
+        pdf_btn_row.addStretch()
+        pdf_btn_row.addWidget(self.pdf_export_btn)
+        pdf_btn_row.addStretch()
+        layout.addLayout(pdf_btn_row)
+
+        # ── Security note ────────────────────────────────────────
+        sec = QtWidgets.QLabel("🔒  Your data is secure and will be exported in PDF format.")
+        sec.setStyleSheet("font-size: 11px; color: #94A3B8; background: transparent; border: none;")
+        sec.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(sec)
+
+        # ── Recent Exports ───────────────────────────────────────
+        self._pdf_recent_container = self._build_recent_exports_widget("PDF")
+        layout.addWidget(self._pdf_recent_container)
+        layout.addStretch()
+
         self.from_date.dateChanged.connect(self.update_preview)
         self.to_date.dateChanged.connect(self.update_preview)
+        self.from_date.wheelEvent = lambda e: e.ignore()
+        self.from_date.stepBy = lambda x: None
+        self.to_date.wheelEvent = lambda e: e.ignore()
+        self.to_date.stepBy = lambda x: None
+        self.month_combo.wheelEvent = lambda e: e.ignore()
         self.month_combo.currentTextChanged.connect(self.update_preview)
-    
-    def setup_excel_tab(self):
-        """Setup the Excel export tab"""
-        layout = QtWidgets.QVBoxLayout(self.excel_tab)
-        layout.setSpacing(15)
-        
-        # Export Options Card
-        options_card = QtWidgets.QGroupBox("🎯 Excel Export Options")
-        options_card.setStyleSheet("""
-            QGroupBox {
-                font-size: 14px;
-                font-weight: bold;
-                color: #2c3e50;
-                border: 2px solid #bdc3c7;
-                border-radius: 8px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 8px 0 8px;
-            }
-        """)
-        options_layout = QtWidgets.QVBoxLayout(options_card)
-        
-        # Export Range Selection
-        range_group = QtWidgets.QButtonGroup(self)
-        
-        self.excel_all_radio = QtWidgets.QRadioButton("📋 Export All Quote Forms")
-        self.excel_all_radio.setChecked(True)
-        self.excel_all_radio.toggled.connect(lambda: self.on_excel_range_changed("all"))
-        
-        self.excel_date_range_radio = QtWidgets.QRadioButton("📅 Export by Date Range")
-        self.excel_date_range_radio.toggled.connect(lambda: self.on_excel_range_changed("date_range"))
-        
-        self.excel_month_radio = QtWidgets.QRadioButton("🗓️ Export by Month")
-        self.excel_month_radio.toggled.connect(lambda: self.on_excel_range_changed("month"))
-        
-        self.excel_year_radio = QtWidgets.QRadioButton("📊 Export by Year")
-        self.excel_year_radio.toggled.connect(lambda: self.on_excel_range_changed("year"))
-        
-        options_layout.addWidget(self.excel_all_radio)
-        options_layout.addWidget(self.excel_date_range_radio)
-        options_layout.addWidget(self.excel_month_radio)
-        options_layout.addWidget(self.excel_year_radio)
-        
-        range_group.addButton(self.excel_all_radio)
-        range_group.addButton(self.excel_date_range_radio)
-        range_group.addButton(self.excel_month_radio)
-        range_group.addButton(self.excel_year_radio)
-        
-        layout.addWidget(options_card)
-        
-        # Date Selection Container for Excel
-        self.excel_date_selection_container = QtWidgets.QWidget()
-        self.excel_date_selection_layout = QtWidgets.QVBoxLayout(self.excel_date_selection_container)
-        self.excel_date_selection_layout.setSpacing(15)
-        self.excel_date_selection_layout.setContentsMargins(10, 10, 10, 10)
-        
-        # Date Range Selector for Excel
-        self.excel_date_range_group = QtWidgets.QGroupBox("📅 Select Date Range")
-        self.excel_date_range_group.setMinimumHeight(120)
-        self.excel_date_range_group.setStyleSheet("""
-            QGroupBox {
-                font-size: 14px;
-                font-weight: bold;
-                color: #2c3e50;
-                border: 2px solid #3498db;
-                border-radius: 8px;
-                margin-top: 8px;
-                padding-top: 12px;
-                background-color: #f8f9fa;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 8px 0 8px;
-                color: #2c3e50;
-            }
-        """)
-        excel_date_range_layout = QtWidgets.QHBoxLayout(self.excel_date_range_group)
-        excel_date_range_layout.setSpacing(20)
 
-        # From date section
-        excel_from_layout = QtWidgets.QVBoxLayout()
-        excel_from_label = QtWidgets.QLabel("From Date:")
-        excel_from_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
-        excel_from_layout.addWidget(excel_from_label)
-        self.excel_from_date = QtWidgets.QDateEdit()
+    def setup_excel_tab(self):
+        """Setup the Excel export sub-window."""
+        self._setup_reference_export_task(self.excel_tab, "excel")
+        return
+        layout = QtWidgets.QVBoxLayout(self.excel_tab)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setAlignment(QtCore.Qt.AlignTop)
+        layout.setSpacing(12)
+
+        layout.addWidget(self._field_lbl("EXPORT RANGE"))
+
+        rg = QtWidgets.QButtonGroup(self)
+        self.excel_all_radio        = QtWidgets.QRadioButton("All Quote Forms")
+        self.excel_date_range_radio = QtWidgets.QRadioButton("Date Range")
+        self.excel_month_radio      = QtWidgets.QRadioButton("By Month")
+        self.excel_year_radio       = QtWidgets.QRadioButton("By Year")
+        self.excel_all_radio.setChecked(True)
+        self.excel_all_radio.toggled.connect(       lambda: self.on_excel_range_changed("all"))
+        self.excel_date_range_radio.toggled.connect(lambda: self.on_excel_range_changed("date_range"))
+        self.excel_month_radio.toggled.connect(     lambda: self.on_excel_range_changed("month"))
+        self.excel_year_radio.toggled.connect(      lambda: self.on_excel_range_changed("year"))
+        layout.addLayout(self._build_range_row(
+            self.excel_all_radio, self.excel_date_range_radio,
+            self.excel_month_radio, self.excel_year_radio, rg))
+
+        self.excel_date_selection_container = QtWidgets.QWidget()
+        self.excel_date_selection_container.setStyleSheet("QWidget { background: transparent; }")
+        self.excel_date_selection_layout = QtWidgets.QVBoxLayout(self.excel_date_selection_container)
+        self.excel_date_selection_layout.setContentsMargins(0, 0, 0, 0)
+        self.excel_date_selection_layout.setSpacing(8)
+
+        # Date Range card
+        self.excel_date_range_group = QtWidgets.QGroupBox("Date Range")
+        self.excel_date_range_group.setStyleSheet(self._CARD)
+        edr = QtWidgets.QHBoxLayout(self.excel_date_range_group)
+        edr.setContentsMargins(14, 8, 14, 10)
+        edr.setSpacing(16)
+
+        efrom_col = QtWidgets.QVBoxLayout()
+        efrom_col.setSpacing(4)
+        efrom_col.addWidget(self._field_lbl("FROM DATE"))
+        self.excel_from_date = _NoScrollDateEdit()
         self.excel_from_date.setDisplayFormat("MM-dd-yyyy")
         self.excel_from_date.setDate(QtCore.QDate.currentDate().addMonths(-1))
         self.excel_from_date.setCalendarPopup(True)
-        self.excel_from_date.setFixedSize(160, 45)
-        self.excel_from_date.setStyleSheet("""
-            QDateEdit {
-                padding: 12px;
-                border: 2px solid #bdc3c7;
-                border-radius: 8px;
-                font-size: 14px;
-                background-color: white;
-            }
-            QDateEdit:hover {
-                border-color: #3498db;
-            }
-        """)
-        excel_from_layout.addWidget(self.excel_from_date)
-        excel_date_range_layout.addLayout(excel_from_layout)
+        self.excel_from_date.setFixedSize(200, 34)
+        self.excel_from_date.setStyleSheet(self._DATE)
+        efrom_col.addWidget(self.excel_from_date)
+        edr.addLayout(efrom_col)
 
-        # To date section
-        excel_to_layout = QtWidgets.QVBoxLayout()
-        excel_to_label = QtWidgets.QLabel("To Date:")
-        excel_to_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
-        excel_to_layout.addWidget(excel_to_label)
-        self.excel_to_date = QtWidgets.QDateEdit()
+        earrow = QtWidgets.QLabel("→")
+        earrow.setStyleSheet(
+            "font-size: 16px; color: #94A3B8; background: transparent;"
+            " border: none; padding-top: 20px;")
+        edr.addWidget(earrow)
+
+        eto_col = QtWidgets.QVBoxLayout()
+        eto_col.setSpacing(4)
+        eto_col.addWidget(self._field_lbl("TO DATE"))
+        self.excel_to_date = _NoScrollDateEdit()
         self.excel_to_date.setDisplayFormat("MM-dd-yyyy")
         self.excel_to_date.setDate(QtCore.QDate.currentDate())
         self.excel_to_date.setCalendarPopup(True)
-        self.excel_to_date.setFixedSize(160, 45)
-        self.excel_to_date.setStyleSheet("""
-            QDateEdit {
-                padding: 12px;
-                border: 2px solid #bdc3c7;
-                border-radius: 8px;
-                font-size: 14px;
-                background-color: white;
-            }
-            QDateEdit:hover {
-                border-color: #3498db;
-            }
-        """)
-        excel_to_layout.addWidget(self.excel_to_date)
-        excel_date_range_layout.addLayout(excel_to_layout)
-
-        excel_date_range_layout.addStretch()
+        self.excel_to_date.setFixedSize(200, 34)
+        self.excel_to_date.setStyleSheet(self._DATE)
+        eto_col.addWidget(self.excel_to_date)
+        edr.addLayout(eto_col)
+        edr.addStretch()
         self.excel_date_selection_layout.addWidget(self.excel_date_range_group)
 
-        # Month Selector for Excel
-        self.excel_month_group = QtWidgets.QGroupBox("🗓️ Select Month and Year")
-        self.excel_month_group.setMinimumHeight(150)
-        self.excel_month_group.setStyleSheet("""
-            QGroupBox {
-                font-size: 14px;
-                font-weight: bold;
-                color: #2c3e50;
-                border: 2px solid #3498db;
-                border-radius: 8px;
-                margin-top: 8px;
-                padding-top: 12px;
-                background-color: #f8f9fa;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 8px 0 8px;
-                color: #2c3e50;
-            }
-        """)
-        excel_month_layout = QtWidgets.QVBoxLayout(self.excel_month_group)
-        excel_month_layout.setSpacing(15)
+        # Month & Year card
+        self.excel_month_group = QtWidgets.QGroupBox("Month && Year")
+        self.excel_month_group.setStyleSheet(self._CARD)
+        emg = QtWidgets.QHBoxLayout(self.excel_month_group)
+        emg.setContentsMargins(14, 8, 14, 10)
+        emg.setSpacing(30)
 
-        # Month and Year selection in one row
-        excel_month_year_row_layout = QtWidgets.QHBoxLayout()
-        excel_month_year_row_layout.setSpacing(15)
-
-        # Month selection
-        excel_month_container = QtWidgets.QHBoxLayout()
-        excel_month_label = QtWidgets.QLabel("Select Month:")
-        excel_month_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
-        excel_month_container.addWidget(excel_month_label)
-        self.excel_month_combo = QtWidgets.QComboBox()
-        self.excel_month_combo.setFixedSize(200, 45)
-        self.excel_month_combo.setStyleSheet("""
-            QComboBox {
-                padding: 12px;
-                border: 2px solid #bdc3c7;
-                border-radius: 8px;
-                font-size: 14px;
-                background-color: white;
-            }
-            QComboBox:hover {
-                border-color: #3498db;
-            }
-        """)
+        em_col = QtWidgets.QVBoxLayout()
+        em_col.setSpacing(4)
+        em_col.addWidget(self._field_lbl("MONTH"))
+        self.excel_month_combo = _NoScrollComboBox()
+        self.excel_month_combo.setFixedSize(175, 34)
+        self.excel_month_combo.setStyleSheet(
+            "QComboBox { padding: 5px 10px; border: 1.5px solid #CBD5E1;"
+            " border-radius: 7px; font-size: 13px; font-weight: 600;"
+            " color: #1E293B; background: white; }"
+            "QComboBox:focus { border-color: #0F766E; }")
         self.populate_months_excel()
-        excel_month_container.addWidget(self.excel_month_combo)
-        excel_month_year_row_layout.addLayout(excel_month_container)
+        em_col.addWidget(self.excel_month_combo)
+        emg.addLayout(em_col)
 
-        # Year selection for month
-        excel_year_container = QtWidgets.QHBoxLayout()
-        excel_year_month_label = QtWidgets.QLabel("Select Year:")
-        excel_year_month_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
-        excel_year_container.addWidget(excel_year_month_label)
-
-        # Year field
+        eym_col = QtWidgets.QVBoxLayout()
+        eym_col.setSpacing(4)
+        eym_col.addWidget(self._field_lbl("YEAR"))
         self.excel_year_edit_month = QtWidgets.QLineEdit(str(datetime.now().year))
-        self.excel_year_edit_month.setFixedSize(150, 45)
         self.excel_year_edit_month.setReadOnly(True)
-        self.excel_year_edit_month.setStyleSheet("""
-            QLineEdit {
-                padding: 12px;
-                border: 2px solid #bdc3c7;
-                border-radius: 8px;
-                font-size: 14px;
-                background-color: white;
-                color: #2c3e50;
-                font-weight: bold;
-            }
-        """)
-
-        # Calendar button
         self.excel_year_calendar_btn_month = QtWidgets.QPushButton("📅")
-        self.excel_year_calendar_btn_month.setFixedSize(50, 45)
-        self.excel_year_calendar_btn_month.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        self.excel_year_calendar_btn_month.setStyleSheet("""
-            QPushButton {
-                background: #3498db;
-                color: white;
-                border: 2px solid #2980b9;
-                border-radius: 8px;
-                font-size: 18px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #2980b9;
-                border-color: #21618c;
-            }
-            QPushButton:pressed {
-                background: #21618c;
-            }
-        """)
         self.excel_year_calendar_btn_month.clicked.connect(self.show_year_popup_for_month_excel)
-
-        excel_year_container.addWidget(self.excel_year_edit_month)
-        excel_year_container.addWidget(self.excel_year_calendar_btn_month)
-        excel_month_year_row_layout.addLayout(excel_year_container)
-
-        excel_month_year_row_layout.addStretch()
-        excel_month_layout.addLayout(excel_month_year_row_layout)
+        eym_col.addLayout(self._build_year_row(
+            self.excel_year_edit_month, self.excel_year_calendar_btn_month))
+        emg.addLayout(eym_col)
+        emg.addStretch()
         self.excel_date_selection_layout.addWidget(self.excel_month_group)
 
-        # Year Selector for Excel
-        self.excel_year_group = QtWidgets.QGroupBox("📊 Select Year")
-        self.excel_year_group.setMinimumHeight(120)
-        self.excel_year_group.setStyleSheet("""
-            QGroupBox {
-                font-size: 14px;
-                font-weight: bold;
-                color: #2c3e50;
-                border: 2px solid #3498db;
-                border-radius: 8px;
-                margin-top: 8px;
-                padding-top: 12px;
-                background-color: #f8f9fa;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 8px 0 8px;
-                color: #2c3e50;
-            }
-        """)
-        excel_year_layout = QtWidgets.QVBoxLayout(self.excel_year_group)
-        excel_year_layout.setSpacing(15)
+        # Year card
+        self.excel_year_group = QtWidgets.QGroupBox("Year")
+        self.excel_year_group.setStyleSheet(self._CARD)
+        eyg = QtWidgets.QHBoxLayout(self.excel_year_group)
+        eyg.setContentsMargins(14, 8, 14, 10)
+        eyg.setSpacing(6)
 
-        # Year selection row
-        excel_year_row_layout = QtWidgets.QHBoxLayout()
-        excel_year_label = QtWidgets.QLabel("Select Year:")
-        excel_year_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
-        excel_year_row_layout.addWidget(excel_year_label)
-        
-        # Year field
+        ey_col = QtWidgets.QVBoxLayout()
+        ey_col.setSpacing(4)
+        ey_col.addWidget(self._field_lbl("YEAR"))
         self.excel_year_edit = QtWidgets.QLineEdit(str(datetime.now().year))
-        self.excel_year_edit.setFixedSize(150, 45)
         self.excel_year_edit.setReadOnly(True)
-        self.excel_year_edit.setStyleSheet("""
-            QLineEdit {
-                padding: 12px;
-                border: 2px solid #bdc3c7;
-                border-radius: 8px;
-                font-size: 14px;
-                background-color: white;
-                color: #2c3e50;
-                font-weight: bold;
-            }
-        """)
-        
-        # Calendar button
         self.excel_year_calendar_btn = QtWidgets.QPushButton("📅")
-        self.excel_year_calendar_btn.setFixedSize(50, 45)
-        self.excel_year_calendar_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        self.excel_year_calendar_btn.setStyleSheet("""
-            QPushButton {
-                background: #3498db;
-                color: white;
-                border: 2px solid #2980b9;
-                border-radius: 8px;
-                font-size: 18px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #2980b9;
-                border-color: #21618c;
-            }
-            QPushButton:pressed {
-                background: #21618c;
-            }
-        """)
         self.excel_year_calendar_btn.clicked.connect(self.show_year_popup_excel)
-        
-        excel_year_row_layout.addWidget(self.excel_year_edit)
-        excel_year_row_layout.addWidget(self.excel_year_calendar_btn)
-        excel_year_row_layout.addStretch()
-        excel_year_layout.addLayout(excel_year_row_layout)
-
+        ey_col.addLayout(self._build_year_row(
+            self.excel_year_edit, self.excel_year_calendar_btn))
+        eyg.addLayout(ey_col)
+        eyg.addStretch()
         self.excel_date_selection_layout.addWidget(self.excel_year_group)
 
         layout.addWidget(self.excel_date_selection_container)
 
-        # Initially hide all date selection components for Excel
         self.excel_date_selection_container.setVisible(False)
         self.excel_date_range_group.setVisible(False)
         self.excel_month_group.setVisible(False)
         self.excel_year_group.setVisible(False)
-        
-        # Preview Section for Excel
-        excel_preview_card = QtWidgets.QGroupBox("👁️ Excel Export Preview")
-        excel_preview_card.setStyleSheet("""
-            QGroupBox {
+
+        # ── Status bar ──────────────────────────────────────────
+        self.excel_preview_label = QtWidgets.QLabel("Will export ALL quote forms as Excel")
+        _xl_preview = self._build_status_bar(self.excel_preview_label)
+        layout.addWidget(_xl_preview)
+
+        # ── Export Summary card ──────────────────────────────────
+        self.excel_summary_card = self._build_export_summary_card("Excel")
+        layout.addWidget(self.excel_summary_card)
+
+        # ── Large Export Excel button ────────────────────────────
+        self.excel_export_btn = QtWidgets.QPushButton("  Export Excel")
+        self.excel_export_btn.setFixedSize(240, 40)
+        self.excel_export_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.excel_export_btn.setStyleSheet("""
+            QPushButton {
+                background: #0F766E;
+                color: white;
+                border: none;
+                border-radius: 10px;
                 font-size: 14px;
-                font-weight: bold;
-                color: #2c3e50;
-                border: 2px solid #e67e22;
-                border-radius: 8px;
-                margin-top: 10px;
-                padding-top: 10px;
+                font-weight: 800;
+                font-family: 'Inter', 'Segoe UI';
             }
+            QPushButton:hover { background: #115E59; }
+            QPushButton:disabled { background: #CBD5E1; color: #94A3B8; }
         """)
-        excel_preview_layout = QtWidgets.QVBoxLayout(excel_preview_card)
-        
-        self.excel_preview_label = QtWidgets.QLabel("Ready to export all quote forms as Excel")
-        self.excel_preview_label.setStyleSheet("""
-            QLabel {
-                font-size: 12px;
-                color: #7f8c8d;
-                padding: 10px;
-                background-color: #ecf0f1;
-                border-radius: 5px;
-            }
-        """)
-        self.excel_preview_label.setWordWrap(True)
-        excel_preview_layout.addWidget(self.excel_preview_label)
-        
-        layout.addWidget(excel_preview_card)
-        
-        # Connect signals for live preview updates for Excel
+        self.excel_export_btn.clicked.connect(self._trigger_excel_export)
+        excel_btn_row = QtWidgets.QHBoxLayout()
+        excel_btn_row.addStretch()
+        excel_btn_row.addWidget(self.excel_export_btn)
+        excel_btn_row.addStretch()
+        layout.addLayout(excel_btn_row)
+
+        # ── Security note ────────────────────────────────────────
+        sec = QtWidgets.QLabel("🔒  Your data is secure and will be exported in Excel format.")
+        sec.setStyleSheet("font-size: 11px; color: #94A3B8; background: transparent; border: none;")
+        sec.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(sec)
+
+        # ── Recent Exports ───────────────────────────────────────
+        self._excel_recent_container = self._build_recent_exports_widget("Excel")
+        layout.addWidget(self._excel_recent_container)
+        layout.addStretch()
+
         self.excel_from_date.dateChanged.connect(self.update_excel_preview)
         self.excel_to_date.dateChanged.connect(self.update_excel_preview)
+        self.excel_from_date.wheelEvent = lambda e: e.ignore()
+        self.excel_from_date.stepBy = lambda x: None
+        self.excel_to_date.wheelEvent = lambda e: e.ignore()
+        self.excel_to_date.stepBy = lambda x: None
+        self.excel_month_combo.wheelEvent = lambda e: e.ignore()
         self.excel_month_combo.currentTextChanged.connect(self.update_excel_preview)
-    
-    # Add all the helper methods from PDFExportDialog that you need
-    # (show_year_popup, on_year_selected, populate_months, on_tab_changed, etc.)
-    # These will be similar to the ones in your invoice history PDFExportDialog
     
     def show_year_popup(self):
         """Show year calendar popup for PDF year selection"""
@@ -6224,175 +7990,195 @@ class JobFormsExportDialog(QtWidgets.QDialog):
     
     def on_tab_changed(self, index):
         """Handle tab changes"""
+        self._sync_format_card_state(index)
         if index == 0:  # PDF tab
             self.export_type = "pdf"
-            self.export_btn.setText("🚀 Export PDF")
+            self._active_export_btn = getattr(self, "pdf_export_btn", None)
             self.update_preview()
         elif index == 1:  # Excel tab
             self.export_type = "excel"
-            self.export_btn.setText("🚀 Export Excel")
+            self._active_export_btn = getattr(self, "excel_export_btn", None)
             self.update_excel_preview()
     
     def on_range_changed(self, range_type):
         """Handle export range changes for PDF"""
         self.export_range = range_type
-        
-        # Show/hide specific date selection components based on the selected range
-        date_range_visible = (range_type == "date_range")
         month_visible = (range_type == "month")
-        year_visible = (range_type == "year")
-        
-        # Show/hide the specific group boxes
-        self.date_range_group.setVisible(date_range_visible)
+        year_visible  = (range_type == "year")
+        date_visible  = (range_type == "date_range")
         self.month_group.setVisible(month_visible)
         self.year_group.setVisible(year_visible)
-        
-        # Show the container if any date selection is needed
-        self.date_selection_container.setVisible(range_type != "all")
-        
-        # Update preview to show what will be exported
+        if hasattr(self, 'date_range_wrap'):
+            self.date_range_wrap.setVisible(date_visible)
+        self.date_selection_container.setVisible(month_visible or year_visible or date_visible)
         self.update_preview()
 
     def on_excel_range_changed(self, range_type):
         """Handle export range changes for Excel"""
         self.excel_export_range = range_type
-        
-        # Show/hide specific date selection components based on the selected range
-        date_range_visible = (range_type == "date_range")
         month_visible = (range_type == "month")
-        year_visible = (range_type == "year")
-        
-        # Show/hide the specific group boxes
-        self.excel_date_range_group.setVisible(date_range_visible)
+        year_visible  = (range_type == "year")
+        date_visible  = (range_type == "date_range")
         self.excel_month_group.setVisible(month_visible)
         self.excel_year_group.setVisible(year_visible)
-        
-        # Show the container if any date selection is needed
-        self.excel_date_selection_container.setVisible(range_type != "all")
-        
-        # Update preview to show what will be exported
+        if hasattr(self, 'excel_date_range_wrap'):
+            self.excel_date_range_wrap.setVisible(date_visible)
+        self.excel_date_selection_container.setVisible(month_visible or year_visible or date_visible)
         self.update_excel_preview()
     
     def update_preview(self):
         """Update the PDF preview text with correct order info"""
+        self._refresh_export_filter_options("pdf")
         if self.export_range == "all":
-            self.preview_label.setText("📋 Will export ALL quote forms as")
-        
+            self.preview_label.setText("Will export ALL quote forms as PDF")
         elif self.export_range == "date_range":
-            from_date = self.from_date.date().toString("MM/dd/yyyy")
-            to_date = self.to_date.date().toString("MM/dd/yyyy")
-            self.preview_label.setText(f"📅 Will export quote forms from {from_date} to {to_date} as PDF")
-        
+            fd = self.from_date.date().toString("MM/dd/yyyy")
+            td = self.to_date.date().toString("MM/dd/yyyy")
+            self.preview_label.setText(f"Will export quote forms from {fd} to {td} as PDF")
         elif self.export_range == "month":
-            month = self.month_combo.currentText()
-            year = self.year_edit_month.text()
-            self.preview_label.setText(f"🗓️ Will export quote forms for {month} {year} as PDF")
-        
+            self.preview_label.setText(
+                f"Will export quote forms for {self.month_combo.currentText()} {self.year_edit_month.text()} as PDF")
         elif self.export_range == "year":
-            year = self.year_edit.text()
-            self.preview_label.setText(f"📊 Will export quote forms for the year {year} as PDF")
+            self.preview_label.setText(
+                f"Will export quote forms for the year {self.year_edit.text()} as PDF")
+        # Update summary card scope label
+        if hasattr(self, '_pdf_scope_lbl'):
+            self._pdf_scope_lbl.setText(self._get_scope_label("pdf"))
+        if hasattr(self, '_pdf_rec_lbl'):
+            self._pdf_rec_lbl.setText(f"{self._get_total_count()} Quotes")
+        self._refresh_reference_summary("pdf")
 
     def update_excel_preview(self):
         """Update the Excel preview text with correct order info"""
-        if hasattr(self, 'excel_export_range'):
-            range_type = self.excel_export_range
-        else:
-            range_type = "all"
-        
+        self._refresh_export_filter_options("excel")
+        range_type = getattr(self, 'excel_export_range', 'all')
+
         if range_type == "all":
-            self.excel_preview_label.setText("📋 Will export ALL quote forms as Excel")
-        
+            self.excel_preview_label.setText("Will export ALL quote forms as Excel")
         elif range_type == "date_range":
-            from_date = self.excel_from_date.date().toString("MM/dd/yyyy")
-            to_date = self.excel_to_date.date().toString("MM/dd/yyyy")
-            self.excel_preview_label.setText(f"📅 Will export quote forms from {from_date} to {to_date} as Excel")
-        
+            fd = self.excel_from_date.date().toString("MM/dd/yyyy")
+            td = self.excel_to_date.date().toString("MM/dd/yyyy")
+            self.excel_preview_label.setText(f"Will export quote forms from {fd} to {td} as Excel")
         elif range_type == "month":
-            month = self.excel_month_combo.currentText()
-            year = self.excel_year_edit_month.text()
-            self.excel_preview_label.setText(f"🗓️ Will export quote forms for {month} {year} as Excel")
-        
+            self.excel_preview_label.setText(
+                f"Will export quote forms for {self.excel_month_combo.currentText()} {self.excel_year_edit_month.text()} as Excel")
         elif range_type == "year":
-            year = self.excel_year_edit.text()
-            self.excel_preview_label.setText(f"📊 Will export quote forms for the year {year} as Excel")
+            self.excel_preview_label.setText(
+                f"Will export quote forms for the year {self.excel_year_edit.text()} as Excel")
+        # Update summary card scope label
+        if hasattr(self, '_excel_scope_lbl'):
+            self._excel_scope_lbl.setText(self._get_scope_label("excel"))
+        if hasattr(self, '_excel_rec_lbl'):
+            self._excel_rec_lbl.setText(f"{self._get_total_count()} Quotes")
+        self._refresh_reference_summary("excel")
+
+    def _refresh_reference_summary(self, export_type):
+        prefix = "excel_" if export_type == "excel" else ""
+        records = self._export_filtered_records(export_type)
+        filtered_count = len(records)
+        clients = sorted({str(job.get("client", "")).strip() for job in records if str(job.get("client", "")).strip()})
+        scope = self._get_scope_label(export_type)
+        filters = self._export_filter_values(export_type)
+        active_filters = []
+        if filters["status"] != "All Status":
+            active_filters.append(filters["status"])
+        if filters["client"] != "All Clients":
+            active_filters.append(filters["client"])
+        if active_filters:
+            scope = f"{scope} | " + " | ".join(active_filters)
+
+        filtered_lbl = getattr(self, f"_{export_type}_filtered_summary_lbl", None)
+        clients_lbl = getattr(self, f"_{export_type}_clients_summary_lbl", None)
+        scope_lbl = getattr(self, f"_{export_type}_scope_summary_lbl", None)
+        info_lbl = getattr(self, f"_{export_type}_info_summary_lbl", None)
+        if filtered_lbl:
+            filtered_lbl.setText(str(filtered_count))
+        if clients_lbl:
+            clients_lbl.setText(str(len(clients)) if clients else "—")
+        if scope_lbl:
+            scope_lbl.setText(scope)
+        if info_lbl:
+            info_lbl.setText(
+                f"ⓘ  You are about to export {filtered_count} quote form(s) in {export_type.upper()} format."
+            )
         
     def get_export_parameters(self):
         """Get export parameters based on current selection"""
         if self.export_type == "pdf":
+            filters = self._export_filter_values("pdf")
             if self.export_range == "all":
-                return {"range": "all", "type": "pdf"}
+                return {"range": "all", "type": "pdf", **filters}
             
             elif self.export_range == "date_range":
                 from_date = self.from_date.date().toPyDate()
                 to_date = self.to_date.date().toPyDate()
-                return {"range": "date_range", "from_date": from_date, "to_date": to_date, "type": "pdf"}
+                return {"range": "date_range", "from_date": from_date, "to_date": to_date, "type": "pdf", **filters}
             
             elif self.export_range == "month":
                 month = self.month_combo.currentIndex() + 1
                 year = int(self.year_edit_month.text())
-                return {"range": "month", "month": month, "year": year, "type": "pdf"}
+                return {"range": "month", "month": month, "year": year, "type": "pdf", **filters}
             
             elif self.export_range == "year":
                 year = int(self.year_edit.text())
-                return {"range": "year", "year": year, "type": "pdf"}
+                return {"range": "year", "year": year, "type": "pdf", **filters}
         
         elif self.export_type == "excel":
+            filters = self._export_filter_values("excel")
             if hasattr(self, 'excel_export_range'):
                 range_type = self.excel_export_range
             else:
                 range_type = "all"
             
             if range_type == "all":
-                return {"range": "all", "type": "excel"}
+                return {"range": "all", "type": "excel", **filters}
             
             elif range_type == "date_range":
                 from_date = self.excel_from_date.date().toPyDate()
                 to_date = self.excel_to_date.date().toPyDate()
-                return {"range": "date_range", "from_date": from_date, "to_date": to_date, "type": "excel"}
+                return {"range": "date_range", "from_date": from_date, "to_date": to_date, "type": "excel", **filters}
             
             elif range_type == "month":
                 month = self.excel_month_combo.currentIndex() + 1
                 year = int(self.excel_year_edit_month.text())
-                return {"range": "month", "month": month, "year": year, "type": "excel"}
+                return {"range": "month", "month": month, "year": year, "type": "excel", **filters}
             
             elif range_type == "year":
                 year = int(self.excel_year_edit.text())
-                return {"range": "year", "year": year, "type": "excel"}
+                return {"range": "year", "year": year, "type": "excel", **filters}
     
     def start_export(self):
         """Start the export process based on selected type"""
-        # Prevent multiple executions
         if hasattr(self, '_export_in_progress') and self._export_in_progress:
             return
-            
+
         self._export_in_progress = True
-        
+        active_btn = getattr(self, '_active_export_btn', None)
+
         try:
-            self.export_btn.setEnabled(False)
+            if active_btn:
+                active_btn.setEnabled(False)
             self.progress_bar.setVisible(True)
             self.progress_bar.setValue(0)
-            
+
             export_params = self.get_export_parameters()
-            
-            # Simulate export process
+
             for i in range(101):
-                if not hasattr(self, '_export_in_progress'):  # Check if still valid
+                if not hasattr(self, '_export_in_progress'):
                     return
                 QtWidgets.QApplication.processEvents()
                 self.progress_bar.setValue(i)
                 QtCore.QThread.msleep(10)
-            
-            # Store export parameters for parent to use after dialog closes
+
             self._export_params = export_params
-            
-            # Simply accept the dialog - let parent handle the actual export
             self.accept()
-            
+
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Export Error", f"Error exporting: {str(e)}")
         finally:
             self.progress_bar.setVisible(False)
-            self.export_btn.setEnabled(True)
+            if active_btn:
+                active_btn.setEnabled(True)
             self._export_in_progress = False
 # Update the JobFormDialog to ensure proper Firebase integration
 class JobFormDialog(QtWidgets.QDialog):
@@ -6432,359 +8218,517 @@ class JobFormDialog(QtWidgets.QDialog):
         
         # Set initial focus
         if not self.is_editing:
-            self.project_name_edit.setFocus()
-            self.project_name_edit.selectAll()
-            
+            QtCore.QTimer.singleShot(50, lambda: self.project_site_edit.setFocus())
+
     def init_ui(self):
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        self.setStyleSheet("QDialog { background: #F8FAFC; }")
 
-        # ===== Header (Reduced Height) =====
-        header = QtWidgets.QFrame()
-        header.setStyleSheet("""
-            QFrame {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #2c3e50, stop:1 #3498db);
-                color: white;
-                padding: 12px 24px;
+        # ── Hidden fields only used internally (not user-facing) ──
+        _hidden = QtWidgets.QWidget()
+        _hidden.setVisible(False)
+        _hidden.setMaximumHeight(0)
+        _hl = QtWidgets.QVBoxLayout(_hidden)
+        _hl.setContentsMargins(0, 0, 0, 0)
+        _hl.setSpacing(0)
+        self.project_name_edit = QtWidgets.QLineEdit()
+        self.timeline_info = QtWidgets.QLabel()
+        for _w in [self.project_name_edit, self.timeline_info]:
+            _hl.addWidget(_w)
+        main_layout.addWidget(_hidden)
+
+        # ── Shared styles ─────────────────────────────────────────
+        _INP = """
+            QLineEdit {
+                background:white; border:1.5px solid #E2E8F0; border-radius:8px;
+                padding:10px 14px; font-size:13px; color:#374151;
+                font-family:'Inter','Segoe UI';
             }
-        """)
-        header_layout = QtWidgets.QVBoxLayout(header)
-        header_layout.setSpacing(2)
+            QLineEdit:focus { border-color:#0F766E; }
+        """
+        _COMBO = """
+            QComboBox {
+                background:white; border:1.5px solid #E2E8F0; border-radius:8px;
+                padding:9px 14px; font-size:13px; color:#374151;
+                font-family:'Inter','Segoe UI';
+            }
+            QComboBox:focus { border-color:#0F766E; }
+            QComboBox::drop-down { border:none; width:28px; }
+            QComboBox QAbstractItemView {
+                border:1px solid #E2E8F0; border-radius:6px;
+                selection-background-color:#0F766E;
+            }
+        """
+        _LBL = (
+            "font-size:12px; font-weight:700; color:#374151;"
+            " background:transparent; border:none; font-family:'Inter','Segoe UI';"
+        )
+        _CARD = "QFrame { background:white; border:1px solid #E2E8F0; border-radius:10px; }"
+        _CHK = """
+            QCheckBox {
+                spacing:8px; font-size:13px; color:#374151;
+                font-family:'Inter','Segoe UI'; padding:4px 0; background:transparent;
+            }
+            QCheckBox::indicator {
+                width:18px; height:18px; border:2px solid #CBD5E1;
+                border-radius:4px; background:white;
+            }
+            QCheckBox::indicator:checked { background:#0F766E; border-color:#0F766E; }
+            QCheckBox::indicator:hover { border-color:#0F766E; }
+        """
 
-        title = QtWidgets.QLabel("Edit Quote Form" if self.is_editing else "Generate Professional Quote Form PDF")
-        title.setStyleSheet("font-size: 22px; font-weight: bold; color: white;")
-        subtitle = QtWidgets.QLabel("Update job details carefully." if self.is_editing else "Enter all job details carefully to generate a professional quote form PDF.")
-        subtitle.setStyleSheet("font-size: 12px; color: #ecf0f1;")
+        def _field(lbl_text, widget, hint=None, required=False):
+            w = QtWidgets.QWidget()
+            w.setStyleSheet("background:transparent;")
+            vl = QtWidgets.QVBoxLayout(w)
+            vl.setContentsMargins(0, 0, 0, 0)
+            vl.setSpacing(5)
+            lbl = QtWidgets.QLabel(lbl_text + (" *" if required else ""))
+            lbl.setStyleSheet(_LBL)
+            vl.addWidget(lbl)
+            vl.addWidget(widget)
+            if hint:
+                h = QtWidgets.QLabel(hint)
+                h.setStyleSheet(
+                    "font-size:11px; color:#9CA3AF; background:transparent;"
+                    " border:none; font-family:'Inter','Segoe UI';"
+                )
+                vl.addWidget(h)
+            return w
 
-        header_layout.addWidget(title)
-        header_layout.addWidget(subtitle)
-        layout.addWidget(header)
+        def _section(icon, title, subtitle):
+            card = QtWidgets.QFrame()
+            card.setStyleSheet(_CARD)
+            cl = QtWidgets.QVBoxLayout(card)
+            cl.setContentsMargins(24, 20, 24, 20)
+            cl.setSpacing(16)
+            hdr = QtWidgets.QHBoxLayout()
+            hdr.setSpacing(10)
+            ic = QtWidgets.QLabel()
+            ic.setFixedSize(30, 30)
+            ic.setAlignment(QtCore.Qt.AlignCenter)
+            ic.setStyleSheet("background:transparent; border:none;")
+            if isinstance(icon, QtGui.QIcon):
+                ic.setPixmap(icon.pixmap(24, 24))
+            else:
+                ic.setText(icon)
+                ic.setStyleSheet(
+                    "font-size:22px; background:transparent; border:none; color:#0F766E;"
+                )
+            hc = QtWidgets.QVBoxLayout()
+            hc.setSpacing(2)
+            tl = QtWidgets.QLabel(title)
+            tl.setStyleSheet(
+                "font-size:20px; font-weight:900; color:#111827;"
+                " background:transparent; border:none; font-family:'Inter','Segoe UI';"
+            )
+            sl = QtWidgets.QLabel(subtitle)
+            sl.setStyleSheet(
+                "font-size:12px; color:#6B7280; background:transparent;"
+                " border:none; font-family:'Inter','Segoe UI';"
+            )
+            hc.addWidget(tl)
+            hc.addWidget(sl)
+            hdr.addWidget(ic)
+            hdr.addLayout(hc)
+            hdr.addStretch()
+            cl.addLayout(hdr)
+            div = QtWidgets.QFrame()
+            div.setFrameShape(QtWidgets.QFrame.HLine)
+            div.setStyleSheet("background:#E2E8F0; border:none; max-height:1px;")
+            cl.addWidget(div)
+            return card, cl
 
-        # ===== Scrollable Content =====
+        # ── Scrollable content ────────────────────────────────────
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet(
+            "QScrollArea { background:#F8FAFC; border:none; }"
+            "QScrollArea > QWidget > QWidget { background:#F8FAFC; }"
+        )
+        content = QtWidgets.QWidget()
+        content.setStyleSheet("background:#F8FAFC;")
+        cly = QtWidgets.QVBoxLayout(content)
+        cly.setContentsMargins(32, 24, 32, 24)
+        cly.setSpacing(20)
 
-        # Create container for full scroll (header + entire form)
-        full_container = QtWidgets.QWidget()
-        scroll.setWidget(full_container)
+        # ════════ PROJECT DETAILS ════════════════════════════════
+        pd_card, pd = _section("📋", "Project Details", "Basic information about the quote")
 
-        full_layout = QtWidgets.QVBoxLayout(full_container)
-        full_layout.setContentsMargins(0, 0, 0, 0)
-        full_layout.setSpacing(0)
-        
-        # Move header INTO scroll
-        full_layout.addWidget(header)
-
-        # Now create original scroll_widget for the form
-        scroll_widget = QtWidgets.QWidget()
-        form_layout = QtWidgets.QVBoxLayout(scroll_widget)
-        form_layout.setContentsMargins(50, 30, 50, 30)
-        form_layout.setSpacing(25)
-
-        # Add form into full container
-        full_layout.addWidget(scroll_widget)
-
-        # Add scroll to main layout
-        layout.addWidget(scroll)
-
-        # ===== Basic Information =====
-        self.add_section_title(form_layout, "📝 Basic Information")
-            
-        # Quote Number field - STRICTLY READ-ONLY
-        self.job_number_edit = self.create_styled_line_edit("Auto-generated")
-        self.job_number_edit.setReadOnly(True)  # Make it STRICTLY read-only
-        self.job_number_edit.setStyleSheet("""
-            QLineEdit {
-                padding: 10px 12px;
-                border: 1px solid #bdc3c7;
-                border-radius: 6px;
-                background: #ecf0f1;  /* Gray background to indicate read-only */
-                font-size: 13px;
-                color: #7f8c8d;  /* Gray text color */
-                font-weight: bold;
-            }
-        """)
-
-        # Add quote number field normally (without generate button)
-        self.add_field(form_layout, "Quote Number:", self.job_number_edit)
-
-        # ==== REMOVED: Job Title field ====
-        # ==== ADDED: Project Name field in place of Job Title ====
-        self.project_name_edit = self.create_styled_line_edit("Enter project name")
-        self.add_field(form_layout, "Project Name:", self.project_name_edit)  # Changed from "Job Title"
-        
-        # Auto-generate quote number when user finishes typing project name (for new jobs only)
-        if not self.is_editing:
-            self.project_name_edit.editingFinished.connect(self.auto_generate_job_number)
-        
-        # Client field
-        self.client_combo = self.create_styled_combo_box([])
+        # Row 1: Quote Number | Client / Company
+        r1 = QtWidgets.QHBoxLayout()
+        r1.setSpacing(16)
+        self.job_number_edit = QtWidgets.QLineEdit()
+        self.job_number_edit.setReadOnly(True)
+        self.job_number_edit.setPlaceholderText("Auto-generated")
+        self.job_number_edit.setMinimumHeight(42)
+        self.job_number_edit.setStyleSheet(
+            "QLineEdit {"
+            "  background:#EFF6FF; border:2px solid #2563EB; border-radius:8px;"
+            "  padding:10px 14px; font-size:14px; color:#2563EB;"
+            "  font-family:'Inter','Segoe UI'; font-weight:800;"
+            "}"
+        )
+        self.client_combo = QtWidgets.QComboBox()
         self.client_combo.setEditable(True)
-        self.client_combo.lineEdit().setPlaceholderText("Select or type client name")
-        self.add_field(form_layout, "Client:", self.client_combo)
+        self.client_combo.setMinimumHeight(42)
+        self.client_combo.setStyleSheet(_COMBO)
+        self.client_combo.lineEdit().setPlaceholderText("Select or type company name")
+        r1.addWidget(_field("Quote Number", self.job_number_edit), 1)
+        r1.addWidget(_field("Client / Company", self.client_combo, required=True), 1)
+        pd.addLayout(r1)
 
-        # ===== Email and Address Fields =====
-        self.client_email_edit = self.create_styled_line_edit("Enter client/company email")
-        self.add_field(form_layout, "Client Email:", self.client_email_edit)
+        # Row 2: Project Site | Plant
+        r2 = QtWidgets.QHBoxLayout()
+        r2.setSpacing(16)
+        self.project_site_edit = QtWidgets.QLineEdit()
+        self.project_site_edit.setPlaceholderText("Enter complete project site address")
+        self.project_site_edit.setMinimumHeight(42)
+        self.project_site_edit.setStyleSheet(_INP)
+        self.plant_edit = QtWidgets.QLineEdit()
+        self.plant_edit.setPlaceholderText("Plant / facility name")
+        self.plant_edit.setMinimumHeight(42)
+        self.plant_edit.setStyleSheet(_INP)
+        r2.addWidget(_field("Project Site", self.project_site_edit, required=True))
+        r2.addWidget(_field("Plant", self.plant_edit))
+        pd.addLayout(r2)
 
-        self.client_address_edit = self.create_styled_line_edit("Enter Site/Mailing address")
-        self.client_address_edit.setMinimumHeight(60)
-        self.add_field(form_layout, "Mailing Address:", self.client_address_edit)
-        
-        self.plant_edit = self.create_styled_line_edit("Enter plant / facility name")
-        self.add_field(form_layout, "Plant (Other):", self.plant_edit)
+        # Row 3: Client Email | Client Address
+        r3 = QtWidgets.QHBoxLayout()
+        r3.setSpacing(16)
+        self.client_email_edit = QtWidgets.QLineEdit()
+        self.client_email_edit.setPlaceholderText("client@company.com")
+        self.client_email_edit.setMinimumHeight(42)
+        self.client_email_edit.setStyleSheet(_INP)
+        self.client_address_edit = QtWidgets.QLineEdit()
+        self.client_address_edit.setPlaceholderText("Mailing / billing address")
+        self.client_address_edit.setMinimumHeight(42)
+        self.client_address_edit.setStyleSheet(_INP)
+        r3.addWidget(_field("Client Email", self.client_email_edit))
+        r3.addWidget(_field("Client Address", self.client_address_edit))
+        pd.addLayout(r3)
 
-        
-        self.project_site_edit = self.create_styled_line_edit("Enter complete project site address")
-        self.add_field(form_layout, "Project Site:", self.project_site_edit)
-        
-        # ===== Sales (Optional) =====
-        # ===== Sales Dropdown (Same as Client) =====
-        self.sales_combo = self.create_styled_combo_box([])
+        # Row 4: Job Type | Sales Person
+        r4 = QtWidgets.QHBoxLayout()
+        r4.setSpacing(16)
+        self.job_type_combo = QtWidgets.QComboBox()
+        self.job_type_combo.addItems([
+            "Engineering Design", "Construction", "Inspection", "Consultation",
+            "Maintenance", "Research", "Drafting", "Peer Review", "Site Visit",
+            "Report Preparation", "Permit Drawings", "Other",
+        ])
+        self.job_type_combo.setEditable(True)
+        self.job_type_combo.setCurrentIndex(-1)
+        self.job_type_combo.lineEdit().setPlaceholderText("Select or type job type")
+        self.job_type_combo.setMinimumHeight(42)
+        self.job_type_combo.setStyleSheet(_COMBO)
+        self.sales_combo = QtWidgets.QComboBox()
         self.sales_combo.setEditable(True)
+        self.sales_combo.setMinimumHeight(42)
+        self.sales_combo.setStyleSheet(_COMBO)
+        self.sales_combo.lineEdit().setPlaceholderText("Enter or select sales person")
+        r4.addWidget(_field("Job Type", self.job_type_combo))
+        r4.addWidget(_field("Sales Person", self.sales_combo))
+        pd.addLayout(r4)
 
-        sales_line = self.sales_combo.lineEdit()
+        # Row 5: Scope of Work (full width)
+        self.scope_of_work_edit = QtWidgets.QLineEdit()
+        self.scope_of_work_edit.setPlaceholderText("Enter detailed scope of work (comma-separated)...")
+        self.scope_of_work_edit.setMinimumHeight(42)
+        self.scope_of_work_edit.setStyleSheet(_INP)
+        pd.addWidget(_field("Scope of Work", self.scope_of_work_edit))
 
-        # Remove placeholder when typing
-        sales_line.textEdited.connect(lambda t: sales_line.setPlaceholderText(""))
+        # Row 6: Agreed Cost | Expedite? | Extra %
+        r6 = QtWidgets.QHBoxLayout()
+        r6.setSpacing(16)
 
-        # Remove placeholder when clicking
-        old_mouse_sales = sales_line.mousePressEvent
-        def new_mouse_sales(event):
-            sales_line.setPlaceholderText("")
-            old_mouse_sales(event)
+        cost_w = QtWidgets.QWidget()
+        cost_w.setStyleSheet("background:transparent;")
+        cost_vl = QtWidgets.QVBoxLayout(cost_w)
+        cost_vl.setContentsMargins(0, 0, 0, 0)
+        cost_vl.setSpacing(5)
+        cost_lbl = QtWidgets.QLabel("Agreed Cost")
+        cost_lbl.setStyleSheet(_LBL)
+        cost_vl.addWidget(cost_lbl)
+        self.engineering_costs_edit = QtWidgets.QLineEdit()
+        self.engineering_costs_edit.setPlaceholderText("$0.00")
+        self.engineering_costs_edit.setMinimumHeight(42)
+        self.engineering_costs_edit.setStyleSheet(
+            "QLineEdit {"
+            "  background:white; border:1.5px solid #E2E8F0; border-radius:8px;"
+            "  padding:10px 14px; font-size:13px; color:#374151;"
+            "  font-family:'Inter','Segoe UI';"
+            "}"
+            "QLineEdit:focus { border-color:#0F766E; }"
+        )
+        cost_vl.addWidget(self.engineering_costs_edit)
+        r6.addWidget(cost_w, 2)
 
-        sales_line.mousePressEvent = new_mouse_sales
-
-        sales_line.setPlaceholderText("Enter or select sales person")
-
-        self.add_field(form_layout, "Sales:", self.sales_combo)
-
-        # ===== Scope of Work =====
-        self.scope_of_work_edit = self.create_styled_line_edit("Enter detailed scope of work (comma-separated)...")
-        self.add_field(form_layout, "Scope of Work:", self.scope_of_work_edit)
-        
-        self.engineering_costs_edit = self.create_styled_line_edit("$0.00")
-        # ===== Expedite Controls =====
-        # ===== Expedite Controls =====
+        exp_w = QtWidgets.QWidget()
+        exp_w.setStyleSheet("background:transparent;")
+        exp_vl = QtWidgets.QVBoxLayout(exp_w)
+        exp_vl.setContentsMargins(0, 0, 0, 0)
+        exp_vl.setSpacing(5)
+        exp_lbl = QtWidgets.QLabel("Expedite?")
+        exp_lbl.setStyleSheet(_LBL)
+        exp_vl.addWidget(exp_lbl)
+        exp_rr = QtWidgets.QHBoxLayout()
+        exp_rr.setSpacing(16)
+        _RDO = "font-size:13px; color:#374151; font-family:'Inter','Segoe UI'; spacing:6px;"
         self.expedite_yes = QtWidgets.QRadioButton("Yes (50% Extra)")
+        self.expedite_yes.setStyleSheet(_RDO)
         self.expedite_no = QtWidgets.QRadioButton("No")
-        # Create a regular button group (exclusive)
+        self.expedite_no.setStyleSheet(_RDO)
         self.expedite_group = QtWidgets.QButtonGroup()
         self.expedite_group.addButton(self.expedite_yes)
         self.expedite_group.addButton(self.expedite_no)
-        self.expedite_group.setExclusive(True)  # Make them exclusive (can't have both)
+        self.expedite_group.setExclusive(True)
+        exp_rr.addWidget(self.expedite_yes)
+        exp_rr.addWidget(self.expedite_no)
+        exp_rr.addStretch()
+        exp_vl.addLayout(exp_rr)
+        r6.addWidget(exp_w, 2)
 
-        self.expedite_amount_edit = self.create_styled_line_edit("0%")
-        self.expedite_amount_edit.setReadOnly(False)
-        self.expedite_amount_edit.setPlaceholderText("Enter % or $ amount")
+        self.expedite_amount_edit = QtWidgets.QLineEdit()
+        self.expedite_amount_edit.setPlaceholderText("0%")
+        self.expedite_amount_edit.setMinimumHeight(42)
+        self.expedite_amount_edit.setStyleSheet(_INP)
+        r6.addWidget(_field("Extra %", self.expedite_amount_edit), 1)
+        pd.addLayout(r6)
 
-        cost_layout = QtWidgets.QHBoxLayout()
-
-        label = QtWidgets.QLabel("Agreed Cost:")
-        label.setStyleSheet("font-weight: 500; color: #2c3e50; min-width: 150px;")
-
-        cost_layout.addWidget(label)
-        cost_layout.addWidget(self.engineering_costs_edit, 2)
-
-        # Remove dollar sign auto-prefix and add number validation
-        self.engineering_costs_edit.textChanged.connect(self.validate_cost_input)
-        # Connect expedite buttons with custom click handler
-        self.expedite_yes.clicked.connect(self.on_expedite_clicked)
-        self.expedite_no.clicked.connect(self.on_expedite_clicked)
-        self.expedite_amount_edit.editingFinished.connect(self.update_expedite_amount)
-
-        # Expedite section
-        expedite_box = QtWidgets.QFrame()
-        expedite_layout = QtWidgets.QHBoxLayout(expedite_box)
-        expedite_layout.setContentsMargins(10, 0, 0, 0)
-        expedite_layout.setSpacing(8)
-
-        expedite_label = QtWidgets.QLabel("Expedite?")
-        expedite_label.setStyleSheet("font-weight: 500;")
-
-        expedite_layout.addWidget(expedite_label)
-        expedite_layout.addWidget(self.expedite_yes)
-        expedite_layout.addWidget(self.expedite_no)
-        expedite_layout.addWidget(self.expedite_amount_edit)
-
-        cost_layout.addWidget(expedite_box, 3)
-
-        # Total Price label (Agreed Cost + 50% when expedite)
+        # Total price summary (shown when expedite Yes is selected)
         self.total_price_lbl = QtWidgets.QLabel("")
         self.total_price_lbl.setStyleSheet(
-            "font-weight:700; color:#0f766e; font-size:13px;"
-            " background:transparent; border:none;"
-            " font-family:'Inter','Segoe UI',sans-serif;")
-        form_layout.addLayout(cost_layout)
-        form_layout.addWidget(self.total_price_lbl)
+            "font-size:12px; font-weight:700; color:#0F766E; background:#F0FDF4;"
+            " border:1px solid #BBF7D0; border-radius:6px; padding:6px 14px;"
+            " font-family:'Inter','Segoe UI';"
+        )
+        self.total_price_lbl.setVisible(False)
+        pd.addWidget(self.total_price_lbl)
 
-        self.engineering_costs_edit.textChanged.connect(self.update_expedite_amount)
-        self.expedite_yes.toggled.connect(self.update_expedite_amount)
-        self.expedite_no.toggled.connect(self.update_expedite_amount)
-        self.expedite_amount_edit.editingFinished.connect(self.update_expedite_amount)
+        # Row 7: Priority
+        self.priority_combo = QtWidgets.QComboBox()
+        self.priority_combo.addItems(["Low", "Medium", "High", "Urgent"])
+        self.priority_combo.setCurrentIndex(0)
+        self.priority_combo.setMinimumHeight(42)
+        self.priority_combo.setStyleSheet(_COMBO)
+        pd.addWidget(_field("Priority", self.priority_combo))
+        cly.addWidget(pd_card)
 
-        # ===== Job Type and Priority =====
-        job_type_list = [
-            "Engineering Design",
-            "Construction",
-            "Inspection",
-            "Consultation",
-            "Maintenance",
-            "Research",
-            "Drafting",
-            "Peer Review",
-            "Site Visit",
-            "Report Preparation",
-            "Permit Drawings",
-            "Other"
-        ]
+        # ════════ TIMELINE ════════════════════════════════════════
+        tl_card, tl = _section(
+            JobFormsExportDialog._make_calendar_icon("#0F766E", 30),
+            "Timeline",
+            "Important dates for this quote",
+        )
+        tl_row = QtWidgets.QHBoxLayout()
+        tl_row.setSpacing(16)
 
-        self.job_type_combo = self.create_styled_combo_box(job_type_list)
-        self.job_type_combo.setEditable(True)
+        _DATE_EDIT_SS = f"""
+            QDateEdit {{
+                background:white;
+                border:1.5px solid #E2E8F0;
+                border-radius:8px;
+                font-size:13px;
+                color:#374151;
+                font-family:'Inter','Segoe UI';
+                padding:0 34px 0 12px;
+            }}
+            QDateEdit:focus {{
+                border-color:#0F766E;
+            }}
+            QDateEdit::drop-down {{
+                border:none;
+                width:28px;
+                background:transparent;
+            }}
+            QDateEdit::down-arrow {{
+                image:url("{CALENDAR_URL}");
+                width:15px;
+                height:15px;
+                margin-right:7px;
+            }}
+            QDateEdit::up-button {{ width:0; }}
+            QDateEdit::down-button {{ width:0; }}
+        """
 
-        # Show placeholder only
-        job_line = self.job_type_combo.lineEdit()
-        job_line.setPlaceholderText("Enter or select job type")
+        def _date_widget(date_edit):
+            date_edit.setStyleSheet(_DATE_EDIT_SS)
+            date_edit.setFrame(False)
+            date_edit.setMinimumHeight(42)
+            date_edit.setMinimumWidth(168)
+            date_edit.setMaximumWidth(190)
+            return date_edit
 
-        # Remove placeholder when typing
-        job_line.textEdited.connect(lambda t: job_line.setPlaceholderText(""))
+        self.start_date_edit = _NoScrollDateEdit(QtCore.QDate.currentDate())
+        self.start_date_edit.setCalendarPopup(True)
+        self.start_date_edit.setDisplayFormat("MM-dd-yyyy")
+        self.start_date_edit.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        _de_le = self.start_date_edit.lineEdit()
+        if _de_le:
+            _de_le.setPlaceholderText("MM-DD-YY")
 
-        # Remove placeholder when clicking anywhere inside field
-        old_mouse_j = job_line.mousePressEvent
-        def new_mouse_j(event):
-            job_line.setPlaceholderText("")
-            old_mouse_j(event)
+        self.due_date_edit = _NoScrollDateEdit(QtCore.QDate.currentDate().addDays(30))
+        self.due_date_edit.setCalendarPopup(True)
+        self.due_date_edit.setDisplayFormat("MM-dd-yyyy")
+        self.due_date_edit.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        _de_le2 = self.due_date_edit.lineEdit()
+        if _de_le2:
+            _de_le2.setPlaceholderText("MM-DD-YY")
 
-        job_line.mousePressEvent = new_mouse_j
-
-        # Ensure no default selection from list
-        self.job_type_combo.setCurrentIndex(-1)
-        job_line.clear()
-
-        self.priority_combo = self.create_styled_combo_box(["Low", "Medium", "High", "Urgent"])
-        self.add_field(form_layout, "Priority:", self.priority_combo)
-
-        # ===== Timeline Section =====
-        self.add_section_title(form_layout, "📅 Timeline")
-        
-        self.start_date_edit = self.create_styled_date_edit(QtCore.QDate.currentDate())
-        if not self.is_editing:
-            self.start_date_edit.dateChanged.connect(self.auto_generate_job_number)
-        self.add_field(form_layout, "Start Date:", self.start_date_edit)
-
-        self.due_date_edit = self.create_styled_date_edit(QtCore.QDate.currentDate().addDays(30))
-        self.add_field(form_layout, "Due Date:", self.due_date_edit)
-
-        # ===== Deliverables =====
-        deliverables_layout = QtWidgets.QHBoxLayout()
-        label = QtWidgets.QLabel("Deliverables:")
-        label.setStyleSheet("font-weight: 500; color: #2c3e50; min-width: 150px;")
-        deliverables_layout.addWidget(label)
-
-        self.deliverables_edit = self.create_styled_line_edit("Enter deliverables like 1, 2, 3...")
+        self.deliverables_edit = QtWidgets.QLineEdit()
+        self.deliverables_edit.setPlaceholderText("Enter deliverables like 1, 2, 3...")
+        self.deliverables_edit.setMinimumHeight(42)
+        self.deliverables_edit.setStyleSheet(_INP)
         self.deliverables_edit.installEventFilter(self)
-        deliverables_layout.addWidget(self.deliverables_edit, 1)
-        form_layout.addLayout(deliverables_layout)
 
-        # ===== Services =====
-        self.add_section_title(form_layout, "🔧 Services")
 
-        services_grid = QtWidgets.QGridLayout()
-        services_grid.setVerticalSpacing(10)
-        services_grid.setHorizontalSpacing(25)
+        tl_row.setAlignment(QtCore.Qt.AlignTop)
+        _sd_w = _field("Start Date", _date_widget(self.start_date_edit), required=True)
+        _dd_w = _field("Due Date", _date_widget(self.due_date_edit), required=True)
+        _del_w = _field(
+            "Deliverables",
+            self.deliverables_edit,
+            hint="Separate multiple deliverables with commas",
+        )
+        tl_row.addWidget(_sd_w, 1, QtCore.Qt.AlignTop)
+        tl_row.addWidget(_dd_w, 1, QtCore.Qt.AlignTop)
+        tl_row.addWidget(_del_w, 2, QtCore.Qt.AlignTop)
+        tl.addLayout(tl_row)
 
-        # Create checkboxes
-        self.structural_checkbox = self.create_styled_checkbox("Structural", False)
-        self.civil_checkbox = self.create_styled_checkbox("Civil", False)
-        self.electrical_checkbox = self.create_styled_checkbox("Electrical", False)
-        self.mechanical_checkbox = self.create_styled_checkbox("Mechanical", False)
-        self.plumbing_checkbox = self.create_styled_checkbox("Plumbing Design", False)
-        self.anchor_calc_checkbox = self.create_styled_checkbox("Anchor Calculations", False)
-        self.solidworks_checkbox = self.create_styled_checkbox("Solid Works", False)
-        self.foundation_checkbox = self.create_styled_checkbox("Foundation", False)
-        self.other_checkbox = self.create_styled_checkbox("Others", False)
+        # Visible timeline summary strip
+        self.timeline_info_visible = QtWidgets.QLabel()
+        self.timeline_info_visible.setStyleSheet(
+            "QLabel {"
+            "  background:#F0FDF4; border:1px solid #BBF7D0; border-radius:7px;"
+            "  padding:7px 14px; font-size:12px; font-weight:700; color:#065F46;"
+            "  font-family:'Inter','Segoe UI';"
+            "}"
+        )
+        self.timeline_info_visible.setVisible(False)
+        tl.addWidget(self.timeline_info_visible)
+        cly.addWidget(tl_card)
+        # ════════ SERVICES ════════════════════════════════════════
+        sv_card, sv = _section("🔧", "Services", "Select applicable service categories")
 
-        # ===== "Others" input field =====
-        self.others_input = self.create_styled_line_edit("Type other services (e.g., 1, 2, 3...)")
+        def _chk(label):
+            c = QtWidgets.QCheckBox(label)
+            c.setStyleSheet(_CHK)
+            c.setFocusPolicy(QtCore.Qt.StrongFocus)
+            return c
+
+        self.structural_checkbox = _chk("Structural")
+        self.civil_checkbox = _chk("Civil")
+        self.electrical_checkbox = _chk("Electrical")
+        self.mechanical_checkbox = _chk("Mechanical")
+        self.plumbing_checkbox = _chk("Plumbing Design")
+        self.anchor_calc_checkbox = _chk("Anchor Calculations")
+        self.solidworks_checkbox = _chk("Solid Works")
+        self.foundation_checkbox = _chk("Foundation")
+        self.other_checkbox = _chk("Others")
+
+        self.others_input = QtWidgets.QLineEdit()
+        self.others_input.setPlaceholderText("Type other services (e.g., 1, 2, 3...)")
+        self.others_input.setStyleSheet(_INP)
         self.others_input.setVisible(False)
-
-        # Connect "Others" checkbox to show/hide input field
         self.other_checkbox.stateChanged.connect(self.toggle_others_input)
 
-        services = [
+        chk_grid = QtWidgets.QGridLayout()
+        chk_grid.setVerticalSpacing(12)
+        chk_grid.setHorizontalSpacing(20)
+        for _i, _c in enumerate([
             self.structural_checkbox, self.civil_checkbox, self.electrical_checkbox,
             self.mechanical_checkbox, self.plumbing_checkbox, self.anchor_calc_checkbox,
-            self.solidworks_checkbox, self.foundation_checkbox, self.other_checkbox
-        ]
+            self.solidworks_checkbox, self.foundation_checkbox, self.other_checkbox,
+        ]):
+            chk_grid.addWidget(_c, _i // 3, _i % 3)
+        chk_grid.addWidget(self.others_input, 3, 0, 1, 3)
+        sv.addLayout(chk_grid)
+        cly.addWidget(sv_card)
 
-        for i, chk in enumerate(services):
-            row = i // 3
-            col = i % 3
-            services_grid.addWidget(chk, row, col)
+        scroll.setWidget(content)
+        main_layout.addWidget(scroll, 1)
 
-        # Add the input field in the next row, spanning all 3 columns
-        services_grid.addWidget(self.others_input, 4, 0, 1, 3)
-
-        form_layout.addLayout(services_grid)
-        
-        # ===== Timeline Summary =====
-        self.timeline_info = QtWidgets.QLabel()
-        self.timeline_info.setStyleSheet(
-            "font-size: 12px; color: #555; background: #f8f9fa; padding: 10px; border-radius: 6px;"
-        )
-        form_layout.addWidget(self.timeline_info)
-        self.start_date_edit.dateChanged.connect(self.update_timeline_info)
-        self.due_date_edit.dateChanged.connect(self.update_timeline_info)
-        self.update_timeline_info()
-
-        # ===== Actions =====
-        self.add_section_title(form_layout, "🚀 Actions")
-        btn_layout = QtWidgets.QHBoxLayout()
-        btn_layout.setSpacing(20)
-
-        self.create_btn = QtWidgets.QPushButton("Update Quote Form" if self.is_editing else "📄 Generate Quote Form PDF")
-        self.create_btn.setMinimumHeight(48)
-        self.create_btn.setStyleSheet("""
+        # ── Footer bar ────────────────────────────────────────────
+        footer = QtWidgets.QFrame()
+        footer.setFixedHeight(68)
+        footer.setStyleSheet("QFrame { background:white; border-top:1px solid #E2E8F0; }")
+        fly = QtWidgets.QHBoxLayout(footer)
+        fly.setContentsMargins(32, 12, 32, 12)
+        fly.setSpacing(12)
+        _GHOST = """
             QPushButton {
-                background-color: #28a745;
-                color: white;
-                font-weight: bold;
-                font-size: 14px;
-                border-radius: 8px;
-                padding: 10px 20px;
+                background:white; color:#374151; border:1.5px solid #E2E8F0;
+                border-radius:8px; font-size:13px; font-weight:700; padding:0 24px;
+                font-family:'Inter','Segoe UI';
             }
-            QPushButton:hover { background-color: #34ce57; }
-        """)
-        self.create_btn.clicked.connect(self.create_job_form)
-        # Set as default button (activated by Enter when focused)
-        self.create_btn.setAutoDefault(True)
-        self.create_btn.setDefault(False)  # Not default for entire dialog
-
+            QPushButton:hover { background:#F8FAFC; }
+        """
         self.cancel_btn = QtWidgets.QPushButton("Cancel")
-        self.cancel_btn.setMinimumHeight(48)
-        self.cancel_btn.setStyleSheet("""
-            QPushButton {
-                background: #6c757d;
-                color: white;
-                font-weight: bold;
-                border-radius: 8px;
-                padding: 10px 20px;
-            }
-            QPushButton:hover { background: #5a6268; }
-        """)
+        self.cancel_btn.setFixedHeight(42)
+        self.cancel_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.cancel_btn.setStyleSheet(_GHOST)
         self.cancel_btn.clicked.connect(self.reject)
         self.cancel_btn.setAutoDefault(True)
 
-        btn_layout.addWidget(self.create_btn)
-        btn_layout.addWidget(self.cancel_btn)
-        form_layout.addLayout(btn_layout)
-        
-        # Load saved clients and populate form if editing
+        _draft_btn = QtWidgets.QPushButton("Save Draft")
+        _draft_btn.setFixedHeight(42)
+        _draft_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        _draft_btn.setStyleSheet(_GHOST)
+        _draft_btn.clicked.connect(self.save_as_draft)
+
+        self.create_btn = QtWidgets.QPushButton("Create Quote  →")
+        self.create_btn.setFixedHeight(42)
+        self.create_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.create_btn.setStyleSheet("""
+            QPushButton {
+                background:#1E293B; color:white; border:none; border-radius:8px;
+                font-size:13px; font-weight:800; padding:0 28px;
+                font-family:'Inter','Segoe UI';
+            }
+            QPushButton:hover { background:#0F172A; }
+        """)
+        self.create_btn.clicked.connect(self.create_job_form)
+        self.create_btn.setAutoDefault(True)
+        self.create_btn.setDefault(False)
+
+        fly.addStretch()
+        fly.addWidget(self.cancel_btn)
+        fly.addWidget(_draft_btn)
+        fly.addWidget(self.create_btn)
+        main_layout.addWidget(footer)
+
+        # ── Signals ───────────────────────────────────────────────
+        self.client_combo.currentTextChanged.connect(self.on_client_selected)
+        self.engineering_costs_edit.textChanged.connect(self.validate_cost_input)
+        self.expedite_yes.clicked.connect(self.on_expedite_clicked)
+        self.expedite_no.clicked.connect(self.on_expedite_clicked)
+        self.expedite_amount_edit.editingFinished.connect(self.update_expedite_amount)
+        self.engineering_costs_edit.textChanged.connect(self.update_expedite_amount)
+        self.expedite_yes.toggled.connect(self.update_expedite_amount)
+        self.expedite_no.toggled.connect(self.update_expedite_amount)
+        self.start_date_edit.dateChanged.connect(self.update_timeline_info)
+        self.due_date_edit.dateChanged.connect(self.update_timeline_info)
+        self.due_date_edit.dateChanged.connect(self._on_due_date_changed)
+        self._priority_auto_set = False
+        self.priority_combo.currentIndexChanged.connect(self._on_priority_manually_changed)
+        self.update_timeline_info()
+
+        if not self.is_editing:
+            self.project_site_edit.editingFinished.connect(self.auto_generate_job_number)
+            self.start_date_edit.dateChanged.connect(self.auto_generate_job_number)
+            self.project_site_edit.textChanged.connect(
+                lambda t: self.project_name_edit.setText(t)
+            )
+
+        # ── Data load ─────────────────────────────────────────────
         self.load_saved_clients()
         self.load_sales_persons()
-        
+
         if self.is_editing:
             self.populate_form_data()
         else:
@@ -6793,10 +8737,10 @@ class JobFormDialog(QtWidgets.QDialog):
         self._enter_on_last_field = False
         self.last_logical_field = self.deliverables_edit
 
-
-        # ===== FIX: Set up Enter key navigation =====
+        # ── Enter navigation ──────────────────────────────────────
         self.setup_enter_key_navigation()
-        # ===== Keyboard Shortcut: Ctrl + S (Save / Generate) =====
+
+        # ── Ctrl+S ────────────────────────────────────────────────
         save_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+S"), self)
         save_shortcut.activated.connect(self.create_job_form)
 
@@ -6853,19 +8797,26 @@ class JobFormDialog(QtWidgets.QDialog):
         if index >= 0:
             self.priority_combo.setCurrentIndex(index)
                     
-        # Set dates
-        start_date = QtCore.QDate.fromString(self.job_data.get('start_date', ''), "MM-dd-yyyy")
-        if start_date.isValid():
-            self.start_date_edit.setDate(start_date)
-            
-        due_date = QtCore.QDate.fromString(self.job_data.get('due_date', ''), "MM-dd-yyyy")
-        if due_date.isValid():
-            self.due_date_edit.setDate(due_date)
-            
-        # Set deliverables
-        deliverables = self.job_data.get('deliverables', [])
-        self.deliverables_edit.setText(", ".join(deliverables))
-        
+        # Set dates — try multiple formats for backwards-compatibility
+        def _parse_qdate(s):
+            for fmt in ("MM-dd-yyyy", "MM/dd/yyyy", "yyyy-MM-dd", "M-d-yyyy", "M/d/yyyy"):
+                d = QtCore.QDate.fromString(s, fmt)
+                if d.isValid():
+                    return d
+            return QtCore.QDate()
+        sd = _parse_qdate(self.job_data.get("start_date", ""))
+        if sd.isValid():
+            self.start_date_edit.setDate(sd)
+        dd = _parse_qdate(self.job_data.get("due_date", ""))
+        if dd.isValid():
+            self.due_date_edit.setDate(dd)
+        # Set deliverables — handle Firebase dict-vs-list quirk
+        raw_del = self.job_data.get("deliverables", [])
+        if isinstance(raw_del, dict):
+            raw_del = [raw_del[k] for k in sorted(raw_del.keys(), key=lambda x: int(x) if x.isdigit() else x)]
+        self.deliverables_edit.setText(", ".join(str(d) for d in raw_del if d))
+
+
         # Set services
         services = self.job_data.get('services', [])
         service_widgets = {
@@ -6941,17 +8892,17 @@ class JobFormDialog(QtWidgets.QDialog):
         
         # Collect all widgets
         widgets_to_add = [
-            self.project_name_edit,      # Project Name (was Job Title)
-            self.client_combo,
-            self.client_email_edit,
-            self.client_address_edit,
-            self.plant_edit,
-            self.project_site_edit,
-            self.sales_combo, 
-            self.scope_of_work_edit,
-            self.engineering_costs_edit,
-            self.job_type_combo,
-            self.priority_combo,
+            self.project_name_edit,      # Project Name (hidden, skipped by navigator)
+            self.client_combo,           # 1 - client/company
+            self.project_site_edit,      # 2 - project site
+            self.plant_edit,             # 3 - plant
+            self.client_email_edit,      # 4 - client email
+            self.client_address_edit,    # 5 - client address
+            self.job_type_combo,         # 6 - job type
+            self.sales_combo,            # 7 - sales
+            self.scope_of_work_edit,     # 8 - scope of work
+            self.engineering_costs_edit, # 9 - agreed cost
+            self.priority_combo,         # 10 - priority
             self.start_date_edit,
             self.due_date_edit,
             self.deliverables_edit,
@@ -7099,16 +9050,26 @@ class JobFormDialog(QtWidgets.QDialog):
             sender.setChecked(False)
             self.expedite_group.setExclusive(True)
             self._last_expedite_btn = None
+            # Yes was toggled off — revert priority to Low
+            if sender == self.expedite_yes and hasattr(self, 'priority_combo'):
+                idx = self.priority_combo.findText("Low")
+                if idx >= 0:
+                    self.priority_combo.setCurrentIndex(idx)
         elif checked:
             if sender == self.expedite_yes:
                 self.expedite_no.setChecked(False)
-                # Auto-set priority to Urgent when expedite is selected
+                # Auto-set priority to Urgent when expedite is Yes
                 if hasattr(self, 'priority_combo'):
                     idx = self.priority_combo.findText("Urgent")
                     if idx >= 0:
                         self.priority_combo.setCurrentIndex(idx)
             else:
+                # Expedite No selected — set priority to Low
                 self.expedite_yes.setChecked(False)
+                if hasattr(self, 'priority_combo'):
+                    idx = self.priority_combo.findText("Low")
+                    if idx >= 0:
+                        self.priority_combo.setCurrentIndex(idx)
 
             self._last_expedite_btn = sender
 
@@ -7165,15 +9126,16 @@ class JobFormDialog(QtWidgets.QDialog):
                 self.expedite_amount_edit.clear()
                 self.expedite_amount_edit.setPlaceholderText("Select Yes or No for expedite")
 
-            # Update total price label
+            # Update total price label (visible summary strip)
             if hasattr(self, 'total_price_lbl'):
                 if self.expedite_yes.isChecked() and base > 0:
                     total = base * 1.5
                     self.total_price_lbl.setText(
-                        f"Total Price (with 50% expedite):  ${total:,.2f}"
-                        f"  =  ${base:,.2f} + ${base * 0.5:,.2f}")
+                        f"Total with 50% expedite:  ${base:,.2f} + ${base * 0.5:,.2f} = ${total:,.2f}"
+                    )
+                    self.total_price_lbl.setVisible(True)
                 else:
-                    self.total_price_lbl.setText("")
+                    self.total_price_lbl.setVisible(False)
 
         except Exception:
             if self.expedite_yes.isChecked():
@@ -7571,9 +9533,9 @@ class JobFormDialog(QtWidgets.QDialog):
 
                 # Second Enter → loop to first field
                 self._enter_on_last_field = False
-                self.project_name_edit.setFocus()
-                self.project_name_edit.selectAll()
-                self.ensureWidgetVisible(self.project_name_edit)
+                self.project_site_edit.setFocus()
+                self.project_site_edit.selectAll()
+                self.ensureWidgetVisible(self.project_site_edit)
                 return True
 
             # Reset flag if user navigates normally
@@ -7584,11 +9546,10 @@ class JobFormDialog(QtWidgets.QDialog):
             if source in [self.create_btn, self.cancel_btn] and is_enter:
                 self._enter_on_last_field = False
 
-                # Loop back to first field (Project Name)
-                QtCore.QTimer.singleShot(20, lambda: self.project_name_edit.setFocus())
-                QtCore.QTimer.singleShot(30, lambda: self.project_name_edit.selectAll())
-                QtCore.QTimer.singleShot(
-                    40, lambda: self.ensureWidgetVisible(self.project_name_edit)
+                # Loop back to first field (Project Site)
+                QtCore.QTimer.singleShot(20, lambda: self.project_site_edit.setFocus())
+                QtCore.QTimer.singleShot(30, lambda: self.project_site_edit.selectAll())
+                QtCore.QTimer.singleShot(40, lambda: self.ensureWidgetVisible(self.project_site_edit)
                 )
                 return True
 
@@ -7627,35 +9588,42 @@ class JobFormDialog(QtWidgets.QDialog):
 
                 
         # =====================================================
-        # 4. Handle Tab key for proper checkbox navigation
+        # 4. Handle Tab / Shift+Tab key navigation for all widgets
         # =====================================================
-        if event.type() == QtCore.QEvent.KeyPress and event.key() == QtCore.Qt.Key_Tab:
-            # Find current widget index
+        if event.type() == QtCore.QEvent.KeyPress and event.key() in (
+            QtCore.Qt.Key_Tab, QtCore.Qt.Key_Backtab
+        ):
+            is_back = (event.key() == QtCore.Qt.Key_Backtab or
+                       bool(event.modifiers() & QtCore.Qt.ShiftModifier))
+            step = -1 if is_back else 1
+
             current_index = -1
             for i, widget in enumerate(self.input_widgets):
-                if widget and widget == source:
+                if widget and (widget == source or (
+                    isinstance(widget, QtWidgets.QComboBox) and source == widget.lineEdit()
+                )):
                     current_index = i
                     break
-            
-            # If we're on a checkbox, move to next widget
-            if current_index >= 0 and isinstance(source, QtWidgets.QCheckBox):
-                # Find next non-checkbox widget
-                next_index = current_index + 1
-                while next_index < len(self.input_widgets):
-                    next_widget = self.input_widgets[next_index]
-                    if next_widget and not isinstance(next_widget, QtWidgets.QCheckBox):
-                        if next_widget.isEnabled() and next_widget.isVisible():
-                            next_widget.setFocus()
-                            
-                            # Special handling for date fields
-                            if isinstance(next_widget, QtWidgets.QDateEdit):
-                                line_edit = next_widget.lineEdit()
-                                if line_edit:
-                                    line_edit.selectAll()
-                            
-                            return True
-                    next_index += 1
-        
+
+            if current_index >= 0:
+                next_index = current_index + step
+                attempts = 0
+                while 0 <= next_index < len(self.input_widgets) and attempts < len(self.input_widgets):
+                    nw = self.input_widgets[next_index]
+                    if nw and nw.isEnabled() and nw.isVisible():
+                        nw.setFocus()
+                        if isinstance(nw, QtWidgets.QLineEdit):
+                            QtCore.QTimer.singleShot(10, nw.selectAll)
+                        elif isinstance(nw, (QtWidgets.QComboBox, QtWidgets.QDateEdit)):
+                            le = nw.lineEdit()
+                            if le:
+                                QtCore.QTimer.singleShot(10, le.selectAll)
+                        self.ensureWidgetVisible(nw)
+                        return True
+                    next_index += step
+                    attempts += 1
+                return True
+
         return super().eventFilter(source, event)
 
     # ===== Helper Methods =====
@@ -7677,7 +9645,10 @@ class JobFormDialog(QtWidgets.QDialog):
         label = QtWidgets.QLabel(label_text)
         label.setStyleSheet("font-weight: 500; color: #2c3e50; min-width: 150px;")
         field_layout.addWidget(label)
+        if isinstance(widget, (QtWidgets.QLineEdit, QtWidgets.QComboBox, QtWidgets.QDateEdit)):
+            widget.setMaximumWidth(1150)
         field_layout.addWidget(widget, 1)
+        field_layout.addStretch(1)
         layout.addLayout(field_layout)
 
     def create_styled_line_edit(self, placeholder="", read_only=False):
@@ -7723,7 +9694,7 @@ class JobFormDialog(QtWidgets.QDialog):
             next_index = (next_index + 1) % len(self.input_widgets)
         
         # If no other widget found, return first input field
-        return self.project_name_edit, 0
+        return self.project_site_edit, 0
 
     def create_styled_text_edit(self, placeholder="", height=100):
         edit = QtWidgets.QTextEdit()
@@ -7854,7 +9825,7 @@ class JobFormDialog(QtWidgets.QDialog):
         """Create styled date edit WITHOUT scroll, arrows, or auto increment"""
         d = QtWidgets.QDateEdit(date)
         d.setCalendarPopup(True)
-        d.setDisplayFormat("MM-dd-yy")
+        d.setDisplayFormat("MM-dd-yyyy")
         d.setReadOnly(False)
 
         # ✅ Disable mouse wheel
@@ -7895,13 +9866,45 @@ class JobFormDialog(QtWidgets.QDialog):
 
         return d
 
+    def _on_priority_manually_changed(self):
+        """User manually changed priority — stop auto-managing it."""
+        self._priority_auto_set = False
+
+    def _on_due_date_changed(self):
+        """Auto-set priority to Urgent when due date is within 7 days; revert when it moves out."""
+        today = QtCore.QDate.currentDate()
+        due = self.due_date_edit.date()
+        days_remaining = today.daysTo(due)
+        if days_remaining <= 7:
+            if self.priority_combo.currentText() != "Urgent":
+                self._priority_auto_set = True
+                idx = self.priority_combo.findText("Urgent")
+                if idx >= 0:
+                    self.priority_combo.blockSignals(True)
+                    self.priority_combo.setCurrentIndex(idx)
+                    self.priority_combo.blockSignals(False)
+        else:
+            if getattr(self, '_priority_auto_set', False):
+                self._priority_auto_set = False
+                idx = self.priority_combo.findText("Medium")
+                if idx >= 0:
+                    self.priority_combo.blockSignals(True)
+                    self.priority_combo.setCurrentIndex(idx)
+                    self.priority_combo.blockSignals(False)
+
     def update_timeline_info(self):
         start = self.start_date_edit.date().toPyDate()
         due = self.due_date_edit.date().toPyDate()
         days = (due - start).days
-        self.timeline_info.setText(
-            f"📅 Start: {start.strftime('%b %d, %Y')}  |  Due: {due.strftime('%b %d, %Y')}  |  Duration: {days} days"
+        info_text = (
+            f"From: {start.strftime('%b %d, %Y')}   |   "
+            f"To: {due.strftime('%b %d, %Y')}   |   "
+            f"Duration: {days} day{'s' if days != 1 else ''}"
         )
+        self.timeline_info.setText(info_text)
+        if hasattr(self, 'timeline_info_visible'):
+            self.timeline_info_visible.setText(info_text)
+            self.timeline_info_visible.setVisible(True)
 
     def auto_generate_job_number(self):
         """Auto-generate quote number based ONLY on category and main sequence"""
@@ -8194,7 +10197,7 @@ class JobFormDialog(QtWidgets.QDialog):
                 "project_amount": self._parse_money_value(job_data.get("engineering_costs", 0)),
                 "start_date": job_data.get("start_date", ""),
                 "due_date": job_data.get("due_date", ""),
-                "updated_at": datetime.now().isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }
 
             if FIREBASE_AVAILABLE:
@@ -8299,6 +10302,14 @@ class JobFormDialog(QtWidgets.QDialog):
             
             
             if success:
+                # Immediately add to in-memory list so the next generate_job_number()
+                # call always sees the just-saved quote, regardless of Firebase refresh timing.
+                if not self.is_editing:
+                    owner_jobs = getattr(self.owner_tab, 'job_forms', None)
+                    if isinstance(owner_jobs, list):
+                        if not any(j.get('job_number') == job_data.get('job_number') for j in owner_jobs):
+                            owner_jobs.append(job_data)
+
                 if self.is_editing:
                     sync_result = self.maybe_sync_linked_project(job_data)
                     if sync_result == "cancel":
@@ -8517,10 +10528,18 @@ class JobFormDialog(QtWidgets.QDialog):
                     return str(value)
 
             # -------------------------
-            # STATIC COMPANY INFO
+            # COMPANY INFO FROM SETTINGS
             # -------------------------
-            company_name = "MABS Engineering LLC"
-            logo_path = resource_path("assets/logo.jpg")
+            try:
+                from main import Config as _Cfg
+                company_name = _Cfg.COMPANY.get('name', 'MABS Engineering LLC')
+                company_address = _Cfg.COMPANY.get('address', '').replace('\n', '<br/>')
+                _logo = _Cfg.get_logo_path()
+                logo_path = _logo if _logo is not None else resource_path("assets/logo.jpg")
+            except Exception:
+                company_name = "MABS Engineering LLC"
+                company_address = "PO Box 1144, 15455 Manchester Rd, Ballwin, MO 63011"
+                logo_path = resource_path("assets/logo.jpg")
             venmo_qr_path = resource_path("assets/venmo.png")
 
             # -------------------------
@@ -8552,11 +10571,24 @@ class JobFormDialog(QtWidgets.QDialog):
                 canvas.line(doc.leftMargin, 18 * mm, doc.width + doc.leftMargin, 20 * mm)  # Reduced from 20mm
                 
                 # Footer text
+                try:
+                    from main import Config as _FCfg
+                    _addr = _FCfg.COMPANY.get('address', '').replace('\n', ', ')
+                    _phone = _FCfg.COMPANY.get('phone', '')
+                    _femail = _FCfg.COMPANY.get('email', '')
+                    _fweb = _FCfg.COMPANY.get('website', '')
+                    _fname = _FCfg.COMPANY.get('name', 'MABS Engineering LLC')
+                except Exception:
+                    _addr = "PO Box 1144, 15455 Manchester Rd, Ballwin, MO 63011"
+                    _phone = "(314) 585-2003"
+                    _femail = "info@mabs-engineering.com"
+                    _fweb = "www.mabs-engineering.com"
+                    _fname = "MABS Engineering LLC"
                 footer_lines = [
-                    "Note: As the CEO of MABS Engineering, Dr. Ashiq reserves the right to change or cancel this policy at any time, at his discretion.",
-                    "Address: PO Box 1144, 15455 Manchester Rd, Ballwin, MO 63011",
-                    "Telephone: (314) 585-2003 • info@mabs-engineering.com",
-                    "www.mabs-engineering.com"
+                    f"Note: As the CEO of {_fname}, Dr. Ashiq reserves the right to change or cancel this policy at any time, at his discretion.",
+                    f"Address: {_addr}",
+                    f"Telephone: {_phone} • {_femail}",
+                    _fweb
                 ]
                 
                 # Start Y position for footer text
@@ -9211,7 +11243,7 @@ class JobFormDialog(QtWidgets.QDialog):
                     [[Paragraph(
                         f"<para align='left' leading='13'>"
                         f"<b>Payable to:</b> {company_name}<br/>"
-                        f"<b>Mailing Address:</b> PO Box 1144, 15455 Manchester Rd, Ballwin, MO 63011"
+                        f"<b>Mailing Address:</b> {company_address}"
                         f"</para>",
                         styles['FieldValue']
                     )]],
@@ -9275,7 +11307,7 @@ class JobFormDialog(QtWidgets.QDialog):
                 ),
                 Spacer(1, 1 * mm),
                 Table(
-                    [[Image(str(venmo_qr_path), width=78, height=78)]],
+                    [[Image(str(venmo_qr_path), width=98, height=98)]],
                     style=TableStyle([
                         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -9452,7 +11484,7 @@ class JobFormDialog(QtWidgets.QDialog):
             if 'firebase_id' in job_data and job_data['firebase_id']:
                 # Update existing job using firebase_id
                 job_id = job_data['firebase_id']
-                job_data['updated_at'] = datetime.now().isoformat()
+                job_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                 ref.child(job_id).update(job_data)
                 return True
             else:
@@ -9462,7 +11494,7 @@ class JobFormDialog(QtWidgets.QDialog):
                 if existing_jobs:
                     # Update existing job
                     job_id = list(existing_jobs.keys())[0]
-                    job_data['updated_at'] = datetime.now().isoformat()
+                    job_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                     ref.child(job_id).update(job_data)
                     _log.info("Quote form UPDATED in Firebase: %s", job_data['job_number'])
                     return True
@@ -9470,8 +11502,8 @@ class JobFormDialog(QtWidgets.QDialog):
                     # Create new job
                     new_job_ref = ref.push()
                     job_data['firebase_id'] = new_job_ref.key
-                    job_data['created_at'] = datetime.now().isoformat()
-                    job_data['updated_at'] = datetime.now().isoformat()
+                    job_data['created_at'] = datetime.now(timezone.utc).isoformat()
+                    job_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                     new_job_ref.set(job_data)
                     _log.info("Quote form CREATED in Firebase with ID: %s", new_job_ref.key)
                     return True
@@ -9520,6 +11552,30 @@ class JobFormDialog(QtWidgets.QDialog):
             _log.exception("Traceback:")
             return False
         
+    def save_as_draft(self):
+        """Save current form data as a Draft quote without generating a PDF."""
+        if not self.job_number_edit.text() or self.job_number_edit.text() == "Auto-generated":
+            self.generate_job_number()
+        job_data = self.collect_job_form_data()
+        job_data['status'] = 'Draft'
+        if self.is_editing and self.job_data and 'firebase_id' in self.job_data:
+            job_data['firebase_id'] = self.job_data['firebase_id']
+        owner = self.owner_tab
+        success = False
+        if hasattr(owner, 'save_job_form_to_firebase'):
+            success = owner.save_job_form_to_firebase(job_data)
+        if success:
+            QtWidgets.QMessageBox.information(
+                self, "Draft Saved",
+                f"Quote {job_data.get('job_number', '')} saved as Draft."
+            )
+            self.accept()
+        else:
+            QtWidgets.QMessageBox.warning(
+                self, "Save Failed",
+                "Could not save draft. Please try again."
+            )
+
     def collect_job_form_data(self):
         """Collect all quote form data into a dictionary"""
         # Get selected services
@@ -9583,12 +11639,12 @@ class JobFormDialog(QtWidgets.QDialog):
             'due_date': self.due_date_edit.date().toString("MM-dd-yyyy"),
             'deliverables': deliverables,
             'services': selected_services,
-            'updated_at': datetime.now().isoformat()
+            'updated_at': datetime.now(timezone.utc).isoformat()
         }
         
         # Add this after creating the engineering_costs_edit
         if not self.is_editing:
-            job_data['created_at'] = datetime.now().isoformat()
+            job_data['created_at'] = datetime.now(timezone.utc).isoformat()
         
         return job_data
 
@@ -10127,17 +12183,17 @@ class PDFExportDialog(QtWidgets.QDialog):
         from_label = QtWidgets.QLabel("From Date:")
         from_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
         from_layout.addWidget(from_label)
-        self.from_date = QtWidgets.QDateEdit()
+        self.from_date = _NoScrollDateEdit()
         self.from_date.setDisplayFormat("MM-dd-yyyy")
         self.from_date.setDate(QtCore.QDate.currentDate().addMonths(-1))
         self.from_date.setCalendarPopup(True)
-        self.from_date.setFixedSize(160, 45)
+        self.from_date.setFixedSize(200, 40)
         self.from_date.setStyleSheet("""
             QDateEdit {
-                padding: 12px;
+                padding: 6px 8px;
                 border: 2px solid #bdc3c7;
                 border-radius: 8px;
-                font-size: 14px;
+                font-size: 13px;
                 background-color: white;
             }
             QDateEdit:hover {
@@ -10152,17 +12208,17 @@ class PDFExportDialog(QtWidgets.QDialog):
         to_label = QtWidgets.QLabel("To Date:")
         to_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
         to_layout.addWidget(to_label)
-        self.to_date = QtWidgets.QDateEdit()
+        self.to_date = _NoScrollDateEdit()
         self.to_date.setDisplayFormat("MM-dd-yyyy")
         self.to_date.setDate(QtCore.QDate.currentDate())
         self.to_date.setCalendarPopup(True)
-        self.to_date.setFixedSize(160, 45)
+        self.to_date.setFixedSize(200, 40)
         self.to_date.setStyleSheet("""
             QDateEdit {
-                padding: 12px;
+                padding: 6px 8px;
                 border: 2px solid #bdc3c7;
                 border-radius: 8px;
-                font-size: 14px;
+                font-size: 13px;
                 background-color: white;
             }
             QDateEdit:hover {
@@ -10201,14 +12257,14 @@ class PDFExportDialog(QtWidgets.QDialog):
 
         # Month and Year selection in one row
         month_year_row_layout = QtWidgets.QHBoxLayout()
-        month_year_row_layout.setSpacing(15)
+        month_year_row_layout.setSpacing(40)
 
         # Month selection
         month_container = QtWidgets.QHBoxLayout()
         month_label = QtWidgets.QLabel("Select Month:")
         month_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
         month_container.addWidget(month_label)
-        self.month_combo = QtWidgets.QComboBox()
+        self.month_combo = _NoScrollComboBox()
         self.month_combo.setFixedSize(200, 45)
         self.month_combo.setStyleSheet("""
             QComboBox {
@@ -10468,8 +12524,13 @@ class PDFExportDialog(QtWidgets.QDialog):
         # Connect signals for live preview updates
         self.from_date.dateChanged.connect(self.update_preview)
         self.to_date.dateChanged.connect(self.update_preview)
+        self.from_date.wheelEvent = lambda e: e.ignore()
+        self.from_date.stepBy = lambda x: None
+        self.to_date.wheelEvent = lambda e: e.ignore()
+        self.to_date.stepBy = lambda x: None
+        self.month_combo.wheelEvent = lambda e: e.ignore()
         self.month_combo.currentTextChanged.connect(self.update_preview)
-    
+
     def show_year_popup(self):
         """Show separate popup window for year selection (year export)"""
         try:
@@ -10759,3 +12820,7 @@ class JobDetailsDialog(QtWidgets.QDialog):
         """)
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn)
+
+
+
+

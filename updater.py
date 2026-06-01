@@ -7,8 +7,8 @@ import ctypes
 import os
 
 # Args:
-# 1 = new invoice exe
-# 2 = old invoice exe
+# 1 = new invoice exe (downloaded to TEMP)
+# 2 = old invoice exe (current running app path)
 
 if len(sys.argv) < 3:
     sys.exit(0)
@@ -16,46 +16,49 @@ if len(sys.argv) < 3:
 new_exe = Path(sys.argv[1])
 old_exe = Path(sys.argv[2])
 
-time.sleep(3)  # ensure main app closed
+time.sleep(3)  # wait for main app to fully close
 
-temp_dir = Path(os.environ["TEMP"])
+old_bak = old_exe.with_suffix(".bak")
 
-old_backup = temp_dir / "invoice.exe.bak"
-updater_exe = Path(sys.executable)
-updater_backup = temp_dir / "invoice_updater.exe.bak"
+# ---- Delete existing .bak so rename never hits WinError 183 ----
+if old_bak.exists():
+    try:
+        old_bak.unlink()
+    except Exception:
+        ctypes.windll.kernel32.MoveFileExW(str(old_bak), None, 4)
 
-# ---- Backup old invoice.exe ----
+# ---- Rename current exe → .bak ----
 try:
-    if old_backup.exists():
-        old_backup.unlink()
-    shutil.move(str(old_exe), str(old_backup))
-except:
-    pass
+    os.replace(str(old_exe), str(old_bak))
+except Exception:
+    sys.exit(1)
 
-# ---- Replace invoice.exe ----
-shutil.move(str(new_exe), str(old_exe))
+# ---- Move new exe into place ----
+try:
+    shutil.move(str(new_exe), str(old_exe))
+except Exception:
+    # Restore backup so the app still works
+    try:
+        os.replace(str(old_bak), str(old_exe))
+    except Exception:
+        pass
+    sys.exit(1)
 
-# ---- Restart app ----
+# ---- Restart updated app ----
 subprocess.Popen([str(old_exe)])
 
 time.sleep(2)
 
-# ---- Move updater to temp ----
-try:
-    shutil.move(str(updater_exe), str(updater_backup))
-except:
-    pass
-
-# ---- DELETE BACKUPS ----
-def force_delete(file):
+# ---- Clean up .bak ----
+def force_delete(path: Path):
     try:
-        file.unlink()
-    except:
-        ctypes.windll.kernel32.MoveFileExW(
-            str(file), None, 4  # DELETE ON REBOOT
-        )
+        path.unlink()
+    except Exception:
+        ctypes.windll.kernel32.MoveFileExW(str(path), None, 4)  # delete on reboot
 
-force_delete(old_backup)
-force_delete(updater_backup)
+force_delete(old_bak)
+
+# ---- Self-delete updater ----
+force_delete(Path(sys.executable))
 
 sys.exit(0)

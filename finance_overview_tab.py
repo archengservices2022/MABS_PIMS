@@ -115,6 +115,57 @@ class FinanceOverviewTab(QtWidgets.QWidget):
         body.addWidget(self.action_panel, 1)
         root.addLayout(body, 1)
 
+        # Overlay: covers the whole tab while refreshing — child of self, no layout parent
+        self._refresh_overlay = QtWidgets.QWidget(self)
+        self._refresh_overlay.setStyleSheet("background: rgba(240,244,248,0.72);")
+        self._refresh_overlay.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        ov_lay = QtWidgets.QVBoxLayout(self._refresh_overlay)
+        ov_lay.setAlignment(QtCore.Qt.AlignCenter)
+        ov_spinner = QtWidgets.QLabel("⟳")
+        ov_spinner.setAlignment(QtCore.Qt.AlignCenter)
+        ov_spinner.setStyleSheet(
+            "font-size:48px; color:#0f766e;"
+            " background:transparent; border:none;"
+        )
+        ov_text = QtWidgets.QLabel("Refreshing finance data…")
+        ov_text.setAlignment(QtCore.Qt.AlignCenter)
+        ov_text.setStyleSheet(
+            "font-size:16px; font-weight:800; color:#0f766e;"
+            " font-family:'Inter','Segoe UI';"
+            " background:transparent; border:none;"
+        )
+        ov_lay.addWidget(ov_spinner)
+        ov_lay.addSpacing(8)
+        ov_lay.addWidget(ov_text)
+        self._refresh_overlay.setVisible(False)
+
+        # Spin the ⟳ label while overlay is visible
+        self._ov_spin_timer = QtCore.QTimer(self)
+        self._ov_spin_angle = 0
+        self._ov_spinner_lbl = ov_spinner
+        self._ov_spin_timer.timeout.connect(self._ov_spin_tick)
+
+    def _ov_spin_tick(self):
+        chars = ["⟳", "↻", "⟲", "↺"]
+        self._ov_spin_angle = (self._ov_spin_angle + 1) % len(chars)
+        self._ov_spinner_lbl.setText(chars[self._ov_spin_angle])
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, '_refresh_overlay'):
+            self._refresh_overlay.setGeometry(self.rect())
+
+    def _show_refresh_overlay(self, visible: bool):
+        if not hasattr(self, '_refresh_overlay'):
+            return
+        self._refresh_overlay.setGeometry(self.rect())
+        self._refresh_overlay.setVisible(visible)
+        if visible:
+            self._refresh_overlay.raise_()
+            self._ov_spin_timer.start(200)
+        else:
+            self._ov_spin_timer.stop()
+
     def _create_metric_card(self, title, value, accent, bg):
         card = QtWidgets.QFrame()
         card.setMinimumHeight(118)
@@ -204,9 +255,9 @@ class FinanceOverviewTab(QtWidgets.QWidget):
         title.setStyleSheet("font: 900 17px 'Inter', 'Segoe UI'; color: #0f172a; background: transparent; border: none;")
         layout.addWidget(title)
 
-        refresh_btn = self._action_button("Refresh Finance Now", "#00756f")
-        refresh_btn.clicked.connect(lambda: self.refresh_data(auto=False))
-        layout.addWidget(refresh_btn)
+        self._refresh_btn = self._action_button("Refresh Finance Now", "#00756f")
+        self._refresh_btn.clicked.connect(lambda: self.refresh_data(auto=False))
+        layout.addWidget(self._refresh_btn)
 
         expenses_btn = self._action_button("Open Expenses", "#2563eb")
         expenses_btn.clicked.connect(lambda: self._select_finance_tab("Expenses"))
@@ -236,17 +287,68 @@ class FinanceOverviewTab(QtWidgets.QWidget):
         """)
         return btn
 
+    # ── button style constants (mirrors invoice_history_tab pattern) ──────────
+    _BTN_BASE = (
+        "QPushButton {"
+        " border-radius:8px;"
+        " font-family:'Inter','Segoe UI';"
+        " font-size:14px;"
+        " font-weight:900;"
+        " border:none;"
+        "}"
+    )
+    _REFRESH_NORMAL_STYLE  = _BTN_BASE + "QPushButton{background:#00756f;color:white;} QPushButton:hover{background:#0f766e;}"
+    _REFRESH_LOADING_STYLE = _BTN_BASE + "QPushButton{background:#5eead4;color:#0f766e;}"
+    _REFRESH_SUCCESS_STYLE = _BTN_BASE + "QPushButton{background:#10b981;color:white;}"
+    _REFRESH_ERROR_STYLE   = _BTN_BASE + "QPushButton{background:#ef4444;color:white;}"
+
     def refresh_data(self, auto=False):
-        metrics = self._collect_metrics()
-        self.cards["cash_received"].setText(self._money(metrics["cash_received"]))
-        self.cards["unpaid_revenue"].setText(self._money(metrics["unpaid_revenue"]))
-        self.cards["expenses"].setText(self._money(metrics["expenses"]))
-        self.cards["salary"].setText(self._money(metrics["salary"]))
-        self.cards["net_profit"].setText(self._money(metrics["net_profit"]))
-        self.cards["unpaid_invoices"].setText(str(metrics["unpaid_invoice_count"]))
-        self._update_summary(metrics)
-        label = "Auto-synced" if auto else "Synced"
-        self.sync_label.setText(datetime.now().strftime(f"{label} %I:%M %p"))
+        if not auto and hasattr(self, '_refresh_btn'):
+            self._refresh_btn.setEnabled(False)
+            self._refresh_btn.setText("⟳  Loading…")
+            self._refresh_btn.setStyleSheet(self._REFRESH_LOADING_STYLE)
+            self.sync_label.setText("Refreshing…")
+            self._show_refresh_overlay(True)
+            QtWidgets.QApplication.processEvents()
+            # Defer so Qt repaints the button/overlay before the blocking Firebase call
+            QtCore.QTimer.singleShot(30, self._do_refresh)
+            return
+        self._do_refresh(auto=auto)
+
+    def _do_refresh(self, auto=False):
+        _btn = getattr(self, '_refresh_btn', None)
+
+        def _restore():
+            self._show_refresh_overlay(False)
+            if _btn:
+                _btn.setEnabled(True)
+                _btn.setText("Refresh Finance Now")
+                _btn.setStyleSheet(self._REFRESH_NORMAL_STYLE)
+
+        try:
+            metrics = self._collect_metrics()
+            self.cards["cash_received"].setText(self._money(metrics["cash_received"]))
+            self.cards["unpaid_revenue"].setText(self._money(metrics["unpaid_revenue"]))
+            self.cards["expenses"].setText(self._money(metrics["expenses"]))
+            self.cards["salary"].setText(self._money(metrics["salary"]))
+            self.cards["net_profit"].setText(self._money(metrics["net_profit"]))
+            self.cards["unpaid_invoices"].setText(str(metrics["unpaid_invoice_count"]))
+            self._update_summary(metrics)
+            label = "Auto-synced" if auto else "Synced"
+            self.sync_label.setText(datetime.now().strftime(f"{label} %I:%M %p"))
+            if not auto and _btn:
+                _btn.setText("✓  Refreshed")
+                _btn.setStyleSheet(self._REFRESH_SUCCESS_STYLE)
+                self._show_refresh_overlay(False)
+                QtCore.QTimer.singleShot(1800, _restore)
+        except Exception as exc:
+            _log.warning("Finance refresh failed: %s", exc)
+            self.sync_label.setText("Refresh failed")
+            self._show_refresh_overlay(False)
+            if not auto and _btn:
+                _btn.setText("✗  Error")
+                _btn.setStyleSheet(self._REFRESH_ERROR_STYLE)
+                QtCore.QTimer.singleShot(1800, _restore)
 
     def _collect_metrics(self):
         invoices = self._load_node("invoices")

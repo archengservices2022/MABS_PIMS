@@ -48,7 +48,7 @@ ROLE_ALLOWED_PAGE_KEYS = {
         PAGE_SETTINGS_KEY,
     ),
     "sales":    (PAGE_QUOTES_KEY,),
-    "projects": (PAGE_PROJECTS_KEY, PAGE_INVOICING_KEY),
+    "projects": (PAGE_PROJECTS_KEY,  PAGE_INVOICING_KEY),
     "finance":  (PAGE_FINANCIAL_KEY,),
 }
 

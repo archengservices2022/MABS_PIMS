@@ -5,7 +5,7 @@ Provides smart client suggestions based on historical data and patterns
 
 import json
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict, Counter
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -41,8 +41,8 @@ class ClientIntelligence:
         """Update client activity history"""
         if client_name not in self.client_history:
             self.client_history[client_name] = {
-                'first_contact': datetime.now().isoformat(),
-                'last_contact': datetime.now().isoformat(),
+                'first_contact': datetime.now(timezone.utc).isoformat(),
+                'last_contact': datetime.now(timezone.utc).isoformat(),
                 'activities': [],
                 'preferences': {},
                 'stats': {
@@ -58,11 +58,11 @@ class ClientIntelligence:
         # Add activity
         activity = {
             'type': activity_type,
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'details': details
         }
         self.client_history[client_name]['activities'].append(activity)
-        self.client_history[client_name]['last_contact'] = datetime.now().isoformat()
+        self.client_history[client_name]['last_contact'] = datetime.now(timezone.utc).isoformat()
         
         # Update stats
         self._update_client_stats(client_name)

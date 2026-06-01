@@ -1,6 +1,6 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 import json
 import math
@@ -20,6 +20,7 @@ from PyQt5.QtChart import (
     QPieSlice, QLegend
 )
 from app_logger import get_logger
+from app_theme import configure_filter_button
 _log = get_logger(__name__)
 # Add this function near the top of the file, after the imports
 def format_amount_no_commas(amount):
@@ -88,8 +89,8 @@ class ExpensesFirebaseManager:
             firebase_id = new_expense_ref.key
             expense_data['firebase_id'] = firebase_id
 
-            expense_data['created_at'] = datetime.now().isoformat()
-            expense_data['updated_at'] = datetime.now().isoformat()
+            expense_data['created_at'] = datetime.now(timezone.utc).isoformat()
+            expense_data['updated_at'] = datetime.now(timezone.utc).isoformat()
 
             new_expense_ref.set(expense_data)
 
@@ -147,20 +148,32 @@ class ExpensesFirebaseManager:
     
     @staticmethod
     def delete_expense(firebase_id: str) -> bool:
-        """Delete expense from Firebase"""
+        """Delete expense from Firebase /expenses node"""
         if not FIREBASE_AVAILABLE:
             _log.warning("Firebase not available - cannot delete expense")
             return False
-            
         try:
-            ref = db.reference(f'/expenses/{firebase_id}')
-            ref.delete()
-            _log.info("Expense deleted from Firebase: %s", firebase_id)
+            db.reference(f'/expenses/{firebase_id}').delete()
+            _log.info("Expense deleted from Firebase /expenses: %s", firebase_id)
             return True
         except Exception as e:
             _log.warning("Error deleting expense from Firebase: %s", e)
             return False
-    
+
+    @staticmethod
+    def delete_balance_sheet_expense(firebase_id: str) -> bool:
+        """Delete expense from Firebase /balance_sheet_expenses node"""
+        if not FIREBASE_AVAILABLE:
+            _log.warning("Firebase not available - cannot delete balance sheet expense")
+            return False
+        try:
+            db.reference(f'/balance_sheet_expenses/{firebase_id}').delete()
+            _log.info("Expense deleted from Firebase /balance_sheet_expenses: %s", firebase_id)
+            return True
+        except Exception as e:
+            _log.warning("Error deleting balance sheet expense from Firebase: %s", e)
+            return False
+
     # ===== NEW METHODS FOR CUSTOM CATEGORIES =====
     
     @staticmethod
@@ -236,7 +249,40 @@ class ExpensesFirebaseManager:
         except Exception as e:
             _log.warning("Error loading custom categories: %s", e)
             return {}
-        
+
+    @staticmethod
+    def save_vendor(vendor_name: str) -> bool:
+        """Save a vendor name to Firebase for future dropdown use."""
+        if not FIREBASE_AVAILABLE or not vendor_name:
+            return False
+        try:
+            ref = db.reference('/vendors')
+            existing = ref.get() or []
+            if isinstance(existing, dict):
+                existing = list(existing.values())
+            if vendor_name not in existing:
+                existing.append(vendor_name)
+                ref.set(existing)
+            return True
+        except Exception as e:
+            _log.warning("Error saving vendor: %s", e)
+            return False
+
+    @staticmethod
+    def load_vendors() -> list:
+        """Load saved vendor names from Firebase."""
+        if not FIREBASE_AVAILABLE:
+            return []
+        try:
+            ref = db.reference('/vendors')
+            data = ref.get() or []
+            if isinstance(data, dict):
+                data = list(data.values())
+            return sorted(str(v) for v in data if v)
+        except Exception as e:
+            _log.warning("Error loading vendors: %s", e)
+            return []
+
 class AddExpenseDialog(QtWidgets.QDialog):
     """Modal dialog for adding new expenses - Simplified categories with improved UX"""
     
@@ -248,7 +294,22 @@ class AddExpenseDialog(QtWidgets.QDialog):
         # Add these flags to track balance sheet state
         self.was_in_balance_sheet = False  # Track if expense was in balance sheet
         self.initializing_form = True  # Track if we're initializing the form
-        
+
+        # Collect vendors from parent's loaded expenses + Firebase
+        vendors_set = set()
+        if parent and hasattr(parent, 'expenses'):
+            for exp in (parent.expenses or []):
+                v = str(exp.get('vendor', '') or '').strip()
+                if v:
+                    vendors_set.add(v)
+        try:
+            for v in ExpensesFirebaseManager.load_vendors():
+                if v:
+                    vendors_set.add(v)
+        except Exception:
+            pass
+        self.vendors = sorted(vendors_set)
+
         title = "Edit Expense" if self.is_editing else "➕ Add New Expense"
         self.setWindowTitle(title)
         self.setModal(True)
@@ -531,6 +592,53 @@ class AddExpenseDialog(QtWidgets.QDialog):
                 line_edit.selectAll()
         
         self.initializing_form = False
+        # Evaluate button state now that all fields are populated
+        QtCore.QTimer.singleShot(0, self._update_save_btn_state)
+        # Snapshot for unsaved-changes detection (taken after form is fully populated)
+        self._initial_snapshot = self._form_snapshot()
+
+    def _form_snapshot(self):
+        """Return a dict of current field values for change detection."""
+        return {
+            "date":         getattr(self, 'expense_date_edit', None) and self.expense_date_edit.date().toString("MM-dd-yyyy"),
+            "type":         getattr(self, 'expense_type_combo', None) and self.expense_type_combo.currentText().strip(),
+            "category":     getattr(self, 'Category_combo', None) and self.Category_combo.currentText().strip(),
+            "name":         getattr(self, 'expense_name_combo', None) and self.expense_name_combo.currentText().strip(),
+            "vendor":       getattr(self, 'vendor_combo', None) and self.vendor_combo.currentText().strip(),
+            "description":  getattr(self, 'description_edit', None) and self.description_edit.text().strip(),
+            "amount":       getattr(self, 'amount_edit', None) and self.amount_edit.text().strip(),
+            "project":      getattr(self, 'project_combo', None) and self.project_combo.currentText().strip(),
+        }
+
+    def _has_unsaved_changes(self):
+        return self._form_snapshot() != self._initial_snapshot
+
+    def reject(self):
+        if self._has_unsaved_changes():
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Unsaved Changes",
+                "You have unsaved changes.\nAre you sure you want to discard them and close?",
+                QtWidgets.QMessageBox.Discard | QtWidgets.QMessageBox.Cancel,
+                QtWidgets.QMessageBox.Cancel,
+            )
+            if reply != QtWidgets.QMessageBox.Discard:
+                return
+        super().reject()
+
+    def closeEvent(self, event):
+        if self._has_unsaved_changes():
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Unsaved Changes",
+                "You have unsaved changes.\nAre you sure you want to discard them and close?",
+                QtWidgets.QMessageBox.Discard | QtWidgets.QMessageBox.Cancel,
+                QtWidgets.QMessageBox.Cancel,
+            )
+            if reply != QtWidgets.QMessageBox.Discard:
+                event.ignore()
+                return
+        event.accept()
 
     def _active_project_options(self):
         """Return active projects as (display text, project number) pairs."""
@@ -656,10 +764,11 @@ class AddExpenseDialog(QtWidgets.QDialog):
         # Main Expense Type
         self.expense_type_combo = self.create_styled_combo_box(
             self.expense_type,
-            "Enter or select main expense type"
+            "Select expense type *"
         )
         self.expense_type_combo.currentTextChanged.connect(self.on_expense_type_changed)
-        self.add_field(form_layout, "📂 Expense Type:", self.expense_type_combo)
+        self.expense_type_combo.currentTextChanged.connect(self._update_save_btn_state)
+        self.add_field(form_layout, "📂 Expense Type *:", self.expense_type_combo)
 
         # Category
         self.Category_combo = self.create_styled_combo_box(
@@ -667,29 +776,23 @@ class AddExpenseDialog(QtWidgets.QDialog):
             "Select or enter Category *"
         )
         self.Category_combo.currentTextChanged.connect(self.on_Category_changed)
+        self.Category_combo.currentTextChanged.connect(self._update_save_btn_state)
         self.add_field(form_layout, "📋 Category *:", self.Category_combo)
 
         # Expense Name/Description
         self.expense_name_combo = self.create_styled_combo_box(
             [],
-            "Select or enter specific expense name"
+            "Select or enter specific expense name *"
         )
-        self.add_field(form_layout, "📝 Expense Name:", self.expense_name_combo)
+        self.expense_name_combo.currentTextChanged.connect(self._update_save_btn_state)
+        self.add_field(form_layout, "📝 Expense Name *:", self.expense_name_combo)
 
-        # Vendor
-        self.vendor_edit = QtWidgets.QLineEdit()
-        self.vendor_edit.setPlaceholderText("Vendor/Supplier name")
-        self.vendor_edit.setStyleSheet("""
-            QLineEdit {
-                padding: 10px 12px;
-                border: 1px solid #bdc3c7;
-                border-radius: 6px;
-                background: white;
-                font-size: 13px;
-            }
-            QLineEdit:focus { border-color: #3498db; background: #f8f9fa; }
-        """)
-        self.add_field(form_layout, "🏢 Vendor/Supplier:", self.vendor_edit)
+        # Vendor (editable dropdown — saves new vendors automatically)
+        self.vendor_combo = self.create_styled_combo_box(
+            self.vendors,
+            "Type or select vendor/supplier"
+        )
+        self.add_field(form_layout, "🏢 Vendor/Supplier:", self.vendor_combo)
 
         # Description
         self.description_edit = QtWidgets.QLineEdit()
@@ -711,26 +814,15 @@ class AddExpenseDialog(QtWidgets.QDialog):
 
         # Amount
         self.amount_edit = self.create_styled_line_edit("$0.00")
-        self.add_field(form_layout, "💰 Amount:", self.amount_edit)
+        self.add_field(form_layout, "💰 Amount *:", self.amount_edit)
 
         self.amount_edit.textChanged.connect(self.validate_amount_input)
+        self.amount_edit.textChanged.connect(self._update_save_btn_state)
 
         # Project/Client
         self.project_combo = self.create_styled_combo_box([], "Enter or select project")
         self._populate_project_combo()
         self.add_field(form_layout, "🎯 Project:", self.project_combo)
-
-        # Payment Method
-        self.payment_method_combo = self.create_styled_combo_box([
-            "Corporate Credit Card",
-            "Business Debit Card", 
-            "Cash Payment",
-            "Bank Transfer",
-            "Company Check",
-            "Digital Payment",
-            "Other Method"
-        ], "Enter or select payment method")
-        self.add_field(form_layout, "💳 Payment Method:", self.payment_method_combo)
 
         # ===== Actions Header with Balance Sheet Checkbox (same line) =====
         actions_header_layout = QtWidgets.QHBoxLayout()
@@ -801,17 +893,31 @@ class AddExpenseDialog(QtWidgets.QDialog):
 
         self.save_btn = QtWidgets.QPushButton("💾 Update Expense" if self.is_editing else "💾 Save Expense")
         self.save_btn.setMinimumHeight(48)
-        self.save_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #28a745;
-                color: white;
-                font-weight: bold;
-                font-size: 14px;
-                border-radius: 8px;
-                padding: 10px 20px;
-            }
-            QPushButton:hover { background-color: #34ce57; }
-        """)
+        self.save_btn.setEnabled(self.is_editing)
+        if self.is_editing:
+            self.save_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #28a745;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 14px;
+                    border-radius: 8px;
+                    padding: 10px 20px;
+                }
+                QPushButton:hover { background-color: #34ce57; }
+            """)
+        else:
+            self.save_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #95a5a6;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 14px;
+                    border-radius: 8px;
+                    padding: 10px 20px;
+                }
+                QPushButton:hover { background-color: #95a5a6; }
+            """)
         self.save_btn.clicked.connect(self.accept)
         self.save_btn.setAutoDefault(False)
         self.save_btn.setDefault(False)
@@ -848,13 +954,77 @@ class AddExpenseDialog(QtWidgets.QDialog):
             self.expense_type_combo,
             self.Category_combo,
             self.expense_name_combo,
-            self.vendor_edit,
+            self.vendor_combo,
             self.description_edit,
             self.amount_edit,
             self.project_combo,
-            self.payment_method_combo
         ]:
             self._install_arrow_navigation(w)
+
+    # Fixed base styles for required-field highlighting — avoids fragile string replacement
+    _COMBO_STYLE_OK  = ("QComboBox { padding:10px 12px; border:1px solid #bdc3c7; border-radius:6px;"
+                        " background:white; font-size:13px; }"
+                        " QComboBox:focus { border-color:#3498db; background:#f8f9fa; }"
+                        " QComboBox QAbstractItemView { selection-background-color:#3498db; }")
+    _COMBO_STYLE_ERR = ("QComboBox { padding:10px 12px; border:2px solid #e74c3c; border-radius:6px;"
+                        " background:#fff8f8; font-size:13px; }"
+                        " QComboBox:focus { border-color:#e74c3c; background:#fff8f8; }"
+                        " QComboBox QAbstractItemView { selection-background-color:#3498db; }")
+    _AMOUNT_STYLE_OK  = ("QLineEdit { padding:10px 12px; border:1px solid #bdc3c7; border-radius:6px;"
+                         " background:white; font-size:13px; }"
+                         " QLineEdit:focus { border-color:#3498db; background:#f8f9fa; }")
+    _AMOUNT_STYLE_ERR = ("QLineEdit { padding:10px 12px; border:2px solid #e74c3c; border-radius:6px;"
+                         " background:#fff8f8; font-size:13px; }"
+                         " QLineEdit:focus { border-color:#e74c3c; background:#fff8f8; }")
+
+    def _update_save_btn_state(self, *_):
+        """Enable the save/update button only when all required fields have values."""
+        if self.initializing_form:
+            return
+
+        # In edit mode the existing data is already valid — keep button always enabled.
+        if self.is_editing:
+            if hasattr(self, 'save_btn'):
+                self.save_btn.setEnabled(True)
+                self.save_btn.setStyleSheet(
+                    "QPushButton { background-color:#28a745; color:white; font-weight:bold;"
+                    " font-size:14px; border-radius:8px; padding:10px 20px; }"
+                    " QPushButton:hover { background-color:#34ce57; }"
+                )
+            return
+
+        expense_type = getattr(self, 'expense_type_combo', None) and self.expense_type_combo.currentText().strip()
+        category     = getattr(self, 'Category_combo', None) and self.Category_combo.currentText().strip()
+        expense_name = getattr(self, 'expense_name_combo', None) and self.expense_name_combo.currentText().strip()
+        amount_raw   = getattr(self, 'amount_edit', None) and self.amount_edit.text().replace("$", "").strip()
+        try:
+            amount_ok = float(amount_raw) > 0 if amount_raw else False
+        except ValueError:
+            amount_ok = False
+        all_ok = bool(expense_type and category and expense_name and amount_ok)
+
+        if hasattr(self, 'save_btn'):
+            self.save_btn.setEnabled(all_ok)
+            bg, hover = ("#28a745", "#34ce57") if all_ok else ("#95a5a6", "#95a5a6")
+            self.save_btn.setStyleSheet(f"""
+                QPushButton {{ background-color:{bg}; color:white; font-weight:bold;
+                               font-size:14px; border-radius:8px; padding:10px 20px; }}
+                QPushButton:hover {{ background-color:{hover}; }}
+            """)
+
+        # Highlight empty required combo fields with red border
+        for attr, val in (("expense_type_combo", expense_type),
+                          ("Category_combo",      category),
+                          ("expense_name_combo",  expense_name)):
+            w = getattr(self, attr, None)
+            if w:
+                w.setStyleSheet(self._COMBO_STYLE_ERR if not val else self._COMBO_STYLE_OK)
+
+        # Highlight empty/invalid amount field
+        if hasattr(self, 'amount_edit'):
+            self.amount_edit.setStyleSheet(
+                self._AMOUNT_STYLE_ERR if not amount_ok else self._AMOUNT_STYLE_OK
+            )
 
     def validate_amount_input(self):
         """Validate amount input to accept only numbers and auto-add $ prefix"""
@@ -894,11 +1064,10 @@ class AddExpenseDialog(QtWidgets.QDialog):
             self.expense_type_combo,
             self.Category_combo,
             self.expense_name_combo,
-            self.vendor_edit,
+            self.vendor_combo,
             self.description_edit,
             self.amount_edit,
             self.project_combo,
-            self.payment_method_combo,
             self.save_btn,
             self.cancel_btn
         ]
@@ -1248,11 +1417,10 @@ class AddExpenseDialog(QtWidgets.QDialog):
             self.expense_type_combo,
             self.Category_combo,
             self.expense_name_combo,
-            self.vendor_edit,
+            self.vendor_combo,
             self.description_edit,
             self.amount_edit,
             self.project_combo,
-            self.payment_method_combo,
             self.save_btn,
             self.cancel_btn
         ]
@@ -1285,6 +1453,15 @@ class AddExpenseDialog(QtWidgets.QDialog):
         combo = QtWidgets.QComboBox()
         combo.addItems(items)
         combo.setEditable(True)
+        # Prevent accidental value changes via scroll wheel (issue #12)
+        combo.wheelEvent = lambda e: e.ignore()
+        _orig_key = combo.keyPressEvent
+        def _no_scroll_keys(e, _ok=_orig_key, _cb=combo):
+            if e.key() in (QtCore.Qt.Key_Up, QtCore.Qt.Key_Down) and not _cb.view().isVisible():
+                e.ignore()
+                return
+            _ok(e)
+        combo.keyPressEvent = _no_scroll_keys
 
         line_edit = combo.lineEdit()
 
@@ -1391,9 +1568,15 @@ class AddExpenseDialog(QtWidgets.QDialog):
             else:
                 self.expense_name_combo.setEditText(expense_name)
             
-        self.vendor_edit.setText(self.expense_data.get('vendor', ''))
+        vendor = self.expense_data.get('vendor', '')
+        if vendor:
+            index = self.vendor_combo.findText(vendor)
+            if index >= 0:
+                self.vendor_combo.setCurrentIndex(index)
+            else:
+                self.vendor_combo.setEditText(vendor)
         self.description_edit.setText(self.expense_data.get('description', ''))
-        
+
         # Set financial information
         amount = self.expense_data.get('amount', 0)
         self.amount_edit.setText(f"${amount:.2f}" if amount else "$0.00")
@@ -1407,14 +1590,6 @@ class AddExpenseDialog(QtWidgets.QDialog):
                 self.project_combo.setCurrentIndex(index)
             else:
                 self.project_combo.setEditText(project)
-            
-        payment_method = self.expense_data.get('payment_method', '')
-        if payment_method:
-            index = self.payment_method_combo.findText(payment_method)
-            if index >= 0:
-                self.payment_method_combo.setCurrentIndex(index)
-            else:
-                self.payment_method_combo.setEditText(payment_method)
         
         # ===== CRITICAL FIX: Set checkbox visibility and state =====
         # Check if this expense was previously saved to balance sheet
@@ -1484,14 +1659,29 @@ class AddExpenseDialog(QtWidgets.QDialog):
         expense_type = self.expense_type_combo.currentText().strip()
         Category = self.Category_combo.currentText().strip()
         expense_name = self.expense_name_combo.currentText().strip()
+        amount_raw = self.amount_edit.text().replace("$", "").strip()
 
-        # Validate only category
-        if not Category:
-            QtWidgets.QMessageBox.warning(self, "Validation Error", "Category field is required!")
-            return None
-
+        # Validate all required fields
+        missing = []
         if not expense_type:
-            expense_type = "Other Expenses"
+            missing.append("Expense Type")
+        if not Category:
+            missing.append("Category")
+        if not expense_name:
+            missing.append("Expense Name")
+        try:
+            if not amount_raw or float(amount_raw) <= 0:
+                missing.append("Amount (must be > 0)")
+        except ValueError:
+            missing.append("Amount (invalid number)")
+
+        if missing:
+            QtWidgets.QMessageBox.warning(
+                self, "Required Fields Missing",
+                "The following required fields must be filled:\n\n• " + "\n• ".join(missing)
+            )
+            self._update_save_btn_state()
+            return None
 
         stored_date = self.expense_date_edit.date().toString("MM-dd-yyyy")
 
@@ -1506,13 +1696,12 @@ class AddExpenseDialog(QtWidgets.QDialog):
             "expense_type": expense_type,
             "Category": Category,
             "expense_name": expense_name,
-            "vendor": self.vendor_edit.text(),
+            "vendor": self.vendor_combo.currentText().strip(),
             "description": self.description_edit.text(),
             "amount": float(amount_text) if amount_text else 0.0,
             "project": selected_project,
             "project_number": selected_project,
-            "payment_method": self.payment_method_combo.currentText(),
-            "updated_at": datetime.now().isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
             "save_to_balance_sheet": self.balance_sheet_checkbox.isChecked()
         }
 
@@ -1607,7 +1796,7 @@ class CategoryExpenseDialog(QtWidgets.QDialog):
                 border: 1.5px solid #e1e8ed;
                 border-radius: 8px;
                 gridline-color: #e1e8ed;
-                font-size: 11px;
+                font-size: 9px;
             }
             QTableWidget::item {
                 padding: 8px 4px;
@@ -1620,11 +1809,11 @@ class CategoryExpenseDialog(QtWidgets.QDialog):
                 color: #2c3e50;
             }
             QHeaderView::section {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 #2c3e50, stop:1 #34495e);
                 color: white;
                 font-weight: bold;
-                font-size: 11px;
+                font-size: 9px;
                 padding: 8px 6px;
                 border: none;
                 border-right: 1px solid #3a506b;
@@ -1640,8 +1829,9 @@ class CategoryExpenseDialog(QtWidgets.QDialog):
         # Set column widths
         header = self.expenses_table.horizontalHeader()
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)  # Date
-        header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)  # Vendor
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.Interactive)  # Vendor
         header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)  # Description
+        self.expenses_table.setColumnWidth(1, 200)
         header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)  # Amount
         header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)  # Project
         header.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeToContents)  # Method
@@ -2216,6 +2406,23 @@ class YearCalendarPopup(QtWidgets.QDialog):
         """Get the selected year"""
         return self.current_year
     
+class _WheelBlocker(QtCore.QObject):
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.Wheel:
+            return True
+        return False
+
+class _NoScrollComboBox(QtWidgets.QComboBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._wb = _WheelBlocker(self)
+        self.installEventFilter(self._wb)
+
+class _NoScrollDateEdit(QtWidgets.QDateEdit):
+    def stepBy(self, steps):
+        pass
+
+
 class ExpensesExportDialog(QtWidgets.QDialog):
     """Professional PDF/Excel Export Dialog for Expenses with Tabs"""
     
@@ -2459,7 +2666,7 @@ class ExpensesExportDialog(QtWidgets.QDialog):
         from_label = QtWidgets.QLabel("From Date:")
         from_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
         from_layout.addWidget(from_label)
-        self.from_date = QtWidgets.QDateEdit()
+        self.from_date = _NoScrollDateEdit()
         self.from_date.setDisplayFormat("MM-dd-yyyy")
         self.from_date.setDate(QtCore.QDate.currentDate().addMonths(-1))
         self.from_date.setCalendarPopup(True)
@@ -2484,7 +2691,7 @@ class ExpensesExportDialog(QtWidgets.QDialog):
         to_label = QtWidgets.QLabel("To Date:")
         to_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
         to_layout.addWidget(to_label)
-        self.to_date = QtWidgets.QDateEdit()
+        self.to_date = _NoScrollDateEdit()
         self.to_date.setDisplayFormat("MM-dd-yyyy")
         self.to_date.setDate(QtCore.QDate.currentDate())
         self.to_date.setCalendarPopup(True)
@@ -2533,15 +2740,16 @@ class ExpensesExportDialog(QtWidgets.QDialog):
 
         # Month and Year selection in one row
         month_year_row_layout = QtWidgets.QHBoxLayout()
-        month_year_row_layout.setSpacing(15)
+        month_year_row_layout.setSpacing(24)
 
-        # Month selection
-        month_container = QtWidgets.QHBoxLayout()
-        month_label = QtWidgets.QLabel("Select Month:")
+        month_col = QtWidgets.QVBoxLayout()
+        month_col.setSpacing(6)
+        month_label = QtWidgets.QLabel("Month")
         month_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
-        month_container.addWidget(month_label)
-        self.month_combo = QtWidgets.QComboBox()
-        self.month_combo.setFixedSize(200, 45)
+        month_col.addWidget(month_label)
+        self.month_combo = _NoScrollComboBox()
+        self.month_combo.setFixedHeight(42)
+        self.month_combo.setMinimumWidth(160)
         self.month_combo.setStyleSheet("""
             QComboBox {
                 padding: 12px;
@@ -2555,16 +2763,18 @@ class ExpensesExportDialog(QtWidgets.QDialog):
             }
         """)
         self.populate_months()
-        month_container.addWidget(self.month_combo)
-        month_year_row_layout.addLayout(month_container)
+        month_col.addWidget(self.month_combo)
+        month_year_row_layout.addLayout(month_col)
 
-        # Year selection for month export
-        year_container = QtWidgets.QHBoxLayout()
-        year_label_month = QtWidgets.QLabel("Select Year:")
+        year_container_col = QtWidgets.QVBoxLayout()
+        year_container_col.setSpacing(6)
+        year_label_month = QtWidgets.QLabel("Year")
         year_label_month.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
-        year_container.addWidget(year_label_month)
+        year_container_col.addWidget(year_label_month)
 
-        # Year field
+        year_field_row = QtWidgets.QHBoxLayout()
+        year_field_row.setSpacing(6)
+
         self.year_edit_month = QtWidgets.QLineEdit(str(datetime.now().year))
         self.year_edit_month.setFixedSize(150, 45)
         self.year_edit_month.setReadOnly(True)
@@ -2580,9 +2790,9 @@ class ExpensesExportDialog(QtWidgets.QDialog):
             }
         """)
 
-        # Calendar button
-        self.year_calendar_btn_month = QtWidgets.QPushButton("📅")
-        self.year_calendar_btn_month.setFixedSize(50, 45)
+        self.year_calendar_btn_month = QtWidgets.QPushButton("▼ Year")
+        self.year_calendar_btn_month.setFixedHeight(45)
+        self.year_calendar_btn_month.setMinimumWidth(72)
         self.year_calendar_btn_month.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
         self.year_calendar_btn_month.setStyleSheet("""
             QPushButton {
@@ -2590,8 +2800,9 @@ class ExpensesExportDialog(QtWidgets.QDialog):
                 color: white;
                 border: 2px solid #2980b9;
                 border-radius: 8px;
-                font-size: 18px;
-                font-weight: bold;
+                font-size: 13px;
+                font-weight: 700;
+                padding: 0 12px;
             }
             QPushButton:hover {
                 background: #2980b9;
@@ -2603,10 +2814,10 @@ class ExpensesExportDialog(QtWidgets.QDialog):
         """)
         self.year_calendar_btn_month.clicked.connect(self.show_year_popup_for_month)
 
-        year_container.addWidget(self.year_edit_month)
-        year_container.addWidget(self.year_calendar_btn_month)
-        month_year_row_layout.addLayout(year_container)
-
+        year_field_row.addWidget(self.year_edit_month)
+        year_field_row.addWidget(self.year_calendar_btn_month)
+        year_container_col.addLayout(year_field_row)
+        month_year_row_layout.addLayout(year_container_col)
         month_year_row_layout.addStretch()
         month_layout.addLayout(month_year_row_layout)
         self.date_selection_layout.addWidget(self.month_group)
@@ -2637,10 +2848,10 @@ class ExpensesExportDialog(QtWidgets.QDialog):
 
         # Year selection row
         year_row_layout = QtWidgets.QHBoxLayout()
-        year_label = QtWidgets.QLabel("Select Year:")
+        year_label = QtWidgets.QLabel("Year")
         year_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
         year_row_layout.addWidget(year_label)
-        
+
         # Year field
         self.year_edit = QtWidgets.QLineEdit(str(datetime.now().year))
         self.year_edit.setFixedSize(150, 45)
@@ -2656,10 +2867,11 @@ class ExpensesExportDialog(QtWidgets.QDialog):
                 font-weight: bold;
             }
         """)
-        
+
         # Calendar button
-        self.year_calendar_btn = QtWidgets.QPushButton("📅")
-        self.year_calendar_btn.setFixedSize(50, 45)
+        self.year_calendar_btn = QtWidgets.QPushButton("▼ Year")
+        self.year_calendar_btn.setFixedHeight(45)
+        self.year_calendar_btn.setMinimumWidth(72)
         self.year_calendar_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
         self.year_calendar_btn.setStyleSheet("""
             QPushButton {
@@ -2667,8 +2879,9 @@ class ExpensesExportDialog(QtWidgets.QDialog):
                 color: white;
                 border: 2px solid #2980b9;
                 border-radius: 8px;
-                font-size: 18px;
-                font-weight: bold;
+                font-size: 13px;
+                font-weight: 700;
+                padding: 0 12px;
             }
             QPushButton:hover {
                 background: #2980b9;
@@ -2818,7 +3031,7 @@ class ExpensesExportDialog(QtWidgets.QDialog):
         excel_from_label = QtWidgets.QLabel("From Date:")
         excel_from_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
         excel_from_layout.addWidget(excel_from_label)
-        self.excel_from_date = QtWidgets.QDateEdit()
+        self.excel_from_date = _NoScrollDateEdit()
         self.excel_from_date.setDisplayFormat("MM-dd-yyyy")
         self.excel_from_date.setDate(QtCore.QDate.currentDate().addMonths(-1))
         self.excel_from_date.setCalendarPopup(True)
@@ -2843,7 +3056,7 @@ class ExpensesExportDialog(QtWidgets.QDialog):
         excel_to_label = QtWidgets.QLabel("To Date:")
         excel_to_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
         excel_to_layout.addWidget(excel_to_label)
-        self.excel_to_date = QtWidgets.QDateEdit()
+        self.excel_to_date = _NoScrollDateEdit()
         self.excel_to_date.setDisplayFormat("MM-dd-yyyy")
         self.excel_to_date.setDate(QtCore.QDate.currentDate())
         self.excel_to_date.setCalendarPopup(True)
@@ -2892,15 +3105,16 @@ class ExpensesExportDialog(QtWidgets.QDialog):
 
         # Month and Year selection in one row
         excel_month_year_row_layout = QtWidgets.QHBoxLayout()
-        excel_month_year_row_layout.setSpacing(15)
+        excel_month_year_row_layout.setSpacing(24)
 
-        # Month selection
-        excel_month_container = QtWidgets.QHBoxLayout()
-        excel_month_label = QtWidgets.QLabel("Select Month:")
+        excel_month_col = QtWidgets.QVBoxLayout()
+        excel_month_col.setSpacing(6)
+        excel_month_label = QtWidgets.QLabel("Month")
         excel_month_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
-        excel_month_container.addWidget(excel_month_label)
-        self.excel_month_combo = QtWidgets.QComboBox()
-        self.excel_month_combo.setFixedSize(200, 45)
+        excel_month_col.addWidget(excel_month_label)
+        self.excel_month_combo = _NoScrollComboBox()
+        self.excel_month_combo.setFixedHeight(42)
+        self.excel_month_combo.setMinimumWidth(160)
         self.excel_month_combo.setStyleSheet("""
             QComboBox {
                 padding: 12px;
@@ -2914,16 +3128,18 @@ class ExpensesExportDialog(QtWidgets.QDialog):
             }
         """)
         self.populate_months_excel()
-        excel_month_container.addWidget(self.excel_month_combo)
-        excel_month_year_row_layout.addLayout(excel_month_container)
+        excel_month_col.addWidget(self.excel_month_combo)
+        excel_month_year_row_layout.addLayout(excel_month_col)
 
-        # Year selection for month
-        excel_year_container = QtWidgets.QHBoxLayout()
-        excel_year_month_label = QtWidgets.QLabel("Select Year:")
+        excel_year_container_col = QtWidgets.QVBoxLayout()
+        excel_year_container_col.setSpacing(6)
+        excel_year_month_label = QtWidgets.QLabel("Year")
         excel_year_month_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
-        excel_year_container.addWidget(excel_year_month_label)
+        excel_year_container_col.addWidget(excel_year_month_label)
 
-        # Year field
+        excel_year_field_row = QtWidgets.QHBoxLayout()
+        excel_year_field_row.setSpacing(6)
+
         self.excel_year_edit_month = QtWidgets.QLineEdit(str(datetime.now().year))
         self.excel_year_edit_month.setFixedSize(150, 45)
         self.excel_year_edit_month.setReadOnly(True)
@@ -2939,9 +3155,9 @@ class ExpensesExportDialog(QtWidgets.QDialog):
             }
         """)
 
-        # Calendar button
-        self.excel_year_calendar_btn_month = QtWidgets.QPushButton("📅")
-        self.excel_year_calendar_btn_month.setFixedSize(50, 45)
+        self.excel_year_calendar_btn_month = QtWidgets.QPushButton("▼ Year")
+        self.excel_year_calendar_btn_month.setFixedHeight(45)
+        self.excel_year_calendar_btn_month.setMinimumWidth(72)
         self.excel_year_calendar_btn_month.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
         self.excel_year_calendar_btn_month.setStyleSheet("""
             QPushButton {
@@ -2949,8 +3165,9 @@ class ExpensesExportDialog(QtWidgets.QDialog):
                 color: white;
                 border: 2px solid #2980b9;
                 border-radius: 8px;
-                font-size: 18px;
-                font-weight: bold;
+                font-size: 13px;
+                font-weight: 700;
+                padding: 0 12px;
             }
             QPushButton:hover {
                 background: #2980b9;
@@ -2962,10 +3179,10 @@ class ExpensesExportDialog(QtWidgets.QDialog):
         """)
         self.excel_year_calendar_btn_month.clicked.connect(self.show_year_popup_for_month_excel)
 
-        excel_year_container.addWidget(self.excel_year_edit_month)
-        excel_year_container.addWidget(self.excel_year_calendar_btn_month)
-        excel_month_year_row_layout.addLayout(excel_year_container)
-
+        excel_year_field_row.addWidget(self.excel_year_edit_month)
+        excel_year_field_row.addWidget(self.excel_year_calendar_btn_month)
+        excel_year_container_col.addLayout(excel_year_field_row)
+        excel_month_year_row_layout.addLayout(excel_year_container_col)
         excel_month_year_row_layout.addStretch()
         excel_month_layout.addLayout(excel_month_year_row_layout)
         self.excel_date_selection_layout.addWidget(self.excel_month_group)
@@ -2996,10 +3213,10 @@ class ExpensesExportDialog(QtWidgets.QDialog):
 
         # Year selection row
         excel_year_row_layout = QtWidgets.QHBoxLayout()
-        excel_year_label = QtWidgets.QLabel("Select Year:")
+        excel_year_label = QtWidgets.QLabel("Year")
         excel_year_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
         excel_year_row_layout.addWidget(excel_year_label)
-        
+
         # Year field
         self.excel_year_edit = QtWidgets.QLineEdit(str(datetime.now().year))
         self.excel_year_edit.setFixedSize(150, 45)
@@ -3015,10 +3232,11 @@ class ExpensesExportDialog(QtWidgets.QDialog):
                 font-weight: bold;
             }
         """)
-        
+
         # Calendar button
-        self.excel_year_calendar_btn = QtWidgets.QPushButton("📅")
-        self.excel_year_calendar_btn.setFixedSize(50, 45)
+        self.excel_year_calendar_btn = QtWidgets.QPushButton("▼ Year")
+        self.excel_year_calendar_btn.setFixedHeight(45)
+        self.excel_year_calendar_btn.setMinimumWidth(72)
         self.excel_year_calendar_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
         self.excel_year_calendar_btn.setStyleSheet("""
             QPushButton {
@@ -3026,8 +3244,9 @@ class ExpensesExportDialog(QtWidgets.QDialog):
                 color: white;
                 border: 2px solid #2980b9;
                 border-radius: 8px;
-                font-size: 18px;
-                font-weight: bold;
+                font-size: 13px;
+                font-weight: 700;
+                padding: 0 12px;
             }
             QPushButton:hover {
                 background: #2980b9;
@@ -3501,7 +3720,7 @@ class PDFExportDialog(QtWidgets.QDialog):
         from_label = QtWidgets.QLabel("From Date:")
         from_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
         from_layout.addWidget(from_label)
-        self.from_date = QtWidgets.QDateEdit()
+        self.from_date = _NoScrollDateEdit()
         self.from_date.setDisplayFormat("MM-dd-yyyy")
         self.from_date.setDate(QtCore.QDate.currentDate().addMonths(-1))
         self.from_date.setCalendarPopup(True)
@@ -3526,7 +3745,7 @@ class PDFExportDialog(QtWidgets.QDialog):
         to_label = QtWidgets.QLabel("To Date:")
         to_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 13px;")
         to_layout.addWidget(to_label)
-        self.to_date = QtWidgets.QDateEdit()
+        self.to_date = _NoScrollDateEdit()
         self.to_date.setDisplayFormat("MM-dd-yyyy")
         self.to_date.setDate(QtCore.QDate.currentDate())
         self.to_date.setCalendarPopup(True)
@@ -4094,6 +4313,61 @@ class MonthYearPickerDialog(QtWidgets.QDialog):
         self.selected_month = m
         self.accept()
 
+
+class PieChartView(QChartView):
+    """Custom pie chart view with hover tooltips"""
+    def __init__(self, chart, parent=None):
+        super().__init__(chart, parent)
+        self.setMouseTracking(True)
+        self.pie_series = None
+        self.pie_slice_categories = {}
+        self.current_tooltip = None
+
+    def mouseMoveEvent(self, event):
+        """Show tooltip on hover"""
+        if self.pie_series and self.pie_slice_categories:
+            slices = self.pie_series.slices()
+            for idx, slice_obj in enumerate(slices):
+                if idx < len(self.pie_slice_categories):
+                    category = self.pie_slice_categories[idx]
+                    amount = slice_obj.value()
+                    tooltip_text = f"{category} - ${amount:,.2f}"
+                    QtWidgets.QToolTip.showText(event.globalPos(), tooltip_text, self)
+                    return
+
+        QtWidgets.QToolTip.hideText()
+        return super().mouseMoveEvent(event)
+
+
+class SliceTooltip(QtWidgets.QWidget):
+    """Clean tooltip for pie slices"""
+    def __init__(self, text, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.ToolTip)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(0)
+
+        label = QtWidgets.QLabel(text)
+        label.setWordWrap(False)
+        label.setStyleSheet("""
+            QLabel {
+                background-color: #ffffff;
+                color: #1e293b;
+                border: 1px solid #e2e8f0;
+                border-radius: 4px;
+                padding: 8px 12px;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+                font-size: 13px;
+                font-weight: 500;
+            }
+        """)
+        layout.addWidget(label)
+        self.adjustSize()
+
+
 class ExpensesTab(QtWidgets.QWidget):
     """Professional Expenses Management Tab with Full Page Scrolling - Firebase Integrated"""
     
@@ -4102,6 +4376,8 @@ class ExpensesTab(QtWidgets.QWidget):
         super().__init__()
         self.main_window = main_window
         self.expenses = []
+        self.slice_tooltip = None  # For pie slice tooltips
+        self.pie_slice_categories = []  # Stores category names in order of slices
         
         # SEPARATE YEAR SELECTION FOR EACH CHART
         self.bar_chart_year = datetime.now().year   # For bar chart only
@@ -4109,7 +4385,10 @@ class ExpensesTab(QtWidgets.QWidget):
         self.pie_chart_month = datetime.now().month  # For pie chart only
 
         self.cached_expenses = []  # Cache for Firebase data
-        
+        self._exp_page = 1
+        self._exp_per_page = 10
+        self._exp_all_items = []
+
         # ===== EXTENSIVE COLOR PALETTE FOR PIE CHART =====
         # 30+ distinct colors for default Categories (one unique color for each)
         self.default_category_colors = [
@@ -4395,28 +4674,46 @@ class ExpensesTab(QtWidgets.QWidget):
 
     def _normalize_balance_sheet_expense(self, expense_data: dict) -> dict:
         """Convert a balance sheet expense record into the Expenses tab display schema."""
-        name = str(expense_data.get("name", "") or "Finance Expense").strip()
-        description = str(expense_data.get("description", "") or "").strip()
-        category = name if name else description or "Finance Expense"
+        # --- Preferred: fields preserved by the updated save_to_balance_sheet_expenses ---
+        expense_type   = str(expense_data.get("expense_type", "") or "").strip()
+        category_field = str(expense_data.get("Category",      "") or "").strip()
+        expense_name_f = str(expense_data.get("expense_name",  "") or "").strip()
+        description_f  = str(expense_data.get("description",   "") or "").strip()
+        name_field     = str(expense_data.get("name",          "") or "Finance Expense").strip()
+
+        # --- Backward-compat fallback for older records that only had name+description ---
+        # Old format stored the original expense_type inside the 'description' field.
+        if not expense_type or expense_type == "Balance Sheet Expense":
+            # If description looks like a stored expense_type use it; else fall back
+            expense_type  = description_f if description_f else "Balance Sheet Expense"
+            display_descr = ""          # already promoted to expense_type, nothing left to show
+        else:
+            display_descr = description_f  # genuine user description
+
+        # Category: prefer stored Category, fall back to name
+        category = category_field or name_field or "Finance Expense"
+        # Expense Name: prefer stored expense_name, fall back to name
+        expense_name = expense_name_f or name_field or "Finance Expense"
+
         return {
-            "date": expense_data.get("date", "") or expense_data.get("expense_date", ""),
-            "expense_type": expense_data.get("expense_type", "") or "Balance Sheet Expense",
-            "type": category,
-            "Category": category,
-            "expense_name": name,
-            "vendor": expense_data.get("vendor", ""),
-            "description": description,
-            "amount": self._safe_amount(expense_data.get("amount", 0)),
-            "project": expense_data.get("project", ""),
+            "date":         expense_data.get("date", "") or expense_data.get("expense_date", ""),
+            "expense_type": expense_type,
+            "type":         category,
+            "Category":     category,
+            "expense_name": expense_name,
+            "vendor":       expense_data.get("vendor", ""),
+            "description":  display_descr,
+            "amount":       self._safe_amount(expense_data.get("amount", 0)),
+            "project":      expense_data.get("project", ""),
             "project_number": expense_data.get("project_number", expense_data.get("project_no", "")),
             "payment_method": expense_data.get("payment_method", ""),
-            "reference": expense_data.get("reference", ""),
-            "notes": expense_data.get("notes", ""),
-            "created_at": expense_data.get("created_at", ""),
-            "updated_at": expense_data.get("updated_at", ""),
-            "firebase_id": expense_data.get("firebase_id", ""),
+            "reference":    expense_data.get("reference", ""),
+            "notes":        expense_data.get("notes", ""),
+            "created_at":   expense_data.get("created_at", ""),
+            "updated_at":   expense_data.get("updated_at", ""),
+            "firebase_id":  expense_data.get("firebase_id", ""),
             "balance_sheet_firebase_id": expense_data.get("firebase_id", ""),
-            "finance_source": "balance_sheet",
+            "finance_source":   "balance_sheet",
             "read_only_expense": True,
         }
 
@@ -4723,14 +5020,14 @@ class ExpensesTab(QtWidgets.QWidget):
         self.quick_entry_frame.setVisible(False)
         scroll_layout.addWidget(self.quick_entry_frame)
         
-        # ===== EXPENSE TABLE SECTION =====
-        table_frame = self.create_table_section()
-        scroll_layout.addWidget(table_frame, 1)
-
         # ===== ANALYTICS SECTION =====
         analytics_frame = self.create_analytics_section()
         analytics_frame.setMaximumHeight(470)
         scroll_layout.addWidget(analytics_frame)
+
+        # ===== EXPENSE TABLE SECTION =====
+        table_frame = self.create_table_section()
+        scroll_layout.addWidget(table_frame)
         
         scroll_layout.addStretch()
         
@@ -4945,11 +5242,16 @@ class ExpensesTab(QtWidgets.QWidget):
         self.quick_date_edit.setFixedHeight(44)
 
         self.quick_type_combo = QtWidgets.QComboBox()
+        self.quick_type_combo.setEditable(True)
+        self.quick_type_combo.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
         self.quick_type_combo.addItems([
             "O & M (Operations & Maintenance)",
             "Capital Expenses",
             "Other Expenses",
         ])
+        self.quick_type_combo.setCurrentIndex(-1)
+        if self.quick_type_combo.lineEdit():
+            self.quick_type_combo.lineEdit().setPlaceholderText("Select or type expense type")
         self.quick_type_combo.setFixedHeight(44)
         self.quick_type_combo.currentTextChanged.connect(self.update_quick_categories)
 
@@ -4965,9 +5267,14 @@ class ExpensesTab(QtWidgets.QWidget):
         self.quick_expense_combo.setFixedHeight(44)
         self.quick_expense_combo.setMaxVisibleItems(14)
         self.quick_expense_combo.lineEdit().setPlaceholderText("Select or enter expense")
-        self.quick_expense_combo.lineEdit().textEdited.connect(self.auto_classify_quick_expense)
-        self.quick_vendor_edit = QtWidgets.QLineEdit()
-        self.quick_vendor_edit.setPlaceholderText("Vendor")
+        # auto_classify intentionally not connected — users select type/category/name manually
+        self.quick_vendor_combo = QtWidgets.QComboBox()
+        self.quick_vendor_combo.setEditable(True)
+        self.quick_vendor_combo.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
+        self.quick_vendor_combo.setFixedHeight(44)
+        self.quick_vendor_combo.setMaxVisibleItems(14)
+        if self.quick_vendor_combo.lineEdit():
+            self.quick_vendor_combo.lineEdit().setPlaceholderText("Type or select vendor")
         self.quick_amount_edit = QtWidgets.QLineEdit()
         self.quick_amount_edit.setPlaceholderText("0.00")
         self.quick_project_combo = QtWidgets.QComboBox()
@@ -5010,7 +5317,7 @@ class ExpensesTab(QtWidgets.QWidget):
             ("Category", self.quick_category_combo, 2),
             ("Expense", self.quick_expense_combo, 2),
             ("Amount", self.quick_amount_edit, 1),
-            ("Vendor", self.quick_vendor_edit, 2),
+            ("Vendor", self.quick_vendor_combo, 2),
             ("Project", self.quick_project_combo, 2),
             ("Description", self.quick_description_edit, 3),
         ]
@@ -5031,12 +5338,13 @@ class ExpensesTab(QtWidgets.QWidget):
         action_row = QtWidgets.QHBoxLayout()
         hint = QtWidgets.QLabel("Checked expenses sync into Balance Sheet.")
         hint.setStyleSheet("color:#64748b; font-size:12px; font-weight:700; background:transparent; border:none;")
-        save_btn = QtWidgets.QPushButton("Save Expense")
-        save_btn.setFixedSize(180, 42)
-        save_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        save_btn.setStyleSheet("""
+        self.quick_save_btn = QtWidgets.QPushButton("Save Expense")
+        self.quick_save_btn.setFixedSize(180, 42)
+        self.quick_save_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.quick_save_btn.setEnabled(False)
+        self.quick_save_btn.setStyleSheet("""
             QPushButton {
-                background: #00756f;
+                background: #9ca3af;
                 color: white;
                 border: none;
                 border-radius: 8px;
@@ -5044,23 +5352,32 @@ class ExpensesTab(QtWidgets.QWidget):
                 font-size: 15px;
                 font-weight: 900;
             }
-            QPushButton:hover { background: #00645f; }
+            QPushButton:hover { background: #9ca3af; }
         """)
-        save_btn.clicked.connect(self.save_quick_expense)
+        self.quick_save_btn.clicked.connect(self.save_quick_expense)
         action_row.addWidget(self.quick_balance_sheet_check)
         action_row.addSpacing(12)
         action_row.addWidget(hint)
         action_row.addStretch()
-        action_row.addWidget(save_btn)
+        action_row.addWidget(self.quick_save_btn)
         layout.addLayout(action_row)
-        self.update_quick_categories(self.quick_type_combo.currentText())
+
+        # Connect all 4 required fields to validation
+        self.quick_type_combo.currentTextChanged.connect(self._update_quick_save_btn)
+        self.quick_category_combo.currentTextChanged.connect(self._update_quick_save_btn)
+        self.quick_expense_combo.currentTextChanged.connect(self._update_quick_save_btn)
+        self.quick_amount_edit.textChanged.connect(self._update_quick_save_btn)
+
+        self.update_quick_categories("")
         return frame
 
     def show_quick_entry(self):
         self.refresh_quick_project_combo()
+        self.refresh_quick_vendor_combo()
         self.quick_entry_frame.setVisible(True)
         self.quick_date_edit.setDate(QtCore.QDate.currentDate())
         self.quick_amount_edit.setFocus()
+        self._update_quick_save_btn()
 
     def _active_project_options_for_tab(self):
         inactive_statuses = {
@@ -5120,6 +5437,38 @@ class ExpensesTab(QtWidgets.QWidget):
         if self.quick_project_combo.lineEdit():
             self.quick_project_combo.lineEdit().setPlaceholderText("Project #")
         self.quick_project_combo.blockSignals(False)
+
+    def refresh_quick_vendor_combo(self):
+        if not hasattr(self, "quick_vendor_combo"):
+            return
+        current_text = self.quick_vendor_combo.currentText().strip() if self.quick_vendor_combo.lineEdit() else ""
+        vendors_set = set()
+        for exp in (getattr(self, "expenses", []) or []):
+            v = str(exp.get('vendor', '') or '').strip()
+            if v:
+                vendors_set.add(v)
+        try:
+            for v in ExpensesFirebaseManager.load_vendors():
+                if v:
+                    vendors_set.add(v)
+        except Exception:
+            pass
+        vendors = sorted(vendors_set)
+        self.quick_vendor_combo.blockSignals(True)
+        self.quick_vendor_combo.clear()
+        self.quick_vendor_combo.addItems(vendors)
+        if current_text:
+            idx = self.quick_vendor_combo.findText(current_text)
+            if idx >= 0:
+                self.quick_vendor_combo.setCurrentIndex(idx)
+            else:
+                self.quick_vendor_combo.setEditText(current_text)
+        else:
+            self.quick_vendor_combo.setCurrentIndex(-1)
+            if self.quick_vendor_combo.lineEdit():
+                self.quick_vendor_combo.lineEdit().clear()
+                self.quick_vendor_combo.lineEdit().setPlaceholderText("Type or select vendor")
+        self.quick_vendor_combo.blockSignals(False)
 
     def _quick_categories(self):
         return {
@@ -5384,11 +5733,11 @@ class ExpensesTab(QtWidgets.QWidget):
         self.quick_category_combo.addItems(categories.get(expense_type, []))
         if current:
             self.quick_category_combo.setEditText(current)
-        elif self.quick_category_combo.count():
-            self.quick_category_combo.setCurrentIndex(0)
-        elif self.quick_category_combo.lineEdit():
-            self.quick_category_combo.setEditText("")
-            self.quick_category_combo.lineEdit().setPlaceholderText("Type category")
+        else:
+            self.quick_category_combo.setCurrentIndex(-1)
+            if self.quick_category_combo.lineEdit():
+                self.quick_category_combo.lineEdit().clear()
+                self.quick_category_combo.lineEdit().setPlaceholderText("Select or type category")
         self.quick_category_combo.blockSignals(False)
         self.update_quick_expenses(self.quick_category_combo.currentText())
 
@@ -5464,6 +5813,39 @@ class ExpensesTab(QtWidgets.QWidget):
             self._quick_auto_classifying = False
             _log.warning("Quick expense auto-classification skipped: %s", e)
 
+    def _update_quick_save_btn(self, *_):
+        """Enable quick-entry Save button only when all 4 required fields are filled."""
+        if not hasattr(self, 'quick_save_btn'):
+            return
+        expense_type = self.quick_type_combo.currentText().strip()
+        category     = self.quick_category_combo.currentText().strip()
+        expense_name = self.quick_expense_combo.currentText().strip()
+        amount_raw   = self.quick_amount_edit.text().replace("$", "").strip()
+        try:
+            amount_ok = float(amount_raw) > 0 if amount_raw else False
+        except ValueError:
+            amount_ok = False
+        all_ok = bool(expense_type and category and expense_name and amount_ok)
+        self.quick_save_btn.setEnabled(all_ok)
+        if all_ok:
+            self.quick_save_btn.setStyleSheet("""
+                QPushButton {
+                    background: #00756f; color: white; border: none;
+                    border-radius: 8px; font-family: 'Inter', 'Segoe UI';
+                    font-size: 15px; font-weight: 900;
+                }
+                QPushButton:hover { background: #00645f; }
+            """)
+        else:
+            self.quick_save_btn.setStyleSheet("""
+                QPushButton {
+                    background: #9ca3af; color: white; border: none;
+                    border-radius: 8px; font-family: 'Inter', 'Segoe UI';
+                    font-size: 15px; font-weight: 900;
+                }
+                QPushButton:hover { background: #9ca3af; }
+            """)
+
     def save_quick_expense(self):
         amount = self._safe_amount(self.quick_amount_edit.text())
         if amount <= 0:
@@ -5484,7 +5866,7 @@ class ExpensesTab(QtWidgets.QWidget):
             "type": category,
             "Category": category,
             "expense_name": expense_name,
-            "vendor": self.quick_vendor_edit.text().strip(),
+            "vendor": self.quick_vendor_combo.currentText().strip(),
             "description": self.quick_description_edit.text().strip(),
             "amount": amount,
             "project": selected_project,
@@ -5494,12 +5876,10 @@ class ExpensesTab(QtWidgets.QWidget):
         }
         self.save_expense(expense_data)
         self.quick_expense_combo.setEditText("")
-        for widget in (
-            self.quick_vendor_edit,
-            self.quick_amount_edit,
-            self.quick_description_edit,
-        ):
-            widget.clear()
+        self.quick_amount_edit.clear()
+        self.quick_description_edit.clear()
+        if self.quick_vendor_combo.lineEdit():
+            self.quick_vendor_combo.lineEdit().clear()
         self.quick_project_combo.setCurrentIndex(-1)
         self.quick_project_combo.setEditText("")
         self.update_quick_categories(self.quick_type_combo.currentText())
@@ -5530,14 +5910,14 @@ class ExpensesTab(QtWidgets.QWidget):
         layout.setSpacing(4)
 
         title_label = QtWidgets.QLabel(title.upper())
-        title_label.setAlignment(QtCore.Qt.AlignLeft)
+        title_label.setAlignment(QtCore.Qt.AlignCenter)
         title_label.setObjectName("stat_title")
         title_label.setStyleSheet(
             "background:transparent; border:none;"
             " font-size:10px; font-weight:800; color:#94a3b8; letter-spacing:0.8px;")
 
         value_label = QtWidgets.QLabel(value)
-        value_label.setAlignment(QtCore.Qt.AlignLeft)
+        value_label.setAlignment(QtCore.Qt.AlignCenter)
         value_label.setObjectName("stat_value")
         value_label.setStyleSheet(
             f"background:transparent; border:none;"
@@ -5949,9 +6329,10 @@ class ExpensesTab(QtWidgets.QWidget):
                 background: white;
             }
         """)
-        
+
         layout = QtWidgets.QVBoxLayout(card)
-        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
         
         # --- HEADER ROW: Title + Calendar icon ---
 
@@ -6049,12 +6430,16 @@ class ExpensesTab(QtWidgets.QWidget):
         self.pie_click_table.setRowCount(0)
         self.pie_click_table.setStyleSheet("""
             QTableWidget {
-                background: white;
+                background: #ffffff;
                 border: 1px solid #e5edf5;
                 border-radius: 6px;
                 color: #0f172a;
                 font-family: 'Inter', 'Segoe UI';
                 font-size: 11px;
+            }
+            QTableWidget::item {
+                background: #ffffff;
+                padding: 2px 4px;
             }
             QHeaderView::section {
                 background: #172033;
@@ -6064,17 +6449,13 @@ class ExpensesTab(QtWidgets.QWidget):
             }
         """)
 
-        # --- WRAP TABLE IN A FIXED CONTAINER ---
+        # Table container kept in memory for click-handler compatibility but not shown
         self.table_container = QtWidgets.QFrame()
-        self.table_container.setFixedHeight(60)   # adjust height (120–180 works well)
-
+        self.table_container.setFixedHeight(0)
         table_container_layout = QtWidgets.QVBoxLayout(self.table_container)
         table_container_layout.setContentsMargins(0, 0, 0, 0)
         table_container_layout.addWidget(self.pie_click_table)
-
-        layout.addWidget(self.table_container)
-
-        # Start with table hidden but container visible
+        self.table_container.hide()
         self.pie_click_table.hide()
 
 
@@ -6310,8 +6691,13 @@ class ExpensesTab(QtWidgets.QWidget):
 
             # Header information
             # Header information
-            ws.merge_cells('A1:I1')
-            ws['A1'] = "MABS ENGINEERING LLC - EXPENSES REPORT"
+            ws.merge_cells('A1:H1')
+            try:
+                from main import Config as _Cfg
+                _co = _Cfg.COMPANY.get('name', 'MABS Engineering LLC').upper()
+            except Exception:
+                _co = 'MABS ENGINEERING LLC'
+            ws['A1'] = f"{_co} - EXPENSES REPORT"
             ws['A1'].font = Font(size=16, bold=True)
             ws['A1'].alignment = Alignment(horizontal='center')
 
@@ -6338,7 +6724,7 @@ class ExpensesTab(QtWidgets.QWidget):
             ws['A3'] = f"Period: {export_range_text}"
 
             # Table headers
-            headers = ["S.No.", "Date", "Expense Type", "Category", "Expense", "Vendor", "Amount", "Project", "Payment Method"]
+            headers = ["S.No.", "Date", "Expense Type", "Category", "Expense", "Vendor", "Amount", "Project"]
             for col, header in enumerate(headers, 1):
                 cell = ws.cell(row=5, column=col, value=header)
                 cell.font = Font(bold=True)
@@ -6388,7 +6774,6 @@ class ExpensesTab(QtWidgets.QWidget):
                     self.remove_emojis(expense.get('vendor', '')),
                     expense.get('amount', 0),
                     self.remove_emojis(expense.get('project', '')),
-                    self.remove_emojis(expense.get('payment_method', ''))
                 ]
 
                 
@@ -6417,10 +6802,9 @@ class ExpensesTab(QtWidgets.QWidget):
                 3: 33,  # Expense Type
                 4: 30,  # Category
                 5: 30,  # Expense
-                6: 20,  # Vendor
+                6: 22,  # Vendor
                 7: 15,  # Amount
                 8: 30,  # Project
-                9: 30   # Payment Method
             }
             
             for col_idx in range(1, len(headers) + 1):
@@ -6671,7 +7055,12 @@ class ExpensesTab(QtWidgets.QWidget):
             elements.append(header_table)
             
             # 2. Main Title: "MABS ENGINEERING EXPENSE REPORT"
-            main_title = Paragraph("MABS ENGINEERING EXPENSES REPORT", main_title_style)
+            try:
+                from main import Config as _Cfg
+                _co = _Cfg.COMPANY.get('name', 'MABS Engineering LLC').upper()
+            except Exception:
+                _co = 'MABS ENGINEERING LLC'
+            main_title = Paragraph(f"{_co} EXPENSES REPORT", main_title_style)
             elements.append(main_title)
             
             # Calculate statistics
@@ -6735,13 +7124,38 @@ class ExpensesTab(QtWidgets.QWidget):
 
             # 5. Expenses Table
             if expenses:
+                cell_s = ParagraphStyle(
+                    'CellStyle',
+                    parent=styles['Normal'],
+                    fontSize=7,
+                    fontName='Helvetica',
+                    textColor=colors.HexColor('#2c3e50'),
+                    alignment=1,
+                    wordWrap='CJK',
+                )
+                hdr_s = ParagraphStyle(
+                    'HdrStyle',
+                    parent=styles['Normal'],
+                    fontSize=8,
+                    fontName='Helvetica-Bold',
+                    textColor=colors.whitesmoke,
+                    alignment=1,
+                    wordWrap='CJK',
+                )
                 # Prepare table data - UPDATED to include Expense Type and Category
-                table_data = [["Date", "Expense Type", "Category", "Expense", "Amount", "Payment Method"]]
-                
+                table_data = [[
+                    Paragraph("Date", hdr_s),
+                    Paragraph("Expense Type", hdr_s),
+                    Paragraph("Category", hdr_s),
+                    Paragraph("Expense", hdr_s),
+                    Paragraph("Vendor", hdr_s),
+                    Paragraph("Amount", hdr_s),
+                ]]
+
                 for expense in expenses:
                     # Get date in MM-dd-yyyy format (as stored in your expenses)
                     date_str = expense.get('date', '')
-                    
+
                     # Try to format the date properly for display
                     try:
                         # Try to parse MM-dd-yyyy format
@@ -6757,15 +7171,15 @@ class ExpensesTab(QtWidgets.QWidget):
                         except ValueError:
                             # If all parsing fails, use the original string
                             display_date = date_str
-                    
+
                     # Get Expense Type - AUTO-SET TO "Other Expenses" IF EMPTY
                     expense_type = expense.get('expense_type', '')
                     if not expense_type:
                         expense_type = "Other Expenses"
-                    
+
                     # Get Category
                     sub_category = expense.get('sub_category', expense.get('type', ''))
-                    
+
                     # Get expense name or use auto-generated number
                     expense_name = expense.get('expense_name', '')
                     if not expense_name:
@@ -6774,35 +7188,33 @@ class ExpensesTab(QtWidgets.QWidget):
                         category_expenses = [e for e in expenses if e.get('type') == category]
                         expense_number = category_expenses.index(expense) + 1
                         expense_name = f"{expense_number}"
-                    
+
                     # Remove emojis from all text fields
                     clean_expense_type = self.remove_emojis(expense_type)
                     clean_sub_category = self.remove_emojis(sub_category)
                     clean_expense_name = self.remove_emojis(expense_name)
-                    payment_method = self.remove_emojis(expense.get('payment_method', ''))
-                    
+                    vendor = self.remove_emojis(expense.get('vendor', ''))
+
                     # Get amount
                     amount = expense.get('amount', 0)
-                    
-                    # In the table_data.append section for PDF generation:
+
                     table_data.append([
-                        display_date,
-                        clean_expense_type,
-                        clean_sub_category,
-                        clean_expense_name[:25] + "..." if len(clean_expense_name) > 25 else clean_expense_name,
-                        # Use whole number formatting without commas
-                        f"${int(amount)}" if hasattr(Currency, 'format_whole') else format_amount_no_commas(amount),
-                        payment_method
+                        Paragraph(display_date, cell_s),
+                        Paragraph(clean_expense_type, cell_s),
+                        Paragraph(clean_sub_category, cell_s),
+                        Paragraph(clean_expense_name, cell_s),
+                        Paragraph(vendor, cell_s),
+                        Paragraph(f"${int(amount)}" if hasattr(Currency, 'format_whole') else format_amount_no_commas(amount), cell_s),
                     ])
                                     
                 # Create table with adjusted column widths for 6 columns
                 col_widths = [
-                    0.9*inch,   # Date (slightly reduced)
-                    2.0*inch,   # Expense Type
-                    1.5*inch,   # Category
+                    0.9*inch,   # Date
+                    1.8*inch,   # Expense Type
+                    1.3*inch,   # Category
                     1.5*inch,   # Expense
-                    0.8*inch,   # Amount
-                    1.0*inch    # Payment Method
+                    1.2*inch,   # Vendor
+                    0.9*inch,   # Amount
                 ]
                 
                 expense_table = Table(table_data, colWidths=col_widths)
@@ -7050,7 +7462,7 @@ class ExpensesTab(QtWidgets.QWidget):
     def create_pie_chart(self):
         """Create a professional pie chart"""
         chart = QChart()
-        chart.setMargins(QtCore.QMargins(4, 4, 4, 4))
+        chart.setMargins(QtCore.QMargins(8, 8, 8, 8))
         chart.layout().setContentsMargins(0, 0, 0, 0)
 
         chart.setTheme(QChart.ChartThemeLight)
@@ -7061,223 +7473,158 @@ class ExpensesTab(QtWidgets.QWidget):
         self.pie_series = QPieSeries()
         self.pie_series.clicked.connect(self.on_pie_slice_clicked)
         self.pie_series.setPieSize(0.82)
-        self.pie_series.setHoleSize(0.42)
-        self.pie_series.setHorizontalPosition(0.45)
+        self.pie_series.setHoleSize(0.40)
+        self.pie_series.setHorizontalPosition(0.5)
         self.pie_series.setVerticalPosition(0.5)
 
         self.pie_series.setLabelsVisible(True)
-        
+
         # Add sample slice
         slice = self.pie_series.append("No Data", 1)
         slice.setColor(QtGui.QColor("#bdc3c7"))
         slice.setLabelVisible(False)
-        
+
         chart.addSeries(self.pie_series)
-        # Chart styling
+
+        # Legend — right side, vertical list
         legend = chart.legend()
         legend.setVisible(True)
-        legend.setAlignment(QtCore.Qt.AlignRight)     # moves legend right side (vertical)
+        legend.setAlignment(QtCore.Qt.AlignRight)
         legend.setMarkerShape(QLegend.MarkerShapeCircle)
-        legend.setFont(QtGui.QFont("Inter", 8))
-        legend.setLabelColor(QtGui.QColor("#334155"))
-        legend.setBorderColor(QtGui.QColor("#e2e8f0"))
+        legend.setFont(QtGui.QFont("Inter", 8, QtGui.QFont.Medium))
+        legend.setLabelColor(QtGui.QColor("#1E293B"))
+        legend.setBorderColor(QtGui.QColor("#ffffff"))
+        legend.setBackgroundVisible(True)
+        legend.setColor(QtGui.QColor("#ffffff"))
 
-        chart_view = QChartView(chart)
+        chart_view = PieChartView(chart)
+        chart_view.pie_series = self.pie_series
+        chart_view.pie_slice_categories = self.pie_slice_categories
         chart_view.setRenderHint(QtGui.QPainter.Antialiasing)
-        chart_view.setMinimumHeight(250)
-        chart_view.setMaximumHeight(300)
+        chart_view.setMinimumHeight(420)
+        chart_view.setMaximumHeight(520)
         chart_view.setStyleSheet("background: transparent; border: none;")
-        
+
         return chart_view
     
     def show_date_range_dialog(self):
-        """Show date range selection dialog"""
+        """Show date range selection dialog - styled like balance sheet tab"""
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle("📅 Select Date Range")
         dialog.setModal(True)
         dialog.resize(400, 200)
-        
+        dialog.setStyleSheet("QDialog { background: #f5f6fa; }")
+
         layout = QtWidgets.QVBoxLayout(dialog)
-        
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
         # Title
         title = QtWidgets.QLabel("Select Date Range")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50; padding: 10px;")
+        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50;")
         title.setAlignment(QtCore.Qt.AlignCenter)
         layout.addWidget(title)
-        
+
         # Date inputs
         form_layout = QtWidgets.QFormLayout()
         form_layout.setSpacing(15)
-        form_layout.setContentsMargins(20, 10, 20, 10)
-        
-        # Check if there's an active date range filter
+
+        # Restore previously chosen dates if available
         current_from_date = QtCore.QDate.currentDate().addMonths(-1)
         current_to_date = QtCore.QDate.currentDate()
-        
-        # Parse current filter if active - use stored QDate objects if available
-        button_text = self.date_range_button.text()
         if hasattr(self, 'current_from_date') and hasattr(self, 'current_to_date'):
-            # Use the stored QDate objects directly
             current_from_date = self.current_from_date
             current_to_date = self.current_to_date
-        elif "to" in button_text and button_text != "📅 Date Range":
-            try:
-                date_text = button_text.replace("📅 ", "")
-                from_str, to_str = date_text.split(" to ")
-                # Parse from US format
-                current_from_date = QtCore.QDate.fromString(from_str, "MMMM d, yyyy")
-                current_to_date = QtCore.QDate.fromString(to_str, "MMMM d, yyyy")
-            except:
-                # If parsing fails, use default dates
-                current_from_date = QtCore.QDate.currentDate().addMonths(-1)
-                current_to_date = QtCore.QDate.currentDate()
-        
-        # From Date - initialize with current filter or default
+
+        date_style = """
+            QDateEdit {
+                padding: 8px 12px;
+                border: 1.5px solid #e1e8ed;
+                border-radius: 8px;
+                background: white;
+                font-size: 13px;
+            }
+            QDateEdit:focus { border-color: #3498db; }
+        """
+
         self.from_date_edit = QtWidgets.QDateEdit()
         self.from_date_edit.setDate(current_from_date)
         self.from_date_edit.setCalendarPopup(True)
-        self.from_date_edit.setDisplayFormat("MMMM d, yyyy")  # US format: Month Day, Year
-        self.from_date_edit.setStyleSheet("""
-            QDateEdit {
-                padding: 8px 12px;
-                border: 1.5px solid #e1e8ed;
-                border-radius: 8px;
-                background: white;
-                font-size: 13px;
-            }
-            QDateEdit:focus { border-color: #3498db; }
-        """)
-        
-        # To Date - initialize with current filter or default
+        self.from_date_edit.setDisplayFormat("MM-dd-yyyy")
+        self.from_date_edit.setStyleSheet(date_style)
+        self.from_date_edit.wheelEvent = lambda e: e.ignore()
+        self.from_date_edit.stepBy = lambda x: None
+
         self.to_date_edit = QtWidgets.QDateEdit()
         self.to_date_edit.setDate(current_to_date)
         self.to_date_edit.setCalendarPopup(True)
-        self.to_date_edit.setDisplayFormat("MMMM d, yyyy")  # US format: Month Day, Year
-        self.to_date_edit.setStyleSheet("""
-            QDateEdit {
-                padding: 8px 12px;
-                border: 1.5px solid #e1e8ed;
-                border-radius: 8px;
-                background: white;
-                font-size: 13px;
-            }
-            QDateEdit:focus { border-color: #3498db; }
-        """)
-        
+        self.to_date_edit.setDisplayFormat("MM-dd-yyyy")
+        self.to_date_edit.setStyleSheet(date_style)
+        self.to_date_edit.wheelEvent = lambda e: e.ignore()
+        self.to_date_edit.stepBy = lambda x: None
+
         form_layout.addRow("From Date:", self.from_date_edit)
         form_layout.addRow("To Date:", self.to_date_edit)
-        
         layout.addLayout(form_layout)
-        
-        # Buttons - Clear on left, Apply on right (Cancel button removed)
-        button_layout = QtWidgets.QHBoxLayout()
-        
+
+        btn_style_clear = """
+            QPushButton {
+                background: #95a5a6; color: white; font-weight: bold;
+                border-radius: 8px; border: none; font-size: 14px;
+            }
+            QPushButton:hover { background: #7f8c8d; }
+        """
+        btn_style_apply = """
+            QPushButton {
+                background: #27ae60; color: white; font-weight: bold;
+                border-radius: 8px; border: none; font-size: 14px;
+            }
+            QPushButton:hover { background: #2ecc71; }
+        """
+
         clear_btn = QtWidgets.QPushButton("Clear Filter")
         clear_btn.setMinimumHeight(40)
-        clear_btn.setStyleSheet("""
-            QPushButton {
-                background: #95a5a6;
-                color: white;
-                font-weight: bold;
-                border-radius: 8px;
-                border: none;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background: #7f8c8d;
-            }
-        """)
-        
+        clear_btn.setStyleSheet(btn_style_clear)
+
         apply_btn = QtWidgets.QPushButton("Apply Filter")
         apply_btn.setMinimumHeight(40)
-        apply_btn.setStyleSheet("""
-            QPushButton {
-                background: #27ae60;
-                color: white;
-                font-weight: bold;
-                border-radius: 8px;
-                border: none;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background: #2ecc71;
-            }
-        """)
-        
+        apply_btn.setStyleSheet(btn_style_apply)
+
+        button_layout = QtWidgets.QHBoxLayout()
         button_layout.addWidget(clear_btn)
-        button_layout.addStretch()  # This pushes the Apply button to the right
+        button_layout.addStretch()
         button_layout.addWidget(apply_btn)
-        
         layout.addLayout(button_layout)
-        
-        # Connect signals
-        def apply_filter():
-            self.apply_date_range_filter()
-            dialog.accept()
-        
-        def clear_filter():
-            self.clear_date_range_filter()
-            dialog.accept()
-        
-        apply_btn.clicked.connect(apply_filter)
-        clear_btn.clicked.connect(clear_filter)
-        
+
+        apply_btn.clicked.connect(lambda: self.apply_date_range_filter(dialog))
+        clear_btn.clicked.connect(lambda: self.clear_date_range_filter(dialog))
+
         dialog.exec_()
 
-    def apply_date_range_filter(self):
+    def apply_date_range_filter(self, dialog=None):
         """Apply date range filter"""
         from_date_qdate = self.from_date_edit.date()
         to_date_qdate = self.to_date_edit.date()
-        
-        # Store the dates in both formats for different uses
-        from_date_us = from_date_qdate.toString("MMMM d, yyyy")  # US format for display
-        to_date_us = to_date_qdate.toString("MMMM d, yyyy")  # US format for display
-        
-        # Store the actual QDate objects for later use
+
         self.current_from_date = from_date_qdate
         self.current_to_date = to_date_qdate
-        
-        # Update button text to show active filter in US format
-        self.date_range_button.setText(f"📅 {from_date_us} to {to_date_us}")
-        self.date_range_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-            QPushButton:pressed {
-                background-color: #21618c;
-            }
-        """)
-        
-        # ✅ UPDATE: Trigger filtering which will update statistics AND categories dropdown
-        self.filter_expenses()
 
-    def clear_date_range_filter(self):
+        from_label = from_date_qdate.toString("MM-dd-yy")
+        to_label = to_date_qdate.toString("MM-dd-yy")
+        configure_filter_button(
+            self.date_range_button,
+            f"{from_label} to {to_label}",
+            active=True,
+            height=40,
+        )
+
+        self.filter_expenses()
+        if dialog:
+            dialog.accept()
+
+    def clear_date_range_filter(self, dialog=None):
         """Clear date range filter AND reset all other filters"""
-        self.date_range_button.setText("📅")
-        self.date_range_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-            QPushButton:pressed {
-                background-color: #21618c;
-            }
-        """)
+        configure_filter_button(self.date_range_button, height=40)
         
         # Clear the stored date objects
         if hasattr(self, 'current_from_date'):
@@ -7309,19 +7656,25 @@ class ExpensesTab(QtWidgets.QWidget):
         # Display all expenses
         self.display_filtered_expenses(self.expenses)
         self.update_statistics(self.expenses)
-            
+        if dialog:
+            dialog.accept()
+
     def create_table_section(self):
         """Create expense table section with search and filters - UPDATED with date range and categories filter"""
         frame = QtWidgets.QFrame()
+        frame.setStyleSheet("""
+            QFrame {
+                background: #ffffff;
+                border: 1px solid #e2e8f0;
+                border-radius: 12px;
+            }
+        """)
         layout = QtWidgets.QVBoxLayout(frame)
-        layout.setSpacing(15)
-        
-        # Expenses Table Group
-        table_group = QtWidgets.QGroupBox("Expense Ledger")
-        table_group.setStyleSheet(self.get_group_box_style())
-        table_layout = QtWidgets.QVBoxLayout(table_group)
-        table_layout.setContentsMargins(16, 18, 16, 16)
-        table_layout.setSpacing(10)
+        layout.setSpacing(10)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        # alias so the rest of the method doesn't change
+        table_layout = layout
         
         # 🔍 Integrated Search and Filter Section
         search_filter_frame = QtWidgets.QFrame()
@@ -7339,25 +7692,7 @@ class ExpensesTab(QtWidgets.QWidget):
         left_section.setContentsMargins(0, 0, 0, 0)
         
         # Calendar Date Range Filter Button
-        self.date_range_button = QtWidgets.QPushButton("📅")
-        self.date_range_button.setFixedSize(56, 40)
-        self.date_range_button.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        self.date_range_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-            QPushButton:pressed {
-                background-color: #21618c;
-            }
-        """)
+        self.date_range_button = configure_filter_button(QtWidgets.QPushButton(), height=40)
         self.date_range_button.clicked.connect(self.show_date_range_dialog)
         
         # Search Bar
@@ -7454,7 +7789,15 @@ class ExpensesTab(QtWidgets.QWidget):
         """)
 
         self.categories_filter_combo.currentTextChanged.connect(self.filter_expenses)
-        
+        self.categories_filter_combo.wheelEvent = lambda e: e.ignore()
+        self.categories_filter_combo.keyPressEvent = lambda e, c=self.categories_filter_combo: (
+            QtWidgets.QComboBox.keyPressEvent(c, e)
+            if e.key() not in (QtCore.Qt.Key_Up, QtCore.Qt.Key_Down) or c.view().isVisible()
+            else e.ignore()
+        )
+        self.categories_filter_combo.currentIndexChanged.connect(
+            lambda: QtCore.QTimer.singleShot(0, self.categories_filter_combo.clearFocus))
+
         filter_right.addWidget(self.categories_filter_combo)
         
         search_filter_layout.addLayout(filter_right)
@@ -7472,25 +7815,19 @@ class ExpensesTab(QtWidgets.QWidget):
         
         # Expenses Table with UPDATED columns (REMOVED STATUS COLUMN)
         self.expenses_table = QtWidgets.QTableWidget()
-        # Expenses Table with UPDATED columns (ADDED EXPENSE NAME COLUMN)
         self.expenses_table.setColumnCount(8)
         self.expenses_table.setHorizontalHeaderLabels([
-            "S.No", "📅 Date", "📂 Expense Type", "📋 Category", "📝 Expense",
-            "🏢 Vendor", "📝 Description", "💰 Amount", "🎯 Project", "💳 Method", "⚡ Actions"
-        ])
-                
-        self.expenses_table.setHorizontalHeaderLabels([
-            "Date", "Vendor", "Category", "Expense", "Memo",
-            "Project", "Amount", "Actions"
+            "S.No", "Date", "Expense Type", "Category",
+            "Expense Name", "Vendor", "Amount", "Actions"
         ])
 
         # Professional table styling with vertical grid lines - UPDATED
         self.expenses_table.setStyleSheet("""
             QTableWidget {
                 background: #ffffff;
-                alternate-background-color: #ffffff;
+                alternate-background-color: #f8fafc;
                 border: none;
-                border-radius: 11px;
+                border-radius: 8px;
                 gridline-color: #e5edf5;
                 font-size: 12px;
                 font-family: 'Inter', 'Segoe UI', sans-serif;
@@ -7498,13 +7835,12 @@ class ExpensesTab(QtWidgets.QWidget):
                 selection-background-color: transparent;
             }
             QTableWidget::item {
-                padding: 7px 4px;
+                padding: 6px 8px;
                 border-bottom: 1px solid #e5edf5;
                 border-right: 1px solid #e5edf5;
                 color: #0f172a;
-                font-size: 12px;
-                qproperty-textAlignment: AlignCenter;
-                background: #ffffff;
+                font-size: 11px;
+                background: transparent;
             }
             QTableWidget::item:last {
                 border-right: none;
@@ -7549,10 +7885,16 @@ class ExpensesTab(QtWidgets.QWidget):
         self.expenses_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.expenses_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.expenses_table.setAlternatingRowColors(True)
-        self.expenses_table.setMinimumHeight(760)
+        self.expenses_table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.expenses_table.setFixedHeight(160)
+        self.expenses_table.viewport().setAutoFillBackground(True)
         self.expenses_table.verticalHeader().setVisible(False)
         self.expenses_table.setSortingEnabled(True)
-        self.expenses_table.setWordWrap(False)
+        self.expenses_table.setWordWrap(True)
+        self.expenses_table.setAccessibleName("Expenses table")
+        self.expenses_table.setAccessibleDescription(
+            "List of expense records. Hover over a cell to see the full text.")
+        self.expenses_table.setTextElideMode(QtCore.Qt.ElideNone)
         
         # Header properties
         header = self.expenses_table.horizontalHeader()
@@ -7561,26 +7903,59 @@ class ExpensesTab(QtWidgets.QWidget):
         header.setFixedHeight(42)
         header.setSortIndicatorShown(True)
         
-        # Make all columns manually sizeable
-        for col in range(self.expenses_table.columnCount()):
+        # col 0 S.No, 1 Date, 2 Expense Type, 3 Category,
+        # 4 Expense Name, 5 Vendor, 6 Amount, 7 Actions
+        self.expenses_table.setColumnWidth(0, 55)
+        self.expenses_table.setColumnWidth(1, 110)
+        self.expenses_table.setColumnWidth(2, 290)   # Expense Type
+        self.expenses_table.setColumnWidth(3, 250)   # Category
+        self.expenses_table.setColumnWidth(5, 200)   # Vendor
+        self.expenses_table.setColumnWidth(6, 100)
+        self.expenses_table.setColumnWidth(7, 190)
+        # Fixed columns
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Fixed)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.Fixed)
+        header.setSectionResizeMode(6, QtWidgets.QHeaderView.Fixed)
+        header.setSectionResizeMode(7, QtWidgets.QHeaderView.Fixed)
+        # Expense Name stretches to fill remaining horizontal space
+        header.setSectionResizeMode(4, QtWidgets.QHeaderView.Stretch)
+        # Type, Category, Vendor are interactive (user can resize)
+        for col in (2, 3, 5):
             header.setSectionResizeMode(col, QtWidgets.QHeaderView.Interactive)
 
-        # Professional auto layout: important fields stay visible, memo flexes.
-        self.expenses_table.setColumnWidth(0, 98)
-        self.expenses_table.setColumnWidth(1, 125)
-        self.expenses_table.setColumnWidth(2, 135)
-        self.expenses_table.setColumnWidth(3, 115)
-        self.expenses_table.setColumnWidth(4, 220)
-        self.expenses_table.setColumnWidth(5, 220)
-        self.expenses_table.setColumnWidth(6, 112)
-        self.expenses_table.setColumnWidth(7, 174)
-        header.setSectionResizeMode(4, QtWidgets.QHeaderView.Stretch)
-        header.setSectionResizeMode(5, QtWidgets.QHeaderView.Interactive)
-        header.setSectionResizeMode(7, QtWidgets.QHeaderView.Fixed)
-
         table_layout.addWidget(self.expenses_table)
-        layout.addWidget(table_group)
-        
+
+        _pg_s = """QPushButton { background:#ffffff; color:#334155; border:1px solid #e2e8f0;
+            border-radius:6px; font-size:12px; font-weight:700;
+            min-width:32px; min-height:28px; padding:0 8px; }
+            QPushButton:hover { background:#f1f5f9; border-color:#cbd5e1; }
+            QPushButton:disabled { color:#cbd5e1; }"""
+        exp_pg_frame = QtWidgets.QFrame()
+        exp_pg_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
+        exp_pg_hbox = QtWidgets.QHBoxLayout(exp_pg_frame)
+        exp_pg_hbox.setContentsMargins(4, 6, 4, 6)
+        exp_pg_hbox.setSpacing(6)
+        self._exp_info_lbl = QtWidgets.QLabel("")
+        self._exp_info_lbl.setStyleSheet(
+            "color:#94a3b8; font-size:11px; font-weight:600; background:transparent; border:none;")
+        exp_pg_hbox.addWidget(self._exp_info_lbl)
+        exp_pg_hbox.addStretch()
+        self._exp_prev_btn = QtWidgets.QPushButton("‹")
+        self._exp_prev_btn.setStyleSheet(_pg_s)
+        self._exp_prev_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self._exp_prev_btn.clicked.connect(self._exp_go_prev)
+        exp_pg_hbox.addWidget(self._exp_prev_btn)
+        self._exp_page_btns_layout = QtWidgets.QHBoxLayout()
+        self._exp_page_btns_layout.setSpacing(4)
+        exp_pg_hbox.addLayout(self._exp_page_btns_layout)
+        self._exp_next_btn = QtWidgets.QPushButton("›")
+        self._exp_next_btn.setStyleSheet(_pg_s)
+        self._exp_next_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self._exp_next_btn.clicked.connect(self._exp_go_next)
+        exp_pg_hbox.addWidget(self._exp_next_btn)
+        self._exp_pg_style = _pg_s
+        table_layout.addWidget(exp_pg_frame)
+
         return frame
 
     def _ledger_item(self, text="", alignment=QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft):
@@ -7595,7 +7970,7 @@ class ExpensesTab(QtWidgets.QWidget):
         return qcolor
 
     def _style_ledger_row(self, row, expense):
-        table_font = QtGui.QFont("Inter", 10)
+        table_font = QtGui.QFont("Inter", 9)
         text_brush = QtGui.QBrush(QtGui.QColor("#0f172a"))
         white_brush = QtGui.QBrush(QtGui.QColor("#ffffff"))
 
@@ -7606,11 +7981,7 @@ class ExpensesTab(QtWidgets.QWidget):
             item.setFont(table_font)
             item.setForeground(text_brush)
             item.setBackground(white_brush)
-            item.setTextAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignCenter)
-
-        memo_item = self.expenses_table.item(row, 4)
-        if memo_item:
-            memo_item.setTextAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
+            # Preserve per-column alignment already set by _populate_ledger_row
 
     def _format_expense_date(self, date_str):
         try:
@@ -7647,25 +8018,25 @@ class ExpensesTab(QtWidgets.QWidget):
 
         return raw_project
 
-    def _populate_ledger_row(self, row, expense):
+    def _populate_ledger_row(self, row, expense, sno=None):
         category = expense.get('Category', expense.get('type', '')) or "Uncategorized"
-        expense_name = expense.get('expense_name', '') or expense.get('expense_type', '')
+        expense_type = expense.get('expense_type', '') or expense.get('type', '')
+        expense_name = expense.get('expense_name', '') or ''
         amount = expense.get('amount', 0)
 
+        # col: 0=S.No, 1=Date, 2=Expense Type, 3=Category, 4=Expense Name, 5=Vendor, 6=Amount, 7=Actions
         values = [
+            str(sno if sno is not None else row + 1),
             self._format_expense_date(expense.get('date', '')),
-            expense.get('vendor', ''),
+            expense_type,
             category,
             expense_name,
-            expense.get('description', ''),
-            self._expense_project_number(expense),
+            expense.get('vendor', ''),
             format_amount_no_commas(amount),
         ]
 
         for col, value in enumerate(values):
             alignment = QtCore.Qt.AlignVCenter | QtCore.Qt.AlignCenter
-            if col == 4:
-                alignment = QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft
             self.expenses_table.setItem(row, col, self._ledger_item(value, alignment))
 
         self.expenses_table.setCellWidget(row, 7, self.create_enhanced_action_buttons(expense))
@@ -7780,6 +8151,9 @@ class ExpensesTab(QtWidgets.QWidget):
         # Save to Firebase
         success = ExpensesFirebaseManager.save_expense(expense_data)
         if success:
+            vendor = str(expense_data.get('vendor', '') or '').strip()
+            if vendor:
+                ExpensesFirebaseManager.save_vendor(vendor)
             # Save custom category colors
             self.save_custom_category_colors()
             self.show_success_message("Expense added successfully!")
@@ -7825,19 +8199,22 @@ class ExpensesTab(QtWidgets.QWidget):
                         
     def save_to_balance_sheet_expenses(self, expense_data):
         """Save expense to balance sheet expenses list and Firebase"""
-        # Convert expense_data to balance sheet expense format
         balance_sheet_expense = {
-            'date': expense_data.get('date', ''),  # Expense date
-            'name': expense_data.get('expense_name', '') or expense_data.get('Category', 'Expense'),
-            'description': expense_data.get('description', '') or expense_data.get('expense_type', ''),
-            'amount': f"{self._safe_amount(expense_data.get('amount', 0)):.2f}",
-            'year': self._expense_year(expense_data),
-            'created_at': datetime.now().isoformat(),  # ADD THIS: creation timestamp
-            'expense_date': expense_data.get('date', ''),  # Store expense date separately for reference
-            'project': expense_data.get('project', ''),
+            'date':          expense_data.get('date', ''),
+            'expense_date':  expense_data.get('date', ''),
+            # Preserve every original Expenses-tab field so the columns are correct on reload
+            'expense_type':  expense_data.get('expense_type', ''),
+            'Category':      expense_data.get('Category', ''),
+            'expense_name':  expense_data.get('expense_name', '') or expense_data.get('Category', 'Expense'),
+            'name':          expense_data.get('expense_name', '') or expense_data.get('Category', 'Expense'),
+            'description':   expense_data.get('description', ''),
+            'vendor':        expense_data.get('vendor', ''),
+            'amount':        f"{self._safe_amount(expense_data.get('amount', 0)):.2f}",
+            'year':          self._expense_year(expense_data),
+            'created_at':    datetime.now(timezone.utc).isoformat(),
+            'project':       expense_data.get('project', ''),
             'project_number': expense_data.get('project_number', ''),
-            'firebase_id': expense_data.get('firebase_id', ''),
-
+            'firebase_id':   expense_data.get('firebase_id', ''),
         }
         
         # Try to find the balance sheet tab
@@ -7917,12 +8294,20 @@ class ExpensesTab(QtWidgets.QWidget):
             expense_number = len(category_expenses) + 1
             updated_expense_data['expense_name'] = f"{expense_number}"
         
-        # Update Firebase if available
+        # Save vendor for future dropdown use
+        vendor = str(updated_expense_data.get('vendor', '') or '').strip()
+        if vendor:
+            ExpensesFirebaseManager.save_vendor(vendor)
+
+        # Update Firebase if available — route to the correct node
         if 'firebase_id' in old_expense_data and FIREBASE_AVAILABLE:
             try:
-                ref = db.reference(f'/expenses/{old_expense_data["firebase_id"]}')
-                ref.update(updated_expense_data)
-
+                _fid = old_expense_data['firebase_id']
+                if old_expense_data.get('finance_source') == 'balance_sheet':
+                    node = f'/balance_sheet_expenses/{_fid}'
+                else:
+                    node = f'/expenses/{_fid}'
+                db.reference(node).update(updated_expense_data)
             except Exception as e:
                 _log.warning("Error updating expense in Firebase: %s", e)
                 self.show_warning_message("Failed to update in Firebase. Updated locally only.")
@@ -7940,10 +8325,10 @@ class ExpensesTab(QtWidgets.QWidget):
             # The old entry (if any) remains completely unchanged
             _log.info("Checkbox not ticked - balance sheet entry unchanged")
         
-        self.update_expenses_table()
+        self._refresh_table_keep_page()
         self.update_charts()
         self.update_statistics()
-        self.update_categories_filter()  # Update filter when editing expense
+        self.update_categories_filter()
     
     def update_balance_sheet_expense(self, old_expense_data, updated_expense_data):
 
@@ -8031,33 +8416,41 @@ class ExpensesTab(QtWidgets.QWidget):
         # NEW: Apply existing filters after loading data
         self.filter_expenses()  # Add this line
     
+    def _fit_table_height(self):
+        """Resize table to show all rows without internal scrolling."""
+        row_count = self.expenses_table.rowCount()
+        header_h = self.expenses_table.horizontalHeader().height()
+        rows_h = sum(self.expenses_table.rowHeight(r) for r in range(row_count))
+        total_h = header_h + rows_h + 4
+        self.expenses_table.setFixedHeight(max(160, total_h))
+        self.expenses_table.updateGeometry()
+
     def update_expenses_table(self):
         """Update the professional expense ledger from current data."""
-        self.expenses_table.setSortingEnabled(False)
-        self.expenses_table.setRowCount(len(self.expenses))
-
-        for row, expense in enumerate(reversed(self.expenses)):
-            self._populate_ledger_row(row, expense)
-
-        for row in range(self.expenses_table.rowCount()):
-            self.expenses_table.setRowHeight(row, 54)
-        self.expenses_table.setSortingEnabled(True)
+        self._exp_all_items = list(reversed(self.expenses))
+        self._exp_page = 1
+        self._exp_render_page()
             
     def on_pie_slice_clicked(self, slice):
         self.pie_click_table.show()
-        # Find actual category name from legend markers
-        chart = self.pie_chart_widget.chart()
-        legend = chart.legend()
-        markers = legend.markers(self.pie_series)
 
-        category_name = None
-        for marker in markers:
-            if marker.slice() is slice:
-                category_name = marker.label().split("$")[0].strip()
+        # Find slice index in series
+        slices = self.pie_series.slices()
+        slice_index = -1
+        for idx, s in enumerate(slices):
+            if s is slice:
+                slice_index = idx
                 break
 
-        if not category_name:
+        if slice_index < 0 or slice_index >= len(self.pie_slice_categories):
             return
+
+        category_name = self.pie_slice_categories[slice_index]
+        amount_value = slice.value()
+
+        # Show click tooltip
+        tooltip_text = f"{category_name} - ${amount_value:,.2f}"
+        self._show_slice_tooltip(tooltip_text)
 
         # Filter expenses by CURRENT PIE CHART month/year AND category
         selected_month = self.pie_chart_month  # Use current pie chart month
@@ -8089,20 +8482,27 @@ class ExpensesTab(QtWidgets.QWidget):
         # Update table header
         self.update_pie_header(len(matched))
 
+    def _show_slice_tooltip(self, text):
+        """Show tooltip for clicked pie slice"""
+        cursor_pos = QtGui.QCursor.pos()
+        QtWidgets.QToolTip.showText(cursor_pos, text, self, self.pie_chart_widget.rect())
+
     def create_enhanced_action_buttons(self, expense):
-        """Create enhanced action buttons matching Job Form style"""
-        # Create container widget for buttons
+        """Create enhanced action buttons — original style, vertically centered in row."""
+        outer = QtWidgets.QWidget()
+        outer_layout = QtWidgets.QVBoxLayout(outer)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setAlignment(QtCore.Qt.AlignCenter)
+
         actions_widget = QtWidgets.QWidget()
         actions_widget.setMinimumWidth(166)
         actions_layout = QtWidgets.QHBoxLayout(actions_widget)
         actions_layout.setContentsMargins(4, 3, 4, 3)
         actions_layout.setSpacing(4)
         actions_layout.setAlignment(QtCore.Qt.AlignCenter)
-        
-        # View button - matching Job Form style
-        view_btn = QtWidgets.QPushButton("👁 View")
+
+        view_btn = QtWidgets.QPushButton("View")
         view_btn.setToolTip("View Details")
-        view_btn.setText("View")
         view_btn.setFixedSize(48, 30)
         view_btn.setStyleSheet("""
             QPushButton {
@@ -8114,20 +8514,13 @@ class ExpensesTab(QtWidgets.QWidget):
                 font-weight: bold;
                 padding: 2px;
             }
-            QPushButton:hover {
-                background-color: #e9ecef;
-                border-color: #3498db;
-            }
-            QPushButton:pressed {
-                background-color: #dee2e6;
-            }
+            QPushButton:hover { background-color: #e9ecef; border-color: #3498db; }
+            QPushButton:pressed { background-color: #dee2e6; }
         """)
         view_btn.clicked.connect(lambda: self.view_expense_details(expense))
-        
-        # Edit button - matching Job Form style  
-        edit_btn = QtWidgets.QPushButton("✏️ Edit")
+
+        edit_btn = QtWidgets.QPushButton("Edit")
         edit_btn.setToolTip("Edit Expense")
-        edit_btn.setText("Edit")
         edit_btn.setFixedSize(46, 30)
         edit_btn.setStyleSheet("""
             QPushButton {
@@ -8139,20 +8532,13 @@ class ExpensesTab(QtWidgets.QWidget):
                 font-weight: bold;
                 padding: 2px;
             }
-            QPushButton:hover {
-                background-color: #e9ecef;
-                border-color: #f39c12;
-            }
-            QPushButton:pressed {
-                background-color: #dee2e6;
-            }
+            QPushButton:hover { background-color: #e9ecef; border-color: #f39c12; }
+            QPushButton:pressed { background-color: #dee2e6; }
         """)
         edit_btn.clicked.connect(lambda: self.edit_expense(expense))
-        
-        # Delete button - matching Job Form style
-        delete_btn = QtWidgets.QPushButton("🗑️ Delete")
+
+        delete_btn = QtWidgets.QPushButton("Del")
         delete_btn.setToolTip("Delete Expense")
-        delete_btn.setText("Del")
         delete_btn.setFixedSize(42, 30)
         delete_btn.setStyleSheet("""
             QPushButton {
@@ -8164,40 +8550,17 @@ class ExpensesTab(QtWidgets.QWidget):
                 font-weight: bold;
                 padding: 2px;
             }
-            QPushButton:hover {
-                background-color: #e9ecef;
-                border-color: #e74c3c;
-            }
-            QPushButton:pressed {
-                background-color: #dee2e6;
-            }
+            QPushButton:hover { background-color: #e9ecef; border-color: #e74c3c; }
+            QPushButton:pressed { background-color: #dee2e6; }
         """)
         delete_btn.clicked.connect(lambda: self.delete_expense(expense))
 
-        if expense.get("read_only_expense"):
-            edit_btn.setEnabled(False)
-            delete_btn.setEnabled(False)
-            edit_btn.setToolTip("Edit this record from Balance Sheet")
-            delete_btn.setToolTip("Delete this record from Balance Sheet")
-            disabled_style = """
-                QPushButton {
-                    background-color: #eef2f6;
-                    color: #94a3b8;
-                    border: 1px solid #d8e2ec;
-                    border-radius: 4px;
-                    font-size: 12px;
-                    font-weight: bold;
-                    padding: 2px;
-                }
-            """
-            edit_btn.setStyleSheet(disabled_style)
-            delete_btn.setStyleSheet(disabled_style)
-        
         actions_layout.addWidget(view_btn)
         actions_layout.addWidget(edit_btn)
         actions_layout.addWidget(delete_btn)
-        
-        return actions_widget
+
+        outer_layout.addWidget(actions_widget)
+        return outer
     
     def update_filter_menus(self):
         """Update filter menus with current data"""
@@ -8248,40 +8611,41 @@ class ExpensesTab(QtWidgets.QWidget):
         # This will be used to populate the categories dropdown
         categories_for_dropdown = set()
         
+        def _parse_expense_qdate(exp):
+            """Parse expense date field trying multiple formats; returns QDate."""
+            raw = exp.get('date', '') or ''
+            for _fmt in ("MM-dd-yyyy", "yyyy-MM-dd", "MM/dd/yyyy", "M/d/yyyy"):
+                qd = QtCore.QDate.fromString(raw, _fmt)
+                if qd.isValid():
+                    return qd
+            return QtCore.QDate()
+
         for expense in self.expenses:
-            # Check date filter (if active)
+            # Check date filter — always uses expense date field, not created_at
             matches_date = True
             if date_range_active and from_date and to_date:
-                try:
-                    # Parse date in MM-DD-YYYY format
-                    expense_date = QtCore.QDate.fromString(expense.get('date', ''), "MM-dd-yyyy")
-                    matches_date = (from_date <= expense_date <= to_date)
-                except:
-                    matches_date = False
-            
+                expense_date = _parse_expense_qdate(expense)
+                matches_date = expense_date.isValid() and (from_date <= expense_date <= to_date)
+
             # Collect categories from expenses that pass date filter only
             if matches_date:
                 cat = expense.get('Category', expense.get('type', ''))
                 if cat:
                     categories_for_dropdown.add(cat)
-        
+
         # STEP 2: Update categories dropdown with ALL categories from date-filtered data
         # (not search-filtered data)
         self.update_categories_filter_based_on_active_filters(categories_for_dropdown)
-        
+
         # STEP 3: Now filter expenses based on ALL active filters
         filtered_expenses = []
-        
+
         for expense in self.expenses:
-            # Check date filter (if active)
+            # Check date filter — always uses expense date field, not created_at
             matches_date = True
             if date_range_active and from_date and to_date:
-                try:
-                    # Parse date in MM-DD-YYYY format
-                    expense_date = QtCore.QDate.fromString(expense.get('date', ''), "MM-dd-yyyy")
-                    matches_date = (from_date <= expense_date <= to_date)
-                except:
-                    matches_date = False
+                expense_date = _parse_expense_qdate(expense)
+                matches_date = expense_date.isValid() and (from_date <= expense_date <= to_date)
             
             # Check search filter (if active)
             matches_search = True
@@ -8386,35 +8750,51 @@ class ExpensesTab(QtWidgets.QWidget):
             if matches_date and matches_search and matches_category:
                 filtered_expenses.append(expense)
         
-        # STEP 4: Display filtered expenses and update statistics
-        self.display_filtered_expenses(filtered_expenses)
+        # STEP 4: Sort by date ascending only when date filter is active, else newest first
+        if date_range_active and from_date and to_date:
+            def _date_key(exp):
+                try:
+                    from datetime import datetime as _dt
+                    return _dt.strptime(exp.get('date', ''), "%m-%d-%Y")
+                except Exception:
+                    from datetime import datetime as _dt
+                    return _dt.min
+            filtered_expenses.sort(key=_date_key)
+            self.display_filtered_expenses(filtered_expenses, date_asc=True)
+        else:
+            self.display_filtered_expenses(filtered_expenses, date_asc=False)
         self.update_statistics(filtered_expenses)
     
     def update_categories_filter_based_on_active_filters(self, categories_set):
         """Update categories filter combo box based on currently active filters"""
-        # Get current selection before updating
         current_selection = self.categories_filter_combo.currentText()
-        
-        # Block signals to prevent recursion
+        # A pinned category (set during delete) must stay selected regardless of
+        # whether it still has expenses — it may have become empty after deletion.
+        pinned = getattr(self, '_pinned_filter_category', None)
+        target = pinned if pinned else current_selection
+
         self.categories_filter_combo.blockSignals(True)
-        
-        # Clear and rebuild dropdown
+
         self.categories_filter_combo.clear()
         self.categories_filter_combo.addItem("All Categories")
-        
-        # Add sorted categories
+
         for category in sorted(categories_set):
-            if category:  # Only add non-empty categories
+            if category:
                 self.categories_filter_combo.addItem(category)
-        
-        # Restore selection if it still exists
-        if current_selection in [self.categories_filter_combo.itemText(i) for i in range(self.categories_filter_combo.count())]:
-            self.categories_filter_combo.setCurrentText(current_selection)
+
+        # If the target category is no longer in the list (e.g. all its expenses were
+        # deleted), add it back so the user stays on their chosen filter.
+        existing = [self.categories_filter_combo.itemText(i)
+                    for i in range(self.categories_filter_combo.count())]
+        if target and target != "All Categories" and target not in existing:
+            self.categories_filter_combo.addItem(target)
+
+        if target and target in [self.categories_filter_combo.itemText(i)
+                                  for i in range(self.categories_filter_combo.count())]:
+            self.categories_filter_combo.setCurrentText(target)
         else:
-            # If previous selection is not in available categories, select "All Categories"
             self.categories_filter_combo.setCurrentText("All Categories")
-        
-        # Restore signals
+
         self.categories_filter_combo.blockSignals(False)
 
 
@@ -8433,18 +8813,94 @@ class ExpensesTab(QtWidgets.QWidget):
             self.update_pie_chart()  # Only update pie chart
 
     
-    def display_filtered_expenses(self, expenses):
+    def display_filtered_expenses(self, expenses, date_asc=False):
         """Display filtered expenses in the professional ledger."""
+        # date_asc=True → oldest first (date filter active)
+        # date_asc=False → newest first (default)
+        self._exp_all_items = list(expenses) if date_asc else list(reversed(expenses))
+        self._exp_page = 1
+        self._exp_render_page()
+
+    def _exp_render_page(self):
+        import math
+        total = len(self._exp_all_items)
+        per_page = self._exp_per_page
+        max_page = max(1, math.ceil(total / per_page))
+        self._exp_page = max(1, min(self._exp_page, max_page))
+        start_i = (self._exp_page - 1) * per_page
+        end_i = min(start_i + per_page, total)
+        page_items = self._exp_all_items[start_i:end_i]
         self.expenses_table.setSortingEnabled(False)
-        self.expenses_table.setRowCount(len(expenses))
-
-        for row, expense in enumerate(reversed(expenses)):
-            self._populate_ledger_row(row, expense)
-
-        for row in range(self.expenses_table.rowCount()):
-            self.expenses_table.setRowHeight(row, 54)
+        self.expenses_table.setRowCount(len(page_items))
+        for row, expense in enumerate(page_items):
+            self._populate_ledger_row(row, expense, sno=start_i + row + 1)
+        # Let each row grow to fit its content, then enforce a minimum so
+        # action buttons always have enough height regardless of text length
+        self.expenses_table.resizeRowsToContents()
+        for r in range(self.expenses_table.rowCount()):
+            if self.expenses_table.rowHeight(r) < 50:
+                self.expenses_table.setRowHeight(r, 50)
         self.expenses_table.setSortingEnabled(True)
-                
+        self._fit_table_height()
+        self._exp_rebuild_pagination(total, max_page)
+
+    def _exp_rebuild_pagination(self, total, max_page):
+        if not hasattr(self, '_exp_page_btns_layout'):
+            return
+        page_num = self._exp_page
+        per_page = self._exp_per_page
+        start = (page_num - 1) * per_page + 1 if total else 0
+        end = min(page_num * per_page, total)
+        if hasattr(self, '_exp_info_lbl'):
+            self._exp_info_lbl.setText(f"Showing {start}–{end} of {total} expenses")
+        while self._exp_page_btns_layout.count():
+            item = self._exp_page_btns_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        _s = getattr(self, '_exp_pg_style', '')
+        _win_start = max(1, min(page_num, max_page - 2))
+        for p in range(_win_start, min(_win_start + 3, max_page + 1)):
+            btn = QtWidgets.QPushButton(str(p))
+            btn.setFixedSize(32, 28)
+            btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+            if p == page_num:
+                btn.setStyleSheet("""QPushButton {
+                    background-color: #00756f; color: #ffffff;
+                    border: 1px solid #00756f; border-radius: 6px;
+                    font-size: 12px; font-weight: 700;
+                    min-width: 32px; min-height: 28px; padding: 0 8px;
+                }
+                QPushButton:hover { background-color: #005f5a; color: #ffffff; }""")
+            else:
+                btn.setStyleSheet(_s)
+                btn.clicked.connect(lambda _, pg=p: self._exp_go_to(pg))
+            self._exp_page_btns_layout.addWidget(btn)
+        if hasattr(self, '_exp_prev_btn'):
+            self._exp_prev_btn.setEnabled(page_num > 1)
+        if hasattr(self, '_exp_next_btn'):
+            self._exp_next_btn.setEnabled(page_num < max_page)
+
+    def _exp_go_prev(self):
+        if self._exp_page > 1:
+            self._exp_page -= 1
+            self._exp_render_page()
+
+    def _exp_go_next(self):
+        self._exp_page += 1
+        self._exp_render_page()
+
+    def _exp_go_to(self, page):
+        self._exp_page = page
+        self._exp_render_page()
+
+    def _refresh_table_keep_page(self):
+        """Re-apply active filters and re-render without resetting the current page."""
+        saved_page = getattr(self, '_exp_page', 1)
+        self.filter_expenses()
+        # filter_expenses resets _exp_page → restore it (clamping handled by _exp_render_page)
+        self._exp_page = saved_page
+        self._exp_render_page()
+
     def update_charts(self):
         """Update both bar chart and pie chart with current data"""
         self.update_bar_chart()
@@ -8673,7 +9129,7 @@ class ExpensesTab(QtWidgets.QWidget):
                 'colors': self.category_colors,
                 'assigned_colors': list(self.assigned_colors),
                 'user_color_index': self.user_color_index,
-                'last_updated': datetime.now().isoformat(),
+                'last_updated': datetime.now(timezone.utc).isoformat(),
                 'total_categories': len(self.category_colors)
             }
             
@@ -8765,6 +9221,7 @@ class ExpensesTab(QtWidgets.QWidget):
 
         # Clear old slices
         self.pie_series.clear()
+        self.pie_slice_categories = []  # Clear category list
 
         # Add slices
         if total_amount == 0:
@@ -8781,45 +9238,49 @@ class ExpensesTab(QtWidgets.QWidget):
             
             for category, amount in sorted_categories:
                 percent = (amount / total_amount) * 100
-                
+
                 label_text = f"{percent:.1f}%"
                 s = self.pie_series.append(label_text, amount)
-                
+
+                # Store full category name for tooltips
+                self.pie_slice_categories.append(category)
+
                 # Get unique color for this category
                 color = self.get_color_for_category(category)
                 s.setColor(QtGui.QColor(color))
-                s.setLabelVisible(percent >= 5)
-                s.setLabelPosition(QPieSlice.LabelInsideHorizontal)
-                s.setLabelFont(QtGui.QFont("Inter", 8, QtGui.QFont.DemiBold))
-                s.setLabelColor(QtGui.QColor("white"))
-                
-                # REMOVE OR COMMENT OUT THIS LINE - QPieSlice doesn't have setToolTip
-                # s.setToolTip(f"{category}: {amount_display}")
-                
-                if 5 <= percent < 8:
-                    s.setLabelPosition(QPieSlice.LabelInsideTangential)
-            # Update legend labels
-            # Update legend labels
+                # Large slices: follow the arc; small slices: stay horizontal so text fits
+                if percent >= 12:
+                    s.setLabelPosition(QPieSlice.LabelInsideNormal)
+                else:
+                    s.setLabelPosition(QPieSlice.LabelInsideHorizontal)
+                s.setLabelFont(QtGui.QFont("Inter", 7, QtGui.QFont.Bold))
+                s.setLabelColor(QtGui.QColor("#FFFFFF"))
+                s.setLabelVisible(True)
+            # Update legend markers — use series-scoped call for correct order
             chart = self.pie_chart_widget.chart()
             legend = chart.legend()
 
-            # Get all markers and update them
-            all_markers = []
-            for marker in legend.markers():
-                if hasattr(marker, "series") and marker.series() == self.pie_series:
-                    all_markers.append(marker)
+            try:
+                all_markers = legend.markers(self.pie_series)
+            except TypeError:
+                all_markers = [m for m in legend.markers()
+                               if m.series() == self.pie_series]
 
-            # Hide all markers first
+            # Hide all first
             for m in all_markers:
                 m.setVisible(False)
 
-            # Show only top categories
-            top_categories = sorted_categories[:12]  # Show top 12 categories
-
-            for marker, (category, amount) in zip(all_markers, top_categories):
-                # Format amount without commas
+            # Re-label and explicitly re-colour each visible marker
+            for marker, (category, amount) in zip(all_markers, sorted_categories[:12]):
                 amount_display = format_amount_no_commas(amount)
-                marker.setLabel(f"{category}  {amount_display}")
+                short_cat = (category[:25] + "…") if len(category) > 25 else category
+                slice_color = self.get_color_for_category(category)
+                # setLabel() can break Qt's automatic colour sync — restore it manually
+                marker.setBrush(QtGui.QBrush(QtGui.QColor(slice_color)))
+                marker.setPen(QtGui.QPen(QtGui.QColor(slice_color)))
+                marker.setLabel(f"{short_cat} - {amount_display}")
+                marker.setFont(QtGui.QFont("Inter", 8))
+                marker.setLabelBrush(QtGui.QBrush(QtGui.QColor("#1E293B")))
                 marker.setVisible(True)
 
         # Update summary text using PIE CHART attributes
@@ -8887,26 +9348,70 @@ class ExpensesTab(QtWidgets.QWidget):
         self.update_statistics_cards(filtered_expenses)
         
     def view_expense_details(self, expense):
-        """View expense details"""
-        details_text = f"""
-        <h3>Expense Details</h3>
-        <table style="border-collapse: collapse; width: 100%;">
-            <tr><td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: bold;">Date:</td><td style="padding: 8px; border-bottom: 1px solid #eee;">{QtCore.QDate.fromString(expense.get('date',''), "MM-dd-yyyy").toString("MMMM d, yyyy")}
-</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: bold;">Category:</td><td style="padding: 8px; border-bottom: 1px solid #eee;">{expense.get('type', 'N/A')}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: bold;">Vendor:</td><td style="padding: 8px; border-bottom: 1px solid #eee;">{expense.get('vendor', 'N/A')}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: bold;">Description:</td><td style="padding: 8px; border-bottom: 1px solid #eee;">{expense.get('description', 'N/A')}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: bold;">Amount:</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${expense.get('amount', 0):,.2f}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: bold;">Project:</td><td style="padding: 8px; border-bottom: 1px solid #eee;">{expense.get('project', 'N/A')}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: bold;">Payment Method:</td><td style="padding: 8px; border-bottom: 1px solid #eee;">{expense.get('payment_method', 'N/A')}</td></tr>
+        """View expense details - styled like invoice history view."""
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Expense Details")
+        dialog.setMinimumSize(640, 420)
+        dialog.resize(700, 480)
+        dialog.setWindowFlags(
+            dialog.windowFlags()
+            | QtCore.Qt.WindowMaximizeButtonHint
+            | QtCore.Qt.WindowMinimizeButtonHint
+        )
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        formatted_date = QtCore.QDate.fromString(
+            expense.get('date', ''), "MM-dd-yyyy"
+        ).toString("MMMM d, yyyy") or expense.get('date', 'N/A')
+        try:
+            amt_display = f"${float(expense.get('amount', 0)):,.2f}"
+        except (ValueError, TypeError):
+            amt_display = str(expense.get('amount', 'N/A'))
+
+        exp_type = expense.get('expense_type', expense.get('type', '')) or 'N/A'
+        category = expense.get('Category', expense.get('type', '')) or 'N/A'
+        exp_name = expense.get('expense_name', '') or 'N/A'
+        vendor   = expense.get('vendor', '') or 'N/A'
+        project  = expense.get('project', '') or 'N/A'
+        method   = expense.get('payment_method', '') or 'N/A'
+        descr    = expense.get('description', '') or 'N/A'
+
+        html = f"""
+        <h2 style="margin:0 0 10px 0; color:#0f172a;">Expense Details</h2>
+        <table border="0" cellspacing="4" cellpadding="5" style="font-size:13px;">
+            <tr><td><b>Date:</b></td><td>{formatted_date}</td></tr>
+            <tr><td><b>Expense Type:</b></td><td>{exp_type}</td></tr>
+            <tr><td><b>Category:</b></td><td>{category}</td></tr>
+            <tr><td><b>Expense Name:</b></td><td>{exp_name}</td></tr>
+            <tr><td><b>Vendor:</b></td><td>{vendor}</td></tr>
+            <tr><td><b>Amount:</b></td><td><b style="color:#0f766e;">{amt_display}</b></td></tr>
+            <tr><td><b>Project:</b></td><td>{project}</td></tr>
+            <tr><td><b>Payment Method:</b></td><td>{method}</td></tr>
+            <tr><td><b>Description:</b></td><td>{descr}</td></tr>
         </table>
         """
-        
-        msg = QtWidgets.QMessageBox(self)
-        msg.setWindowTitle("Expense Details")
-        msg.setTextFormat(QtCore.Qt.RichText)
-        msg.setText(details_text)
-        msg.exec_()
+
+        text_edit = QtWidgets.QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setHtml(html)
+        layout.addWidget(text_edit)
+
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.setFixedSize(100, 36)
+        close_btn.setStyleSheet(
+            "QPushButton { background: #0f766e; color: white; border: none; "
+            "border-radius: 6px; font-size: 12px; font-weight: bold; }"
+            "QPushButton:hover { background: #115e59; }"
+        )
+        close_btn.clicked.connect(dialog.accept)
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch()
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        dialog.exec_()
     
     def edit_expense(self, expense):
         """Edit expense - opens the form with existing data"""
@@ -8920,35 +9425,40 @@ class ExpensesTab(QtWidgets.QWidget):
         )
 
         if reply == QtWidgets.QMessageBox.Yes:
-            # Store current filter state
-            current_category_filter = self.categories_filter_combo.currentText()
             current_search_text = self.search_edit.text()
-            date_range_active = "to" in self.date_range_button.text()
-            
+            current_category = self.categories_filter_combo.currentText()
+
             if expense in self.expenses:
                 self.expenses.remove(expense)
 
             self.expenses_table.setUpdatesEnabled(False)
-            self.update_expenses_table()
 
-            # ✅ FIX: defer chart update
+            # Pin the category so filter_expenses/update_categories_filter_based_on_active_filters
+            # won't reset the combo even when the category becomes empty after deletion.
+            self._pinned_filter_category = current_category
+            self._refresh_table_keep_page()
+            self._pinned_filter_category = None
+
             QtCore.QTimer.singleShot(0, self.update_charts)
-
             self.update_statistics_cards()
-            self.update_categories_filter()
-            
-            # Apply filters again after deletion
-            self.filter_expenses()
-            
+
             # Restore search text if it was set
-            self.search_edit.setText(current_search_text)
-            
+            if current_search_text:
+                self.search_edit.setText(current_search_text)
+
             self.expenses_table.setUpdatesEnabled(True)
 
             if 'firebase_id' in expense:
-                QtCore.QTimer.singleShot(
-                    100, lambda: ExpensesFirebaseManager.delete_expense(expense['firebase_id'])
-                )
+                _fid = expense['firebase_id']
+                _is_bs = expense.get('finance_source') == 'balance_sheet'
+                if _is_bs:
+                    QtCore.QTimer.singleShot(
+                        100, lambda fid=_fid: ExpensesFirebaseManager.delete_balance_sheet_expense(fid)
+                    )
+                else:
+                    QtCore.QTimer.singleShot(
+                        100, lambda fid=_fid: ExpensesFirebaseManager.delete_expense(fid)
+                    )
 
             self.show_success_message("Expense deleted successfully!")
             

@@ -1,5 +1,6 @@
 """Premium top bar with search, manual refresh, and sync status."""
 from datetime import datetime
+from pathlib import Path
 from PyQt5 import QtWidgets, QtCore, QtGui
 
 WHITE = "#FFFFFF"
@@ -11,6 +12,7 @@ SLATE400 = "#94A3B8"
 SLATE600 = "#475569"
 SLATE800 = "#1E293B"
 SLATE900 = "#0F172A"
+SETTINGS_ICON = Path(__file__).resolve().parent / "assets" / "icons" / "settings.svg"
 
 
 class TopBar(QtWidgets.QFrame):
@@ -80,7 +82,7 @@ class TopBar(QtWidgets.QFrame):
         lay.addStretch()
 
         search_wrap = QtWidgets.QFrame()
-        search_wrap.setFixedSize(360, 40)
+        search_wrap.setFixedSize(420, 42)
         search_wrap.setStyleSheet(f"""
             QFrame {{
                 background: {SLATE50};
@@ -103,7 +105,7 @@ class TopBar(QtWidgets.QFrame):
             f"font-size:12px; font-weight:800; color:{SLATE400};"
             " background:transparent; border:none;")
         self.search_edit = QtWidgets.QLineEdit()
-        self.search_edit.setPlaceholderText("Search quotes, invoices, projects...   Ctrl+K")
+        self.search_edit.setPlaceholderText("Search quote, invoice, project, or client...")
         self.search_edit.setStyleSheet(f"""
             QLineEdit {{
                 background: transparent;
@@ -125,6 +127,7 @@ class TopBar(QtWidgets.QFrame):
         self.sync_label.setFixedHeight(28)
         self.set_status("Ready")
         self.sync_label.setVisible(False)
+        lay.addWidget(self.sync_label)
 
         divider = QtWidgets.QFrame()
         divider.setFrameShape(QtWidgets.QFrame.VLine)
@@ -133,23 +136,29 @@ class TopBar(QtWidgets.QFrame):
         lay.addWidget(divider)
 
         self.settings_btn = QtWidgets.QPushButton("Settings")
+        self.settings_btn.setIcon(QtGui.QIcon(str(SETTINGS_ICON)))
+        self.settings_btn.setIconSize(QtCore.QSize(16, 16))
         self.settings_btn.setFixedHeight(36)
         self.settings_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.settings_btn.setToolTip("Settings")
         self.settings_btn.setStyleSheet(f"""
             QPushButton {{
-                background: {WHITE};
-                color: {SLATE600};
-                border: 1px solid {SLATE200};
+                background: #FEF2F2;
+                color: #334155;
+                border: 1px solid #FECACA;
                 border-radius: 8px;
                 font-size: 13px;
-                font-weight: 600;
+                font-weight: 700;
                 font-family: 'Inter', 'Segoe UI';
                 padding: 0 16px;
             }}
             QPushButton:hover {{
-                background: {INDIGO_L};
-                border-color: {INDIGO};
-                color: {INDIGO};
+                background: #FEE2E2;
+                border-color: #FCA5A5;
+                color: #991B1B;
+            }}
+            QPushButton:pressed {{
+                background: #FDECEC;
             }}
         """)
         self.settings_btn.clicked.connect(self.settings_clicked.emit)
@@ -199,6 +208,55 @@ class TopBar(QtWidgets.QFrame):
         self._rslot.setSpacing(4)
         lay.addLayout(self._rslot)
 
+    def set_role(self, role: str):
+        """Swap the settings button to 'Software Updates' style for non-admin roles."""
+        is_admin = (role or "").strip().lower() == "admin"
+        if is_admin:
+            self.settings_btn.setText("Settings")
+            self.settings_btn.setIcon(QtGui.QIcon(str(SETTINGS_ICON)))
+            self.settings_btn.setIconSize(QtCore.QSize(16, 16))
+            self.settings_btn.setToolTip("Settings")
+            self.settings_btn.setStyleSheet("""
+                QPushButton {
+                    background: #FEF2F2;
+                    color: #334155;
+                    border: 1px solid #FECACA;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: 700;
+                    font-family: 'Inter', 'Segoe UI';
+                    padding: 0 16px;
+                }
+                QPushButton:hover {
+                    background: #FEE2E2;
+                    border-color: #FCA5A5;
+                    color: #991B1B;
+                }
+                QPushButton:pressed { background: #FDECEC; }
+            """)
+        else:
+            self.settings_btn.setText("  Software Updates")
+            self.settings_btn.setIcon(QtGui.QIcon())
+            self.settings_btn.setToolTip("Check for software updates")
+            self.settings_btn.setStyleSheet("""
+                QPushButton {
+                    background: #EFF6FF;
+                    color: #1D4ED8;
+                    border: 1px solid #BFDBFE;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: 700;
+                    font-family: 'Inter', 'Segoe UI';
+                    padding: 0 16px;
+                }
+                QPushButton:hover {
+                    background: #DBEAFE;
+                    border-color: #93C5FD;
+                    color: #1E40AF;
+                }
+                QPushButton:pressed { background: #BFDBFE; }
+            """)
+
     def set_title(self, title):
         self._page_label.setText(title)
 
@@ -225,6 +283,7 @@ class TopBar(QtWidgets.QFrame):
         }
         bg, fg, border = colors.get(tone, colors["neutral"])
         self.sync_label.setText(text)
+        self.sync_label.setVisible(True)
         self.sync_label.setStyleSheet(f"""
             QLabel {{
                 background: {bg};
@@ -237,6 +296,10 @@ class TopBar(QtWidgets.QFrame):
                 font-family: 'Inter', 'Segoe UI';
             }}
         """)
+
+    def clear_status(self):
+        self.sync_label.clear()
+        self.sync_label.setVisible(False)
 
     def add_right_widget(self, widget):
         self._rslot.addWidget(widget)

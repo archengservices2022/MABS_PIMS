@@ -1,5 +1,5 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
-from datetime import datetime
+from datetime import datetime, timezone
 import calendar
 from decimal import Decimal
 import os
@@ -9,6 +9,7 @@ import tempfile
 # Add this import at the top with the other imports
 
 from app_logger import get_logger
+from app_theme import configure_filter_button
 _log = get_logger(__name__)
 try:
     from expenses_tab import ExpensesTab
@@ -68,12 +69,12 @@ class BalanceSheetFirebaseManager:
             if 'firebase_id' in expense_data and expense_data['firebase_id']:
                 expense_id = expense_data['firebase_id']
                 data_to_save = {k: v for k, v in expense_data.items() if k != 'firebase_id'}
-                data_to_save['updated_at'] = datetime.now().isoformat()
+                data_to_save['updated_at'] = datetime.now(timezone.utc).isoformat()
                 ref.child(expense_id).update(data_to_save)
                 _log.info("Updated balance sheet expense: %s", expense_id)
             else:
-                expense_data['created_at'] = datetime.now().isoformat()
-                expense_data['updated_at'] = datetime.now().isoformat()
+                expense_data['created_at'] = datetime.now(timezone.utc).isoformat()
+                expense_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                 new_ref = ref.push(expense_data)
                 expense_data['firebase_id'] = new_ref.key
                 _log.info("Created balance sheet expense: %s", new_ref.key)
@@ -148,9 +149,9 @@ class BalanceSheetFirebaseManager:
             ref = db.reference('revenue')
             
             if 'created_at' not in revenue_data:
-                revenue_data['created_at'] = datetime.now().isoformat()
+                revenue_data['created_at'] = datetime.now(timezone.utc).isoformat()
             if 'updated_at' not in revenue_data:
-                revenue_data['updated_at'] = datetime.now().isoformat()
+                revenue_data['updated_at'] = datetime.now(timezone.utc).isoformat()
             
             if 'due_date' not in revenue_data:
                 revenue_data['due_date'] = 'N/A'
@@ -163,7 +164,7 @@ class BalanceSheetFirebaseManager:
             if 'firebase_id' in revenue_data and revenue_data['firebase_id']:
                 revenue_id = revenue_data['firebase_id']
                 data_to_save = {k: v for k, v in revenue_data.items() if k != 'firebase_id'}
-                data_to_save['updated_at'] = datetime.now().isoformat()
+                data_to_save['updated_at'] = datetime.now(timezone.utc).isoformat()
                 ref.child(revenue_id).update(data_to_save)
                 _log.info("Updated revenue in Firebase with ID: %s", revenue_id)
             else:
@@ -218,12 +219,12 @@ class BalanceSheetFirebaseManager:
             if 'firebase_id' in salary_data and salary_data['firebase_id']:
                 salary_id = salary_data['firebase_id']
                 data_to_save = {k: v for k, v in salary_data.items() if k != 'firebase_id'}
-                data_to_save['updated_at'] = datetime.now().isoformat()
+                data_to_save['updated_at'] = datetime.now(timezone.utc).isoformat()
                 ref.child(salary_id).update(data_to_save)
                 _log.info("Updated salary in Firebase with ID: %s", salary_id)
             else:
-                salary_data['created_at'] = datetime.now().isoformat()
-                salary_data['updated_at'] = datetime.now().isoformat()
+                salary_data['created_at'] = datetime.now(timezone.utc).isoformat()
+                salary_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                 new_ref = ref.push(salary_data)
                 salary_data['firebase_id'] = new_ref.key
                 _log.info("Created new salary in Firebase with ID: %s", new_ref.key)
@@ -279,7 +280,7 @@ class BalanceSheetFirebaseManager:
                 "description": f"Revenue from completed project {project_number}",
                 "is_invoice": False,
                 "project_number": project_number,
-                "completion_date": project_data.get("completion_date", datetime.now().isoformat()),
+                "completion_date": project_data.get("completion_date", datetime.now(timezone.utc).isoformat()),
                 "category": "Project Revenue"
             }
             
@@ -296,8 +297,15 @@ class BalanceSheetFirebaseManager:
         try:
             if entry.get("year"):
                 return int(entry.get("year"))
-            date_text = str(entry.get("date", "") or entry.get("received_date", ""))
-            for fmt in ("%m-%d-%Y", "%Y-%m-%d", "%m/%d/%Y"):
+            date_text = str(
+                entry.get("date", "")
+                or entry.get("received_date", "")
+                or entry.get("paid_date", "")
+                or entry.get("created_at", "")
+            ).strip()
+            if "T" in date_text:
+                date_text = date_text.split("T", 1)[0]
+            for fmt in ("%m-%d-%Y", "%Y-%m-%d", "%m/%d/%Y", "%m-%d-%y", "%m/%d/%y", "%B %d, %Y"):
                 try:
                     return datetime.strptime(date_text, fmt).year
                 except ValueError:
@@ -305,16 +313,80 @@ class BalanceSheetFirebaseManager:
         except Exception:
             pass
         return datetime.now().year
+
+
+class _AnnualRefreshSignaler(QtCore.QObject):
+    """Thread-safe bridge: background threads emit do_refresh to trigger
+    _refresh_annual_revenue_background on the GUI thread via queued connection."""
+    do_refresh = QtCore.pyqtSignal()
+
+
+# Module-level singleton — set in BalanceSheetTab.__init__, used by payment_tracker.py
+_annual_refresh_signaler: '_AnnualRefreshSignaler | None' = None
+
+
+class _RealtimeRevenueSignaler(QtCore.QObject):
+    """Thread-safe bridge: Firebase listener thread emits revenue_updated to push
+    live /revenue/ changes to the GUI thread without polling."""
+    revenue_updated = QtCore.pyqtSignal(object)  # passes current revenue list (list[dict])
+
+
+# Module-level singleton — created in BalanceSheetTab.__init__
+_revenue_signaler: '_RealtimeRevenueSignaler | None' = None
+
+
+class _FinLoadSignaler(QtCore.QObject):
+    """Thread-safe bridge: background load thread emits loaded to trigger
+    UI update on the GUI thread via queued connection."""
+    loaded = QtCore.pyqtSignal()
+
+
 class BalanceSheetTab(QtWidgets.QWidget):
     """Annual Financial Summary Tab with Firebase integration and filters"""
     
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
-        
+
+        # Wire up the thread-safe annual-summary refresh signal
+        global _annual_refresh_signaler
+        _annual_refresh_signaler = _AnnualRefreshSignaler()
+        _annual_refresh_signaler.do_refresh.connect(
+            self._refresh_annual_revenue_background,
+            QtCore.Qt.QueuedConnection
+        )
+
+        # Wire up the date-range background-load signal
+        self._fin_load_signaler = _FinLoadSignaler()
+        self._fin_load_signaler.loaded.connect(
+            self._after_date_range_load,
+            QtCore.Qt.QueuedConnection
+        )
+
+        # Wire up the real-time Firebase revenue listener signal
+        global _revenue_signaler
+        _revenue_signaler = _RealtimeRevenueSignaler()
+        _revenue_signaler.revenue_updated.connect(
+            self._on_realtime_revenue_update,
+            QtCore.Qt.QueuedConnection
+        )
+        self._revenue_listener_handle = None
+        # Debounce timer: coalesces rapid listener events (multiple field writes)
+        # into a single UI update so editing one entry doesn't trigger 5 redraws.
+        self._listener_debounce_timer = QtCore.QTimer(self)
+        self._listener_debounce_timer.setSingleShot(True)
+        self._listener_debounce_timer.setInterval(150)  # 150 ms quiet period
+        self._listener_pending_revenue: list = []
+        self._listener_debounce_timer.timeout.connect(self._flush_realtime_update)
+        # Start listener after initial load so both don't race on startup
+        QtCore.QTimer.singleShot(3000, self._start_revenue_listener)
+
         # Current year
         self.current_year = datetime.now().year
         self.annual_summary_year = self.current_year
+        # Set of invoice_numbers that have an is_invoice entry in /revenue/ (all years).
+        # Populated on every full Firebase refresh so cross-year invoices are covered.
+        self._all_invoiced_numbers: set = set()
 
         # Firebase availability
         self.FIREBASE_AVAILABLE = getattr(self.main_window, 'FIREBASE_AVAILABLE', FIREBASE_AVAILABLE)
@@ -324,7 +396,10 @@ class BalanceSheetTab(QtWidgets.QWidget):
 
         # Current selected category
         self.current_category = "Revenue"
-        
+        self._fin_page = 1
+        self._fin_per_page = 10
+        self._fin_all_items = []
+
         # Data storage for transaction table (remains independent)
         self.expenses_data = []
         self.revenue_data = []
@@ -412,7 +487,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
         # ── KPI cards row ────────────────────────────────────────────────
         self.create_stats_section(main_layout)
 
-        # ── Middle row: Annual Summary (left) + Invoice Aging (right) ───
+        # ── Middle row: Annual Summary (full width) ──────────────────────
         mid_row = QtWidgets.QHBoxLayout()
         mid_row.setSpacing(12)
 
@@ -425,23 +500,18 @@ class BalanceSheetTab(QtWidgets.QWidget):
         annual_inner.setSpacing(0)
         self._build_annual_card_header(annual_inner)
         self._build_annual_table(annual_inner)
-
-        aging_card = QtWidgets.QFrame()
-        aging_card.setFixedWidth(220)
-        aging_card.setStyleSheet("""
-            QFrame { background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; }
-        """)
-        aging_inner = QtWidgets.QVBoxLayout(aging_card)
-        aging_inner.setContentsMargins(0, 0, 0, 0)
-        aging_inner.setSpacing(0)
-        self._build_aging_card(aging_inner)
+        annual_card.setFixedHeight(240)
 
         mid_row.addWidget(annual_card, 1)
-        mid_row.addWidget(aging_card)
         main_layout.addLayout(mid_row)
 
         # ── Transactions sub-window ───────────────────────────────────────
         self.create_finance_table_section(main_layout)
+
+        # Push all content to the top — prevents the layout from distributing
+        # extra viewport height into mid_row when the transactions table is short
+        # (e.g. Salary mode with few rows), which created a gap below annual_card.
+        main_layout.addStretch(1)
 
         # Set initial year display
         self.update_year_display()
@@ -449,7 +519,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
     def create_header_section(self, layout):
         header_frame = QtWidgets.QFrame()
         header_frame.setStyleSheet("""
-            QFrame { background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; }
+            QFrame { background:#ffffff; border:none; border-radius:12px; }
         """)
         h = QtWidgets.QHBoxLayout(header_frame)
         h.setContentsMargins(20, 14, 20, 14)
@@ -479,7 +549,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
         self.year_btn.clicked.connect(self.show_year_calendar)
         h.addWidget(self.year_btn)
 
-        self.export_btn = QtWidgets.QPushButton("Export")
+        self.export_btn = QtWidgets.QPushButton("⬇  Export")
         self.export_btn.setFixedHeight(34)
         self.export_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
         self.export_btn.setStyleSheet("""
@@ -499,35 +569,45 @@ class BalanceSheetTab(QtWidgets.QWidget):
             QPushButton:hover { background:#0d625c; }
         """)
         self.add_btn.clicked.connect(self.open_add_dialog)
+        self.add_btn.setVisible(False)  # hidden by default (Revenue is initial category)
         h.addWidget(self.add_btn)
 
         layout.addWidget(header_frame)
 
-    def load_all_financial_data(self):
-        """Load ALL financial data - both for transaction table and annual summary"""
+    def _fetch_data_background(self, _invoice_override=None):
+        """Firebase reads only — NO Qt calls. Safe to run from a background thread.
+        After this returns, call _apply_fetched_data_ui() on the main thread.
+        Pass _invoice_override (captured on the main thread before spawning the worker)
+        so a slow Firebase propagation never reverts a status that invoice_history already applied."""
         if not self.FIREBASE_AVAILABLE or self.db is None:
-            _log.warning("Firebase not available - using local data")
-            self.load_local_data()
             return
-            
         try:
             _log.info("Loading all financial data for year %s...", self.current_year)
-            
-            # Load from BALANCE SHEET node
+
             all_expenses = BalanceSheetFirebaseManager.load_expenses()
-            
-            # Filter for current year
             self.expenses_data = [exp for exp in all_expenses if exp.get('year') == self.current_year]
             self.annual_expenses_data = self.expenses_data.copy()
             _log.info("Loaded %s balance sheet expenses", len(self.expenses_data))
-            
-            # Load revenue
+
             all_revenue = BalanceSheetFirebaseManager.load_revenue()
-            self.revenue_data = [rev for rev in all_revenue if rev.get('year') == self.current_year]
-            self.annual_revenue_data = self.revenue_data.copy()
+            all_revenue = BalanceSheetTab._dedup_is_payment_entries(all_revenue)
+            # Apply the locally-cached status overrides so switching to this tab never
+            # overwrites a status change that invoice_history_tab already committed.
+            _omap = _invoice_override if _invoice_override is not None \
+                else dict(getattr(self, '_invoice_status_map', {}))
+            inv_map = BalanceSheetTab._build_invoice_status_map()
+            inv_map.update(_omap)      # invoice_history overrides always win
+            all_revenue = BalanceSheetTab._sync_revenue_statuses_from_invoices(all_revenue, inv_map)
+            self.revenue_data = [
+                rev for rev in all_revenue
+                if BalanceSheetFirebaseManager._entry_year(rev) == self.current_year
+            ]
+            self.annual_revenue_data = [
+                rev for rev in all_revenue
+                if BalanceSheetFirebaseManager._entry_year(rev) == self.annual_summary_year
+            ]
             _log.info("Loaded %s revenue entries", len(self.revenue_data))
-            
-            # Load salary
+
             all_salary = BalanceSheetFirebaseManager.load_salary()
             self.salary_data = {"Inside America": [], "Outside America": []}
             self.annual_salary_data = {"Inside America": [], "Outside America": []}
@@ -535,16 +615,43 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 self.salary_data[region] = [sal for sal in all_salary[region] if sal.get('year') == self.current_year]
                 self.annual_salary_data[region] = self.salary_data[region].copy()
             _log.info("Loaded %s salary entries", sum(len(v) for v in self.salary_data.values()))
-            
         except Exception as e:
-            _log.warning("Error loading financial data: %s", e)
-            import traceback
-            traceback.print_exc()
+            _log.warning("Error fetching financial data in background: %s", e)
+
+    def _apply_fetched_data_ui(self):
+        """Qt widget updates after _fetch_data_background(). Must run on the main thread."""
+        try:
+            self.update_stats_cards()
+            self.update_annual_summary()
+            self.on_category_changed(self.current_category)
+        except Exception as e:
+            _log.warning("Error applying fetched financial data to UI: %s", e)
+
+    def load_all_financial_data(self):
+        """Load ALL financial data - both for transaction table and annual summary.
+        Runs entirely on the calling thread (main thread only)."""
+        if not self.FIREBASE_AVAILABLE or self.db is None:
+            _log.warning("Firebase not available - using local data")
             self.load_local_data()
-        
-        self.update_stats_cards()
-        self.update_annual_summary()
-        self.on_category_changed(self.current_category)
+            return
+        _omap = dict(getattr(self, '_invoice_status_map', {}))
+        self._fetch_data_background(_omap)
+        self._apply_fetched_data_ui()
+
+    def refresh_on_tab_show(self):
+        """Refresh all balance sheet data when the tab becomes visible.
+        Runs the Firebase fetch in a background thread so the UI stays responsive."""
+        import threading as _threading
+        # Capture the override map on the main thread NOW so the background worker
+        # uses the correct statuses even if Firebase hasn't propagated the latest write.
+        _override_map = dict(getattr(self, '_invoice_status_map', {}))
+        def _bg(_omap=_override_map):
+            try:
+                self._fetch_data_background(_omap)
+            except Exception as _e:
+                _log.warning("refresh_on_tab_show fetch failed: %s", _e)
+            QtCore.QTimer.singleShot(0, self._apply_fetched_data_ui)
+        _threading.Thread(target=_bg, daemon=True).start()
 
     def fix_date_edit(self, date_edit, set_today=True):
         """Make QDateEdit stable + optionally set today's date"""
@@ -601,37 +708,132 @@ class BalanceSheetTab(QtWidgets.QWidget):
             self.revenue_data = []
             self.salary_data = {"Inside America": [], "Outside America": []}
             
+    def _create_breakdown_card(self, title, main_value, color, sub_rows):
+        """Expanded stat card: title + main value + sub-value rows.
+
+        sub_rows: list of (label_text, initial_value, text_color) tuples.
+        Returns (card, main_value_label, [sub_value_labels...]).
+        """
+        BG_MAP = {
+            "#27ae60": ("#f0fdf4", "#bbf7d0"),
+            "#e74c3c": ("#fff7f7", "#fecaca"),
+            "#3498db": ("#eff6ff", "#bfdbfe"),
+        }
+        ACCESSIBLE_TEXT = {
+            "#27ae60": "#15803d",
+            "#e74c3c": "#b91c1c",
+            "#3498db": "#1d4ed8",
+        }
+        bg, border = BG_MAP.get(color, ("#f8fafc", "#e2e8f0"))
+        main_color = ACCESSIBLE_TEXT.get(color, color)
+
+        card = QtWidgets.QFrame()
+        card.setStyleSheet(f"""
+            QFrame {{
+                background: {bg};
+                border: 1px solid {border};
+                border-radius: 10px;
+            }}
+        """)
+        lay = QtWidgets.QVBoxLayout(card)
+        lay.setContentsMargins(14, 8, 14, 8)
+        lay.setSpacing(2)
+
+        title_lbl = QtWidgets.QLabel(title.upper())
+        title_lbl.setAlignment(QtCore.Qt.AlignCenter)
+        title_lbl.setStyleSheet(
+            "font-size:9px; font-weight:800; color:#64748b;"
+            " letter-spacing:0.8px; background:transparent; border:none;")
+        lay.addWidget(title_lbl)
+
+        val_lbl = QtWidgets.QLabel(main_value)
+        val_lbl.setAlignment(QtCore.Qt.AlignCenter)
+        val_lbl.setObjectName("stat_value")
+        val_lbl.setStyleSheet(
+            f"font-size:19px; font-weight:900; color:{main_color};"
+            " background:transparent; border:none;")
+        lay.addWidget(val_lbl)
+
+        # Divider
+        div = QtWidgets.QFrame()
+        div.setFrameShape(QtWidgets.QFrame.HLine)
+        div.setStyleSheet(f"color:{border}; background:{border}; border:none; max-height:1px;")
+        lay.addWidget(div)
+
+        sub_labels = []
+        for sub_text, sub_val, sub_color in sub_rows:
+            sub_row = QtWidgets.QHBoxLayout()
+            sub_row.setContentsMargins(0, 0, 0, 0)
+            sub_row.setSpacing(4)
+            lbl = QtWidgets.QLabel(sub_text)
+            lbl.setStyleSheet(
+                "font-size:9px; font-weight:700; color:#64748b;"
+                " background:transparent; border:none;")
+            val = QtWidgets.QLabel(sub_val)
+            val.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            val.setStyleSheet(
+                f"font-size:9px; font-weight:800; color:{sub_color};"
+                " background:transparent; border:none;")
+            sub_row.addWidget(lbl)
+            sub_row.addWidget(val, 1)
+            lay.addLayout(sub_row)
+            sub_labels.append(val)
+
+        return card, val_lbl, sub_labels
+
     def create_stats_section(self, layout):
-        """Four KPI cards: Revenue, Expenses, Salaries, Net Profit."""
+        """Four KPI cards with hover tooltips showing breakdown details."""
         total_expenses = self.calculate_total_expenses()
         total_revenue  = self.calculate_total_revenue()
         total_salary   = self.calculate_total_salary()
         net_profit     = total_revenue - total_expenses - total_salary
 
-        row = QtWidgets.QHBoxLayout()
-        row.setSpacing(12)
-
-        self.revenue_card  = self.create_stat_card("Total Revenue",   f"${total_revenue:,.2f}",  "#27ae60")
-        self.expenses_card = self.create_stat_card("Total Expenses",  f"${total_expenses:,.2f}", "#e74c3c")
-        self.salary_card   = self.create_stat_card("Total Salaries",  f"${total_salary:,.2f}",   "#3498db")
+        paid_rev   = sum(self._money_to_float(r.get('amount', 0))
+                         for r in self.revenue_data
+                         if str(r.get('status', '')).strip().lower() == 'paid')
+        unpaid_rev = total_revenue - paid_rev
+        sal_inside  = sum(self._money_to_float(s.get('amount', 0))
+                          for s in self.salary_data.get('Inside America', []))
+        sal_outside = sum(self._money_to_float(s.get('amount', 0))
+                          for s in self.salary_data.get('Outside America', []))
         net_color = "#27ae60" if net_profit >= 0 else "#e74c3c"
-        self.net_card      = self.create_stat_card("Net Profit / Loss", f"${net_profit:,.2f}",   net_color)
 
-        # Store value labels by objectName for updates
-        def _val_label(card):
-            for lbl in card.findChildren(QtWidgets.QLabel):
-                if lbl.objectName() == "stat_value":
-                    return lbl
-            return card.findChildren(QtWidgets.QLabel)[1]
+        row = QtWidgets.QHBoxLayout()
+        row.setSpacing(0)
 
-        self.revenue_value_label  = _val_label(self.revenue_card)
-        self.expenses_value_label = _val_label(self.expenses_card)
-        self.salary_value_label   = _val_label(self.salary_card)
-        self.net_value_label      = _val_label(self.net_card)
+        self.revenue_card, self.revenue_value_label = self.create_stat_card(
+            "Total Revenue", f"${total_revenue:,.2f}", "#27ae60", icon="revenue")
+        self.revenue_card.setToolTip(
+            f"<b>Paid Revenue:</b> ${paid_rev:,.2f}<br>"
+            f"<b>Unpaid Revenue:</b> ${unpaid_rev:,.2f}")
 
+        self.expenses_card, self.expenses_value_label = self.create_stat_card(
+            "Total Expenses", f"${total_expenses:,.2f}", "#e74c3c", icon="expenses")
+        self.expenses_card.setToolTip(
+            f"<b>Total:</b> ${total_expenses:,.2f}<br>"
+            f"<b>Entries:</b> {len(self.expenses_data)}")
+
+        self.salary_card, self.salary_value_label = self.create_stat_card(
+            "Total Salaries", f"${total_salary:,.2f}", "#3498db", icon="salary")
+        self.salary_card.setToolTip(
+            f"<b>Inside America:</b> ${sal_inside:,.2f}<br>"
+            f"<b>Outside America:</b> ${sal_outside:,.2f}")
+
+        self.net_card, self.net_value_label = self.create_stat_card(
+            "Net Profit / Loss", f"${net_profit:,.2f}", net_color, icon="netpl")
+        self.net_value_label.setStyleSheet(
+            f"font-size:19px; font-weight:900; color:"
+            f"{'#15803d' if net_profit >= 0 else '#b91c1c'};"
+            " background:transparent; border:none;")
+        self.net_card.setToolTip(
+            f"<b>Revenue:</b> ${total_revenue:,.2f}<br>"
+            f"<b>Expenses:</b> -${total_expenses:,.2f}<br>"
+            f"<b>Salaries:</b> -${total_salary:,.2f}")
+
+        row.addStretch()
         for card in (self.revenue_card, self.expenses_card, self.salary_card, self.net_card):
-            card.setFixedHeight(86)
-            row.addWidget(card, 1)
+            row.addWidget(card)
+            row.addStretch()
 
         layout.addLayout(row)
     
@@ -640,17 +842,30 @@ class BalanceSheetTab(QtWidgets.QWidget):
         try:
             if not self.FIREBASE_AVAILABLE:
                 return
-            
+
             _log.info("Refreshing invoice revenues in balance sheet...")
-            
-            # Reload all revenue data from Firebase
+
+            # Reload all revenue data from Firebase, applying any locally-cached
+            # status overrides so a slow Firebase propagation doesn't revert a
+            # status change that invoice_history_tab already applied.
             all_revenue = BalanceSheetFirebaseManager.load_revenue()
-            
+            _override_map = dict(getattr(self, '_invoice_status_map', {}))
+            inv_map = BalanceSheetTab._build_invoice_status_map()
+            inv_map.update(_override_map)   # signal overrides always win
+            all_revenue = BalanceSheetTab._sync_revenue_statuses_from_invoices(
+                all_revenue, inv_map)
+
             # Filter by current year for transaction table
-            self.revenue_data = [rev for rev in all_revenue if rev.get('year') == self.current_year]
-            
+            self.revenue_data = [
+                rev for rev in all_revenue
+                if BalanceSheetFirebaseManager._entry_year(rev) == self.current_year
+            ]
+
             # Update annual summary data for current year
-            self.annual_revenue_data = [rev for rev in all_revenue if rev.get('year') == self.annual_summary_year]
+            self.annual_revenue_data = [
+                rev for rev in all_revenue
+                if BalanceSheetFirebaseManager._entry_year(rev) == self.annual_summary_year
+            ]
             
             # Refresh the display based on current category
             if self.current_category == "Revenue":
@@ -672,7 +887,9 @@ class BalanceSheetTab(QtWidgets.QWidget):
         """Load data temporarily for export without changing UI year"""
         try:
             self.expenses_data = BalanceSheetFirebaseManager.load_expenses(year)
-            self.revenue_data = BalanceSheetFirebaseManager.load_revenue(year)
+            all_revenue = BalanceSheetFirebaseManager.load_revenue(year)
+            all_revenue = BalanceSheetTab._sync_revenue_statuses_from_invoices(all_revenue)
+            self.revenue_data = all_revenue
             self.salary_data = BalanceSheetFirebaseManager.load_salary(year)
         except Exception as e:
             _log.warning("Error loading data for export: %s", e)
@@ -682,18 +899,29 @@ class BalanceSheetTab(QtWidgets.QWidget):
         dialog = ExportDialog(self)
         dialog.exec_()
 
-    def create_stat_card(self, title, value, color):
-        """Create modern stat card with white background and colored value text."""
-        # Map old solid colors to tinted backgrounds
+    def create_stat_card(self, title, value, color, icon="●"):
+        """Stat card — coloured icon circle left, title + value centred H & V on right."""
         BG_MAP = {
-            "#e74c3c": ("#fff7f7", "#fecaca"),   # Expenses → red tint
-            "#27ae60": ("#f0fdf4", "#bbf7d0"),   # Revenue  → green tint
-            "#3498db": ("#eff6ff", "#bfdbfe"),   # Salary   → blue tint
+            "#e74c3c": ("#fff7f7", "#fecaca"),
+            "#27ae60": ("#f0fdf4", "#bbf7d0"),
+            "#3498db": ("#eff6ff", "#bfdbfe"),
         }
-        bg, border = BG_MAP.get(color, ("#f8fafc", "#e2e8f0"))
+        ACCESSIBLE_TEXT = {
+            "#27ae60": "#15803d",
+            "#e74c3c": "#b91c1c",
+            "#3498db": "#1d4ed8",
+        }
+        ICON_BG = {
+            "#27ae60": ("#bbf7d0", "#16a34a"),   # green-200 tint
+            "#e74c3c": ("#fecaca", "#dc2626"),   # red-200 tint
+            "#3498db": ("#bfdbfe", "#2563eb"),   # blue-200 tint
+        }
+        bg, border       = BG_MAP.get(color, ("#f8fafc", "#e2e8f0"))
+        text_color       = ACCESSIBLE_TEXT.get(color, color)
+        icon_bg, icon_fg = ICON_BG.get(color, ("#f1f5f9", "#475569"))
 
         card = QtWidgets.QFrame()
-        card.setFixedSize(200, 86)
+        card.setFixedSize(220, 86)          # slightly wider than before
         card.setStyleSheet(f"""
             QFrame {{
                 background: {bg};
@@ -701,25 +929,243 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 border-radius: 10px;
             }}
         """)
-        lay = QtWidgets.QVBoxLayout(card)
-        lay.setContentsMargins(16, 10, 16, 10)
-        lay.setSpacing(4)
+        card.setAccessibleName(f"{title} card")
+
+        lay = QtWidgets.QHBoxLayout(card)
+        lay.setContentsMargins(14, 0, 14, 0)   # 0 top/bottom — vertical centring done by stretch
+        lay.setSpacing(12)
+        lay.setAlignment(QtCore.Qt.AlignVCenter)
+
+        # ── Painted icon (QPainter-drawn, matches design reference) ──────────
+        icon_px  = BalanceSheetTab._paint_stat_icon(icon, icon_bg, icon_fg, size=44)
+        icon_lbl = QtWidgets.QLabel()
+        icon_lbl.setFixedSize(44, 44)
+        icon_lbl.setAlignment(QtCore.Qt.AlignCenter)
+        icon_lbl.setPixmap(icon_px)
+        icon_lbl.setStyleSheet("background:transparent; border:none;")
+
+        # ── Right column: title + value, both centred H & V ───────────────
+        col = QtWidgets.QVBoxLayout()
+        col.setSpacing(3)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.addStretch(1)                      # push content to vertical centre
 
         title_label = QtWidgets.QLabel(title.upper())
-        title_label.setAlignment(QtCore.Qt.AlignLeft)
+        title_label.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+        title_label.setWordWrap(True)
         title_label.setStyleSheet(
-            "font-size:10px; font-weight:800; color:#94a3b8;"
-            " letter-spacing:0.8px; background:transparent; border:none;")
+            "font-size:10px; font-weight:800; color:#64748b;"
+            " letter-spacing:0.6px; background:transparent; border:none;")
 
         value_label = QtWidgets.QLabel(value)
-        value_label.setAlignment(QtCore.Qt.AlignLeft)
+        value_label.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
         value_label.setStyleSheet(
-            f"font-size:22px; font-weight:900; color:{color};"
+            f"font-size:19px; font-weight:900; color:{text_color};"
             " background:transparent; border:none;")
+        value_label.setAccessibleName(f"{title}: {value}")
 
-        lay.addWidget(title_label)
-        lay.addWidget(value_label)
-        return card
+        col.addWidget(title_label)
+        col.addWidget(value_label)
+        col.addStretch(1)                      # equal stretch below = perfectly centred
+
+        lay.addWidget(icon_lbl)
+        lay.addLayout(col, 1)
+        return card, value_label
+
+    # ------------------------------------------------------------------ #
+    # Annual table icon helpers                                           #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _make_row_header_icon(color_hex: str, symbol: str, size: int = 22) -> "QtGui.QIcon":
+        """Plain coloured symbol on transparent background — no filled box/circle."""
+        px = QtGui.QPixmap(size, size)
+        px.fill(QtCore.Qt.transparent)
+        p = QtGui.QPainter(px)
+        p.setRenderHint(QtGui.QPainter.Antialiasing)
+        p.setPen(QtGui.QColor(color_hex))           # symbol drawn in the accent color
+        p.setFont(QtGui.QFont("Segoe UI", max(9, size // 2), QtGui.QFont.Bold))
+        p.drawText(QtCore.QRect(0, 0, size, size), QtCore.Qt.AlignCenter, symbol)
+        p.end()
+        return QtGui.QIcon(px)
+
+    def _apply_annual_row_headers(self) -> None:
+        """Set coloured icon + label for every row and stamp MONTH in the corner."""
+        _rows = [
+            ("REVENUE",  "#16a34a", "↗"),
+            ("EXPENSES", "#dc2626", "⊖"),
+            ("NET P/L",  "#16a34a", "◑"),
+        ]
+        vh = self.annual_table.verticalHeader()
+        vh.setIconSize(QtCore.QSize(22, 22))        # ensure icons render at full symbol size
+
+        for row, (label, color, sym) in enumerate(_rows):
+            item = QtWidgets.QTableWidgetItem(f"  {label}")
+            item.setIcon(self._make_row_header_icon(color, sym))
+            self.annual_table.setVerticalHeaderItem(row, item)
+
+        # Stamp "MONTH" in the top-left corner where the two headers meet
+        corner = self.annual_table.findChild(QtWidgets.QAbstractButton)
+        if corner:
+            corner.setText("MONTH")
+            corner.setStyleSheet(
+                "QAbstractButton{"
+                "background:#f8fafc; color:#475569;"
+                "font-size:10px; font-weight:800; letter-spacing:0.5px;"
+                "border:none;"
+                "border-right:1px solid #e2e8f0;"
+                "border-bottom:1px solid #e2e8f0;"
+                "}")
+
+    # ------------------------------------------------------------------ #
+    # Painted icon helpers (stat cards + action buttons)                  #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _paint_stat_icon(icon_type: str, bg_hex: str, fg_hex: str, size: int = 50) -> "QtGui.QPixmap":
+        """
+        Paint a professional stat-card icon.
+        icon_type: 'revenue' | 'expenses' | 'salary' | 'netpl'
+        bg_hex : light-tint background (e.g. #dcfce7)
+        fg_hex : accent color (e.g. #16a34a)
+        """
+        px = QtGui.QPixmap(size, size)
+        px.fill(QtCore.Qt.transparent)
+        p = QtGui.QPainter(px)
+        p.setRenderHint(QtGui.QPainter.Antialiasing)
+
+        # Perfect circle background
+        p.setBrush(QtGui.QBrush(QtGui.QColor(bg_hex)))
+        p.setPen(QtCore.Qt.NoPen)
+        p.drawEllipse(0, 0, size, size)
+
+        white = QtGui.QColor("#ffffff")
+        fg    = QtGui.QColor(fg_hex)
+        # Margin inside the circle — keep content away from the curved edge
+        m = max(7, size // 5)
+
+        if icon_type == "revenue":
+            # Bold upward-right trending arrow drawn in fg (accent green)
+            pw  = max(2, size // 7)
+            pen = QtGui.QPen(fg, pw, QtCore.Qt.SolidLine,
+                             QtCore.Qt.RoundCap, QtCore.Qt.RoundJoin)
+            p.setPen(pen)
+            p.setBrush(QtCore.Qt.NoBrush)
+            # Diagonal body of the arrow
+            p.drawLine(m, size - m, size - m, m)
+            # Arrowhead — two short wings at the top-right tip
+            ah = max(5, size // 4)
+            p.drawLine(size - m, m, size - m - ah, m)
+            p.drawLine(size - m, m, size - m, m + ah)
+
+        elif icon_type == "expenses":
+            # Solid fg-coloured circle + white minus bar
+            cx, cy = size // 2, size // 2
+            cr = int(size * 0.36)
+            p.setBrush(QtGui.QBrush(fg))
+            p.setPen(QtCore.Qt.NoPen)
+            p.drawEllipse(cx - cr, cy - cr, cr * 2, cr * 2)
+            bar_len = int(cr * 1.05)
+            bar_h   = max(2, size // 9)
+            p.setBrush(QtGui.QBrush(white))
+            p.drawRoundedRect(cx - bar_len, cy - bar_h // 2,
+                              bar_len * 2, bar_h, bar_h // 2, bar_h // 2)
+
+        elif icon_type == "salary":
+            # People emoji 👥 rendered in the accent color, sized to fit the circle
+            p.setPen(QtGui.QColor(fg_hex))
+            p.setFont(QtGui.QFont("Segoe UI Emoji", max(14, int(size * 0.32)), QtGui.QFont.Bold))
+            p.drawText(QtCore.QRect(0, 0, size, size), QtCore.Qt.AlignCenter, "👥")
+
+        else:  # "netpl" — 3 ascending vertical bars in fg (accent green)
+            p.setPen(QtCore.Qt.NoPen)
+            p.setBrush(QtGui.QBrush(fg))
+            bw     = max(3, size // 7)
+            gap    = max(2, size // 9)
+            bottom = int(size * 0.80)
+            heights = [int(size * 0.28), int(size * 0.48), int(size * 0.68)]
+            total_w = 3 * bw + 2 * gap
+            sx = (size - total_w) // 2
+            for i, h in enumerate(heights):
+                p.drawRoundedRect(sx + i * (bw + gap), bottom - h,
+                                  bw, h, bw // 3, bw // 3)
+        p.end()
+        return px
+
+    @staticmethod
+    def _make_action_icon(icon_type: str, color: str, size: int = 16) -> "QtGui.QIcon":
+        """Paint a professional icon for table action buttons."""
+        px = QtGui.QPixmap(size, size)
+        px.fill(QtCore.Qt.transparent)
+        p = QtGui.QPainter(px)
+        p.setRenderHint(QtGui.QPainter.Antialiasing)
+
+        c  = QtGui.QColor(color)
+        pw = max(1, size // 7)
+
+        if icon_type == "view":
+            # Outlined eye: almond shape + filled pupil
+            pen = QtGui.QPen(c, pw, QtCore.Qt.SolidLine,
+                             QtCore.Qt.RoundCap, QtCore.Qt.RoundJoin)
+            p.setPen(pen)
+            p.setBrush(QtCore.Qt.NoBrush)
+            em = size // 5
+            path = QtGui.QPainterPath()
+            path.moveTo(em, size // 2)
+            path.quadTo(size // 2, size // 5, size - em, size // 2)
+            path.quadTo(size // 2, size * 4 // 5, em, size // 2)
+            p.drawPath(path)
+            p.setBrush(QtGui.QBrush(c))
+            p.setPen(QtCore.Qt.NoPen)
+            pr = max(2, size // 5)
+            p.drawEllipse(size // 2 - pr, size // 2 - pr, pr * 2, pr * 2)
+
+        elif icon_type == "edit":
+            # Pencil: diagonal body + tip + cap line
+            pen = QtGui.QPen(c, pw, QtCore.Qt.SolidLine,
+                             QtCore.Qt.RoundCap, QtCore.Qt.RoundJoin)
+            p.setPen(pen)
+            p.setBrush(QtCore.Qt.NoBrush)
+            bw = size // 4   # body half-width
+            m  = size // 6
+            # Left & right edges of pencil body
+            p.drawLine(m, size - m - bw, size - m - bw, m)
+            p.drawLine(m + bw, size - m, size - m, m + bw)
+            # Tip at bottom-left corner
+            p.drawLine(m, size - m - bw, m + bw, size - m)
+            # Cap line at top-right corner
+            p.drawLine(size - m - bw, m, size - m, m + bw)
+            # Small eraser/cap rule
+            cap = bw // 2
+            p.setPen(QtGui.QPen(c, pw + 1, QtCore.Qt.SolidLine,
+                                QtCore.Qt.RoundCap))
+            cx2, cy2 = size - m - cap, m + cap
+            p.drawLine(cx2 - cap, cy2 - cap, cx2 + cap, cy2 + cap)
+
+        else:  # "delete" — trash can
+            pen = QtGui.QPen(c, pw, QtCore.Qt.SolidLine,
+                             QtCore.Qt.RoundCap, QtCore.Qt.RoundJoin)
+            p.setPen(pen)
+            p.setBrush(QtCore.Qt.NoBrush)
+            m  = max(2, size // 5)
+            by = size // 3          # body top y
+            bh = size - by - m // 2 # body height
+            # Body
+            p.drawRoundedRect(m, by, size - 2 * m, bh, 1, 1)
+            # Lid
+            p.drawLine(m - 1, by, size - m + 1, by)
+            # Handle on lid
+            hw = size // 3
+            p.drawRoundedRect((size - hw) // 2, by - size // 5,
+                              hw, size // 5, 2, 2)
+            # Vertical stripes inside body
+            gap3 = (size - 2 * m) // 3
+            for i in range(1, 3):
+                lx = m + i * gap3
+                p.drawLine(lx, by + bh // 5, lx, by + bh * 4 // 5)
+
+        p.end()
+        return QtGui.QIcon(px)
 
     # ------------------------------------------------------------------ #
     #  Sub-window builders (Annual + Aging)                               #
@@ -731,7 +1177,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
         bar.setStyleSheet("""
             QFrame {
                 background: #f8fafc;
-                border-bottom: 1px solid #e2e8f0;
+                border: none;
                 border-top-left-radius: 12px;
                 border-top-right-radius: 12px;
             }
@@ -760,7 +1206,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
         """)
         self.yearly_calendar_btn.clicked.connect(self.show_annual_summary_year_calendar)
 
-        self.expenses_breakdown_btn = QtWidgets.QPushButton("Expenses Breakdown")
+        self.expenses_breakdown_btn = QtWidgets.QPushButton("⊖  Expenses Breakdown")
         self.expenses_breakdown_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
         self.expenses_breakdown_btn.setFixedHeight(28)
         self.expenses_breakdown_btn.setStyleSheet("""
@@ -770,7 +1216,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
         """)
         self.expenses_breakdown_btn.clicked.connect(self.show_expenses_breakdown)
 
-        self.salary_breakdown_btn = QtWidgets.QPushButton("Salary Breakdown")
+        self.salary_breakdown_btn = QtWidgets.QPushButton("◑  Salary Breakdown")
         self.salary_breakdown_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
         self.salary_breakdown_btn.setFixedHeight(28)
         self.salary_breakdown_btn.setStyleSheet("""
@@ -793,11 +1239,11 @@ class BalanceSheetTab(QtWidgets.QWidget):
         self.annual_table.setRowCount(3)
         self.annual_table.setHorizontalHeaderLabels(
             [_cal.month_abbr[i] for i in range(1, 13)] + ["Total"])
-        self.annual_table.setVerticalHeaderLabels(["Revenue", "Expenses", "Net Profit / Loss"])
+        self._apply_annual_row_headers()
 
         vh = self.annual_table.verticalHeader()
-        vh.setDefaultAlignment(QtCore.Qt.AlignCenter)
-        vh.setFixedWidth(100)
+        vh.setDefaultAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
+        vh.setFixedWidth(155)
 
         hh = self.annual_table.horizontalHeader()
         hh.setDefaultAlignment(QtCore.Qt.AlignCenter)
@@ -805,14 +1251,19 @@ class BalanceSheetTab(QtWidgets.QWidget):
         self.annual_table.setStyleSheet("""
             QTableWidget {
                 background:#ffffff; border:none;
-                gridline-color:#f1f5f9; font-size:12px;
+                gridline-color:#f1f5f9; font-size:11px;
                 alternate-background-color:#f8fafc;
             }
+            QTableWidget:focus {
+                border: 2px solid #0f766e;
+                border-radius: 4px;
+            }
             QTableWidget::item {
-                padding:10px 6px;
+                padding:8px 4px;
                 border-bottom:1px solid #f1f5f9;
             }
-            QTableWidget::item:selected { background:transparent; }
+            QTableWidget::item:selected { background:#e0f2fe; color:#0f172a; }
+            QTableWidget::item:focus { border: 1px solid #0f766e; }
             QHeaderView::section {
                 background:#f8fafc; color:#475569;
                 font-weight:800; font-size:11px;
@@ -833,18 +1284,30 @@ class BalanceSheetTab(QtWidgets.QWidget):
 
         self.annual_table.verticalHeader().setDefaultSectionSize(46)
         hdr = self.annual_table.horizontalHeader()
+        hdr.setMinimumSectionSize(82)
         for i in range(12):
             hdr.setSectionResizeMode(i, QtWidgets.QHeaderView.Stretch)
         hdr.setSectionResizeMode(12, QtWidgets.QHeaderView.Fixed)
-        self.annual_table.setColumnWidth(12, 105)
-        self.annual_table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.annual_table.setFont(QtGui.QFont("Inter", 10))
-        self.annual_table.setFixedHeight(200)
+        self.annual_table.setColumnWidth(12, 145)
+        self.annual_table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.annual_table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.annual_table.setFont(QtGui.QFont("Inter", 9))
+        # Exact fit: header ~30px + 3 rows × 46px = 168px; no scroll bar space needed
+        self.annual_table.setFixedHeight(168)
         self.annual_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.annual_table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
-        self.annual_table.setFocusPolicy(QtCore.Qt.NoFocus)
+        self.annual_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.annual_table.setFocusPolicy(QtCore.Qt.TabFocus)
         self.annual_table.setAlternatingRowColors(True)
         self.annual_table.verticalHeader().setVisible(True)
+        self.annual_table.setMouseTracking(True)
+        self.annual_table.setAccessibleName("Annual Financial Summary table")
+        self.annual_table.setAccessibleDescription(
+            "Monthly revenue, expenses, and net profit/loss. Click a cell to view details.")
+
+        # Clicking a Revenue-row month cell or the "Revenue" vertical header opens the detail popup
+        self.annual_table.cellClicked.connect(self._on_annual_cell_clicked)
+        self.annual_table.verticalHeader().sectionClicked.connect(
+            self._on_annual_row_header_clicked)
 
         wrap = QtWidgets.QVBoxLayout()
         wrap.setContentsMargins(12, 10, 12, 12)
@@ -1031,10 +1494,10 @@ class BalanceSheetTab(QtWidgets.QWidget):
         self.annual_table.setHorizontalHeaderLabels(month_headers)
 
         # Set vertical headers
-        self.annual_table.setVerticalHeaderLabels(["Revenue", "Expenses", "Net Profit/Loss"])
-        # Center vertical header text (row titles)
+        self._apply_annual_row_headers()
         vertical_header = self.annual_table.verticalHeader()
-        vertical_header.setDefaultAlignment(QtCore.Qt.AlignCenter)
+        vertical_header.setDefaultAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
+        vertical_header.setFixedWidth(155)
         horizontal_header = self.annual_table.horizontalHeader()
         horizontal_header.setDefaultAlignment(QtCore.Qt.AlignCenter)
 
@@ -1083,16 +1546,17 @@ class BalanceSheetTab(QtWidgets.QWidget):
         # Set row heights
         self.annual_table.verticalHeader().setDefaultSectionSize(45)
         
-        # Make table read-only and non-selectable
+        # Make table read-only with keyboard-navigable selection
         self.annual_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.annual_table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
-        self.annual_table.setFocusPolicy(QtCore.Qt.NoFocus)
-        
+        self.annual_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.annual_table.setFocusPolicy(QtCore.Qt.TabFocus)
+        self.annual_table.setAccessibleName("Annual Financial Summary table")
+
         # Enable alternating row colors
         self.annual_table.setAlternatingRowColors(True)
         
         # Set font for better readability
-        font = QtGui.QFont("Segoe UI", 10, QtGui.QFont.Bold)
+        font = QtGui.QFont("Segoe UI", 9, QtGui.QFont.Bold)
         self.annual_table.setFont(font)
         
         # Set fixed height for the annual summary table
@@ -1222,7 +1686,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
             amount_item = QtWidgets.QTableWidgetItem(f"${amount:,.2f}")
             amount_item.setTextAlignment(QtCore.Qt.AlignCenter)
             amount_item.setForeground(QtGui.QColor('#27ae60'))
-            amount_item.setFont(QtGui.QFont("Segoe UI", 10, QtGui.QFont.Bold))
+            amount_item.setFont(QtGui.QFont("Segoe UI", 9, QtGui.QFont.Bold))
             table.setItem(row, 1, amount_item)
             
             # Percentage
@@ -1409,7 +1873,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
             amount_item = QtWidgets.QTableWidgetItem(f"${amount:,.2f}")
             amount_item.setTextAlignment(QtCore.Qt.AlignCenter)
             amount_item.setForeground(QtGui.QColor('#27ae60'))
-            amount_item.setFont(QtGui.QFont("Segoe UI", 10, QtGui.QFont.Bold))
+            amount_item.setFont(QtGui.QFont("Segoe UI", 9, QtGui.QFont.Bold))
             inside_table.setItem(row, 1, amount_item)
             
             inside_table.setRowHeight(row, 40)
@@ -1500,7 +1964,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
             amount_item = QtWidgets.QTableWidgetItem(f"${amount:,.2f}")
             amount_item.setTextAlignment(QtCore.Qt.AlignCenter)
             amount_item.setForeground(QtGui.QColor('#27ae60'))
-            amount_item.setFont(QtGui.QFont("Segoe UI", 10, QtGui.QFont.Bold))
+            amount_item.setFont(QtGui.QFont("Segoe UI", 9, QtGui.QFont.Bold))
             outside_table.setItem(row, 1, amount_item)
 
             outside_table.setRowHeight(row, 40)
@@ -1618,87 +2082,78 @@ class BalanceSheetTab(QtWidgets.QWidget):
             self.unpaid_invoice_revenue = []
 
     def update_annual_summary(self):
-        """Update the annual summary table with Unpaid Revenue and Paid Revenue based on appropriate dates"""
-        # Calculate monthly totals
-        monthly_unpaid = [0] * 12
-        monthly_paid = [0] * 12
-        monthly_expenses = [0] * 12
-        
-        # Process revenue from annual data
-        for revenue in self.annual_revenue_data:
-            try:
-                status = revenue.get('status', 'Unpaid')
-                
-                paid_split = self._money_to_float(revenue.get('paid_amount', 0))
-                unpaid_split = self._money_to_float(revenue.get('unpaid_amount', revenue.get('amount', 0)))
+        """Update the annual summary table using Firebase annual_revenue_data.
 
-                # Determine which date to use based on status
-                if status == "Paid":
-                    date_str = revenue.get('received_date', revenue.get('date', ''))
-                else:
-                    date_str = revenue.get('date', '')
-                
-                date = self._parse_finance_date(date_str)
-                if date:
-                    if date.year != self.annual_summary_year:
-                        continue
-                        
-                    month = date.month - 1
-                    if status == "Paid":
-                        monthly_paid[month] += self._money_to_float(revenue.get('amount', 0))
-                    elif status == "Partially Paid":
-                        monthly_unpaid[month] += unpaid_split
-                        down_payment_date = self._parse_finance_date(
-                            revenue.get('down_payment_received_date', revenue.get('date', ''))
-                        )
-                        if down_payment_date and down_payment_date.year == self.annual_summary_year:
-                            monthly_paid[down_payment_date.month - 1] += paid_split
-                    else:
-                        monthly_unpaid[month] += self._money_to_float(revenue.get('amount', 0))
+        Paid Revenue is summed from is_payment=True entries in annual_revenue_data —
+        the same Firebase /revenue/ node the RevenueDetailDialog popup reads from,
+        so the numbers always match the popup exactly.
+        """
+        monthly_paid     = [0] * 12
+        monthly_expenses = [0] * 12
+
+        # ── Paid Revenue: is_payment entries — only those whose invoice has an
+        # is_invoice entry in the balance sheet (invoice was created and saved).
+        invoiced_numbers = self._get_invoiced_numbers()
+        for rev in self.annual_revenue_data:
+            if not rev.get('is_payment'):
+                continue
+            inv_num = (rev.get('invoice_number') or '').strip()
+            if not inv_num or inv_num not in invoiced_numbers:
+                continue  # no matching invoice revenue entry in the balance sheet
+            try:
+                date_str = rev.get('date', rev.get('received_date', ''))
+                dt = self._parse_finance_date(date_str)
+                if dt and dt.year == self.annual_summary_year:
+                    monthly_paid[dt.month - 1] += self._money_to_float(rev.get('amount', 0))
             except Exception as e:
-                _log.warning("Error processing revenue for annual summary: %s", e)
-        
-        # Process expenses from annual data
+                _log.warning("Error processing revenue entry for annual summary: %s", e)
+
+        # ── Expenses: from Firebase annual data ───────────────────────────────
         for expense in self.annual_expenses_data:
             try:
                 date = self._parse_finance_date(expense.get('date', ''))
-                if date:
-                    if date.year == self.annual_summary_year:
-                        month = date.month - 1
-                        amount = self._money_to_float(expense.get('amount', 0))
-                        monthly_expenses[month] += amount
+                if date and date.year == self.annual_summary_year:
+                    monthly_expenses[date.month - 1] += self._money_to_float(
+                        expense.get('amount', 0)
+                    )
             except Exception as e:
                 _log.warning("Error processing expense for annual summary: %s", e)
-        
-        # Calculate monthly net profit/loss (only paid revenue counts for net)
-        monthly_net = [monthly_paid[i] - monthly_expenses[i] for i in range(12)]
-        
-        # Calculate totals
-        total_unpaid = sum(monthly_unpaid)
-        total_paid = sum(monthly_paid)
+
+        monthly_net    = [monthly_paid[i] - monthly_expenses[i] for i in range(12)]
+        total_paid     = sum(monthly_paid)
         total_expenses = sum(monthly_expenses)
-        total_net = total_paid - total_expenses
+        total_net      = total_paid - total_expenses
         
         # Update table — 3 rows only (Unpaid Revenue is hidden per business rule)
         self.annual_table.setRowCount(3)
-        self.annual_table.setVerticalHeaderLabels(["Revenue", "Expenses", "Net P/L"])
+        self._apply_annual_row_headers()
         self.annual_table.clearContents()
+        # Re-apply fixed row heights — setRowCount can reset them
+        for _r in range(3):
+            self.annual_table.setRowHeight(_r, 46)
 
         # Row 0 — Paid Revenue only
+        import calendar as _cal
         for col in range(12):
             item = QtWidgets.QTableWidgetItem(f"${monthly_paid[col]:,.2f}")
             item.setTextAlignment(QtCore.Qt.AlignCenter)
             if monthly_paid[col] > 0:
                 item.setForeground(QtGui.QColor('#27ae60'))
-                item.setFont(QtGui.QFont("Segoe UI", 10, QtGui.QFont.Bold))
+                item.setFont(QtGui.QFont("Segoe UI", 9, QtGui.QFont.Bold))
             else:
                 item.setForeground(QtGui.QColor('#95a5a6'))
+            item.setToolTip(
+                f"Click to view paid revenue details for "
+                f"{_cal.month_name[col + 1]} {self.annual_summary_year}")
             self.annual_table.setItem(0, col, item)
         total_paid_item = QtWidgets.QTableWidgetItem(f"${total_paid:,.2f}")
         total_paid_item.setTextAlignment(QtCore.Qt.AlignCenter)
         total_paid_item.setForeground(QtGui.QColor('#27ae60'))
-        total_paid_item.setFont(QtGui.QFont("Segoe UI", 10, QtGui.QFont.Bold))
+        total_paid_item.setFont(QtGui.QFont("Segoe UI", 9, QtGui.QFont.Bold))
         self.annual_table.setItem(0, 12, total_paid_item)
+        # Make Revenue vertical header hint clickable
+        self.annual_table.verticalHeader().setToolTip(
+            "Click 'Revenue' to view all paid revenue for this year")
 
         # Row 1 — Expenses
         for col in range(12):
@@ -1706,14 +2161,14 @@ class BalanceSheetTab(QtWidgets.QWidget):
             item.setTextAlignment(QtCore.Qt.AlignCenter)
             if monthly_expenses[col] > 0:
                 item.setForeground(QtGui.QColor('#e74c3c'))
-                item.setFont(QtGui.QFont("Segoe UI", 10, QtGui.QFont.Bold))
+                item.setFont(QtGui.QFont("Segoe UI", 9, QtGui.QFont.Bold))
             else:
                 item.setForeground(QtGui.QColor('#95a5a6'))
             self.annual_table.setItem(1, col, item)
         total_exp_item = QtWidgets.QTableWidgetItem(f"${total_expenses:,.2f}")
         total_exp_item.setTextAlignment(QtCore.Qt.AlignCenter)
         total_exp_item.setForeground(QtGui.QColor('#e74c3c'))
-        total_exp_item.setFont(QtGui.QFont("Segoe UI", 10, QtGui.QFont.Bold))
+        total_exp_item.setFont(QtGui.QFont("Segoe UI", 9, QtGui.QFont.Bold))
         self.annual_table.setItem(1, 12, total_exp_item)
 
         # Row 2 — Net Profit/Loss
@@ -1722,10 +2177,10 @@ class BalanceSheetTab(QtWidgets.QWidget):
             item.setTextAlignment(QtCore.Qt.AlignCenter)
             if monthly_net[col] > 0:
                 item.setForeground(QtGui.QColor('#27ae60'))
-                item.setFont(QtGui.QFont("Segoe UI", 10, QtGui.QFont.Bold))
+                item.setFont(QtGui.QFont("Segoe UI", 9, QtGui.QFont.Bold))
             elif monthly_net[col] < 0:
                 item.setForeground(QtGui.QColor('#e74c3c'))
-                item.setFont(QtGui.QFont("Segoe UI", 10, QtGui.QFont.Bold))
+                item.setFont(QtGui.QFont("Segoe UI", 9, QtGui.QFont.Bold))
             else:
                 item.setForeground(QtGui.QColor('#95a5a6'))
             self.annual_table.setItem(2, col, item)
@@ -1740,7 +2195,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
             total_net_item.setBackground(QtGui.QColor('#fdedec'))
         else:
             total_net_item.setForeground(QtGui.QColor('#95a5a6'))
-        total_net_item.setFont(QtGui.QFont("Segoe UI", 10, QtGui.QFont.Bold))
+        total_net_item.setFont(QtGui.QFont("Segoe UI", 9, QtGui.QFont.Bold))
         self.annual_table.setItem(2, 12, total_net_item)
 
         # Background highlights for first + total columns
@@ -1750,15 +2205,505 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 item = self.annual_table.item(row, col)
                 if item and (col == 0 or col == 12):
                     item.setBackground(QtGui.QColor(row_bg[row]))
-                        
+
+    @staticmethod
+    def _dedup_is_payment_entries(all_revenue: list) -> list:
+        """Deduplicate is_payment=True entries by payment_id, keeping the most recently
+        updated one and deleting stale orphans from Firebase.  Non-payment entries are
+        passed through unchanged.  Runs in a background thread — safe to call Firebase."""
+        result = []          # non-payment entries pass through unchanged
+        pid_map = {}         # payment_id -> best entry so far
+
+        for rev in all_revenue:
+            if not rev.get('is_payment'):
+                result.append(rev)
+                continue
+            pid = rev.get('payment_id', '')
+            if not pid:
+                result.append(rev)   # no payment_id — include as-is (tax/legacy)
+                continue
+            existing = pid_map.get(pid)
+            if existing is None:
+                pid_map[pid] = rev
+            else:
+                rev_ts = rev.get('updated_at', rev.get('created_at', ''))
+                ex_ts  = existing.get('updated_at', existing.get('created_at', ''))
+                # Fallback to firebase_id comparison when timestamps are equal/missing
+                # Firebase push IDs are lexicographically chronological: larger = newer
+                if rev_ts == ex_ts:
+                    rev_ts = rev.get('firebase_id', '')
+                    ex_ts  = existing.get('firebase_id', '')
+                if rev_ts > ex_ts:
+                    # Current entry is newer — delete the old orphan
+                    old_fid = existing.get('firebase_id', '')
+                    if old_fid:
+                        try:
+                            BalanceSheetFirebaseManager.delete_entry('revenue', old_fid)
+                        except Exception:
+                            pass
+                    pid_map[pid] = rev
+                else:
+                    # Existing entry is newer — delete the current orphan
+                    fid = rev.get('firebase_id', '')
+                    if fid:
+                        try:
+                            BalanceSheetFirebaseManager.delete_entry('revenue', fid)
+                        except Exception:
+                            pass
+
+        result.extend(pid_map.values())
+        return result
+
+    @staticmethod
+    def _build_invoice_status_map() -> dict:
+        """Load all invoices from Firebase and return a map of
+        {invoice_number: {status, received_date}} using the identical Overdue
+        escalation logic as invoice_history_tab.get_invoice_status()."""
+        from main import FirebaseManager as _FM
+        from datetime import datetime as _dt, date as _date
+        _DATE_FMTS = ("%Y-%m-%d", "%m-%d-%Y", "%m/%d/%Y")
+        inv_map = {}
+        for inv in (_FM.load_invoices() or []):
+            meta = inv.get("meta") or {}
+            inv_num = (meta.get("invoice_number") or "").strip()
+            if not inv_num:
+                continue
+            raw_status = meta.get("status") or "Unpaid"
+            # Overdue escalation: identical to invoice_history_tab.get_invoice_status()
+            if raw_status in ("Unpaid", "Pending"):
+                due_str = meta.get("due_date") or ""
+                for _fmt in _DATE_FMTS:
+                    try:
+                        if _dt.strptime(due_str, _fmt).date() < _date.today():
+                            raw_status = "Overdue"
+                        break
+                    except (ValueError, TypeError):
+                        pass
+            inv_map[inv_num] = {
+                "status": raw_status,
+                "received_date": meta.get("received_date") or "N/A",
+            }
+        return inv_map
+
+    @staticmethod
+    def _sync_revenue_statuses_from_invoices(all_revenue: list,
+                                              inv_map: dict = None) -> list:
+        """Patch status + received_date for every non-is_payment revenue entry so they
+        exactly match the corresponding invoice — using the same source and the same
+        Overdue escalation logic as invoice_history_tab.get_invoice_status().
+        Pass a pre-built inv_map (from _build_invoice_status_map) to avoid an
+        extra Firebase round-trip; omit it and one will be built here.
+        Runs in a background thread.  Returns the same list (patched in-place)."""
+        try:
+            if inv_map is None:
+                inv_map = BalanceSheetTab._build_invoice_status_map()
+            # If Firebase load failed (empty map) skip patching entirely — better to
+            # keep the stale value than to wipe every entry to "Unpaid".
+            if not inv_map:
+                return all_revenue
+            for rev in all_revenue:
+                if not isinstance(rev, dict) or rev.get("is_payment"):
+                    continue
+                inv_num = (rev.get("invoice_number") or "").strip()
+                if not inv_num:
+                    continue
+                if inv_num in inv_map:
+                    info = inv_map[inv_num]
+                    rev["status"] = info["status"]
+                    rev["received_date"] = info["received_date"]
+                elif rev.get("is_invoice"):
+                    # Invoice entry whose invoice was not found in Firebase (deleted or
+                    # mismatch) — default to Unpaid so it never stays falsely "Paid".
+                    rev["status"] = "Unpaid"
+                    rev["received_date"] = "N/A"
+        except Exception as _e:
+            _log.warning("_sync_revenue_statuses_from_invoices: %s", _e)
+        return all_revenue
+
+    # ------------------------------------------------------------------ #
+    # Real-time Firebase listener for /revenue/                            #
+    # ------------------------------------------------------------------ #
+
+    def _start_revenue_listener(self):
+        """Attach a Firebase SSE listener to /revenue/ so any write from ANY device
+        (this machine or another) is pushed to the GUI instantly — no polling."""
+        if not self.FIREBASE_AVAILABLE:
+            return
+        if getattr(self, '_revenue_listener_handle', None) is not None:
+            return  # already running
+        try:
+            from firebase_admin import db as _fdb
+            _cache: dict = {}  # firebase_id → entry dict (maintained incrementally)
+
+            def _on_event(event):
+                if event.event_type == 'cancel':
+                    _log.warning("Revenue listener cancelled: %s", event.data)
+                    return
+                path = event.path or '/'
+                data = event.data
+
+                if event.event_type == 'put':
+                    if path == '/':
+                        # Initial full load or complete replacement
+                        _cache.clear()
+                        if isinstance(data, dict):
+                            for fid, entry in data.items():
+                                if isinstance(entry, dict):
+                                    _cache[fid] = {**entry, 'firebase_id': fid}
+                    else:
+                        # Single entry or nested field
+                        parts = path.strip('/').split('/', 1)
+                        key = parts[0]
+                        if len(parts) == 1:
+                            if data is None:
+                                _cache.pop(key, None)
+                            elif isinstance(data, dict):
+                                _cache[key] = {**data, 'firebase_id': key}
+                        else:
+                            # Nested field update (e.g. /KEY/amount)
+                            if key in _cache and data is not None:
+                                _cache[key][parts[1].split('/')[0]] = data
+                elif event.event_type == 'patch':
+                    for key, val in (data or {}).items():
+                        if val is None:
+                            _cache.pop(key, None)
+                        elif isinstance(val, dict):
+                            if key in _cache:
+                                _cache[key].update(val)
+                                _cache[key]['firebase_id'] = key
+                            else:
+                                _cache[key] = {**val, 'firebase_id': key}
+
+                # Push snapshot to GUI thread
+                global _revenue_signaler
+                if _revenue_signaler is not None:
+                    _revenue_signaler.revenue_updated.emit(list(_cache.values()))
+
+            self._revenue_listener_handle = _fdb.reference('revenue').listen(_on_event)
+            _log.info("Real-time /revenue/ listener started")
+        except Exception as e:
+            _log.warning("Could not start revenue listener: %s", e)
+            self._revenue_listener_handle = None
+
+    def _stop_revenue_listener(self):
+        """Stop the Firebase /revenue/ listener (called on tab close / app exit)."""
+        timer = getattr(self, '_listener_debounce_timer', None)
+        if timer is not None:
+            timer.stop()
+        handle = getattr(self, '_revenue_listener_handle', None)
+        if handle is not None:
+            try:
+                handle.close()
+            except Exception:
+                pass
+            self._revenue_listener_handle = None
+
+    def update_revenue_entry_status(self, invoice_number: str, new_status: str, received_date: str):
+        """Immediately sync status + received_date for an invoice revenue entry.
+
+        Three-layer update (all on the GUI thread, no Firebase read):
+          1. Patch revenue_data and annual_revenue_data in-memory.
+          2. Patch the visible finance_table cells directly (like update_invoice_row_immediately).
+          3. If no row is currently visible (different page/category) call populate_revenue_data
+             so the next time Revenue tab is shown it reflects the correct values.
+        """
+        rd = received_date if new_status not in ('Unpaid', 'Overdue') else 'N/A'
+        inv = (invoice_number or "").strip()
+
+        # Keep the local override map in sync so the listener's next flush
+        # uses the signal-provided status rather than stale Firebase data.
+        if not hasattr(self, '_invoice_status_map'):
+            self._invoice_status_map = {}
+        if inv:
+            self._invoice_status_map[inv] = {'status': new_status, 'received_date': rd}
+
+        def _is_invoice_row(rev):
+            if not isinstance(rev, dict):
+                return False
+            if rev.get('is_payment'):
+                return False
+            return (rev.get('invoice_number') or '').strip() == inv
+
+        # ── 1. In-memory update ───────────────────────────────────────────────
+        matched_rev = None
+        for rev in self.revenue_data:
+            if _is_invoice_row(rev):
+                rev['status'] = new_status
+                rev['received_date'] = rd
+                rev['down_payment_received_date'] = rd
+                matched_rev = rev
+                break
+        for rev in self.annual_revenue_data:
+            if _is_invoice_row(rev):
+                rev['status'] = new_status
+                rev['received_date'] = rd
+                rev['down_payment_received_date'] = rd
+                break
+
+        if matched_rev is None:
+            return  # entry not loaded yet — Firebase listener will handle it
+
+        # ── 2. Direct table-cell patch (instant, no full repopulate) ─────────
+        if self.current_category == "Revenue" and hasattr(self, '_fin_all_items'):
+            per_page = self._fin_per_page
+            start_i = (self._fin_page - 1) * per_page
+            page_slice = self._fin_all_items[start_i:start_i + per_page]
+            patched = False
+            for offset, page_rev in enumerate(page_slice):
+                if page_rev is not matched_rev:
+                    continue
+                table_row = offset
+                # Status cell (col 6) — pill badge
+                self.finance_table.setCellWidget(
+                    table_row, 6, self._make_revenue_status_pill(new_status))
+                # Received Date cell (col 7)
+                rd_item = QtWidgets.QTableWidgetItem(rd)
+                rd_item.setTextAlignment(QtCore.Qt.AlignCenter)
+                if rd != 'N/A':
+                    if new_status == "Paid":
+                        rd_item.setForeground(QtGui.QColor('#27ae60'))
+                        rd_item.setFont(QtGui.QFont("Segoe UI", 8, QtGui.QFont.Bold))
+                    elif new_status == "Partially Paid":
+                        rd_item.setForeground(QtGui.QColor('#8e44ad'))
+                        rd_item.setFont(QtGui.QFont("Segoe UI", 8, QtGui.QFont.Bold))
+                self.finance_table.setItem(table_row, 7, rd_item)
+                patched = True
+                break
+
+            # ── 3. If entry is off-page or filtered out, full repopulate ─────
+            if not patched:
+                self.populate_revenue_data()
+        elif self.current_category == "Revenue":
+            self.populate_revenue_data()
+
+    def _on_realtime_revenue_update(self, all_revenue: list):
+        """GUI-thread slot: called whenever Firebase pushes a /revenue/ change.
+        Stores the latest snapshot and resets the debounce timer so that rapid
+        field-level writes (5+ events for a single edit) collapse into one redraw."""
+        self._listener_pending_revenue = all_revenue
+        self._listener_debounce_timer.start()  # restarts the 150 ms countdown
+
+    def _flush_realtime_update(self):
+        """Debounce timer callback — runs on the GUI thread 150 ms after the last
+        listener event. Syncs invoice statuses from /invoices/ in a background
+        thread so the display always matches invoice history exactly."""
+        all_revenue = self._listener_pending_revenue
+        if not all_revenue:
+            return
+        try:
+            year = self.annual_summary_year
+            cur_year = self.current_year
+            import threading as _threading
+
+            # Capture the signal-based override map (built on main thread — safe)
+            _override_map = dict(getattr(self, '_invoice_status_map', {}))
+
+            def _bg(rev=list(all_revenue), omap=_override_map):
+                # Build full invoice map from Firebase, then overlay signal overrides
+                inv_map = BalanceSheetTab._build_invoice_status_map()
+                inv_map.update(omap)  # signal updates always win over Firebase reads
+                BalanceSheetTab._sync_revenue_statuses_from_invoices(rev, inv_map)
+                new_annual = [
+                    r for r in rev
+                    if BalanceSheetFirebaseManager._entry_year(r) == year
+                ]
+                new_rev = [
+                    r for r in rev
+                    if BalanceSheetFirebaseManager._entry_year(r) == cur_year
+                ]
+                QtCore.QTimer.singleShot(
+                    0, lambda a=new_annual, r=new_rev: self._apply_all_revenue(a, r)
+                )
+
+            _threading.Thread(target=_bg, daemon=True).start()
+        except Exception as e:
+            _log.warning("Real-time revenue flush failed: %s", e)
+
+    def _refresh_annual_revenue_background(self):
+        """Fetch fresh /revenue/ data in a background thread, deduplicate is_payment
+        entries, sync statuses from /invoices/, then redraw the annual summary."""
+        import threading as _threading
+        # Capture signal overrides on the main thread before spawning the worker,
+        # so a slow Firebase read never overwrites a status already set locally.
+        _override_map = dict(getattr(self, '_invoice_status_map', {}))
+
+        def _bg(omap=_override_map):
+            try:
+                all_revenue = BalanceSheetFirebaseManager.load_revenue()
+                all_revenue = BalanceSheetTab._dedup_is_payment_entries(all_revenue)
+                inv_map = BalanceSheetTab._build_invoice_status_map()
+                inv_map.update(omap)          # signal overrides always win
+                all_revenue = BalanceSheetTab._sync_revenue_statuses_from_invoices(
+                    all_revenue, inv_map)
+                new_data = [
+                    rev for rev in all_revenue
+                    if BalanceSheetFirebaseManager._entry_year(rev) == self.annual_summary_year
+                ]
+                QtCore.QTimer.singleShot(0, lambda d=new_data: self._apply_annual_revenue(d))
+            except Exception as e:
+                _log.warning("Annual revenue background refresh failed: %s", e)
+        _threading.Thread(target=_bg, daemon=True).start()
+
+    def _apply_annual_revenue(self, new_data):
+        """Apply freshly fetched annual revenue data and redraw the summary table (main thread only).
+        is_payment entries are always rebuilt from in-memory payments so a stale Firebase read
+        (arriving before the write for an edit completes) never overwrites the correct values."""
+        self.annual_revenue_data = new_data
+        self.update_annual_summary_from_payments()  # rebuilds is_payment slice; calls update_annual_summary
+
+    def _get_invoiced_numbers(self) -> set:
+        """Return the set of invoice_numbers that have an is_invoice=True entry in the
+        balance sheet (/revenue/).  Combines the full-year persistent set (updated on every
+        Firebase refresh) with whatever is already in the currently-loaded annual/revenue
+        data so the filter works correctly even before the first full refresh runs."""
+        result = set(getattr(self, '_all_invoiced_numbers', ()))
+        for r in list(self.annual_revenue_data or []) + list(self.revenue_data or []):
+            if r.get('is_invoice') and r.get('invoice_number', '').strip():
+                result.add(r['invoice_number'].strip())
+        return result
+
+    def update_annual_summary_from_payments(self):
+        """Instantly rebuild the annual summary from in-memory payment data — no Firebase
+        read needed. Called on the main thread right after any payment add/edit/delete so
+        the REVENUE row reflects the change before the background Firebase refresh arrives.
+
+        Strategy:
+        - Non-payment (is_invoice, manual) entries are always preserved from annual_revenue_data.
+        - is_payment entries whose payment_id IS in tracker.payments are replaced by the
+          tracker version (so edits to date/amount show immediately).
+        - is_payment entries whose payment_id is NOT in tracker.payments are kept from
+          annual_revenue_data (legacy/external Firebase payments the local tracker doesn't know
+          about — discarding them would make older months go blank)."""
+        try:
+            from payment_tracker import get_payment_tracker
+            tracker = get_payment_tracker()
+            year = self.annual_summary_year
+
+            # Build set of payment_ids managed by the local tracker
+            tracker_pids = {p.payment_id for p in tracker.payments if p.payment_id}
+
+            # Keep non-payment entries (is_invoice, manual revenue, etc.) unchanged
+            non_payment = [
+                r for r in (self.annual_revenue_data or [])
+                if not r.get('is_payment')
+            ]
+
+            # Invoice numbers the tracker already has payments for — used to
+            # exclude legacy Firebase entries for those invoices so they don't
+            # double-count alongside fresh tracker entries.
+            tracker_inv_nos = {
+                (p.invoice_number or '').strip()
+                for p in tracker.payments
+                if (p.invoice_number or '').strip()
+            }
+
+            # Keep is_payment entries that the local tracker does NOT know about
+            # (legacy Firebase entries, entries from other devices, etc.).
+            # Exclude entries whose invoice_number is already covered by the tracker —
+            # those are superseded by tracker_entries and would cause double-counting.
+            firebase_only = [
+                r for r in (self.annual_revenue_data or [])
+                if r.get('is_payment')
+                and r.get('payment_id', '') not in tracker_pids
+                and (r.get('invoice_number') or '').strip() not in tracker_inv_nos
+            ]
+
+            # Only include payments whose invoice has an is_invoice entry in the balance sheet.
+            # This prevents orphaned payments (no matching invoice revenue) from inflating the
+            # annual summary totals.
+            invoiced_numbers = self._get_invoiced_numbers()
+
+            # Rebuild the tracker-managed is_payment slice from live Payment objects
+            tracker_entries = []
+            for p in tracker.payments:
+                if not p.invoice_number:
+                    continue  # bare project payments don't appear in balance sheet
+                if p.invoice_number.strip() not in invoiced_numbers:
+                    continue  # invoice has no revenue entry in the balance sheet yet
+                try:
+                    dt = self._parse_finance_date(p.payment_date)
+                    if not dt or dt.year != year:
+                        continue
+                except Exception:
+                    continue
+                tracker_entries.append({
+                    'is_payment':     True,
+                    'payment_id':     p.payment_id,
+                    'amount':         float(p.amount),
+                    'date':           p.payment_date,
+                    'received_date':  p.payment_date,
+                    'year':           year,
+                    'source':         f'Project {p.project_number}',
+                    'invoice_number': p.invoice_number,
+                    'project_number': p.project_number,
+                    'payment_stage':  p.payment_stage or '',
+                    'firebase_id':    p.balance_sheet_id or '',
+                    'status':         'Paid',
+                })
+
+            self.annual_revenue_data = non_payment + firebase_only + tracker_entries
+            self.update_annual_summary()
+            self.update_stats_cards()
+        except Exception as e:
+            _log.warning("Immediate annual summary update failed: %s", e)
+
+    def _refresh_all_revenue_background(self):
+        """Fetch fresh /revenue/ data in background, deduplicate is_payment entries,
+        sync status/received_date from /invoices/ so balance sheet mirrors invoice history,
+        then update BOTH the annual summary AND the paid revenues transaction table."""
+        import threading as _threading
+        _override_map = dict(getattr(self, '_invoice_status_map', {}))
+
+        def _bg(omap=_override_map):
+            try:
+                all_revenue = BalanceSheetFirebaseManager.load_revenue()
+                all_revenue = BalanceSheetTab._dedup_is_payment_entries(all_revenue)
+                inv_map = BalanceSheetTab._build_invoice_status_map()
+                inv_map.update(omap)
+                all_revenue = BalanceSheetTab._sync_revenue_statuses_from_invoices(all_revenue, inv_map)
+                new_annual = [
+                    rev for rev in all_revenue
+                    if BalanceSheetFirebaseManager._entry_year(rev) == self.annual_summary_year
+                ]
+                new_revenue = [
+                    rev for rev in all_revenue
+                    if BalanceSheetFirebaseManager._entry_year(rev) == self.current_year
+                ]
+                # Build the set of invoice_numbers that have an is_invoice entry across
+                # ALL years so the annual-summary filter works even for cross-year invoices.
+                invoiced = {
+                    r.get('invoice_number', '').strip()
+                    for r in all_revenue
+                    if r.get('is_invoice') and r.get('invoice_number', '').strip()
+                }
+                QtCore.QTimer.singleShot(
+                    0, lambda a=new_annual, r=new_revenue, iv=invoiced:
+                        self._apply_all_revenue(a, r, iv)
+                )
+            except Exception as e:
+                _log.warning("All-revenue background refresh failed: %s", e)
+        _threading.Thread(target=_bg, daemon=True).start()
+
+    def _apply_all_revenue(self, new_annual, new_revenue, invoiced_numbers: set = None):
+        """Apply fresh revenue data to both tables (main thread only).
+        is_payment entries are always rebuilt from in-memory payments so a stale Firebase read
+        (arriving before the write for an edit completes) never overwrites the correct values."""
+        self.annual_revenue_data = new_annual
+        self.revenue_data = new_revenue
+        if invoiced_numbers is not None:
+            self._all_invoiced_numbers = invoiced_numbers
+        self.update_annual_summary_from_payments()  # rebuilds is_payment slice; calls update_annual_summary + update_stats_cards
+        if self.current_category == "Revenue":
+            self.populate_revenue_data()
+
     def create_finance_table_section(self, layout):
         """Create finance table section with integrated search and filters and full page scrolling"""
         table_group = QtWidgets.QGroupBox("Transactions")
         table_group.setStyleSheet("""
             QGroupBox {
                 font-weight:900; font-size:13px; color:#0f766e;
-                border:1px solid #e2e8f0; border-radius:12px;
-                margin-top:0.5em; padding-top:10px; background:#ffffff;
+                border: none;
+                margin-top:0.5em; padding-top:10px; background: transparent;
             }
             QGroupBox::title {
                 subcontrol-origin:margin; left:16px;
@@ -1778,22 +2723,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
         search_filter_layout.setContentsMargins(10, 0, 10, 0)
 
         # Date Range Filter Button
-        self.date_range_button = QtWidgets.QPushButton("📅")
-        self.date_range_button.setMinimumHeight(36)
-        self.date_range_button.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        self.date_range_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-        """)
+        self.date_range_button = configure_filter_button(QtWidgets.QPushButton(), height=36)
         self.date_range_button.clicked.connect(self.show_date_range_dialog)
         search_filter_layout.addWidget(self.date_range_button)
 
@@ -1872,14 +2802,22 @@ class BalanceSheetTab(QtWidgets.QWidget):
             }
         """)
         self.category_combo.currentTextChanged.connect(self.on_category_changed)
+        self.category_combo.wheelEvent = lambda e: e.ignore()
+        self.category_combo.keyPressEvent = lambda e, c=self.category_combo: (
+            QtWidgets.QComboBox.keyPressEvent(c, e)
+            if e.key() not in (QtCore.Qt.Key_Up, QtCore.Qt.Key_Down) or c.view().isVisible()
+            else e.ignore()
+        )
+        self.category_combo.currentIndexChanged.connect(
+            lambda: QtCore.QTimer.singleShot(0, self.category_combo.clearFocus))
         filters_container.addWidget(self.category_combo)
 
         search_filter_layout.addLayout(filters_container)
         table_layout.addWidget(search_filter_frame)
 
-        # Finance Table with scrolling enabled
+        # Finance Table — no internal scroll; page-level scroll handles it
         self.finance_table = QtWidgets.QTableWidget()
-        self.finance_table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.finance_table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.finance_table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.finance_table.setWordWrap(True)
         self.finance_table.setAlternatingRowColors(True)
@@ -1915,7 +2853,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2c3e50, stop:1 #34495e);
                 color: white;
                 font-weight: bold;
-                font-size: 14px;
+                font-size: 12px;
                 padding: 10px 6px;
                 border: none;
                 border-right: 1px solid #3a506b;
@@ -1961,10 +2899,39 @@ class BalanceSheetTab(QtWidgets.QWidget):
         for col in range(self.finance_table.columnCount()):
             header.setSectionResizeMode(col, QtWidgets.QHeaderView.Interactive)
 
-        # Set minimum height for the table to enable scrolling
-        self.finance_table.setMinimumHeight(620)
-        
         table_layout.addWidget(self.finance_table)
+
+        _pg_s = """QPushButton { background:#ffffff; color:#334155; border:1px solid #e2e8f0;
+            border-radius:6px; font-size:12px; font-weight:700;
+            min-width:32px; min-height:28px; padding:0 8px; }
+            QPushButton:hover { background:#f1f5f9; border-color:#cbd5e1; }
+            QPushButton:disabled { color:#cbd5e1; }"""
+        fin_pg_frame = QtWidgets.QFrame()
+        fin_pg_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
+        fin_pg_hbox = QtWidgets.QHBoxLayout(fin_pg_frame)
+        fin_pg_hbox.setContentsMargins(4, 6, 4, 6)
+        fin_pg_hbox.setSpacing(6)
+        self._fin_info_lbl = QtWidgets.QLabel("")
+        self._fin_info_lbl.setStyleSheet(
+            "color:#94a3b8; font-size:11px; font-weight:600; background:transparent; border:none;")
+        fin_pg_hbox.addWidget(self._fin_info_lbl)
+        fin_pg_hbox.addStretch()
+        self._fin_prev_btn = QtWidgets.QPushButton("‹")
+        self._fin_prev_btn.setStyleSheet(_pg_s)
+        self._fin_prev_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self._fin_prev_btn.clicked.connect(self._fin_go_prev)
+        fin_pg_hbox.addWidget(self._fin_prev_btn)
+        self._fin_page_btns_layout = QtWidgets.QHBoxLayout()
+        self._fin_page_btns_layout.setSpacing(4)
+        fin_pg_hbox.addLayout(self._fin_page_btns_layout)
+        self._fin_next_btn = QtWidgets.QPushButton("›")
+        self._fin_next_btn.setStyleSheet(_pg_s)
+        self._fin_next_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self._fin_next_btn.clicked.connect(self._fin_go_next)
+        fin_pg_hbox.addWidget(self._fin_next_btn)
+        self._fin_pg_style = _pg_s
+        table_layout.addWidget(fin_pg_frame)
+
         layout.addWidget(table_group)
 
     def on_category_changed(self, category):
@@ -1986,8 +2953,12 @@ class BalanceSheetTab(QtWidgets.QWidget):
             self.setup_salary_table()
             self.populate_salary_data()
         
-        # Update add button text
-        self.add_btn.setText(f"+ Add {category.rstrip('s')}")
+        # Update add button — hide for Revenue (auto-created from invoices)
+        if category == "Revenue":
+            self.add_btn.setVisible(False)
+        else:
+            self.add_btn.setVisible(True)
+            self.add_btn.setText(f"+ Add {category.rstrip('s')}")
         self.update_stats_cards()
         # Annual summary is NOT updated here - it stays constant
 
@@ -2001,13 +2972,13 @@ class BalanceSheetTab(QtWidgets.QWidget):
         # Set column widths
         self.finance_table.setColumnWidth(0, 54)    # S.No
         self.finance_table.setColumnWidth(1, 112)   # Date
-        self.finance_table.setColumnWidth(2, 280)   # Revenue Source
-        self.finance_table.setColumnWidth(3, 330)   # Description
+        self.finance_table.setColumnWidth(2, 260)   # Revenue Source
+        self.finance_table.setColumnWidth(3, 380)   # Description (wider — stretches)
         self.finance_table.setColumnWidth(4, 130)   # Amount
         self.finance_table.setColumnWidth(5, 112)   # Due Date
-        self.finance_table.setColumnWidth(6, 150)   # Status
-        self.finance_table.setColumnWidth(7, 124)   # Received Date
-        self.finance_table.setColumnWidth(8, 160)   # Actions
+        self.finance_table.setColumnWidth(6, 140)   # Status
+        self.finance_table.setColumnWidth(7, 120)   # Received Date
+        self.finance_table.setColumnWidth(8, 100)   # Actions (narrower — 3 × 28px buttons)
         hdr = self.finance_table.horizontalHeader()
         hdr.setSectionResizeMode(3, QtWidgets.QHeaderView.Stretch)
         hdr.setSectionResizeMode(8, QtWidgets.QHeaderView.Fixed)
@@ -2023,7 +2994,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
         self.finance_table.setColumnWidth(1, 120)   # Date
         self.finance_table.setColumnWidth(2, 320)   # Expense Item
         self.finance_table.setColumnWidth(4, 150)   # Amount
-        self.finance_table.setColumnWidth(5, 160)   # Actions
+        self.finance_table.setColumnWidth(5, 90)    # Actions (narrower — 2 × 28px buttons)
         hdr = self.finance_table.horizontalHeader()
         hdr.setSectionResizeMode(3, QtWidgets.QHeaderView.Stretch)
         hdr.setSectionResizeMode(5, QtWidgets.QHeaderView.Fixed)
@@ -2052,43 +3023,74 @@ class BalanceSheetTab(QtWidgets.QWidget):
         self.finance_table.setColumnWidth(2, 170)   # Region
         self.finance_table.setColumnWidth(3, 260)   # Employee Name
         self.finance_table.setColumnWidth(5, 150)   # Amount
-        self.finance_table.setColumnWidth(6, 160)   # Actions
+        self.finance_table.setColumnWidth(6, 90)    # Actions (narrower — 2 × 28px buttons)
         hdr = self.finance_table.horizontalHeader()
         hdr.setSectionResizeMode(4, QtWidgets.QHeaderView.Stretch)
         hdr.setSectionResizeMode(6, QtWidgets.QHeaderView.Fixed)
 
     def populate_revenue_data(self):
-        """Populate revenue table with data in LIFO order (latest first) - Status as colored text, shows both invoice and received dates"""
+        """Populate revenue table in chronological order (oldest first)."""
         filtered = self.filter_revenue_data()
-        # Reverse for LIFO (latest first)
-        filtered_reversed = list(reversed(filtered))
-        self.finance_table.setRowCount(len(filtered_reversed))
-        
-        # Helper to safely format amount
+        self._fin_all_items = filtered
+        self._fin_page = 1
+        self._fin_render_page()
+
+    # Same palette as invoice_history_tab
+    _REV_PILL_COLORS = {
+        "Paid":           ("#d1fae5", "#065f46", "#6ee7b7"),
+        "Unpaid":         ("#f8d7da", "#721c24", "#f5c6cb"),
+        "Pending":        ("#fff3cd", "#856404", "#ffeaa7"),
+        "Overdue":        ("#ffe5d9", "#a13700", "#ffb599"),
+        "Partially Paid": ("#ede7f6", "#4a148c", "#d1c4e9"),
+    }
+
+    _STATUS_ICONS = {
+        "Paid":           "✓",
+        "Unpaid":         "✗",
+        "Pending":        "⏳",
+        "Overdue":        "⚠",
+        "Partially Paid": "◐",
+    }
+
+    def _make_revenue_status_pill(self, status: str) -> QtWidgets.QWidget:
+        """Centered static pill badge for the revenue status column."""
+        bg, fg, border = self._REV_PILL_COLORS.get(
+            status, ("#e2e8f0", "#64748b", "#cbd5e1"))
+        icon = self._STATUS_ICONS.get(status, "")
+        text = f"{icon}  {status}" if icon else status
+        lbl = QtWidgets.QLabel(text)
+        lbl.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
+        lbl.setAlignment(QtCore.Qt.AlignCenter)
+        lbl.setStyleSheet(
+            f"QLabel {{ background-color:{bg}; color:{fg}; "
+            f"border:1px solid {border}; border-radius:12px; "
+            f"padding:4px 12px; font-size:12px; font-weight:bold; "
+            f"font-family:'Inter','Segoe UI',sans-serif; }}"
+        )
+        container = QtWidgets.QWidget()
+        container.setStyleSheet("background:transparent; border:none;")
+        lay = QtWidgets.QHBoxLayout(container)
+        lay.setContentsMargins(4, 0, 4, 0)
+        lay.addStretch()
+        lay.addWidget(lbl)
+        lay.addStretch()
+        return container
+
+    def _render_revenue_rows(self, page_items, start_i):
         def format_amount(amount):
             if isinstance(amount, (int, float)):
                 return f"${amount:,.2f}"
             elif isinstance(amount, str):
-                # Remove any existing $ and commas
                 clean = amount.replace('$', '').replace(',', '')
                 try:
                     return f"${float(clean):,.2f}"
                 except:
                     return "$0.00"
             return "$0.00"
-        
-        # Define status colors
-        status_colors = {
-            "Paid": "#27ae60",           # Green
-            "Unpaid": "#e74c3c",         # Red
-            "Pending": "#f39c12",        # Orange
-            "Overdue": "#c0392b",        # Dark Red
-            "Partially Paid": "#8e44ad"  # Purple
-        }
-        
-        for row, revenue in enumerate(filtered_reversed):
+
+        for row, revenue in enumerate(page_items):
             # S.No
-            sno_item = QtWidgets.QTableWidgetItem(str(row + 1))
+            sno_item = QtWidgets.QTableWidgetItem(str(start_i + row + 1))
             sno_item.setTextAlignment(QtCore.Qt.AlignCenter)
             self.finance_table.setItem(row, 0, sno_item)
             
@@ -2096,16 +3098,21 @@ class BalanceSheetTab(QtWidgets.QWidget):
             invoice_date = revenue.get('date', '')
             date_item = QtWidgets.QTableWidgetItem(invoice_date)
             date_item.setTextAlignment(QtCore.Qt.AlignCenter)
+            date_item.setToolTip(invoice_date)
             self.finance_table.setItem(row, 1, date_item)
             
             # Revenue Source
-            source_item = QtWidgets.QTableWidgetItem(revenue.get('source', ''))
+            source_text = revenue.get('source', '')
+            source_item = QtWidgets.QTableWidgetItem(source_text)
             source_item.setTextAlignment(QtCore.Qt.AlignCenter)
+            source_item.setToolTip(source_text)
             self.finance_table.setItem(row, 2, source_item)
-            
+
             # Description
-            desc_item = QtWidgets.QTableWidgetItem(revenue.get('description', ''))
+            desc_text = revenue.get('description', '')
+            desc_item = QtWidgets.QTableWidgetItem(desc_text)
             desc_item.setTextAlignment(QtCore.Qt.AlignCenter)
+            desc_item.setToolTip(desc_text)
             self.finance_table.setItem(row, 3, desc_item)
             
             # Amount
@@ -2132,100 +3139,81 @@ class BalanceSheetTab(QtWidgets.QWidget):
                     pass
             self.finance_table.setItem(row, 5, due_date_item)
             
-            # Status - COLORED TEXT
-            status_item = QtWidgets.QTableWidgetItem(status)
-            status_item.setTextAlignment(QtCore.Qt.AlignCenter)
+            # Status — colored pill badge
+            self.finance_table.setCellWidget(row, 6, self._make_revenue_status_pill(status))
             
-            # Apply color based on status
-            color = status_colors.get(status, "#7f8c8d")
-            status_item.setForeground(QtGui.QColor(color))
-            status_item.setFont(QtGui.QFont("Segoe UI", 8, QtGui.QFont.Bold))
-            self.finance_table.setItem(row, 6, status_item)
-            
-            # Received Date - Show when payment was received (only for Paid status)
-            received_date = revenue.get('received_date', 'N/A')
-            if status == "Partially Paid":
-                received_date = revenue.get('down_payment_received_date', revenue.get('date', 'N/A'))
+            # Received Date — always use received_date field (latest payment date for
+            # Paid/Partially Paid; N/A for Unpaid/Pending).  The old fallback to
+            # down_payment_received_date for Partially Paid is removed because
+            # received_date is now always kept in sync with the latest payment.
+            received_date = revenue.get('received_date', 'N/A') or 'N/A'
             received_date_item = QtWidgets.QTableWidgetItem(received_date)
             received_date_item.setTextAlignment(QtCore.Qt.AlignCenter)
             
-            # Highlight received date in green for Paid status
-            if status == "Paid" and received_date != 'N/A':
-                received_date_item.setForeground(QtGui.QColor('#27ae60'))
-                received_date_item.setFont(QtGui.QFont("Segoe UI", 8, QtGui.QFont.Bold))
+            # Highlight received date for Paid (green) and Partially Paid (purple)
+            if received_date != 'N/A':
+                if status == "Paid":
+                    received_date_item.setForeground(QtGui.QColor('#27ae60'))
+                    received_date_item.setFont(QtGui.QFont("Segoe UI", 8, QtGui.QFont.Bold))
+                elif status == "Partially Paid":
+                    received_date_item.setForeground(QtGui.QColor('#8e44ad'))
+                    received_date_item.setFont(QtGui.QFont("Segoe UI", 8, QtGui.QFont.Bold))
             
             self.finance_table.setItem(row, 7, received_date_item)
             
             # Actions
-            self.add_action_buttons(row, revenue, "Revenue", col_offset=8)
-            
+            self.add_revenue_action_buttons(row, revenue, col_offset=8)
+
             self.finance_table.setRowHeight(row, 54)
         
     def populate_expenses_data(self):
-        """Populate expenses table with data in LIFO order (latest first) - with 2 decimal places"""
+        """Populate expenses table in chronological order (oldest first)."""
         filtered = self.filter_expenses_data()
-        # Reverse for LIFO (latest first)
-        filtered_reversed = list(reversed(filtered))
-        self.finance_table.setRowCount(len(filtered_reversed))
-        
-        for row, expense in enumerate(filtered_reversed):
-            # S.No
-            sno_item = QtWidgets.QTableWidgetItem(str(row + 1))
+        self._fin_all_items = filtered
+        self._fin_page = 1
+        self._fin_render_page()
+
+    def _render_expenses_rows(self, page_items, start_i):
+        for row, expense in enumerate(page_items):
+            sno_item = QtWidgets.QTableWidgetItem(str(start_i + row + 1))
             sno_item.setTextAlignment(QtCore.Qt.AlignCenter)
             self.finance_table.setItem(row, 0, sno_item)
-            
-            # Date
             date_item = QtWidgets.QTableWidgetItem(expense.get('date', ''))
             date_item.setTextAlignment(QtCore.Qt.AlignCenter)
             self.finance_table.setItem(row, 1, date_item)
-            
-            # Expense Item
             name_item = QtWidgets.QTableWidgetItem(expense.get('name', ''))
             name_item.setTextAlignment(QtCore.Qt.AlignCenter)
             self.finance_table.setItem(row, 2, name_item)
-            
-            # Description
             desc_item = QtWidgets.QTableWidgetItem(expense.get('description', ''))
             desc_item.setTextAlignment(QtCore.Qt.AlignCenter)
             self.finance_table.setItem(row, 3, desc_item)
-            
-            # Amount - Format with 2 decimal places
             amount = expense.get('amount', '0')
             try:
-                amount_value = float(amount)
-                formatted_amount = f"${amount_value:,.2f}"
-            except:
+                formatted_amount = f"${float(amount):,.2f}"
+            except Exception:
                 formatted_amount = f"${amount}"
-            
             amount_item = QtWidgets.QTableWidgetItem(formatted_amount)
             amount_item.setTextAlignment(QtCore.Qt.AlignCenter)
             amount_item.setForeground(QtGui.QColor('#27ae60'))
             self.finance_table.setItem(row, 4, amount_item)
-            
-            # Actions
             self.add_action_buttons(row, expense, "Expenses", col_offset=5)
-            
             self.finance_table.setRowHeight(row, 54)
 
     def populate_salary_data(self):
-        """Populate salary table with data in LIFO order (latest first) - with 2 decimal places"""
+        """Populate salary table in chronological order (oldest first)."""
         filtered = self.filter_salary_data()
-        # Reverse for LIFO (latest first)
-        filtered_reversed = list(reversed(filtered))
-        self.finance_table.setRowCount(len(filtered_reversed))
-        
-        for row, salary in enumerate(filtered_reversed):
-            # S.No
-            sno_item = QtWidgets.QTableWidgetItem(str(row + 1))
+        self._fin_all_items = filtered
+        self._fin_page = 1
+        self._fin_render_page()
+
+    def _render_salary_rows(self, page_items, start_i):
+        for row, salary in enumerate(page_items):
+            sno_item = QtWidgets.QTableWidgetItem(str(start_i + row + 1))
             sno_item.setTextAlignment(QtCore.Qt.AlignCenter)
             self.finance_table.setItem(row, 0, sno_item)
-            
-            # Date
             date_item = QtWidgets.QTableWidgetItem(salary.get('date', ''))
             date_item.setTextAlignment(QtCore.Qt.AlignCenter)
             self.finance_table.setItem(row, 1, date_item)
-            
-            # Region
             region_item = QtWidgets.QTableWidgetItem(salary.get('region', ''))
             region_item.setTextAlignment(QtCore.Qt.AlignCenter)
             if salary.get('region') == "Inside America":
@@ -2234,35 +3222,100 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 region_item.setForeground(QtGui.QColor('#c0392b'))
             region_item.setFont(QtGui.QFont("Arial", 8, QtGui.QFont.Normal))
             self.finance_table.setItem(row, 2, region_item)
-            
-            # Employee Name
             name_item = QtWidgets.QTableWidgetItem(salary.get('name', ''))
             name_item.setTextAlignment(QtCore.Qt.AlignCenter)
             self.finance_table.setItem(row, 3, name_item)
-            
-            # Description
             desc_item = QtWidgets.QTableWidgetItem(salary.get('description', ''))
             desc_item.setTextAlignment(QtCore.Qt.AlignCenter)
             self.finance_table.setItem(row, 4, desc_item)
-            
-            # Amount - Format with 2 decimal places
             amount = salary.get('amount', '0')
             try:
-                amount_value = float(amount)
-                formatted_amount = f"${amount_value:,.2f}"
-            except:
+                formatted_amount = f"${float(amount):,.2f}"
+            except Exception:
                 formatted_amount = f"${amount}"
-            
             amount_item = QtWidgets.QTableWidgetItem(formatted_amount)
             amount_item.setTextAlignment(QtCore.Qt.AlignCenter)
             amount_item.setForeground(QtGui.QColor('#27ae60'))
             self.finance_table.setItem(row, 5, amount_item)
-            
-            # Actions
             self.add_action_buttons(row, salary, "Salary", col_offset=6)
-            
             self.finance_table.setRowHeight(row, 54)
             
+    def _fin_render_page(self):
+        import math
+        total = len(self._fin_all_items)
+        per_page = self._fin_per_page
+        max_page = max(1, math.ceil(total / per_page))
+        self._fin_page = max(1, min(self._fin_page, max_page))
+        start_i = (self._fin_page - 1) * per_page
+        end_i = min(start_i + per_page, total)
+        page_items = self._fin_all_items[start_i:end_i]
+        self.finance_table.setRowCount(len(page_items))
+        if self.current_category == "Revenue":
+            self._render_revenue_rows(page_items, start_i)
+        elif self.current_category == "Expenses":
+            self._render_expenses_rows(page_items, start_i)
+        else:
+            self._render_salary_rows(page_items, start_i)
+        self._fin_resize_table()
+        self._fin_rebuild_pagination(total, max_page)
+
+    def _fin_resize_table(self):
+        t = self.finance_table
+        h = t.horizontalHeader().height()
+        for i in range(t.rowCount()):
+            h += t.rowHeight(i)
+        t.setFixedHeight(h + 2)
+
+    def _fin_rebuild_pagination(self, total, max_page):
+        if not hasattr(self, '_fin_page_btns_layout'):
+            return
+        page_num = self._fin_page
+        per_page = self._fin_per_page
+        start = (page_num - 1) * per_page + 1 if total else 0
+        end = min(page_num * per_page, total)
+        if hasattr(self, '_fin_info_lbl'):
+            category = self.current_category.lower() + "s" if not self.current_category.endswith("y") else self.current_category[:-1] + "ies"
+            self._fin_info_lbl.setText(f"Showing {start}–{end} of {total} {self.current_category.lower()} records")
+        while self._fin_page_btns_layout.count():
+            item = self._fin_page_btns_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        _s = getattr(self, '_fin_pg_style', '')
+        _win_start = max(1, min(page_num, max_page - 2))
+        for p in range(_win_start, min(_win_start + 3, max_page + 1)):
+            btn = QtWidgets.QPushButton(str(p))
+            btn.setFixedSize(32, 28)
+            btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+            if p == page_num:
+                btn.setStyleSheet("""QPushButton {
+                    background-color: #00756f; color: #ffffff;
+                    border: 1px solid #00756f; border-radius: 6px;
+                    font-size: 12px; font-weight: 700;
+                    min-width: 32px; min-height: 28px; padding: 0 8px;
+                }
+                QPushButton:hover { background-color: #005f5a; color: #ffffff; }""")
+            else:
+                btn.setStyleSheet(_s)
+                btn.clicked.connect(lambda _, pg=p: self._fin_go_to(pg))
+            self._fin_page_btns_layout.addWidget(btn)
+        if hasattr(self, '_fin_prev_btn'):
+            self._fin_prev_btn.setEnabled(page_num > 1)
+        if hasattr(self, '_fin_next_btn'):
+            self._fin_next_btn.setEnabled(page_num < max_page)
+
+    def _fin_go_prev(self):
+        if self._fin_page > 1:
+            self._fin_page -= 1
+            self._fin_render_page()
+
+    def _fin_go_next(self):
+        self._fin_page += 1
+        self._fin_render_page()
+
+    def _fin_go_to(self, page):
+        self._fin_page = page
+        self._fin_render_page()
+
     def filter_finance_entries(self):
         if self.current_category == "Revenue":
             self.populate_revenue_data()
@@ -2333,6 +3386,17 @@ class BalanceSheetTab(QtWidgets.QWidget):
             if matches_date and matches_search:
                 filtered.append(expense)
 
+        if date_range_active and from_date and to_date:
+            # Date filter active → sort by date ascending (1 Jan → 31 Dec)
+            def _exp_sort_key(e):
+                try:
+                    return datetime.strptime(e['date'], "%m-%d-%Y") if e.get('date') else datetime.min
+                except (ValueError, TypeError):
+                    return datetime.min
+            filtered.sort(key=_exp_sort_key)
+        else:
+            # No filter → newest created_at first
+            filtered.sort(key=lambda e: e.get('created_at') or '', reverse=True)
         return filtered
 
     def filter_revenue_data(self):
@@ -2359,13 +3423,16 @@ class BalanceSheetTab(QtWidgets.QWidget):
         
         filtered = []
         for revenue in self.revenue_data:
-            # Determine which date to use for filtering based on status
+            # Payment-tracker entries (is_payment=True) are internal records used only
+            # for the per-month annual summary breakdown — hide them from the list view
+            # so the invoice entry (is_invoice=True) remains the single visible record.
+            if revenue.get('is_payment'):
+                continue
+
+            # Always filter by invoice date (the DATE column) for consistency
             status = revenue.get('status', 'Unpaid')
-            if status == "Paid":
-                date_str = revenue.get('received_date', revenue.get('date', ''))
-            else:
-                date_str = revenue.get('date', '')
-            
+            date_str = revenue.get('date', '')
+
             # ----- DATE RANGE FILTER (if active) -----
             matches_date = True
             if date_range_active and from_date and to_date:
@@ -2399,6 +3466,18 @@ class BalanceSheetTab(QtWidgets.QWidget):
             if matches_date and matches_search:
                 filtered.append(revenue)
 
+        if date_range_active and from_date and to_date:
+            # Date filter active → sort by invoice date ascending (year → month → day)
+            def _rev_sort_key(r):
+                ds = r.get('date', '') or ''
+                try:
+                    return datetime.strptime(ds, "%m-%d-%Y")
+                except (ValueError, TypeError):
+                    return datetime.min
+            filtered.sort(key=_rev_sort_key)
+        else:
+            # No filter → newest created_at first
+            filtered.sort(key=lambda r: r.get('created_at') or '', reverse=True)
         return filtered
 
     def filter_salary_data(self):
@@ -2468,7 +3547,527 @@ class BalanceSheetTab(QtWidgets.QWidget):
             if matches_date and matches_search:
                 filtered.append(salary)
 
+        if date_range_active and from_date and to_date:
+            # Date filter active → sort by date ascending (1 Jan → 31 Dec)
+            def _sal_sort_key(s):
+                try:
+                    return datetime.strptime(s['date'], "%m-%d-%Y") if s.get('date') else datetime.min
+                except (ValueError, TypeError):
+                    return datetime.min
+            filtered.sort(key=_sal_sort_key)
+        else:
+            # No filter → newest created_at first
+            filtered.sort(key=lambda s: s.get('created_at') or '', reverse=True)
         return filtered
+
+    def add_revenue_action_buttons(self, row, revenue: dict, col_offset: int):
+        """Actions for revenue rows — Edit, Delete, plus View Payments for invoice entries."""
+        actions_widget = QtWidgets.QWidget()
+        actions_layout = QtWidgets.QHBoxLayout(actions_widget)
+        actions_layout.setContentsMargins(2, 2, 2, 2)
+        actions_layout.setSpacing(3)
+
+        _btn_ss = (
+            "QPushButton{{background:{bg};border:1px solid {br};"
+            "border-radius:6px;padding:0px;}}"
+            "QPushButton:hover{{background:{hbg};border-color:{hbr};}}"
+        )
+        # View Payments button — only for invoice-linked entries
+        if revenue.get('is_invoice') and revenue.get('invoice_number'):
+            view_btn = QtWidgets.QPushButton()
+            view_btn.setFixedSize(28, 28)
+            view_btn.setIcon(BalanceSheetTab._make_action_icon("view", "#0f766e", 16))
+            view_btn.setIconSize(QtCore.QSize(16, 16))
+            view_btn.setToolTip("View payment history for this invoice")
+            view_btn.setStyleSheet(_btn_ss.format(
+                bg="white", br="#e2e8f0", hbg="#f0fdf4", hbr="#bbf7d0"))
+            view_btn.clicked.connect(lambda checked=False, r=revenue: self.show_bs_payment_history(r))
+            actions_layout.addWidget(view_btn)
+
+        edit_btn = QtWidgets.QPushButton()
+        edit_btn.setFixedSize(28, 28)
+        edit_btn.setIcon(BalanceSheetTab._make_action_icon("edit", "#2563eb", 16))
+        edit_btn.setIconSize(QtCore.QSize(16, 16))
+        edit_btn.setToolTip("Edit entry")
+        edit_btn.setStyleSheet(_btn_ss.format(
+            bg="white", br="#e2e8f0", hbg="#eff6ff", hbr="#93c5fd"))
+        edit_btn.clicked.connect(lambda: self.edit_entry(revenue, "Revenue"))
+
+        delete_btn = QtWidgets.QPushButton()
+        delete_btn.setFixedSize(28, 28)
+        delete_btn.setIcon(BalanceSheetTab._make_action_icon("delete", "#f43f5e", 16))
+        delete_btn.setIconSize(QtCore.QSize(16, 16))
+        delete_btn.setToolTip("Delete entry")
+        delete_btn.setStyleSheet(_btn_ss.format(
+            bg="#fff1f2", br="#fecdd3", hbg="#ffe4e6", hbr="#fda4af"))
+        delete_btn.clicked.connect(lambda: self.delete_entry(revenue, "Revenue"))
+
+        actions_layout.addWidget(edit_btn)
+        actions_layout.addWidget(delete_btn)
+        actions_layout.addStretch()
+        self.finance_table.setCellWidget(row, col_offset, actions_widget)
+        self.finance_table.setRowHeight(row, 32)
+
+    def show_bs_payment_history(self, revenue: dict):
+        """Show payment history dialog for a balance-sheet invoice entry."""
+        try:
+            from payment_tracker import get_payment_tracker
+            from tax_payment_tracker import get_tax_payment_tracker as _get_tt
+            tracker = get_payment_tracker()
+            tracker._load_payments()   # ensure fresh
+            _bs_tax_tracker = _get_tt()
+            _bs_tax_tracker._load_tax_payments()
+
+            invoice_number = revenue.get('invoice_number', '')
+            inv_total = self._money_to_float(revenue.get('amount', 0))
+
+            # Project payments for this invoice (tax stored separately)
+            all_payments = [
+                p for p in tracker.payments
+                if (p.invoice_number or '').strip() == invoice_number.strip()
+                and (p.payment_stage or '').strip().lower() != 'tax'
+            ]
+            # Tax payments from the dedicated tax store
+            _bs_inv_tax_pays = _bs_tax_tracker.get_invoice_taxes(invoice_number)
+
+            total_paid = (
+                sum(float(p.amount) for p in all_payments)
+                + sum(float(t.amount) for t in _bs_inv_tax_pays)
+            )
+            remaining = max(inv_total - total_paid, 0.0)
+            status = revenue.get('status', 'Unpaid')
+
+            dialog = QtWidgets.QDialog(self)
+            dialog.setWindowTitle(f"Payment History — Invoice {invoice_number}")
+            dialog.setWindowFlags(
+                dialog.windowFlags()
+                | QtCore.Qt.WindowMaximizeButtonHint
+                | QtCore.Qt.WindowMinimizeButtonHint
+            )
+            dialog.setMinimumWidth(780)
+            dialog.setMinimumHeight(500)
+            layout = QtWidgets.QVBoxLayout(dialog)
+            layout.setSpacing(10)
+            layout.setContentsMargins(14, 14, 14, 14)
+
+            # ── Header — load fresh invoice details from Firebase ─────────
+            inv_client   = revenue.get('client_name', '') or ''
+            inv_date     = revenue.get('invoice_date', '') or revenue.get('date', '') or ''
+            inv_proj_names: list = []
+            _inv_data = None   # initialise so it's always defined
+            try:
+                from main import FirebaseManager as _FM
+                _raw_invs = _FM.load_invoices() or []
+                _inv_data = next(
+                    (i for i in _raw_invs
+                     if (i.get('meta') or {}).get('invoice_number') == invoice_number),
+                    None,
+                )
+                if _inv_data:
+                    _meta = _inv_data.get('meta', {}) or {}
+                    if not inv_client:
+                        inv_client = _meta.get('client_name', '')
+                    if not inv_date:
+                        inv_date = _meta.get('date', '')
+                    for _it in (_inv_data.get('items') or []):
+                        _pn = str(_it.get('project_number', '') or '').strip()
+                        _nm = str(_it.get('description', '') or _pn).strip()
+                        if _nm and _nm not in inv_proj_names:
+                            inv_proj_names.append(_nm)
+            except Exception:
+                pass
+
+            if not inv_proj_names:
+                _raw_desc = revenue.get('description', '') or ''
+                inv_proj_names = [_raw_desc] if _raw_desc else []
+
+            # Format project names: show all if ≤2, else first2 + "…"
+            if len(inv_proj_names) == 0:
+                proj_display = '—'
+            elif len(inv_proj_names) <= 2:
+                proj_display = ', '.join(inv_proj_names)
+            else:
+                proj_display = ', '.join(inv_proj_names[:2]) + f', +{len(inv_proj_names)-2} more…'
+
+            hdr = QtWidgets.QFrame()
+            hdr.setStyleSheet(
+                "QFrame{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;}"
+            )
+            hg = QtWidgets.QGridLayout(hdr)
+            hg.setContentsMargins(16, 12, 16, 12)
+            hg.setHorizontalSpacing(24)
+            hg.setVerticalSpacing(6)
+
+            def _lbl(t, bold=False, color="#374151", wrap=False):
+                l = QtWidgets.QLabel(str(t))
+                l.setStyleSheet(
+                    f"font-weight:{'700' if bold else '400'};"
+                    f"color:{color};border:none;font-size:12px;"
+                )
+                if wrap:
+                    l.setWordWrap(True)
+                return l
+
+            hg.addWidget(_lbl("Invoice #:",    True), 0, 0)
+            hg.addWidget(_lbl(invoice_number),         0, 1)
+            hg.addWidget(_lbl("Client:",       True), 0, 2)
+            hg.addWidget(_lbl(inv_client or '—'),      0, 3)
+
+            hg.addWidget(_lbl("Project:",      True), 1, 0)
+            proj_lbl = _lbl(proj_display, wrap=True)
+            proj_lbl.setMaximumWidth(340)
+            hg.addWidget(proj_lbl,                     1, 1)
+            hg.addWidget(_lbl("Invoice Date:", True), 1, 2)
+            hg.addWidget(_lbl(inv_date or '—'),        1, 3)
+
+            hg.addWidget(_lbl("Total Due:",    True), 2, 0)
+            hg.addWidget(_lbl(f"${inv_total:,.2f}"),   2, 1)
+            hg.addWidget(_lbl("Status:",       True), 2, 2)
+            _st_color = {"Paid": "#15803d", "Partially Paid": "#1e40af",
+                         "Overdue": "#b91c1c"}.get(status, "#78350f")
+            sl = QtWidgets.QLabel(status)
+            sl.setStyleSheet(
+                f"font-weight:800;color:{_st_color};border:none;font-size:12px;"
+            )
+            hg.addWidget(sl, 2, 3)
+            hg.setColumnStretch(1, 1)
+            hg.setColumnStretch(3, 1)
+            layout.addWidget(hdr)
+
+            # ── Table — grouped by Project # ──────────────────────────────
+            _tbl_hdr_lbl = QtWidgets.QLabel("Payment History by Project")
+            _tbl_hdr_lbl.setStyleSheet(
+                "font-weight:700;font-size:13px;color:#0f172a;border:none;"
+                "padding:4px 0 2px 0;"
+            )
+            layout.addWidget(_tbl_hdr_lbl)
+            tbl = QtWidgets.QTableWidget()
+            COL_COUNT = 6
+            tbl.setColumnCount(COL_COUNT)
+            tbl.setHorizontalHeaderLabels(
+                ["Project #", "Date", "Amount", "Method", "Stage", "Notes"]
+            )
+            tbl.horizontalHeader().setVisible(True)
+            tbl.horizontalHeader().setStretchLastSection(True)
+            tbl.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+            tbl.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+            tbl.setAlternatingRowColors(False)
+            tbl.verticalHeader().setVisible(False)
+            tbl.setStyleSheet("""
+                QTableWidget{background:white;border:1px solid #e2e8f0;
+                             border-radius:6px;gridline-color:#f1f5f9;}
+                QTableWidget::item{padding:6px 10px;color:#1e293b;}
+                QHeaderView::section{background:#f8fafc;font-weight:700;padding:8px;
+                    border:none;border-bottom:2px solid #e2e8f0;
+                    min-height:34px;color:#374151;}
+                QTableWidget::item:selected{background:#dbeafe;color:#1e40af;}
+            """)
+
+            import re as _re2
+
+            def _fmt_d(raw):
+                for fmt in ("%Y-%m-%d", "%m-%d-%Y"):
+                    try:
+                        return datetime.strptime(raw, fmt).strftime("%b %d, %Y")
+                    except Exception:
+                        pass
+                return raw or "N/A"
+
+            def _cell(t, al=QtCore.Qt.AlignCenter):
+                it = QtWidgets.QTableWidgetItem(str(t))
+                it.setTextAlignment(al)
+                return it
+
+            def _clean(s):
+                return _re2.sub(r'\s*\(\d+%\)', '', s or '').strip() or '—'
+
+            # ── Planned amount per project from loaded invoice items ───────
+            planned_per_pn: dict = {}
+            if _inv_data:
+                try:
+                    for _it in (_inv_data.get('items') or []):
+                        _pn = str(_it.get('project_number', '') or '').strip()
+                        if _pn:
+                            _pd = float(_it.get('payment_due') or _it.get('unit_price') or 0)
+                            planned_per_pn[_pn] = planned_per_pn.get(_pn, 0.0) + _pd
+                except Exception:
+                    pass
+
+            # Determine project order: invoice items first (all projects), then
+            # any extra project numbers found only in payments (edge case)
+            pn_order: list = []
+            seen_pns2: set = set()
+            for _pn in planned_per_pn:
+                if _pn and _pn not in seen_pns2:
+                    pn_order.append(_pn)
+                    seen_pns2.add(_pn)
+            for _p in all_payments:
+                _pn = (_p.project_number or "").strip()
+                if _pn and _pn not in seen_pns2:
+                    pn_order.append(_pn)
+                    seen_pns2.add(_pn)
+
+            _HDR_BG = QtGui.QColor("#1e3a5f")
+            _HDR_FG = QtGui.QColor("#ffffff")
+            _SUB_BG = QtGui.QColor("#f0f9ff")
+            _SUB_FG = QtGui.QColor("#0369a1")
+            _REM_GRN = QtGui.QColor("#15803d")
+            _REM_RED = QtGui.QColor("#b91c1c")
+            _TAX_HDR_BG = QtGui.QColor("#0f5a52")
+
+            def _make_bg2(bg_color):
+                it = QtWidgets.QTableWidgetItem("")
+                it.setBackground(QtGui.QBrush(bg_color))
+                return it
+
+            # "sub" data = (paid, planned)
+            rows_spec: list = []
+            for pn in pn_order:
+                pn_pays = sorted(
+                    [p for p in all_payments
+                     if (p.project_number or "").strip() == pn
+                     and (p.payment_stage or "").strip().lower() != "tax"],
+                    key=lambda p: p.payment_date or "",
+                )
+                pn_paid    = sum(float(p.amount) for p in pn_pays)
+                pn_planned = planned_per_pn.get(pn, 0.0)
+                rows_spec.append(("header", pn))
+                for pay in pn_pays:
+                    rows_spec.append(("pay", pay))
+                rows_spec.append(("sub", (pn_paid, pn_planned)))
+
+            if not all_payments and not pn_order:
+                rows_spec = [("empty", None)]
+
+            # ── TAX section (only when invoice has tax) ───────────────────
+            # Reads from tax_payment_tracker (Firebase /tax_payments/)
+            try:
+                _bs_tax_amount = float(
+                    ((_inv_data or {}).get('meta') or {}).get('tax_amount') or 0
+                )
+            except (TypeError, ValueError):
+                _bs_tax_amount = 0.0
+            if _bs_tax_amount > 0.005:
+                tax_pays2 = sorted(_bs_inv_tax_pays, key=lambda t: t.payment_date or "")
+                tax_paid_total2 = sum(float(t.amount) for t in tax_pays2)
+                rows_spec.append(("tax_header", _bs_tax_amount))
+                if tax_pays2:
+                    for tp in tax_pays2:
+                        rows_spec.append(("tax_pay", tp))
+                else:
+                    rows_spec.append(("tax_pending", (invoice_number, _bs_tax_amount)))
+                rows_spec.append(("tax_sub", (tax_paid_total2, _bs_tax_amount)))
+
+            tbl.setRowCount(len(rows_spec))
+            for r, (kind, data) in enumerate(rows_spec):
+                if kind == "header":
+                    h = QtWidgets.QTableWidgetItem(f"  Project: {data}")
+                    h.setBackground(QtGui.QBrush(_HDR_BG))
+                    h.setForeground(QtGui.QBrush(_HDR_FG))
+                    h.setFont(QtGui.QFont("Segoe UI", 9, QtGui.QFont.Bold))
+                    h.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+                    tbl.setItem(r, 0, h)
+                    for c in range(1, COL_COUNT):
+                        tbl.setItem(r, c, _make_bg2(_HDR_BG))
+                    tbl.setSpan(r, 0, 1, COL_COUNT)
+                    tbl.setRowHeight(r, 30)
+
+                elif kind == "pay":
+                    pay = data
+                    tbl.setItem(r, 0, _cell((pay.project_number or "—").strip()))
+                    tbl.setItem(r, 1, _cell(_fmt_d(pay.payment_date or "")))
+                    amt_it = _cell(f"${float(pay.amount):,.2f}")
+                    amt_it.setForeground(QtGui.QColor("#15803d"))
+                    tbl.setItem(r, 2, amt_it)
+                    tbl.setItem(r, 3, _cell(pay.payment_method or "—"))
+                    tbl.setItem(r, 4, _cell(_clean(pay.payment_stage)))
+                    tbl.setItem(r, 5, _cell(
+                        pay.notes or "—",
+                        QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter,
+                    ))
+                    tbl.setRowHeight(r, 36)
+
+                elif kind == "sub":
+                    pn_paid, pn_planned = data
+                    pn_remaining = max(pn_planned - pn_paid, 0.0)
+                    _sub_font = QtGui.QFont("Segoe UI", 8, QtGui.QFont.Bold)
+
+                    # Left: Paid (span 3)
+                    paid_cell = QtWidgets.QTableWidgetItem(
+                        f"  Paid: ${pn_paid:,.2f}"
+                    )
+                    paid_cell.setBackground(QtGui.QBrush(_SUB_BG))
+                    paid_cell.setForeground(QtGui.QBrush(_SUB_FG))
+                    paid_cell.setFont(_sub_font)
+                    paid_cell.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+                    tbl.setItem(r, 0, paid_cell)
+                    tbl.setItem(r, 1, _make_bg2(_SUB_BG))
+                    tbl.setItem(r, 2, _make_bg2(_SUB_BG))
+                    tbl.setSpan(r, 0, 1, 3)
+
+                    # Right: Remaining (span 3)
+                    _rem_color = _REM_GRN if pn_remaining <= 0 else _REM_RED
+                    _rem_text = (
+                        "Fully Paid ✓"
+                        if pn_remaining <= 0
+                        else f"Remaining: ${pn_remaining:,.2f}"
+                    )
+                    rem_cell = QtWidgets.QTableWidgetItem(f"{_rem_text}  ")
+                    rem_cell.setBackground(QtGui.QBrush(_SUB_BG))
+                    rem_cell.setForeground(QtGui.QBrush(_rem_color))
+                    rem_cell.setFont(_sub_font)
+                    rem_cell.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                    tbl.setItem(r, 3, rem_cell)
+                    tbl.setItem(r, 4, _make_bg2(_SUB_BG))
+                    tbl.setItem(r, 5, _make_bg2(_SUB_BG))
+                    tbl.setSpan(r, 3, 1, 3)
+                    tbl.setRowHeight(r, 28)
+
+                elif kind == "tax_header":
+                    _th_item = QtWidgets.QTableWidgetItem("  TAX")
+                    _th_item.setBackground(QtGui.QBrush(_TAX_HDR_BG))
+                    _th_item.setForeground(QtGui.QBrush(QtGui.QColor("#ffffff")))
+                    _th_item.setFont(QtGui.QFont("Consolas", 9, QtGui.QFont.Bold))
+                    _th_item.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+                    tbl.setItem(r, 0, _th_item)
+                    _th_note = QtWidgets.QTableWidgetItem(
+                        f"Tax Amount: ${data:,.2f}  — Recorded when invoice is marked Paid  "
+                    )
+                    _th_note.setBackground(QtGui.QBrush(_TAX_HDR_BG))
+                    _th_note.setForeground(QtGui.QBrush(QtGui.QColor("#a7f3d0")))
+                    _th_note.setFont(QtGui.QFont("Segoe UI", 8))
+                    _th_note.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                    tbl.setItem(r, 1, _th_note)
+                    for c in range(2, COL_COUNT):
+                        tbl.setItem(r, c, _make_bg2(_TAX_HDR_BG))
+                    tbl.setSpan(r, 1, 1, COL_COUNT - 1)
+                    tbl.setRowHeight(r, 30)
+
+                elif kind == "tax_pay":
+                    pay = data
+                    tbl.setItem(r, 0, _cell((pay.invoice_number or "—").strip()))
+                    tbl.setItem(r, 1, _cell(_fmt_d(pay.payment_date or "")))
+                    _amt_it = _cell(f"${float(pay.amount):,.2f}")
+                    _amt_it.setForeground(QtGui.QColor("#15803d"))
+                    tbl.setItem(r, 2, _amt_it)
+                    tbl.setItem(r, 3, _cell(pay.payment_method or "—"))
+                    tbl.setItem(r, 4, _cell("Tax"))
+                    tbl.setItem(r, 5, _cell(
+                        pay.notes or "—",
+                        QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter,
+                    ))
+                    tbl.setRowHeight(r, 36)
+
+                elif kind == "tax_pending":
+                    inv_no2, tax_amt2 = data
+                    tbl.setItem(r, 0, _cell(inv_no2))
+                    tbl.setItem(r, 1, _cell("—"))
+                    _pa = _cell(f"${tax_amt2:,.2f}")
+                    _pa.setForeground(QtGui.QColor("#b45309"))
+                    tbl.setItem(r, 2, _pa)
+                    tbl.setItem(r, 3, _cell("—"))
+                    _badge2 = QtWidgets.QTableWidgetItem("  Unpaid  ")
+                    _badge2.setBackground(QtGui.QBrush(QtGui.QColor("#fef3c7")))
+                    _badge2.setForeground(QtGui.QBrush(QtGui.QColor("#92400e")))
+                    _badge2.setTextAlignment(QtCore.Qt.AlignCenter)
+                    tbl.setItem(r, 4, _badge2)
+                    tbl.setItem(r, 5, _cell(
+                        "Pending — mark invoice as Paid to record",
+                        QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter,
+                    ))
+                    tbl.setRowHeight(r, 36)
+
+                elif kind == "tax_sub":
+                    _tp2, _tpl2 = data
+                    _tr2 = max(_tpl2 - _tp2, 0.0)
+                    _tsub_bg2 = QtGui.QColor("#f0fdf4") if _tr2 <= 0 else QtGui.QColor("#fef9c3")
+                    _tsub_fg2 = QtGui.QColor("#15803d") if _tr2 <= 0 else QtGui.QColor("#92400e")
+                    _tsub_font2 = QtGui.QFont("Segoe UI", 8, QtGui.QFont.Bold)
+                    _tpc2 = QtWidgets.QTableWidgetItem(f"  Paid: ${_tp2:,.2f}")
+                    _tpc2.setBackground(QtGui.QBrush(_tsub_bg2))
+                    _tpc2.setForeground(QtGui.QBrush(_tsub_fg2))
+                    _tpc2.setFont(_tsub_font2)
+                    _tpc2.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+                    tbl.setItem(r, 0, _tpc2)
+                    tbl.setItem(r, 1, _make_bg2(_tsub_bg2))
+                    tbl.setItem(r, 2, _make_bg2(_tsub_bg2))
+                    tbl.setSpan(r, 0, 1, 3)
+                    _trt2 = "Tax Paid ✓" if _tr2 <= 0 else f"Remaining: ${_tr2:,.2f}"
+                    _trc2 = QtWidgets.QTableWidgetItem(f"{_trt2}  ")
+                    _trc2.setBackground(QtGui.QBrush(_tsub_bg2))
+                    _trc2.setForeground(QtGui.QBrush(_tsub_fg2))
+                    _trc2.setFont(_tsub_font2)
+                    _trc2.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                    tbl.setItem(r, 3, _trc2)
+                    tbl.setItem(r, 4, _make_bg2(_tsub_bg2))
+                    tbl.setItem(r, 5, _make_bg2(_tsub_bg2))
+                    tbl.setSpan(r, 3, 1, 3)
+                    tbl.setRowHeight(r, 28)
+
+                else:
+                    ni = QtWidgets.QTableWidgetItem("No payments recorded for this invoice")
+                    ni.setTextAlignment(QtCore.Qt.AlignCenter)
+                    tbl.setItem(r, 0, ni)
+                    tbl.setSpan(r, 0, 1, COL_COUNT)
+                    tbl.setRowHeight(r, 38)
+
+            tbl.setColumnWidth(0, 165)   # Project #
+            tbl.setColumnWidth(1, 115)   # Date
+            tbl.setColumnWidth(2, 105)   # Amount
+            tbl.setColumnWidth(3, 115)   # Method
+            tbl.setColumnWidth(4, 130)   # Stage
+            layout.addWidget(tbl)
+
+            # ── Summary ───────────────────────────────────────────────────
+            sf = QtWidgets.QFrame()
+            sf.setFrameShape(QtWidgets.QFrame.NoFrame)
+            sf.setStyleSheet(
+                "QFrame{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;}"
+                if remaining <= 0 else
+                "QFrame{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;}"
+            )
+            sl2 = QtWidgets.QHBoxLayout(sf)
+            sl2.setContentsMargins(14, 8, 14, 8)
+
+            def _sum_col(label, value, color="#1e293b"):
+                col = QtWidgets.QVBoxLayout()
+                l1 = QtWidgets.QLabel(label)
+                l1.setStyleSheet("font-size:11px;color:#64748b;border:none;")
+                l2 = QtWidgets.QLabel(value)
+                l2.setStyleSheet(f"font-size:14px;font-weight:800;color:{color};border:none;")
+                col.addWidget(l1); col.addWidget(l2)
+                return col
+
+            sl2.addLayout(_sum_col("Invoice Total", f"${inv_total:,.2f}"))
+            sep = QtWidgets.QLabel("|")
+            sep.setStyleSheet("color:#cbd5e1;font-size:18px;border:none;")
+            sl2.addWidget(sep)
+            sl2.addLayout(_sum_col("Total Paid", f"${total_paid:,.2f}", "#15803d"))
+            sep2 = QtWidgets.QLabel("|")
+            sep2.setStyleSheet("color:#cbd5e1;font-size:18px;border:none;")
+            sl2.addWidget(sep2)
+            sl2.addLayout(_sum_col("Remaining", f"${remaining:,.2f}",
+                                   "#15803d" if remaining <= 0 else "#b45309"))
+            sl2.addStretch()
+            layout.addWidget(sf)
+
+            close_btn = QtWidgets.QPushButton("Close")
+            close_btn.setFixedHeight(34)
+            close_btn.setStyleSheet("""
+                QPushButton{background:#334155;color:white;border:none;border-radius:6px;
+                            font-weight:bold;padding:0 22px;}
+                QPushButton:hover{background:#1e293b;}
+            """)
+            close_btn.clicked.connect(dialog.accept)
+            btn_row = QtWidgets.QHBoxLayout()
+            btn_row.addStretch()
+            btn_row.addWidget(close_btn)
+            layout.addLayout(btn_row)
+            dialog.exec_()
+
+        except Exception as e:
+            _log.warning("Error showing BS payment history: %s", e)
+            QtWidgets.QMessageBox.critical(self, "Error", f"Could not load payment history:\n{e}")
 
     def add_action_buttons(self, row, data, category, col_offset):
         """Add Edit and Delete buttons to table"""
@@ -2477,46 +4076,27 @@ class BalanceSheetTab(QtWidgets.QWidget):
         actions_layout.setContentsMargins(2, 2, 2, 2)  # Reduced margins
         actions_layout.setSpacing(3)  # Reduced spacing
         
-        # Edit button - make slightly smaller
-        edit_btn = QtWidgets.QPushButton("✏️ Edit")
-        edit_btn.setFixedSize(68, 28)  # Square button with icon only
+        _btn_ss2 = (
+            "QPushButton{{background:{bg};border:1px solid {br};"
+            "border-radius:6px;padding:0px;}}"
+            "QPushButton:hover{{background:{hbg};border-color:{hbr};}}"
+        )
+        edit_btn = QtWidgets.QPushButton()
+        edit_btn.setFixedSize(28, 28)
+        edit_btn.setIcon(BalanceSheetTab._make_action_icon("edit", "#2563eb", 16))
+        edit_btn.setIconSize(QtCore.QSize(16, 16))
         edit_btn.setToolTip("Edit")
-        edit_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f8f9fa;
-                color: #2c3e50;
-                border: 1px solid #bdc3c7;
-                border-radius: 4px;
-                font-size: 12px;
-                font-weight: bold;
-                padding: 0px;
-            }
-            QPushButton:hover {
-                background-color: #e9ecef;
-                border-color: #3498db;
-            }
-        """)
+        edit_btn.setStyleSheet(_btn_ss2.format(
+            bg="white", br="#e2e8f0", hbg="#eff6ff", hbr="#93c5fd"))
         edit_btn.clicked.connect(lambda: self.edit_entry(data, category))
-        
-        # Delete button - make slightly smaller
-        delete_btn = QtWidgets.QPushButton("🗑️ Del")
-        delete_btn.setFixedSize(68, 28)  # Square button with icon only
+
+        delete_btn = QtWidgets.QPushButton()
+        delete_btn.setFixedSize(28, 28)
+        delete_btn.setIcon(BalanceSheetTab._make_action_icon("delete", "#f43f5e", 16))
+        delete_btn.setIconSize(QtCore.QSize(16, 16))
         delete_btn.setToolTip("Delete")
-        delete_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f8f9fa;
-                color: #e74c3c;
-                border: 1px solid #e74c3c;
-                border-radius: 4px;
-                font-size: 12px;
-                font-weight: bold;
-                padding: 0px;
-            }
-            QPushButton:hover {
-                background-color: #e74c3c;
-                color: white;
-            }
-        """)
+        delete_btn.setStyleSheet(_btn_ss2.format(
+            bg="#fff1f2", br="#fecdd3", hbg="#ffe4e6", hbr="#fda4af"))
         delete_btn.clicked.connect(lambda: self.delete_entry(data, category))
         
         actions_layout.addWidget(edit_btn)
@@ -2567,31 +4147,41 @@ class BalanceSheetTab(QtWidgets.QWidget):
         self.from_date_edit.setDate(current_from_date)
         self.from_date_edit.setCalendarPopup(True)
         self.from_date_edit.setDisplayFormat("MM-dd-yyyy")
-        self.fix_date_edit(self.from_date_edit, set_today=True)
+        self.from_date_edit.setMinimumWidth(148)
+        self.from_date_edit.setFixedHeight(36)
+        self.from_date_edit.wheelEvent = lambda e: e.ignore()
+        self.from_date_edit.stepBy = lambda x: None
         self.from_date_edit.setStyleSheet("""
             QDateEdit {
-                padding: 8px 12px;
-                border: 1.5px solid #e1e8ed;
-                border-radius: 8px;
+                padding: 6px 28px 6px 8px;
+                border: 1px solid #bdc3c7;
+                border-radius: 6px;
                 background: white;
                 font-size: 13px;
+                font-weight: 600;
             }
+            QDateEdit:focus { border-color: #00756f; }
         """)
-        
+
         # To Date
         self.to_date_edit = QtWidgets.QDateEdit()
         self.to_date_edit.setDate(current_to_date)
         self.to_date_edit.setCalendarPopup(True)
         self.to_date_edit.setDisplayFormat("MM-dd-yyyy")
-        self.fix_date_edit(self.to_date_edit, set_today=True)
+        self.to_date_edit.setMinimumWidth(148)
+        self.to_date_edit.setFixedHeight(36)
+        self.to_date_edit.wheelEvent = lambda e: e.ignore()
+        self.to_date_edit.stepBy = lambda x: None
         self.to_date_edit.setStyleSheet("""
             QDateEdit {
-                padding: 8px 12px;
-                border: 1.5px solid #e1e8ed;
-                border-radius: 8px;
+                padding: 6px 28px 6px 8px;
+                border: 1px solid #bdc3c7;
+                border-radius: 6px;
                 background: white;
                 font-size: 13px;
+                font-weight: 600;
             }
+            QDateEdit:focus { border-color: #00756f; }
         """)
         
         form_layout.addRow("From Date:", self.from_date_edit)
@@ -2665,8 +4255,9 @@ class BalanceSheetTab(QtWidgets.QWidget):
             # These now use the correct nodes
             all_expenses = BalanceSheetFirebaseManager.load_expenses()  # Now uses 'balance_sheet_expenses'
             all_revenue = BalanceSheetFirebaseManager.load_revenue()    # Uses 'revenue'
+            all_revenue = BalanceSheetTab._sync_revenue_statuses_from_invoices(all_revenue)
             all_salary = BalanceSheetFirebaseManager.load_salary()      # Uses 'salary'
-            
+
             self.expenses_data = all_expenses
             self.revenue_data = all_revenue
             self.salary_data = all_salary
@@ -2731,54 +4322,56 @@ class BalanceSheetTab(QtWidgets.QWidget):
             self.salary_data = {"Inside America": [], "Outside America": []}
     
     def apply_date_range_filter(self, dialog):
-        """Apply date range filter - Load ALL data across years"""
+        """Apply date range filter - Load ALL data across years in background thread."""
         from_date = self.from_date_edit.date()
         to_date = self.to_date_edit.date()
-        
+
         self.current_from_date = from_date
         self.current_to_date = to_date
-        
+
         from_date_formatted = from_date.toString("MM-dd-yy")
         to_date_formatted = to_date.toString("MM-dd-yy")
-        
-        self.date_range_button.setText(f"📅 {from_date_formatted} to {to_date_formatted}")
-        self.date_range_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-        """)
-        
-        # Load ALL data across all years
-        self.load_all_years_data()
-        
-        # Then apply filters to show only the date range
-        self.filter_finance_entries()
+
+        configure_filter_button(
+            self.date_range_button,
+            f"{from_date_formatted} to {to_date_formatted}",
+            active=True,
+            height=36,
+        )
+
+        # Close dialog immediately so the UI stays responsive
         dialog.accept()
+
+        # Load Firebase data in a background thread, then refresh the table
+        import threading
+
+        def _bg_load():
+            try:
+                if self.FIREBASE_AVAILABLE and self.db is not None:
+                    all_expenses = BalanceSheetFirebaseManager.load_expenses()
+                    all_revenue  = BalanceSheetFirebaseManager.load_revenue()
+                    all_revenue  = BalanceSheetTab._dedup_is_payment_entries(all_revenue)
+                    all_revenue  = BalanceSheetTab._sync_revenue_statuses_from_invoices(all_revenue)
+                    all_salary   = BalanceSheetFirebaseManager.load_salary()
+                    self.expenses_data = all_expenses
+                    self.revenue_data  = all_revenue
+                    self.salary_data   = all_salary
+                else:
+                    self.load_all_years_local_data()
+            except Exception as _e:
+                _log.warning("apply_date_range_filter bg load error: %s", _e)
+            self._fin_load_signaler.loaded.emit()
+
+        threading.Thread(target=_bg_load, daemon=True).start()
+
+    def _after_date_range_load(self):
+        """Called on the GUI thread after background data load for date-range filter."""
+        self.update_stats_cards()
+        self.filter_finance_entries()
 
     def clear_date_range_filter(self, dialog):
         """Clear date range filter and return to normal year-based view"""
-        self.date_range_button.setText("📅")
-        self.date_range_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-        """)
+        configure_filter_button(self.date_range_button, height=36)
         
         if hasattr(self, 'current_from_date'):
             del self.current_from_date
@@ -2834,18 +4427,23 @@ class BalanceSheetTab(QtWidgets.QWidget):
         title = QtWidgets.QLabel("Expense Details")
         title.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50; margin-bottom: 10px;")
         layout.addRow(title)
-        
+
         # Date
         date_edit = QtWidgets.QDateEdit()
         date_edit.setCalendarPopup(True)
         date_edit.setDisplayFormat("MM-dd-yyyy")
 
         if edit_data:
-            date_edit.setDate(QtCore.QDate.fromString(edit_data.get('date', ''), "MM-dd-yyyy"))
+            _raw = edit_data.get('date', '')
+            _qd = QtCore.QDate()
+            for _fmt in ("MM-dd-yyyy", "yyyy-MM-dd", "MM/dd/yyyy", "M/d/yyyy"):
+                _qd = QtCore.QDate.fromString(_raw, _fmt)
+                if _qd.isValid():
+                    break
+            date_edit.setDate(_qd if _qd.isValid() else QtCore.QDate.currentDate())
             self.fix_date_edit(date_edit, set_today=False)
         else:
             self.fix_date_edit(date_edit, set_today=True)
-        self.fix_date_edit(date_edit)
         date_edit.setMinimumHeight(38)
         date_edit.setMinimumWidth(220)
 
@@ -3177,7 +4775,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 _log.info("(converted from print, see git history)")
             
             if changed:
-                meta_updates['updated_at'] = datetime.now().isoformat()
+                meta_updates['updated_at'] = datetime.now(timezone.utc).isoformat()
                 
                 # Update the invoice in Firebase
                 if meta_updates:
@@ -3715,18 +5313,23 @@ class BalanceSheetTab(QtWidgets.QWidget):
         title = QtWidgets.QLabel("Salary Details")
         title.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50; margin-bottom: 10px;")
         layout.addRow(title)
-        
+
         # Date
         date_edit = QtWidgets.QDateEdit()
         date_edit.setCalendarPopup(True)
         date_edit.setDisplayFormat("MM-dd-yyyy")
 
         if edit_data:
-            date_edit.setDate(QtCore.QDate.fromString(edit_data.get('date', ''), "MM-dd-yyyy"))
+            _raw = edit_data.get('date', '')
+            _qd = QtCore.QDate()
+            for _fmt in ("MM-dd-yyyy", "yyyy-MM-dd", "MM/dd/yyyy", "M/d/yyyy"):
+                _qd = QtCore.QDate.fromString(_raw, _fmt)
+                if _qd.isValid():
+                    break
+            date_edit.setDate(_qd if _qd.isValid() else QtCore.QDate.currentDate())
             self.fix_date_edit(date_edit, set_today=False)
         else:
             self.fix_date_edit(date_edit, set_today=True)
-        self.fix_date_edit(date_edit)
         date_edit.setMinimumHeight(38)
         date_edit.setMinimumWidth(220)
 
@@ -4014,30 +5617,20 @@ class BalanceSheetTab(QtWidgets.QWidget):
             self.open_salary_dialog(edit_data=data)
 
     def switch_to_invoice_management_for_revenue(self, revenue_data):
-        """Invoice-created revenue should be edited from the invoice workflow."""
+        """Delegate to main_window.edit_invoice_by_number which owns Firebase access."""
         invoice_number = revenue_data.get("invoice_number", "")
         try:
-            if hasattr(self.main_window, "_nav_to"):
-                self.main_window._nav_to(2)
-            elif hasattr(self.main_window, "stack"):
-                self.main_window.stack.setCurrentIndex(2)
-
-            if hasattr(self.main_window, "project_invoice_inner_tabs"):
-                self.main_window.project_invoice_inner_tabs.setCurrentIndex(1)
-
-            QtWidgets.QMessageBox.information(
-                self,
-                "Edit Invoice Revenue",
-                f"Revenue from invoice {invoice_number or 'N/A'} should be edited in Invoice Management.\n\n"
-                "Update the invoice/payment details there so the Balance Sheet stays synced.",
-            )
+            mw = self.main_window
+            if hasattr(mw, "edit_invoice_by_number"):
+                mw.edit_invoice_by_number(invoice_number)
+            else:
+                # Fallback: just navigate
+                if hasattr(mw, "_nav_to"):
+                    mw._nav_to(2)
+                if hasattr(mw, "project_invoice_inner_tabs"):
+                    mw.project_invoice_inner_tabs.setCurrentIndex(1)
         except Exception as exc:
-            _log.warning("Could not switch to Invoice Management for revenue edit: %s", exc)
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Navigation Error",
-                "Could not switch to Invoice Management. Please open Project & Invoice Management manually.",
-            )
+            _log.warning("switch_to_invoice_management_for_revenue error: %s", exc)
 
     def is_expense_from_expenses_tab(self, expense_data):
         """Check if expense originated from Expenses Tab (not manually added in Balance Sheet)"""
@@ -4354,7 +5947,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 revenue_data['firebase_id'] = old_data['firebase_id']
             
             # Add timestamps
-            revenue_data['updated_at'] = datetime.now().isoformat()
+            revenue_data['updated_at'] = datetime.now(timezone.utc).isoformat()
             
             # Ensure due_date is present
             if 'due_date' not in revenue_data:
@@ -4412,40 +6005,74 @@ class BalanceSheetTab(QtWidgets.QWidget):
             return False
 
     def delete_entry(self, data, category):
-        """Delete an entry with confirmation and Firebase delete"""
+        """Delete a balance-sheet entry.
+
+        Revenue entries are removed only from the balance-sheet tab (revenue_data,
+        annual_revenue_data) and from Firebase /revenue.  Invoice history records
+        and payment-tracker entries are intentionally NOT touched — they must
+        remain intact after a balance-sheet-only deletion.
+        """
         reply = QtWidgets.QMessageBox.question(
             self, "Confirm Delete",
-            f"Are you sure you want to delete this {category.rstrip('s')} entry?",
+            f"Are you sure you want to delete this {category.rstrip('s')} entry?\n\n"
+            f"This will remove the entry from the balance sheet and annual\n"
+            f"summary only. Invoices and payment histories are not affected.",
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
             QtWidgets.QMessageBox.No
         )
-        
+
         if reply == QtWidgets.QMessageBox.Yes:
             success = False
-            
+
             if category == "Revenue":
                 firebase_id = data.get('firebase_id')
-                
+
                 if firebase_id:
                     success = BalanceSheetFirebaseManager.delete_entry('revenue', firebase_id)
                     _log.info("Deleted from Firebase: revenue/%s", firebase_id)
                 else:
                     _log.warning("No firebase_id found, can't delete from Firebase")
                     success = True
-                
+
                 if success:
-                    # Remove from main revenue_data by firebase_id
+                    # Remove from balance-sheet revenue cache
                     for i, rev in enumerate(self.revenue_data[:]):
                         if rev.get('firebase_id') == firebase_id or (not firebase_id and rev == data):
                             self.revenue_data.pop(i)
                             break
-                    
-                    # Remove from annual_revenue_data by firebase_id
+
+                    # Remove from annual summary cache
                     for i, ann_rev in enumerate(self.annual_revenue_data[:]):
                         if ann_rev.get('firebase_id') == firebase_id or (not firebase_id and ann_rev == data):
                             self.annual_revenue_data.pop(i)
                             break
-                            
+
+                    # Also remove any linked balance-sheet payment-entries for this invoice
+                    # (is_payment=True rows in /revenue that belong to the same invoice).
+                    # These are balance-sheet-only rows; the actual payment-tracker records
+                    # and invoice-history entries are NOT deleted.
+                    if data.get('has_payment_entries') or data.get('is_invoice'):
+                        inv_num = data.get('invoice_number', '')
+                        linked_ids = [
+                            r.get('firebase_id') for r in self.revenue_data
+                            if r.get('is_payment') and r.get('invoice_number') == inv_num
+                            and r.get('firebase_id')
+                        ]
+                        for lid in linked_ids:
+                            try:
+                                BalanceSheetFirebaseManager.delete_entry('revenue', lid)
+                            except Exception as _e:
+                                _log.warning("Could not delete linked payment entry %s: %s", lid, _e)
+                        # Remove from local caches only
+                        self.revenue_data = [
+                            r for r in self.revenue_data
+                            if not (r.get('is_payment') and r.get('invoice_number') == inv_num)
+                        ]
+                        self.annual_revenue_data = [
+                            r for r in self.annual_revenue_data
+                            if not (r.get('is_payment') and r.get('invoice_number') == inv_num)
+                        ]
+
             elif category == "Expenses":
                 firebase_id = data.get('firebase_id')
                 if firebase_id:
@@ -4501,6 +6128,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
             _log.info("Loaded %s balance sheet expenses for year %s", len(self.expenses_data), self.current_year)
             
             all_revenue = BalanceSheetFirebaseManager.load_revenue()
+            all_revenue = BalanceSheetTab._sync_revenue_statuses_from_invoices(all_revenue)
             self.revenue_data = [rev for rev in all_revenue if rev.get('year') == self.current_year]
             _log.info("Loaded %s revenue entries for year %s", len(self.revenue_data), self.current_year)
             
@@ -4536,6 +6164,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
             _log.info("Loaded %s expenses for year %s", len(self.annual_expenses_data), year)
             
             all_revenue = BalanceSheetFirebaseManager.load_revenue()
+            all_revenue = BalanceSheetTab._sync_revenue_statuses_from_invoices(all_revenue)
             self.annual_revenue_data = [rev for rev in all_revenue if rev.get('year') == year]
             _log.info("Loaded %s revenue entries for year %s", len(self.annual_revenue_data), year)
             
@@ -4665,30 +6294,64 @@ class BalanceSheetTab(QtWidgets.QWidget):
         return None
 
     def update_stats_cards(self):
-        """Update stats cards based on CURRENT FILTERED data"""
-        
-        # Expenses
-        filtered_expenses = self.filter_expenses_data()
-        total_expenses = sum(self._money_to_float(e.get('amount', 0)) for e in filtered_expenses)
-        
-        # Revenue
+        """Update stats cards (main values + sub-breakdown labels) from filtered data."""
+
+        # ── Revenue ──────────────────────────────────────────────────────
         filtered_revenue = self.filter_revenue_data()
-        total_revenue = sum(self._money_to_float(r.get('amount', 0)) for r in filtered_revenue)
-        
-        # Salary
+        total_revenue    = sum(self._money_to_float(r.get('amount', 0)) for r in filtered_revenue)
+        paid_rev         = sum(self._money_to_float(r.get('amount', 0)) for r in filtered_revenue
+                               if str(r.get('status', '')).strip().lower() == 'paid')
+        unpaid_rev       = total_revenue - paid_rev
+
+        # ── Expenses ─────────────────────────────────────────────────────
+        filtered_expenses = self.filter_expenses_data()
+        total_expenses    = sum(self._money_to_float(e.get('amount', 0)) for e in filtered_expenses)
+
+        # ── Salary ───────────────────────────────────────────────────────
         filtered_salary = self.filter_salary_data()
-        total_salary = sum(self._money_to_float(s.get('amount', 0)) for s in filtered_salary)
-        
-        net = total_revenue - total_expenses - total_salary
-        self.expenses_value_label.setText(f"${total_expenses:,.2f}")
+        total_salary    = sum(self._money_to_float(s.get('amount', 0)) for s in filtered_salary)
+        sal_inside      = sum(self._money_to_float(s.get('amount', 0)) for s in filtered_salary
+                              if s.get('region') == 'Inside America')
+        sal_outside     = sum(self._money_to_float(s.get('amount', 0)) for s in filtered_salary
+                              if s.get('region') == 'Outside America')
+
+        net       = total_revenue - total_expenses - total_salary
+        net_color = "#15803d" if net >= 0 else "#b91c1c"
+
+        # ── Update main value labels ──────────────────────────────────────
         self.revenue_value_label.setText(f"${total_revenue:,.2f}")
+        self.expenses_value_label.setText(f"${total_expenses:,.2f}")
         self.salary_value_label.setText(f"${total_salary:,.2f}")
+
         if hasattr(self, "net_value_label"):
-            net_color = "#27ae60" if net >= 0 else "#e74c3c"
             self.net_value_label.setText(f"${net:,.2f}")
             self.net_value_label.setStyleSheet(
                 f"font-size:22px; font-weight:900; color:{net_color};"
                 " background:transparent; border:none;")
+        if hasattr(self, "net_card"):
+            _nbg, _nbrd = ("#f0fdf4", "#bbf7d0") if net >= 0 else ("#fff7f7", "#fecaca")
+            self.net_card.setStyleSheet(
+                f"QFrame {{ background:{_nbg}; border:1px solid {_nbrd}; border-radius:10px; }}")
+
+        # ── Update hover tooltips ─────────────────────────────────────────
+        if hasattr(self, "revenue_card"):
+            self.revenue_card.setToolTip(
+                f"<b>Paid Revenue:</b> ${paid_rev:,.2f}<br>"
+                f"<b>Unpaid Revenue:</b> ${unpaid_rev:,.2f}")
+        if hasattr(self, "expenses_card"):
+            self.expenses_card.setToolTip(
+                f"<b>Total:</b> ${total_expenses:,.2f}<br>"
+                f"<b>Entries:</b> {len(filtered_expenses)}")
+        if hasattr(self, "salary_card"):
+            self.salary_card.setToolTip(
+                f"<b>Inside America:</b> ${sal_inside:,.2f}<br>"
+                f"<b>Outside America:</b> ${sal_outside:,.2f}")
+        if hasattr(self, "net_card"):
+            self.net_card.setToolTip(
+                f"<b>Revenue:</b> ${total_revenue:,.2f}<br>"
+                f"<b>Expenses:</b> -${total_expenses:,.2f}<br>"
+                f"<b>Salaries:</b> -${total_salary:,.2f}")
+
         self.update_aging_section()
         
     # ------------------------------------------------------------------ #
@@ -4804,6 +6467,1508 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 font-weight: bold;
             }
         """
+
+    # ------------------------------------------------------------------ #
+    #  Annual table click handlers                                       #
+    # ------------------------------------------------------------------ #
+
+    def _on_annual_cell_clicked(self, row, col):
+        """Open monthly revenue detail when a Revenue-row month cell is clicked."""
+        if row == 0 and 0 <= col <= 11:
+            dlg = self.RevenueDetailDialog(
+                self, mode='month',
+                year=self.annual_summary_year,
+                month=col + 1,
+            )
+            dlg.exec_()
+
+    def _on_annual_row_header_clicked(self, logical_index):
+        """Open yearly revenue detail when the 'Revenue' row header is clicked."""
+        if logical_index == 0:
+            dlg = self.RevenueDetailDialog(
+                self, mode='year',
+                year=self.annual_summary_year,
+            )
+            dlg.exec_()
+
+    # ------------------------------------------------------------------ #
+    #  Revenue Detail Dialog                                              #
+    # ------------------------------------------------------------------ #
+
+    class RevenueDetailDialog(QtWidgets.QDialog):
+        """Click-through popup: paid revenue by month (or full year) from the annual table."""
+
+        def __init__(self, parent_tab, mode='month', year=None, month=None):
+            super().__init__(parent_tab)
+            self.parent_tab = parent_tab
+            self.mode = mode          # 'month' | 'year'
+            self._year = year or datetime.now().year
+            self._month = month       # 1-12, only for mode='month'
+            self._all_entries = []
+            self._filtered_entries = []   # after date/search filter
+            self._search_text = ''
+            self._pg_page = 1
+            self._pg_per_page = 15
+
+            self.setWindowFlags(
+                self.windowFlags() | QtCore.Qt.WindowMaximizeButtonHint)
+            self.setModal(True)
+            self.resize(1040, 640)
+            self._init_ui()
+            self._reload()
+
+        # ── UI ─────────────────────────────────────────────────────────
+
+        def _init_ui(self):
+            root = QtWidgets.QVBoxLayout(self)
+            root.setSpacing(0)
+            root.setContentsMargins(0, 0, 0, 0)
+
+            # ── Header bar ────────────────────────────────────────────
+            hdr_w = QtWidgets.QWidget()
+            hdr_w.setStyleSheet("background:#1e3a5f;")
+            hdr_w.setFixedHeight(56)
+            hdr_hl = QtWidgets.QHBoxLayout(hdr_w)
+            hdr_hl.setContentsMargins(20, 0, 16, 0)
+            hdr_hl.setSpacing(12)
+
+            self._title_lbl = QtWidgets.QLabel()
+            self._title_lbl.setStyleSheet(
+                "font-size:16px;font-weight:bold;color:white;background:transparent;")
+            hdr_hl.addWidget(self._title_lbl, 1)
+
+            self._yr_btn = QtWidgets.QPushButton()
+            self._yr_btn.setFixedSize(120, 32)
+            self._yr_btn.setStyleSheet("""
+                QPushButton{background:#2563eb;color:white;border:none;
+                    border-radius:6px;font-size:12px;font-weight:bold;}
+                QPushButton:hover{background:#1d4ed8;}
+            """)
+            self._yr_btn.clicked.connect(self._pick_year)
+            hdr_hl.addWidget(self._yr_btn)
+            root.addWidget(hdr_w)
+
+            # ── Sub-toolbar (month nav / year date range) ──────────────
+            sub_w = QtWidgets.QWidget()
+            sub_w.setStyleSheet(
+                "background:#f0fdf4;border-bottom:1px solid #bbf7d0;")
+            sub_w.setFixedHeight(50)
+            sub_hl = QtWidgets.QHBoxLayout(sub_w)
+            sub_hl.setContentsMargins(16, 0, 16, 0)
+            sub_hl.setSpacing(8)
+
+            _nav_ss = """
+                QPushButton{background:#dcfce7;color:#15803d;
+                    border:1px solid #86efac;border-radius:6px;
+                    font-size:13px;font-weight:bold;padding:0 12px;}
+                QPushButton:hover{background:#bbf7d0;}
+            """
+
+            if self.mode == 'month':
+                self._prev_btn = QtWidgets.QPushButton("◀  Prev")
+                self._prev_btn.setFixedHeight(32)
+                self._prev_btn.setStyleSheet(_nav_ss)
+                self._prev_btn.clicked.connect(self._prev_month)
+
+                self._period_lbl = QtWidgets.QLabel()
+                self._period_lbl.setStyleSheet(
+                    "font-size:14px;font-weight:bold;color:#166534;"
+                    "background:transparent;padding:0 10px;")
+                self._period_lbl.setAlignment(QtCore.Qt.AlignCenter)
+
+                self._next_btn = QtWidgets.QPushButton("Next  ▶")
+                self._next_btn.setFixedHeight(32)
+                self._next_btn.setStyleSheet(_nav_ss)
+                self._next_btn.clicked.connect(self._next_month)
+
+                sub_hl.addWidget(self._prev_btn)
+                sub_hl.addWidget(self._period_lbl, 1)
+                sub_hl.addWidget(self._next_btn)
+            else:
+                # Year mode: date-range filter
+                for lbl_txt in ["From:"]:
+                    l = QtWidgets.QLabel(lbl_txt)
+                    l.setStyleSheet(
+                        "font-size:12px;font-weight:bold;color:#166534;"
+                        "background:transparent;")
+                    sub_hl.addWidget(l)
+
+                self._from_de = QtWidgets.QDateEdit()
+                self._from_de.setCalendarPopup(True)
+                self._from_de.setDisplayFormat("MM-dd-yyyy")
+                self._from_de.setMinimumHeight(32)
+                self._from_de.setDate(QtCore.QDate(self._year, 1, 1))
+                self._from_de.wheelEvent = lambda e: e.ignore()
+                self._from_de.stepBy = lambda x: None
+                sub_hl.addWidget(self._from_de)
+
+                sub_hl.addSpacing(8)
+                to_lbl = QtWidgets.QLabel("To:")
+                to_lbl.setStyleSheet(
+                    "font-size:12px;font-weight:bold;color:#166534;"
+                    "background:transparent;")
+                sub_hl.addWidget(to_lbl)
+
+                self._to_de = QtWidgets.QDateEdit()
+                self._to_de.setCalendarPopup(True)
+                self._to_de.setDisplayFormat("MM-dd-yyyy")
+                self._to_de.setMinimumHeight(32)
+                self._to_de.setDate(QtCore.QDate(self._year, 12, 31))
+                self._to_de.wheelEvent = lambda e: e.ignore()
+                self._to_de.stepBy = lambda x: None
+                sub_hl.addWidget(self._to_de)
+
+                apply_btn = QtWidgets.QPushButton("Apply")
+                apply_btn.setFixedHeight(32)
+                apply_btn.setStyleSheet("""
+                    QPushButton{background:#15803d;color:white;border:none;
+                        border-radius:6px;font-size:12px;font-weight:bold;
+                        padding:0 14px;}
+                    QPushButton:hover{background:#166534;}
+                """)
+                apply_btn.clicked.connect(self._display)
+                sub_hl.addSpacing(8)
+                sub_hl.addWidget(apply_btn)
+                sub_hl.addStretch()
+
+            root.addWidget(sub_w)
+
+            # ── Search + Export row ────────────────────────────────────
+            tool_w = QtWidgets.QWidget()
+            tool_w.setStyleSheet(
+                "background:white;border-bottom:1px solid #e2e8f0;")
+            tool_w.setFixedHeight(48)
+            tool_hl = QtWidgets.QHBoxLayout(tool_w)
+            tool_hl.setContentsMargins(16, 0, 16, 0)
+            tool_hl.setSpacing(10)
+
+            srch_lbl = QtWidgets.QLabel("🔍")
+            srch_lbl.setStyleSheet("background:transparent;font-size:14px;")
+            self._search_edit = QtWidgets.QLineEdit()
+            self._search_edit.setPlaceholderText(
+                "Search by source, description, amount, date…")
+            self._search_edit.setMinimumHeight(32)
+            self._search_edit.setStyleSheet("""
+                QLineEdit{border:1px solid #d1d5db;border-radius:6px;
+                    padding:0 10px;font-size:12px;background:white;}
+                QLineEdit:focus{border:1px solid #15803d;}
+            """)
+            self._search_edit.textChanged.connect(self._on_search)
+
+            exp_btn = QtWidgets.QPushButton("📄  Export PDF")
+            exp_btn.setFixedHeight(32)
+            exp_btn.setStyleSheet("""
+                QPushButton{background:#1e3a5f;color:white;border:none;
+                    border-radius:6px;font-size:12px;font-weight:bold;
+                    padding:0 16px;}
+                QPushButton:hover{background:#1d4ed8;}
+            """)
+            exp_btn.clicked.connect(self._export_pdf)
+
+            tool_hl.addWidget(srch_lbl)
+            tool_hl.addWidget(self._search_edit, 1)
+            tool_hl.addSpacing(8)
+            tool_hl.addWidget(exp_btn)
+            root.addWidget(tool_w)
+
+            # ── Table ──────────────────────────────────────────────────
+            self._table = QtWidgets.QTableWidget()
+            # month: S.No | Invoice Date | Revenue Source | Description | Invoice Total | Paid Amount | Paid Date | Actions
+            # year:  S.No | Paid Month | Invoice Date | Revenue Source | Description | Invoice Total | Paid Amount | Paid Date | Actions
+            if self.mode == 'month':
+                cols = ["S.No", "Invoice Date", "Invoice #",
+                        "Description", "Invoice Total",
+                        "Paid Amount", "Paid Date", "Actions"]
+                # Description=Stretch; money cols Fixed so they don't crowd Description
+                col_modes = ['F','F','F','S','F','F','F','F']
+                col_widths = [52, 115, 160, 0, 128, 128, 115, 95]
+            else:
+                cols = ["S.No", "Paid Month", "Invoice Date",
+                        "Invoice #", "Description",
+                        "Invoice Total", "Paid Amount", "Paid Date", "Actions"]
+                # Description=Stretch; money cols Fixed
+                col_modes = ['F','F','F','F','S','F','F','F','F']
+                col_widths = [52, 125, 115, 165, 0, 128, 128, 115, 95]
+
+            self._table.setColumnCount(len(cols))
+            self._table.setHorizontalHeaderLabels(cols)
+            self._table.setEditTriggers(
+                QtWidgets.QAbstractItemView.NoEditTriggers)
+            self._table.setSelectionBehavior(
+                QtWidgets.QAbstractItemView.SelectRows)
+            self._table.setSelectionMode(
+                QtWidgets.QAbstractItemView.SingleSelection)
+            self._table.setAlternatingRowColors(True)
+            self._table.verticalHeader().setVisible(False)
+            self._table.setShowGrid(True)
+            self._table.setSortingEnabled(False)
+            self._table.setHorizontalScrollBarPolicy(
+                QtCore.Qt.ScrollBarAsNeeded)
+            self._table.setStyleSheet("""
+                QTableWidget{
+                    background:white;
+                    border:1px solid #e2e8f0;
+                    border-radius:8px;
+                    gridline-color:#e2e8f0;font-size:13px;
+                    alternate-background-color:#f8fafc;
+                }
+                QTableWidget::item{padding:7px 10px;}
+                QTableWidget::item:selected{
+                    background:#dbeafe;color:#1e3a5f;}
+                QHeaderView::section{
+                    background:#f1f5f9;color:#374151;font-weight:700;
+                    font-size:12px;padding:9px 10px;border:none;
+                    border-bottom:2px solid #e2e8f0;
+                    border-right:1px solid #e2e8f0;
+                }
+                QHeaderView::section:last{border-right:none;}
+            """)
+            hdr = self._table.horizontalHeader()
+            for i, (mode, w) in enumerate(zip(col_modes, col_widths)):
+                if mode == 'S':
+                    hdr.setSectionResizeMode(
+                        i, QtWidgets.QHeaderView.Stretch)
+                else:
+                    hdr.setSectionResizeMode(
+                        i, QtWidgets.QHeaderView.Fixed)
+                    self._table.setColumnWidth(i, w)
+            self._table.verticalHeader().setDefaultSectionSize(48)
+            root.addWidget(self._table, 1)
+
+            # ── Footer (totals + pagination) ───────────────────────────
+            foot_w = QtWidgets.QWidget()
+            foot_w.setStyleSheet(
+                "background:#f0fdf4;border-top:1px solid #bbf7d0;")
+            foot_w.setFixedHeight(44)
+            foot_hl = QtWidgets.QHBoxLayout(foot_w)
+            foot_hl.setContentsMargins(16, 0, 16, 0)
+            foot_hl.setSpacing(6)
+
+            self._count_lbl = QtWidgets.QLabel()
+            self._count_lbl.setStyleSheet(
+                "font-size:11px;color:#6b7280;background:transparent;"
+                "font-weight:600;")
+            foot_hl.addWidget(self._count_lbl)
+            foot_hl.addStretch()
+
+            # Pagination controls (centre-right)
+            _pg_s = (
+                "QPushButton{background:#ffffff;color:#334155;"
+                "border:1px solid #e2e8f0;border-radius:6px;"
+                "font-size:12px;font-weight:700;"
+                "min-width:30px;min-height:26px;padding:0 6px;}"
+                "QPushButton:hover{background:#f1f5f9;border-color:#cbd5e1;}"
+                "QPushButton:disabled{color:#cbd5e1;}")
+            self._pg_prev_btn = QtWidgets.QPushButton("‹")
+            self._pg_prev_btn.setStyleSheet(_pg_s)
+            self._pg_prev_btn.setCursor(
+                QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+            self._pg_prev_btn.clicked.connect(self._pg_go_prev)
+            foot_hl.addWidget(self._pg_prev_btn)
+
+            self._pg_btns_layout = QtWidgets.QHBoxLayout()
+            self._pg_btns_layout.setSpacing(3)
+            foot_hl.addLayout(self._pg_btns_layout)
+            self._pg_style = _pg_s
+
+            self._pg_next_btn = QtWidgets.QPushButton("›")
+            self._pg_next_btn.setStyleSheet(_pg_s)
+            self._pg_next_btn.setCursor(
+                QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+            self._pg_next_btn.clicked.connect(self._pg_go_next)
+            foot_hl.addWidget(self._pg_next_btn)
+            foot_hl.addSpacing(12)
+
+            self._total_lbl = QtWidgets.QLabel()
+            self._total_lbl.setStyleSheet(
+                "font-size:13px;font-weight:bold;color:#15803d;"
+                "background:transparent;")
+            foot_hl.addWidget(self._total_lbl)
+            root.addWidget(foot_w)
+
+        # ── Data helpers ────────────────────────────────────────────────
+
+        def _fetch_revenue_for_year(self, year):
+            pt = self.parent_tab
+            if pt.annual_summary_year == year and pt.annual_revenue_data:
+                return list(pt.annual_revenue_data)
+            try:
+                if pt.FIREBASE_AVAILABLE and pt.db is not None:
+                    all_rev = BalanceSheetFirebaseManager.load_revenue()
+                    return [r for r in all_rev if r.get('year') == year]
+            except Exception as exc:
+                _log.warning("RevenueDetailDialog: Firebase load: %s", exc)
+            try:
+                from pathlib import Path as _Path
+                import json as _json
+                fp = _Path.home() / ".mabs_finance" / f"revenue_{year}.json"
+                if fp.exists():
+                    with open(fp) as fh:
+                        return _json.load(fh)
+            except Exception as exc:
+                _log.warning("RevenueDetailDialog: local load: %s", exc)
+            return []
+
+        def _extract_paid_entries(self, revenue_list, year, month=None):
+            pt = self.parent_tab
+            # Build invoice_number → invoice total lookup from parent records
+            inv_totals = {}
+            # Also build set of invoice numbers that have a real is_invoice entry
+            # (same filter the annual summary uses — prevents orphaned is_payment
+            # entries from appearing when their parent invoice was deleted)
+            invoiced_numbers = set()
+            for r in revenue_list:
+                inv_no = r.get('invoice_number', '')
+                if inv_no and not r.get('is_payment'):
+                    inv_totals[inv_no] = pt._money_to_float(r.get('amount', 0))
+                if r.get('is_invoice') and inv_no.strip():
+                    invoiced_numbers.add(inv_no.strip())
+
+            # Invoice numbers already covered by split-payment tracker records;
+            # skip the parent Paid/PartiallyPaid row to prevent double-counting.
+            split_inv_nos = {
+                r.get('invoice_number', '') for r in revenue_list
+                if r.get('is_payment') and r.get('invoice_number', '')
+            }
+            # Also include invoice numbers from the in-memory tracker — this covers the
+            # window where tracker.add_payment() has run but the Firebase write is still
+            # in flight, so the is_payment entry isn't in revenue_list yet.
+            try:
+                from payment_tracker import get_payment_tracker as _gpt
+                _tk = _gpt()
+                split_inv_nos |= {
+                    (p.invoice_number or '').strip()
+                    for p in _tk.payments
+                    if (p.invoice_number or '').strip()
+                }
+            except Exception:
+                pass
+
+            results = []
+            for rev in revenue_list:
+                try:
+                    if rev.get('has_payment_entries'):
+                        continue
+                    status = rev.get('status', '')
+                    _created = rev.get('created_at', '')
+
+                    # Payment-tracker individual entries and tax entries
+                    if rev.get('is_payment'):
+                        ds = rev.get('date', rev.get('received_date', ''))
+                        dt = pt._parse_finance_date(ds)
+                        if not dt or (year is not None and dt.year != year):
+                            continue
+                        if month and dt.month != month:
+                            continue
+                        inv_no   = (rev.get('invoice_number') or '').strip()
+                        # Skip orphaned payment entries with no matching is_invoice record
+                        # (matches the annual summary filter to keep totals consistent)
+                        if inv_no and invoiced_numbers and inv_no not in invoiced_numbers:
+                            continue
+                        paid_amt = pt._money_to_float(rev.get('amount', 0))
+                        inv_tot  = inv_totals.get(inv_no, paid_amt)
+                        is_tax   = bool(rev.get('is_tax'))
+                        stage    = 'TAX' if is_tax else rev.get('payment_stage', '')
+                        results.append({
+                            'invoice_date':   rev.get('date', 'N/A'),
+                            'source':         rev.get('source', ''),
+                            'description':    rev.get('description', ''),
+                            'invoice_total':  inv_tot,
+                            'paid_amount':    paid_amt,
+                            'paid_date':      ds,
+                            'paid_dt':        dt,
+                            'created_at':     _created,
+                            'status':         'Paid',
+                            'invoice_number': inv_no,
+                            'payment_stage':  stage,
+                            '_is_payment':    True,
+                            '_is_tax':        is_tax,
+                        })
+                        continue
+
+                    if status == 'Paid':
+                        _inv_chk = rev.get('invoice_number', '')
+                        if _inv_chk and _inv_chk in split_inv_nos:
+                            continue
+                        paid_ds  = rev.get('received_date', rev.get('date', ''))
+                        paid_dt  = pt._parse_finance_date(paid_ds)
+                        if not paid_dt or (year is not None and paid_dt.year != year):
+                            continue
+                        if month and paid_dt.month != month:
+                            continue
+                        total = pt._money_to_float(rev.get('amount', 0))
+                        results.append({
+                            'invoice_date':   rev.get('date', 'N/A'),
+                            'source':         rev.get('source', ''),
+                            'description':    rev.get('description', ''),
+                            'invoice_total':  total,
+                            'paid_amount':    total,
+                            'paid_date':      paid_ds,
+                            'paid_dt':        paid_dt,
+                            'created_at':     _created,
+                            'status':         'Paid',
+                            'invoice_number': rev.get('invoice_number', ''),
+                            'payment_stage':  '',
+                            '_is_payment':    False,
+                            '_is_tax':        False,
+                        })
+
+                    elif status == 'Partially Paid':
+                        _inv_chk = rev.get('invoice_number', '')
+                        if _inv_chk and _inv_chk in split_inv_nos:
+                            continue
+                        dp_ds = rev.get('received_date',
+                                        rev.get('down_payment_received_date', ''))
+                        dp_dt = pt._parse_finance_date(dp_ds)
+                        if not dp_dt or (year is not None and dp_dt.year != year):
+                            continue
+                        if month and dp_dt.month != month:
+                            continue
+                        inv_total  = pt._money_to_float(rev.get('amount', 0))
+                        paid_split = pt._money_to_float(rev.get('paid_amount', 0))
+                        results.append({
+                            'invoice_date':   rev.get('date', 'N/A'),
+                            'source':         rev.get('source', ''),
+                            'description':    rev.get('description', ''),
+                            'invoice_total':  inv_total,
+                            'paid_amount':    paid_split if paid_split > 0 else inv_total,
+                            'paid_date':      dp_ds,
+                            'paid_dt':        dp_dt,
+                            'created_at':     _created,
+                            'status':         'Partially Paid',
+                            'invoice_number': rev.get('invoice_number', ''),
+                            'payment_stage':  'Down Payment',
+                            '_is_payment':    False,
+                            '_is_tax':        False,
+                        })
+                except Exception as exc:
+                    _log.warning("RevenueDetailDialog skip entry: %s", exc)
+
+            # Consolidate is_payment entries per invoice+date, keeping tax
+            # entries separate from project payment entries so they display
+            # as distinct rows (matching the balance-sheet payment-history view).
+            payment_entries = [e for e in results if e.get('_is_payment') and not e.get('_is_tax')]
+            tax_entries     = [e for e in results if e.get('_is_payment') and e.get('_is_tax')]
+            other_entries   = [e for e in results if not e.get('_is_payment')]
+
+            # Group project payments by invoice+date
+            proj_groups: dict = {}
+            for e in payment_entries:
+                key = (e['invoice_number'], e['paid_date'])
+                if key not in proj_groups:
+                    proj_groups[key] = e.copy()
+                    proj_groups[key]['payment_stage'] = e.get('payment_stage', '')
+                else:
+                    proj_groups[key]['paid_amount'] += e['paid_amount']
+                    if e.get('payment_stage') and e['payment_stage'] not in proj_groups[key].get('description', ''):
+                        proj_groups[key]['description'] = (
+                            (proj_groups[key]['description'] + ', ' if proj_groups[key]['description'] else '')
+                            + e['payment_stage']
+                        )
+
+            # Clean internal markers before returning
+            for col in ('_is_payment', '_is_tax'):
+                for e in list(proj_groups.values()) + tax_entries + other_entries:
+                    e.pop(col, None)
+
+            # Sort all entries together by paid_date (day 1→31) then created_at
+            # so tax entries appear in chronological order alongside payments,
+            # not forced to the end of each day.
+            all_merged = other_entries + list(proj_groups.values()) + tax_entries
+            all_merged.sort(key=lambda e: (e['paid_dt'], e.get('created_at', '')))
+            return all_merged
+
+        # ── Load & refresh ──────────────────────────────────────────────
+
+        def _reload(self):
+            if self.mode == 'month':
+                rev_list = self._fetch_revenue_for_year(self._year)
+                self._all_entries = self._extract_paid_entries(
+                    rev_list, self._year, self._month)
+            else:
+                # Determine year span from date pickers
+                if hasattr(self, '_from_de'):
+                    from_year = self._from_de.date().year()
+                    to_year   = self._to_de.date().year()
+                else:
+                    from_year = to_year = self._year
+                if from_year == to_year:
+                    rev_list = self._fetch_revenue_for_year(from_year)
+                    self._all_entries = self._extract_paid_entries(
+                        rev_list, from_year)
+                else:
+                    # Load all years in range with a single Firebase call when possible
+                    try:
+                        pt = self.parent_tab
+                        if pt.FIREBASE_AVAILABLE and pt.db is not None:
+                            all_rev = BalanceSheetFirebaseManager.load_revenue()
+                            rev_list = [
+                                r for r in all_rev
+                                if from_year <= (r.get('year') or 0) <= to_year
+                            ]
+                        else:
+                            raise RuntimeError("no db")
+                    except Exception:
+                        rev_list = []
+                        for yr in range(from_year, to_year + 1):
+                            rev_list.extend(self._fetch_revenue_for_year(yr))
+                    # year=None → skip year filter; _display applies date-range
+                    self._all_entries = self._extract_paid_entries(
+                        rev_list, None)
+            self._pg_page = 1
+            self._update_labels()
+            self._display()
+
+        def _update_labels(self):
+            import calendar as _cal
+            if self.mode == 'month':
+                mn = _cal.month_name[self._month]
+                self.setWindowTitle(f"Paid Revenue — {mn} {self._year}")
+                self._title_lbl.setText(
+                    f"💰  Paid Revenue  ·  {mn} {self._year}")
+                self._yr_btn.setText(f"📅  {self._year}")
+                self._period_lbl.setText(f"{mn}  {self._year}")
+            else:
+                self.setWindowTitle(f"Annual Paid Revenue — {self._year}")
+                self._title_lbl.setText(
+                    f"💰  Annual Paid Revenue  ·  {self._year}")
+                self._yr_btn.setText(f"📅  {self._year}")
+
+        def _display(self):
+            import math as _math
+            search = self._search_text.lower().strip()
+            entries = self._all_entries
+
+            if self.mode == 'year' and hasattr(self, '_from_de'):
+                from_py = self._from_de.date().toPyDate()
+                to_py = self._to_de.date().toPyDate()
+                entries = [e for e in entries
+                           if from_py <= e['paid_dt'].date() <= to_py]
+                # Sort ascending by date when filter applied (day 1→31, month/year low→high)
+                entries = sorted(entries, key=lambda e: e['paid_dt'])
+
+            if search:
+                entries = [
+                    e for e in entries
+                    if (search in e['source'].lower()
+                        or search in e['description'].lower()
+                        or search in e['paid_date'].lower()
+                        or search in e['invoice_date'].lower()
+                        or search in e.get('invoice_number', '').lower()
+                        or search in f"{e['paid_amount']:.2f}")
+                ]
+
+            # Cache filtered list for totals and pagination
+            self._filtered_entries = entries
+            total_all = len(entries)
+            total_paid_all = sum(e['paid_amount'] for e in entries)
+
+            # Pagination
+            per_page = self._pg_per_page
+            max_page = max(1, _math.ceil(total_all / per_page))
+            self._pg_page = max(1, min(self._pg_page, max_page))
+            start_i = (self._pg_page - 1) * per_page
+            end_i = min(start_i + per_page, total_all)
+            page_entries = entries[start_i:end_i]
+
+            self._table.setRowCount(0)
+            self._table.setRowCount(len(page_entries))
+
+            for row, e in enumerate(page_entries):
+                # global row number for S.No
+                global_row = start_i + row
+                # month: off=0  → Invoice Date = col 1
+                # year:  off=1  → Paid Month = col 1, Invoice Date = col 2
+                off = 0 if self.mode == 'month' else 1
+
+                def _c(txt, align=QtCore.Qt.AlignCenter):
+                    it = QtWidgets.QTableWidgetItem(str(txt))
+                    it.setTextAlignment(align)
+                    it.setFlags(it.flags() & ~QtCore.Qt.ItemIsEditable)
+                    return it
+
+                self._table.setItem(row, 0, _c(global_row + 1))
+
+                if self.mode == 'year':
+                    import calendar as _cal
+                    self._table.setItem(
+                        row, 1,
+                        _c(f"{_cal.month_abbr[e['paid_dt'].month]} "
+                           f"{e['paid_dt'].year}"))
+
+                self._table.setItem(row, off + 1, _c(e['invoice_date']))
+                _inv_display = e.get('invoice_number', '') or e['source']
+                self._table.setItem(row, off + 2, _c(_inv_display))
+                self._table.setItem(
+                    row, off + 3,
+                    _c(e['description'],
+                       QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter))
+
+                tot_it = _c(f"${e['invoice_total']:,.2f}")
+                tot_it.setForeground(QtGui.QColor('#64748b'))
+                tot_it.setFont(QtGui.QFont("Segoe UI", 9))
+                self._table.setItem(row, off + 4, tot_it)
+
+                paid_it = _c(f"${e['paid_amount']:,.2f}")
+                is_partial = e['paid_amount'] < e['invoice_total']
+                paid_it.setForeground(
+                    QtGui.QColor('#d97706' if is_partial else '#15803d'))
+                paid_it.setFont(QtGui.QFont("Segoe UI", 9, QtGui.QFont.Bold))
+                if is_partial:
+                    paid_it.setToolTip(
+                        f"Partial: ${e['paid_amount']:,.2f} of "
+                        f"${e['invoice_total']:,.2f}")
+                self._table.setItem(row, off + 5, paid_it)
+
+                self._table.setItem(row, off + 6, _c(e['paid_date']))
+
+                action_col = off + 7
+                act_w = QtWidgets.QWidget()
+                act_w.setStyleSheet("background:transparent;")
+                act_hl = QtWidgets.QHBoxLayout(act_w)
+                act_hl.setContentsMargins(6, 4, 6, 4)
+                act_hl.setSpacing(0)
+                act_hl.setAlignment(QtCore.Qt.AlignCenter)
+
+                _rev_row = e
+                view_btn = QtWidgets.QPushButton("View")
+                view_btn.setFixedSize(62, 32)
+                view_btn.setToolTip("")
+                view_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #15803d; color: white;
+                        border: none; border-radius: 6px;
+                        padding: 0px; font-size: 11px; font-weight: bold;
+                    }
+                    QPushButton:hover { background-color: #166534; }
+                    QPushButton:pressed { background-color: #14532d; }
+                """)
+                view_btn.clicked.connect(
+                    lambda _, rv=_rev_row:
+                        self._show_invoice_payment_history(rv))
+                act_hl.addWidget(view_btn)
+                self._table.setCellWidget(row, action_col, act_w)
+                self._table.setRowHeight(row, 48)
+
+            # Footer labels
+            n = total_all
+            self._count_lbl.setText(
+                f"Showing {start_i + 1}–{end_i} of {n} "
+                f"entr{'y' if n == 1 else 'ies'}" if n else "0 entries")
+            self._total_lbl.setText(f"Total Paid:   ${total_paid_all:,.2f}")
+
+            # Rebuild pagination buttons
+            self._pg_rebuild(total_all, max_page)
+
+        def _pg_rebuild(self, total, max_page):
+            while self._pg_btns_layout.count():
+                item = self._pg_btns_layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            _s = self._pg_style
+            page_num = self._pg_page
+            win_start = max(1, min(page_num, max_page - 2))
+            for p in range(win_start, min(win_start + 3, max_page + 1)):
+                btn = QtWidgets.QPushButton(str(p))
+                btn.setFixedSize(30, 26)
+                btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+                if p == page_num:
+                    btn.setStyleSheet(
+                        "QPushButton{background:#00756f;color:#fff;"
+                        "border:1px solid #00756f;border-radius:6px;"
+                        "font-size:12px;font-weight:700;"
+                        "min-width:30px;min-height:26px;padding:0 6px;}"
+                        "QPushButton:hover{background:#005f5a;color:#fff;}")
+                else:
+                    btn.setStyleSheet(_s)
+                    btn.clicked.connect(lambda _, pg=p: self._pg_go_to(pg))
+                self._pg_btns_layout.addWidget(btn)
+            self._pg_prev_btn.setEnabled(page_num > 1)
+            self._pg_next_btn.setEnabled(page_num < max_page)
+
+        def _pg_go_prev(self):
+            if self._pg_page > 1:
+                self._pg_page -= 1
+                self._display()
+
+        def _pg_go_next(self):
+            self._pg_page += 1
+            self._display()
+
+        def _pg_go_to(self, page):
+            self._pg_page = page
+            self._display()
+
+        # ── Navigation ──────────────────────────────────────────────────
+
+        def _prev_month(self):
+            if self._month == 1:
+                self._month = 12
+                self._year -= 1
+            else:
+                self._month -= 1
+            self._reload()
+
+        def _next_month(self):
+            if self._month == 12:
+                self._month = 1
+                self._year += 1
+            else:
+                self._month += 1
+            self._reload()
+
+        def _on_search(self, text):
+            self._search_text = text
+            self._pg_page = 1
+            self._display()
+
+        def _pick_year(self):
+            dlg = self.parent_tab.YearPickerDialog(self, self._year)
+            if dlg.exec_() == QtWidgets.QDialog.Accepted:
+                self._year = dlg.selected_year
+                if self.mode == 'year' and hasattr(self, '_from_de'):
+                    self._from_de.setDate(QtCore.QDate(self._year, 1, 1))
+                    self._to_de.setDate(QtCore.QDate(self._year, 12, 31))
+                self._reload()
+
+        def _show_invoice_payment_history(self, entry):
+            """Show payment history for an invoice — identical layout to show_bs_payment_history."""
+            import re as _re
+            invoice_number = entry.get('invoice_number', '')
+            source         = entry.get('source', '')
+            inv_date       = entry.get('invoice_date', '')
+            pt             = self.parent_tab
+
+            # ── Load project payments (exclude tax stage) ──────────────
+            try:
+                from payment_tracker import get_payment_tracker as _get_pt
+                _tracker = _get_pt()
+                _tracker._load_payments()
+                all_payments = [
+                    p for p in _tracker.payments
+                    if (p.invoice_number or '').strip() == invoice_number.strip()
+                    and (p.payment_stage or '').strip().lower() != 'tax'
+                ]
+            except Exception:
+                all_payments = []
+
+            # ── Load tax payments ──────────────────────────────────────
+            try:
+                from tax_payment_tracker import get_tax_payment_tracker as _get_tt
+                _tax_tracker = _get_tt()
+                _tax_tracker._load_tax_payments()
+                inv_tax_pays = _tax_tracker.get_invoice_taxes(invoice_number)
+            except Exception:
+                inv_tax_pays = []
+
+            # ── Load invoice data from Firebase for correct totals ─────
+            _inv_data   = None
+            inv_client  = ''
+            inv_proj_names: list = []
+            planned_per_pn: dict = {}
+            inv_total   = entry.get('invoice_total', 0.0)  # fallback
+            status      = entry.get('status', '')
+            try:
+                from main import FirebaseManager as _FM
+                _raw_invs = _FM.load_invoices() or []
+                _inv_data = next(
+                    (i for i in _raw_invs
+                     if (i.get('meta') or {}).get('invoice_number') == invoice_number),
+                    None)
+                if _inv_data:
+                    _meta = _inv_data.get('meta', {}) or {}
+                    inv_client = _meta.get('client_name', '') or ''
+                    if not inv_date:
+                        inv_date = _meta.get('date', '')
+                    # Use the authoritative invoice total from Firebase meta
+                    _fb_total = pt._money_to_float(_meta.get('amount', 0))
+                    if _fb_total > 0:
+                        inv_total = _fb_total
+                    if not status:
+                        status = _meta.get('status', '')
+                    for _it in (_inv_data.get('items') or []):
+                        _pn = str(_it.get('project_number', '') or '').strip()
+                        _nm = str(_it.get('description', '') or _pn).strip()
+                        if _nm and _nm not in inv_proj_names:
+                            inv_proj_names.append(_nm)
+                        if _pn:
+                            _pd = float(_it.get('payment_due') or
+                                        _it.get('unit_price') or 0)
+                            planned_per_pn[_pn] = planned_per_pn.get(_pn, 0.0) + _pd
+            except Exception:
+                pass
+
+            if not inv_proj_names:
+                inv_proj_names = [entry.get('description', '')] if entry.get('description') else []
+
+            # Tax amount from invoice meta
+            try:
+                _tax_amount = float(
+                    ((_inv_data or {}).get('meta') or {}).get('tax_amount') or 0
+                )
+            except (TypeError, ValueError):
+                _tax_amount = 0.0
+
+            tax_paid_total = sum(float(t.amount) for t in inv_tax_pays)
+            proj_paid_total = sum(float(p.amount) for p in all_payments)
+            total_paid = proj_paid_total + tax_paid_total
+            remaining  = max(inv_total - total_paid, 0.0)
+
+            def _clean_stage(s):
+                return _re.sub(r'\s*\(\d+%\)', '', s or '').strip() or '—'
+
+            def _fmt_d(raw):
+                for fmt in ("%Y-%m-%d", "%m-%d-%Y"):
+                    try:
+                        return datetime.strptime(raw, fmt).strftime("%b %d, %Y")
+                    except Exception:
+                        pass
+                return raw or '—'
+
+            def _make_bg(bg_color):
+                it = QtWidgets.QTableWidgetItem("")
+                it.setBackground(QtGui.QBrush(bg_color))
+                return it
+
+            # ── Dialog ────────────────────────────────────────────────
+            dlg = QtWidgets.QDialog(self)
+            dlg.setWindowTitle(f"Payment History — {invoice_number or source}")
+            dlg.setWindowFlags(
+                dlg.windowFlags()
+                | QtCore.Qt.WindowMaximizeButtonHint
+                | QtCore.Qt.WindowMinimizeButtonHint)
+            dlg.setMinimumWidth(800)
+            dlg.setMinimumHeight(520)
+            dlg.setStyleSheet("background:white;")
+
+            root = QtWidgets.QVBoxLayout(dlg)
+            root.setSpacing(10)
+            root.setContentsMargins(14, 14, 14, 14)
+
+            # ── Header grid ────────────────────────────────────────────
+            hdr_frame = QtWidgets.QFrame()
+            hdr_frame.setStyleSheet(
+                "QFrame{background:#f8fafc;border:1px solid #e2e8f0;"
+                "border-radius:8px;}")
+            hg = QtWidgets.QGridLayout(hdr_frame)
+            hg.setContentsMargins(16, 12, 16, 12)
+            hg.setHorizontalSpacing(24)
+            hg.setVerticalSpacing(6)
+
+            def _lbl(t, bold=False, color="#374151", wrap=False):
+                l = QtWidgets.QLabel(str(t))
+                l.setStyleSheet(
+                    f"font-weight:{'700' if bold else '400'};"
+                    f"color:{color};border:none;font-size:12px;")
+                if wrap:
+                    l.setWordWrap(True)
+                return l
+
+            if len(inv_proj_names) == 0:
+                proj_display = '—'
+            elif len(inv_proj_names) <= 2:
+                proj_display = ', '.join(inv_proj_names)
+            else:
+                proj_display = ', '.join(inv_proj_names[:2]) + f', +{len(inv_proj_names)-2} more…'
+
+            _st_color = {"Paid": "#15803d", "Partially Paid": "#1e40af",
+                         "Overdue": "#b91c1c"}.get(status, "#78350f")
+
+            hg.addWidget(_lbl("Invoice #:", True),   0, 0)
+            hg.addWidget(_lbl(invoice_number or '—'), 0, 1)
+            hg.addWidget(_lbl("Client:", True),       0, 2)
+            hg.addWidget(_lbl(inv_client or '—'),     0, 3)
+            hg.addWidget(_lbl("Project:", True),      1, 0)
+            pl = _lbl(proj_display, wrap=True)
+            pl.setMaximumWidth(340)
+            hg.addWidget(pl, 1, 1)
+            hg.addWidget(_lbl("Invoice Date:", True), 1, 2)
+            hg.addWidget(_lbl(inv_date or '—'),       1, 3)
+            hg.addWidget(_lbl("Total Due:", True),    2, 0)
+            hg.addWidget(_lbl(f"${inv_total:,.2f}"),  2, 1)
+            hg.addWidget(_lbl("Status:", True),       2, 2)
+            _sl = QtWidgets.QLabel(status or '—')
+            _sl.setStyleSheet(
+                f"font-weight:800;color:{_st_color};border:none;font-size:12px;")
+            hg.addWidget(_sl, 2, 3)
+            hg.setColumnStretch(1, 1)
+            hg.setColumnStretch(3, 1)
+            root.addWidget(hdr_frame)
+
+            # ── Table ──────────────────────────────────────────────────
+            hdr_lbl = QtWidgets.QLabel("Payment History by Project")
+            hdr_lbl.setStyleSheet(
+                "font-weight:700;font-size:13px;color:#0f172a;"
+                "border:none;padding:4px 0 2px 0;")
+            root.addWidget(hdr_lbl)
+
+            COL = 6
+            tbl = QtWidgets.QTableWidget()
+            tbl.setColumnCount(COL)
+            tbl.setHorizontalHeaderLabels(
+                ["Project #", "Date", "Amount", "Method", "Stage", "Notes"])
+            tbl.horizontalHeader().setVisible(True)
+            tbl.horizontalHeader().setStretchLastSection(True)
+            tbl.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+            tbl.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+            tbl.setAlternatingRowColors(False)
+            tbl.verticalHeader().setVisible(False)
+            tbl.setStyleSheet("""
+                QTableWidget{background:white;border:1px solid #e2e8f0;
+                    border-radius:6px;gridline-color:#f1f5f9;}
+                QTableWidget::item{padding:6px 10px;color:#1e293b;}
+                QHeaderView::section{background:#f8fafc;font-weight:700;
+                    padding:8px;border:none;
+                    border-bottom:2px solid #e2e8f0;
+                    min-height:34px;color:#374151;}
+                QTableWidget::item:selected{background:#dbeafe;color:#1e40af;}
+            """)
+            tbl.setColumnWidth(0, 165)
+            tbl.setColumnWidth(1, 115)
+            tbl.setColumnWidth(2, 105)
+            tbl.setColumnWidth(3, 115)
+            tbl.setColumnWidth(4, 130)
+
+            def _cell(t, al=QtCore.Qt.AlignCenter):
+                it = QtWidgets.QTableWidgetItem(str(t))
+                it.setTextAlignment(al)
+                return it
+
+            _HDR_BG    = QtGui.QColor("#1e3a5f")
+            _HDR_FG    = QtGui.QColor("#ffffff")
+            _SUB_BG    = QtGui.QColor("#f0f9ff")
+            _SUB_FG    = QtGui.QColor("#0369a1")
+            _REM_GRN   = QtGui.QColor("#15803d")
+            _REM_RED   = QtGui.QColor("#b91c1c")
+            _TAX_HDR_BG = QtGui.QColor("#0f5a52")
+
+            # Build project order (invoice items first, then payment-only projects)
+            pn_order, seen_pns = [], set()
+            for _pn in planned_per_pn:
+                if _pn and _pn not in seen_pns:
+                    pn_order.append(_pn)
+                    seen_pns.add(_pn)
+            for _p in all_payments:
+                _pn = (_p.project_number or '').strip()
+                if _pn and _pn not in seen_pns:
+                    pn_order.append(_pn)
+                    seen_pns.add(_pn)
+
+            rows_spec = []
+            for pn in pn_order:
+                pn_pays = sorted(
+                    [p for p in all_payments
+                     if (p.project_number or '').strip() == pn
+                     and (p.payment_stage or '').strip().lower() != 'tax'],
+                    key=lambda p: p.payment_date or '')
+                pn_paid    = sum(float(p.amount) for p in pn_pays)
+                pn_planned = planned_per_pn.get(pn, 0.0)
+                rows_spec.append(("header", pn))
+                for pay in pn_pays:
+                    rows_spec.append(("pay", pay))
+                rows_spec.append(("sub", (pn_paid, pn_planned)))
+
+            if not all_payments and not pn_order:
+                rows_spec = [("empty", None)]
+
+            # TAX section — shown when invoice has a tax amount
+            if _tax_amount > 0.005:
+                tax_pays_sorted = sorted(inv_tax_pays, key=lambda t: t.payment_date or '')
+                rows_spec.append(("tax_header", _tax_amount))
+                if tax_pays_sorted:
+                    for tp in tax_pays_sorted:
+                        rows_spec.append(("tax_pay", tp))
+                else:
+                    rows_spec.append(("tax_pending", (invoice_number, _tax_amount)))
+                rows_spec.append(("tax_sub", (tax_paid_total, _tax_amount)))
+
+            tbl.setRowCount(len(rows_spec))
+            for r, (kind, data) in enumerate(rows_spec):
+                if kind == "header":
+                    h = QtWidgets.QTableWidgetItem(f"  Project: {data}")
+                    h.setBackground(QtGui.QBrush(_HDR_BG))
+                    h.setForeground(QtGui.QBrush(_HDR_FG))
+                    h.setFont(QtGui.QFont("Segoe UI", 9, QtGui.QFont.Bold))
+                    h.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+                    tbl.setItem(r, 0, h)
+                    for c in range(1, COL):
+                        tbl.setItem(r, c, _make_bg(_HDR_BG))
+                    tbl.setSpan(r, 0, 1, COL)
+                    tbl.setRowHeight(r, 30)
+
+                elif kind == "pay":
+                    pay = data
+                    tbl.setItem(r, 0, _cell((pay.project_number or '—').strip()))
+                    tbl.setItem(r, 1, _cell(_fmt_d(pay.payment_date or '')))
+                    amt_it = _cell(f"${float(pay.amount):,.2f}")
+                    amt_it.setForeground(QtGui.QColor("#15803d"))
+                    amt_it.setFont(QtGui.QFont("Segoe UI", 9, QtGui.QFont.Bold))
+                    tbl.setItem(r, 2, amt_it)
+                    tbl.setItem(r, 3, _cell(pay.payment_method or '—'))
+                    tbl.setItem(r, 4, _cell(_clean_stage(pay.payment_stage)))
+                    tbl.setItem(r, 5, _cell(
+                        pay.notes or '—',
+                        QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter))
+                    tbl.setRowHeight(r, 36)
+
+                elif kind == "sub":
+                    pn_paid, pn_planned = data
+                    pn_remaining = max(pn_planned - pn_paid, 0.0)
+                    _sub_font = QtGui.QFont("Segoe UI", 8, QtGui.QFont.Bold)
+                    # Left: Paid (span 3)
+                    paid_cell = QtWidgets.QTableWidgetItem(f"  Paid: ${pn_paid:,.2f}")
+                    paid_cell.setBackground(QtGui.QBrush(_SUB_BG))
+                    paid_cell.setForeground(QtGui.QBrush(_SUB_FG))
+                    paid_cell.setFont(_sub_font)
+                    paid_cell.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+                    tbl.setItem(r, 0, paid_cell)
+                    tbl.setItem(r, 1, _make_bg(_SUB_BG))
+                    tbl.setItem(r, 2, _make_bg(_SUB_BG))
+                    tbl.setSpan(r, 0, 1, 3)
+                    # Right: Remaining (span 3)
+                    _rem_color = _REM_GRN if pn_remaining <= 0 else _REM_RED
+                    _rem_text  = "Fully Paid ✓" if pn_remaining <= 0 else f"Remaining: ${pn_remaining:,.2f}"
+                    rem_cell = QtWidgets.QTableWidgetItem(f"{_rem_text}  ")
+                    rem_cell.setBackground(QtGui.QBrush(_SUB_BG))
+                    rem_cell.setForeground(QtGui.QBrush(_rem_color))
+                    rem_cell.setFont(_sub_font)
+                    rem_cell.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                    tbl.setItem(r, 3, rem_cell)
+                    tbl.setItem(r, 4, _make_bg(_SUB_BG))
+                    tbl.setItem(r, 5, _make_bg(_SUB_BG))
+                    tbl.setSpan(r, 3, 1, 3)
+                    tbl.setRowHeight(r, 28)
+
+                elif kind == "tax_header":
+                    _th = QtWidgets.QTableWidgetItem("  TAX")
+                    _th.setBackground(QtGui.QBrush(_TAX_HDR_BG))
+                    _th.setForeground(QtGui.QBrush(QtGui.QColor("#ffffff")))
+                    _th.setFont(QtGui.QFont("Consolas", 9, QtGui.QFont.Bold))
+                    _th.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+                    tbl.setItem(r, 0, _th)
+                    _th_note = QtWidgets.QTableWidgetItem(
+                        f"Tax Amount: ${data:,.2f}  — Recorded when invoice is marked Paid  ")
+                    _th_note.setBackground(QtGui.QBrush(_TAX_HDR_BG))
+                    _th_note.setForeground(QtGui.QBrush(QtGui.QColor("#a7f3d0")))
+                    _th_note.setFont(QtGui.QFont("Segoe UI", 8))
+                    _th_note.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                    tbl.setItem(r, 1, _th_note)
+                    for c in range(2, COL):
+                        tbl.setItem(r, c, _make_bg(_TAX_HDR_BG))
+                    tbl.setSpan(r, 1, 1, COL - 1)
+                    tbl.setRowHeight(r, 30)
+
+                elif kind == "tax_pay":
+                    pay = data
+                    tbl.setItem(r, 0, _cell((pay.invoice_number or '—').strip()))
+                    tbl.setItem(r, 1, _cell(_fmt_d(pay.payment_date or '')))
+                    _amt_it = _cell(f"${float(pay.amount):,.2f}")
+                    _amt_it.setForeground(QtGui.QColor("#15803d"))
+                    tbl.setItem(r, 2, _amt_it)
+                    tbl.setItem(r, 3, _cell(pay.payment_method or '—'))
+                    tbl.setItem(r, 4, _cell("Tax"))
+                    tbl.setItem(r, 5, _cell(
+                        pay.notes or '—',
+                        QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter))
+                    tbl.setRowHeight(r, 36)
+
+                elif kind == "tax_pending":
+                    inv_no2, tax_amt2 = data
+                    tbl.setItem(r, 0, _cell(inv_no2))
+                    tbl.setItem(r, 1, _cell('—'))
+                    _pa = _cell(f"${tax_amt2:,.2f}")
+                    _pa.setForeground(QtGui.QColor("#b45309"))
+                    tbl.setItem(r, 2, _pa)
+                    tbl.setItem(r, 3, _cell('—'))
+                    _badge = QtWidgets.QTableWidgetItem("  Unpaid  ")
+                    _badge.setBackground(QtGui.QBrush(QtGui.QColor("#fef3c7")))
+                    _badge.setForeground(QtGui.QBrush(QtGui.QColor("#92400e")))
+                    _badge.setTextAlignment(QtCore.Qt.AlignCenter)
+                    tbl.setItem(r, 4, _badge)
+                    tbl.setItem(r, 5, _cell(
+                        "Pending — mark invoice as Paid to record",
+                        QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter))
+                    tbl.setRowHeight(r, 36)
+
+                elif kind == "tax_sub":
+                    _tp, _tpl = data
+                    _tr = max(_tpl - _tp, 0.0)
+                    _tsub_bg   = QtGui.QColor("#f0fdf4") if _tr <= 0 else QtGui.QColor("#fef9c3")
+                    _tsub_fg   = QtGui.QColor("#15803d") if _tr <= 0 else QtGui.QColor("#92400e")
+                    _tsub_font = QtGui.QFont("Segoe UI", 8, QtGui.QFont.Bold)
+                    _tpc = QtWidgets.QTableWidgetItem(f"  Paid: ${_tp:,.2f}")
+                    _tpc.setBackground(QtGui.QBrush(_tsub_bg))
+                    _tpc.setForeground(QtGui.QBrush(_tsub_fg))
+                    _tpc.setFont(_tsub_font)
+                    _tpc.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+                    tbl.setItem(r, 0, _tpc)
+                    tbl.setItem(r, 1, _make_bg(_tsub_bg))
+                    tbl.setItem(r, 2, _make_bg(_tsub_bg))
+                    tbl.setSpan(r, 0, 1, 3)
+                    _trt = "Tax Paid ✓" if _tr <= 0 else f"Remaining: ${_tr:,.2f}"
+                    _trc = QtWidgets.QTableWidgetItem(f"{_trt}  ")
+                    _trc.setBackground(QtGui.QBrush(_tsub_bg))
+                    _trc.setForeground(QtGui.QBrush(_tsub_fg))
+                    _trc.setFont(_tsub_font)
+                    _trc.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                    tbl.setItem(r, 3, _trc)
+                    tbl.setItem(r, 4, _make_bg(_tsub_bg))
+                    tbl.setItem(r, 5, _make_bg(_tsub_bg))
+                    tbl.setSpan(r, 3, 1, 3)
+                    tbl.setRowHeight(r, 28)
+
+                else:  # "empty"
+                    no_it = QtWidgets.QTableWidgetItem(
+                        "No payment records found for this invoice.")
+                    no_it.setTextAlignment(QtCore.Qt.AlignCenter)
+                    no_it.setForeground(QtGui.QColor('#9ca3af'))
+                    tbl.setItem(r, 0, no_it)
+                    tbl.setSpan(r, 0, 1, COL)
+
+            root.addWidget(tbl)
+
+            # ── Summary bar ────────────────────────────────────────────
+            sf = QtWidgets.QFrame()
+            sf.setFrameShape(QtWidgets.QFrame.NoFrame)
+            sf.setStyleSheet(
+                "QFrame{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;}"
+                if remaining <= 0 else
+                "QFrame{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;}")
+            sl2 = QtWidgets.QHBoxLayout(sf)
+            sl2.setContentsMargins(14, 8, 14, 8)
+
+            def _sum_col(label, value, color="#1e293b"):
+                col = QtWidgets.QVBoxLayout()
+                l1 = QtWidgets.QLabel(label)
+                l1.setStyleSheet("font-size:11px;color:#64748b;border:none;")
+                l2 = QtWidgets.QLabel(value)
+                l2.setStyleSheet(
+                    f"font-size:14px;font-weight:800;color:{color};border:none;")
+                col.addWidget(l1)
+                col.addWidget(l2)
+                return col
+
+            sl2.addLayout(_sum_col("Invoice Total", f"${inv_total:,.2f}"))
+            _sep1 = QtWidgets.QLabel("|")
+            _sep1.setStyleSheet("color:#cbd5e1;font-size:18px;border:none;")
+            sl2.addWidget(_sep1)
+            sl2.addLayout(_sum_col("Total Paid", f"${total_paid:,.2f}", "#15803d"))
+            _sep2 = QtWidgets.QLabel("|")
+            _sep2.setStyleSheet("color:#cbd5e1;font-size:18px;border:none;")
+            sl2.addWidget(_sep2)
+            _rem_color = "#15803d" if remaining <= 0 else "#b45309"
+            sl2.addLayout(_sum_col("Remaining", f"${remaining:,.2f}", _rem_color))
+            sl2.addStretch()
+            root.addWidget(sf)
+
+            # ── Close button ───────────────────────────────────────────
+            _close_btn = QtWidgets.QPushButton("Close")
+            _close_btn.setFixedHeight(34)
+            _close_btn.setStyleSheet("""
+                QPushButton{background:#334155;color:white;border:none;
+                    border-radius:6px;font-weight:bold;padding:0 22px;}
+                QPushButton:hover{background:#1e293b;}
+            """)
+            _close_btn.clicked.connect(dlg.accept)
+            _btn_row = QtWidgets.QHBoxLayout()
+            _btn_row.addStretch()
+            _btn_row.addWidget(_close_btn)
+            root.addLayout(_btn_row)
+            dlg.exec_()
+
+        # ── PDF export ──────────────────────────────────────────────────
+
+        def _export_pdf(self):
+            try:
+                from reportlab.lib.pagesizes import A4, landscape
+                from reportlab.platypus import (
+                    SimpleDocTemplate, Table, TableStyle,
+                    Paragraph, Spacer)
+                from reportlab.lib.styles import (
+                    getSampleStyleSheet, ParagraphStyle)
+                from reportlab.lib import colors
+                from reportlab.lib.units import inch
+                from pathlib import Path as _Path
+                import calendar as _cal
+
+                # For Annual mode: show date-range picker before export
+                export_from_py = None
+                export_to_py = None
+                if self.mode == 'year':
+                    dlg = QtWidgets.QDialog(self)
+                    dlg.setWindowTitle("Export Date Range")
+                    dlg.setFixedSize(340, 230)
+                    dlg.setStyleSheet(
+                        "QDialog{background:#f8fafc;}"
+                        "QLabel{font-size:13px;font-weight:600;color:#1e293b;"
+                        "border:none;background:transparent;}")
+                    dlg_lay = QtWidgets.QVBoxLayout(dlg)
+                    dlg_lay.setContentsMargins(24, 20, 24, 20)
+                    dlg_lay.setSpacing(12)
+
+                    hdr_lbl = QtWidgets.QLabel("Select Export Date Range")
+                    hdr_lbl.setStyleSheet(
+                        "font-size:15px;font-weight:800;color:#0f172a;"
+                        "border:none;background:transparent;")
+                    dlg_lay.addWidget(hdr_lbl)
+
+                    _de_style = (
+                        "QDateEdit{padding:6px 28px 6px 8px;"
+                        "border:2px solid #bdc3c7;border-radius:6px;"
+                        "background:white;font-size:13px;font-weight:600;}"
+                        "QDateEdit:focus{border-color:#00756f;}")
+                    _lbl_ss = ("font-size:12px;font-weight:700;color:#374151;"
+                               "border:none;background:transparent;")
+
+                    # From row
+                    from_row = QtWidgets.QHBoxLayout()
+                    from_row.setSpacing(10)
+                    from_lbl = QtWidgets.QLabel("From:")
+                    from_lbl.setStyleSheet(_lbl_ss)
+                    from_lbl.setFixedWidth(42)
+                    _fd = QtWidgets.QDateEdit()
+                    _fd.setCalendarPopup(True)
+                    _fd.setDisplayFormat("MM-dd-yyyy")
+                    _fd.setFixedHeight(36)
+                    _fd.wheelEvent = lambda e: e.ignore()
+                    _fd.stepBy = lambda x: None
+                    _fd.setDate(QtCore.QDate(self._year, 1, 1))
+                    _fd.setStyleSheet(_de_style)
+                    from_row.addWidget(from_lbl)
+                    from_row.addWidget(_fd, 1)
+                    dlg_lay.addLayout(from_row)
+
+                    # To row
+                    to_row = QtWidgets.QHBoxLayout()
+                    to_row.setSpacing(10)
+                    to_lbl = QtWidgets.QLabel("To:")
+                    to_lbl.setStyleSheet(_lbl_ss)
+                    to_lbl.setFixedWidth(42)
+                    _td = QtWidgets.QDateEdit()
+                    _td.setCalendarPopup(True)
+                    _td.setDisplayFormat("MM-dd-yyyy")
+                    _td.setFixedHeight(36)
+                    _td.wheelEvent = lambda e: e.ignore()
+                    _td.stepBy = lambda x: None
+                    _td.setDate(QtCore.QDate(self._year, 12, 31))
+                    _td.setStyleSheet(_de_style)
+                    to_row.addWidget(to_lbl)
+                    to_row.addWidget(_td, 1)
+                    dlg_lay.addLayout(to_row)
+
+                    dlg_lay.addStretch()
+
+                    btn_row = QtWidgets.QHBoxLayout()
+                    btn_row.addStretch()
+                    cancel_b = QtWidgets.QPushButton("Cancel")
+                    cancel_b.setFixedSize(90, 36)
+                    cancel_b.setStyleSheet(
+                        "QPushButton{background:#f1f5f9;color:#334155;"
+                        "border:1px solid #cbd5e1;border-radius:7px;"
+                        "font-size:13px;font-weight:700;}"
+                        "QPushButton:hover{background:#e2e8f0;}")
+                    cancel_b.clicked.connect(dlg.reject)
+                    export_b = QtWidgets.QPushButton("Export PDF")
+                    export_b.setFixedSize(110, 36)
+                    export_b.setStyleSheet(
+                        "QPushButton{background:#0f766e;color:white;border:none;"
+                        "border-radius:7px;font-size:13px;font-weight:800;}"
+                        "QPushButton:hover{background:#0d625c;}")
+                    export_b.clicked.connect(dlg.accept)
+                    btn_row.addWidget(cancel_b)
+                    btn_row.addSpacing(8)
+                    btn_row.addWidget(export_b)
+                    dlg_lay.addLayout(btn_row)
+
+                    if dlg.exec_() != QtWidgets.QDialog.Accepted:
+                        return
+                    export_from_py = _fd.date().toPyDate()
+                    export_to_py = _td.date().toPyDate()
+
+                search = self._search_text.lower().strip()
+                entries = self._all_entries
+
+                # Apply date filter: custom export range (annual) or existing widget range
+                if export_from_py and export_to_py:
+                    entries = [e for e in entries
+                               if export_from_py <= e['paid_dt'].date() <= export_to_py]
+                elif self.mode == 'year' and hasattr(self, '_from_de'):
+                    from_py = self._from_de.date().toPyDate()
+                    to_py = self._to_de.date().toPyDate()
+                    entries = [e for e in entries
+                               if from_py <= e['paid_dt'].date() <= to_py]
+                if search:
+                    entries = [
+                        e for e in entries
+                        if (search in e['source'].lower()
+                            or search in e['description'].lower()
+                            or search in e['paid_date'].lower()
+                            or search in e['invoice_date'].lower()
+                            or search in e.get('invoice_number', '').lower()
+                            or search in f"{e['paid_amount']:.2f}")
+                    ]
+
+                if not entries:
+                    QtWidgets.QMessageBox.information(
+                        self, "No Data", "No entries to export.")
+                    return
+
+                exp_dir = _Path.home() / "Downloads" / "Balance_Exports"
+                exp_dir.mkdir(parents=True, exist_ok=True)
+                if self.mode == 'month':
+                    label = (f"{_cal.month_name[self._month]}"
+                             f"_{self._year}")
+                    period_str = (f"{_cal.month_name[self._month]} "
+                                  f"{self._year}")
+                else:
+                    label = f"Annual_{self._year}"
+                    if export_from_py and export_to_py:
+                        period_str = (
+                            f"{export_from_py.strftime('%m-%d-%Y')}"
+                            f" — "
+                            f"{export_to_py.strftime('%m-%d-%Y')}")
+                    elif hasattr(self, '_from_de'):
+                        period_str = (
+                            f"{self._from_de.date().toString('MM-dd-yyyy')}"
+                            f" — "
+                            f"{self._to_de.date().toString('MM-dd-yyyy')}")
+                    else:
+                        period_str = f"Annual {self._year}"
+                filepath = exp_dir / f"PaidRevenue_{label}.pdf"
+
+                doc = SimpleDocTemplate(
+                    str(filepath), pagesize=landscape(A4),
+                    topMargin=0.5*inch, bottomMargin=0.5*inch,
+                    leftMargin=0.5*inch, rightMargin=0.5*inch)
+
+                styles = getSampleStyleSheet()
+                title_s = ParagraphStyle(
+                    'RDTitle', parent=styles['Heading1'],
+                    fontSize=14, textColor=colors.white, alignment=1,
+                    backColor=colors.HexColor('#1e3a5f'),
+                    borderPadding=8, spaceAfter=2)
+                # Left-aligned wrapping text for regular cells
+                cell_s = ParagraphStyle(
+                    'RDCell', parent=styles['Normal'],
+                    fontSize=8, leading=10)
+                # Centered wrapping text — used for Description column
+                cell_c_s = ParagraphStyle(
+                    'RDCellC', parent=styles['Normal'],
+                    fontSize=8, leading=10, alignment=1)
+
+                # Equal column widths across the full usable page width
+                # Landscape A4 − 1 inch margins ≈ 10.69 in
+                if self.mode == 'month':
+                    col_hdr = ["S.No", "Invoice Date", "Invoice #",
+                               "Description", "Invoice Total",
+                               "Paid Amount", "Paid Date"]
+                    _col_w_each = 10.5 / len(col_hdr)
+                    col_w = [_col_w_each * inch] * len(col_hdr)
+                else:
+                    col_hdr = ["S.No", "Paid Month", "Invoice Date",
+                               "Invoice #", "Description",
+                               "Invoice Total", "Paid Amount", "Paid Date"]
+                    _col_w_each = 10.56 / len(col_hdr)
+                    col_w = [_col_w_each * inch] * len(col_hdr)
+
+                try:
+                    from main import Config as _Cfg
+                    _co = _Cfg.COMPANY.get('name', 'MABS Engineering LLC').upper()
+                except Exception:
+                    _co = 'MABS ENGINEERING SERVICES'
+                elems = [
+                    Paragraph(
+                        f"{_co}  —  PAID REVENUE"
+                        f"  ({period_str})", title_s),
+                    Spacer(1, 0.12*inch),
+                ]
+
+                tbl_data = [col_hdr]
+                row_styles = []
+                for i, e in enumerate(entries, 1):
+                    bg = (colors.HexColor('#f0fdf4')
+                          if i % 2 == 0 else colors.white)
+                    row_styles.append(
+                        ('BACKGROUND', (0, i), (-1, i), bg))
+                    desc_p = (Paragraph(e['description'], cell_c_s)
+                              if e['description'] else '')
+                    _inv_no = e.get('invoice_number', '') or e['source']
+                    if self.mode == 'month':
+                        tbl_data.append([
+                            str(i), e['invoice_date'], _inv_no,
+                            desc_p,
+                            f"${e['invoice_total']:,.2f}",
+                            f"${e['paid_amount']:,.2f}",
+                            e['paid_date'],
+                        ])
+                    else:
+                        tbl_data.append([
+                            str(i),
+                            f"{_cal.month_abbr[e['paid_dt'].month]} "
+                            f"{e['paid_dt'].year}",
+                            e['invoice_date'], _inv_no, desc_p,
+                            f"${e['invoice_total']:,.2f}",
+                            f"${e['paid_amount']:,.2f}",
+                            e['paid_date'],
+                        ])
+
+                total_paid = sum(e['paid_amount'] for e in entries)
+                total_row_idx = len(tbl_data)
+                blank = [""] * len(col_hdr)
+                total_row = blank[:]
+                total_row[-3] = "TOTAL PAID"
+                total_row[-2] = f"${total_paid:,.2f}"
+                tbl_data.append(total_row)
+
+                base_style = [
+                    ('BACKGROUND', (0, 0), (-1, 0),
+                     colors.HexColor('#1e3a5f')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 9),
+                    # All cells centered — description uses cell_c_s Paragraph
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('FONTSIZE', (0, 1), (-1, -1), 8),
+                    ('GRID', (0, 0), (-1, -1), 0.4,
+                     colors.HexColor('#e2e8f0')),
+                    ('BACKGROUND', (0, total_row_idx), (-1, total_row_idx),
+                     colors.HexColor('#d1fae5')),
+                    ('FONTNAME', (0, total_row_idx), (-1, total_row_idx),
+                     'Helvetica-Bold'),
+                    ('ALIGN', (0, total_row_idx), (-1, total_row_idx),
+                     'CENTER'),
+                    ('LINEABOVE', (0, total_row_idx), (-1, total_row_idx),
+                     1, colors.HexColor('#15803d')),
+                ] + row_styles
+
+                tbl = Table(tbl_data, colWidths=col_w, repeatRows=1)
+                tbl.setStyle(TableStyle(base_style))
+                elems.append(tbl)
+                doc.build(elems)
+
+                import platform, subprocess, os
+                if platform.system() == "Windows":
+                    os.startfile(filepath)
+                elif platform.system() == "Darwin":
+                    subprocess.run(["open", str(filepath)])
+                else:
+                    subprocess.run(["xdg-open", str(filepath)])
+
+                QtWidgets.QMessageBox.information(
+                    self, "Export Complete",
+                    f"PDF saved!\n\nFile: {filepath.name}"
+                    f"\nFolder: {exp_dir}")
+
+            except ImportError:
+                QtWidgets.QMessageBox.critical(
+                    self, "Missing Library",
+                    "reportlab is required.\n"
+                    "Install: pip install reportlab")
+            except Exception as exc:
+                QtWidgets.QMessageBox.critical(
+                    self, "Export Error", str(exc))
+                _log.warning("RevenueDetailDialog PDF error: %s", exc)
 
     class YearPickerDialog(QtWidgets.QDialog):
         """Year picker dialog with 3x4 grid"""
@@ -4935,11 +8100,12 @@ class BalanceSheetTab(QtWidgets.QWidget):
                
     def show_annual_summary_year_calendar(self):
         """Show year selection popup - ONLY updates annual summary and breakdowns, NOT transaction table or header year"""
-        dialog = self.YearPickerDialog(self, self.current_year)
+        dialog = self.YearPickerDialog(self, self.annual_summary_year)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
             # Store the selected year separately for annual summary
             self.annual_summary_year = dialog.selected_year
-            
+            if hasattr(self, 'yearly_calendar_btn'):
+                self.yearly_calendar_btn.setText(str(self.annual_summary_year))
             # Update ONLY the annual summary title, NOT the header year
             self.annual_title.setText(f"📈 ANNUAL FINANCIAL SUMMARY - {self.annual_summary_year}")
             
@@ -4959,8 +8125,9 @@ class BalanceSheetTab(QtWidgets.QWidget):
         dialog = self.YearPickerDialog(self, self.current_year)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
             self.current_year = dialog.selected_year
-            # Also update annual summary year to match (optional - you can remove this if you want them independent)
             self.annual_summary_year = self.current_year
+            if hasattr(self, 'yearly_calendar_btn'):
+                self.yearly_calendar_btn.setText(str(self.annual_summary_year))
             
             self.year_btn.setText(f"{self.current_year} 📅")
             self.annual_title.setText(f"📈 ANNUAL FINANCIAL SUMMARY - {self.annual_summary_year}")
@@ -5050,6 +8217,23 @@ class BalanceSheetTab(QtWidgets.QWidget):
         self.year_btn.setText(f"{self.current_year} 📅")
 
 
+class _WheelBlocker(QtCore.QObject):
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.Wheel:
+            return True
+        return False
+
+class _NoScrollComboBox(QtWidgets.QComboBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._wb = _WheelBlocker(self)
+        self.installEventFilter(self._wb)
+
+class _NoScrollDateEdit(QtWidgets.QDateEdit):
+    def stepBy(self, steps):
+        pass
+
+
 class ExportDialog(QtWidgets.QDialog):
     """Export options dialog for Balance Sheet with PDF and Excel support"""
     
@@ -5058,7 +8242,7 @@ class ExportDialog(QtWidgets.QDialog):
         self.parent_tab = parent
         self.setWindowTitle("📤 Export Options")
         self.setModal(True)
-        self.resize(650, 550)
+        self.setFixedSize(700, 750)
 
         self.setStyleSheet("""
             QDialog {
@@ -5101,12 +8285,12 @@ class ExportDialog(QtWidgets.QDialog):
             QTabBar::tab {
                 background-color: #ecf0f1;
                 color: #2c3e50;
-                padding: 10px 20px;
+                padding: 10px 26px;
                 margin-right: 2px;
                 border-top-left-radius: 8px;
                 border-top-right-radius: 8px;
                 font-weight: bold;
-                font-size: 13px;
+                font-size: 12px;
             }
             QTabBar::tab:selected {
                 background-color: #3498db;
@@ -5221,8 +8405,9 @@ class ExportDialog(QtWidgets.QDialog):
             }
         """)
         
-        self.year_calendar_btn = QtWidgets.QPushButton("📅")
-        self.year_calendar_btn.setFixedSize(40, 40)
+        self.year_calendar_btn = QtWidgets.QPushButton("▼ Year")
+        self.year_calendar_btn.setFixedHeight(40)
+        self.year_calendar_btn.setMinimumWidth(72)
         self.year_calendar_btn.clicked.connect(self.show_year_picker)
         self.year_calendar_btn.setStyleSheet("""
             QPushButton {
@@ -5230,10 +8415,15 @@ class ExportDialog(QtWidgets.QDialog):
                 color: white;
                 border: none;
                 border-radius: 5px;
-                font-size: 16px;
+                font-size: 13px;
+                font-weight: 700;
+                padding: 0 12px;
             }
             QPushButton:hover {
                 background: #2980b9;
+            }
+            QPushButton:pressed {
+                background: #2471a3;
             }
         """)
         
@@ -5303,98 +8493,180 @@ class ExportDialog(QtWidgets.QDialog):
         self.date_range_widget = QtWidgets.QWidget()
         date_range_layout = QtWidgets.QHBoxLayout(self.date_range_widget)
         date_range_layout.setContentsMargins(20, 10, 0, 0)
-        
-        self.from_date = QtWidgets.QDateEdit()
+        date_range_layout.setSpacing(24)
+
+        _date_style = """
+            QDateEdit {
+                padding: 10px;
+                border: 2px solid #bdc3c7;
+                border-radius: 8px;
+                font-size: 14px;
+                background-color: white;
+            }
+            QDateEdit:hover { border-color: #3498db; }
+        """
+        _label_style = "font-weight: bold; color: #2c3e50; font-size: 13px; border: none; background: transparent;"
+
+        from_col = QtWidgets.QVBoxLayout()
+        from_col.setSpacing(6)
+        from_lbl = QtWidgets.QLabel("From Date:")
+        from_lbl.setStyleSheet(_label_style)
+        from_col.addWidget(from_lbl)
+        self.from_date = _NoScrollDateEdit()
         self.from_date.setDate(QtCore.QDate.currentDate().addMonths(-1))
         self.from_date.setCalendarPopup(True)
         self.from_date.setDisplayFormat("MM-dd-yyyy")
+        self.from_date.setFixedSize(160, 45)
+        self.from_date.setStyleSheet(_date_style)
         self.from_date.dateChanged.connect(self.update_preview)
-        
-        self.to_date = QtWidgets.QDateEdit()
+        from_col.addWidget(self.from_date)
+        date_range_layout.addLayout(from_col)
+
+        to_col = QtWidgets.QVBoxLayout()
+        to_col.setSpacing(6)
+        to_lbl = QtWidgets.QLabel("To Date:")
+        to_lbl.setStyleSheet(_label_style)
+        to_col.addWidget(to_lbl)
+        self.to_date = _NoScrollDateEdit()
         self.to_date.setDate(QtCore.QDate.currentDate())
         self.to_date.setCalendarPopup(True)
         self.to_date.setDisplayFormat("MM-dd-yyyy")
+        self.to_date.setFixedSize(160, 45)
+        self.to_date.setStyleSheet(_date_style)
         self.to_date.dateChanged.connect(self.update_preview)
-        
-        date_range_layout.addWidget(QtWidgets.QLabel("From:"))
-        date_range_layout.addWidget(self.from_date)
-        date_range_layout.addWidget(QtWidgets.QLabel("To:"))
-        date_range_layout.addWidget(self.to_date)
+        to_col.addWidget(self.to_date)
+        date_range_layout.addLayout(to_col)
         date_range_layout.addStretch()
-        
+
         range_layout.addWidget(self.date_range_widget)
-        
+
         # Month selection
         self.month_widget = QtWidgets.QWidget()
         month_layout = QtWidgets.QHBoxLayout(self.month_widget)
         month_layout.setContentsMargins(20, 10, 0, 0)
-        
-        self.month_combo = QtWidgets.QComboBox()
+        month_layout.setSpacing(24)
+
+        month_col = QtWidgets.QVBoxLayout()
+        month_col.setSpacing(6)
+        month_lbl = QtWidgets.QLabel("Month")
+        month_lbl.setStyleSheet(_label_style)
+        month_col.addWidget(month_lbl)
+        self.month_combo = _NoScrollComboBox()
         months = ["January", "February", "March", "April", "May", "June",
                 "July", "August", "September", "October", "November", "December"]
         self.month_combo.addItems(months)
         self.month_combo.setCurrentIndex(datetime.now().month - 1)
+        self.month_combo.setFixedHeight(42)
+        self.month_combo.setMinimumWidth(160)
+        self.month_combo.setStyleSheet("""
+            QComboBox {
+                padding: 10px;
+                border: 2px solid #bdc3c7;
+                border-radius: 8px;
+                font-size: 14px;
+                background-color: white;
+            }
+            QComboBox:hover { border-color: #3498db; }
+        """)
         self.month_combo.currentIndexChanged.connect(self.update_preview)
-        
+        month_col.addWidget(self.month_combo)
+        month_layout.addLayout(month_col)
+
+        month_year_col = QtWidgets.QVBoxLayout()
+        month_year_col.setSpacing(6)
+        month_year_lbl = QtWidgets.QLabel("Year")
+        month_year_lbl.setStyleSheet(_label_style)
+        month_year_col.addWidget(month_year_lbl)
+        month_year_field_row = QtWidgets.QHBoxLayout()
+        month_year_field_row.setSpacing(6)
         self.month_year_edit = QtWidgets.QLineEdit(str(datetime.now().year))
-        self.month_year_edit.setFixedSize(100, 30)
+        self.month_year_edit.setFixedSize(120, 45)
         self.month_year_edit.setReadOnly(True)
-        
-        self.month_calendar_btn = QtWidgets.QPushButton("📅")
-        self.month_calendar_btn.setFixedSize(36, 36)
+        self.month_year_edit.setStyleSheet("""
+            QLineEdit {
+                padding: 10px;
+                border: 2px solid #bdc3c7;
+                border-radius: 8px;
+                font-size: 14px;
+                background-color: white;
+                color: #2c3e50;
+                font-weight: bold;
+            }
+        """)
+        self.month_calendar_btn = QtWidgets.QPushButton("▼ Year")
+        self.month_calendar_btn.setFixedHeight(45)
+        self.month_calendar_btn.setMinimumWidth(72)
+        self.month_calendar_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
         self.month_calendar_btn.clicked.connect(lambda: self.show_year_picker_for_field(self.month_year_edit))
         self.month_calendar_btn.setStyleSheet("""
             QPushButton {
                 background: #3498db;
                 color: white;
-                border: none;
-                border-radius: 5px;
-                font-size: 14px;
+                border: 2px solid #2980b9;
+                border-radius: 8px;
+                font-size: 13px;
+                font-weight: 700;
+                padding: 0 12px;
             }
-            QPushButton:hover {
-                background: #2980b9;
-            }
+            QPushButton:hover { background: #2980b9; border-color: #21618c; }
+            QPushButton:pressed { background: #21618c; }
         """)
-        
-        month_layout.addWidget(QtWidgets.QLabel("Month:"))
-        month_layout.addWidget(self.month_combo)
-        month_layout.addWidget(QtWidgets.QLabel("Year:"))
-        month_layout.addWidget(self.month_year_edit)
-        month_layout.addWidget(self.month_calendar_btn)
+        month_year_field_row.addWidget(self.month_year_edit)
+        month_year_field_row.addWidget(self.month_calendar_btn)
+        month_year_col.addLayout(month_year_field_row)
+        month_layout.addLayout(month_year_col)
         month_layout.addStretch()
-        
+
         range_layout.addWidget(self.month_widget)
-        
+
         # Year selection
         self.year_widget = QtWidgets.QWidget()
         year_layout2 = QtWidgets.QHBoxLayout(self.year_widget)
         year_layout2.setContentsMargins(20, 10, 0, 0)
-        
+        year_layout2.setSpacing(10)
+
+        year_lbl2 = QtWidgets.QLabel("Year:")
+        year_lbl2.setStyleSheet(_label_style)
+        year_layout2.addWidget(year_lbl2)
+
         self.year_edit2 = QtWidgets.QLineEdit(str(datetime.now().year))
-        self.year_edit2.setFixedSize(100, 30)
+        self.year_edit2.setFixedSize(120, 45)
         self.year_edit2.setReadOnly(True)
-        
-        self.year_calendar_btn2 = QtWidgets.QPushButton("📅")
-        self.year_calendar_btn2.setFixedSize(36, 36)
+        self.year_edit2.setStyleSheet("""
+            QLineEdit {
+                padding: 10px;
+                border: 2px solid #bdc3c7;
+                border-radius: 8px;
+                font-size: 14px;
+                background-color: white;
+                color: #2c3e50;
+                font-weight: bold;
+            }
+        """)
+
+        self.year_calendar_btn2 = QtWidgets.QPushButton("▼ Year")
+        self.year_calendar_btn2.setFixedHeight(45)
+        self.year_calendar_btn2.setMinimumWidth(72)
+        self.year_calendar_btn2.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
         self.year_calendar_btn2.clicked.connect(lambda: self.show_year_picker_for_field(self.year_edit2))
         self.year_calendar_btn2.setStyleSheet("""
             QPushButton {
                 background: #3498db;
                 color: white;
-                border: none;
-                border-radius: 5px;
-                font-size: 14px;
+                border: 2px solid #2980b9;
+                border-radius: 8px;
+                font-size: 13px;
+                font-weight: 700;
+                padding: 0 12px;
             }
-            QPushButton:hover {
-                background: #2980b9;
-            }
+            QPushButton:hover { background: #2980b9; border-color: #21618c; }
+            QPushButton:pressed { background: #21618c; }
         """)
-        
-        year_layout2.addWidget(QtWidgets.QLabel("Year:"))
+
         year_layout2.addWidget(self.year_edit2)
         year_layout2.addWidget(self.year_calendar_btn2)
         year_layout2.addStretch()
-        
+
         range_layout.addWidget(self.year_widget)
         
         layout.addWidget(range_frame)
@@ -5489,7 +8761,7 @@ class ExportDialog(QtWidgets.QDialog):
     def update_preview(self):
         """Update preview text"""
         self.update_date_widgets_visibility()
-        
+
         if self.tab_widget.currentIndex() == 0:
             # Annual tab
             date_str = datetime.now().strftime("%m-%d-%Y")
@@ -5503,7 +8775,7 @@ class ExportDialog(QtWidgets.QDialog):
                 range_text = f"{self.month_combo.currentText()} {self.month_year_edit.text()}"
             else:
                 range_text = f"Year {self.year_edit2.text()}"
-            
+
             categories = []
             if self.include_revenue.isChecked():
                 categories.append("Revenue")
@@ -5511,7 +8783,7 @@ class ExportDialog(QtWidgets.QDialog):
                 categories.append("Expenses")
             if self.include_salary.isChecked():
                 categories.append("Salaries")
-            
+
             date_str = datetime.now().strftime("%m-%d-%Y")
     
     def perform_export(self):
@@ -5543,7 +8815,7 @@ class ExportDialog(QtWidgets.QDialog):
                     self.export_combined_excel()
                 else:
                     self.export_combined_pdf()
-            
+
             # Refresh annual summary after export
             self.parent_tab.load_annual_summary_data_for_year(
                 self.parent_tab.annual_summary_year
@@ -5654,30 +8926,25 @@ class ExportDialog(QtWidgets.QDialog):
             except:
                 pass
 
-        # Revenue - Separate Unpaid and Paid based on status
+        # Revenue — use is_payment=True entries to match Annual Summary table exactly
+        _invoiced_nos = {
+            r['invoice_number'].strip()
+            for r in (self.parent_tab.annual_revenue_data or [])
+            if r.get('is_invoice') and (r.get('invoice_number') or '').strip()
+        }
         for r in self.parent_tab.annual_revenue_data:
+            if not r.get('is_payment'):
+                continue
+            inv_num = (r.get('invoice_number') or '').strip()
+            if not inv_num or inv_num not in _invoiced_nos:
+                continue
             try:
-                status = r.get('status', 'Unpaid')
-                
-                # Determine which date to use based on status
-                if status == "Paid":
-                    date_str = r.get('received_date', r.get('date', ''))
-                else:
-                    date_str = r.get('date', '')
-                
-                if not date_str or date_str == 'N/A':
-                    continue
-                    
-                d = datetime.strptime(date_str, "%m-%d-%Y")
-                if d.year == year:
+                date_str = r.get('date', r.get('received_date', ''))
+                d = self.parent_tab._parse_finance_date(date_str)
+                if d and d.year == year:
                     m = d.month - 1
-                    amount = float(r["amount"].replace("$", "").replace(",", ""))
-                    
-                    if status == "Paid":
-                        monthly_paid_revenue[m] += amount
-                    else:
-                        monthly_unpaid_revenue[m] += amount
-            except:
+                    monthly_paid_revenue[m] += self.parent_tab._money_to_float(r.get('amount', 0))
+            except Exception:
                 pass
 
         total_expenses = sum(monthly_expenses)
@@ -5692,7 +8959,12 @@ class ExportDialog(QtWidgets.QDialog):
         # Main Title - MABS HEADING
         ws.merge_cells('B1:O1')
         title_cell = ws['B1']
-        title_cell.value = "MABS ENGINEERING LLC"
+        try:
+            from main import Config as _Cfg
+            _co_title = _Cfg.COMPANY.get('name', 'MABS Engineering LLC').upper()
+        except Exception:
+            _co_title = 'MABS ENGINEERING LLC'
+        title_cell.value = _co_title
         title_cell.font = Font(name='Calibri', size=24, bold=True, color="1F4E79")
         title_cell.alignment = center_align
         title_cell.fill = white_fill
@@ -5725,57 +8997,37 @@ class ExportDialog(QtWidgets.QDialog):
             cell.alignment = center_align
             cell.border = thin_border
         
-        # UNPAID REVENUE Row (Row 11)
-        ws['B11'] = "Unpaid Revenue"
+        # REVENUE Row (Row 11)
+        ws['B11'] = "Revenue"
         ws['B11'].font = bold_font
-        ws['B11'].fill = orange_fill
+        ws['B11'].fill = light_gray_fill
         ws['B11'].alignment = center_align
         ws['B11'].border = thin_border
-        
-        for i, value in enumerate(monthly_unpaid_revenue, 3):
+
+        for i, value in enumerate(monthly_paid_revenue, 3):
             cell = ws.cell(row=11, column=i, value=value)
             cell.number_format = '"$"#,##0.00'
             cell.alignment = center_align
             cell.border = thin_border
-            # Add gray fill and smaller font for zero values
             if value == 0:
-                cell.font = Font(size=9)  # Changed from 10 to 8
+                cell.font = Font(size=9)
             else:
                 cell.font = normal_font
-        
-        # PAID REVENUE Row (Row 12)
-        ws['B12'] = "Paid Revenue"
+
+        # EXPENSE Row (Row 12)
+        ws['B12'] = "Expense"
         ws['B12'].font = bold_font
         ws['B12'].fill = light_gray_fill
         ws['B12'].alignment = center_align
         ws['B12'].border = thin_border
-        
-        for i, value in enumerate(monthly_paid_revenue, 3):
+
+        for i, value in enumerate(monthly_expenses, 3):
             cell = ws.cell(row=12, column=i, value=value)
             cell.number_format = '"$"#,##0.00'
             cell.alignment = center_align
             cell.border = thin_border
-            # Add gray fill and smaller font for zero values
             if value == 0:
-                cell.font = Font(size=9)  # Changed from 10 to 8
-            else:
-                cell.font = normal_font  # Size 10 for non-zero
-                
-        # EXPENSE Row (Row 13)
-        ws['B13'] = "Expense"
-        ws['B13'].font = bold_font
-        ws['B13'].fill = light_gray_fill
-        ws['B13'].alignment = center_align
-        ws['B13'].border = thin_border
-                
-        for i, value in enumerate(monthly_expenses, 3):
-            cell = ws.cell(row=13, column=i, value=value)
-            cell.number_format = '"$"#,##0.00'
-            cell.alignment = center_align
-            cell.border = thin_border
-            # Add gray fill and smaller font for zero values
-            if value == 0:
-                cell.font = Font(size=9)  # Changed from 10 to 8
+                cell.font = Font(size=9)
             else:
                 cell.font = normal_font
                 
@@ -5789,12 +9041,11 @@ class ExportDialog(QtWidgets.QDialog):
         # ------------------------------------------------
 
         # LABELS
-        ws['G18'] = "Unpaid Revenue"
-        ws['G19'] = "Paid Revenue"
-        ws['G20'] = "Total Expense"
-        ws['G21'] = "Net Profit"
+        ws['G18'] = "Revenue"
+        ws['G19'] = "Total Expense"
+        ws['G20'] = "Net Profit"
 
-        for r in range(18, 22):
+        for r in range(18, 21):
             ws[f"G{r}"].font = bold_font
             ws[f"G{r}"].alignment = left_align
 
@@ -5802,36 +9053,28 @@ class ExportDialog(QtWidgets.QDialog):
         ws['H18'] = "="
         ws['H19'] = "="
         ws['H20'] = "="
-        ws['H21'] = "="
 
-        for r in range(18, 22):
+        for r in range(18, 21):
             ws[f"H{r}"].alignment = center_align
             ws[f"H{r}"].font = bold_font
 
         # VALUES
         ws.merge_cells('I18:J18')
-        unpaid_cell = ws['I18']
-        unpaid_cell.value = total_unpaid
-        unpaid_cell.number_format = '"$"#,##0.00'
-        unpaid_cell.font = bold_font
-        unpaid_cell.alignment = left_align
+        rev_cell = ws['I18']
+        rev_cell.value = total_paid
+        rev_cell.number_format = '"$"#,##0.00'
+        rev_cell.font = bold_font
+        rev_cell.alignment = left_align
 
         ws.merge_cells('I19:J19')
-        paid_cell = ws['I19']
-        paid_cell.value = total_paid
-        paid_cell.number_format = '"$"#,##0.00'
-        paid_cell.font = bold_font
-        paid_cell.alignment = left_align
-
-        ws.merge_cells('I20:J20')
-        exp_cell = ws['I20']
+        exp_cell = ws['I19']
         exp_cell.value = total_expenses
         exp_cell.number_format = '"$"#,##0.00'
         exp_cell.font = bold_font
         exp_cell.alignment = left_align
 
-        ws.merge_cells('I21:J21')
-        net_cell = ws['I21']
+        ws.merge_cells('I20:J20')
+        net_cell = ws['I20']
         net_cell.value = net_profit
         net_cell.number_format = '"$"#,##0.00'
         net_cell.font = bold_font
@@ -6232,7 +9475,12 @@ class ExportDialog(QtWidgets.QDialog):
             # =================================================================
             
             # Title
-            elements.append(Paragraph(f"MABS ENGINEERING LLC - ANNUAL BALANCE SHEET - {year}", title_style))
+            try:
+                from main import Config as _Cfg
+                _co = _Cfg.COMPANY.get('name', 'MABS Engineering LLC').upper()
+            except Exception:
+                _co = 'MABS ENGINEERING LLC'
+            elements.append(Paragraph(f"{_co} - ANNUAL BALANCE SHEET - {year}", title_style))
             
             # Calculate monthly data - SEPARATE UNPAID AND PAID
             monthly_expenses = [0] * 12
@@ -6250,91 +9498,74 @@ class ExportDialog(QtWidgets.QDialog):
                 except:
                     pass
             
-            # Revenue - Separate Unpaid and Paid based on status
+            # Revenue — use is_payment=True entries to match Annual Summary table exactly
+            _invoiced_nos = {
+            r['invoice_number'].strip()
+            for r in (self.parent_tab.annual_revenue_data or [])
+            if r.get('is_invoice') and (r.get('invoice_number') or '').strip()
+        }
             for revenue in self.parent_tab.annual_revenue_data:
+                if not revenue.get('is_payment'):
+                    continue
+                inv_num = (revenue.get('invoice_number') or '').strip()
+                if not inv_num or inv_num not in _invoiced_nos:
+                    continue
                 try:
-                    status = revenue.get('status', 'Unpaid')
-                    
-                    # Determine which date to use based on status
-                    if status == "Paid":
-                        date_str = revenue.get('received_date', revenue.get('date', ''))
-                    else:
-                        date_str = revenue.get('date', '')
-                    
-                    if not date_str or date_str == 'N/A':
-                        continue
-                        
-                    date = datetime.strptime(date_str, "%m-%d-%Y")
-                    if date.year == year:
+                    date_str = revenue.get('date', revenue.get('received_date', ''))
+                    date = self.parent_tab._parse_finance_date(date_str)
+                    if date and date.year == year:
                         month = date.month - 1
-                        amount = float(revenue.get('amount', '0').replace('$', '').replace(',', ''))
-                        
-                        if status == "Paid":
-                            monthly_paid_revenue[month] += amount
-                        else:
-                            monthly_unpaid_revenue[month] += amount
-                except:
+                        amount = self.parent_tab._money_to_float(revenue.get('amount', 0))
+                        monthly_paid_revenue[month] += amount
+                except Exception:
                     pass
-            
+
             total_expenses = sum(monthly_expenses)
             total_unpaid = sum(monthly_unpaid_revenue)
             total_paid = sum(monthly_paid_revenue)
             net_profit = total_paid - total_expenses
             
-            # Monthly Summary Table with 3 rows: Unpaid Revenue, Paid Revenue, Expenses
-            months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+            # Monthly Summary Table with 3 rows: Revenue, Expenses, Net P/L
+            months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Total"]
-            
-            # Create table data
-            # In the PDF export, replace the table creation section (around line 1790) with:
 
-            # Create table data with styling information
             table_data = []
 
             # Header row
             header_row = [''] + months
             table_data.append(header_row)
 
-            # Create a list to track which cells should have gray styling
             gray_cells = []
 
-            # Unpaid Revenue row (row 1 in table)
-            unpaid_row = ['Unpaid Revenue']
-            for i, value in enumerate(monthly_unpaid_revenue):
-                if value == 0:
-                    unpaid_row.append(f"${value:,.2f}")
-                    gray_cells.append((1, i + 1))  # (row, col) 1-based for table indexing
-                else:
-                    unpaid_row.append(f"${value:,.2f}")
-            unpaid_row.append(f"${total_unpaid:,.2f}")
-            table_data.append(unpaid_row)
-
-            # Paid Revenue row (row 2 in table)
-            paid_row = ['Paid Revenue']
+            # Revenue row (row 1 in table) — paid revenue only, matches UI table
+            revenue_row = ['Revenue']
             for i, value in enumerate(monthly_paid_revenue):
+                revenue_row.append(f"${value:,.2f}")
                 if value == 0:
-                    paid_row.append(f"${value:,.2f}")
-                    gray_cells.append((2, i + 1))
-                else:
-                    paid_row.append(f"${value:,.2f}")
-            paid_row.append(f"${total_paid:,.2f}")
-            table_data.append(paid_row)
+                    gray_cells.append((1, i + 1))
+            revenue_row.append(f"${total_paid:,.2f}")
+            table_data.append(revenue_row)
 
-            # Expenses row (row 3 in table)
+            # Expenses row (row 2 in table)
             expenses_row = ['Expenses']
             for i, value in enumerate(monthly_expenses):
+                expenses_row.append(f"${value:,.2f}")
                 if value == 0:
-                    expenses_row.append(f"${value:,.2f}")
-                    gray_cells.append((3, i + 1))
-                else:
-                    expenses_row.append(f"${value:,.2f}")
+                    gray_cells.append((2, i + 1))
             expenses_row.append(f"${total_expenses:,.2f}")
             table_data.append(expenses_row)
+
+            # Net P/L row (row 3 in table)
+            monthly_net = [monthly_paid_revenue[i] - monthly_expenses[i] for i in range(12)]
+            net_row = ['Net P/L']
+            for i, value in enumerate(monthly_net):
+                net_row.append(f"${value:,.2f}")
+            net_row.append(f"${net_profit:,.2f}")
+            table_data.append(net_row)
 
             # Create table
             table = Table(table_data, colWidths=[1.2*inch] + [0.74*inch]*12 + [1*inch])
 
-            # Base table styling
             table_style = TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495E')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -6348,36 +9579,25 @@ class ExportDialog(QtWidgets.QDialog):
                 ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 1), (-1, -1), 9),
                 ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                ('BACKGROUND', (0, 1), (0, 1), colors.HexColor('#FDE9D9')),  # Unpaid Revenue - Orange
-                ('BACKGROUND', (0, 2), (0, 2), colors.HexColor('#D5F5E3')),  # Paid Revenue - Green
-                ('BACKGROUND', (0, 3), (0, 3), colors.HexColor('#FADBD8')),  # Expenses - Red
-                ('BACKGROUND', (-1, 1), (-1, 1), colors.HexColor('#FDE9D9')),
-                ('BACKGROUND', (-1, 2), (-1, 2), colors.HexColor('#D5F5E3')),
-                ('BACKGROUND', (-1, 3), (-1, 3), colors.HexColor('#FADBD8')),
+                ('BACKGROUND', (0, 1), (0, 1), colors.HexColor('#D5F5E3')),  # Revenue - Green
+                ('BACKGROUND', (0, 2), (0, 2), colors.HexColor('#FADBD8')),  # Expenses - Red
+                ('BACKGROUND', (-1, 1), (-1, 1), colors.HexColor('#D5F5E3')),
+                ('BACKGROUND', (-1, 2), (-1, 2), colors.HexColor('#FADBD8')),
             ])
 
-            # Apply gray styling for zero value cells
             for row, col in gray_cells:
-                # Row is 1-based (1 = Unpaid, 2 = Paid, 3 = Expenses)
-                # Col is 1-based (1 = Jan, 12 = Dec)
                 table_style.add('TEXTCOLOR', (col, row), (col, row), colors.HexColor('#A0A0A0'))
                 table_style.add('BACKGROUND', (col, row), (col, row), colors.HexColor('#F5F5F5'))
 
             table.setStyle(table_style)
 
-            # Gap BEFORE the monthly table
             elements.append(Spacer(1, 0.8*inch))
-
-            # Monthly table
             elements.append(table)
-
-            # Gap AFTER the monthly table
             elements.append(Spacer(1, 0.4*inch))
-            
+
             # Summary Section
             summary_data = [
-                ["Unpaid Revenue", ":", f"${total_unpaid:,.2f}"],
-                ["Paid Revenue", ":", f"${total_paid:,.2f}"],
+                ["Revenue", ":", f"${total_paid:,.2f}"],
                 ["Total Expense", ":", f"${total_expenses:,.2f}"],
                 ["Net Profit", ":", f"${net_profit:,.2f}"]
             ]
@@ -6390,7 +9610,7 @@ class ExportDialog(QtWidgets.QDialog):
                 ('ALIGN', (2,0), (2,-1), 'LEFT'),
                 ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
                 ('FONTSIZE', (0,0), (-1,-1), 10),
-                ('BACKGROUND', (2,3), (2,3), colors.HexColor('#D4E6F1')),
+                ('BACKGROUND', (2,2), (2,2), colors.HexColor('#D4E6F1')),
             ]))
 
             summary_table.hAlign = "CENTER"
@@ -6673,14 +9893,21 @@ class ExportDialog(QtWidgets.QDialog):
             
             # Revenue Section with columns: S.No, Date, Revenue Source, Description, Amount ($), Due Date, Status, Received Date
             if self.include_revenue.isChecked():
-                revenue_data = self.filter_data_by_range(self.parent_tab.revenue_data)
+                _invoice_rev = [r for r in self.parent_tab.revenue_data
+                    if not r.get('is_payment') and r.get('is_invoice', True)]
+                revenue_data = self.filter_data_by_range(_invoice_rev)
                 if revenue_data:
                     ws = wb.create_sheet("Revenue")
                     
                     # Title
                     ws.merge_cells('A1:H1')
                     cell = ws['A1']
-                    cell.value = f"MABS ENGINEERING - REVENUE REPORT ({range_description})"
+                    try:
+                        from main import Config as _Cfg
+                        _co = _Cfg.COMPANY.get('name', 'MABS Engineering LLC').upper()
+                    except Exception:
+                        _co = 'MABS ENGINEERING'
+                    cell.value = f"{_co} - REVENUE REPORT ({range_description})"
                     cell.font = title_font
                     cell.fill = PatternFill(start_color="27AE60", end_color="27AE60", fill_type="solid")
                     cell.alignment = Alignment(horizontal='center', vertical='center')
@@ -6702,12 +9929,15 @@ class ExportDialog(QtWidgets.QDialog):
                         date_cell = ws.cell(row=row, column=2, value=safe_str(rev.get('date', '')))
                         date_cell.alignment = Alignment(horizontal='center')
                         
-                        # Revenue Source
-                        ws.cell(row=row, column=3, value=safe_str(rev.get('source', '')))
-                        
-                        # Description with text wrapping
+                        # Revenue Source — strip "Invoice - " prefix if present
+                        _src = safe_str(rev.get('source', ''))
+                        if _src.startswith("Invoice - "):
+                            _src = _src[len("Invoice - "):]
+                        ws.cell(row=row, column=3, value=_src).alignment = Alignment(horizontal='center', vertical='center')
+
+                        # Description
                         desc_cell = ws.cell(row=row, column=4, value=safe_str(rev.get('description', '')))
-                        desc_cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+                        desc_cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
                         
                         # Amount
                         amount = safe_float_amount(rev.get('amount', 0))
@@ -6767,7 +9997,7 @@ class ExportDialog(QtWidgets.QDialog):
                     total_cell.font = bold_font
                     
                     # Adjust column widths
-                    ws.column_dimensions['A'].width = 8
+                    ws.column_dimensions['A'].width = 10
                     ws.column_dimensions['B'].width = 15
                     ws.column_dimensions['C'].width = 25
                     ws.column_dimensions['D'].width = 40
@@ -6785,7 +10015,12 @@ class ExportDialog(QtWidgets.QDialog):
                     # Title
                     ws.merge_cells('A1:E1')
                     cell = ws['A1']
-                    cell.value = f"MABS ENGINEERING - EXPENSES REPORT ({range_description})"
+                    try:
+                        from main import Config as _Cfg
+                        _co = _Cfg.COMPANY.get('name', 'MABS Engineering LLC').upper()
+                    except Exception:
+                        _co = 'MABS ENGINEERING'
+                    cell.value = f"{_co} - EXPENSES REPORT ({range_description})"
                     cell.font = title_font
                     cell.fill = PatternFill(start_color="C0392B", end_color="C0392B", fill_type="solid")
                     cell.alignment = Alignment(horizontal='center', vertical='center')
@@ -6803,11 +10038,11 @@ class ExportDialog(QtWidgets.QDialog):
                     for row, exp in enumerate(expenses_data, 5):
                         ws.cell(row=row, column=1, value=row-4).alignment = Alignment(horizontal='center')
                         ws.cell(row=row, column=2, value=safe_str(exp.get('date', ''))).alignment = Alignment(horizontal='center')
-                        ws.cell(row=row, column=3, value=safe_str(exp.get('name', '')))
-                        
-                        # Description with text wrapping
+                        ws.cell(row=row, column=3, value=safe_str(exp.get('name', ''))).alignment = Alignment(horizontal='center', vertical='center')
+
+                        # Description
                         desc_cell = ws.cell(row=row, column=4, value=safe_str(exp.get('description', '')))
-                        desc_cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+                        desc_cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
                         
                         amount = safe_float_amount(exp.get('amount', 0))
                         amount_cell = ws.cell(row=row, column=5, value=amount)
@@ -6829,7 +10064,7 @@ class ExportDialog(QtWidgets.QDialog):
                     total_cell.font = bold_font
                     
                     # Adjust column widths
-                    ws.column_dimensions['A'].width = 8
+                    ws.column_dimensions['A'].width = 10
                     ws.column_dimensions['B'].width = 15
                     ws.column_dimensions['C'].width = 25
                     ws.column_dimensions['D'].width = 45
@@ -6852,7 +10087,12 @@ class ExportDialog(QtWidgets.QDialog):
                     # Title
                     ws.merge_cells('A1:F1')
                     cell = ws['A1']
-                    cell.value = f"MABS ENGINEERING - SALARY REPORT ({range_description})"
+                    try:
+                        from main import Config as _Cfg
+                        _co = _Cfg.COMPANY.get('name', 'MABS Engineering LLC').upper()
+                    except Exception:
+                        _co = 'MABS ENGINEERING'
+                    cell.value = f"{_co} - SALARY REPORT ({range_description})"
                     cell.font = title_font
                     cell.fill = PatternFill(start_color="2980B9", end_color="2980B9", fill_type="solid")
                     cell.alignment = Alignment(horizontal='center', vertical='center')
@@ -6873,16 +10113,17 @@ class ExportDialog(QtWidgets.QDialog):
                         
                         region = safe_str(sal.get('region', ''))
                         region_cell = ws.cell(row=row, column=3, value=region)
+                        region_cell.alignment = Alignment(horizontal='center', vertical='center')
                         if region == "Inside America":
                             region_cell.font = Font(color="2980B9", bold=True)
                         else:
                             region_cell.font = Font(color="C0392B", bold=True)
-                        
-                        ws.cell(row=row, column=4, value=safe_str(sal.get('name', '')))
-                        
-                        # Description with text wrapping
+
+                        ws.cell(row=row, column=4, value=safe_str(sal.get('name', ''))).alignment = Alignment(horizontal='center', vertical='center')
+
+                        # Description
                         desc_cell = ws.cell(row=row, column=5, value=safe_str(sal.get('description', '')))
-                        desc_cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+                        desc_cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
                         
                         amount = safe_float_amount(sal.get('amount', 0))
                         amount_cell = ws.cell(row=row, column=6, value=amount)
@@ -6904,7 +10145,7 @@ class ExportDialog(QtWidgets.QDialog):
                     total_cell.font = bold_font
                     
                     # Adjust column widths
-                    ws.column_dimensions['A'].width = 8
+                    ws.column_dimensions['A'].width = 10
                     ws.column_dimensions['B'].width = 15
                     ws.column_dimensions['C'].width = 18
                     ws.column_dimensions['D'].width = 20
@@ -7006,25 +10247,33 @@ class ExportDialog(QtWidgets.QDialog):
                 fontName='Helvetica-Bold'
             )
             
-            # Style for normal cells with wrapping
+            # Style for normal cells with wrapping — centered
             cell_style = ParagraphStyle(
                 'CellStyle',
                 parent=styles['Normal'],
                 fontSize=8,
-                leading=10
+                leading=10,
+                alignment=1
             )
             
             # Get range description
             range_description = self.get_range_description()
             
             # Title
-            elements.append(Paragraph(f"MABS ENGINEERING - FINANCIAL OVERVIEW REPORT", title_style))
+            try:
+                from main import Config as _Cfg
+                _co = _Cfg.COMPANY.get('name', 'MABS Engineering LLC').upper()
+            except Exception:
+                _co = 'MABS ENGINEERING'
+            elements.append(Paragraph(f"{_co} - FINANCIAL OVERVIEW REPORT", title_style))
             elements.append(Paragraph(f"<b>Period:</b> {range_description}", styles['Normal']))
             elements.append(Spacer(1, 0.2*inch))
             
             # Revenue Section
             if self.include_revenue.isChecked():
-                revenue_data = self.filter_data_by_range(self.parent_tab.revenue_data)
+                _invoice_rev = [r for r in self.parent_tab.revenue_data
+                    if not r.get('is_payment') and r.get('is_invoice', True)]
+                revenue_data = self.filter_data_by_range(_invoice_rev)
                 if revenue_data:
                     elements.append(Paragraph("REVENUE", section_style))
                     
@@ -7039,9 +10288,10 @@ class ExportDialog(QtWidgets.QDialog):
                         }
                         return colors_map.get(status, "#7F8C8D")
                     
+                    hdr_s = ParagraphStyle('BsHdr', parent=styles['Normal'], fontSize=8, fontName='Helvetica-Bold', textColor=colors.white, alignment=1, wordWrap='CJK')
                     # Headers: S.No, Date, Revenue Source, Description, Amount ($), Due Date, Status, Received Date
-                    data = [["S.No", "Date", "Revenue Source", "Description", "Amount ($)", "Due Date", "Status", "Received Date"]]
-                    
+                    data = [[Paragraph(h, hdr_s) for h in ["S.No", "Date", "Revenue Source", "Description", "Amount ($)", "Due Date", "Status", "Received Date"]]]
+
                     for idx, rev in enumerate(revenue_data, 1):
                         amount = safe_float_amount(rev.get('amount', 0))
                         status = safe_str(rev.get('status', 'Unpaid'))
@@ -7049,6 +10299,8 @@ class ExportDialog(QtWidgets.QDialog):
                         invoice_date = safe_str(rev.get('date', ''))
                         received_date = safe_str(rev.get('received_date', 'N/A'))
                         revenue_source = safe_str(rev.get('source', ''))
+                        if revenue_source.startswith("Invoice - "):
+                            revenue_source = revenue_source[len("Invoice - "):]
                         description = safe_str(rev.get('description', ''))
                         
                         # Create wrapped paragraphs
@@ -7080,7 +10332,7 @@ class ExportDialog(QtWidgets.QDialog):
                                 pass
                         
                         data.append([
-                            str(idx),
+                            Paragraph(str(idx), cell_style),
                             date_para,
                             source_para,
                             desc_para,
@@ -7101,20 +10353,14 @@ class ExportDialog(QtWidgets.QDialog):
                     data.append(["", "", "", total_label, total_amount, "", "", ""])
                     
                     # Create table with appropriate column widths
-                    table = Table(data, colWidths=[0.35*inch, 0.8*inch, 1.3*inch, 1.6*inch, 0.85*inch, 0.8*inch, 0.7*inch, 0.8*inch])
+                    table = Table(data, colWidths=[0.45*inch, 0.8*inch, 1.3*inch, 1.6*inch, 0.85*inch, 0.8*inch, 0.7*inch, 0.8*inch])
                     table.setStyle(TableStyle([
                         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#27AE60')),
                         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                         ('FONTSIZE', (0, 0), (-1, 0), 7),
                         ('GRID', (0, 0), (-1, -2), 0.5, colors.grey),
-                        ('ALIGN', (0, 1), (0, -1), 'CENTER'),
-                        ('ALIGN', (1, 1), (1, -1), 'CENTER'),
-                        ('ALIGN', (4, 1), (4, -1), 'CENTER'),
-                        ('ALIGN', (5, 1), (5, -1), 'CENTER'),
-                        ('ALIGN', (6, 1), (6, -1), 'CENTER'),
-                        ('ALIGN', (7, 1), (7, -1), 'CENTER'),
                         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                         ('FONTNAME', (3, -1), (3, -1), 'Helvetica-Bold'),
                         ('FONTNAME', (4, -1), (4, -1), 'Helvetica-Bold'),
@@ -7128,7 +10374,8 @@ class ExportDialog(QtWidgets.QDialog):
                 expenses_data = self.filter_data_by_range(self.parent_tab.expenses_data)
                 if expenses_data:
                     elements.append(Paragraph("EXPENSES", section_style))
-                    data = [["S.No", "Date", "Expense Item", "Description", "Amount ($)"]]
+                    hdr_s2 = ParagraphStyle('BsHdr2', parent=styles['Normal'], fontSize=8, fontName='Helvetica-Bold', textColor=colors.white, alignment=1, wordWrap='CJK')
+                    data = [[Paragraph(h, hdr_s2) for h in ["S.No", "Date", "Expense Item", "Description", "Amount ($)"]]]
                     for idx, exp in enumerate(expenses_data, 1):
                         amount = safe_float_amount(exp.get('amount', 0))
                         
@@ -7145,7 +10392,7 @@ class ExportDialog(QtWidgets.QDialog):
                             cell_style
                         )
                         data.append([
-                            str(idx),
+                            Paragraph(str(idx), cell_style),
                             date_para,
                             item_para,
                             desc_para,
@@ -7161,17 +10408,14 @@ class ExportDialog(QtWidgets.QDialog):
                     )
 
                     data.append(["", "", "", total_label, total_amount])
-                    table = Table(data, colWidths=[0.35*inch, 0.9*inch, 2.15*inch, 2.9*inch, 0.9*inch])
+                    table = Table(data, colWidths=[0.45*inch, 0.9*inch, 2.15*inch, 2.9*inch, 0.9*inch])
                     table.setStyle(TableStyle([
                         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E74C3C')),
                         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                         ('FONTSIZE', (0, 0), (-1, 0), 8),
                         ('GRID', (0, 0), (-1, -2), 0.5, colors.grey),
-                        ('ALIGN', (0, 1), (0, -1), 'CENTER'),
-                        ('ALIGN', (1, 1), (1, -1), 'CENTER'),
-                        ('ALIGN', (4, 1), (4, -1), 'CENTER'),
                         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                         ('FONTNAME', (3, -1), (3, -1), 'Helvetica-Bold'),
                         ('FONTNAME', (4, -1), (4, -1), 'Helvetica-Bold'),
@@ -7194,7 +10438,8 @@ class ExportDialog(QtWidgets.QDialog):
                 if salary_data:
                     elements.append(Paragraph("SALARIES", section_style))
                     
-                    data = [["S.No", "Date", "Region", "Employee", "Description", "Amount ($)"]]
+                    hdr_s3 = ParagraphStyle('BsHdr3', parent=styles['Normal'], fontSize=8, fontName='Helvetica-Bold', textColor=colors.white, alignment=1, wordWrap='CJK')
+                    data = [[Paragraph(h, hdr_s3) for h in ["S.No", "Date", "Region", "Employee", "Description", "Amount ($)"]]]
                     for idx, sal in enumerate(salary_data, 1):
                         amount = safe_float_amount(sal.get('amount', 0))
                         region = safe_str(sal.get('region', ''))
@@ -7217,7 +10462,7 @@ class ExportDialog(QtWidgets.QDialog):
                         )
                         
                         data.append([
-                            str(idx),
+                            Paragraph(str(idx), cell_style),
                             date_para,
                             region_para,
                             emp_para,
@@ -7235,18 +10480,14 @@ class ExportDialog(QtWidgets.QDialog):
 
                     data.append(["", "", "", total_label, "", total_amount])
                     
-                    table = Table(data, colWidths=[0.35*inch, 0.9*inch, 1.3*inch, 1.5*inch, 2.25*inch, 0.9*inch])
+                    table = Table(data, colWidths=[0.45*inch, 0.9*inch, 1.3*inch, 1.5*inch, 2.25*inch, 0.9*inch])
                     table.setStyle(TableStyle([
                         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498DB')),
                         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                         ('FONTSIZE', (0, 0), (-1, 0), 8),
                         ('GRID', (0, 0), (-1, -2), 0.5, colors.grey),
-                        ('ALIGN', (0, 1), (0, -1), 'CENTER'),
-                        ('ALIGN', (1, 1), (1, -1), 'CENTER'),
-                        ('ALIGN', (2, 1), (2, -1), 'CENTER'),
-                        ('ALIGN', (5, 1), (5, -1), 'CENTER'),
                         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                         ('FONTNAME', (3, -1), (4, -1), 'Helvetica-Bold'),
                         ('FONTNAME', (5, -1), (5, -1), 'Helvetica-Bold'),
@@ -7299,42 +10540,88 @@ class ExportDialog(QtWidgets.QDialog):
         else:
             return f"Year {self.year_edit2.text()}"
     
-             
+    def _parse_export_item_date(self, item):
+        """Parse finance dates from all records that can appear in exports."""
+        date_fields = (
+            "date",
+            "received_date",
+            "paid_date",
+            "payment_date",
+            "due_date",
+            "created_at",
+            "updated_at",
+            "completion_date",
+        )
+        date_formats = (
+            "%m-%d-%Y",
+            "%Y-%m-%d",
+            "%m/%d/%Y",
+            "%d-%m-%Y",
+            "%d/%m/%Y",
+            "%m-%d-%y",
+            "%m/%d/%y",
+            "%B %d, %Y",
+        )
+
+        for field in date_fields:
+            raw_value = item.get(field)
+            if not raw_value or raw_value == "N/A":
+                continue
+
+            text = str(raw_value).strip()
+            if not text:
+                continue
+
+            if "T" in text:
+                iso_text = text.replace("Z", "+00:00")
+                try:
+                    return datetime.fromisoformat(iso_text)
+                except ValueError:
+                    text = text.split("T", 1)[0]
+
+            for date_format in date_formats:
+                try:
+                    return datetime.strptime(text, date_format)
+                except ValueError:
+                    continue
+
+        return None
     
     def filter_data_by_range(self, data_list):
         """Filter data based on selected range"""
         if self.all_radio.isChecked():
-            filtered = list(data_list)
-        else:
-            filtered = []
-                
+            return self._sort_export_items(list(data_list))
+
+        filtered = []
         for item in data_list:
             try:
-                date_str = item.get('date', '')
-                if not date_str:
-                    continue
-                
-                item_date = QtCore.QDate.fromString(date_str, "MM-dd-yyyy")
-                if not item_date.isValid():
-                    continue
+                item_datetime = self._parse_export_item_date(item)
+                item_year = None
+                try:
+                    if item.get("year"):
+                        item_year = int(item.get("year"))
+                except Exception:
+                    item_year = None
                 
                 include = False
                 
                 if self.date_range_radio.isChecked():
-                    from_qdate = self.from_date.date()
-                    to_qdate = self.to_date.date()
-                    if from_qdate <= item_date <= to_qdate:
+                    if item_datetime is None:
+                        continue
+                    from_date = self.from_date.date().toPyDate()
+                    to_date = self.to_date.date().toPyDate()
+                    if from_date <= item_datetime.date() <= to_date:
                         include = True
                 
                 elif self.month_radio.isChecked():
                     year = int(self.month_year_edit.text())
                     month = self.month_combo.currentIndex() + 1
-                    if item_date.year() == year and item_date.month() == month:
+                    if item_datetime and item_datetime.year == year and item_datetime.month == month:
                         include = True
                 
                 elif self.year_radio.isChecked():
                     year = int(self.year_edit2.text())
-                    if item_date.year() == year:
+                    if (item_datetime and item_datetime.year == year) or item_year == year:
                         include = True
                 
                 if include:
@@ -7344,18 +10631,20 @@ class ExportDialog(QtWidgets.QDialog):
                 _log.warning("Error filtering item: %s", e)
                 continue
         
-        try:
-            filtered.sort(
-                key=lambda x: (
-                    int(x.get('date','01-01-1900').split('-')[2]),  # year
-                    int(x.get('date','01-01-1900').split('-')[0]),  # month
-                    int(x.get('date','01-01-1900').split('-')[1])   # day
-                )
-            )
-        except:
-            pass
+        return self._sort_export_items(filtered)
 
-        return filtered
+    def _sort_export_items(self, items):
+        """Sort export records chronologically while keeping undated rows."""
+        def sort_key(item):
+            parsed = self._parse_export_item_date(item)
+            if parsed:
+                return (0, parsed)
+            try:
+                return (1, datetime(int(item.get("year")), 1, 1))
+            except Exception:
+                return (2, datetime(1900, 1, 1))
+
+        return sorted(items, key=sort_key)
             
     def open_file(self, filepath):
         """Open file with default application"""

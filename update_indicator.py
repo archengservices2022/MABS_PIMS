@@ -13,8 +13,7 @@ class UpdateIndicator(QtWidgets.QWidget):
         self.update_available_flag = False
         self.init_ui()
         
-        # Check for updates in background
-        QtCore.QTimer.singleShot(2000, self.check_updates_background)
+        # Auto-check removed — startup check is handled by UpdateChecker.check_on_startup()
     
     def init_ui(self):
         layout = QtWidgets.QHBoxLayout(self)

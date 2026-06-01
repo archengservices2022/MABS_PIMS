@@ -1,6 +1,6 @@
 # firebase_utils.py
 import base64
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 import tempfile
@@ -40,7 +40,7 @@ class FirebaseJobManager:
             if existing_jobs:
                 # Update existing job
                 job_id = list(existing_jobs.keys())[0]
-                job_data['updated_at'] = datetime.now().isoformat()
+                job_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                 ref.child(job_id).update(job_data)
                 print(f"✓ Job form updated in Firebase: {job_data['job_number']}")
                 return True
@@ -48,8 +48,8 @@ class FirebaseJobManager:
                 # Create new job
                 new_job_ref = ref.push()
                 job_data['firebase_id'] = new_job_ref.key
-                job_data['created_at'] = datetime.now().isoformat()
-                job_data['updated_at'] = datetime.now().isoformat()
+                job_data['created_at'] = datetime.now(timezone.utc).isoformat()
+                job_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                 new_job_ref.set(job_data)
                 print(f"✓ Job form saved to Firebase with ID: {new_job_ref.key}")
                 return True
@@ -78,7 +78,7 @@ class FirebaseJobManager:
                 'job_number': job_number,
                 'pdf_base64': pdf_base64,
                 'file_name': f"{job_number}_job_form.pdf",
-                'created_at': datetime.now().isoformat(),
+                'created_at': datetime.now(timezone.utc).isoformat(),
                 'size_bytes': len(pdf_data)
             }
             

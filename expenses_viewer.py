@@ -12,6 +12,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import inch
+from app_theme import configure_filter_button
 
 class ExpensesViewerWindow(QtWidgets.QMainWindow):
     """Full window expenses viewer with category-wise display"""
@@ -270,26 +271,7 @@ class ExpensesViewerWindow(QtWidgets.QMainWindow):
         left_section.addWidget(self.table_search_edit)
         
         # Date Range Filter Button
-        self.date_range_button = QtWidgets.QPushButton("📅")
-        self.date_range_button.setMinimumHeight(36)
-        self.date_range_button.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        self.date_range_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                font-size: 16px;
-                font-weight: bold;
-                min-width: 40px;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-            QPushButton:pressed {
-                background-color: #21618c;
-            }
-        """)
+        self.date_range_button = configure_filter_button(QtWidgets.QPushButton(), height=36)
         self.date_range_button.clicked.connect(self.show_date_range_dialog)
         left_section.addWidget(self.date_range_button)
         
@@ -1064,7 +1046,12 @@ class ExpensesViewerWindow(QtWidgets.QMainWindow):
         self.current_to_date = to_date_qdate
         
         # Update button text to show active filter in US format
-        self.date_range_button.setText(f"📅 {from_date_us} to {to_date_us}")
+        configure_filter_button(
+            self.date_range_button,
+            f"{from_date_us} to {to_date_us}",
+            active=True,
+            height=36,
+        )
         
         # Clear search filter when applying date filter
         self.table_search_edit.clear()
@@ -1074,7 +1061,7 @@ class ExpensesViewerWindow(QtWidgets.QMainWindow):
 
     def clear_date_range_filter(self):
         """Clear date range filter"""
-        self.date_range_button.setText("📅")
+        configure_filter_button(self.date_range_button, height=36)
         
         # Clear the stored date objects
         if hasattr(self, 'current_from_date'):
@@ -1290,7 +1277,12 @@ class ExpensesViewerWindow(QtWidgets.QMainWindow):
 
             # Header information (ONLY MAIN TITLE - NO DATE)
             ws.merge_cells('A1:G1')
-            ws['A1'] = f"MABS ENGINEERING LLC - {category_name.upper()} EXPENSES REPORT"
+            try:
+                from main import Config as _Cfg
+                _co = _Cfg.COMPANY.get('name', 'MABS Engineering LLC').upper()
+            except Exception:
+                _co = 'MABS ENGINEERING LLC'
+            ws['A1'] = f"{_co} - {category_name.upper()} EXPENSES REPORT"
             ws['A1'].font = Font(size=16, bold=True)
             ws['A1'].alignment = Alignment(horizontal='center')
 
@@ -1520,10 +1512,15 @@ class ExpensesViewerWindow(QtWidgets.QMainWindow):
                 fontName='Helvetica-Bold'
             )
 
-            # 1. Header table with MABS Engineering LLC (centered) and Date (right)
+            # 1. Header table with company name (centered) and Date (right)
+            try:
+                from main import Config as _Cfg
+                _co_hdr = _Cfg.COMPANY.get('name', 'MABS Engineering LLC')
+            except Exception:
+                _co_hdr = 'MABS Engineering LLC'
             generated_date = datetime.now().strftime("%m/%d/%Y")
             header_data = [
-                [Paragraph("MABS Engineering LLC", mabs_header_style), 
+                [Paragraph(_co_hdr, mabs_header_style),
                 Paragraph(f"{generated_date}", date_style)]
             ]
 
@@ -1534,8 +1531,6 @@ class ExpensesViewerWindow(QtWidgets.QMainWindow):
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
                 ('TOPPADDING', (0, 0), (-1, -1), 5),
-                # Shift the first cell (MABS header) to the right
-                ('LEFTPADDING', (0,0), (0,0), 115),
             ]))
 
             elements.append(header_table)
@@ -1598,9 +1593,35 @@ class ExpensesViewerWindow(QtWidgets.QMainWindow):
 
             # 5. Expenses Table with UPDATED columns
             if expenses:
+                cell_s = ParagraphStyle(
+                    'CellStyle',
+                    parent=styles['Normal'],
+                    fontSize=7,
+                    fontName='Helvetica',
+                    textColor=colors.HexColor('#2c3e50'),
+                    alignment=1,
+                    wordWrap='CJK',
+                )
+                hdr_s = ParagraphStyle(
+                    'HdrStyle',
+                    parent=styles['Normal'],
+                    fontSize=8,
+                    fontName='Helvetica-Bold',
+                    textColor=colors.whitesmoke,
+                    alignment=1,
+                    wordWrap='CJK',
+                )
                 # Prepare table data with required columns: S.No, Date, Expense Type, Expense Name, Vendor, Amount, Payment Method
-                table_data = [["S.No", "Date", "Expense Type", "Expense Name", "Vendor", "Amount", "Payment Method"]]
-                
+                table_data = [[
+                    Paragraph("S.No", hdr_s),
+                    Paragraph("Date", hdr_s),
+                    Paragraph("Expense Type", hdr_s),
+                    Paragraph("Expense Name", hdr_s),
+                    Paragraph("Vendor", hdr_s),
+                    Paragraph("Amount", hdr_s),
+                    Paragraph("Payment Method", hdr_s),
+                ]]
+
                 for idx, expense in enumerate(expenses, 1):
                     # Convert date to MM/dd/yyyy format
                     date_str = expense.get('date', '')
@@ -1614,26 +1635,26 @@ class ExpensesViewerWindow(QtWidgets.QMainWindow):
                         us_date = expense_date.strftime("%m/%d/%Y")
                     except:
                         us_date = date_str  # Fallback to original if parsing fails
-                    
+
                     # Get expense type - auto-set to "Other Expenses" if empty
                     expense_type = expense.get('expense_type', '')
                     if not expense_type:
                         expense_type = "Other Expenses"
-                    
+
                     # Remove emojis from fields
                     expense_type = self.remove_emojis(expense_type)
                     expense_name = self.remove_emojis(expense.get('expense_name', ''))
                     vendor = self.remove_emojis(expense.get('vendor', ''))
                     payment_method = self.remove_emojis(expense.get('payment_method', ''))
-                    
+
                     table_data.append([
-                        str(idx),
-                        us_date,
-                        expense_type[:25] + "..." if len(expense_type) > 25 else expense_type,
-                        expense_name[:25] + "..." if len(expense_name) > 25 else expense_name,
-                        vendor[:25] + "..." if len(vendor) > 25 else vendor,
-                        f"${expense.get('amount', 0):,.2f}",
-                        payment_method[:20] + "..." if len(payment_method) > 20 else payment_method
+                        Paragraph(str(idx), cell_s),
+                        Paragraph(us_date, cell_s),
+                        Paragraph(expense_type, cell_s),
+                        Paragraph(expense_name, cell_s),
+                        Paragraph(vendor, cell_s),
+                        Paragraph(f"${expense.get('amount', 0):,.2f}", cell_s),
+                        Paragraph(payment_method, cell_s),
                     ])
                 
                 # Create table with adjusted column widths for required columns
