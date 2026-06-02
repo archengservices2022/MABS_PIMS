@@ -1,0 +1,27 @@
+{
+  "meta": {
+    "invoice_number": "INV-202510-001",
+    "date": "2025-10-18",
+    "due_date": "2025-11-17",
+    "client_name": "geethika",
+    "client_email": "",
+    "client_address": "hyderabad",
+    "tax_rate": 0.0,
+    "subtotal": 0.0,
+    "tax_amount": 0.0,
+    "total": 0.0,
+    "notes": "Thank you for your business! Best regards, MABS Engineering LLC"
+  },
+  "items": [
+    {
+      "project_number": "",
+      "description": "",
+      "plant": "",
+      "quantity": 1,
+      "unit_price": 0.0,
+      "down_payment": 0.0,
+      "payment_due": 0.0,
+      "total": 0.0
+    }
+  ]
+}

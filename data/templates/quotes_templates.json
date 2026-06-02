@@ -1,0 +1,20 @@
+{
+  "quotes_20260505_122555": {
+    "name": "Multi-Discipline Engineering",
+    "description": "Full engineering services package",
+    "scope_of_work": "Complete multi-discipline engineering services including:\n- Structural engineering and design\n- Civil engineering and site work\n- Electrical system design\n- Mechanical system design\n- Plumbing design and calculations\n- Coordination between all disciplines\n- Complete construction documentation",
+    "services": [
+      "Structural",
+      "Civil",
+      "Electrical",
+      "Mechanical",
+      "Plumbing Design"
+    ],
+    "default_price_range": "$25,000 - $100,000",
+    "estimated_duration": "45-60 days",
+    "payment_terms": "50% Advance, 50% on Completion",
+    "id": "quotes_20260505_122555",
+    "created_at": "2026-05-05T12:25:55.788217",
+    "updated_at": "2026-05-05T12:25:55.788220"
+  }
+}

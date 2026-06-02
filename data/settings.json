@@ -1,0 +1,57 @@
+{
+  "company": {
+    "name": "MABS Engineering LLC",
+    "address": "15455 Manchester Rd, PO Box 1144\nManchester, MO 63011",
+    "email": "info@mabs-engineering.com",
+    "phone": "(314) 585-2003",
+    "website": "www.mabs-engineeringg.com",
+    "logo_path": "E:/ArchInvoiceGenerator/assets/logo.jpg",
+    "default_tax_rate": 0.0,
+    "default_terms": "Thank you for your business! Best regards, MABS Engineering LLC"
+  },
+  "users": {
+    "admin": {
+      "password_hash": "pbkdf2_sha256$310000$fSW1OrnedWuz/FYN8y0j1A==$76EcwqYD9JYdAPnJhgCK4yGqKsi3NcDxHWpYdqi2VgE=",
+      "role": "admin"
+    },
+    "projects": {
+      "password_hash": "3ce9c3268a5afa194f8f565a6413848a20b14c6648676e19fdcb33e7a97f0bf5",
+      "role": "projects"
+    },
+    "finance": {
+      "password_hash": "5a4438bcb19ff36605360dbd041edd67a4034f5b4d4f9e2445fdb6e01663f6ae",
+      "role": "finance"
+    },
+    "Admin": {
+      "role": "admin",
+      "password_hash": "pbkdf2_sha256$310000$e99PMsiq2cF3/eavDgKqLQ==$K1qQkieMfWr0zoO/uC7KKUoUCnF3rfthd8sf1wECLLw=",
+      "created_at": "2026-05-02T19:19:57.220942",
+      "updated_at": "2026-05-02T19:19:57.220942"
+    },
+    "sales": {
+      "role": "sales",
+      "password_hash": "pbkdf2_sha256$310000$V/4Xw0oV6Gt8tgMus4iiPQ==$rH/B/IbrYHsiycD/+DnYYQUalCaN+k+nPfH5Nip1DJA=",
+      "created_at": "2026-05-02T19:20:18.071151",
+      "updated_at": "2026-05-02T19:20:18.071151"
+    }
+  },
+  "app": {
+    "log_level": "INFO",
+    "auto_check_updates": true,
+    "theme": "light"
+  },
+  "github": {
+    "repo": "archengservices2022/MABS_PIMS",
+    "current_version": "1.2",
+    "dismissed_version": "1.2"
+  },
+  "email": {
+    "enabled": false,
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "smtp_user": "",
+    "smtp_password": "",
+    "from_name": "MABS Engineering LLC",
+    "reminder_days_before": 3
+  }
+}

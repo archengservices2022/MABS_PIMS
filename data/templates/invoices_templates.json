@@ -1,0 +1,14 @@
+{
+  "invoices_20260505_122555": {
+    "name": "Milestone Invoice",
+    "description": "Invoice with milestone-based payments",
+    "payment_terms": "Progress Payments",
+    "payment_structure": "Milestone Payments",
+    "down_payment_percentage": 33,
+    "notes_template": "Payments tied to project milestones. See project schedule for details.",
+    "footer_text": "MABS Engineering LLC\nLicensed Professional Engineers\nState License #12345",
+    "id": "invoices_20260505_122555",
+    "created_at": "2026-05-05T12:25:55.793029",
+    "updated_at": "2026-05-05T12:25:55.793032"
+  }
+}

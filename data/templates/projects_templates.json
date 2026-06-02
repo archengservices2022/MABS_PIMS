@@ -1,0 +1,54 @@
+{
+  "projects_20260505_122555": {
+    "name": "Large Project Template",
+    "description": "Template for projects over $50,000",
+    "payment_category": "Large Project",
+    "status_workflow": [
+      "Not Started",
+      "In Progress",
+      "On Hold",
+      "Completed Not Invoiced",
+      "Completed & Invoiced",
+      "Paid"
+    ],
+    "milestones": [
+      {
+        "name": "Project Kickoff",
+        "duration_days": 0
+      },
+      {
+        "name": "Conceptual Design",
+        "duration_days": 15
+      },
+      {
+        "name": "Schematic Design",
+        "duration_days": 30
+      },
+      {
+        "name": "Design Development",
+        "duration_days": 45
+      },
+      {
+        "name": "Construction Documents",
+        "duration_days": 60
+      },
+      {
+        "name": "Review Phase",
+        "duration_days": 75
+      },
+      {
+        "name": "Final Deliverables",
+        "duration_days": 90
+      }
+    ],
+    "payment_stages": [
+      "Down Payment",
+      "Due Payment",
+      "Final Payment"
+    ],
+    "estimated_duration": "90 days",
+    "id": "projects_20260505_122555",
+    "created_at": "2026-05-05T12:25:55.790597",
+    "updated_at": "2026-05-05T12:25:55.790600"
+  }
+}
