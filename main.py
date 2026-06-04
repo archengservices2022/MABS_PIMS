@@ -1030,8 +1030,15 @@ class FirebaseManager:
             existing_invoices = ref.order_by_child('meta/invoice_number').equal_to(invoice_data['meta']['invoice_number']).get()
             
             if existing_invoices:
-                # Update existing invoice
+                # Update existing invoice - preserve created_at
                 invoice_id = list(existing_invoices.keys())[0]
+                # If created_at is not already in invoice_data, fetch from existing record
+                if 'created_at' not in invoice_data.get('meta', {}):
+                    existing_data = ref.child(invoice_id).get().val()
+                    if existing_data and 'meta' in existing_data:
+                        # Preserve the original created_at timestamp
+                        if 'created_at' in existing_data['meta']:
+                            invoice_data['meta']['created_at'] = existing_data['meta']['created_at']
                 invoice_data['meta']['updated_at'] = datetime.now(timezone.utc).isoformat()
                 ref.child(invoice_id).update(invoice_data)
                 log.info("Invoice updated in Firebase: %s", invoice_data['meta']['invoice_number'])
@@ -1187,7 +1194,7 @@ class FirebaseManager:
         if not FIREBASE_AVAILABLE:
             log.warning("Firebase not available - cannot load projects")
             return []
-            
+
         try:
             ref = db.reference('/projects')
             projects_data = ref.get()
@@ -1204,6 +1211,65 @@ class FirebaseManager:
         except Exception as e:
             log.warning("Error loading projects from Firebase: %s", e)
             return []
+
+    _listeners = {}  # Store all listeners
+
+    @staticmethod
+    def add_realtime_listener(path, callback, name="listener"):
+        """Generic method to add real-time listener for any Firebase path"""
+        if not FIREBASE_AVAILABLE:
+            return False
+
+        try:
+            ref = db.reference(path)
+
+            def on_change(message):
+                """Called whenever data changes in Firebase"""
+                try:
+                    data = ref.get()
+                    callback(data)
+                except Exception as e:
+                    log.warning(f"Error in {name} listener callback: %s", e)
+
+            ref.listen(on_change)
+            if name not in FirebaseManager._listeners:
+                FirebaseManager._listeners[name] = []
+            FirebaseManager._listeners[name].append((ref, on_change))
+            log.info(f"Real-time {name} listener added for {path}")
+            return True
+        except Exception as e:
+            log.warning(f"Error adding {name} listener: %s", e)
+            return False
+
+    @staticmethod
+    def add_projects_listener(callback):
+        """Add a real-time listener for projects changes"""
+        return FirebaseManager.add_realtime_listener('/projects', callback, 'projects')
+
+    @staticmethod
+    def add_invoices_listener(callback):
+        """Add a real-time listener for invoices changes"""
+        return FirebaseManager.add_realtime_listener('/invoices', callback, 'invoices')
+
+    @staticmethod
+    def add_quotes_listener(callback):
+        """Add a real-time listener for quotes/job forms changes"""
+        return FirebaseManager.add_realtime_listener('/job_forms', callback, 'quotes')
+
+    @staticmethod
+    def add_clients_listener(callback):
+        """Add a real-time listener for clients changes"""
+        return FirebaseManager.add_realtime_listener('/clients', callback, 'clients')
+
+    @staticmethod
+    def add_expenses_listener(callback):
+        """Add a real-time listener for expenses changes"""
+        return FirebaseManager.add_realtime_listener('/balance_sheet_expenses', callback, 'expenses')
+
+    @staticmethod
+    def add_balance_sheet_listener(callback):
+        """Add a real-time listener for balance sheet changes"""
+        return FirebaseManager.add_realtime_listener('/balance_sheet_data', callback, 'balance_sheet')
 
     @staticmethod
     def load_job_forms() -> List[Dict]:
@@ -4355,6 +4421,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self._initialization_complete:
             self._initialization_complete = True
             QtCore.QTimer.singleShot(0, self.window_ready.emit)
+            # Pre-load invoice cache after window is shown
+            QtCore.QTimer.singleShot(500, self._preload_invoice_cache)
 
     def __init__(self, username="", role="", parent=None):
         super().__init__(parent)
@@ -6390,7 +6458,7 @@ class MainWindow(QtWidgets.QMainWindow):
         actions_layout.setSpacing(14)
 
         # Enhanced PDF Button with icon and increased width
-        self.generate_pdf_btn = QtWidgets.QPushButton("Generate PDF")
+        self.generate_pdf_btn = QtWidgets.QPushButton("Save & Generate Invoice")
         self.generate_pdf_btn.setMinimumHeight(52)
         self.generate_pdf_btn.setMaximumHeight(52)
         self.generate_pdf_btn.setMinimumWidth(220)
@@ -6455,6 +6523,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """)
         self.save_invoice_btn.clicked.connect(self.save_invoice)
         actions_layout.addWidget(self.save_invoice_btn)
+        self.save_invoice_btn.hide()  # Hidden - only Generate PDF is used
         actions_layout.addWidget(self.generate_pdf_btn)
 
         self.history_btn = QtWidgets.QPushButton("Invoice History")
@@ -6719,7 +6788,15 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.information = original_information
             QtWidgets.QMessageBox.critical = original_critical
             QtWidgets.QMessageBox.question = original_question
-            
+
+    def _preload_invoice_cache(self):
+        """Pre-load invoice cache in background after window is shown."""
+        try:
+            from invoice_history_tab import preload_invoices_cache
+            preload_invoices_cache()
+            log.info("Invoice cache pre-loading initiated")
+        except Exception as e:
+            log.warning("Failed to initiate invoice cache pre-loading: %s", e)
 
     def save_data(self):
         """Save clients and settings to Firebase only"""
@@ -7325,9 +7402,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.invoice.notes = self.notes_edit.toPlainText()
         
     def update_invoice_preview(self):
-        """Update the invoice number preview"""
-        date_str = self.date_edit.date().toString("MM-dd-yyyy")
-        preview_number = InvoiceNumberGenerator.get_preview_number(date_str)
+        """Update the invoice number preview using CURRENT date (not invoice date)"""
+        from datetime import datetime as _dt
+        today_str = _dt.now().strftime("%Y-%m-%d")
+        preview_number = InvoiceNumberGenerator.get_preview_number(today_str)
         self.invoice_no_edit.setText(preview_number)
     
     def load_client(self):
@@ -8403,7 +8481,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def generate_pdf(self):
         """Generate PDF invoice and save to Firebase only - ADD revenue tracking"""
         self.update_invoice_from_form()
-        
+        # Recalculate status after form update (important when tax/total changes)
+        if getattr(self, '_editing_existing_invoice', False):
+            self.update_totals()
+
         # Validate required fields
         client_name = self.invoice.client_name.strip()
         if not client_name:
@@ -8463,12 +8544,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.show_client_information_tab()
                 return
         
-        # Set final invoice number. Reuse a previously saved invoice number when present.
+        # Set final invoice number based on current date (not invoice date). Reuse if already set.
         if not self.invoice.invoice_number:
-            self.invoice.invoice_number = InvoiceNumberGenerator.get_next_number(self.invoice.date)
+            from datetime import datetime as _dt
+            today_str = _dt.now().strftime("%Y-%m-%d")
+            self.invoice.invoice_number = InvoiceNumberGenerator.get_next_number(today_str)
             self.invoice_no_edit.setText(self.invoice.invoice_number)
         
-        # Generate PDF
+        # Generate PDF with wait cursor
         temp_dir = Path(tempfile.gettempdir()) / "mabs_invoices_temp"
         temp_dir.mkdir(parents=True, exist_ok=True)
         pdf_path = temp_dir / f"{self.invoice.invoice_number}.pdf"
@@ -8476,7 +8559,7 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             logo_path = Config.get_logo_path()
 
-            # Generate PDF locally — fast, no network needed; show wait cursor only
+            # Generate PDF locally with wait cursor (no network needed)
             QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
             QtWidgets.QApplication.processEvents()
             try:
@@ -8488,43 +8571,51 @@ class MainWindow(QtWidgets.QMainWindow):
                 _saved_inv_number = self.invoice.invoice_number
                 _saved_inv_items  = list(self.invoice.items)
 
-                # Snapshot invoice data as a dict BEFORE clearing the form.
-                # Use Invoice.from_dict() to get a proper independent copy — NOT a
-                # reference to self.invoice which will be cleared below.
                 invoice_data = self.invoice.to_dict()
-                # For new invoices start as Unpaid; for edits preserve the existing status
                 if not getattr(self, '_editing_existing_invoice', False):
                     invoice_data['meta']['status'] = 'Unpaid'
                     invoice_data['meta']['received_date'] = 'N/A'
+                else:
+                    # Preserve original created_at and firebase_id when editing (so invoice stays in original position)
+                    if hasattr(self, '_original_created_at') and self._original_created_at:
+                        invoice_data['meta']['created_at'] = self._original_created_at
+                    if hasattr(self, '_original_firebase_id') and self._original_firebase_id:
+                        invoice_data['firebase_id'] = self._original_firebase_id
                 _inv_total_fmt = Currency.format(self.invoice.total)
-                # Reconstruct a fully independent Invoice object for background use
                 _inv_copy = Invoice.from_dict(invoice_data)
 
-                # Reset tax percentage and clear form immediately
+                # Clear form BEFORE showing popup
                 self.tax_spin.setValue(float(Config.COMPANY.get("default_tax_rate", 0.0)))
                 self.notes_edit.setPlainText(Config.DEFAULT_TERMS)
                 self.clear_all_items()
                 self.clear_client_information()
                 self.invoice.invoice_number = ""
                 self.invoice_no_edit.setText("")
+                # Add one empty line item immediately
+                self.add_item_row()
 
-                # Show success — user sees this instantly, Firebase saves run in background
+                log.info("Invoice %s generated", _saved_inv_number)
+
+                # Show popup with BLOCKING dialog (user must close before other interactions)
+                is_editing = getattr(self, '_editing_existing_invoice', False)
+                title_text = "Invoice Saved & Updated Successfully!" if is_editing else "Invoice Saved & Generated Successfully!"
                 message = (
                     f"<div style='text-align:center;'>"
-                    f"<h3 style='color:#28a745;margin-bottom:15px;'>Invoice Generated Successfully!</h3>"
+                    f"<h3 style='color:#28a745;margin-bottom:15px;'>{title_text}</h3>"
                     f"<p style='font-size:14px;color:#495057;line-height:1.6;'>"
                     f"<b>Invoice Number:</b> {_saved_inv_number}<br>"
                     f"<b>Client:</b> {client_name}<br>"
                     f"<b>Amount:</b> {_inv_total_fmt}"
                     f"</p></div>"
                 )
+
                 msg_box = QtWidgets.QMessageBox(self)
                 msg_box.setWindowTitle("Success")
                 msg_box.setTextFormat(QtCore.Qt.RichText)
                 msg_box.setText(message)
                 msg_box.setIcon(QtWidgets.QMessageBox.Information)
-                open_btn = QtWidgets.QPushButton("  Open PDF")
                 ok_btn = QtWidgets.QPushButton("OK")
+                open_btn = QtWidgets.QPushButton("📄 Open PDF")
                 msg_box.addButton(ok_btn, QtWidgets.QMessageBox.AcceptRole)
                 msg_box.addButton(open_btn, QtWidgets.QMessageBox.ActionRole)
                 msg_box.setDefaultButton(ok_btn)
@@ -8534,9 +8625,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 if msg_box.clickedButton() == open_btn:
                     FileManager.open_file(pdf_path)
 
-                # Background: Firebase saves only (no Qt calls allowed here).
-                # _inv_copy is an independent Invoice object; _skip_ui_refresh=True
-                # prevents save_invoice_as_revenue from touching Qt widgets.
+                # Background: Firebase saves only (no Qt calls allowed)
                 def _bg_save(inv_data=invoice_data, inv_num=_saved_inv_number,
                               inv_copy=_inv_copy, _pdf_path=pdf_path):
                     try:
@@ -8555,12 +8644,41 @@ class MainWindow(QtWidgets.QMainWindow):
                 import threading as _threading
                 _threading.Thread(target=_bg_save, daemon=True).start()
 
-                # Post-save payment sync and UI refresh (timers — main thread only)
+                # Post-save UI refresh and syncs (main thread only)
                 self._trigger_post_save_payment_sync(_saved_inv_number, _saved_inv_items)
-
                 self.update_invoice_preview()
-                if hasattr(self, 'history_tab'):
-                    QtCore.QTimer.singleShot(800, self.history_tab.refresh_invoices_immediately)
+
+                # Live update: Update invoice in-memory immediately (handles both new and edited)
+                try:
+                    if hasattr(self, 'history_tab'):
+                        current_widget = self.history_tab.stacked_widget.currentWidget() if hasattr(self.history_tab, 'stacked_widget') else None
+                        if current_widget and hasattr(current_widget, 'invoices'):
+                            updated_inv = Invoice.from_dict(invoice_data)
+                            client_name = invoice_data.get('meta', {}).get('client_name', '')
+
+                            # Check if invoice already exists (editing) or new
+                            found = False
+                            for i, (inv, json_file) in enumerate(current_widget.invoices):
+                                if inv.invoice_number == _saved_inv_number:
+                                    # Update existing invoice (editing) - preserve firebase_timestamp so it stays in place
+                                    original_timestamp = getattr(inv, 'firebase_timestamp', None)
+                                    if original_timestamp is not None:
+                                        updated_inv.firebase_timestamp = original_timestamp
+                                    current_widget.invoices[i] = (updated_inv, json_file)
+                                    found = True
+                                    break
+
+                            if not found and client_name == current_widget.client_name:
+                                # Add new invoice to list (for current client only)
+                                from datetime import datetime, timezone
+                                timestamp = datetime.now(timezone.utc).timestamp()
+                                updated_inv.firebase_timestamp = timestamp
+                                current_widget.invoices.append((updated_inv, None))  # Add to list, sort will order it
+
+                            # Refresh table display immediately (live, like balance sheet)
+                            QtCore.QTimer.singleShot(0, current_widget.apply_all_time_filter)
+                except Exception as _e:
+                    log.warning("Live update error: %s", _e)
                 if hasattr(self, 'balance_sheet_tab'):
                     QtCore.QTimer.singleShot(1500, self.balance_sheet_tab.load_invoice_revenues)
                     QtCore.QTimer.singleShot(1500, self.balance_sheet_tab.update_annual_summary)
@@ -8573,7 +8691,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.critical(self, "PDF Generation Error", f"Failed to generate PDF: {str(e)}")
 
     def save_invoice(self):
-        """Save invoice record and silently generate PDF in background."""
+        """Save invoice record in background - instant form clear, responsive UI."""
         self.update_invoice_from_form()
 
         client_name = self.invoice.client_name.strip()
@@ -8612,11 +8730,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 log.info("New client '%s' auto-saved before invoice save", client_name)
 
         if not self.invoice.invoice_number:
-            self.invoice.invoice_number = InvoiceNumberGenerator.get_next_number(self.invoice.date)
+            from datetime import datetime as _dt
+            today_str = _dt.now().strftime("%Y-%m-%d")
+            self.invoice.invoice_number = InvoiceNumberGenerator.get_next_number(today_str)
             self.invoice_no_edit.setText(self.invoice.invoice_number)
 
         invoice_data = self.invoice.to_dict()
-        # Preserve existing status when editing; new invoices start as Unpaid
         if not getattr(self, '_editing_existing_invoice', False):
             invoice_data['meta']['status'] = 'Unpaid'
         invoice_data['meta']['received_date'] = self.invoice.received_date or 'N/A'
@@ -8624,45 +8743,76 @@ class MainWindow(QtWidgets.QMainWindow):
         saved_number = self.invoice.invoice_number
         saved_items  = list(self.invoice.items)
         invoice_snapshot = Invoice.from_dict(invoice_data)
+        _save_total_fmt = Currency.format(self.invoice.total) if hasattr(self, 'invoice') else "$0.00"
 
-        if not FirebaseManager.save_invoice(invoice_data):
-            QtWidgets.QMessageBox.critical(
-                self, "Save Failed",
-                "Could not save the invoice. Please check Firebase connection and try again."
-            )
-            return
-
-        # Silently generate PDF (wait cursor, no success dialog for PDF step)
-        temp_dir = Path(tempfile.gettempdir()) / "mabs_invoices_temp"
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        pdf_path = temp_dir / f"{saved_number}.pdf"
-        pdf_ok = False
-        try:
-            logo_path = Config.get_logo_path()
-            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
-            QtWidgets.QApplication.processEvents()
-            try:
-                pdf_ok = PDFGenerator.generate(invoice_snapshot, pdf_path, logo_path)
-            finally:
-                QtWidgets.QApplication.restoreOverrideCursor()
-        except Exception as _pdf_e:
-            log.warning("save_invoice: silent PDF generation error: %s", _pdf_e)
-
-        # Show only "Saved" popup — no Open PDF button
-        QtWidgets.QMessageBox.information(
-            self, "Invoice Saved",
-            f"Invoice {saved_number} saved successfully.\n\n"
-            "You can download the PDF from Invoice History."
+        # Show saved notification FIRST - popup appears instantly
+        # All other work happens in background so UI remains responsive
+        msg = (
+            f"<div style='text-align:center;'>"
+            f"<h3 style='color:#15803d;margin-bottom:10px;'>✓ Invoice Saved</h3>"
+            f"<p style='font-size:12px;color:#495057;line-height:1.5;margin:10px 0;'>"
+            f"<b>{saved_number}</b><br>"
+            f"{client_name}<br>"
+            f"{_save_total_fmt}"
+            f"</p></div>"
         )
+        msg_box = QtWidgets.QMessageBox(self)
+        msg_box.setWindowTitle("Invoice Saved")
+        msg_box.setTextFormat(QtCore.Qt.RichText)
+        msg_box.setText(msg)
+        msg_box.setIcon(QtWidgets.QMessageBox.Information)
+        msg_box.setWindowModality(QtCore.Qt.NonModal)
+        msg_box.setStandardButtons(QtWidgets.QMessageBox.Ok)
 
-        # Background: upload PDF + sync revenue
-        def _bg_save(inv_num=saved_number, _pdf_path=pdf_path,
-                     inv_copy=invoice_snapshot, _pdf_ok=pdf_ok):
-            if _pdf_ok:
+        # Auto-close after 3 seconds
+        _timer = QtCore.QTimer()
+        def _auto_close():
+            if msg_box.isVisible():
+                msg_box.close()
+        _timer.setSingleShot(True)
+        _timer.timeout.connect(_auto_close)
+        _timer.start(3000)
+        msg_box.show()
+
+        log.info("Invoice %s saved", saved_number)
+
+        # Background: form reset + save invoice + PDF + revenue (all non-blocking)
+        def _bg_save(inv_data=invoice_data, inv_num=saved_number,
+                     inv_copy=invoice_snapshot, inv_items=saved_items):
+            # Schedule form clearing on main thread (non-blocking, happens after popup shows)
+            try:
+                from datetime import datetime as _dt
+                QtCore.QTimer.singleShot(100, lambda: self.tax_spin.setValue(float(Config.COMPANY.get("default_tax_rate", 0.0))))
+                QtCore.QTimer.singleShot(100, lambda: self.notes_edit.setPlainText(Config.DEFAULT_TERMS))
+                QtCore.QTimer.singleShot(100, self.clear_all_items)
+                QtCore.QTimer.singleShot(100, self.clear_client_information)
+                next_inv_number = InvoiceNumberGenerator.get_next_number(_dt.now().strftime("%Y-%m-%d"))
+                QtCore.QTimer.singleShot(100, lambda: setattr(self.invoice, 'invoice_number', next_inv_number))
+                QtCore.QTimer.singleShot(100, lambda: self.invoice_no_edit.setText(next_inv_number))
+                QtCore.QTimer.singleShot(200, self.add_item_row)
+            except Exception as _e:
+                log.warning("Form reset schedule error: %s", _e)
+
+            # Save to Firebase
+            try:
+                FirebaseManager.save_invoice(inv_data)
+            except Exception as _e:
+                log.warning("bg save_invoice error: %s", _e)
+
+            # Generate and save PDF
+            temp_dir = Path(tempfile.gettempdir()) / "mabs_invoices_temp"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            pdf_path = temp_dir / f"{inv_num}.pdf"
+            try:
+                logo_path = Config.get_logo_path()
+                PDFGenerator.generate(inv_copy, pdf_path, logo_path)
                 try:
-                    FirebaseManager.save_pdf_to_firebase(inv_num, _pdf_path)
+                    FirebaseManager.save_pdf_to_firebase(inv_num, pdf_path)
                 except Exception as _e:
                     log.warning("bg save_pdf_to_firebase error: %s", _e)
+            except Exception as _e:
+                log.warning("bg PDF generation error: %s", _e)
+
             try:
                 self.save_invoice_as_revenue(inv_copy, _skip_ui_refresh=True)
             except Exception as _e:
@@ -8671,15 +8821,28 @@ class MainWindow(QtWidgets.QMainWindow):
         import threading as _threading
         _threading.Thread(target=_bg_save, daemon=True).start()
 
+        # Schedule UI refresh (main thread only)
+        self._trigger_post_save_payment_sync(saved_number, saved_items)
         if hasattr(self, 'history_tab'):
-            QtCore.QTimer.singleShot(800, self.history_tab.refresh_invoices_immediately)
+            QtCore.QTimer.singleShot(1000, self.history_tab.refresh_invoices_immediately)
         if hasattr(self, 'balance_sheet_tab'):
             QtCore.QTimer.singleShot(1500, self.balance_sheet_tab.load_invoice_revenues)
             QtCore.QTimer.singleShot(1500, self.balance_sheet_tab.update_annual_summary)
-        if pdf_ok:
-            QtCore.QTimer.singleShot(8000, lambda: self.cleanup_temp_file(pdf_path))
 
-        self._trigger_post_save_payment_sync(saved_number, saved_items)
+    def _clear_invoice_form_after_save(self):
+        """Clear invoice form and add 1 empty line item after saving"""
+        try:
+            # Clear all line items
+            self.clear_all_items()
+            # Clear client information
+            self.clear_client_information()
+            # Reset editing flag
+            self._editing_existing_invoice = False
+            # Add 1 empty line item with proper delay
+            if hasattr(self, 'add_item_row'):
+                QtCore.QTimer.singleShot(200, self.add_item_row)
+        except Exception as e:
+            log.warning("Error clearing invoice form after save: %s", e)
 
     def edit_invoice_by_number(self, invoice_number: str):
         """Find invoice in Firebase and load it into the Invoice Management form.
@@ -8694,6 +8857,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Load invoice from Firebase
         invoice_obj = None
+        original_created_at = None
+        original_firebase_id = None
         try:
             raw = FirebaseManager.load_invoices() or []
             for inv_data in raw:
@@ -8701,6 +8866,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 stored = str(meta.get('invoice_number', '') or '').strip()
                 if stored == invoice_number.strip():
                     invoice_obj = Invoice.from_dict(inv_data)
+                    original_created_at = meta.get('created_at')
+                    original_firebase_id = inv_data.get('firebase_id')
                     break
         except Exception as e:
             log.warning("edit_invoice_by_number load error: %s", e)
@@ -8784,10 +8951,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.update_totals()
         # Mark as editing so Generate PDF is always enabled for existing invoices
         self._editing_existing_invoice = True
+        self._original_created_at = original_created_at  # Preserve original creation date
+        self._original_firebase_id = original_firebase_id  # Preserve Firebase ID for proper update
         QtCore.QTimer.singleShot(150, self._update_pdf_btn_state)
         if hasattr(self, 'statusBar'):
             self.statusBar().showMessage(
-                f"Editing invoice {invoice_obj.invoice_number} — modify and click Generate PDF or Save Invoice.",
+                f"Editing invoice {invoice_obj.invoice_number} — modify and click Generate PDF.",
                 8000,
             )
 
@@ -9380,6 +9549,17 @@ def _make_app_icon() -> QtGui.QIcon:
 
 
 def main():
+    # Single-instance check BEFORE creating QApplication — prevent multiple instances from running
+    import socket
+    single_instance_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        single_instance_socket.bind(('127.0.0.1', 25519))
+        single_instance_socket.listen(1)
+    except OSError:
+        # Port is already in use — another instance is running
+        print("ERROR: PIMS is already running. Aborting this instance.")
+        sys.exit(1)
+
     Config.setup_directories()
     cleanup_old_backup()   # delete MABS_Invoice.bak left by the previous update
     cleanup_temp_backups()
