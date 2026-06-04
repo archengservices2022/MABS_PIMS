@@ -2215,31 +2215,55 @@ class PDFPermissions:
     @staticmethod
     def ensure_full_permissions(pdf_path: Path) -> bool:
         """
-        Verify PDF is readable and doesn't have restrictions.
-        ReportLab generated PDFs are already unrestricted by default.
-        This method just validates the PDF integrity.
-        Returns True if valid, False if error.
+        Remove PDF restrictions safely to allow full access in Adobe Reader.
+        Returns True if successful, False if error.
         """
         try:
-            # Verify PDF is readable and not corrupted
-            from PyPDF2 import PdfReader
+            from PyPDF2 import PdfReader, PdfWriter
+            import shutil
+            import tempfile
 
-            with open(pdf_path, 'rb') as pdf_file:
-                reader = PdfReader(pdf_file)
-                # Just verify we can read pages - if this works, PDF is valid
-                page_count = len(reader.pages)
-                if page_count > 0:
-                    # Verify first page is readable
-                    _ = reader.pages[0]
+            # Create backup in case something goes wrong
+            pdf_path = Path(pdf_path)
+            backup_path = pdf_path.with_stem(pdf_path.stem + "_backup")
 
-            # If we got here, PDF is valid and readable
-            # ReportLab PDFs are generated unrestricted by default
-            return True
+            try:
+                # Read the PDF
+                with open(pdf_path, 'rb') as input_file:
+                    reader = PdfReader(input_file)
+
+                    # Check if PDF has encryption - if not, it's already unrestricted
+                    if not reader.is_encrypted:
+                        return True
+
+                    # Create a new writer
+                    writer = PdfWriter()
+
+                    # Copy all pages to new writer
+                    for page_num in range(len(reader.pages)):
+                        page = reader.pages[page_num]
+                        writer.add_page(page)
+
+                    # Copy metadata
+                    if reader.metadata:
+                        writer.add_metadata(reader.metadata)
+
+                    # Write to temporary file first (safer)
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp:
+                        temp_path = temp.name
+                        writer.write(temp)
+
+                    # Replace original with temporary file
+                    shutil.move(temp_path, str(pdf_path))
+                    return True
+
+            except Exception as inner_e:
+                log.warning("Error processing PDF permissions: %s", inner_e)
+                return False
+
         except Exception as e:
-            log.warning("Error validating PDF: %s", e)
-            # Return True anyway - don't fail if validation has issues
-            # The PDF is still usable even if validation fails
-            return True
+            log.warning("Error ensuring PDF permissions: %s", e)
+            return False
 
 # ---------- PDF Generator ----------
 class PDFGenerator:
