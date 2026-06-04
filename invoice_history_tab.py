@@ -137,6 +137,69 @@ except ImportError:
     except ImportError:
         PDF_AVAILABLE = False
 
+class PDFWatermarker:
+    """Add PAID watermark to invoices with Paid status"""
+
+    @staticmethod
+    def add_watermark_to_pdf(input_pdf_path: Path, status: str) -> Path:
+        """Add watermark for paid invoices. Returns original path if not paid or any error."""
+        try:
+            if status != "Paid" or not PDF_AVAILABLE:
+                return input_pdf_path
+
+            # Try to add watermark, but return original on any error
+            try:
+                from reportlab.pdfgen import canvas
+                from reportlab.lib.pagesizes import A4
+                from reportlab.lib import colors
+                import io
+
+                input_pdf_path = Path(input_pdf_path)
+                output_pdf_path = input_pdf_path.parent / f"{input_pdf_path.stem}_watermarked{input_pdf_path.suffix}"
+
+                with open(input_pdf_path, 'rb') as input_file:
+                    reader = PdfReader(input_file)
+                    writer = PdfWriter()
+
+                    for page_num in range(len(reader.pages)):
+                        page = reader.pages[page_num]
+
+                        # Create watermark
+                        packet = io.BytesIO()
+                        can = canvas.Canvas(packet, pagesize=A4)
+                        can.setFillAlpha(0.15)
+                        can.setFillColor(colors.HexColor('#27ae60'))
+                        can.setFont("Helvetica-Bold", 65)
+
+                        page_width = A4[0]
+                        page_height = A4[1]
+                        text_width = can.stringWidth("PAID", "Helvetica-Bold", 65)
+                        x = page_width / 2 - text_width / 2
+                        y = page_height / 2
+
+                        can.saveState()
+                        can.translate(x, y)
+                        can.rotate(40)
+                        can.drawString(0, 0, "PAID")
+                        can.restoreState()
+                        can.save()
+
+                        packet.seek(0)
+                        watermark_pdf = PdfReader(packet)
+                        watermark_page = watermark_pdf.pages[0]
+                        page.merge_page(watermark_page)
+                        writer.add_page(page)
+
+                    with open(output_pdf_path, 'wb') as output_file:
+                        writer.write(output_file)
+
+                return output_pdf_path
+            except Exception as e:
+                _log.warning("Watermark failed, returning original: %s", e)
+                return input_pdf_path
+        except Exception:
+            return input_pdf_path
+
 class TextWrapDelegate(QtWidgets.QStyledItemDelegate):
     """Custom delegate that forces text wrapping in table cells."""
 
@@ -6461,9 +6524,11 @@ class InvoiceHistoryViewWidget(QtWidgets.QWidget):
             pdf_path = FirebaseManager.load_pdf_from_firebase(invoice.invoice_number, original_pdf_path)
             loading_msg.close()
             if pdf_path and pdf_path.exists():
-                if FileManager.open_file(pdf_path):
+                # Add watermark for paid invoices
+                watermarked_pdf_path = PDFWatermarker.add_watermark_to_pdf(pdf_path, status)
+                if FileManager.open_file(watermarked_pdf_path):
                     QtWidgets.QMessageBox.information(self, "PDF Open", f"✅ PDF opened successfully!\n\nInvoice: {invoice.invoice_number}\nStatus: {status}")
-                    QtCore.QTimer.singleShot(10000, lambda: self.cleanup_temp_files([pdf_path]))
+                    QtCore.QTimer.singleShot(10000, lambda: self.cleanup_temp_files([pdf_path, watermarked_pdf_path]))
                 else:
                     QtWidgets.QMessageBox.critical(self, "PDF Open", "Failed to open PDF file.")
             else:
