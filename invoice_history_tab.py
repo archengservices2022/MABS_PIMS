@@ -4492,6 +4492,34 @@ class InvoiceHistoryViewWidget(QtWidgets.QWidget):
         if raw_status:
             if not cached_status:
                 self.set_cached_status(invoice.invoice_number, raw_status)
+            # Check for remaining balance: if status is Paid but there's a remaining balance, downgrade to Partially Paid
+            if raw_status == "Paid":
+                try:
+                    total_amount = float(invoice.total) if hasattr(invoice, 'total') else 0.0
+                    paid_amount = 0.0
+
+                    # Get project numbers from invoice items and calculate total paid from payment tracker
+                    if hasattr(invoice, 'items') and invoice.items:
+                        try:
+                            from payment_tracker import PaymentTracker
+                            pt = PaymentTracker()
+                            pt._load_payments()
+                            project_numbers = set()
+                            for item in invoice.items:
+                                if hasattr(item, 'project_number') and item.project_number:
+                                    project_numbers.add(item.project_number)
+
+                            for pn in project_numbers:
+                                for payment in pt.get_project_payments(pn):
+                                    paid_amount += float(payment.get('amount', 0)) if isinstance(payment, dict) else float(getattr(payment, 'amount', 0))
+                        except Exception:
+                            pass
+
+                    remaining_balance = total_amount - paid_amount
+                    if remaining_balance > 0.01:  # Allow small rounding differences
+                        return "Partially Paid"
+                except Exception:
+                    pass
             # Auto-escalate Unpaid/Pending → Overdue when due date has passed
             if raw_status in ("Unpaid", "Pending"):
                 due = self._parse_due_date(invoice)
@@ -8135,100 +8163,6 @@ class EditItemRowWidget(QtWidgets.QWidget):
         except Exception as e:
             _log.warning("Error in get_item: %s", e)
             return InvoiceItem()
-
-
-class InvoiceHistoryTab(QtWidgets.QWidget):
-    """Enhanced Invoice History Tab with direct invoice history view and Firebase sync"""
-    
-    def __init__(self, main_window):
-        super().__init__()
-        self.main_window = main_window
-        self.current_client = None
-        self.init_ui()
-    
-    def init_ui(self):
-        main_layout = QtWidgets.QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-        
-        self.stacked_widget = QtWidgets.QStackedWidget()
-        
-        self.client_view = ClientListWidget()
-        self.client_view.client_selected.connect(self.show_invoice_history)
-        self.stacked_widget.addWidget(self.client_view)
-        
-        self.history_view_placeholder = QtWidgets.QWidget()
-        self.stacked_widget.addWidget(self.history_view_placeholder)
-        
-        main_layout.addWidget(self.stacked_widget)
-        self.show_client_view()
-        self._auto_refresh_timer = QtCore.QTimer(self)
-        self._auto_refresh_timer.setInterval(5000)
-        self._auto_refresh_timer.timeout.connect(self.refresh_invoices_immediately)
-        self._auto_refresh_timer.start()
-        self._auto_refresh_timer = QtCore.QTimer(self)
-        self._auto_refresh_timer.setInterval(5000)
-        self._auto_refresh_timer.timeout.connect(self.refresh_invoices_immediately)
-        self._auto_refresh_timer.start()
-    
-    def add_firebase_sync_button(self):
-        if not FIREBASE_AVAILABLE:
-            return
-    
-    def sync_to_firebase(self):
-        if not FIREBASE_AVAILABLE:
-            QtWidgets.QMessageBox.information(self, "Cloud Sync", "Firebase integration is not available.")
-            return
-        try:
-            progress_dialog = QtWidgets.QProgressDialog("Syncing invoices to cloud...", "Cancel", 0, 100, self)
-            progress_dialog.setWindowTitle("Cloud Sync")
-            progress_dialog.setWindowModality(QtCore.Qt.WindowModal)
-            progress_dialog.show()
-            QtWidgets.QMessageBox.information(self, "Cloud Sync", "✅ Invoices are automatically synced to Firebase!\n\nYour data is already backed up and accessible from anywhere.")
-            progress_dialog.close()
-        except Exception as e:
-            progress_dialog.close()
-            QtWidgets.QMessageBox.critical(self, "Sync Error", f"Error during cloud sync: {e}")
-    
-    def show_client_view(self):
-        if self.stacked_widget.indexOf(self.history_view_placeholder) != -1:
-            self.stacked_widget.removeWidget(self.history_view_placeholder)
-        self.history_view_placeholder = QtWidgets.QWidget()
-        self.stacked_widget.insertWidget(1, self.history_view_placeholder)
-        self.stacked_widget.setCurrentIndex(0)
-        self.client_view.load_clients()
-    
-    def show_invoice_history(self, client_name: str):
-        self.current_client = client_name
-        history_view = InvoiceHistoryViewWidget(client_name, compact=True)
-        history_view.back_clicked.connect(self.show_client_view)
-        index = self.stacked_widget.indexOf(self.history_view_placeholder)
-        self.stacked_widget.removeWidget(self.history_view_placeholder)
-        self.stacked_widget.insertWidget(index, history_view)
-        self.history_view_placeholder = QtWidgets.QWidget()
-        self.stacked_widget.insertWidget(index + 1, self.history_view_placeholder)
-        self.stacked_widget.setCurrentIndex(index)
-
-    def refresh_data(self):
-        current_widget = self.stacked_widget.currentWidget()
-        if isinstance(current_widget, ClientListWidget):
-            current_widget.load_clients()
-        elif isinstance(current_widget, InvoiceHistoryViewWidget):
-            self.show_invoice_history(self.current_client)
-
-    def load_history(self):
-        self.show_client_view()
-
-    def refresh_invoices_immediately(self):
-        current_widget = self.stacked_widget.currentWidget()
-        if isinstance(current_widget, ClientListWidget):
-            current_widget.load_clients()
-        elif self.current_client and isinstance(current_widget, InvoiceHistoryViewWidget):
-            search_text = current_widget.date_range_widget.search_bar.text() if hasattr(current_widget, "date_range_widget") else ""
-            self.show_invoice_history(self.current_client)
-            refreshed_widget = self.stacked_widget.currentWidget()
-            if search_text and isinstance(refreshed_widget, InvoiceHistoryViewWidget):
-                refreshed_widget.date_range_widget.search_bar.setText(search_text)
 
 
 class InvoiceHistoryTab(QtWidgets.QWidget):
