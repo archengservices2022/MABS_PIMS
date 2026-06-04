@@ -2682,9 +2682,16 @@ class ClientListWidget(QtWidgets.QWidget):
             else:
                 no_data_style = ParagraphStyle('NoData', parent=styles['Normal'], fontSize=12, textColor=colors.HexColor('#7f8c8d'), alignment=1)
                 elements.append(Paragraph("No invoices found for the selected criteria.", no_data_style))
-            
+
             doc.build(elements)
-            
+
+            # Ensure PDF has full permissions for Adobe Reader compatibility
+            try:
+                from main import PDFPermissions
+                PDFPermissions.ensure_full_permissions(Path(pdf_path))
+            except Exception as e:
+                _log.warning("Error ensuring PDF permissions: %s", e)
+
             if FileManager.open_file(pdf_path):
                 QtWidgets.QMessageBox.information(self, "Export Success", f"✅ PDF exported successfully!\n\nFile saved to: {pdf_path}\nThe PDF has been opened automatically.")
             else:
@@ -4433,7 +4440,14 @@ class InvoiceHistoryViewWidget(QtWidgets.QWidget):
                 elements.append(Paragraph("No invoices found for the selected criteria.", no_data_style))
             
             doc.build(elements)
-            
+
+            # Ensure PDF has full permissions for Adobe Reader compatibility
+            try:
+                from main import PDFPermissions
+                PDFPermissions.ensure_full_permissions(Path(pdf_path))
+            except Exception as e:
+                _log.warning("Error ensuring PDF permissions: %s", e)
+
             if FileManager.open_file(pdf_path):
                 QtWidgets.QMessageBox.information(self, "Export Success", f"✅ PDF exported successfully!\n\nFile saved to: {pdf_path}\nThe PDF has been opened automatically.")
             else:
@@ -4476,76 +4490,40 @@ class InvoiceHistoryViewWidget(QtWidgets.QWidget):
                 _log.warning("Could not auto-overdue %s: %s", inv_no, exc)
 
     def get_invoice_status(self, invoice: Invoice) -> str:
-        """Calculate invoice status based on paid amount vs. total amount"""
-        try:
-            total_amount = float(invoice.total) if hasattr(invoice, 'total') else 0.0
-            paid_amount = 0.0
+        cached_status = self.get_cached_status(invoice.invoice_number)
+        firebase_status = (
+            invoice.status if hasattr(invoice, 'status') and invoice.status else None)
 
-            # Get project numbers from invoice items and calculate total paid from payment tracker
-            if hasattr(invoice, 'items') and invoice.items:
-                try:
-                    from payment_tracker import PaymentTracker
-                    pt = PaymentTracker()
-                    pt._load_payments()
-                    project_numbers = set()
-                    for item in invoice.items:
-                        if hasattr(item, 'project_number') and item.project_number:
-                            project_numbers.add(item.project_number)
+        # Firebase is the source of truth after payment deletions/edits.
+        # If the on-disk cache differs from the loaded Firebase status, treat the
+        # cache as stale and update it so future calls are consistent.
+        if cached_status and firebase_status and cached_status != firebase_status:
+            self.set_cached_status(invoice.invoice_number, firebase_status)
+            cached_status = firebase_status
 
-                    for pn in project_numbers:
-                        for payment in pt.get_project_payments(pn):
-                            paid_amount += float(payment.get('amount', 0)) if isinstance(payment, dict) else float(getattr(payment, 'amount', 0))
-                except Exception:
-                    pass
+        raw_status = cached_status or firebase_status
 
-            # Determine status based on paid amount vs. total amount
-            remaining_balance = total_amount - paid_amount
-
-            if remaining_balance <= 0.01:  # Allow small rounding differences
-                # Fully paid
-                return "Paid"
-            elif paid_amount < 0.01:
-                # Nothing paid - check due date to determine Unpaid/Overdue
+        if raw_status:
+            if not cached_status:
+                self.set_cached_status(invoice.invoice_number, raw_status)
+            # Auto-escalate Unpaid/Pending → Overdue when due date has passed
+            if raw_status in ("Unpaid", "Pending"):
                 due = self._parse_due_date(invoice)
                 if due and due < datetime.now().date():
+                    self.set_cached_status(invoice.invoice_number, "Overdue")
+                    self._schedule_overdue_update(invoice.invoice_number)
                     return "Overdue"
-                return "Unpaid"
-            else:
-                # Partially paid
-                return "Partially Paid"
+            return raw_status
+
+        # No status stored — derive from due date
+        try:
+            due = self._parse_due_date(invoice)
+            if due is None:
+                return "Pending"
+            return "Overdue" if due < datetime.now().date() else "Pending"
         except Exception as exc:
             _log.warning("Error determining invoice status: %s", exc)
-            # Fallback to Firebase status or due date check
-            cached_status = self.get_cached_status(invoice.invoice_number)
-            firebase_status = (
-                invoice.status if hasattr(invoice, 'status') and invoice.status else None)
-
-            if cached_status and firebase_status and cached_status != firebase_status:
-                self.set_cached_status(invoice.invoice_number, firebase_status)
-                cached_status = firebase_status
-
-            raw_status = cached_status or firebase_status
-
-            if raw_status:
-                if not cached_status:
-                    self.set_cached_status(invoice.invoice_number, raw_status)
-                # Auto-escalate Unpaid/Pending → Overdue when due date has passed
-                if raw_status in ("Unpaid", "Pending"):
-                    due = self._parse_due_date(invoice)
-                    if due and due < datetime.now().date():
-                        self.set_cached_status(invoice.invoice_number, "Overdue")
-                        self._schedule_overdue_update(invoice.invoice_number)
-                        return "Overdue"
-                return raw_status
-
-            # No status stored — derive from due date
-            try:
-                due = self._parse_due_date(invoice)
-                if due is None:
-                    return "Pending"
-                return "Overdue" if due < datetime.now().date() else "Pending"
-            except Exception:
-                return "Pending"
+            return "Pending"
     
     def _reload_invoices(self):
         """Refresh button: reload invoices from Firebase with visual feedback."""
@@ -8171,6 +8149,100 @@ class EditItemRowWidget(QtWidgets.QWidget):
         except Exception as e:
             _log.warning("Error in get_item: %s", e)
             return InvoiceItem()
+
+
+class InvoiceHistoryTab(QtWidgets.QWidget):
+    """Enhanced Invoice History Tab with direct invoice history view and Firebase sync"""
+    
+    def __init__(self, main_window):
+        super().__init__()
+        self.main_window = main_window
+        self.current_client = None
+        self.init_ui()
+    
+    def init_ui(self):
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        self.stacked_widget = QtWidgets.QStackedWidget()
+        
+        self.client_view = ClientListWidget()
+        self.client_view.client_selected.connect(self.show_invoice_history)
+        self.stacked_widget.addWidget(self.client_view)
+        
+        self.history_view_placeholder = QtWidgets.QWidget()
+        self.stacked_widget.addWidget(self.history_view_placeholder)
+        
+        main_layout.addWidget(self.stacked_widget)
+        self.show_client_view()
+        self._auto_refresh_timer = QtCore.QTimer(self)
+        self._auto_refresh_timer.setInterval(5000)
+        self._auto_refresh_timer.timeout.connect(self.refresh_invoices_immediately)
+        self._auto_refresh_timer.start()
+        self._auto_refresh_timer = QtCore.QTimer(self)
+        self._auto_refresh_timer.setInterval(5000)
+        self._auto_refresh_timer.timeout.connect(self.refresh_invoices_immediately)
+        self._auto_refresh_timer.start()
+    
+    def add_firebase_sync_button(self):
+        if not FIREBASE_AVAILABLE:
+            return
+    
+    def sync_to_firebase(self):
+        if not FIREBASE_AVAILABLE:
+            QtWidgets.QMessageBox.information(self, "Cloud Sync", "Firebase integration is not available.")
+            return
+        try:
+            progress_dialog = QtWidgets.QProgressDialog("Syncing invoices to cloud...", "Cancel", 0, 100, self)
+            progress_dialog.setWindowTitle("Cloud Sync")
+            progress_dialog.setWindowModality(QtCore.Qt.WindowModal)
+            progress_dialog.show()
+            QtWidgets.QMessageBox.information(self, "Cloud Sync", "✅ Invoices are automatically synced to Firebase!\n\nYour data is already backed up and accessible from anywhere.")
+            progress_dialog.close()
+        except Exception as e:
+            progress_dialog.close()
+            QtWidgets.QMessageBox.critical(self, "Sync Error", f"Error during cloud sync: {e}")
+    
+    def show_client_view(self):
+        if self.stacked_widget.indexOf(self.history_view_placeholder) != -1:
+            self.stacked_widget.removeWidget(self.history_view_placeholder)
+        self.history_view_placeholder = QtWidgets.QWidget()
+        self.stacked_widget.insertWidget(1, self.history_view_placeholder)
+        self.stacked_widget.setCurrentIndex(0)
+        self.client_view.load_clients()
+    
+    def show_invoice_history(self, client_name: str):
+        self.current_client = client_name
+        history_view = InvoiceHistoryViewWidget(client_name, compact=True)
+        history_view.back_clicked.connect(self.show_client_view)
+        index = self.stacked_widget.indexOf(self.history_view_placeholder)
+        self.stacked_widget.removeWidget(self.history_view_placeholder)
+        self.stacked_widget.insertWidget(index, history_view)
+        self.history_view_placeholder = QtWidgets.QWidget()
+        self.stacked_widget.insertWidget(index + 1, self.history_view_placeholder)
+        self.stacked_widget.setCurrentIndex(index)
+
+    def refresh_data(self):
+        current_widget = self.stacked_widget.currentWidget()
+        if isinstance(current_widget, ClientListWidget):
+            current_widget.load_clients()
+        elif isinstance(current_widget, InvoiceHistoryViewWidget):
+            self.show_invoice_history(self.current_client)
+
+    def load_history(self):
+        self.show_client_view()
+
+    def refresh_invoices_immediately(self):
+        current_widget = self.stacked_widget.currentWidget()
+        if isinstance(current_widget, ClientListWidget):
+            current_widget.load_clients()
+        elif self.current_client and isinstance(current_widget, InvoiceHistoryViewWidget):
+            search_text = current_widget.date_range_widget.search_bar.text() if hasattr(current_widget, "date_range_widget") else ""
+            self.show_invoice_history(self.current_client)
+            refreshed_widget = self.stacked_widget.currentWidget()
+            if search_text and isinstance(refreshed_widget, InvoiceHistoryViewWidget):
+                refreshed_widget.date_range_widget.search_bar.setText(search_text)
 
 
 class InvoiceHistoryTab(QtWidgets.QWidget):

@@ -430,6 +430,13 @@ class JobFormTab(QtWidgets.QWidget):
         
         self.init_ui()
         self.load_job_forms_from_firebase()
+
+        # Add real-time listener for quotes/job forms
+        try:
+            from main import FirebaseManager
+            FirebaseManager.add_quotes_listener(self._on_quotes_updated)
+        except Exception:
+            pass
         
     def calculate_next_job_numbers_numeric(self):
         """Calculate next available quote numbers based ONLY on main sequence with proper rollover logic"""
@@ -812,7 +819,14 @@ class JobFormTab(QtWidgets.QWidget):
             self.update_client_filter_menu()
             return self.job_forms
 
-            
+    def _on_quotes_updated(self, quotes_data):
+        """Called when quotes/job forms are updated in Firebase - updates UI automatically"""
+        try:
+            QtCore.QTimer.singleShot(300, self.load_job_forms_from_firebase)
+        except Exception as e:
+            _log.warning("Error updating quotes in real-time: %s", e)
+
+
     def save_job_form_to_firebase(self, job_data):
         """Save quote form to Firebase - UPDATE existing job instead of creating new one"""
         
@@ -3402,6 +3416,13 @@ class JobFormTab(QtWidgets.QWidget):
 
             # Build PDF
             doc.build(elements)
+
+            # Ensure PDF has full permissions for Adobe Reader compatibility
+            try:
+                from main import PDFPermissions
+                PDFPermissions.ensure_full_permissions(Path(pdf_path))
+            except Exception as e:
+                _log.warning("Error ensuring PDF permissions: %s", e)
 
             # Open the PDF file
             if self.open_job_form_pdf_file(pdf_path):

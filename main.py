@@ -2197,6 +2197,41 @@ def truncate_text(text: str, max_chars: int = 45) -> str:
     text = text.strip()
     return text if len(text) <= max_chars else text[:max_chars - 3] + "..."
 
+# ---------- PDF Permissions Utility ----------
+class PDFPermissions:
+    """Ensures all generated PDFs have full permissions for Adobe Reader compatibility"""
+
+    @staticmethod
+    def ensure_full_permissions(pdf_path: Path) -> bool:
+        """
+        Remove any restrictions from PDF to allow saving, printing, copying in Adobe Reader.
+        Returns True if successful, False if error.
+        """
+        try:
+            from PyPDF2 import PdfReader, PdfWriter
+
+            # Read the PDF
+            with open(pdf_path, 'rb') as input_file:
+                reader = PdfReader(input_file)
+                writer = PdfWriter()
+
+                # Copy all pages
+                for page in reader.pages:
+                    writer.add_page(page)
+
+                # Copy metadata if exists
+                if reader.metadata:
+                    writer.add_metadata(reader.metadata)
+
+                # Write without encryption/restrictions
+                with open(pdf_path, 'wb') as output_file:
+                    writer.write(output_file)
+
+            return True
+        except Exception as e:
+            log.warning("Error ensuring PDF permissions: %s", e)
+            return False
+
 # ---------- PDF Generator ----------
 class PDFGenerator:
     """Generates simple, clean PDF invoices using ReportLab's SimpleDocTemplate and Flowables"""
@@ -8568,6 +8603,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtWidgets.QApplication.restoreOverrideCursor()
 
             if success:
+                # Ensure PDF has full permissions for Adobe Reader compatibility
+                PDFPermissions.ensure_full_permissions(pdf_path)
+
                 _saved_inv_number = self.invoice.invoice_number
                 _saved_inv_items  = list(self.invoice.items)
 
