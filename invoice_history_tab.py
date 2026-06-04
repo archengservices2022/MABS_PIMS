@@ -7268,10 +7268,8 @@ class InvoiceHistoryViewWidget(QtWidgets.QWidget):
             reply = QtWidgets.QMessageBox.question(
                 self, "Confirm Delete",
                 f"Are you sure you want to delete this invoice?\n\n"
-                f"Invoice Number: {invoice.invoice_number}\n"
-                f"Client: {invoice.client_name}\n"
-                f"Date: {invoice.date}\n"
-                f"Total: {Currency.format(invoice.total)}\n\n"
+                f"Invoice Number: {invoice.invoice_number}\n\n"
+                f"⚠️ This will also delete all associated revenue records.\n\n"
                 f"This action cannot be undone!",
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                 QtWidgets.QMessageBox.No
