@@ -8673,7 +8673,13 @@ class MainWindow(QtWidgets.QMainWindow):
                                 from datetime import datetime, timezone
                                 timestamp = datetime.now(timezone.utc).timestamp()
                                 updated_inv.firebase_timestamp = timestamp
-                                current_widget.invoices.append((updated_inv, None))  # Add to list, sort will order it
+                                current_widget.invoices.append((updated_inv, None))
+
+                            # Sort invoices by firebase_timestamp descending (newest first) after any add/update
+                            current_widget.invoices.sort(
+                                key=lambda x: getattr(x[0], 'firebase_timestamp', 0) or 0,
+                                reverse=True
+                            )
 
                             # Refresh table display immediately (live, like balance sheet)
                             QtCore.QTimer.singleShot(0, current_widget.apply_all_time_filter)
