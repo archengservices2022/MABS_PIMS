@@ -6493,7 +6493,7 @@ class MainWindow(QtWidgets.QMainWindow):
         actions_layout.setSpacing(14)
 
         # Enhanced PDF Button with icon and increased width
-        self.generate_pdf_btn = QtWidgets.QPushButton("Save & generate Invoice")
+        self.generate_pdf_btn = QtWidgets.QPushButton("Save & Generate Invoice")
         self.generate_pdf_btn.setMinimumHeight(52)
         self.generate_pdf_btn.setMaximumHeight(52)
         self.generate_pdf_btn.setMinimumWidth(220)
