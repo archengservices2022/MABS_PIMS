@@ -28,6 +28,15 @@ class FinanceOverviewTab(QtWidgets.QWidget):
         self._build_ui()
         self.refresh_data()
 
+        # Add real-time listeners for finance data
+        try:
+            from main import FirebaseManager
+            FirebaseManager.add_invoices_listener(self._on_finance_data_updated)
+            FirebaseManager.add_expenses_listener(self._on_finance_data_updated)
+            FirebaseManager.add_balance_sheet_listener(self._on_finance_data_updated)
+        except Exception:
+            pass
+
     def _build_ui(self):
         root = QtWidgets.QVBoxLayout(self)
         root.setContentsMargins(18, 18, 18, 18)
@@ -301,6 +310,13 @@ class FinanceOverviewTab(QtWidgets.QWidget):
     _REFRESH_LOADING_STYLE = _BTN_BASE + "QPushButton{background:#5eead4;color:#0f766e;}"
     _REFRESH_SUCCESS_STYLE = _BTN_BASE + "QPushButton{background:#10b981;color:white;}"
     _REFRESH_ERROR_STYLE   = _BTN_BASE + "QPushButton{background:#ef4444;color:white;}"
+
+    def _on_finance_data_updated(self, data):
+        """Called when finance data is updated in Firebase"""
+        try:
+            QtCore.QTimer.singleShot(300, lambda: self.refresh_data(auto=True))
+        except Exception as e:
+            pass
 
     def refresh_data(self, auto=False):
         if not auto and hasattr(self, '_refresh_btn'):

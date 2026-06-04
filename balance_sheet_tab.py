@@ -381,6 +381,14 @@ class BalanceSheetTab(QtWidgets.QWidget):
         # Start listener after initial load so both don't race on startup
         QtCore.QTimer.singleShot(3000, self._start_revenue_listener)
 
+        # Add real-time listeners for expenses and balance sheet
+        try:
+            from main import FirebaseManager
+            FirebaseManager.add_expenses_listener(self._on_expenses_realtime_update)
+            FirebaseManager.add_invoices_listener(self._on_invoices_realtime_update)
+        except Exception:
+            pass
+
         # Current year
         self.current_year = datetime.now().year
         self.annual_summary_year = self.current_year
@@ -1251,7 +1259,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
         self.annual_table.setStyleSheet("""
             QTableWidget {
                 background:#ffffff; border:none;
-                gridline-color:#f1f5f9; font-size:11px;
+                gridline-color:#f1f5f9; font-size:8px;
                 alternate-background-color:#f8fafc;
             }
             QTableWidget:focus {
@@ -1259,15 +1267,15 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 border-radius: 4px;
             }
             QTableWidget::item {
-                padding:8px 4px;
+                padding:4px 2px;
                 border-bottom:1px solid #f1f5f9;
             }
             QTableWidget::item:selected { background:#e0f2fe; color:#0f172a; }
             QTableWidget::item:focus { border: 1px solid #0f766e; }
             QHeaderView::section {
                 background:#f8fafc; color:#475569;
-                font-weight:800; font-size:11px;
-                padding:8px 4px; border:none;
+                font-weight:800; font-size:8px;
+                padding:4px 2px; border:none;
                 border-right:1px solid #e2e8f0;
                 border-bottom:1px solid #e2e8f0;
             }
@@ -1276,8 +1284,8 @@ class BalanceSheetTab(QtWidgets.QWidget):
             }
             QHeaderView::section:vertical {
                 background:#f8fafc; color:#334155;
-                font-weight:800; font-size:12px;
-                padding:8px 12px; border:none;
+                font-weight:800; font-size:11px;
+                padding:6px 8px; border:none;
                 border-bottom:1px solid #e2e8f0;
             }
         """)
@@ -2397,6 +2405,36 @@ class BalanceSheetTab(QtWidgets.QWidget):
             except Exception:
                 pass
             self._revenue_listener_handle = None
+
+    def _on_expenses_realtime_update(self, expenses_data):
+        """Called when expenses are updated in Firebase"""
+        try:
+            QtCore.QTimer.singleShot(300, self._refresh_expenses_from_listener)
+        except Exception as e:
+            _log.warning("Error updating expenses in real-time: %s", e)
+
+    def _on_invoices_realtime_update(self, invoices_data):
+        """Called when invoices are updated in Firebase"""
+        try:
+            QtCore.QTimer.singleShot(300, self._refresh_invoices_from_listener)
+        except Exception as e:
+            _log.warning("Error updating invoices in real-time: %s", e)
+
+    def _refresh_expenses_from_listener(self):
+        """Refresh expenses on main thread"""
+        try:
+            self.load_all_financial_data()
+            self.update_annual_summary()
+        except Exception as e:
+            _log.warning("Error refreshing expenses: %s", e)
+
+    def _refresh_invoices_from_listener(self):
+        """Refresh invoices on main thread"""
+        try:
+            self.load_all_financial_data()
+            self.update_annual_summary()
+        except Exception as e:
+            _log.warning("Error refreshing invoices: %s", e)
 
     def update_revenue_entry_status(self, invoice_number: str, new_status: str, received_date: str):
         """Immediately sync status + received_date for an invoice revenue entry.
@@ -6473,23 +6511,38 @@ class BalanceSheetTab(QtWidgets.QWidget):
     # ------------------------------------------------------------------ #
 
     def _on_annual_cell_clicked(self, row, col):
-        """Open monthly revenue detail when a Revenue-row month cell is clicked."""
-        if row == 0 and 0 <= col <= 11:
-            dlg = self.RevenueDetailDialog(
-                self, mode='month',
-                year=self.annual_summary_year,
-                month=col + 1,
-            )
-            dlg.exec_()
+        """Open monthly detail when a month cell is clicked (revenue or expenses)."""
+        if 0 <= col <= 11:
+            if row == 0:  # Revenue row
+                dlg = self.RevenueDetailDialog(
+                    self, mode='month',
+                    year=self.annual_summary_year,
+                    month=col + 1,
+                )
+                dlg.exec_()
+            elif row == 1:  # Expenses row
+                dlg = self.ExpenseDetailDialog(
+                    self,
+                    year=self.annual_summary_year,
+                    month=col + 1,
+                )
+                dlg.exec_()
 
     def _on_annual_row_header_clicked(self, logical_index):
-        """Open yearly revenue detail when the 'Revenue' row header is clicked."""
-        if logical_index == 0:
+        """Open yearly detail when a row header is clicked."""
+        if logical_index == 0:  # Revenue row
             dlg = self.RevenueDetailDialog(
                 self, mode='year',
                 year=self.annual_summary_year,
             )
             dlg.exec_()
+        elif logical_index == 1:  # Expenses row
+            dlg = self.ExpenseDetailDialog(
+                self, mode='year',
+                year=self.annual_summary_year,
+            )
+            dlg.exec_()
+
 
     # ------------------------------------------------------------------ #
     #  Revenue Detail Dialog                                              #
@@ -6681,14 +6734,14 @@ class BalanceSheetTab(QtWidgets.QWidget):
                         "Paid Amount", "Paid Date", "Actions"]
                 # Description=Stretch; money cols Fixed so they don't crowd Description
                 col_modes = ['F','F','F','S','F','F','F','F']
-                col_widths = [52, 115, 160, 0, 128, 128, 115, 95]
+                col_widths = [52, 115, 160, 0, 150, 150, 115, 95]
             else:
                 cols = ["S.No", "Paid Month", "Invoice Date",
                         "Invoice #", "Description",
                         "Invoice Total", "Paid Amount", "Paid Date", "Actions"]
                 # Description=Stretch; money cols Fixed
                 col_modes = ['F','F','F','F','S','F','F','F','F']
-                col_widths = [52, 125, 115, 165, 0, 128, 128, 115, 95]
+                col_widths = [52, 125, 115, 165, 0, 150, 150, 115, 95]
 
             self._table.setColumnCount(len(cols))
             self._table.setHorizontalHeaderLabels(cols)
@@ -7969,6 +8022,704 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.critical(
                     self, "Export Error", str(exc))
                 _log.warning("RevenueDetailDialog PDF error: %s", exc)
+
+    class ExpenseDetailDialog(QtWidgets.QDialog):
+        """Click-through popup: expenses by month or year from the annual table."""
+
+        def __init__(self, parent_tab, mode='month', year=None, month=None):
+            super().__init__(parent_tab)
+            self.parent_tab = parent_tab
+            self.mode = mode  # 'month' or 'year'
+            self._year = year or datetime.now().year
+            self._month = month or 1
+            self._all_entries = []
+            self._filtered_entries = []
+            self._search_text = ''
+            self._pg_page = 1
+            self._pg_per_page = 15
+
+            self.setWindowFlags(
+                self.windowFlags() | QtCore.Qt.WindowMaximizeButtonHint)
+            self.setModal(True)
+            self.resize(1040, 640)
+            self._init_ui()
+            self._reload()
+
+        def _init_ui(self):
+            root = QtWidgets.QVBoxLayout(self)
+            root.setSpacing(0)
+            root.setContentsMargins(0, 0, 0, 0)
+
+            # ── Header bar ────────────────────────────────────────────
+            hdr_w = QtWidgets.QWidget()
+            hdr_w.setStyleSheet("background:#1e3a5f;")
+            hdr_w.setFixedHeight(56)
+            hdr_hl = QtWidgets.QHBoxLayout(hdr_w)
+            hdr_hl.setContentsMargins(20, 0, 16, 0)
+            hdr_hl.setSpacing(12)
+
+            self._title_lbl = QtWidgets.QLabel()
+            self._title_lbl.setStyleSheet(
+                "font-size:18px;font-weight:bold;color:white;background:transparent;")
+            hdr_hl.addWidget(self._title_lbl, 1)
+
+            self._yr_btn = QtWidgets.QPushButton()
+            self._yr_btn.setFixedSize(120, 32)
+            self._yr_btn.setStyleSheet("""
+                QPushButton{background:#2563eb;color:white;border:none;
+                    border-radius:6px;font-size:12px;font-weight:bold;}
+                QPushButton:hover{background:#1d4ed8;}
+            """)
+            self._yr_btn.clicked.connect(self._pick_year)
+            hdr_hl.addWidget(self._yr_btn)
+            root.addWidget(hdr_w)
+
+            # ── Sub-toolbar: conditional based on mode ────────────────────
+            sub_w = QtWidgets.QWidget()
+            sub_w.setStyleSheet(
+                "background:#f0fdf4;border-bottom:1px solid #bbf7d0;")
+            sub_w.setFixedHeight(50)
+            sub_hl = QtWidgets.QHBoxLayout(sub_w)
+            sub_hl.setContentsMargins(16, 0, 16, 0)
+            sub_hl.setSpacing(8)
+
+            _nav_ss = """
+                QPushButton{background:#dcfce7;color:#15803d;
+                    border:1px solid #86efac;border-radius:6px;
+                    font-size:13px;font-weight:bold;padding:0 12px;}
+                QPushButton:hover{background:#bbf7d0;}
+            """
+            _lbl_ss = ("font-size:12px;font-weight:700;color:#374151;"
+                       "border:none;background:transparent;")
+
+            if self.mode == 'month':
+                self._prev_btn = QtWidgets.QPushButton("◀  Prev")
+                self._prev_btn.setFixedHeight(32)
+                self._prev_btn.setStyleSheet(_nav_ss)
+                self._prev_btn.clicked.connect(self._prev_month)
+
+                self._period_lbl = QtWidgets.QLabel()
+                self._period_lbl.setStyleSheet(
+                    "font-size:14px;font-weight:bold;color:#166534;"
+                    "background:transparent;padding:0 10px;")
+                self._period_lbl.setAlignment(QtCore.Qt.AlignCenter)
+
+                self._next_btn = QtWidgets.QPushButton("Next  ▶")
+                self._next_btn.setFixedHeight(32)
+                self._next_btn.setStyleSheet(_nav_ss)
+                self._next_btn.clicked.connect(self._next_month)
+
+                sub_hl.addWidget(self._prev_btn)
+                sub_hl.addWidget(self._period_lbl, 1)
+                sub_hl.addWidget(self._next_btn)
+            else:
+                # Year mode: date-range filter
+                for lbl_txt in ["From:"]:
+                    l = QtWidgets.QLabel(lbl_txt)
+                    l.setStyleSheet(_lbl_ss)
+                    sub_hl.addWidget(l)
+
+                self._from_de = QtWidgets.QDateEdit()
+                self._from_de.setCalendarPopup(True)
+                self._from_de.setDisplayFormat("MM-dd-yyyy")
+                self._from_de.setMinimumHeight(32)
+                self._from_de.setDate(QtCore.QDate(self._year, 1, 1))
+                self._from_de.wheelEvent = lambda e: e.ignore()
+                self._from_de.stepBy = lambda x: None
+                sub_hl.addWidget(self._from_de)
+
+                sub_hl.addSpacing(8)
+                to_lbl = QtWidgets.QLabel("To:")
+                to_lbl.setStyleSheet(_lbl_ss)
+                sub_hl.addWidget(to_lbl)
+
+                self._to_de = QtWidgets.QDateEdit()
+                self._to_de.setCalendarPopup(True)
+                self._to_de.setDisplayFormat("MM-dd-yyyy")
+                self._to_de.setMinimumHeight(32)
+                self._to_de.setDate(QtCore.QDate(self._year, 12, 31))
+                self._to_de.wheelEvent = lambda e: e.ignore()
+                self._to_de.stepBy = lambda x: None
+                sub_hl.addWidget(self._to_de)
+
+                apply_btn = QtWidgets.QPushButton("Apply")
+                apply_btn.setFixedHeight(32)
+                apply_btn.setStyleSheet("""
+                    QPushButton{background:#15803d;color:white;border:none;
+                        border-radius:6px;font-size:12px;font-weight:bold;
+                        padding:0 14px;}
+                    QPushButton:hover{background:#166534;}
+                """)
+                apply_btn.clicked.connect(self._display)
+                sub_hl.addSpacing(8)
+                sub_hl.addWidget(apply_btn)
+                sub_hl.addStretch()
+
+            root.addWidget(sub_w)
+
+            # ── Search + Export row ────────────────────────────────────
+            tool_w = QtWidgets.QWidget()
+            tool_w.setStyleSheet(
+                "background:white;border-bottom:1px solid #e2e8f0;")
+            tool_w.setFixedHeight(48)
+            tool_hl = QtWidgets.QHBoxLayout(tool_w)
+            tool_hl.setContentsMargins(16, 0, 16, 0)
+            tool_hl.setSpacing(10)
+
+            srch_lbl = QtWidgets.QLabel("🔍")
+            srch_lbl.setStyleSheet("background:transparent;font-size:14px;")
+            self._search_edit = QtWidgets.QLineEdit()
+            self._search_edit.setPlaceholderText(
+                "Search by name, description, amount, date…")
+            self._search_edit.setMinimumHeight(32)
+            self._search_edit.setStyleSheet("""
+                QLineEdit{border:1px solid #d1d5db;border-radius:6px;
+                    padding:0 10px;font-size:12px;background:white;}
+                QLineEdit:focus{border:1px solid #15803d;}
+            """)
+            self._search_edit.textChanged.connect(self._on_search)
+
+            exp_btn = QtWidgets.QPushButton("📄  Export PDF")
+            exp_btn.setFixedHeight(32)
+            exp_btn.setStyleSheet("""
+                QPushButton{background:#1e3a5f;color:white;border:none;
+                    border-radius:6px;font-size:12px;font-weight:bold;
+                    padding:0 16px;}
+                QPushButton:hover{background:#1d4ed8;}
+            """)
+            exp_btn.clicked.connect(self._export_pdf)
+
+            tool_hl.addWidget(srch_lbl)
+            tool_hl.addWidget(self._search_edit, 1)
+            tool_hl.addSpacing(8)
+            tool_hl.addWidget(exp_btn)
+            root.addWidget(tool_w)
+
+            # ── Table ──────────────────────────────────────────────────
+            self._table = QtWidgets.QTableWidget()
+            cols = ["S.No", "Date", "Expense Name", "Description", "Amount"]
+            col_modes = ['F', 'F', 'F', 'S', 'F']
+            col_widths = [50, 120, 320, 0, 170]
+
+            self._table.setColumnCount(len(cols))
+            self._table.setHorizontalHeaderLabels(cols)
+            self._table.setEditTriggers(
+                QtWidgets.QAbstractItemView.NoEditTriggers)
+            self._table.setSelectionBehavior(
+                QtWidgets.QAbstractItemView.SelectRows)
+            self._table.setSelectionMode(
+                QtWidgets.QAbstractItemView.SingleSelection)
+            self._table.setAlternatingRowColors(True)
+            self._table.verticalHeader().setVisible(False)
+            self._table.setShowGrid(True)
+            self._table.setSortingEnabled(False)
+            self._table.setHorizontalScrollBarPolicy(
+                QtCore.Qt.ScrollBarAsNeeded)
+            self._table.setWordWrap(True)
+            self._table.verticalHeader().setDefaultSectionSize(32)
+            self._table.setStyleSheet("""
+                QTableWidget{
+                    background:white;
+                    border:1px solid #e2e8f0;
+                    gridline-color:#f1f5f9;
+                    font-size:9px;
+                }
+                QTableWidget:focus{
+                    border:2px solid #0f766e;border-radius:4px;
+                }
+                QTableWidget::item{padding:5px 3px;border-bottom:1px solid #f1f5f9;text-align:center;}
+                QTableWidget::item:selected{background:#e0f2fe;color:#0f172a;}
+                QHeaderView::section{
+                    background:#f8fafc;color:#475569;font-weight:800;
+                    font-size:11px;padding:8px 4px;border:none;
+                    border-right:1px solid #e2e8f0;
+                    border-bottom:1px solid #e2e8f0;
+                }
+                QHeaderView::section:last{background:#f0fdf4;color:#0f766e;}
+            """)
+
+            for i, (col, mode, wid) in enumerate(zip(cols, col_modes, col_widths)):
+                if mode == 'F':
+                    self._table.horizontalHeader().setSectionResizeMode(
+                        i, QtWidgets.QHeaderView.Fixed)
+                    self._table.setColumnWidth(i, wid)
+                else:
+                    self._table.horizontalHeader().setSectionResizeMode(
+                        i, QtWidgets.QHeaderView.Stretch)
+
+            root.addWidget(self._table, 1)
+
+            # ── Footer (totals + pagination) ───────────────────────────
+            foot_w = QtWidgets.QWidget()
+            foot_w.setStyleSheet(
+                "background:#f0fdf4;border-top:1px solid #bbf7d0;")
+            foot_w.setFixedHeight(44)
+            foot_hl = QtWidgets.QHBoxLayout(foot_w)
+            foot_hl.setContentsMargins(16, 0, 16, 0)
+            foot_hl.setSpacing(6)
+
+            self._count_lbl = QtWidgets.QLabel()
+            self._count_lbl.setStyleSheet(
+                "font-size:11px;color:#6b7280;background:transparent;"
+                "font-weight:600;")
+            foot_hl.addWidget(self._count_lbl)
+            foot_hl.addStretch()
+
+            # Pagination controls (centre-right)
+            _pg_s = (
+                "QPushButton{background:#ffffff;color:#334155;"
+                "border:1px solid #e2e8f0;border-radius:6px;"
+                "font-size:12px;font-weight:700;"
+                "min-width:30px;min-height:26px;padding:0 6px;}"
+                "QPushButton:hover{background:#f1f5f9;border-color:#cbd5e1;}"
+                "QPushButton:disabled{color:#cbd5e1;}")
+            self._pg_prev_btn = QtWidgets.QPushButton("‹")
+            self._pg_prev_btn.setStyleSheet(_pg_s)
+            self._pg_prev_btn.setCursor(
+                QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+            self._pg_prev_btn.clicked.connect(self._pg_go_prev)
+            foot_hl.addWidget(self._pg_prev_btn)
+
+            self._pg_btns_layout = QtWidgets.QHBoxLayout()
+            self._pg_btns_layout.setSpacing(3)
+            foot_hl.addLayout(self._pg_btns_layout)
+            self._pg_style = _pg_s
+
+            self._pg_next_btn = QtWidgets.QPushButton("›")
+            self._pg_next_btn.setStyleSheet(_pg_s)
+            self._pg_next_btn.setCursor(
+                QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+            self._pg_next_btn.clicked.connect(self._pg_go_next)
+            foot_hl.addWidget(self._pg_next_btn)
+            foot_hl.addSpacing(12)
+
+            self._total_lbl = QtWidgets.QLabel()
+            self._total_lbl.setStyleSheet(
+                "font-size:13px;font-weight:bold;color:#dc2626;"
+                "background:transparent;")
+            foot_hl.addWidget(self._total_lbl)
+            root.addWidget(foot_w)
+
+        def _reload(self):
+            """Reload expenses for the selected month."""
+            self._filtered_entries = []
+            total = 0.0
+
+            for exp in self.parent_tab.annual_expenses_data:
+                try:
+                    date_str = exp.get('date', '')
+                    if date_str:
+                        date = datetime.strptime(date_str, "%m-%d-%Y")
+                        if date.year == self._year and date.month == self._month:
+                            amount = float(exp.get('amount', '0').replace('$', '').replace(',', ''))
+                            self._filtered_entries.append({
+                                'date': date_str,
+                                'name': exp.get('name', 'Unknown'),
+                                'description': exp.get('description', ''),
+                                'amount': amount,
+                            })
+                            total += amount
+                except Exception:
+                    pass
+
+            self._pg_page = 1
+            self._update_title()
+            self._display()
+
+        def _display(self):
+            """Filter and display expenses with pagination."""
+            filtered = self._filtered_entries
+            if self._search_text:
+                filtered = [
+                    e for e in self._filtered_entries
+                    if any(self._search_text in str(v).lower()
+                           for v in [e.get('date', ''), e.get('name', ''),
+                                   e.get('description', ''), e.get('amount', '')])
+                ]
+
+            total_all = sum(e['amount'] for e in filtered)
+            total = len(filtered)
+            max_page = (total + self._pg_per_page - 1) // self._pg_per_page if total else 1
+            if self._pg_page > max_page:
+                self._pg_page = max_page
+
+            start_i = (self._pg_page - 1) * self._pg_per_page
+            end_i = min(start_i + self._pg_per_page, total)
+            page_items = filtered[start_i:end_i]
+
+            self._table.setRowCount(len(page_items))
+            for row, entry in enumerate(page_items):
+                # S.No
+                sno = QtWidgets.QTableWidgetItem(str(start_i + row + 1))
+                sno.setTextAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+                sno.setFont(QtGui.QFont("Inter", 8))
+                self._table.setItem(row, 0, sno)
+
+                # Date
+                date_item = QtWidgets.QTableWidgetItem(entry['date'])
+                date_item.setTextAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+                date_item.setFont(QtGui.QFont("Inter", 8))
+                self._table.setItem(row, 1, date_item)
+
+                # Expense Name
+                name_item = QtWidgets.QTableWidgetItem(entry['name'])
+                name_item.setTextAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+                name_item.setFont(QtGui.QFont("Inter", 8))
+                self._table.setItem(row, 2, name_item)
+
+                # Description
+                desc_item = QtWidgets.QTableWidgetItem(entry['description'])
+                desc_item.setTextAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+                desc_item.setFont(QtGui.QFont("Inter", 8))
+                self._table.setItem(row, 3, desc_item)
+
+                # Amount
+                amount_item = QtWidgets.QTableWidgetItem(f"${entry['amount']:,.2f}")
+                amount_item.setTextAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter)
+                amount_item.setForeground(QtGui.QColor('#dc2626'))
+                amount_item.setFont(QtGui.QFont("Inter", 8, QtGui.QFont.Bold))
+                self._table.setItem(row, 4, amount_item)
+
+            # Update pagination display
+            self._count_lbl.setText(
+                f"Showing {start_i + 1}–{end_i} of {total} "
+                f"entr{'y' if total == 1 else 'ies'}" if total else "0 entries")
+            self._total_lbl.setText(f"Total: ${total_all:,.2f}")
+            self._pg_rebuild(total, max_page)
+
+        def _prev_month(self):
+            self._month -= 1
+            if self._month < 1:
+                self._month = 12
+                self._year -= 1
+            self._reload()
+
+        def _next_month(self):
+            self._month += 1
+            if self._month > 12:
+                self._month = 1
+                self._year += 1
+            self._reload()
+
+        def _pick_year(self):
+            dlg = self.parent_tab.YearPickerDialog(self, self._year)
+            if dlg.exec_():
+                self._year = dlg.selected_year
+                self._reload()
+
+        def _on_search(self):
+            self._search_text = self._search_edit.text().lower()
+            self._display()
+
+        def _update_title(self):
+            if self.mode == 'month':
+                self._title_lbl.setText(f"📊 Expenses - {calendar.month_name[self._month]} {self._year}")
+                self._yr_btn.setText(str(self._year))
+                self._period_lbl.setText(f"{calendar.month_name[self._month]} {self._year}")
+            else:
+                self._title_lbl.setText(f"📊 Expenses - {self._year}")
+                self._yr_btn.setText(str(self._year))
+
+        def _reload(self):
+            """Reload expenses for the selected period."""
+            self._filtered_entries = []
+            total = 0.0
+
+            for exp in self.parent_tab.annual_expenses_data:
+                try:
+                    date_str = exp.get('date', '')
+                    if date_str:
+                        date = datetime.strptime(date_str, "%m-%d-%Y")
+                        if self.mode == 'month':
+                            if date.year == self._year and date.month == self._month:
+                                amount = float(exp.get('amount', '0').replace('$', '').replace(',', ''))
+                                self._filtered_entries.append({
+                                    'date': date_str,
+                                    'name': exp.get('name', 'Unknown'),
+                                    'description': exp.get('description', ''),
+                                    'amount': amount,
+                                })
+                                total += amount
+                        else:  # year mode
+                            if date.year == self._year:
+                                amount = float(exp.get('amount', '0').replace('$', '').replace(',', ''))
+                                self._filtered_entries.append({
+                                    'date': date_str,
+                                    'name': exp.get('name', 'Unknown'),
+                                    'description': exp.get('description', ''),
+                                    'amount': amount,
+                                })
+                                total += amount
+                except Exception:
+                    pass
+
+            self._update_title()
+            self._display()
+
+        def _pg_go_prev(self):
+            """Go to previous page"""
+            if self._pg_page > 1:
+                self._pg_page -= 1
+                self._display()
+
+        def _pg_go_next(self):
+            """Go to next page"""
+            max_page = (len(self._filtered_entries) + self._pg_per_page - 1) // self._pg_per_page
+            if self._pg_page < max_page:
+                self._pg_page += 1
+                self._display()
+
+        def _pg_rebuild(self, total, max_page):
+            """Rebuild pagination buttons"""
+            while self._pg_btns_layout.count():
+                item = self._pg_btns_layout.takeAt(0)
+                if item and item.widget():
+                    item.widget().deleteLater()
+
+            self._pg_prev_btn.setEnabled(self._pg_page > 1)
+            self._pg_next_btn.setEnabled(self._pg_page < max_page)
+
+            for pg in range(1, max_page + 1):
+                btn = QtWidgets.QPushButton(str(pg))
+                btn.setStyleSheet(
+                    self._pg_style if pg != self._pg_page else
+                    ("QPushButton{background:#15803d;color:white;"
+                     "border:1px solid #15803d;border-radius:6px;"
+                     "font-size:12px;font-weight:700;"
+                     "min-width:30px;min-height:26px;padding:0 6px;}"))
+                btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+                btn.clicked.connect(lambda checked=False, p=pg: self._go_to_page(p))
+                self._pg_btns_layout.addWidget(btn)
+
+        def _go_to_page(self, page):
+            """Jump to specific page"""
+            if 1 <= page <= (len(self._filtered_entries) + self._pg_per_page - 1) // self._pg_per_page:
+                self._pg_page = page
+                self._display()
+
+        def _export_pdf(self):
+            try:
+                from reportlab.lib.pagesizes import A4, landscape
+                from reportlab.platypus import (
+                    SimpleDocTemplate, Table, TableStyle,
+                    Paragraph, Spacer)
+                from reportlab.lib.styles import (
+                    getSampleStyleSheet, ParagraphStyle)
+                from reportlab.lib import colors
+                from reportlab.lib.units import inch
+                from pathlib import Path as _Path
+                import calendar as _cal
+
+                # For year mode: show date-range picker before export
+                export_from_py = None
+                export_to_py = None
+                if self.mode == 'year':
+                    dlg = QtWidgets.QDialog(self)
+                    dlg.setWindowTitle("Export Date Range")
+                    dlg.setFixedSize(340, 230)
+                    dlg.setStyleSheet(
+                        "QDialog{background:#f8fafc;}"
+                        "QLabel{font-size:13px;font-weight:600;color:#1e293b;"
+                        "border:none;background:transparent;}")
+                    dlg_lay = QtWidgets.QVBoxLayout(dlg)
+                    dlg_lay.setContentsMargins(24, 20, 24, 20)
+                    dlg_lay.setSpacing(12)
+
+                    hdr_lbl = QtWidgets.QLabel("Select Export Date Range")
+                    hdr_lbl.setStyleSheet(
+                        "font-size:15px;font-weight:800;color:#0f172a;"
+                        "border:none;background:transparent;")
+                    dlg_lay.addWidget(hdr_lbl)
+
+                    _de_style = (
+                        "QDateEdit{padding:6px 28px 6px 8px;"
+                        "border:2px solid #bdc3c7;border-radius:6px;"
+                        "background:white;font-size:13px;font-weight:600;}"
+                        "QDateEdit:focus{border-color:#00756f;}")
+                    _lbl_ss = ("font-size:12px;font-weight:700;color:#374151;"
+                               "border:none;background:transparent;")
+
+                    from_row = QtWidgets.QHBoxLayout()
+                    from_row.setSpacing(10)
+                    from_lbl = QtWidgets.QLabel("From:")
+                    from_lbl.setStyleSheet(_lbl_ss)
+                    from_lbl.setFixedWidth(42)
+                    _fd = QtWidgets.QDateEdit()
+                    _fd.setCalendarPopup(True)
+                    _fd.setDisplayFormat("MM-dd-yyyy")
+                    _fd.setFixedHeight(36)
+                    _fd.wheelEvent = lambda e: e.ignore()
+                    _fd.stepBy = lambda x: None
+                    _fd.setDate(QtCore.QDate(self._year, 1, 1))
+                    _fd.setStyleSheet(_de_style)
+                    from_row.addWidget(from_lbl)
+                    from_row.addWidget(_fd, 1)
+                    dlg_lay.addLayout(from_row)
+
+                    to_row = QtWidgets.QHBoxLayout()
+                    to_row.setSpacing(10)
+                    to_lbl = QtWidgets.QLabel("To:")
+                    to_lbl.setStyleSheet(_lbl_ss)
+                    to_lbl.setFixedWidth(42)
+                    _td = QtWidgets.QDateEdit()
+                    _td.setCalendarPopup(True)
+                    _td.setDisplayFormat("MM-dd-yyyy")
+                    _td.setFixedHeight(36)
+                    _td.wheelEvent = lambda e: e.ignore()
+                    _td.stepBy = lambda x: None
+                    _td.setDate(QtCore.QDate(self._year, 12, 31))
+                    _td.setStyleSheet(_de_style)
+                    to_row.addWidget(to_lbl)
+                    to_row.addWidget(_td, 1)
+                    dlg_lay.addLayout(to_row)
+
+                    dlg_lay.addStretch()
+
+                    btn_row = QtWidgets.QHBoxLayout()
+                    btn_row.addStretch()
+                    cancel_b = QtWidgets.QPushButton("Cancel")
+                    cancel_b.setFixedSize(90, 36)
+                    cancel_b.setStyleSheet(
+                        "QPushButton{background:#f1f5f9;color:#334155;"
+                        "border:1px solid #cbd5e1;border-radius:7px;"
+                        "font-size:13px;font-weight:700;}"
+                        "QPushButton:hover{background:#e2e8f0;}")
+                    cancel_b.clicked.connect(dlg.reject)
+                    export_b = QtWidgets.QPushButton("Export PDF")
+                    export_b.setFixedSize(110, 36)
+                    export_b.setStyleSheet(
+                        "QPushButton{background:#0f766e;color:white;border:none;"
+                        "border-radius:7px;font-size:13px;font-weight:800;}"
+                        "QPushButton:hover{background:#0d625c;}")
+                    export_b.clicked.connect(dlg.accept)
+                    btn_row.addWidget(cancel_b)
+                    btn_row.addSpacing(8)
+                    btn_row.addWidget(export_b)
+                    dlg_lay.addLayout(btn_row)
+
+                    if dlg.exec_() != QtWidgets.QDialog.Accepted:
+                        return
+                    export_from_py = _fd.date().toPyDate()
+                    export_to_py = _td.date().toPyDate()
+
+                entries = self._filtered_entries.copy()
+
+                if not entries:
+                    QtWidgets.QMessageBox.information(
+                        self, "No Data", "No entries to export.")
+                    return
+
+                exp_dir = _Path.home() / "Downloads" / "Balance_Exports"
+                exp_dir.mkdir(parents=True, exist_ok=True)
+                if self.mode == 'month':
+                    label = (f"Expenses_{_cal.month_name[self._month]}"
+                             f"_{self._year}")
+                    period_str = (f"{_cal.month_name[self._month]} "
+                                  f"{self._year}")
+                else:
+                    label = f"Expenses_Annual_{self._year}"
+                    if export_from_py and export_to_py:
+                        period_str = (
+                            f"{export_from_py.strftime('%m-%d-%Y')}"
+                            f" — "
+                            f"{export_to_py.strftime('%m-%d-%Y')}")
+                    else:
+                        period_str = f"{self._year}"
+
+                filename = (exp_dir / f"{label}.pdf")
+                doc = SimpleDocTemplate(str(filename), pagesize=landscape(A4))
+                styles = getSampleStyleSheet()
+                story = []
+
+                # Add company heading from settings - match revenue export style
+                try:
+                    from main import Config as _Cfg
+                    company_name = _Cfg.COMPANY.get('name', 'MABS Engineering LLC').upper()
+                except Exception:
+                    company_name = 'MABS ENGINEERING LLC'
+
+                # Use same style as paid revenue export - smaller, centered, with background
+                header_style = ParagraphStyle(
+                    'ExpenseHeader',
+                    parent=styles['Heading1'],
+                    fontSize=12,
+                    textColor=colors.white,
+                    alignment=1,  # Center alignment
+                    backColor=colors.HexColor('#1e3a5f'),
+                    borderPadding=6,
+                    spaceAfter=8)
+
+                header_text = f"{company_name}  —  EXPENSE REPORT  ({period_str})"
+                header = Paragraph(header_text, header_style)
+                story.append(header)
+                story.append(Spacer(1, 0.15*inch))
+
+                # Create wrapping paragraph style for cells
+                from reportlab.lib.styles import ParagraphStyle
+                cell_style = ParagraphStyle(
+                    'ExpenseCell',
+                    parent=styles['Normal'],
+                    fontSize=8,
+                    leading=10,
+                    alignment=1)  # Center alignment
+
+                data = [["S.No", "Date", "Expense Name", "Description", "Amount"]]
+                total = 0.0
+                for row, entry in enumerate(entries, 1):
+                    data.append([
+                        str(row),
+                        Paragraph(entry['date'], cell_style),
+                        Paragraph(entry['name'], cell_style),
+                        Paragraph(entry['description'], cell_style),
+                        Paragraph(f"${entry['amount']:,.2f}", cell_style)
+                    ])
+                    total += entry['amount']
+
+                data.append(["", "", "", Paragraph("TOTAL", cell_style), Paragraph(f"${total:,.2f}", cell_style)])
+
+                table = Table(data, colWidths=[0.7*inch, 1.1*inch, 2.8*inch, 3.5*inch, 1.2*inch])
+                table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 11),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
+                    ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#f0fdf4')),
+                    ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, -1), (-1, -1), 11),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f8fafc')]),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 5),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+                ]))
+                story.append(table)
+                doc.build(story)
+
+                # Auto-open the PDF like paid revenue does
+                import platform
+                import subprocess
+                import os
+                if platform.system() == "Windows":
+                    os.startfile(filename)
+                elif platform.system() == "Darwin":
+                    subprocess.run(["open", str(filename)])
+                else:
+                    subprocess.run(["xdg-open", str(filename)])
+
+                QtWidgets.QMessageBox.information(
+                    self, "Success", f"PDF exported to:\n{filename}")
+                _log.info(f"Expense PDF exported: {filename}")
+            except ImportError:
+                QtWidgets.QMessageBox.warning(
+                    self, "Missing Library",
+                    "Install: pip install reportlab")
+            except Exception as exc:
+                QtWidgets.QMessageBox.critical(
+                    self, "Export Error", str(exc))
+                _log.warning("ExpenseDetailDialog PDF error: %s", exc)
 
     class YearPickerDialog(QtWidgets.QDialog):
         """Year picker dialog with 3x4 grid"""

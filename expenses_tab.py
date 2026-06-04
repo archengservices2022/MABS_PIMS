@@ -4628,6 +4628,13 @@ class ExpensesTab(QtWidgets.QWidget):
         """Load initial data after UI is fully initialized"""
         self.load_expenses()
 
+        # Add real-time listener for expenses
+        try:
+            from main import FirebaseManager
+            FirebaseManager.add_expenses_listener(self._on_expenses_realtime_update)
+        except Exception:
+            pass
+
     def refresh_data(self, auto=False):
         """Reload expenses from Firebase while preserving filters and search."""
         if getattr(self, "_finance_refreshing", False):
@@ -8415,7 +8422,14 @@ class ExpensesTab(QtWidgets.QWidget):
         
         # NEW: Apply existing filters after loading data
         self.filter_expenses()  # Add this line
-    
+
+    def _on_expenses_realtime_update(self, expenses_data):
+        """Called when expenses are updated in Firebase - updates UI automatically"""
+        try:
+            QtCore.QTimer.singleShot(300, self.load_expenses)
+        except Exception as e:
+            _log.warning("Error updating expenses in real-time: %s", e)
+
     def _fit_table_height(self):
         """Resize table to show all rows without internal scrolling."""
         row_count = self.expenses_table.rowCount()

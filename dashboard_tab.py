@@ -415,6 +415,9 @@ class DashboardTab(QtWidgets.QWidget):
         self._build()
         QtCore.QTimer.singleShot(0, self._initial_load)
 
+        # Add real-time listeners for dashboard data
+        QtCore.QTimer.singleShot(2000, self._setup_realtime_listeners)
+
     def _build(self):
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -685,6 +688,45 @@ class DashboardTab(QtWidgets.QWidget):
         worker = _DashboardLoader(self.main_window)
         worker.signals.done.connect(self._on_data_loaded)
         QtCore.QThreadPool.globalInstance().start(worker)
+
+    def _setup_realtime_listeners(self):
+        """Set up real-time listeners for dashboard data"""
+        try:
+            from main import FirebaseManager
+            FirebaseManager.add_invoices_listener(self._on_invoices_updated)
+            FirebaseManager.add_projects_listener(self._on_projects_updated)
+            FirebaseManager.add_quotes_listener(self._on_quotes_updated)
+            FirebaseManager.add_balance_sheet_listener(self._on_balance_updated)
+        except Exception:
+            pass
+
+    def _on_invoices_updated(self, data):
+        """Called when invoices are updated"""
+        try:
+            QtCore.QTimer.singleShot(300, self._initial_load)
+        except Exception as e:
+            log.warning("Error updating dashboard invoices: %s", e)
+
+    def _on_projects_updated(self, data):
+        """Called when projects are updated"""
+        try:
+            QtCore.QTimer.singleShot(300, self._initial_load)
+        except Exception as e:
+            log.warning("Error updating dashboard projects: %s", e)
+
+    def _on_quotes_updated(self, data):
+        """Called when quotes are updated"""
+        try:
+            QtCore.QTimer.singleShot(300, self._initial_load)
+        except Exception as e:
+            log.warning("Error updating dashboard quotes: %s", e)
+
+    def _on_balance_updated(self, data):
+        """Called when balance sheet data is updated"""
+        try:
+            QtCore.QTimer.singleShot(300, self._initial_load)
+        except Exception as e:
+            log.warning("Error updating dashboard balance: %s", e)
 
     def _on_data_loaded(self, data: dict, *, _save: bool = True):
         """Receives results from background Firebase thread and updates UI."""

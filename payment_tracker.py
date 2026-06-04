@@ -90,8 +90,25 @@ class ProjectPaymentTracker:
         self.payments: List[Payment] = []
         self._load_payments()
         self._migrate_from_json()
+        # Add real-time listener for payments
+        self._setup_payment_listener()
 
     # ── Firebase storage ─────────────────────────────────────────────────────
+
+    def _setup_payment_listener(self):
+        """Set up real-time listener for payment changes"""
+        try:
+            from main import FirebaseManager
+            FirebaseManager.add_realtime_listener('/payments', self._on_payments_updated, 'payments')
+        except Exception:
+            pass
+
+    def _on_payments_updated(self, payments_data):
+        """Called when payments are updated in Firebase"""
+        try:
+            self._load_payments()
+        except Exception as e:
+            _log.warning("Error updating payments in real-time: %s", e)
 
     def _load_payments(self):
         """Load all payments from Firebase /payments/ node."""
