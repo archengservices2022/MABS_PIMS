@@ -2071,8 +2071,19 @@ class FileManager:
     def open_file(path: Path) -> bool:
         """Open file with default application"""
         try:
+            import time
+            # For PDF files, ensure file is fully written and released
+            if str(path).lower().endswith('.pdf'):
+                # Wait for file to be fully written and released
+                time.sleep(0.5)
+                # Verify file exists and is readable
+                if not Path(path).exists():
+                    log.warning("PDF file not found: %s", path)
+                    return False
+
             if platform.system() == "Windows":
-                os.startfile(str(path))
+                # Use subprocess instead of os.startfile for better handling
+                subprocess.Popen([str(path)], shell=True)
             elif platform.system() == "Darwin":
                 subprocess.run(["open", str(path)])
             else:
