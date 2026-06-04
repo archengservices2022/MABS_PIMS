@@ -4476,68 +4476,76 @@ class InvoiceHistoryViewWidget(QtWidgets.QWidget):
                 _log.warning("Could not auto-overdue %s: %s", inv_no, exc)
 
     def get_invoice_status(self, invoice: Invoice) -> str:
-        cached_status = self.get_cached_status(invoice.invoice_number)
-        firebase_status = (
-            invoice.status if hasattr(invoice, 'status') and invoice.status else None)
+        """Calculate invoice status based on paid amount vs. total amount"""
+        try:
+            total_amount = float(invoice.total) if hasattr(invoice, 'total') else 0.0
+            paid_amount = 0.0
 
-        # Firebase is the source of truth after payment deletions/edits.
-        # If the on-disk cache differs from the loaded Firebase status, treat the
-        # cache as stale and update it so future calls are consistent.
-        if cached_status and firebase_status and cached_status != firebase_status:
-            self.set_cached_status(invoice.invoice_number, firebase_status)
-            cached_status = firebase_status
-
-        raw_status = cached_status or firebase_status
-
-        if raw_status:
-            if not cached_status:
-                self.set_cached_status(invoice.invoice_number, raw_status)
-            # Check for remaining balance: if status is Paid but there's a remaining balance, downgrade to Partially Paid
-            if raw_status == "Paid":
+            # Get project numbers from invoice items and calculate total paid from payment tracker
+            if hasattr(invoice, 'items') and invoice.items:
                 try:
-                    total_amount = float(invoice.total) if hasattr(invoice, 'total') else 0.0
-                    paid_amount = 0.0
+                    from payment_tracker import PaymentTracker
+                    pt = PaymentTracker()
+                    pt._load_payments()
+                    project_numbers = set()
+                    for item in invoice.items:
+                        if hasattr(item, 'project_number') and item.project_number:
+                            project_numbers.add(item.project_number)
 
-                    # Get project numbers from invoice items and calculate total paid from payment tracker
-                    if hasattr(invoice, 'items') and invoice.items:
-                        try:
-                            from payment_tracker import PaymentTracker
-                            pt = PaymentTracker()
-                            pt._load_payments()
-                            project_numbers = set()
-                            for item in invoice.items:
-                                if hasattr(item, 'project_number') and item.project_number:
-                                    project_numbers.add(item.project_number)
-
-                            for pn in project_numbers:
-                                for payment in pt.get_project_payments(pn):
-                                    paid_amount += float(payment.get('amount', 0)) if isinstance(payment, dict) else float(getattr(payment, 'amount', 0))
-                        except Exception:
-                            pass
-
-                    remaining_balance = total_amount - paid_amount
-                    if remaining_balance > 0.01:  # Allow small rounding differences
-                        return "Partially Paid"
+                    for pn in project_numbers:
+                        for payment in pt.get_project_payments(pn):
+                            paid_amount += float(payment.get('amount', 0)) if isinstance(payment, dict) else float(getattr(payment, 'amount', 0))
                 except Exception:
                     pass
-            # Auto-escalate Unpaid/Pending → Overdue when due date has passed
-            if raw_status in ("Unpaid", "Pending"):
+
+            # Determine status based on paid amount vs. total amount
+            remaining_balance = total_amount - paid_amount
+
+            if remaining_balance <= 0.01:  # Allow small rounding differences
+                # Fully paid
+                return "Paid"
+            elif paid_amount < 0.01:
+                # Nothing paid - check due date to determine Unpaid/Overdue
                 due = self._parse_due_date(invoice)
                 if due and due < datetime.now().date():
-                    self.set_cached_status(invoice.invoice_number, "Overdue")
-                    self._schedule_overdue_update(invoice.invoice_number)
                     return "Overdue"
-            return raw_status
-
-        # No status stored — derive from due date
-        try:
-            due = self._parse_due_date(invoice)
-            if due is None:
-                return "Pending"
-            return "Overdue" if due < datetime.now().date() else "Pending"
+                return "Unpaid"
+            else:
+                # Partially paid
+                return "Partially Paid"
         except Exception as exc:
             _log.warning("Error determining invoice status: %s", exc)
-            return "Pending"
+            # Fallback to Firebase status or due date check
+            cached_status = self.get_cached_status(invoice.invoice_number)
+            firebase_status = (
+                invoice.status if hasattr(invoice, 'status') and invoice.status else None)
+
+            if cached_status and firebase_status and cached_status != firebase_status:
+                self.set_cached_status(invoice.invoice_number, firebase_status)
+                cached_status = firebase_status
+
+            raw_status = cached_status or firebase_status
+
+            if raw_status:
+                if not cached_status:
+                    self.set_cached_status(invoice.invoice_number, raw_status)
+                # Auto-escalate Unpaid/Pending → Overdue when due date has passed
+                if raw_status in ("Unpaid", "Pending"):
+                    due = self._parse_due_date(invoice)
+                    if due and due < datetime.now().date():
+                        self.set_cached_status(invoice.invoice_number, "Overdue")
+                        self._schedule_overdue_update(invoice.invoice_number)
+                        return "Overdue"
+                return raw_status
+
+            # No status stored — derive from due date
+            try:
+                due = self._parse_due_date(invoice)
+                if due is None:
+                    return "Pending"
+                return "Overdue" if due < datetime.now().date() else "Pending"
+            except Exception:
+                return "Pending"
     
     def _reload_invoices(self):
         """Refresh button: reload invoices from Firebase with visual feedback."""
