@@ -3417,13 +3417,6 @@ class JobFormTab(QtWidgets.QWidget):
             # Build PDF
             doc.build(elements)
 
-            # Ensure PDF has full permissions for Adobe Reader compatibility
-            try:
-                from main import PDFPermissions
-                PDFPermissions.ensure_full_permissions(Path(pdf_path))
-            except Exception as e:
-                _log.warning("Error ensuring PDF permissions: %s", e)
-
             # Open the PDF file
             if self.open_job_form_pdf_file(pdf_path):
                 QtWidgets.QMessageBox.information(self, "Export Success",

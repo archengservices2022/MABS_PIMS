@@ -2071,19 +2071,8 @@ class FileManager:
     def open_file(path: Path) -> bool:
         """Open file with default application"""
         try:
-            import time
-            # For PDF files, ensure file is fully written and released
-            if str(path).lower().endswith('.pdf'):
-                # Wait for file to be fully written and released
-                time.sleep(0.5)
-                # Verify file exists and is readable
-                if not Path(path).exists():
-                    log.warning("PDF file not found: %s", path)
-                    return False
-
             if platform.system() == "Windows":
-                # Use subprocess instead of os.startfile for better handling
-                subprocess.Popen([str(path)], shell=True)
+                os.startfile(str(path))
             elif platform.system() == "Darwin":
                 subprocess.run(["open", str(path)])
             else:
@@ -2207,63 +2196,6 @@ def truncate_text(text: str, max_chars: int = 45) -> str:
         return ""
     text = text.strip()
     return text if len(text) <= max_chars else text[:max_chars - 3] + "..."
-
-# ---------- PDF Permissions Utility ----------
-class PDFPermissions:
-    """Ensures all generated PDFs have full permissions for Adobe Reader compatibility"""
-
-    @staticmethod
-    def ensure_full_permissions(pdf_path: Path) -> bool:
-        """
-        Remove PDF restrictions safely to allow full access in Adobe Reader.
-        Returns True if successful, False if error.
-        """
-        try:
-            from PyPDF2 import PdfReader, PdfWriter
-            import shutil
-            import tempfile
-
-            # Create backup in case something goes wrong
-            pdf_path = Path(pdf_path)
-            backup_path = pdf_path.with_stem(pdf_path.stem + "_backup")
-
-            try:
-                # Read the PDF
-                with open(pdf_path, 'rb') as input_file:
-                    reader = PdfReader(input_file)
-
-                    # Check if PDF has encryption - if not, it's already unrestricted
-                    if not reader.is_encrypted:
-                        return True
-
-                    # Create a new writer
-                    writer = PdfWriter()
-
-                    # Copy all pages to new writer
-                    for page_num in range(len(reader.pages)):
-                        page = reader.pages[page_num]
-                        writer.add_page(page)
-
-                    # Copy metadata
-                    if reader.metadata:
-                        writer.add_metadata(reader.metadata)
-
-                    # Write to temporary file first (safer)
-                    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp:
-                        temp_path = temp.name
-                        writer.write(temp)
-
-                    # Replace original with temporary file
-                    shutil.move(temp_path, str(pdf_path))
-                    return True
-
-            except Exception as inner_e:
-                log.warning("Error processing PDF permissions: %s", inner_e)
-                return False
-
-        except Exception as e:
-            log.warning("Error ensuring PDF permissions: %s", e)
-            return False
 
 # ---------- PDF Generator ----------
 class PDFGenerator:
@@ -8636,9 +8568,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtWidgets.QApplication.restoreOverrideCursor()
 
             if success:
-                # Ensure PDF has full permissions for Adobe Reader compatibility
-                PDFPermissions.ensure_full_permissions(pdf_path)
-
                 _saved_inv_number = self.invoice.invoice_number
                 _saved_inv_items  = list(self.invoice.items)
 

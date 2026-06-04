@@ -137,78 +137,6 @@ except ImportError:
     except ImportError:
         PDF_AVAILABLE = False
 
-class PDFWatermarker:
-    """Professional PDF watermarking utility - WATERMARK ONLY FOR PAID STATUS"""
-    
-    @staticmethod
-    def add_watermark_simple(input_pdf_path: Path, status: str) -> Path:
-        try:
-            if status != "Paid":
-                return input_pdf_path
-            
-            output_pdf_path = input_pdf_path.parent / f"{input_pdf_path.stem}_watermarked{input_pdf_path.suffix}"
-            watermark_config = PDFWatermarker.get_watermark_config(status)
-            
-            with open(input_pdf_path, 'rb') as input_file:
-                existing_pdf = PdfReader(input_file)
-                total_pages = len(existing_pdf.pages)
-                output_pdf = PdfWriter()
-                
-                for page_num in range(total_pages):
-                    page = existing_pdf.pages[page_num]
-                    packet = io.BytesIO()
-                    can = canvas.Canvas(packet, pagesize=A4)
-                    
-                    can.setFillAlpha(watermark_config['opacity'])
-                    can.setFillColor(watermark_config['color'])
-                    can.setFont("Helvetica-Bold", watermark_config['font_size'])
-                    
-                    page_width = A4[0]
-                    page_height = A4[1]
-                    text = watermark_config['text']
-                    text_width = can.stringWidth(text, "Helvetica-Bold", watermark_config['font_size'])
-                    
-                    x = page_width / 2 - text_width / 2
-                    y = page_height / 2
-                    
-                    can.saveState()
-                    can.translate(x, y)
-                    can.rotate(40)
-                    can.drawString(0, 0, text)
-                    can.restoreState()
-                    can.save()
-                    
-                    packet.seek(0)
-                    watermark_pdf = PdfReader(packet)
-                    watermark_page = watermark_pdf.pages[0]
-                    page.merge_page(watermark_page)
-                    output_pdf.add_page(page)
-                
-                with open(output_pdf_path, 'wb') as output_file:
-                    output_pdf.write(output_file)
-            
-            return output_pdf_path
-        except Exception as e:
-            _log.warning("Error in watermarking: %s", e)
-            return input_pdf_path
-
-    @staticmethod
-    def get_watermark_config(status: str) -> Dict:
-        if status == "Paid":
-            return {
-                'text': 'PAID',
-                'color': colors.HexColor('#27ae60'),
-                'font_size': 65,
-                'opacity': 0.15
-            }
-        else:
-            return {'text': '', 'color': colors.black, 'font_size': 0, 'opacity': 0}
-
-    @staticmethod
-    def add_watermark_to_pdf(input_pdf_path: Path, status: str) -> Path:
-        return PDFWatermarker.add_watermark_simple(input_pdf_path, status)
-
-
 class TextWrapDelegate(QtWidgets.QStyledItemDelegate):
     """Custom delegate that forces text wrapping in table cells."""
 
@@ -2685,13 +2613,6 @@ class ClientListWidget(QtWidgets.QWidget):
 
             doc.build(elements)
 
-            # Ensure PDF has full permissions for Adobe Reader compatibility
-            try:
-                from main import PDFPermissions
-                PDFPermissions.ensure_full_permissions(Path(pdf_path))
-            except Exception as e:
-                _log.warning("Error ensuring PDF permissions: %s", e)
-
             if FileManager.open_file(pdf_path):
                 QtWidgets.QMessageBox.information(self, "Export Success", f"✅ PDF exported successfully!\n\nFile saved to: {pdf_path}\nThe PDF has been opened automatically.")
             else:
@@ -4440,13 +4361,6 @@ class InvoiceHistoryViewWidget(QtWidgets.QWidget):
                 elements.append(Paragraph("No invoices found for the selected criteria.", no_data_style))
             
             doc.build(elements)
-
-            # Ensure PDF has full permissions for Adobe Reader compatibility
-            try:
-                from main import PDFPermissions
-                PDFPermissions.ensure_full_permissions(Path(pdf_path))
-            except Exception as e:
-                _log.warning("Error ensuring PDF permissions: %s", e)
 
             if FileManager.open_file(pdf_path):
                 QtWidgets.QMessageBox.information(self, "Export Success", f"✅ PDF exported successfully!\n\nFile saved to: {pdf_path}\nThe PDF has been opened automatically.")
@@ -6547,19 +6461,11 @@ class InvoiceHistoryViewWidget(QtWidgets.QWidget):
             pdf_path = FirebaseManager.load_pdf_from_firebase(invoice.invoice_number, original_pdf_path)
             loading_msg.close()
             if pdf_path and pdf_path.exists():
-                watermarked_pdf_path = PDFWatermarker.add_watermark_simple(pdf_path, status)
-                if watermarked_pdf_path.exists():
-                    if FileManager.open_file(watermarked_pdf_path):
-                        QtWidgets.QMessageBox.information(self, "PDF Open", f"✅ PDF opened successfully!\n\nInvoice: {invoice.invoice_number}\nStatus: {status}")
-                        QtCore.QTimer.singleShot(10000, lambda: self.cleanup_temp_files([pdf_path, watermarked_pdf_path]))
-                    else:
-                        QtWidgets.QMessageBox.critical(self, "PDF Open", "Failed to open watermarked PDF file.")
+                if FileManager.open_file(pdf_path):
+                    QtWidgets.QMessageBox.information(self, "PDF Open", f"✅ PDF opened successfully!\n\nInvoice: {invoice.invoice_number}\nStatus: {status}")
+                    QtCore.QTimer.singleShot(10000, lambda: self.cleanup_temp_files([pdf_path]))
                 else:
-                    if FileManager.open_file(pdf_path):
-                        QtWidgets.QMessageBox.information(self, "PDF Open", f"✅ PDF opened (original version)\n\nInvoice: {invoice.invoice_number}\nStatus: {status}")
-                        QtCore.QTimer.singleShot(10000, lambda: self.cleanup_temp_file(pdf_path))
-                    else:
-                        QtWidgets.QMessageBox.critical(self, "PDF Open", "Failed to open PDF file.")
+                    QtWidgets.QMessageBox.critical(self, "PDF Open", "Failed to open PDF file.")
             else:
                 QtWidgets.QMessageBox.warning(
                     self, "PDF Not Generated",
