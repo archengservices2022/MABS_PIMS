@@ -6619,7 +6619,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
             self.setWindowFlags(
                 self.windowFlags() | QtCore.Qt.WindowMaximizeButtonHint)
             self.setModal(True)
-            self.resize(1040, 640)
+            self.resize(1200, 640)
             self._init_ui()
             self._reload()
 
@@ -6655,22 +6655,22 @@ class BalanceSheetTab(QtWidgets.QWidget):
             root.addWidget(hdr_w)
 
             # ── Sub-toolbar (month nav / year date range) ──────────────
-            sub_w = QtWidgets.QWidget()
-            sub_w.setStyleSheet(
-                "background:#f0fdf4;border-bottom:1px solid #bbf7d0;")
-            sub_w.setFixedHeight(50)
-            sub_hl = QtWidgets.QHBoxLayout(sub_w)
-            sub_hl.setContentsMargins(16, 0, 16, 0)
-            sub_hl.setSpacing(8)
-
-            _nav_ss = """
-                QPushButton{background:#dcfce7;color:#15803d;
-                    border:1px solid #86efac;border-radius:6px;
-                    font-size:13px;font-weight:bold;padding:0 12px;}
-                QPushButton:hover{background:#bbf7d0;}
-            """
-
             if self.mode == 'month':
+                sub_w = QtWidgets.QWidget()
+                sub_w.setStyleSheet(
+                    "background:#f0fdf4;border-bottom:1px solid #bbf7d0;")
+                sub_w.setFixedHeight(50)
+                sub_hl = QtWidgets.QHBoxLayout(sub_w)
+                sub_hl.setContentsMargins(16, 0, 16, 0)
+                sub_hl.setSpacing(8)
+
+                _nav_ss = """
+                    QPushButton{background:#dcfce7;color:#15803d;
+                        border:1px solid #86efac;border-radius:6px;
+                        font-size:13px;font-weight:bold;padding:0 12px;}
+                    QPushButton:hover{background:#bbf7d0;}
+                """
+
                 self._prev_btn = QtWidgets.QPushButton("◀  Prev")
                 self._prev_btn.setFixedHeight(32)
                 self._prev_btn.setStyleSheet(_nav_ss)
@@ -6690,11 +6690,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 sub_hl.addWidget(self._prev_btn)
                 sub_hl.addWidget(self._period_lbl, 1)
                 sub_hl.addWidget(self._next_btn)
-            else:
-                # Year mode: no date filter, just add stretch
-                sub_hl.addStretch()
-
-            root.addWidget(sub_w)
+                root.addWidget(sub_w)
 
             # ── Search + Export row ────────────────────────────────────
             tool_w = QtWidgets.QWidget()
@@ -7119,35 +7115,22 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 self._all_entries = self._extract_paid_entries(
                     rev_list, self._year, self._month, filter_by_invoice_date=False)
             else:
-                # Determine year span from date pickers
-                if hasattr(self, '_from_de'):
-                    from_year = self._from_de.date().year()
-                    to_year   = self._to_de.date().year()
-                else:
-                    from_year = to_year = self._year
-                if from_year == to_year:
-                    # For annual summary: load ALL data and filter by PAYMENT received date
-                    rev_list = self._fetch_revenue_for_year(from_year, load_all_for_filtering=True)
-                    self._all_entries = self._extract_paid_entries(
-                        rev_list, from_year, filter_by_invoice_date=False)
-                else:
-                    # Load all years in range - filter by PAYMENT DATE not year field
-                    try:
-                        pt = self.parent_tab
-                        if pt.FIREBASE_AVAILABLE and pt.db is not None:
-                            all_rev = BalanceSheetFirebaseManager.load_revenue()
-                            # Load ALL revenue, let _extract_paid_entries handle payment date filtering
-                            rev_list = all_rev
-                        else:
-                            raise RuntimeError("no db")
-                    except Exception:
-                        rev_list = []
-                        for yr in range(from_year, to_year + 1):
-                            rev_list.extend(self._fetch_revenue_for_year(yr, load_all_for_filtering=True))
-                    # year=None → skip year filter; _display applies date-range
-                    # Filter by PAYMENT DATE (not invoice date) for paid revenue window
-                    self._all_entries = self._extract_paid_entries(
-                        rev_list, None, filter_by_invoice_date=False)
+                # Year mode: load ALL revenue data and filter by payment year only
+                try:
+                    pt = self.parent_tab
+                    if pt.FIREBASE_AVAILABLE and pt.db is not None:
+                        all_rev = BalanceSheetFirebaseManager.load_revenue()
+                        rev_list = all_rev
+                    else:
+                        raise RuntimeError("no db")
+                except Exception:
+                    # Fallback: load from multiple years to capture all payments
+                    rev_list = []
+                    for year in range(self._year - 1, self._year + 2):
+                        rev_list.extend(self._fetch_revenue_for_year(year, load_all_for_filtering=True))
+                # Filter by PAYMENT DATE for the selected year only
+                self._all_entries = self._extract_paid_entries(
+                    rev_list, self._year, filter_by_invoice_date=False)
             self._pg_page = 1
             self._update_labels()
             self._display()
@@ -8010,7 +7993,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
             self.setWindowFlags(
                 self.windowFlags() | QtCore.Qt.WindowMaximizeButtonHint)
             self.setModal(True)
-            self.resize(1040, 640)
+            self.resize(1200, 640)
             self._init_ui()
             self._reload()
 
@@ -8044,24 +8027,22 @@ class BalanceSheetTab(QtWidgets.QWidget):
             root.addWidget(hdr_w)
 
             # ── Sub-toolbar: conditional based on mode ────────────────────
-            sub_w = QtWidgets.QWidget()
-            sub_w.setStyleSheet(
-                "background:#f0fdf4;border-bottom:1px solid #bbf7d0;")
-            sub_w.setFixedHeight(50)
-            sub_hl = QtWidgets.QHBoxLayout(sub_w)
-            sub_hl.setContentsMargins(16, 0, 16, 0)
-            sub_hl.setSpacing(8)
-
-            _nav_ss = """
-                QPushButton{background:#dcfce7;color:#15803d;
-                    border:1px solid #86efac;border-radius:6px;
-                    font-size:13px;font-weight:bold;padding:0 12px;}
-                QPushButton:hover{background:#bbf7d0;}
-            """
-            _lbl_ss = ("font-size:12px;font-weight:700;color:#374151;"
-                       "border:none;background:transparent;")
-
             if self.mode == 'month':
+                sub_w = QtWidgets.QWidget()
+                sub_w.setStyleSheet(
+                    "background:#f0fdf4;border-bottom:1px solid #bbf7d0;")
+                sub_w.setFixedHeight(50)
+                sub_hl = QtWidgets.QHBoxLayout(sub_w)
+                sub_hl.setContentsMargins(16, 0, 16, 0)
+                sub_hl.setSpacing(8)
+
+                _nav_ss = """
+                    QPushButton{background:#dcfce7;color:#15803d;
+                        border:1px solid #86efac;border-radius:6px;
+                        font-size:13px;font-weight:bold;padding:0 12px;}
+                    QPushButton:hover{background:#bbf7d0;}
+                """
+
                 self._prev_btn = QtWidgets.QPushButton("◀  Prev")
                 self._prev_btn.setFixedHeight(32)
                 self._prev_btn.setStyleSheet(_nav_ss)
@@ -8081,11 +8062,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 sub_hl.addWidget(self._prev_btn)
                 sub_hl.addWidget(self._period_lbl, 1)
                 sub_hl.addWidget(self._next_btn)
-            else:
-                # Year mode: no date filter, just add stretch
-                sub_hl.addStretch()
-
-            root.addWidget(sub_w)
+                root.addWidget(sub_w)
 
             # ── Search + Export row ────────────────────────────────────
             tool_w = QtWidgets.QWidget()
@@ -8231,7 +8208,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
             root.addWidget(foot_w)
 
         def _reload(self):
-            """Reload expenses for the selected month."""
+            """Reload expenses for the selected month or year."""
             self._filtered_entries = []
             total = 0.0
 
@@ -8240,7 +8217,11 @@ class BalanceSheetTab(QtWidgets.QWidget):
                     date_str = exp.get('date', '')
                     if date_str:
                         date = datetime.strptime(date_str, "%m-%d-%Y")
-                        if date.year == self._year and date.month == self._month:
+                        # For month mode: filter by year and month
+                        # For year mode: filter by year only
+                        year_match = date.year == self._year
+                        month_match = self._month is None or date.month == self._month
+                        if year_match and month_match:
                             amount = float(exp.get('amount', '0').replace('$', '').replace(',', ''))
                             self._filtered_entries.append({
                                 'date': date_str,
