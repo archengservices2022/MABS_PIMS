@@ -3635,14 +3635,18 @@ class BalanceSheetTab(QtWidgets.QWidget):
             view_btn.clicked.connect(lambda checked=False, r=revenue: self.show_bs_payment_history(r))
             actions_layout.addWidget(view_btn)
 
-        edit_btn = QtWidgets.QPushButton()
-        edit_btn.setFixedSize(28, 28)
-        edit_btn.setIcon(BalanceSheetTab._make_action_icon("edit", "#2563eb", 16))
-        edit_btn.setIconSize(QtCore.QSize(16, 16))
-        edit_btn.setToolTip("Edit entry")
-        edit_btn.setStyleSheet(_btn_ss.format(
-            bg="white", br="#e2e8f0", hbg="#eff6ff", hbr="#93c5fd"))
-        edit_btn.clicked.connect(lambda: self.edit_entry(revenue, "Revenue"))
+        # Only show edit button if status is not "Paid"
+        revenue_status = revenue.get('status', 'Unpaid')
+        if revenue_status != "Paid":
+            edit_btn = QtWidgets.QPushButton()
+            edit_btn.setFixedSize(28, 28)
+            edit_btn.setIcon(BalanceSheetTab._make_action_icon("edit", "#2563eb", 16))
+            edit_btn.setIconSize(QtCore.QSize(16, 16))
+            edit_btn.setToolTip("Edit entry")
+            edit_btn.setStyleSheet(_btn_ss.format(
+                bg="white", br="#e2e8f0", hbg="#eff6ff", hbr="#93c5fd"))
+            edit_btn.clicked.connect(lambda: self.edit_entry(revenue, "Revenue"))
+            actions_layout.addWidget(edit_btn)
 
         delete_btn = QtWidgets.QPushButton()
         delete_btn.setFixedSize(28, 28)
@@ -3653,7 +3657,6 @@ class BalanceSheetTab(QtWidgets.QWidget):
             bg="#fff1f2", br="#fecdd3", hbg="#ffe4e6", hbr="#fda4af"))
         delete_btn.clicked.connect(lambda: self.delete_entry(revenue, "Revenue"))
 
-        actions_layout.addWidget(edit_btn)
         actions_layout.addWidget(delete_btn)
         actions_layout.addStretch()
         self.finance_table.setCellWidget(row, col_offset, actions_widget)
@@ -6659,50 +6662,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 sub_hl.addWidget(self._period_lbl, 1)
                 sub_hl.addWidget(self._next_btn)
             else:
-                # Year mode: date-range filter
-                for lbl_txt in ["From:"]:
-                    l = QtWidgets.QLabel(lbl_txt)
-                    l.setStyleSheet(
-                        "font-size:12px;font-weight:bold;color:#166534;"
-                        "background:transparent;")
-                    sub_hl.addWidget(l)
-
-                self._from_de = QtWidgets.QDateEdit()
-                self._from_de.setCalendarPopup(True)
-                self._from_de.setDisplayFormat("MM-dd-yyyy")
-                self._from_de.setMinimumHeight(32)
-                self._from_de.setDate(QtCore.QDate(self._year, 1, 1))
-                self._from_de.wheelEvent = lambda e: e.ignore()
-                self._from_de.stepBy = lambda x: None
-                sub_hl.addWidget(self._from_de)
-
-                sub_hl.addSpacing(8)
-                to_lbl = QtWidgets.QLabel("To:")
-                to_lbl.setStyleSheet(
-                    "font-size:12px;font-weight:bold;color:#166534;"
-                    "background:transparent;")
-                sub_hl.addWidget(to_lbl)
-
-                self._to_de = QtWidgets.QDateEdit()
-                self._to_de.setCalendarPopup(True)
-                self._to_de.setDisplayFormat("MM-dd-yyyy")
-                self._to_de.setMinimumHeight(32)
-                self._to_de.setDate(QtCore.QDate(self._year, 12, 31))
-                self._to_de.wheelEvent = lambda e: e.ignore()
-                self._to_de.stepBy = lambda x: None
-                sub_hl.addWidget(self._to_de)
-
-                apply_btn = QtWidgets.QPushButton("Apply")
-                apply_btn.setFixedHeight(32)
-                apply_btn.setStyleSheet("""
-                    QPushButton{background:#15803d;color:white;border:none;
-                        border-radius:6px;font-size:12px;font-weight:bold;
-                        padding:0 14px;}
-                    QPushButton:hover{background:#166534;}
-                """)
-                apply_btn.clicked.connect(self._display)
-                sub_hl.addSpacing(8)
-                sub_hl.addWidget(apply_btn)
+                # Year mode: no date filter, just add stretch
                 sub_hl.addStretch()
 
             root.addWidget(sub_w)
@@ -7835,112 +7795,12 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 from pathlib import Path as _Path
                 import calendar as _cal
 
-                # For Annual mode: show date-range picker before export
-                export_from_py = None
-                export_to_py = None
-                if self.mode == 'year':
-                    dlg = QtWidgets.QDialog(self)
-                    dlg.setWindowTitle("Export Date Range")
-                    dlg.setFixedSize(340, 230)
-                    dlg.setStyleSheet(
-                        "QDialog{background:#f8fafc;}"
-                        "QLabel{font-size:13px;font-weight:600;color:#1e293b;"
-                        "border:none;background:transparent;}")
-                    dlg_lay = QtWidgets.QVBoxLayout(dlg)
-                    dlg_lay.setContentsMargins(24, 20, 24, 20)
-                    dlg_lay.setSpacing(12)
-
-                    hdr_lbl = QtWidgets.QLabel("Select Export Date Range")
-                    hdr_lbl.setStyleSheet(
-                        "font-size:15px;font-weight:800;color:#0f172a;"
-                        "border:none;background:transparent;")
-                    dlg_lay.addWidget(hdr_lbl)
-
-                    _de_style = (
-                        "QDateEdit{padding:6px 28px 6px 8px;"
-                        "border:2px solid #bdc3c7;border-radius:6px;"
-                        "background:white;font-size:13px;font-weight:600;}"
-                        "QDateEdit:focus{border-color:#00756f;}")
-                    _lbl_ss = ("font-size:12px;font-weight:700;color:#374151;"
-                               "border:none;background:transparent;")
-
-                    # From row
-                    from_row = QtWidgets.QHBoxLayout()
-                    from_row.setSpacing(10)
-                    from_lbl = QtWidgets.QLabel("From:")
-                    from_lbl.setStyleSheet(_lbl_ss)
-                    from_lbl.setFixedWidth(42)
-                    _fd = QtWidgets.QDateEdit()
-                    _fd.setCalendarPopup(True)
-                    _fd.setDisplayFormat("MM-dd-yyyy")
-                    _fd.setFixedHeight(36)
-                    _fd.wheelEvent = lambda e: e.ignore()
-                    _fd.stepBy = lambda x: None
-                    _fd.setDate(QtCore.QDate(self._year, 1, 1))
-                    _fd.setStyleSheet(_de_style)
-                    from_row.addWidget(from_lbl)
-                    from_row.addWidget(_fd, 1)
-                    dlg_lay.addLayout(from_row)
-
-                    # To row
-                    to_row = QtWidgets.QHBoxLayout()
-                    to_row.setSpacing(10)
-                    to_lbl = QtWidgets.QLabel("To:")
-                    to_lbl.setStyleSheet(_lbl_ss)
-                    to_lbl.setFixedWidth(42)
-                    _td = QtWidgets.QDateEdit()
-                    _td.setCalendarPopup(True)
-                    _td.setDisplayFormat("MM-dd-yyyy")
-                    _td.setFixedHeight(36)
-                    _td.wheelEvent = lambda e: e.ignore()
-                    _td.stepBy = lambda x: None
-                    _td.setDate(QtCore.QDate(self._year, 12, 31))
-                    _td.setStyleSheet(_de_style)
-                    to_row.addWidget(to_lbl)
-                    to_row.addWidget(_td, 1)
-                    dlg_lay.addLayout(to_row)
-
-                    dlg_lay.addStretch()
-
-                    btn_row = QtWidgets.QHBoxLayout()
-                    btn_row.addStretch()
-                    cancel_b = QtWidgets.QPushButton("Cancel")
-                    cancel_b.setFixedSize(90, 36)
-                    cancel_b.setStyleSheet(
-                        "QPushButton{background:#f1f5f9;color:#334155;"
-                        "border:1px solid #cbd5e1;border-radius:7px;"
-                        "font-size:13px;font-weight:700;}"
-                        "QPushButton:hover{background:#e2e8f0;}")
-                    cancel_b.clicked.connect(dlg.reject)
-                    export_b = QtWidgets.QPushButton("Export PDF")
-                    export_b.setFixedSize(110, 36)
-                    export_b.setStyleSheet(
-                        "QPushButton{background:#0f766e;color:white;border:none;"
-                        "border-radius:7px;font-size:13px;font-weight:800;}"
-                        "QPushButton:hover{background:#0d625c;}")
-                    export_b.clicked.connect(dlg.accept)
-                    btn_row.addWidget(cancel_b)
-                    btn_row.addSpacing(8)
-                    btn_row.addWidget(export_b)
-                    dlg_lay.addLayout(btn_row)
-
-                    if dlg.exec_() != QtWidgets.QDialog.Accepted:
-                        return
-                    export_from_py = _fd.date().toPyDate()
-                    export_to_py = _td.date().toPyDate()
-
                 search = self._search_text.lower().strip()
                 entries = self._all_entries
 
-                # Apply date filter: custom export range (annual) or existing widget range
-                if export_from_py and export_to_py:
-                    entries = [e for e in entries
-                               if export_from_py <= e['paid_dt'].date() <= export_to_py]
-                elif self.mode == 'year' and hasattr(self, '_from_de'):
-                    from_py = self._from_de.date().toPyDate()
-                    to_py = self._to_de.date().toPyDate()
-                    entries = [e for e in entries
-                               if from_py <= e['paid_dt'].date() <= to_py]
+                # For annual mode: export all entries for the selected year
+                # For monthly mode: export all entries for the selected month
+                # No additional date filtering dialog needed
                 if search:
                     entries = [
                         e for e in entries
@@ -7966,18 +7826,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
                                   f"{self._year}")
                 else:
                     label = f"Annual_{self._year}"
-                    if export_from_py and export_to_py:
-                        period_str = (
-                            f"{export_from_py.strftime('%m-%d-%Y')}"
-                            f" — "
-                            f"{export_to_py.strftime('%m-%d-%Y')}")
-                    elif hasattr(self, '_from_de'):
-                        period_str = (
-                            f"{self._from_de.date().toString('MM-dd-yyyy')}"
-                            f" — "
-                            f"{self._to_de.date().toString('MM-dd-yyyy')}")
-                    else:
-                        period_str = f"Annual {self._year}"
+                    period_str = f"Annual {self._year}"
                 filepath = exp_dir / f"PaidRevenue_{label}.pdf"
 
                 doc = SimpleDocTemplate(
@@ -8204,46 +8053,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 sub_hl.addWidget(self._period_lbl, 1)
                 sub_hl.addWidget(self._next_btn)
             else:
-                # Year mode: date-range filter
-                for lbl_txt in ["From:"]:
-                    l = QtWidgets.QLabel(lbl_txt)
-                    l.setStyleSheet(_lbl_ss)
-                    sub_hl.addWidget(l)
-
-                self._from_de = QtWidgets.QDateEdit()
-                self._from_de.setCalendarPopup(True)
-                self._from_de.setDisplayFormat("MM-dd-yyyy")
-                self._from_de.setMinimumHeight(32)
-                self._from_de.setDate(QtCore.QDate(self._year, 1, 1))
-                self._from_de.wheelEvent = lambda e: e.ignore()
-                self._from_de.stepBy = lambda x: None
-                sub_hl.addWidget(self._from_de)
-
-                sub_hl.addSpacing(8)
-                to_lbl = QtWidgets.QLabel("To:")
-                to_lbl.setStyleSheet(_lbl_ss)
-                sub_hl.addWidget(to_lbl)
-
-                self._to_de = QtWidgets.QDateEdit()
-                self._to_de.setCalendarPopup(True)
-                self._to_de.setDisplayFormat("MM-dd-yyyy")
-                self._to_de.setMinimumHeight(32)
-                self._to_de.setDate(QtCore.QDate(self._year, 12, 31))
-                self._to_de.wheelEvent = lambda e: e.ignore()
-                self._to_de.stepBy = lambda x: None
-                sub_hl.addWidget(self._to_de)
-
-                apply_btn = QtWidgets.QPushButton("Apply")
-                apply_btn.setFixedHeight(32)
-                apply_btn.setStyleSheet("""
-                    QPushButton{background:#15803d;color:white;border:none;
-                        border-radius:6px;font-size:12px;font-weight:bold;
-                        padding:0 14px;}
-                    QPushButton:hover{background:#166534;}
-                """)
-                apply_btn.clicked.connect(self._display)
-                sub_hl.addSpacing(8)
-                sub_hl.addWidget(apply_btn)
+                # Year mode: no date filter, just add stretch
                 sub_hl.addStretch()
 
             root.addWidget(sub_w)
@@ -8601,98 +8411,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 from pathlib import Path as _Path
                 import calendar as _cal
 
-                # For year mode: show date-range picker before export
-                export_from_py = None
-                export_to_py = None
-                if self.mode == 'year':
-                    dlg = QtWidgets.QDialog(self)
-                    dlg.setWindowTitle("Export Date Range")
-                    dlg.setFixedSize(340, 230)
-                    dlg.setStyleSheet(
-                        "QDialog{background:#f8fafc;}"
-                        "QLabel{font-size:13px;font-weight:600;color:#1e293b;"
-                        "border:none;background:transparent;}")
-                    dlg_lay = QtWidgets.QVBoxLayout(dlg)
-                    dlg_lay.setContentsMargins(24, 20, 24, 20)
-                    dlg_lay.setSpacing(12)
-
-                    hdr_lbl = QtWidgets.QLabel("Select Export Date Range")
-                    hdr_lbl.setStyleSheet(
-                        "font-size:15px;font-weight:800;color:#0f172a;"
-                        "border:none;background:transparent;")
-                    dlg_lay.addWidget(hdr_lbl)
-
-                    _de_style = (
-                        "QDateEdit{padding:6px 28px 6px 8px;"
-                        "border:2px solid #bdc3c7;border-radius:6px;"
-                        "background:white;font-size:13px;font-weight:600;}"
-                        "QDateEdit:focus{border-color:#00756f;}")
-                    _lbl_ss = ("font-size:12px;font-weight:700;color:#374151;"
-                               "border:none;background:transparent;")
-
-                    from_row = QtWidgets.QHBoxLayout()
-                    from_row.setSpacing(10)
-                    from_lbl = QtWidgets.QLabel("From:")
-                    from_lbl.setStyleSheet(_lbl_ss)
-                    from_lbl.setFixedWidth(42)
-                    _fd = QtWidgets.QDateEdit()
-                    _fd.setCalendarPopup(True)
-                    _fd.setDisplayFormat("MM-dd-yyyy")
-                    _fd.setFixedHeight(36)
-                    _fd.wheelEvent = lambda e: e.ignore()
-                    _fd.stepBy = lambda x: None
-                    _fd.setDate(QtCore.QDate(self._year, 1, 1))
-                    _fd.setStyleSheet(_de_style)
-                    from_row.addWidget(from_lbl)
-                    from_row.addWidget(_fd, 1)
-                    dlg_lay.addLayout(from_row)
-
-                    to_row = QtWidgets.QHBoxLayout()
-                    to_row.setSpacing(10)
-                    to_lbl = QtWidgets.QLabel("To:")
-                    to_lbl.setStyleSheet(_lbl_ss)
-                    to_lbl.setFixedWidth(42)
-                    _td = QtWidgets.QDateEdit()
-                    _td.setCalendarPopup(True)
-                    _td.setDisplayFormat("MM-dd-yyyy")
-                    _td.setFixedHeight(36)
-                    _td.wheelEvent = lambda e: e.ignore()
-                    _td.stepBy = lambda x: None
-                    _td.setDate(QtCore.QDate(self._year, 12, 31))
-                    _td.setStyleSheet(_de_style)
-                    to_row.addWidget(to_lbl)
-                    to_row.addWidget(_td, 1)
-                    dlg_lay.addLayout(to_row)
-
-                    dlg_lay.addStretch()
-
-                    btn_row = QtWidgets.QHBoxLayout()
-                    btn_row.addStretch()
-                    cancel_b = QtWidgets.QPushButton("Cancel")
-                    cancel_b.setFixedSize(90, 36)
-                    cancel_b.setStyleSheet(
-                        "QPushButton{background:#f1f5f9;color:#334155;"
-                        "border:1px solid #cbd5e1;border-radius:7px;"
-                        "font-size:13px;font-weight:700;}"
-                        "QPushButton:hover{background:#e2e8f0;}")
-                    cancel_b.clicked.connect(dlg.reject)
-                    export_b = QtWidgets.QPushButton("Export PDF")
-                    export_b.setFixedSize(110, 36)
-                    export_b.setStyleSheet(
-                        "QPushButton{background:#0f766e;color:white;border:none;"
-                        "border-radius:7px;font-size:13px;font-weight:800;}"
-                        "QPushButton:hover{background:#0d625c;}")
-                    export_b.clicked.connect(dlg.accept)
-                    btn_row.addWidget(cancel_b)
-                    btn_row.addSpacing(8)
-                    btn_row.addWidget(export_b)
-                    dlg_lay.addLayout(btn_row)
-
-                    if dlg.exec_() != QtWidgets.QDialog.Accepted:
-                        return
-                    export_from_py = _fd.date().toPyDate()
-                    export_to_py = _td.date().toPyDate()
-
+                # Export based on selected year (month mode exports the selected month, year mode exports all months in year)
                 entries = self._filtered_entries.copy()
 
                 if not entries:
@@ -8709,13 +8428,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
                                   f"{self._year}")
                 else:
                     label = f"Expenses_Annual_{self._year}"
-                    if export_from_py and export_to_py:
-                        period_str = (
-                            f"{export_from_py.strftime('%m-%d-%Y')}"
-                            f" — "
-                            f"{export_to_py.strftime('%m-%d-%Y')}")
-                    else:
-                        period_str = f"{self._year}"
+                    period_str = f"{self._year}"
 
                 filename = (exp_dir / f"{label}.pdf")
                 doc = SimpleDocTemplate(str(filename), pagesize=landscape(A4))

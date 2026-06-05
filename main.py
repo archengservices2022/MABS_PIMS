@@ -4672,6 +4672,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # Refresh balance sheet whenever the user switches to it
         self.finance_inner_tabs.currentChanged.connect(self._on_finance_tab_changed)
 
+        # Refresh client list whenever the user switches to Invoice History tab
+        self.project_invoice_inner_tabs.currentChanged.connect(self._on_project_invoice_tab_changed)
+
         # Stack: 4 pages. Projects & Invoicing share one page, switching via inner tab.
         self.stack.addWidget(self.dashboard_tab)   # 0 - Dashboard
         self.stack.addWidget(self.job_form_tab)    # 1 - Quote Forms
@@ -4772,6 +4775,11 @@ class MainWindow(QtWidgets.QMainWindow):
         """Refresh balance sheet data whenever the user switches to the Balance Sheet tab."""
         if index == 2 and hasattr(self, "balance_sheet_tab"):
             self.balance_sheet_tab.refresh_on_tab_show()
+
+    def _on_project_invoice_tab_changed(self, index: int):
+        """Refresh client list whenever the user switches to the Invoice History tab."""
+        if index == 3 and hasattr(self, "history_tab"):
+            self.history_tab.load_clients()
 
     def open_dashboard_expenses(self):
         if self._nav_to(3) and hasattr(self, "finance_inner_tabs"):

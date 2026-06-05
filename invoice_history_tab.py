@@ -5123,8 +5123,13 @@ class InvoiceHistoryViewWidget(QtWidgets.QWidget):
                 more_menu.addAction(email_action)
                 more_menu.addAction(payment_action)
                 more_menu.addSeparator()
-                more_menu.addAction(edit_action)
-                more_menu.addSeparator()
+
+                # Only add edit action if status is not "Paid"
+                invoice_status = self.get_invoice_status(invoice)
+                if invoice_status != "Paid":
+                    more_menu.addAction(edit_action)
+                    more_menu.addSeparator()
+
                 more_menu.addAction(delete_action)
 
                 view_action.triggered.connect(lambda checked=False, inv=invoice: self.view_invoice_details(inv))
