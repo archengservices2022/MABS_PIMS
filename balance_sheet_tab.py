@@ -7115,19 +7115,19 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 self._all_entries = self._extract_paid_entries(
                     rev_list, self._year, self._month, filter_by_invoice_date=False)
             else:
-                # Year mode: load ALL revenue data and filter by payment year only
+                # Year mode: load data from multiple years to capture all payments made in that year
+                rev_list = []
                 try:
                     pt = self.parent_tab
                     if pt.FIREBASE_AVAILABLE and pt.db is not None:
                         all_rev = BalanceSheetFirebaseManager.load_revenue()
-                        rev_list = all_rev
+                        rev_list = all_rev  # Load ALL revenue
                     else:
                         raise RuntimeError("no db")
                 except Exception:
-                    # Fallback: load from multiple years to capture all payments
-                    rev_list = []
+                    # Fallback: load from multiple years like month view does
                     for year in range(self._year - 1, self._year + 2):
-                        rev_list.extend(self._fetch_revenue_for_year(year, load_all_for_filtering=True))
+                        rev_list.extend(self._fetch_revenue_for_year(year))
                 # Filter by PAYMENT DATE for the selected year only
                 self._all_entries = self._extract_paid_entries(
                     rev_list, self._year, filter_by_invoice_date=False)
