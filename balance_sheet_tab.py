@@ -593,9 +593,10 @@ class BalanceSheetTab(QtWidgets.QWidget):
             _log.info("Loading all financial data for year %s...", self.current_year)
 
             all_expenses = BalanceSheetFirebaseManager.load_expenses()
-            self.expenses_data = [exp for exp in all_expenses if exp.get('year') == self.current_year]
-            self.annual_expenses_data = self.expenses_data.copy()
-            _log.info("Loaded %s balance sheet expenses", len(self.expenses_data))
+            # Load ALL data without pre-filtering - let filter methods handle year filtering by date field
+            self.expenses_data = all_expenses
+            self.annual_expenses_data = [exp for exp in all_expenses if exp.get('year') == self.annual_summary_year]
+            _log.info("Loaded %s balance sheet expenses total", len(self.expenses_data))
 
             all_revenue = BalanceSheetFirebaseManager.load_revenue()
             all_revenue = BalanceSheetTab._dedup_is_payment_entries(all_revenue)
@@ -606,23 +607,21 @@ class BalanceSheetTab(QtWidgets.QWidget):
             inv_map = BalanceSheetTab._build_invoice_status_map()
             inv_map.update(_omap)      # invoice_history overrides always win
             all_revenue = BalanceSheetTab._sync_revenue_statuses_from_invoices(all_revenue, inv_map)
-            self.revenue_data = [
-                rev for rev in all_revenue
-                if BalanceSheetFirebaseManager._entry_year(rev) == self.current_year
-            ]
+            # Load ALL data without pre-filtering - let filter methods handle year filtering by date field
+            self.revenue_data = all_revenue
             self.annual_revenue_data = [
                 rev for rev in all_revenue
                 if BalanceSheetFirebaseManager._entry_year(rev) == self.annual_summary_year
             ]
-            _log.info("Loaded %s revenue entries", len(self.revenue_data))
+            _log.info("Loaded %s revenue entries total", len(self.revenue_data))
 
             all_salary = BalanceSheetFirebaseManager.load_salary()
-            self.salary_data = {"Inside America": [], "Outside America": []}
+            # Load ALL data without pre-filtering - let filter methods handle year filtering by year field
+            self.salary_data = all_salary
             self.annual_salary_data = {"Inside America": [], "Outside America": []}
             for region in ["Inside America", "Outside America"]:
-                self.salary_data[region] = [sal for sal in all_salary[region] if sal.get('year') == self.current_year]
-                self.annual_salary_data[region] = self.salary_data[region].copy()
-            _log.info("Loaded %s salary entries", sum(len(v) for v in self.salary_data.values()))
+                self.annual_salary_data[region] = [sal for sal in all_salary.get(region, []) if sal.get('year') == self.annual_summary_year]
+            _log.info("Loaded %s salary entries total", sum(len(v) for v in self.salary_data.values()))
         except Exception as e:
             _log.warning("Error fetching financial data in background: %s", e)
 
@@ -3180,11 +3179,25 @@ class BalanceSheetTab(QtWidgets.QWidget):
             # Status — colored pill badge
             self.finance_table.setCellWidget(row, 6, self._make_revenue_status_pill(status))
             
-            # Received Date — always use received_date field (latest payment date for
-            # Paid/Partially Paid; N/A for Unpaid/Pending).  The old fallback to
-            # down_payment_received_date for Partially Paid is removed because
-            # received_date is now always kept in sync with the latest payment.
-            received_date = revenue.get('received_date', 'N/A') or 'N/A'
+            # Payment Date — Get the LATEST payment date from payment tracker
+            # If no payments exist or all deleted, show N/A
+            received_date = 'N/A'
+            invoice_num = revenue.get('invoice_number', '')
+
+            if invoice_num:
+                try:
+                    from payment_tracker import get_payment_tracker
+                    tracker = get_payment_tracker()
+                    # Get all payments for this invoice
+                    payments = [p for p in tracker.payments if p.invoice_number == invoice_num]
+                    if payments:
+                        # Find the latest payment date
+                        latest_payment = max(payments, key=lambda p: _parse_pdate(p.payment_date))
+                        received_date = latest_payment.payment_date
+                except Exception:
+                    # Fallback to received_date field if payment tracker fails
+                    received_date = revenue.get('received_date', 'N/A') or 'N/A'
+
             received_date_item = QtWidgets.QTableWidgetItem(received_date)
             received_date_item.setTextAlignment(QtCore.Qt.AlignCenter)
             
@@ -6159,27 +6172,27 @@ class BalanceSheetTab(QtWidgets.QWidget):
             
         try:
             _log.info("Loading balance sheet data for year %s...", self.current_year)
-            
-            # Load from BALANCE SHEET node (separate from expenses tab)
+
+            # Load from BALANCE SHEET node - load ALL data, let filtering handle year
             all_expenses = BalanceSheetFirebaseManager.load_expenses()
-            self.expenses_data = [exp for exp in all_expenses if exp.get('year') == self.current_year]
-            _log.info("Loaded %s balance sheet expenses for year %s", len(self.expenses_data), self.current_year)
-            
+            self.expenses_data = all_expenses
+            _log.info("Loaded %s balance sheet expenses total", len(self.expenses_data))
+
             all_revenue = BalanceSheetFirebaseManager.load_revenue()
             all_revenue = BalanceSheetTab._sync_revenue_statuses_from_invoices(all_revenue)
-            self.revenue_data = [rev for rev in all_revenue if rev.get('year') == self.current_year]
-            _log.info("Loaded %s revenue entries for year %s", len(self.revenue_data), self.current_year)
-            
+            self.revenue_data = all_revenue
+            _log.info("Loaded %s revenue entries total", len(self.revenue_data))
+
             all_salary = BalanceSheetFirebaseManager.load_salary()
-            self.salary_data = {"Inside America": [], "Outside America": []}
+            self.salary_data = all_salary
+            _log.info("Loaded %s salary entries total", sum(len(v) for v in self.salary_data.values()))
+
+            # ALSO update annual summary data - filter by year for display
+            self.annual_expenses_data = [exp for exp in all_expenses if exp.get('year') == self.current_year]
+            self.annual_revenue_data = [rev for rev in all_revenue if rev.get('year') == self.current_year]
+            self.annual_salary_data = {"Inside America": [], "Outside America": []}
             for region in ["Inside America", "Outside America"]:
-                self.salary_data[region] = [sal for sal in all_salary[region] if sal.get('year') == self.current_year]
-            _log.info("Loaded %s salary entries for year %s", sum(len(v) for v in self.salary_data.values()), self.current_year)
-            
-            # ALSO update annual summary data for current year
-            self.annual_expenses_data = self.expenses_data.copy()
-            self.annual_revenue_data = self.revenue_data.copy()
-            self.annual_salary_data = self.salary_data.copy()
+                self.annual_salary_data[region] = [sal for sal in all_salary.get(region, []) if sal.get('year') == self.current_year]
             
         except Exception as e:
             _log.warning("Error loading balance sheet data: %s", e)
@@ -6335,11 +6348,20 @@ class BalanceSheetTab(QtWidgets.QWidget):
         """Update stats cards (main values + sub-breakdown labels) from filtered data."""
 
         # ── Revenue ──────────────────────────────────────────────────────
-        filtered_revenue = self.filter_revenue_data()
-        total_revenue    = sum(self._money_to_float(r.get('amount', 0)) for r in filtered_revenue)
-        paid_rev         = sum(self._money_to_float(r.get('amount', 0)) for r in filtered_revenue
-                               if str(r.get('status', '')).strip().lower() == 'paid')
-        unpaid_rev       = total_revenue - paid_rev
+        # Calculate ONLY paid revenue using the same logic as annual summary (is_payment entries)
+        paid_rev = 0
+        try:
+            # Use annual_revenue_data which is already filtered by year and contains is_payment entries
+            for rev in self.annual_revenue_data:
+                if rev.get('is_payment'):
+                    # Only count is_payment entries which represent actual payments received in this year
+                    amount = self._money_to_float(rev.get('amount', 0))
+                    paid_rev += amount
+        except Exception as e:
+            _log.warning("Error calculating revenue for stat cards: %s", e)
+
+        total_revenue = paid_rev
+        unpaid_rev = 0  # Not displayed, kept for tooltip compatibility
 
         # ── Expenses ─────────────────────────────────────────────────────
         filtered_expenses = self.filter_expenses_data()
@@ -6374,8 +6396,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
         # ── Update hover tooltips ─────────────────────────────────────────
         if hasattr(self, "revenue_card"):
             self.revenue_card.setToolTip(
-                f"<b>Paid Revenue:</b> ${paid_rev:,.2f}<br>"
-                f"<b>Unpaid Revenue:</b> ${unpaid_rev:,.2f}")
+                f"<b>Paid Revenue:</b> ${paid_rev:,.2f}")
         if hasattr(self, "expenses_card"):
             self.expenses_card.setToolTip(
                 f"<b>Total:</b> ${total_expenses:,.2f}<br>"
@@ -6386,7 +6407,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 f"<b>Outside America:</b> ${sal_outside:,.2f}")
         if hasattr(self, "net_card"):
             self.net_card.setToolTip(
-                f"<b>Revenue:</b> ${total_revenue:,.2f}<br>"
+                f"<b>Paid Revenue:</b> ${total_revenue:,.2f}<br>"
                 f"<b>Expenses:</b> -${total_expenses:,.2f}<br>"
                 f"<b>Salaries:</b> -${total_salary:,.2f}")
 
@@ -6841,14 +6862,19 @@ class BalanceSheetTab(QtWidgets.QWidget):
 
         # ── Data helpers ────────────────────────────────────────────────
 
-        def _fetch_revenue_for_year(self, year):
+        def _fetch_revenue_for_year(self, year, load_all_for_filtering=False):
             pt = self.parent_tab
             if pt.annual_summary_year == year and pt.annual_revenue_data:
                 return list(pt.annual_revenue_data)
             try:
                 if pt.FIREBASE_AVAILABLE and pt.db is not None:
                     all_rev = BalanceSheetFirebaseManager.load_revenue()
-                    return [r for r in all_rev if r.get('year') == year]
+                    # If load_all_for_filtering=True, return all data and let _extract_paid_entries handle filtering by date
+                    # Otherwise, filter by 'year' field (for month view with payment dates)
+                    if load_all_for_filtering:
+                        return all_rev
+                    else:
+                        return [r for r in all_rev if r.get('year') == year]
             except Exception as exc:
                 _log.warning("RevenueDetailDialog: Firebase load: %s", exc)
             try:
@@ -6862,7 +6888,7 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 _log.warning("RevenueDetailDialog: local load: %s", exc)
             return []
 
-        def _extract_paid_entries(self, revenue_list, year, month=None):
+        def _extract_paid_entries(self, revenue_list, year, month=None, filter_by_invoice_date=True):
             pt = self.parent_tab
             # Build invoice_number → invoice total lookup from parent records
             inv_totals = {}
@@ -6870,6 +6896,20 @@ class BalanceSheetTab(QtWidgets.QWidget):
             # (same filter the annual summary uses — prevents orphaned is_payment
             # entries from appearing when their parent invoice was deleted)
             invoiced_numbers = set()
+
+            # Load all invoices to get original invoice dates
+            invoice_dates = {}
+            try:
+                from main import FirebaseManager
+                all_invs = FirebaseManager.load_invoices() or []
+                for inv in all_invs:
+                    inv_num = inv.get('meta', {}).get('invoice_number', '')
+                    inv_date = inv.get('meta', {}).get('date', '')
+                    if inv_num and inv_date:
+                        invoice_dates[inv_num] = inv_date
+            except Exception:
+                pass
+
             for r in revenue_list:
                 inv_no = r.get('invoice_number', '')
                 if inv_no and not r.get('is_payment'):
@@ -6907,23 +6947,41 @@ class BalanceSheetTab(QtWidgets.QWidget):
 
                     # Payment-tracker individual entries and tax entries
                     if rev.get('is_payment'):
+                        inv_no   = (rev.get('invoice_number') or '').strip()
+
+                        # Get both dates for flexibility
+                        inv_date_str = invoice_dates.get(inv_no, rev.get('date', ''))
+                        inv_dt = pt._parse_finance_date(inv_date_str)
                         ds = rev.get('date', rev.get('received_date', ''))
                         dt = pt._parse_finance_date(ds)
-                        if not dt or (year is not None and dt.year != year):
-                            continue
-                        if month and dt.month != month:
-                            continue
-                        inv_no   = (rev.get('invoice_number') or '').strip()
+
+                        # Filter based on parameter: invoice date or payment date
+                        if filter_by_invoice_date:
+                            # For annual summary: filter by invoice creation year
+                            if not inv_dt or (year is not None and inv_dt.year != year):
+                                continue
+                            if month and inv_dt.month != month:
+                                continue
+                        else:
+                            # For paid revenue window: filter by payment date
+                            if not dt or (year is not None and dt.year != year):
+                                continue
+                            if month and dt.month != month:
+                                continue
+
                         # Skip orphaned payment entries with no matching is_invoice record
                         # (matches the annual summary filter to keep totals consistent)
                         if inv_no and invoiced_numbers and inv_no not in invoiced_numbers:
                             continue
+
                         paid_amt = pt._money_to_float(rev.get('amount', 0))
                         inv_tot  = inv_totals.get(inv_no, paid_amt)
                         is_tax   = bool(rev.get('is_tax'))
                         stage    = 'TAX' if is_tax else rev.get('payment_stage', '')
+                        # Use actual invoice date from invoice object, not from revenue entry
+                        inv_date = invoice_dates.get(inv_no, rev.get('date', 'N/A'))
                         results.append({
-                            'invoice_date':   rev.get('date', 'N/A'),
+                            'invoice_date':   inv_date,
                             'source':         rev.get('source', ''),
                             'description':    rev.get('description', ''),
                             'invoice_total':  inv_tot,
@@ -6943,15 +7001,33 @@ class BalanceSheetTab(QtWidgets.QWidget):
                         _inv_chk = rev.get('invoice_number', '')
                         if _inv_chk and _inv_chk in split_inv_nos:
                             continue
+
+                        # Get both dates for filtering flexibility
+                        inv_date_str = invoice_dates.get(_inv_chk, rev.get('date', ''))
+                        inv_dt = pt._parse_finance_date(inv_date_str)
                         paid_ds  = rev.get('received_date', rev.get('date', ''))
                         paid_dt  = pt._parse_finance_date(paid_ds)
-                        if not paid_dt or (year is not None and paid_dt.year != year):
-                            continue
-                        if month and paid_dt.month != month:
-                            continue
+
+                        # Filter based on parameter: invoice date or payment date
+                        if filter_by_invoice_date:
+                            # For annual summary: filter by invoice creation year
+                            if not inv_dt or (year is not None and inv_dt.year != year):
+                                continue
+                            if month and inv_dt.month != month:
+                                continue
+                        else:
+                            # For paid revenue window: filter by payment date
+                            if not paid_dt or (year is not None and paid_dt.year != year):
+                                continue
+                            if month and paid_dt.month != month:
+                                continue
                         total = pt._money_to_float(rev.get('amount', 0))
+
+                        # Use actual invoice date from invoice object, not from revenue entry
+                        inv_date = invoice_dates.get(_inv_chk, rev.get('date', 'N/A'))
+
                         results.append({
-                            'invoice_date':   rev.get('date', 'N/A'),
+                            'invoice_date':   inv_date,
                             'source':         rev.get('source', ''),
                             'description':    rev.get('description', ''),
                             'invoice_total':  total,
@@ -7035,9 +7111,24 @@ class BalanceSheetTab(QtWidgets.QWidget):
 
         def _reload(self):
             if self.mode == 'month':
-                rev_list = self._fetch_revenue_for_year(self._year)
+                # For month view: load data for ALL years to capture all payments made in that month
+                rev_list = []
+                try:
+                    pt = self.parent_tab
+                    if pt.FIREBASE_AVAILABLE and pt.db is not None:
+                        all_rev = BalanceSheetFirebaseManager.load_revenue()
+                        rev_list = all_rev  # Load ALL revenue
+                    else:
+                        raise RuntimeError("no db")
+                except Exception:
+                    # Fallback: load from all years
+                    for year in range(self._year - 1, self._year + 2):
+                        rev_list.extend(self._fetch_revenue_for_year(year))
+
+                # For month view: filter by PAYMENT DATE (not invoice creation date)
+                # Pass year=None so it doesn't pre-filter, only filter by month in _extract_paid_entries
                 self._all_entries = self._extract_paid_entries(
-                    rev_list, self._year, self._month)
+                    rev_list, self._year, self._month, filter_by_invoice_date=False)
             else:
                 # Determine year span from date pickers
                 if hasattr(self, '_from_de'):
@@ -7046,28 +7137,28 @@ class BalanceSheetTab(QtWidgets.QWidget):
                 else:
                     from_year = to_year = self._year
                 if from_year == to_year:
-                    rev_list = self._fetch_revenue_for_year(from_year)
+                    # For annual summary: load ALL data and filter by PAYMENT received date
+                    rev_list = self._fetch_revenue_for_year(from_year, load_all_for_filtering=True)
                     self._all_entries = self._extract_paid_entries(
-                        rev_list, from_year)
+                        rev_list, from_year, filter_by_invoice_date=False)
                 else:
-                    # Load all years in range with a single Firebase call when possible
+                    # Load all years in range - filter by PAYMENT DATE not year field
                     try:
                         pt = self.parent_tab
                         if pt.FIREBASE_AVAILABLE and pt.db is not None:
                             all_rev = BalanceSheetFirebaseManager.load_revenue()
-                            rev_list = [
-                                r for r in all_rev
-                                if from_year <= (r.get('year') or 0) <= to_year
-                            ]
+                            # Load ALL revenue, let _extract_paid_entries handle payment date filtering
+                            rev_list = all_rev
                         else:
                             raise RuntimeError("no db")
                     except Exception:
                         rev_list = []
                         for yr in range(from_year, to_year + 1):
-                            rev_list.extend(self._fetch_revenue_for_year(yr))
+                            rev_list.extend(self._fetch_revenue_for_year(yr, load_all_for_filtering=True))
                     # year=None → skip year filter; _display applies date-range
+                    # Filter by PAYMENT DATE (not invoice date) for paid revenue window
                     self._all_entries = self._extract_paid_entries(
-                        rev_list, None)
+                        rev_list, None, filter_by_invoice_date=False)
             self._pg_page = 1
             self._update_labels()
             self._display()
@@ -8850,24 +8941,20 @@ class BalanceSheetTab(QtWidgets.QWidget):
             self.annual_salary_data = {"Inside America": [], "Outside America": []}
                
     def show_annual_summary_year_calendar(self):
-        """Show year selection popup - ONLY updates annual summary and breakdowns, NOT transaction table or header year"""
+        """Show year selection popup - ONLY updates annual summary table, not stat cards or transaction table"""
         dialog = self.YearPickerDialog(self, self.annual_summary_year)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            # Store the selected year separately for annual summary
+            # Store the selected year separately for annual summary ONLY
             self.annual_summary_year = dialog.selected_year
             if hasattr(self, 'yearly_calendar_btn'):
                 self.yearly_calendar_btn.setText(str(self.annual_summary_year))
-            # Update ONLY the annual summary title, NOT the header year
+            # Update the annual summary title
             self.annual_title.setText(f"📈 ANNUAL FINANCIAL SUMMARY - {self.annual_summary_year}")
-            
-            # Store current category (but don't reload transaction data)
-            current_category = self.current_category
-            
-            # Load ONLY annual summary data for the selected year
-            # We need to pass the selected year to the load method
+
+            # Load ONLY annual summary data for the selected year (not transaction table data)
             self.load_annual_summary_data_for_year(self.annual_summary_year)
-            
-            # Update the annual summary table
+
+            # Update ONLY the annual summary table
             self.update_annual_summary()
             
         
