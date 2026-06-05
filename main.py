@@ -4779,7 +4779,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_project_invoice_tab_changed(self, index: int):
         """Refresh client list whenever the user switches to the Invoice History tab."""
         if index == 3 and hasattr(self, "history_tab"):
-            self.history_tab.load_clients()
+            self.history_tab.client_view.load_clients()
 
     def open_dashboard_expenses(self):
         if self._nav_to(3) and hasattr(self, "finance_inner_tabs"):
