@@ -3635,18 +3635,22 @@ class BalanceSheetTab(QtWidgets.QWidget):
             view_btn.clicked.connect(lambda checked=False, r=revenue: self.show_bs_payment_history(r))
             actions_layout.addWidget(view_btn)
 
-        # Only show edit button if status is not "Paid"
+        # Edit button — show for all, but display dialog for paid revenue
         revenue_status = revenue.get('status', 'Unpaid')
-        if revenue_status != "Paid":
-            edit_btn = QtWidgets.QPushButton()
-            edit_btn.setFixedSize(28, 28)
-            edit_btn.setIcon(BalanceSheetTab._make_action_icon("edit", "#2563eb", 16))
-            edit_btn.setIconSize(QtCore.QSize(16, 16))
-            edit_btn.setToolTip("Edit entry")
-            edit_btn.setStyleSheet(_btn_ss.format(
-                bg="white", br="#e2e8f0", hbg="#eff6ff", hbr="#93c5fd"))
+        edit_btn = QtWidgets.QPushButton()
+        edit_btn.setFixedSize(28, 28)
+        edit_btn.setIcon(BalanceSheetTab._make_action_icon("edit", "#2563eb", 16))
+        edit_btn.setIconSize(QtCore.QSize(16, 16))
+        edit_btn.setToolTip("Edit entry")
+        edit_btn.setStyleSheet(_btn_ss.format(
+            bg="white", br="#e2e8f0", hbg="#eff6ff", hbr="#93c5fd"))
+        if revenue_status == "Paid":
+            # Show dialog for paid revenue
+            edit_btn.clicked.connect(lambda: self._show_paid_revenue_cannot_edit_dialog())
+        else:
+            # Allow editing for unpaid revenue
             edit_btn.clicked.connect(lambda: self.edit_entry(revenue, "Revenue"))
-            actions_layout.addWidget(edit_btn)
+        actions_layout.addWidget(edit_btn)
 
         delete_btn = QtWidgets.QPushButton()
         delete_btn.setFixedSize(28, 28)
@@ -6057,6 +6061,31 @@ class BalanceSheetTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.critical(self, "Firebase Error", 
                                         f"Failed to save salary: {str(e)}")
             return False
+
+    def _show_paid_revenue_cannot_edit_dialog(self):
+        """Show professional dialog for paid revenue that cannot be edited"""
+        dialog = QtWidgets.QMessageBox(self)
+        dialog.setWindowTitle("Paid Revenue - Cannot Edit")
+        dialog.setIcon(QtWidgets.QMessageBox.Information)
+        dialog.setText("Cannot Edit Paid Revenue")
+        dialog.setInformativeText(
+            "This revenue entry has been marked as Paid and cannot be edited.\n\n"
+            "To modify payment details, please delete this entry and create a new one."
+        )
+        dialog.setStyleSheet("""
+            QMessageBox {
+                background-color: white;
+            }
+            QMessageBox QLabel {
+                color: #1f2937;
+            }
+            QMessageBox QLabel#qt_msgbox_label {
+                font-weight: bold;
+                color: #1f2937;
+            }
+        """)
+        dialog.setStandardButtons(QtWidgets.QMessageBox.Ok)
+        dialog.exec_()
 
     def delete_entry(self, data, category):
         """Delete a balance-sheet entry.
