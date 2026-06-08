@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Projects{% endblock %}
+{% block page_title %}Projects{% endblock %}
+
+{% block content %}
+<!-- Tab nav -->
+<ul class="nav nav-tabs mb-4" id="projectTabs">
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-all-projects">
+      <i class="bi bi-kanban me-1"></i>All Projects
+      <span class="badge bg-secondary ms-1">{{ projects|length }}</span>
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('project_new') }}">
+      <i class="bi bi-plus-square me-1"></i>New Project
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-export">
+      <i class="bi bi-download me-1"></i>Export
+    </a>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- ── Tab 1: All Projects ─────────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-all-projects">
+    {% set status_styles = {
+      'Not Started': ('bi-hourglass-split',  'bg-slate'),
+      'Active':      ('bi-lightning-charge', 'bg-blue'),
+      'In Progress': ('bi-arrow-repeat',     'bg-blue'),
+      'On Hold':     ('bi-pause-circle',     'bg-amber'),
+      'Completed':   ('bi-check-circle-fill','bg-green'),
+      'Cancelled':   ('bi-x-circle',         'bg-red'),
+    } %}
+    {% if status_counts %}
+    <div class="row g-2 mb-3">
+      {% for st, count in status_counts.items() %}
+      {% set icon, color = status_styles.get(st, ('bi-kanban', 'bg-slate')) %}
+      <div class="col-6 col-md-3 col-lg-2">
+        <a href="{{ url_for('projects', status=st, tab='all-projects') }}" class="text-decoration-none">
+          <div class="stat-card py-2 px-3" style="gap:10px;{{ 'border-color:var(--slate-400);box-shadow:0 0 0 1px var(--slate-300);' if status_filter == st }}">
+            <div class="stat-icon {{ color }}" style="width:36px;height:36px;font-size:16px;border-radius:8px;">
+              <i class="bi {{ icon }}"></i>
+            </div>
+            <div>
+              <div class="stat-value" style="font-size:18px;">{{ count }}</div>
+              <div class="stat-label">{{ st }}</div>
+            </div>
+          </div>
+        </a>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <form class="d-flex gap-2 flex-wrap" method="GET">
+        <input type="text" name="q" value="{{ search }}" class="form-control form-control-sm"
+               placeholder="Search projects..." style="width:200px;">
+        <select name="status" class="form-select form-select-sm" style="width:160px;">
+          <option value="">All Statuses</option>
+          {% for s in statuses %}
+          <option value="{{ s }}" {{ 'selected' if status_filter == s }}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-search"></i> Filter
+        </button>
+        {% if search or status_filter %}
+        <a href="{{ url_for('projects') }}" class="btn btn-sm btn-outline-danger">
+          <i class="bi bi-x"></i> Clear
+        </a>
+        {% endif %}
+      </form>
+    </div>
+
+    <div class="card-panel">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead>
+            <tr>
+              <th>Project #</th>
+              <th>Name</th>
+              <th>Client</th>
+              <th>Start Date</th>
+              <th class="text-end">Contract Value</th>
+              <th class="text-end">Paid</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in projects %}
+            <tr onclick="location.href='{{ url_for('project_detail', project_id=p.firebase_id) }}'"
+                style="cursor:pointer;">
+              <td><span class="fw-bold text-teal">{{ p.get('project_number','—') }}</span></td>
+              <td class="fw-500">{{ p.get('project_name','—') }}</td>
+              <td class="text-muted">{{ p.get('client_name','—') }}</td>
+              <td>{{ p.get('start_date','—') }}</td>
+              <td class="text-end fw-bold">${{ "{:,.0f}".format(p.get('contract_value',0)|float) }}</td>
+              <td class="text-end text-success">${{ "{:,.0f}".format(p.get('amount_paid',0)|float) }}</td>
+              <td>
+                <span class="badge status-{{ p.get('status','Not Started')|lower|replace(' ','-') }}">
+                  {{ p.get('status','Not Started') }}
+                </span>
+              </td>
+              <td onclick="event.stopPropagation()">
+                <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}"
+                   class="btn btn-xs btn-outline-secondary">
+                  <i class="bi bi-eye"></i>
+                </a>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="8" class="text-center text-muted py-5">
+                <i class="bi bi-kanban fs-2 d-block mb-2"></i>
+                No projects found.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tab 2: New Project ──────────────────────────────────────────────── -->
+  <!-- ── Tab 3: Export ───────────────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-export">
+    <div class="mb-4">
+      <label class="form-label fw-600 small text-muted text-uppercase">Filter by Status</label>
+      <select id="exportStatus" class="form-select form-select-sm" style="width:220px;"
+              onchange="updateExportLinks()">
+        <option value="">All Statuses</option>
+        {% for s in statuses %}
+        <option value="{{ s }}">{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="export-card">
+          <div style="font-size:2.5rem;color:#DC2626;margin-bottom:12px;">
+            <i class="bi bi-file-earmark-pdf-fill"></i>
+          </div>
+          <h6 class="fw-700 mb-1">PDF Report</h6>
+          <p class="text-muted small mb-3">Professional PDF with all project data</p>
+          <a id="exportPdfLink" href="{{ url_for('projects_export_pdf') }}"
+             class="btn btn-sm btn-danger w-100">
+            <i class="bi bi-download me-1"></i>Download PDF
+          </a>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="export-card">
+          <div style="font-size:2.5rem;color:#16A34A;margin-bottom:12px;">
+            <i class="bi bi-file-earmark-spreadsheet-fill"></i>
+          </div>
+          <h6 class="fw-700 mb-1">Excel Spreadsheet</h6>
+          <p class="text-muted small mb-3">Styled .xlsx with all project details</p>
+          <a id="exportExcelLink" href="{{ url_for('projects_export_excel') }}"
+             class="btn btn-sm btn-success w-100">
+            <i class="bi bi-download me-1"></i>Download Excel
+          </a>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="export-card">
+          <div style="font-size:2.5rem;color:#2563EB;margin-bottom:12px;">
+            <i class="bi bi-file-earmark-text-fill"></i>
+          </div>
+          <h6 class="fw-700 mb-1">CSV Export</h6>
+          <p class="text-muted small mb-3">Comma-separated values file</p>
+          <a id="exportCsvLink" href="{{ url_for('projects_export_csv') }}"
+             class="btn btn-sm btn-primary w-100">
+            <i class="bi bi-download me-1"></i>Download CSV
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PDF_BASE   = "{{ url_for('projects_export_pdf') }}";
+const EXCEL_BASE = "{{ url_for('projects_export_excel') }}";
+const CSV_BASE   = "{{ url_for('projects_export_csv') }}";
+
+function updateExportLinks() {
+  const s = document.getElementById('exportStatus').value;
+  const q = s ? '?status=' + encodeURIComponent(s) : '';
+  document.getElementById('exportPdfLink').href   = PDF_BASE   + q;
+  document.getElementById('exportExcelLink').href = EXCEL_BASE + q;
+  document.getElementById('exportCsvLink').href   = CSV_BASE   + q;
+}
+
+// Activate tab from URL param or server active_tab
+const tabParam = "{{ active_tab }}";
+const allTabs  = ["all-projects", "export"];
+const target   = allTabs.includes(tabParam) ? tabParam : "all-projects";
+const el = document.querySelector('[href="#tab-' + target + '"]');
+if (el) new bootstrap.Tab(el).show();
+
+// Sync URL when tab changes
+document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
+  el.addEventListener('shown.bs.tab', e => {
+    const id = e.target.getAttribute('href').replace('#tab-', '');
+    const url = new URL(window.location);
+    url.searchParams.set('tab', id);
+    window.history.replaceState({}, '', url);
+  });
+});
+</script>
+{% endblock %}

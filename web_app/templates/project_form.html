@@ -1,0 +1,356 @@
+{% extends "base.html" %}
+{% block title %}{{ 'New Project' if is_new else 'Edit Project' }}{% endblock %}
+{% block page_title %}{{ 'New Project' if is_new else 'Edit Project' }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+  <a href="{{ url_for('projects') }}" class="btn btn-sm btn-outline-secondary me-2">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h5 class="mb-0">{{ 'Create New Project' if is_new else 'Edit Project' }}</h5>
+</div>
+
+<form method="POST">
+  <div class="row g-3">
+    <div class="col-lg-8">
+      <div class="card-panel mb-3">
+        <h6 class="section-heading">Project Details</h6>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Project Number</label>
+            <input type="text" name="project_number" class="form-control"
+                   value="{{ project.get('project_number','') if project else '' }}"
+                   placeholder="e.g. PRJ-2025-001" required>
+          </div>
+          <div class="col-md-8">
+            <label class="form-label">Project Name</label>
+            <input type="text" name="project_name" class="form-control"
+                   value="{{ project.get('project_name','') if project else '' }}"
+                   placeholder="Project name" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Client</label>
+            <select name="client_name" class="form-select">
+              <option value="">-- Select Client --</option>
+              {% for c in clients %}
+              <option value="{{ c }}"
+                {{ 'selected' if project and project.get('client_name') == c }}>{{ c }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Assigned To</label>
+            <input type="text" name="assigned_to" class="form-control"
+                   value="{{ project.get('assigned_to','') if project else '' }}"
+                   placeholder="Team member name">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Start Date</label>
+            <input type="date" name="start_date" class="form-control"
+                   value="{{ project.get('start_date','') if project else '' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">End Date</label>
+            <input type="date" name="end_date" class="form-control"
+                   value="{{ project.get('end_date','') if project else '' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Status</label>
+            <select name="status" class="form-select">
+              {% for s in ['Not Started','In Progress','On Hold','Completed','Cancelled'] %}
+              <option value="{{ s }}"
+                {{ 'selected' if project and project.get('status') == s }}>{{ s }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Description</label>
+            <textarea name="description" class="form-control" rows="3">{{ project.get('description','') if project else '' }}</textarea>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Notes</label>
+            <textarea name="notes" class="form-control" rows="2">{{ project.get('notes','') if project else '' }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card-panel mb-3">
+        <h6 class="section-heading">Financials</h6>
+        <div class="mb-3">
+          <label class="form-label">Contract Value ($)</label>
+          <input type="number" id="contractValue" name="contract_value" class="form-control"
+                 value="{{ project.get('contract_value','0') if project else '0' }}"
+                 min="0" step="0.01" oninput="recalcPlanPreview()">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Amount Paid ($)</label>
+          <input type="number" name="amount_paid" class="form-control bg-light" readonly
+                 value="{{ '%.2f'|format(project.get('amount_paid', 0)|float) if project else '0.00' }}">
+          <div class="form-text">
+            <i class="bi bi-info-circle me-1"></i>
+            Auto-calculated from the <strong>Paid</strong>/<strong>Partial</strong> invoices linked to this
+            project — it updates itself as you generate and collect on Payment Plan stages below.
+          </div>
+        </div>
+        <div class="mb-1">
+          <label class="form-label">Payment Stage</label>
+          <select name="payment_category" class="form-select">
+            {% for stage in ['Down Payment','Due Payment','Final Payment'] %}
+            <option value="{{ stage }}"
+              {{ 'selected' if project and project.get('payment_category') == stage }}>{{ stage }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text">
+            Just a status label shown on lists/reports for "what phase is this project in right now" —
+            it doesn't affect billing. The <strong>Payment Plan</strong> below is what actually drives invoicing.
+          </div>
+        </div>
+      </div>
+
+      <div class="card-panel mb-3">
+        <h6 class="section-heading">Payment Plan</h6>
+        {% set existing_stages = project.get('payment_stages') if project else None %}
+        {% set plan_locked = existing_stages and (existing_stages|selectattr('status', 'ne', 'Pending')|list|length > 0) %}
+        <p class="text-muted small mb-3">
+          Set this up once and the system splits the contract value into ordered, billable stages.
+          On the project page you'll generate one invoice per stage — in order — and each stage
+          unlocks the next once it's invoiced and paid.
+        </p>
+        {% if plan_locked %}
+        <p class="text-muted small mb-2">
+          <i class="bi bi-lock-fill me-1"></i>
+          One or more stages already have an invoice, so the plan structure is locked to protect those
+          links. Adjust the contract value above if the total changes — stage amounts will stay as-is.
+        </p>
+        {% else %}
+        <div class="mb-3">
+          <label class="form-label">Down Payment (%)</label>
+          <input type="number" id="downPaymentPct" name="down_payment_percent" class="form-control"
+                 value="{{ project.get('down_payment_percent', 0) if project else 0 }}"
+                 min="0" max="100" step="1" placeholder="0 = no down payment" oninput="recalcPlanPreview()">
+          <div class="form-text">e.g. 50 for a 50% down payment. Leave 0 to skip straight to billing the full balance.</div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Remaining Balance Installments</label>
+          {% set is_custom_mode = (project.get('installment_mode') == 'custom') if project else false %}
+          <select id="installmentCount" name="installment_count" class="form-select" onchange="onInstallmentModeChange()">
+            {% set current_installments = project.get('installment_count', 1)|int if project else 1 %}
+            <option value="1" {{ 'selected' if (current_installments == 1 and not is_custom_mode) }}>Single payment</option>
+            {% for n in range(2, 7) %}
+            <option value="{{ n }}" {{ 'selected' if (current_installments == n and not is_custom_mode) }}>{{ n }} installments</option>
+            {% endfor %}
+            <option value="custom" {{ 'selected' if is_custom_mode }}>Custom amounts…</option>
+          </select>
+          <div class="form-text" id="installmentHelpText">How many equal installments to split whatever's left after the down payment.</div>
+        </div>
+        <div class="mb-2" id="customInstallmentsWrap" style="display:none;">
+          <label class="form-label">Custom Installment Amounts</label>
+          <div id="customInstallmentRows"></div>
+          <button type="button" class="btn btn-sm btn-outline-teal mt-1" onclick="addCustomInstallmentRow()">
+            <i class="bi bi-plus-lg me-1"></i>Add Installment
+          </button>
+          <div class="form-text">
+            Type each payment exactly as the client will actually pay it — handy for negotiated or
+            irregular amounts that don't split evenly.
+          </div>
+          <div class="d-flex justify-content-between small mt-2 fw-bold" id="customTotalCheck"></div>
+        </div>
+        <hr>
+        <div class="small">
+          <div class="text-muted mb-1">
+            <i class="bi bi-eye me-1"></i>Preview — this is what will be saved:
+          </div>
+          <div id="planPreviewBox"></div>
+          <div class="d-flex justify-content-between mt-2 pt-2 border-top" id="planTotalCheck"></div>
+        </div>
+        {% endif %}
+        {% if existing_stages %}
+        <hr>
+        <div class="small">
+          <div class="text-muted mb-1">Current saved stage plan:</div>
+          {% for s in existing_stages %}
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span>{{ s.get('name','') }}</span>
+            <span>
+              <span class="fw-bold">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</span>
+              <span class="badge status-{{ {'Pending':'not-started','Invoiced':'invoiced','Paid':'paid','Partially Paid':'partial'}.get(s.get('status','Pending'), 'not-started') }} ms-1">
+                {{ s.get('status','Pending') }}
+              </span>
+            </span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="d-grid gap-2">
+        <button type="submit" class="btn btn-teal">
+          <i class="bi bi-check-lg me-1"></i>
+          {{ 'Create Project' if is_new else 'Save Changes' }}
+        </button>
+        <a href="{{ url_for('projects') }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </div>
+  </div>
+</form>
+
+<script>
+const existingCustomAmounts = {{ (project.get('custom_installment_amounts', []) if project else [])|tojson }};
+
+function fmtMoney(n) {
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Mirrors the server-side _compute_payment_stages() so the user sees the exact
+// plan that will be saved before they submit the form.
+function computePlanPreview(contractValue, downPct, installmentSel, customAmounts) {
+  contractValue = Math.max(0, contractValue || 0);
+  downPct = Math.max(0, Math.min(100, downPct || 0));
+
+  const stages = [];
+  let remaining = contractValue;
+  if (downPct > 0) {
+    const downAmt = Math.round(contractValue * downPct / 100 * 100) / 100;
+    stages.push({ name: `Down Payment (${downPct.toFixed(0)}%)`, amount: downAmt });
+    remaining = Math.round((contractValue - downAmt) * 100) / 100;
+  }
+
+  if (installmentSel === 'custom') {
+    const amounts = (customAmounts || []).filter(a => a > 0);
+    amounts.forEach((amt, i) => {
+      stages.push({ name: `Installment ${i + 1} of ${amounts.length}`, amount: Math.round(amt * 100) / 100 });
+    });
+    return stages;
+  }
+
+  const installments = Math.max(1, Math.min(parseInt(installmentSel) || 1, 6));
+  if (installments <= 1) {
+    stages.push({ name: downPct > 0 ? 'Final Payment' : 'Full Payment', amount: remaining });
+  } else {
+    const per = Math.round((remaining / installments) * 100) / 100;
+    let running = 0;
+    for (let i = 0; i < installments; i++) {
+      const amt = (i < installments - 1) ? per : Math.round((remaining - running) * 100) / 100;
+      running += amt;
+      stages.push({ name: `Installment ${i + 1} of ${installments}`, amount: amt });
+    }
+  }
+  return stages;
+}
+
+function collectCustomAmounts() {
+  return Array.from(document.querySelectorAll('#customInstallmentRows input.custom-amt'))
+    .map(inp => parseFloat(inp.value) || 0);
+}
+
+function addCustomInstallmentRow(value) {
+  const wrap = document.getElementById('customInstallmentRows');
+  const row = document.createElement('div');
+  row.className = 'd-flex gap-2 align-items-center mb-2';
+  row.innerHTML =
+    `<span class="text-muted small" style="min-width:90px;">Installment ${wrap.children.length + 1}</span>
+     <input type="number" name="custom_installment_amount[]" class="form-control form-control-sm custom-amt"
+            min="0" step="0.01" placeholder="0.00" value="${value != null ? value : ''}">
+     <button type="button" class="btn btn-xs btn-outline-danger" onclick="removeCustomInstallmentRow(this)">
+       <i class="bi bi-trash"></i>
+     </button>`;
+  wrap.appendChild(row);
+  row.querySelector('input').addEventListener('input', recalcPlanPreview);
+  renumberCustomRows();
+  recalcPlanPreview();
+}
+
+function removeCustomInstallmentRow(btn) {
+  const wrap = document.getElementById('customInstallmentRows');
+  btn.closest('div.d-flex').remove();
+  if (!wrap.children.length) addCustomInstallmentRow();
+  renumberCustomRows();
+  recalcPlanPreview();
+}
+
+function renumberCustomRows() {
+  document.querySelectorAll('#customInstallmentRows > div').forEach((row, i) => {
+    row.querySelector('span').textContent = `Installment ${i + 1}`;
+  });
+}
+
+function onInstallmentModeChange() {
+  const sel = document.getElementById('installmentCount').value;
+  const customWrap = document.getElementById('customInstallmentsWrap');
+  const helpText = document.getElementById('installmentHelpText');
+  if (sel === 'custom') {
+    customWrap.style.display = '';
+    helpText.textContent = 'Define exactly how much each installment should be.';
+    if (!document.getElementById('customInstallmentRows').children.length) {
+      if (existingCustomAmounts && existingCustomAmounts.length) {
+        existingCustomAmounts.forEach(a => addCustomInstallmentRow(a));
+      } else {
+        addCustomInstallmentRow();
+        addCustomInstallmentRow();
+      }
+    }
+  } else {
+    customWrap.style.display = 'none';
+    helpText.textContent = "How many equal installments to split whatever's left after the down payment.";
+  }
+  recalcPlanPreview();
+}
+
+function recalcPlanPreview() {
+  const box = document.getElementById('planPreviewBox');
+  if (!box) return;
+  const contractValue = parseFloat(document.getElementById('contractValue').value) || 0;
+  const downPct = parseFloat(document.getElementById('downPaymentPct').value) || 0;
+  const installmentSel = document.getElementById('installmentCount').value;
+  const customAmounts = (installmentSel === 'custom') ? collectCustomAmounts() : null;
+  const stages = computePlanPreview(contractValue, downPct, installmentSel, customAmounts);
+
+  box.innerHTML = stages.map(s =>
+    `<div class="d-flex justify-content-between"><span>${s.name}</span><span class="fw-bold">${fmtMoney(s.amount)}</span></div>`
+  ).join('');
+
+  const totalEl = document.getElementById('planTotalCheck');
+  if (totalEl) {
+    const planTotal = Math.round(stages.reduce((a, s) => a + s.amount, 0) * 100) / 100;
+    const cv = Math.round(contractValue * 100) / 100;
+    if (Math.abs(planTotal - cv) < 0.01) {
+      totalEl.innerHTML = `<span class="text-muted">Plan total</span>
+        <span class="text-success"><i class="bi bi-check-circle me-1"></i>${fmtMoney(planTotal)} — matches Contract Value</span>`;
+    } else {
+      totalEl.innerHTML = `<span class="text-muted">Plan total</span>
+        <span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>${fmtMoney(planTotal)} vs Contract Value ${fmtMoney(cv)}</span>`;
+    }
+  }
+
+  const checkEl = document.getElementById('customTotalCheck');
+  if (checkEl) {
+    if (installmentSel === 'custom') {
+      const downPctSafe = Math.max(0, Math.min(100, downPct || 0));
+      const downAmt = downPctSafe > 0 ? Math.round(contractValue * downPctSafe / 100 * 100) / 100 : 0;
+      const remaining = Math.round((contractValue - downAmt) * 100) / 100;
+      const total = (customAmounts || []).filter(a => a > 0).reduce((a, b) => a + Math.round(b * 100) / 100, 0);
+      const diff = Math.round((remaining - total) * 100) / 100;
+      if (Math.abs(diff) < 0.01) {
+        checkEl.innerHTML = `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Installments total ${fmtMoney(total)} — matches the remaining balance.</span>`;
+      } else if (diff > 0) {
+        checkEl.innerHTML = `<span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Installments total ${fmtMoney(total)} — short ${fmtMoney(diff)} of the ${fmtMoney(remaining)} remaining balance.</span>`;
+      } else {
+        checkEl.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Installments total ${fmtMoney(total)} — exceeds the ${fmtMoney(remaining)} remaining balance by ${fmtMoney(-diff)}.</span>`;
+      }
+    } else {
+      checkEl.innerHTML = '';
+    }
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  if (document.getElementById('installmentCount').value === 'custom') {
+    onInstallmentModeChange();
+  } else {
+    recalcPlanPreview();
+  }
+});
+</script>
+{% endblock %}
