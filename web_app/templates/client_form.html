@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ 'New Client' if is_new else 'Edit Client' }}{% endblock %}
+{% block page_title %}{{ 'New Client' if is_new else 'Edit Client' }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+  <a href="{{ url_for('clients') }}" class="btn btn-sm btn-outline-secondary me-2">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h5 class="mb-0">{{ 'New Client' if is_new else 'Edit Client' }}</h5>
+</div>
+
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card-panel">
+      <form method="POST">
+        <div class="mb-3">
+          <label class="form-label">Client Name <span class="text-danger">*</span></label>
+          <input type="text" name="client_name" class="form-control"
+                 value="{{ client.get('client_name','') if client else '' }}"
+                 {{ 'readonly' if not is_new }} required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Company</label>
+          <input type="text" name="company" class="form-control"
+                 value="{{ client.get('company','') if client else '' }}">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Email</label>
+          <input type="email" name="email" class="form-control"
+                 value="{{ client.get('email','') if client else '' }}">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Phone</label>
+          <input type="text" name="phone" class="form-control"
+                 value="{{ client.get('phone','') if client else '' }}">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Address</label>
+          <textarea name="address" class="form-control" rows="3">{{ client.get('address','') if client else '' }}</textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-control" rows="2">{{ client.get('notes','') if client else '' }}</textarea>
+        </div>
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-teal">
+            <i class="bi bi-check-lg me-1"></i>Save Client
+          </button>
+          <a href="{{ url_for('clients') }}" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

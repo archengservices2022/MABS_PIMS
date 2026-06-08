@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+{% block title %}Invoicing{% endblock %}
+{% block page_title %}Invoicing{% endblock %}
+
+{% block content %}
+<!-- Tab nav -->
+<ul class="nav nav-tabs mb-4" id="invoiceTabs">
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-all-invoices">
+      <i class="bi bi-receipt me-1"></i>All Invoices
+      <span class="badge bg-secondary ms-1">{{ invoices|length }}</span>
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-new-invoice">
+      <i class="bi bi-plus-square me-1"></i>New Invoice
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-export">
+      <i class="bi bi-download me-1"></i>Export
+    </a>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- ── Tab 1: All Invoices ────────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-all-invoices">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <form class="d-flex gap-2 flex-wrap" method="GET">
+        <input type="text" name="q" value="{{ search }}" class="form-control form-control-sm"
+               placeholder="Search invoices..." style="width:200px;">
+        <select name="status" class="form-select form-select-sm" style="width:160px;">
+          <option value="">All Statuses</option>
+          {% for s in statuses %}
+          <option value="{{ s }}" {{ 'selected' if status_filter == s }}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-search"></i> Filter
+        </button>
+        {% if search or status_filter %}
+        <a href="{{ url_for('invoicing') }}" class="btn btn-sm btn-outline-danger">
+          <i class="bi bi-x"></i> Clear
+        </a>
+        {% endif %}
+      </form>
+    </div>
+
+    <div class="card-panel">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead>
+            <tr>
+              <th>Invoice #</th>
+              <th>Client</th>
+              <th>Project</th>
+              <th>Date</th>
+              <th>Due Date</th>
+              <th class="text-end">Total</th>
+              <th class="text-end">Paid</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for inv in invoices %}
+            {% set meta = inv.get('meta', {}) %}
+            <tr onclick="location.href='{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}'"
+                style="cursor:pointer;">
+              <td><span class="fw-bold text-teal">{{ meta.get('invoice_number','—') }}</span></td>
+              <td>{{ meta.get('client_name','—') }}</td>
+              <td class="text-muted small">{{ meta.get('project_number','—') or '—' }}</td>
+              <td>{{ meta.get('invoice_date','—') }}</td>
+              <td>{{ meta.get('due_date','—') }}</td>
+              <td class="text-end fw-bold">${{ "{:,.2f}".format(meta.get('total',0)|float) }}</td>
+              <td class="text-end text-success">${{ "{:,.2f}".format(meta.get('amount_paid',0)|float) }}</td>
+              <td>
+                <span class="badge status-{{ meta.get('status','Draft')|lower|replace(' ','-') }}">
+                  {{ meta.get('status','Draft') }}
+                </span>
+              </td>
+              <td onclick="event.stopPropagation()">
+                <a href="{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}"
+                   class="btn btn-xs btn-outline-secondary">
+                  <i class="bi bi-eye"></i>
+                </a>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="9" class="text-center text-muted py-5">
+                <i class="bi bi-receipt fs-2 d-block mb-2"></i>
+                No invoices found.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tab 2: New Invoice ──────────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-new-invoice">
+    <form method="POST" action="{{ url_for('invoice_new') }}">
+      <div class="row g-3">
+        <div class="col-lg-8">
+          <div class="card-panel mb-3">
+            <h6 class="section-heading">Invoice Details</h6>
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label">Invoice Number</label>
+                <input type="text" name="invoice_number" class="form-control"
+                       value="{{ next_num }}" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Invoice Date</label>
+                <input type="date" name="invoice_date" class="form-control"
+                       value="{{ today_date }}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Due Date</label>
+                <input type="date" name="due_date" class="form-control">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Client</label>
+                <select name="client_name" class="form-select">
+                  <option value="">-- Select Client --</option>
+                  {% for c in clients %}
+                  <option value="{{ c }}">{{ c }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Project</label>
+                <select name="project_number" class="form-select">
+                  <option value="">-- Select Project --</option>
+                  {% for p in projects %}
+                  <option value="{{ p.get('project_number','') }}">
+                    {{ p.get('project_number','') }} — {{ p.get('project_name','') }}
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Status</label>
+                <select name="status" class="form-select">
+                  {% for s in ['Draft','Sent','Viewed','Paid','Partial','Overdue','Cancelled'] %}
+                  <option value="{{ s }}" {{ 'selected' if s == 'Draft' }}>{{ s }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Payment Method</label>
+                <select name="payment_method" class="form-select">
+                  <option value="">— Select —</option>
+                  {% for pm in ['Check','Wire Transfer','ACH','Cash','Zelle','Credit Card','Other'] %}
+                  <option value="{{ pm }}">{{ pm }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Amount Paid ($)</label>
+                <input type="number" name="amount_paid" class="form-control"
+                       value="0" min="0" step="0.01">
+              </div>
+            </div>
+          </div>
+
+          <!-- Line Items -->
+          <div class="card-panel mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h6 class="section-heading mb-0">Line Items</h6>
+              <button type="button" class="btn btn-sm btn-outline-teal" onclick="addLineItem()">
+                <i class="bi bi-plus-lg"></i> Add Item
+              </button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm">
+                <thead>
+                  <tr>
+                    <th style="width:50%">Description</th>
+                    <th style="width:12%">Qty</th>
+                    <th style="width:18%">Unit Price</th>
+                    <th style="width:15%">Amount</th>
+                    <th style="width:5%"></th>
+                  </tr>
+                </thead>
+                <tbody id="lineItemsBody">
+                  <tr class="line-item-row">
+                    <td><input type="text" name="item_description[]" class="form-control form-control-sm"
+                               placeholder="Description" required></td>
+                    <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty"
+                               value="1" min="0" step="any" oninput="calcRow(this)"></td>
+                    <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price"
+                               value="0" min="0" step="0.01" oninput="calcRow(this)"></td>
+                    <td><input type="text" class="form-control form-control-sm item-total bg-light"
+                               value="0.00" readonly></td>
+                    <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="removeRow(this)">
+                      <i class="bi bi-trash"></i></button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card-panel">
+            <h6 class="section-heading">Notes &amp; Terms</h6>
+            <div class="mb-3">
+              <label class="form-label">Notes</label>
+              <textarea name="notes" class="form-control" rows="2"></textarea>
+            </div>
+            <div>
+              <label class="form-label">Terms &amp; Conditions</label>
+              <textarea name="terms" class="form-control" rows="2">Thank you for your business!</textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-4">
+          <div class="card-panel mb-3">
+            <h6 class="section-heading">Totals</h6>
+            <div class="d-flex justify-content-between mb-2">
+              <span>Subtotal</span>
+              <strong id="inv_subtotalDisplay">$0.00</strong>
+              <input type="hidden" name="subtotal" id="inv_subtotalInput" value="0">
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span>Tax Rate (%)</span>
+              <input type="number" name="tax_rate" id="inv_taxRate"
+                     class="form-control form-control-sm text-end" style="width:80px;"
+                     value="0" min="0" max="100" step="0.01" oninput="calcInvTotals()">
+            </div>
+            <div class="d-flex justify-content-between mb-2">
+              <span>Tax</span>
+              <strong id="inv_taxDisplay">$0.00</strong>
+              <input type="hidden" name="tax_amount" id="inv_taxInput">
+            </div>
+            <hr>
+            <div class="d-flex justify-content-between">
+              <strong>Total</strong>
+              <strong id="inv_totalDisplay" class="text-teal fs-5">$0.00</strong>
+              <input type="hidden" name="total" id="inv_totalInput">
+            </div>
+          </div>
+          <div class="d-grid">
+            <button type="submit" class="btn btn-teal">
+              <i class="bi bi-check-lg me-1"></i>Create Invoice
+            </button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <!-- ── Tab 3: Export ───────────────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-export">
+    <div class="mb-4">
+      <label class="form-label fw-600 small text-muted text-uppercase">Filter by Status</label>
+      <select id="invExportStatus" class="form-select form-select-sm" style="width:220px;"
+              onchange="updateInvExportLinks()">
+        <option value="">All Statuses</option>
+        {% for s in statuses %}
+        <option value="{{ s }}">{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="export-card">
+          <div style="font-size:2.5rem;color:#DC2626;margin-bottom:12px;">
+            <i class="bi bi-file-earmark-pdf-fill"></i>
+          </div>
+          <h6 class="fw-700 mb-1">PDF Report</h6>
+          <p class="text-muted small mb-3">Professional PDF invoice listing</p>
+          <a id="invExportPdfLink" href="{{ url_for('invoicing_export_pdf') }}"
+             class="btn btn-sm btn-danger w-100">
+            <i class="bi bi-download me-1"></i>Download PDF
+          </a>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="export-card">
+          <div style="font-size:2.5rem;color:#16A34A;margin-bottom:12px;">
+            <i class="bi bi-file-earmark-spreadsheet-fill"></i>
+          </div>
+          <h6 class="fw-700 mb-1">Excel Spreadsheet</h6>
+          <p class="text-muted small mb-3">Styled .xlsx with all invoice data</p>
+          <a id="invExportExcelLink" href="{{ url_for('invoicing_export_excel') }}"
+             class="btn btn-sm btn-success w-100">
+            <i class="bi bi-download me-1"></i>Download Excel
+          </a>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="export-card">
+          <div style="font-size:2.5rem;color:#2563EB;margin-bottom:12px;">
+            <i class="bi bi-file-earmark-text-fill"></i>
+          </div>
+          <h6 class="fw-700 mb-1">CSV Export</h6>
+          <p class="text-muted small mb-3">Comma-separated values file</p>
+          <a id="invExportCsvLink" href="{{ url_for('invoicing_export_csv') }}"
+             class="btn btn-sm btn-primary w-100">
+            <i class="bi bi-download me-1"></i>Download CSV
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Invoice line-item calculations ──────────────────────────────────────────
+function fmt(n) { return '$' + parseFloat(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+function calcRow(input) {
+  const row = input.closest('tr');
+  const qty   = parseFloat(row.querySelector('.item-qty').value   || 0);
+  const price = parseFloat(row.querySelector('.item-price').value || 0);
+  row.querySelector('.item-total').value = (qty * price).toFixed(2);
+  calcInvTotals();
+}
+function calcInvTotals() {
+  let sub = 0;
+  document.querySelectorAll('.item-total').forEach(el => sub += parseFloat(el.value || 0));
+  const tax   = sub * (parseFloat(document.getElementById('inv_taxRate').value || 0) / 100);
+  const total = sub + tax;
+  document.getElementById('inv_subtotalDisplay').textContent = fmt(sub);
+  document.getElementById('inv_taxDisplay').textContent      = fmt(tax);
+  document.getElementById('inv_totalDisplay').textContent    = fmt(total);
+  document.getElementById('inv_subtotalInput').value = sub.toFixed(2);
+  document.getElementById('inv_taxInput').value      = tax.toFixed(2);
+  document.getElementById('inv_totalInput').value    = total.toFixed(2);
+}
+function addLineItem() {
+  const tbody = document.getElementById('lineItemsBody');
+  const row = document.createElement('tr');
+  row.className = 'line-item-row';
+  row.innerHTML = `<td><input type="text" name="item_description[]" class="form-control form-control-sm" placeholder="Description" required></td>
+    <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
+    <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="0" min="0" step="0.01" oninput="calcRow(this)"></td>
+    <td><input type="text" class="form-control form-control-sm item-total bg-light" value="0.00" readonly></td>
+    <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>`;
+  tbody.appendChild(row);
+}
+function removeRow(btn) {
+  const rows = document.querySelectorAll('.line-item-row');
+  if (rows.length > 1) { btn.closest('tr').remove(); calcInvTotals(); }
+}
+calcInvTotals();
+
+// ── Export link updater ──────────────────────────────────────────────────────
+const INV_PDF_BASE   = "{{ url_for('invoicing_export_pdf') }}";
+const INV_EXCEL_BASE = "{{ url_for('invoicing_export_excel') }}";
+const INV_CSV_BASE   = "{{ url_for('invoicing_export_csv') }}";
+function updateInvExportLinks() {
+  const s = document.getElementById('invExportStatus').value;
+  const q = s ? '?status=' + encodeURIComponent(s) : '';
+  document.getElementById('invExportPdfLink').href   = INV_PDF_BASE   + q;
+  document.getElementById('invExportExcelLink').href = INV_EXCEL_BASE + q;
+  document.getElementById('invExportCsvLink').href   = INV_CSV_BASE   + q;
+}
+
+// ── Tab activation ───────────────────────────────────────────────────────────
+const invTabParam = "{{ active_tab }}";
+const invAllTabs  = ["all-invoices", "new-invoice", "export"];
+const invTarget   = invAllTabs.includes(invTabParam) ? invTabParam : "all-invoices";
+const invEl = document.querySelector('[href="#tab-' + invTarget + '"]');
+if (invEl) new bootstrap.Tab(invEl).show();
+
+document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
+  el.addEventListener('shown.bs.tab', e => {
+    const id = e.target.getAttribute('href').replace('#tab-', '');
+    const url = new URL(window.location);
+    url.searchParams.set('tab', id);
+    window.history.replaceState({}, '', url);
+  });
+});
+</script>
+{% endblock %}

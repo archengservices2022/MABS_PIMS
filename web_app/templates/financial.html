@@ -1,0 +1,482 @@
+{% extends "base.html" %}
+{% block title %}Financial{% endblock %}
+{% block page_title %}Financial Overview{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+
+<!-- Tab nav -->
+<ul class="nav nav-tabs mb-4" id="finTabs">
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'overview' or not active_tab %}active{% endif %}"
+       data-bs-toggle="tab" href="#tab-overview">
+      <i class="bi bi-graph-up me-1"></i>Overview
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'income' %}active{% endif %}"
+       data-bs-toggle="tab" href="#tab-income">
+      <i class="bi bi-cash-stack me-1"></i>Income
+      {% if rev_list %}
+      <span class="badge bg-secondary ms-1">{{ rev_list|length }}</span>
+      {% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'expenses' %}active{% endif %}"
+       data-bs-toggle="tab" href="#tab-expenses">
+      <i class="bi bi-receipt me-1"></i>Expenses
+      {% if expenses %}
+      <span class="badge bg-secondary ms-1">{{ expenses|length }}</span>
+      {% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'by-project' %}active{% endif %}"
+       data-bs-toggle="tab" href="#tab-by-project">
+      <i class="bi bi-kanban me-1"></i>By Project
+    </a>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- ── Overview Tab ─────────────────────────────────────────────────── -->
+  <div class="tab-pane fade {% if active_tab == 'overview' or not active_tab %}show active{% endif %}" id="tab-overview">
+
+    <!-- KPI row -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-xl-3">
+        <div class="kpi-card kpi-teal">
+          <div class="kpi-top"><span class="kpi-label">Total Invoiced</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
+          <div class="kpi-value">${{ "{:,.0f}".format(total_invoiced) }}</div>
+          <div class="kpi-sub">all invoices combined</div>
+        </div>
+      </div>
+      <div class="col-6 col-xl-3">
+        <div class="kpi-card kpi-green">
+          <div class="kpi-top"><span class="kpi-label">Collected</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
+          <div class="kpi-value">${{ "{:,.0f}".format(total_paid) }}</div>
+          <div class="kpi-sub">{{ "%.0f"|format((total_paid/total_invoiced*100) if total_invoiced > 0 else 0) }}% of invoiced</div>
+        </div>
+      </div>
+      <div class="col-6 col-xl-3">
+        <div class="kpi-card kpi-red">
+          <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
+          <div class="kpi-value">${{ "{:,.0f}".format(total_expenses) }}</div>
+          <div class="kpi-sub">{{ expenses|length }} entries</div>
+        </div>
+      </div>
+      <div class="col-6 col-xl-3">
+        <div class="kpi-card {{ 'kpi-green' if net_profit >= 0 else 'kpi-red' }}">
+          <div class="kpi-top"><span class="kpi-label">Net Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
+          <div class="kpi-value {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(net_profit) }}</div>
+          <div class="kpi-sub">collected minus expenses</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chart -->
+    <div class="card-panel mb-4">
+      <h6 class="panel-title mb-3">Revenue vs Expenses — Last 6 Months</h6>
+      <canvas id="finChart" height="220"></canvas>
+    </div>
+
+    <!-- Quick summary row -->
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <div class="card-panel">
+          <h6 class="section-heading">Outstanding Receivables</h6>
+          {% set outstanding = total_invoiced - total_paid %}
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="text-muted small">Invoiced</span>
+            <strong>${{ "{:,.0f}".format(total_invoiced) }}</strong>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="text-muted small">Collected</span>
+            <strong class="text-success">${{ "{:,.0f}".format(total_paid) }}</strong>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <span class="text-muted small">Outstanding</span>
+            <strong class="{{ 'text-danger' if outstanding > 0 else 'text-success' }}">${{ "{:,.0f}".format(outstanding) }}</strong>
+          </div>
+          {% if total_invoiced > 0 %}
+          {% set pct = [(total_paid / total_invoiced * 100), 100]|min %}
+          <div class="progress" style="height:8px;">
+            <div class="progress-bar bg-teal" style="width:{{ pct }}%"></div>
+          </div>
+          <div class="text-end small text-muted mt-1">{{ "%.0f"|format(pct) }}% collected</div>
+          {% endif %}
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="card-panel">
+          <h6 class="section-heading">Expense Breakdown</h6>
+          {% set categories = {} %}
+          {% for exp in expenses %}
+            {% set cat = exp.get('category','Other') or 'Other' %}
+            {% set _ = categories.update({cat: (categories.get(cat, 0) + exp.get('amount',0)|float)}) %}
+          {% endfor %}
+          {% if categories %}
+          {% for cat, amt in categories.items() %}
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="badge bg-light text-dark border">{{ cat }}</span>
+            <span class="small fw-bold">${{ "{:,.0f}".format(amt) }}</span>
+          </div>
+          {% endfor %}
+          {% else %}
+          <div class="empty-state py-2 small">No expenses yet.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Income Tab ────────────────────────────────────────────────────── -->
+  <div class="tab-pane fade {% if active_tab == 'income' %}show active{% endif %}" id="tab-income">
+    <div class="card-panel">
+      <div class="panel-header d-flex justify-content-between align-items-center mb-3">
+        <h6 class="panel-title mb-0">Income — Paid &amp; Partial Invoices</h6>
+        <span class="text-muted small">Auto-populated from invoice payments</span>
+      </div>
+      {% if rev_list %}
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0 align-middle">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Invoice #</th>
+              <th>Client</th>
+              <th>Project</th>
+              <th>Status</th>
+              <th class="text-end">Invoice Total</th>
+              <th class="text-end">Amount Paid</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rev_list|sort(attribute='date', reverse=True) %}
+            <tr>
+              <td>{{ r.get('date','—') }}</td>
+              <td>
+                {% if r.get('invoice_id') %}
+                <a href="{{ url_for('invoice_detail', invoice_id=r.get('invoice_id','')) }}"
+                   class="fw-bold text-teal text-decoration-none">
+                  {{ r.get('invoice_number','—') }}
+                </a>
+                {% else %}
+                <span class="fw-bold text-teal">{{ r.get('invoice_number','—') }}</span>
+                {% endif %}
+              </td>
+              <td>{{ r.get('client_name','—') }}</td>
+              <td class="text-muted small">{{ r.get('project_number','—') or '—' }}</td>
+              <td>
+                <span class="badge status-{{ r.get('status','paid')|lower|replace(' ','-') }}">
+                  {{ r.get('status','Paid') }}
+                </span>
+              </td>
+              <td class="text-end">${{ "{:,.2f}".format(r.get('total',0)|float) }}</td>
+              <td class="text-end text-success fw-bold">${{ "{:,.2f}".format(r.get('amount_paid',0)|float) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light fw-bold">
+            <tr>
+              <td colspan="6" class="text-end">Total Collected</td>
+              <td class="text-end text-success">${{ "{:,.2f}".format(rev_list|sum(attribute='amount_paid')) }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state py-4">
+        <i class="bi bi-cash-stack fs-2 d-block mb-2"></i>
+        No income recorded yet. Income entries are created automatically when invoices are marked Paid or Partial.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ── Expenses Tab ──────────────────────────────────────────────────── -->
+  <div class="tab-pane fade {% if active_tab == 'expenses' %}show active{% endif %}" id="tab-expenses">
+    <div class="row g-3">
+      <!-- Add Expense form -->
+      <div class="col-lg-4">
+        <div class="card-panel">
+          <h6 class="section-heading">Add Expense</h6>
+          <form method="POST" action="{{ url_for('expense_new') }}">
+            <input type="hidden" name="_tab" value="expenses">
+            <div class="mb-2">
+              <input type="text" name="description" class="form-control form-control-sm"
+                     placeholder="Description" required>
+            </div>
+            <div class="row g-2 mb-2">
+              <div class="col-6">
+                <input type="number" name="amount" class="form-control form-control-sm"
+                       placeholder="Amount ($)" min="0" step="0.01" required>
+              </div>
+              <div class="col-6">
+                <input type="date" name="date" class="form-control form-control-sm"
+                       value="{{ today_date }}">
+              </div>
+            </div>
+            <div class="mb-2">
+              <select name="category" class="form-select form-select-sm">
+                <option value="">Category</option>
+                {% for cat in ['Labor','Materials','Equipment','Subcontractor','Overhead','Travel','Other'] %}
+                <option value="{{ cat }}">{{ cat }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-2">
+              <input type="text" name="vendor" class="form-control form-control-sm" placeholder="Vendor">
+            </div>
+            <div class="mb-2">
+              <select name="project_number" class="form-select form-select-sm">
+                <option value="">— Link to Project (optional) —</option>
+                {% for p in projects %}
+                <option value="{{ p.get('project_number','') }}">
+                  {{ p.get('project_number','') }} — {{ p.get('project_name','') }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-2">
+              <textarea name="notes" class="form-control form-control-sm" rows="2" placeholder="Notes"></textarea>
+            </div>
+            <button type="submit" class="btn btn-sm btn-teal w-100">
+              <i class="bi bi-plus-lg me-1"></i>Add Expense
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Expense log -->
+      <div class="col-lg-8">
+        <div class="card-panel">
+          <h6 class="panel-title mb-3">Expense Log</h6>
+          <div class="table-responsive">
+            <table class="table table-hover table-sm mb-0">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Description</th>
+                  <th>Category</th>
+                  <th>Project</th>
+                  <th>Vendor</th>
+                  <th class="text-end">Amount</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for exp in expenses|sort(attribute='date', reverse=True) %}
+                <tr>
+                  <td>{{ exp.get('date','—') }}</td>
+                  <td>{{ exp.get('description','—') }}</td>
+                  <td><span class="badge bg-light text-dark border">{{ exp.get('category','—') }}</span></td>
+                  <td class="text-muted small">{{ exp.get('project_number','—') or '—' }}</td>
+                  <td>{{ exp.get('vendor','—') }}</td>
+                  <td class="text-end">${{ "{:,.2f}".format(exp.get('amount',0)|float) }}</td>
+                  <td>
+                    {% if exp.get('firebase_id') %}
+                    <form method="POST"
+                          action="{{ url_for('expense_delete', exp_id=exp.firebase_id) }}"
+                          onsubmit="return confirm('Delete this expense?');">
+                      <button type="submit" class="btn btn-xs btn-outline-danger">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </form>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="7" class="text-center text-muted py-3">No expenses recorded.</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+              <tfoot class="table-light fw-bold">
+                <tr>
+                  <td colspan="5">Total Expenses</td>
+                  <td class="text-end">${{ "{:,.2f}".format(total_expenses) }}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── By Project Tab ────────────────────────────────────────────────── -->
+  <div class="tab-pane fade {% if active_tab == 'by-project' %}show active{% endif %}" id="tab-by-project">
+    <div class="card-panel">
+      <div class="panel-header d-flex justify-content-between align-items-center mb-3">
+        <h6 class="panel-title mb-0">Profit &amp; Loss by Project</h6>
+        <span class="text-muted small">Click a row to open the project</span>
+      </div>
+
+      {% if project_pnl %}
+      <!-- Summary KPIs -->
+      <div class="row g-3 mb-4">
+        <div class="col-6 col-xl-3">
+          <div class="text-center p-3 bg-light rounded">
+            <div class="fs-5 fw-bold text-teal">${{ "{:,.0f}".format(project_pnl|sum(attribute='invoiced')) }}</div>
+            <div class="text-muted small">Total Invoiced</div>
+          </div>
+        </div>
+        <div class="col-6 col-xl-3">
+          <div class="text-center p-3 bg-light rounded">
+            <div class="fs-5 fw-bold text-success">${{ "{:,.0f}".format(project_pnl|sum(attribute='paid')) }}</div>
+            <div class="text-muted small">Total Collected</div>
+          </div>
+        </div>
+        <div class="col-6 col-xl-3">
+          <div class="text-center p-3 bg-light rounded">
+            <div class="fs-5 fw-bold text-danger">${{ "{:,.0f}".format(project_pnl|sum(attribute='expenses')) }}</div>
+            <div class="text-muted small">Total Expenses</div>
+          </div>
+        </div>
+        <div class="col-6 col-xl-3">
+          {% set total_gp = project_pnl|sum(attribute='gross_profit') %}
+          <div class="text-center p-3 bg-light rounded">
+            <div class="fs-5 fw-bold {{ 'text-success' if total_gp >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(total_gp) }}</div>
+            <div class="text-muted small">Total Gross Profit</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0 align-middle">
+          <thead>
+            <tr>
+              <th>Project #</th>
+              <th>Project Name</th>
+              <th>Client</th>
+              <th>Status</th>
+              <th class="text-end">Contract</th>
+              <th class="text-end">Invoiced</th>
+              <th class="text-end">Collected</th>
+              <th class="text-end">Expenses</th>
+              <th class="text-end">Gross Profit</th>
+              <th class="text-end">Margin</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in project_pnl|sort(attribute='project_number') %}
+            {% set margin = (row.gross_profit / row.paid * 100) if row.paid > 0 else 0 %}
+            <tr onclick="location.href='{{ url_for('project_detail', project_id=row.firebase_id) }}'"
+                style="cursor:pointer;">
+              <td><span class="fw-bold text-teal">{{ row.project_number }}</span></td>
+              <td>{{ row.project_name }}</td>
+              <td>{{ row.client_name }}</td>
+              <td>
+                <span class="badge status-{{ row.status|lower|replace(' ','-') }}">{{ row.status }}</span>
+              </td>
+              <td class="text-end">${{ "{:,.0f}".format(row.contract_value) }}</td>
+              <td class="text-end">${{ "{:,.0f}".format(row.invoiced) }}</td>
+              <td class="text-end text-success">${{ "{:,.0f}".format(row.paid) }}</td>
+              <td class="text-end text-danger">${{ "{:,.0f}".format(row.expenses) }}</td>
+              <td class="text-end fw-bold {{ 'text-success' if row.gross_profit >= 0 else 'text-danger' }}">
+                ${{ "{:,.0f}".format(row.gross_profit) }}
+              </td>
+              <td class="text-end">
+                <span class="badge {{ 'bg-success' if margin >= 20 else ('bg-warning text-dark' if margin >= 0 else 'bg-danger') }}">
+                  {{ "%.0f"|format(margin) }}%
+                </span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light fw-bold">
+            <tr>
+              <td colspan="4">Totals</td>
+              <td class="text-end">${{ "{:,.0f}".format(project_pnl|sum(attribute='contract_value')) }}</td>
+              <td class="text-end">${{ "{:,.0f}".format(project_pnl|sum(attribute='invoiced')) }}</td>
+              <td class="text-end text-success">${{ "{:,.0f}".format(project_pnl|sum(attribute='paid')) }}</td>
+              <td class="text-end text-danger">${{ "{:,.0f}".format(project_pnl|sum(attribute='expenses')) }}</td>
+              <td class="text-end {{ 'text-success' if project_pnl|sum(attribute='gross_profit') >= 0 else 'text-danger' }}">
+                ${{ "{:,.0f}".format(project_pnl|sum(attribute='gross_profit')) }}
+              </td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state py-4">
+        <i class="bi bi-kanban fs-2 d-block mb-2"></i>
+        No projects found.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Tab persistence
+(function () {
+  var initTab = "{{ active_tab or 'overview' }}";
+  var tabMap  = { overview: '#tab-overview', income: '#tab-income', expenses: '#tab-expenses', 'by-project': '#tab-by-project' };
+  if (initTab && tabMap[initTab]) {
+    var el = document.querySelector('.nav-link[href="' + tabMap[initTab] + '"]');
+    if (el) el.click();
+  }
+  document.querySelectorAll('#finTabs .nav-link').forEach(function(link) {
+    link.addEventListener('shown.bs.tab', function(e) {
+      var href = e.target.getAttribute('href') || '';
+      var key  = href.replace('#tab-', '');
+      var url  = new URL(window.location);
+      url.searchParams.set('tab', key);
+      history.replaceState(null, '', url);
+    });
+  });
+})();
+</script>
+
+<script>
+const labels   = {{ chart_labels|safe }};
+const revenue  = {{ chart_revenue|safe }};
+const expData  = {{ chart_expenses|safe }};
+
+const chartEl = document.getElementById('finChart');
+if (chartEl) {
+  new Chart(chartEl, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Revenue Collected',
+          data: revenue,
+          backgroundColor: 'rgba(0,117,111,0.75)',
+          borderRadius: 4,
+        },
+        {
+          label: 'Expenses',
+          data: expData,
+          backgroundColor: 'rgba(220,53,69,0.6)',
+          borderRadius: 4,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'top' } },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { callback: v => '$' + v.toLocaleString() }
+        }
+      }
+    }
+  });
+}
+</script>
+{% endblock %}

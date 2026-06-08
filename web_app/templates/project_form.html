@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}{{ 'New Project' if is_new else 'Edit Project' }}{% endblock %}
+{% block page_title %}{{ 'New Project' if is_new else 'Edit Project' }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+  <a href="{{ url_for('projects') }}" class="btn btn-sm btn-outline-secondary me-2">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h5 class="mb-0">{{ 'Create New Project' if is_new else 'Edit Project' }}</h5>
+</div>
+
+<form method="POST">
+  <div class="row g-3">
+    <div class="col-lg-8">
+      <div class="card-panel mb-3">
+        <h6 class="section-heading">Project Details</h6>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Project Number</label>
+            <input type="text" name="project_number" class="form-control"
+                   value="{{ project.get('project_number','') if project else '' }}"
+                   placeholder="e.g. PRJ-2025-001" required>
+          </div>
+          <div class="col-md-8">
+            <label class="form-label">Project Name</label>
+            <input type="text" name="project_name" class="form-control"
+                   value="{{ project.get('project_name','') if project else '' }}"
+                   placeholder="Project name" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Client</label>
+            <select name="client_name" class="form-select">
+              <option value="">-- Select Client --</option>
+              {% for c in clients %}
+              <option value="{{ c }}"
+                {{ 'selected' if project and project.get('client_name') == c }}>{{ c }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Assigned To</label>
+            <input type="text" name="assigned_to" class="form-control"
+                   value="{{ project.get('assigned_to','') if project else '' }}"
+                   placeholder="Team member name">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Start Date</label>
+            <input type="date" name="start_date" class="form-control"
+                   value="{{ project.get('start_date','') if project else '' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">End Date</label>
+            <input type="date" name="end_date" class="form-control"
+                   value="{{ project.get('end_date','') if project else '' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Status</label>
+            <select name="status" class="form-select">
+              {% for s in ['Not Started','In Progress','On Hold','Completed','Cancelled'] %}
+              <option value="{{ s }}"
+                {{ 'selected' if project and project.get('status') == s }}>{{ s }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Description</label>
+            <textarea name="description" class="form-control" rows="3">{{ project.get('description','') if project else '' }}</textarea>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Notes</label>
+            <textarea name="notes" class="form-control" rows="2">{{ project.get('notes','') if project else '' }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card-panel mb-3">
+        <h6 class="section-heading">Financials</h6>
+        <div class="mb-3">
+          <label class="form-label">Contract Value ($)</label>
+          <input type="number" name="contract_value" class="form-control"
+                 value="{{ project.get('contract_value','0') if project else '0' }}"
+                 min="0" step="0.01">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Amount Paid ($)</label>
+          <input type="number" name="amount_paid" class="form-control"
+                 value="{{ project.get('amount_paid','0') if project else '0' }}"
+                 min="0" step="0.01">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Payment Stage</label>
+          <select name="payment_category" class="form-select">
+            {% for stage in ['Down Payment','Due Payment','Final Payment'] %}
+            <option value="{{ stage }}"
+              {{ 'selected' if project and project.get('payment_category') == stage }}>{{ stage }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="d-grid gap-2">
+        <button type="submit" class="btn btn-teal">
+          <i class="bi bi-check-lg me-1"></i>
+          {{ 'Create Project' if is_new else 'Save Changes' }}
+        </button>
+        <a href="{{ url_for('projects') }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}

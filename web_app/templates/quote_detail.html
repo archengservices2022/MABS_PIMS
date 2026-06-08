@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% block title %}Quote {{ quote.get('job_number','') }}{% endblock %}
+{% block page_title %}Quote Detail{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <a href="{{ url_for('quotes') }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left"></i>
+    </a>
+    <h5 class="mb-0">{{ quote.get('job_number', 'Quote') }}</h5>
+    <button class="btn btn-xs btn-outline-secondary" title="Copy quote number"
+            onclick="copyNumber('{{ quote.get('job_number','') }}', this)">
+      <i class="bi bi-copy"></i>
+    </button>
+    <span class="badge status-{{ quote.get('status','Not Started')|lower|replace(' ','-') }} ms-1">
+      {{ quote.get('status','Not Started') }}
+    </span>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <!-- PDF -->
+    <a href="{{ url_for('quote_pdf', quote_id=quote.firebase_id) }}" target="_blank"
+       class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+    </a>
+
+    {% set already_won = quote.get('status','') in ['Converted','Invoiced'] %}
+
+    <!-- WIN QUOTE — one click creates Project + Invoice -->
+    {% if 'projects' in allowed_pages and 'invoicing' in allowed_pages and not already_won %}
+    <form method="POST" action="{{ url_for('quote_win', quote_id=quote.firebase_id) }}"
+          onsubmit="return confirm('Win this quote?\n\nThis will create a Project and an Invoice at the same time.');">
+      <button type="submit" class="btn btn-sm btn-success fw-bold">
+        <i class="bi bi-trophy-fill me-1"></i>Win Quote
+      </button>
+    </form>
+    {% elif already_won %}
+    <span class="btn btn-sm btn-outline-success disabled">
+      <i class="bi bi-check2-circle me-1"></i>Won
+    </span>
+    {% else %}
+      <!-- Fallback: individual convert buttons if only one role -->
+      {% if 'projects' in allowed_pages %}
+      <form method="POST" action="{{ url_for('quote_to_project', quote_id=quote.firebase_id) }}"
+            onsubmit="return confirm('Create a Project from this quote?');">
+        <button type="submit" class="btn btn-sm btn-outline-success">
+          <i class="bi bi-kanban me-1"></i>→ Project
+        </button>
+      </form>
+      {% endif %}
+      {% if 'invoicing' in allowed_pages %}
+      <form method="POST" action="{{ url_for('quote_to_invoice', quote_id=quote.firebase_id) }}"
+            onsubmit="return confirm('Create an Invoice from this quote?');">
+        <button type="submit" class="btn btn-sm btn-teal">
+          <i class="bi bi-receipt me-1"></i>→ Invoice
+        </button>
+      </form>
+      {% endif %}
+    {% endif %}
+
+    <a href="{{ url_for('quote_edit', quote_id=quote.firebase_id) }}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-pencil me-1"></i>Edit
+    </a>
+    <button type="button" class="btn btn-sm btn-outline-danger"
+            onclick="openDeleteModal()">
+      <i class="bi bi-trash me-1"></i>Delete
+    </button>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card-panel mb-3">
+      <h6 class="section-heading">Quote Info</h6>
+      <div class="row g-2">
+        <div class="col-sm-4">
+          <div class="info-label">Client</div>
+          <div class="info-value">{{ quote.get('client_name','—') }}</div>
+        </div>
+        <div class="col-sm-4">
+          <div class="info-label">Salesperson</div>
+          <div class="info-value">{{ quote.get('salesperson','—') }}</div>
+        </div>
+        <div class="col-sm-4">
+          <div class="info-label">Date</div>
+          <div class="info-value">{{ quote.get('date','—') }}</div>
+        </div>
+        <div class="col-sm-4">
+          <div class="info-label">Valid Until</div>
+          <div class="info-value">{{ quote.get('valid_until','—') }}</div>
+        </div>
+        <div class="col-sm-4">
+          <div class="info-label">Expected Completion</div>
+          <div class="info-value">{{ quote.get('expected_completion','—') or '—' }}</div>
+        </div>
+        <div class="col-sm-4">
+          <div class="info-label">Priority</div>
+          <div class="info-value">
+            {% set pv = quote.get('priority','Normal') %}
+            <span class="badge {{ 'bg-danger' if pv == 'Urgent' else ('bg-warning text-dark' if pv == 'High' else ('bg-info text-dark' if pv == 'Low' else 'bg-secondary')) }}">
+              {{ pv or 'Normal' }}
+            </span>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="info-label">Service Types</div>
+          <div class="info-value">
+            {% set svcs = (quote.get('service_types') or ([quote.get('service_type')] if quote.get('service_type') else [])) %}
+            {% if svcs %}
+              {% for svc in svcs %}<span class="badge bg-secondary me-1 mb-1">{{ svc }}</span>{% endfor %}
+            {% else %}—{% endif %}
+          </div>
+        </div>
+        <div class="col-sm-8">
+          <div class="info-label">Project / Scope</div>
+          <div class="info-value">{{ quote.get('project_name','—') }}</div>
+        </div>
+        {% if quote.get('is_expedited') %}
+        <div class="col-12">
+          <div class="alert alert-warning py-2 mb-0">
+            <i class="bi bi-lightning-charge-fill me-1"></i>
+            <strong>Expedited / Rush Order</strong> —
+            {{ quote.get('rush_rate','0') }}% surcharge applied
+            (${{ "{:,.2f}".format(quote.get('rush_fee',0)|float) }})
+          </div>
+        </div>
+        {% endif %}
+        {% if quote.get('description') %}
+        <div class="col-12">
+          <div class="info-label">Description</div>
+          <div class="info-value">{{ quote.get('description') }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Line items -->
+    {% if quote.get('line_items') %}
+    <div class="card-panel mb-3">
+      <h6 class="section-heading">Line Items</h6>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr><th>Description</th><th class="text-end">Qty</th><th class="text-end">Unit Price</th><th class="text-end">Total</th></tr>
+          </thead>
+          <tbody>
+            {% for item in quote.get('line_items',[]) %}
+            <tr>
+              <td>{{ item.get('description','') }}</td>
+              <td class="text-end">{{ item.get('quantity','') }}</td>
+              <td class="text-end">${{ "{:,.2f}".format(item.get('unit_price',0)|float) }}</td>
+              <td class="text-end">${{ "{:,.2f}".format(item.get('total',0)|float) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr class="table-light">
+              <td colspan="3" class="text-end"><strong>Subtotal</strong></td>
+              <td class="text-end">${{ "{:,.2f}".format(quote.get('subtotal',0)|float) }}</td>
+            </tr>
+            <tr class="table-light">
+              <td colspan="3" class="text-end">Tax ({{ quote.get('tax_rate',0) }}%)</td>
+              <td class="text-end">${{ "{:,.2f}".format(quote.get('tax_amount',0)|float) }}</td>
+            </tr>
+            {% if quote.get('is_expedited') and quote.get('rush_fee',0)|float > 0 %}
+            <tr class="table-light">
+              <td colspan="3" class="text-end text-warning">
+                <i class="bi bi-lightning-charge-fill me-1"></i>Rush Fee ({{ quote.get('rush_rate','0') }}%)
+              </td>
+              <td class="text-end text-warning">${{ "{:,.2f}".format(quote.get('rush_fee',0)|float) }}</td>
+            </tr>
+            {% endif %}
+            <tr>
+              <td colspan="3" class="text-end"><strong class="fs-6">Total</strong></td>
+              <td class="text-end"><strong class="text-teal fs-6">${{ "{:,.2f}".format(quote.get('total',0)|float) }}</strong></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if quote.get('notes') or quote.get('terms') %}
+    <div class="card-panel">
+      {% if quote.get('notes') %}
+      <h6 class="section-heading">Notes</h6>
+      <p class="text-muted small">{{ quote.get('notes') }}</p>
+      {% endif %}
+      {% if quote.get('terms') %}
+      <h6 class="section-heading mt-3">Terms &amp; Conditions</h6>
+      <p class="text-muted small">{{ quote.get('terms') }}</p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="col-lg-4">
+    {% if linked_project or linked_invoice %}
+    <div class="card-panel mb-3">
+      <h6 class="section-heading"><i class="bi bi-link-45deg me-1 text-teal"></i>Linked Records</h6>
+      {% if linked_project %}
+      <div class="mb-2">
+        <div class="info-label">Project</div>
+        <div>
+          <a href="{{ url_for('project_detail', project_id=linked_project.firebase_id) }}" class="fw-bold text-teal text-decoration-none">
+            {{ linked_project.get('project_number','') }}
+          </a>
+          <span class="text-muted small ms-1">— {{ linked_project.get('project_name','') }}</span>
+        </div>
+        <span class="badge status-{{ linked_project.get('status','not-started')|lower|replace(' ','-') }}">
+          {{ linked_project.get('status','') }}
+        </span>
+      </div>
+      {% endif %}
+      {% if linked_invoice %}
+      <div>
+        <div class="info-label">Invoice</div>
+        <div>
+          <a href="{{ url_for('invoice_detail', invoice_id=linked_invoice.firebase_id) }}" class="fw-bold text-teal text-decoration-none">
+            {{ linked_invoice.get('meta',{}).get('invoice_number','') }}
+          </a>
+          <span class="text-muted small ms-1">${{ "{:,.2f}".format(linked_invoice.get('meta',{}).get('total',0)|float) }}</span>
+        </div>
+        <span class="badge status-{{ linked_invoice.get('meta',{}).get('status','draft')|lower|replace(' ','-') }}">
+          {{ linked_invoice.get('meta',{}).get('status','') }}
+        </span>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+    <div class="card-panel mb-3">
+      <h6 class="section-heading">Update Status</h6>
+      <form method="POST" action="{{ url_for('quote_status', quote_id=quote.firebase_id) }}">
+        <select name="status" class="form-select form-select-sm mb-2">
+          {% for s in ['Not Started','Draft','Sent','In Review','Approved','On Hold','In Progress','Completed','Converted','Invoiced','Rejected','Expired','Cancelled'] %}
+          <option value="{{ s }}" {{ 'selected' if quote.get('status') == s }}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-sm btn-teal w-100">Update Status</button>
+      </form>
+    </div>
+
+    <div class="card-panel">
+      <h6 class="section-heading">Metadata</h6>
+      <div class="info-label">Created</div>
+      <div class="info-value small">{{ quote.get('created_at','—')[:19]|replace('T',' ') }}</div>
+      <div class="info-label mt-2">Updated</div>
+      <div class="info-value small">{{ quote.get('updated_at','—')[:19]|replace('T',' ') }}</div>
+      <div class="info-label mt-2">Created By</div>
+      <div class="info-value small">{{ quote.get('created_by','—') }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-danger">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill me-2"></i>Delete Quote</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="fw-bold mb-1">You are about to permanently delete:</p>
+        <div class="p-3 bg-light rounded mb-3">
+          <div class="fw-bold text-teal">{{ quote.get('job_number','') }}</div>
+          <div>{{ quote.get('project_name','—') }}</div>
+          <div class="text-muted small">Client: {{ quote.get('client_name','—') }}</div>
+          <div class="text-muted small">Total: ${{ "{:,.0f}".format(quote.get('total',0)|float) }}</div>
+        </div>
+        <p class="text-muted small mb-2">Type the quote number to confirm:</p>
+        <input type="text" id="deleteConfirmInput" class="form-control mb-1"
+               placeholder="{{ quote.get('job_number','') }}"
+               oninput="checkDeleteInput(this)">
+        <div class="text-muted small">Type: <strong>{{ quote.get('job_number','') }}</strong></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+          <i class="bi bi-x-lg me-1"></i>Cancel — Keep Quote
+        </button>
+        <form method="POST" action="{{ url_for('quote_delete', quote_id=quote.firebase_id) }}">
+          <button type="submit" id="deleteConfirmBtn" class="btn btn-danger" disabled>
+            <i class="bi bi-trash me-1"></i>Yes, Delete Permanently
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openDeleteModal() {
+  document.getElementById('deleteConfirmInput').value = '';
+  document.getElementById('deleteConfirmBtn').disabled = true;
+  new bootstrap.Modal(document.getElementById('deleteModal')).show();
+}
+function checkDeleteInput(input) {
+  const expected = '{{ quote.get("job_number","") }}';
+  document.getElementById('deleteConfirmBtn').disabled = input.value.trim() !== expected;
+}
+</script>
+{% endblock %}

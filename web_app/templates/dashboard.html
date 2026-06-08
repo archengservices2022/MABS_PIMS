@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── Alert Banners ─────────────────────────────────────────────────────────── -->
+{% if overdue_count > 0 or expiring_count > 0 %}
+<div class="d-flex flex-column gap-2 mb-3">
+  {% if overdue_count > 0 %}
+  <div class="alert alert-danger d-flex align-items-center justify-content-between py-2 mb-0">
+    <div>
+      <i class="bi bi-exclamation-triangle-fill me-2"></i>
+      <strong>{{ overdue_count }} overdue invoice{{ 's' if overdue_count != 1 }}</strong>
+      — payment past due date.
+      {% if 'invoicing' in allowed_pages %}
+      <a href="{{ url_for('invoicing', status='Overdue') }}" class="alert-link ms-2">View →</a>
+      {% endif %}
+    </div>
+    {% if 'invoicing' in allowed_pages %}
+    <form method="POST" action="{{ url_for('send_overdue_reminders') }}" class="ms-3">
+      <button type="submit" class="btn btn-sm btn-danger"
+              onclick="return confirm('Send reminder emails to all {{ overdue_count }} overdue clients?');">
+        <i class="bi bi-envelope-exclamation me-1"></i>Send Reminders
+      </button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if expiring_count > 0 %}
+  <div class="alert alert-warning d-flex align-items-center py-2 mb-0">
+    <i class="bi bi-clock-fill me-2"></i>
+    <strong>{{ expiring_count }} quote{{ 's' if expiring_count != 1 }}</strong>
+    expiring within 7 days — follow up now.
+    {% if 'quotes' in allowed_pages %}
+    <a href="{{ url_for('quotes') }}" class="alert-link ms-2">View quotes →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ── Quick Actions ────────────────────────────────────────────────────────── -->
+<div class="d-flex align-items-center gap-2 mb-4 flex-wrap">
+  <span class="text-muted small fw-500 me-1">Quick Actions:</span>
+  {% if 'quotes' in allowed_pages %}
+  <a href="{{ url_for('quotes_new') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-file-earmark-plus me-1"></i>New Quote
+  </a>
+  {% endif %}
+  {% if 'projects' in allowed_pages %}
+  <a href="{{ url_for('project_new') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-plus-square me-1"></i>New Project
+  </a>
+  {% endif %}
+  {% if 'invoicing' in allowed_pages %}
+  <a href="{{ url_for('invoice_new') }}" class="btn btn-sm btn-teal">
+    <i class="bi bi-receipt me-1"></i>New Invoice
+  </a>
+  {% endif %}
+</div>
+
+<!-- ── KPI Cards ─────────────────────────────────────────────────────────────── -->
+<div class="row g-3 mb-3">
+
+  <div class="col-6 col-xl-3">
+    <div class="kpi-card kpi-teal">
+      <div class="kpi-top">
+        <span class="kpi-label">Total Invoiced</span>
+        <i class="bi bi-receipt-cutoff kpi-icon-sm"></i>
+      </div>
+      <div class="kpi-value">${{ "{:,.0f}".format(total_invoiced) }}</div>
+      <div class="kpi-sub">{{ total_invoices }} invoice{{ 's' if total_invoices != 1 else '' }}</div>
+    </div>
+  </div>
+
+  <div class="col-6 col-xl-3">
+    {% set rate = ((total_paid / total_invoiced * 100) if total_invoiced > 0 else 0)|round|int %}
+    <div class="kpi-card kpi-green">
+      <div class="kpi-top">
+        <span class="kpi-label">Collected</span>
+        <i class="bi bi-check-circle-fill kpi-icon-sm"></i>
+      </div>
+      <div class="kpi-value">${{ "{:,.0f}".format(total_paid) }}</div>
+      <div class="kpi-sub">{{ rate }}% collection rate</div>
+      <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ rate }}%"></div></div>
+    </div>
+  </div>
+
+  <div class="col-6 col-xl-3">
+    <div class="kpi-card kpi-amber">
+      <div class="kpi-top">
+        <span class="kpi-label">Outstanding</span>
+        <i class="bi bi-hourglass-split kpi-icon-sm"></i>
+      </div>
+      <div class="kpi-value">${{ "{:,.0f}".format(total_outstanding) }}</div>
+      <div class="kpi-sub">pending payment</div>
+    </div>
+  </div>
+
+  <div class="col-6 col-xl-3">
+    <div class="kpi-card kpi-blue">
+      <div class="kpi-top">
+        <span class="kpi-label">Active Projects</span>
+        <i class="bi bi-kanban-fill kpi-icon-sm"></i>
+      </div>
+      <div class="kpi-value">{{ active_projects }}</div>
+      <div class="kpi-sub">{{ open_quotes }} open quote{{ 's' if open_quotes != 1 else '' }}</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Revenue Chart + Recent Invoices ─────────────────────────────────────── -->
+<div class="row g-3 mb-3">
+
+  <div class="col-lg-7">
+    <div class="card-panel" style="height:100%;">
+      <div class="panel-header d-flex justify-content-between align-items-center">
+        <h6 class="panel-title mb-0">Revenue Overview — Last 6 Months</h6>
+        {% if 'invoicing' in allowed_pages %}
+        <a href="{{ url_for('invoicing') }}" class="text-teal small">View invoices →</a>
+        {% endif %}
+      </div>
+      <canvas id="revenueChart" height="190"></canvas>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card-panel" style="height:100%;">
+      <div class="panel-header d-flex justify-content-between align-items-center">
+        <h6 class="panel-title mb-0">Recent Invoices</h6>
+        {% if 'invoicing' in allowed_pages %}
+        <a href="{{ url_for('invoicing') }}" class="text-teal small">View all →</a>
+        {% endif %}
+      </div>
+
+      {% for inv in recent_invoices %}
+      {% set meta = inv.get('meta', {}) %}
+      <a href="{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}"
+         class="list-item text-decoration-none" style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="d-flex align-items-center gap-2">
+          <div class="inv-avatar">{{ meta.get('client_name','?')[0]|upper }}</div>
+          <div>
+            <div class="list-item-title">{{ meta.get('invoice_number','N/A') }}</div>
+            <div class="list-item-sub">{{ meta.get('client_name','—') }}</div>
+          </div>
+        </div>
+        <div class="text-end">
+          <div class="list-item-amount">${{ "{:,.0f}".format(meta.get('total',0)|float) }}</div>
+          <span class="badge status-{{ meta.get('status','Draft')|lower|replace(' ','-') }}">
+            {{ meta.get('status','Draft') }}
+          </span>
+        </div>
+      </a>
+      {% else %}
+      <div class="empty-state py-4">
+        <i class="bi bi-receipt fs-2 d-block mb-2"></i>No invoices yet.
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Recent Projects ───────────────────────────────────────────────────────── -->
+<div class="card-panel">
+  <div class="panel-header d-flex justify-content-between align-items-center">
+    <h6 class="panel-title mb-0">Recent Projects</h6>
+    {% if 'projects' in allowed_pages %}
+    <a href="{{ url_for('projects') }}" class="text-teal small">View all →</a>
+    {% endif %}
+  </div>
+
+  {% if recent_projects %}
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>Project #</th>
+          <th>Name</th>
+          <th>Client</th>
+          <th>Status</th>
+          <th class="text-end">Contract Value</th>
+          <th class="text-end">Amount Paid</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in recent_projects %}
+        <tr onclick="location.href='{{ url_for('project_detail', project_id=p.firebase_id) }}'"
+            style="cursor:pointer;">
+          <td><span class="fw-bold text-teal">{{ p.get('project_number','—') }}</span></td>
+          <td class="fw-500">{{ p.get('project_name','—') }}</td>
+          <td class="text-muted">{{ p.get('client_name','—') }}</td>
+          <td>
+            <span class="badge status-{{ p.get('status','Not Started')|lower|replace(' ','-') }}">
+              {{ p.get('status','Not Started') }}
+            </span>
+          </td>
+          <td class="text-end fw-bold">${{ "{:,.0f}".format(p.get('contract_value',0)|float) }}</td>
+          <td class="text-end text-success fw-bold">${{ "{:,.0f}".format(p.get('amount_paid',0)|float) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state py-4">
+    <i class="bi bi-kanban fs-2 d-block mb-2"></i>No projects yet.
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const labels = {{ chart_labels|safe }};
+const data   = {{ chart_data|safe }};
+
+const ctx = document.getElementById('revenueChart').getContext('2d');
+const grad = ctx.createLinearGradient(0, 0, 0, 300);
+grad.addColorStop(0, 'rgba(15,118,110,0.22)');
+grad.addColorStop(1, 'rgba(15,118,110,0)');
+
+new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: labels.length ? labels : ['—'],
+    datasets: [{
+      label: 'Revenue',
+      data: data.length ? data : [0],
+      backgroundColor: grad,
+      borderColor: '#0F766E',
+      borderWidth: 2.5,
+      pointBackgroundColor: '#fff',
+      pointBorderColor: '#0F766E',
+      pointBorderWidth: 2,
+      pointRadius: 5,
+      pointHoverRadius: 7,
+      fill: true,
+      tension: 0.4,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#0F172A',
+        titleFont: { size: 12 },
+        bodyFont: { size: 13, weight: '700' },
+        callbacks: { label: c => ' $' + c.parsed.y.toLocaleString() }
+      }
+    },
+    scales: {
+      x: {
+        grid: { display: false },
+        ticks: { font: { size: 11 }, color: '#94A3B8' }
+      },
+      y: {
+        beginAtZero: true,
+        grid: { color: 'rgba(0,0,0,.04)', drawBorder: false },
+        ticks: {
+          font: { size: 11 }, color: '#94A3B8',
+          callback: v => '$' + (v >= 1000 ? (v/1000).toFixed(0)+'k' : v)
+        }
+      }
+    }
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,320 @@
+{% extends "base.html" %}
+{% set meta = invoice.get('meta', {}) %}
+{% block title %}Invoice {{ meta.get('invoice_number','') }}{% endblock %}
+{% block page_title %}Invoice Detail{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <a href="{{ url_for('invoicing') }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left"></i>
+    </a>
+    <h5 class="mb-0">{{ meta.get('invoice_number','Invoice') }}</h5>
+    <button class="btn btn-xs btn-outline-secondary" title="Copy invoice number"
+            onclick="copyNumber('{{ meta.get('invoice_number','') }}', this)">
+      <i class="bi bi-copy"></i>
+    </button>
+    <span class="badge status-{{ meta.get('status','Draft')|lower|replace(' ','-') }}">
+      {{ meta.get('status','Draft') }}
+    </span>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-printer me-1"></i>Print / PDF
+    </button>
+    <form method="POST" action="{{ url_for('invoice_send', invoice_id=invoice.firebase_id) }}"
+          onsubmit="return confirm('Send this invoice to {{ meta.get("client_name","client") }}?');">
+      <button type="submit" class="btn btn-sm btn-teal">
+        <i class="bi bi-envelope me-1"></i>Send Email
+      </button>
+    </form>
+    <a href="{{ url_for('invoice_edit', invoice_id=invoice.firebase_id) }}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-pencil me-1"></i>Edit
+    </a>
+    <button type="button" class="btn btn-sm btn-outline-danger"
+            onclick="openDeleteModal()">
+      <i class="bi bi-trash me-1"></i>Delete
+    </button>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <!-- Invoice preview card -->
+    <div class="card-panel mb-3 invoice-preview">
+      <div class="d-flex justify-content-between mb-4">
+        <div>
+          <div class="fw-bold fs-5">{{ company.name }}</div>
+          <div class="text-muted small" style="white-space:pre-line;">{{ company.address }}</div>
+          <div class="text-muted small">{{ company.phone }}</div>
+          <div class="text-muted small">{{ company.email }}</div>
+        </div>
+        <div class="text-end">
+          <div class="text-teal fw-bold fs-4">INVOICE</div>
+          <div class="fw-bold">{{ meta.get('invoice_number','') }}</div>
+          <div class="text-muted small">Date: {{ meta.get('invoice_date','—') }}</div>
+          <div class="text-muted small">Due: {{ meta.get('due_date','—') }}</div>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <div class="text-muted small fw-bold mb-1">BILL TO</div>
+        <div class="fw-bold">{{ meta.get('client_name','—') }}</div>
+        {% if meta.get('project_number') %}
+        <div class="text-muted small">Project: {{ meta.get('project_number') }}</div>
+        {% endif %}
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr><th>Description</th><th class="text-end">Qty</th><th class="text-end">Unit Price</th><th class="text-end">Amount</th></tr>
+          </thead>
+          <tbody>
+            {% for item in invoice.get('line_items',[]) %}
+            <tr>
+              <td>{{ item.get('description','') }}</td>
+              <td class="text-end">{{ item.get('quantity','') }}</td>
+              <td class="text-end">${{ "{:,.2f}".format(item.get('unit_price',0)|float) }}</td>
+              <td class="text-end">${{ "{:,.2f}".format(item.get('amount',0)|float) }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-muted text-center">No line items.</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr class="table-light">
+              <td colspan="3" class="text-end">Subtotal</td>
+              <td class="text-end">${{ "{:,.2f}".format(meta.get('subtotal',0)|float) }}</td>
+            </tr>
+            {% if meta.get('tax_rate',0)|float > 0 %}
+            <tr class="table-light">
+              <td colspan="3" class="text-end">Tax ({{ meta.get('tax_rate','0') }}%)</td>
+              <td class="text-end">${{ "{:,.2f}".format(meta.get('tax_amount',0)|float) }}</td>
+            </tr>
+            {% endif %}
+            <tr>
+              <td colspan="3" class="text-end"><strong>Total</strong></td>
+              <td class="text-end"><strong class="text-teal">${{ "{:,.2f}".format(meta.get('total',0)|float) }}</strong></td>
+            </tr>
+            <tr>
+              <td colspan="3" class="text-end">Amount Paid</td>
+              <td class="text-end text-success">${{ "{:,.2f}".format(meta.get('amount_paid',0)|float) }}</td>
+            </tr>
+            {% set balance = meta.get('total',0)|float - meta.get('amount_paid',0)|float %}
+            <tr>
+              <td colspan="3" class="text-end"><strong>Balance Due</strong></td>
+              <td class="text-end"><strong class="{{ 'text-danger' if balance > 0 else 'text-success' }}">${{ "{:,.2f}".format(balance) }}</strong></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {% if meta.get('notes') or meta.get('terms') %}
+      <div class="mt-4 pt-3 border-top">
+        {% if meta.get('notes') %}
+        <div class="text-muted small"><strong>Notes:</strong> {{ meta.get('notes') }}</div>
+        {% endif %}
+        {% if meta.get('terms') %}
+        <div class="text-muted small mt-1"><strong>Terms:</strong> {{ meta.get('terms') }}</div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Payment Log -->
+  {% set payment_log = invoice.get('payment_log', []) %}
+  <div class="col-12">
+    <div class="card-panel mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="section-heading mb-0"><i class="bi bi-cash-stack me-1 text-teal"></i>Payments Received</h6>
+        <span class="text-muted small">{{ payment_log|length }} payment{{ 's' if payment_log|length != 1 }}</span>
+      </div>
+
+      <!-- Record Payment form -->
+      <form method="POST" action="{{ url_for('payment_add', invoice_id=invoice.firebase_id) }}"
+            class="row g-2 align-items-end mb-3 pb-3 border-bottom">
+        <div class="col-md-2">
+          <label class="form-label form-label-sm">Amount ($)</label>
+          <input type="number" name="amount" class="form-control form-control-sm"
+                 placeholder="0.00" min="0.01" step="0.01" required>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label form-label-sm">Date</label>
+          <input type="date" name="date" class="form-control form-control-sm"
+                 value="{{ today_date }}">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label form-label-sm">Method</label>
+          <select name="method" class="form-select form-select-sm">
+            <option value="">— Select —</option>
+            {% for m in ['Check','Wire Transfer','ACH','Cash','Zelle','Credit Card','Other'] %}
+            <option value="{{ m }}">{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label form-label-sm">Reference #</label>
+          <input type="text" name="reference" class="form-control form-control-sm" placeholder="Cheque / Wire #">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label form-label-sm">Notes</label>
+          <input type="text" name="notes" class="form-control form-control-sm" placeholder="Optional">
+        </div>
+        <div class="col-md-2">
+          <button type="submit" class="btn btn-sm btn-success w-100">
+            <i class="bi bi-plus-lg me-1"></i>Record Payment
+          </button>
+        </div>
+      </form>
+
+      {% if payment_log %}
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Method</th>
+              <th>Reference</th>
+              <th>Notes</th>
+              <th class="text-end">Amount</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in payment_log %}
+            <tr>
+              <td>{{ p.get('date','—') }}</td>
+              <td>{{ p.get('method','—') or '—' }}</td>
+              <td class="text-muted small">{{ p.get('reference','—') or '—' }}</td>
+              <td class="text-muted small">{{ p.get('notes','') or '' }}</td>
+              <td class="text-end text-success fw-bold">${{ "{:,.2f}".format(p.get('amount',0)|float) }}</td>
+              <td>
+                <form method="POST"
+                      action="{{ url_for('payment_delete', invoice_id=invoice.firebase_id, idx=loop.index0) }}"
+                      onsubmit="return confirm('Remove this payment entry?');">
+                  <button type="submit" class="btn btn-xs btn-outline-danger">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light fw-bold">
+            <tr>
+              <td colspan="4" class="text-end">Total Collected</td>
+              <td class="text-end text-success">${{ "{:,.2f}".format(meta.get('amount_paid',0)|float) }}</td>
+              <td></td>
+            </tr>
+            {% set balance = meta.get('total',0)|float - meta.get('amount_paid',0)|float %}
+            <tr>
+              <td colspan="4" class="text-end">Balance Due</td>
+              <td class="text-end {{ 'text-danger' if balance > 0 else 'text-success' }}">${{ "{:,.2f}".format(balance) }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-muted small text-center py-2">No payments recorded yet. Use the form above to log each payment received.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card-panel mb-3">
+      <h6 class="section-heading">Update Status</h6>
+      <form method="POST" action="{{ url_for('invoice_status', invoice_id=invoice.firebase_id) }}">
+        <select name="status" class="form-select form-select-sm mb-2">
+          {% for s in ['Draft','Sent','Viewed','Paid','Partial','Overdue','Cancelled'] %}
+          <option value="{{ s }}" {{ 'selected' if meta.get('status','Draft') == s }}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <div class="mb-2">
+          <label class="form-label form-label-sm">Amount Paid ($)</label>
+          <input type="number" name="amount_paid" class="form-control form-control-sm"
+                 value="{{ meta.get('amount_paid','0') }}" min="0" step="0.01">
+        </div>
+        <button type="submit" class="btn btn-sm btn-teal w-100">Update</button>
+      </form>
+    </div>
+
+    <div class="card-panel">
+      <h6 class="section-heading">Details</h6>
+      {% if linked_project %}
+      <div class="info-label">Project</div>
+      <div class="info-value">
+        <a href="{{ url_for('project_detail', project_id=linked_project.firebase_id) }}" class="text-teal fw-bold text-decoration-none">
+          {{ linked_project.get('project_number','') }}
+        </a>
+        <span class="text-muted small d-block">{{ linked_project.get('project_name','') }}</span>
+      </div>
+      <div class="info-label mt-2">Payment Method</div>
+      <div class="info-value">{{ meta.get('payment_method','—') }}</div>
+      <div class="info-label mt-2">Created</div>
+      <div class="info-value small">{{ meta.get('created_at','—')[:19]|replace('T',' ') }}</div>
+      <div class="info-label mt-2">Updated</div>
+      <div class="info-value small">{{ meta.get('updated_at','—')[:19]|replace('T',' ') }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-danger">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill me-2"></i>Delete Invoice</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="fw-bold mb-1">You are about to permanently delete:</p>
+        <div class="p-3 bg-light rounded mb-3">
+          <div class="fw-bold text-teal">{{ meta.get('invoice_number','') }}</div>
+          <div class="text-muted small">Client: {{ meta.get('client_name','—') }}</div>
+          <div class="text-muted small">Total: ${{ "{:,.2f}".format(meta.get('total',0)|float) }}</div>
+          <div class="text-muted small">Status: {{ meta.get('status','—') }}</div>
+        </div>
+        <p class="text-muted small mb-2">Type the invoice number to confirm:</p>
+        <input type="text" id="deleteConfirmInput" class="form-control mb-1"
+               placeholder="{{ meta.get('invoice_number','') }}"
+               oninput="checkDeleteInput(this)">
+        <div class="text-muted small">Type: <strong>{{ meta.get('invoice_number','') }}</strong></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+          <i class="bi bi-x-lg me-1"></i>Cancel — Keep Invoice
+        </button>
+        <form method="POST" action="{{ url_for('invoice_delete', invoice_id=invoice.firebase_id) }}">
+          <button type="submit" id="deleteConfirmBtn" class="btn btn-danger" disabled>
+            <i class="bi bi-trash me-1"></i>Yes, Delete Permanently
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openDeleteModal() {
+  document.getElementById('deleteConfirmInput').value = '';
+  document.getElementById('deleteConfirmBtn').disabled = true;
+  new bootstrap.Modal(document.getElementById('deleteModal')).show();
+}
+function checkDeleteInput(input) {
+  const expected = '{{ meta.get("invoice_number","") }}';
+  document.getElementById('deleteConfirmBtn').disabled = input.value.trim() !== expected;
+}
+function copyNumber(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    const icon = btn.querySelector('i');
+    icon.className = 'bi bi-check2';
+    setTimeout(() => icon.className = 'bi bi-copy', 1500);
+  });
+}
+</script>
+{% endblock %}
