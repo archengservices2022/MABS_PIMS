@@ -124,6 +124,17 @@
             </div>
           </div>
           <div class="col-md-4">
+            <label class="form-label">Job Type</label>
+            <select name="job_type" class="form-select">
+              <option value="">-- Select Job Type --</option>
+              {% for jt in ['Engineering Design','Construction','Inspection','Consultation',
+                            'Maintenance','Research','Drafting','Peer Review','Site Visit',
+                            'Report Preparation','Permit Drawings','Other'] %}
+              <option value="{{ jt }}" {{ 'selected' if quote and quote.get('job_type') == jt }}>{{ jt }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
             <label class="form-label">Priority</label>
             <select name="priority" class="form-select">
               {% for pv in ['Low','Normal','High','Urgent'] %}

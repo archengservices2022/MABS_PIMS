@@ -241,6 +241,7 @@ def inject_globals():
         "allowed_pages": ROLE_PAGES.get(normalize_role(role), []),
         "company":     company_info(),
         "now":         datetime.now(),
+        "timedelta":   timedelta,
     }
 
 # ── Routes: Auth ──────────────────────────────────────────────────────────────
@@ -295,6 +296,7 @@ def index():
 @app.route("/dashboard")
 @role_required("dashboard")
 def dashboard():
+    _auto_flag_overdue()
     invoices = fb_get("/invoices") or {}
     projects = fb_get("/projects") or {}
     quotes   = fb_get("/job_forms") or {}
@@ -381,6 +383,29 @@ def dashboard():
                          and q.get("valid_until", "")
                          and today_str <= q.get("valid_until", "") <= week_str)
 
+    # ── Action queue ──────────────────────────────────────────────────────────
+    followup_quotes = sorted(
+        [q for q in quot_list
+         if isinstance(q, dict)
+         and q.get("status", "") not in _QTERMINAL
+         and q.get("follow_up_date", "")
+         and q.get("follow_up_date", "") <= today_str],
+        key=lambda x: x.get("follow_up_date", "")
+    )[:8]
+
+    approved_quotes = sorted(
+        [q for q in quot_list
+         if isinstance(q, dict)
+         and q.get("status", "") == "Approved"],
+        key=lambda x: x.get("date", x.get("created_at", "")),
+        reverse=True
+    )[:6]
+
+    # Active projects by status for pipeline view
+    pipeline_statuses = ["Not Started", "In Progress", "On Hold"]
+    pipeline = {st: [p for p in proj_list if isinstance(p, dict) and p.get("status", "Not Started") == st]
+                for st in pipeline_statuses}
+
     return render_template("dashboard.html",
         total_invoiced=total_invoiced,
         total_paid=total_paid,
@@ -394,6 +419,9 @@ def dashboard():
         chart_data=json.dumps(chart_data),
         overdue_count=overdue_count,
         expiring_count=expiring_count,
+        followup_quotes=followup_quotes,
+        approved_quotes=approved_quotes,
+        pipeline=pipeline,
         inv_status_labels=json.dumps(list(inv_status_counts.keys())),
         inv_status_data=json.dumps(list(inv_status_counts.values())),
         proj_status_labels=json.dumps(list(proj_status_counts.keys())),
@@ -979,8 +1007,10 @@ def project_new():
         return redirect(url_for("projects", tab="all-projects"))
     sales_people = [p.get("name","") for p in _load_sales_people() if p.get("name","")]
     prefill_quote = request.args.get("from_quote", "")
+    next_proj_num = _next_project_number()
     return render_template("project_form.html", project=None, clients=clients,
-                           sales_people=sales_people, prefill_quote=prefill_quote, is_new=True)
+                           sales_people=sales_people, prefill_quote=prefill_quote,
+                           is_new=True, next_proj_num=next_proj_num)
 
 @app.route("/projects/<project_id>", methods=["GET"])
 @role_required("projects")
@@ -1096,21 +1126,11 @@ def project_status(project_id):
 @app.route("/projects/<project_id>/stage/<int:stage_idx>/invoice", methods=["GET"])
 @role_required("projects")
 def project_stage_invoice(project_id, stage_idx):
-    """Jump to New Invoice prefilled for the next pending payment-plan stage.
-
-    Enforces the same sequential rule server-side as the UI shows: you can only
-    generate an invoice for the first stage that is still Pending — later stages
-    stay locked until the ones before them are invoiced.
-    """
+    """Kept for backwards compatibility — redirects to the old form flow."""
     project = fb_get(f"/projects/{project_id}") or {}
     stages = project.get("payment_stages") or []
     if not (0 <= stage_idx < len(stages)) or not isinstance(stages[stage_idx], dict):
         abort(404)
-    first_pending = next((i for i, s in enumerate(stages) if s.get("status") == "Pending"), None)
-    if first_pending is None or stage_idx != first_pending:
-        flash("That stage isn't ready to invoice yet — complete the earlier stages first.", "warning")
-        return redirect(url_for("project_detail", project_id=project_id))
-
     stage = stages[stage_idx]
     return redirect(url_for("invoice_new",
                             project=project.get("project_number", ""),
@@ -1119,12 +1139,180 @@ def project_stage_invoice(project_id, stage_idx):
                             stage_name=stage.get("name", ""),
                             stage_amount=stage.get("amount", 0)))
 
+def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = False):
+    """Create an invoice for a payment stage instantly — no form needed.
+    Returns (invoice_id, error_message). If mark_paid=True, also marks it Paid
+    and syncs the project payment totals.
+    """
+    project = fb_get(f"/projects/{project_id}") or {}
+    stages  = project.get("payment_stages") or []
+    if not (0 <= stage_idx < len(stages)) or not isinstance(stages[stage_idx], dict):
+        return None, "Stage not found."
+    first_pending = next((i for i, s in enumerate(stages) if s.get("status") == "Pending"), None)
+    if first_pending is None or stage_idx != first_pending:
+        return None, "That stage isn't ready yet — complete earlier stages first."
+
+    stage      = stages[stage_idx]
+    amount     = _safe_float(stage.get("amount", 0))
+    proj_num   = project.get("project_number", "")
+    client     = project.get("client_name", "")
+    now_str    = datetime.now(timezone.utc).isoformat()
+    today      = datetime.now().strftime("%Y-%m-%d")
+    due_date   = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+    inv_num    = _next_invoice_number()
+    inv_status = "Paid" if mark_paid else "Draft"
+    amt_paid   = str(amount) if mark_paid else "0"
+
+    invoice_data = {
+        "meta": {
+            "invoice_number":      inv_num,
+            "invoice_date":        today,
+            "due_date":            due_date,
+            "client_name":         client,
+            "project_number":      proj_num,
+            "status":              inv_status,
+            "subtotal":            str(amount),
+            "tax_rate":            "0",
+            "tax_amount":          "0",
+            "total":               str(amount),
+            "amount_paid":         amt_paid,
+            "notes":               "",
+            "terms":               "",
+            "payment_method":      "",
+            "payment_stage_index": stage_idx,
+            "payment_stage":       stage.get("name", ""),
+            "created_at":          now_str,
+            "updated_at":          now_str,
+            "created_by":          session.get("user_email", ""),
+        },
+        "line_items": [{
+            "description": stage.get("name", f"Payment Stage {stage_idx + 1}"),
+            "quantity":    "1",
+            "unit_price":  str(amount),
+            "amount":      str(amount),
+        }],
+    }
+    iid = fb_push("/invoices", invoice_data)
+    stage_status = "Paid" if mark_paid else "Invoiced"
+    _mark_project_stage(proj_num, stage_idx, stage_status, invoice_id=iid)
+    if mark_paid:
+        _sync_project_payment(proj_num)
+        _auto_complete_project_if_paid(proj_num)
+        _upsert_revenue_entry(iid, invoice_data["meta"])
+    return iid, None
+
+@app.route("/projects/<project_id>/stage/<int:stage_idx>/create-invoice", methods=["POST"])
+@role_required("projects")
+def project_stage_create_invoice(project_id, stage_idx):
+    """One-click: create invoice for a stage instantly and go straight to it."""
+    iid, err = _create_stage_invoice(project_id, stage_idx, mark_paid=False)
+    if err:
+        flash(err, "warning")
+        return redirect(url_for("project_detail", project_id=project_id))
+    flash("Invoice created.", "success")
+    return redirect(url_for("invoice_detail", invoice_id=iid))
+
+@app.route("/projects/<project_id>/stage/<int:stage_idx>/mark-paid", methods=["POST"])
+@role_required("projects")
+def project_stage_mark_paid(project_id, stage_idx):
+    """One-click: create invoice + mark Paid immediately."""
+    iid, err = _create_stage_invoice(project_id, stage_idx, mark_paid=True)
+    if err:
+        flash(err, "warning")
+        return redirect(url_for("project_detail", project_id=project_id))
+    flash("Stage marked as paid and invoice created.", "success")
+    return redirect(url_for("project_detail", project_id=project_id))
+
+@app.route("/projects/<project_id>/stage/<int:stage_idx>/set-amount", methods=["POST"])
+@role_required("projects")
+def project_stage_set_amount(project_id, stage_idx):
+    data = fb_get(f"/projects/{project_id}")
+    if not data:
+        abort(404)
+    stages = data.get("payment_stages") or []
+    if not (0 <= stage_idx < len(stages)) or not isinstance(stages[stage_idx], dict):
+        flash("Stage not found.", "danger")
+        return redirect(url_for("project_detail", project_id=project_id))
+    if stages[stage_idx].get("status") != "Pending":
+        flash("Cannot edit amount on an already-invoiced stage.", "warning")
+        return redirect(url_for("project_detail", project_id=project_id))
+    try:
+        new_amount = round(float(str(request.form.get("amount", "0")).replace(",", "")), 2)
+    except (ValueError, TypeError):
+        flash("Invalid amount.", "danger")
+        return redirect(url_for("project_detail", project_id=project_id))
+    stages[stage_idx]["amount"] = new_amount
+
+    # Auto-balance: spread remaining balance equally across all OTHER pending stages
+    contract_value = _safe_float(data.get("contract_value", 0))
+    locked_sum = sum(
+        _safe_float(s.get("amount", 0))
+        for i, s in enumerate(stages)
+        if i != stage_idx and isinstance(s, dict) and s.get("status") != "Pending"
+    )
+    other_pending = [
+        i for i, s in enumerate(stages)
+        if i != stage_idx and isinstance(s, dict) and s.get("status") == "Pending"
+    ]
+    if other_pending and contract_value > 0:
+        remaining = round(contract_value - locked_sum - new_amount, 2)
+        per = round(remaining / len(other_pending), 2)
+        allocated = 0
+        for j, idx in enumerate(other_pending):
+            if j < len(other_pending) - 1:
+                stages[idx]["amount"] = per
+                allocated += per
+            else:
+                stages[idx]["amount"] = round(remaining - allocated, 2)
+
+    fb_update(f"/projects/{project_id}", {
+        "payment_stages": stages,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    flash(f"Stage updated to ${new_amount:,.2f} — remaining stages adjusted to balance.", "success")
+    return redirect(url_for("project_detail", project_id=project_id))
+
 @app.route("/projects/<project_id>/delete", methods=["POST"])
 @role_required("projects")
 def project_delete(project_id):
     fb_delete(f"/projects/{project_id}")
     flash("Project deleted.", "success")
     return redirect(url_for("projects"))
+
+@app.route("/projects/<project_id>/notes/add", methods=["POST"])
+@role_required("projects")
+def project_note_add(project_id):
+    text = request.form.get("note_text", "").strip()
+    if not text:
+        flash("Note cannot be empty.", "warning")
+        return redirect(url_for("project_detail", project_id=project_id) + "#tab-notes")
+    project = fb_get(f"/projects/{project_id}") or {}
+    log = project.get("activity_log") or []
+    if not isinstance(log, list):
+        log = []
+    log.append({
+        "text":       text,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": session.get("user_name") or session.get("user_email", ""),
+    })
+    fb_update(f"/projects/{project_id}", {
+        "activity_log": log,
+        "updated_at":   datetime.now(timezone.utc).isoformat(),
+    })
+    return redirect(url_for("project_detail", project_id=project_id) + "#tab-notes")
+
+@app.route("/projects/<project_id>/notes/<int:idx>/delete", methods=["POST"])
+@role_required("projects")
+def project_note_delete(project_id, idx):
+    project = fb_get(f"/projects/{project_id}") or {}
+    log = project.get("activity_log") or []
+    if isinstance(log, list) and 0 <= idx < len(log):
+        log.pop(idx)
+        fb_update(f"/projects/{project_id}", {
+            "activity_log": log,
+            "updated_at":   datetime.now(timezone.utc).isoformat(),
+        })
+    return redirect(url_for("project_detail", project_id=project_id) + "#tab-notes")
 
 # ── Routes: Projects Export ───────────────────────────────────────────────────
 def _filter_projects_export(items):
@@ -1299,6 +1487,7 @@ def projects_export_pdf():
 @app.route("/invoicing")
 @role_required("invoicing")
 def invoicing():
+    _auto_flag_overdue()
     raw = fb_get("/invoices") or {}
     items = []
     for iid, idata in (raw.items() if isinstance(raw, dict) else []):
@@ -1425,9 +1614,19 @@ def invoice_detail(invoice_id):
                     linked_project = pdata
                 linked_projects.append(pdata)
 
+    # Source quote — via the linked project's source_quote field
+    source_quote = None
+    if linked_project:
+        sq_id = linked_project.get("source_quote")
+        if sq_id:
+            source_quote = fb_get(f"/job_forms/{sq_id}") or None
+            if source_quote:
+                source_quote["firebase_id"] = sq_id
+
     return render_template("invoice_detail.html", invoice=data, company=company_info(),
                            today_date=datetime.now().strftime("%Y-%m-%d"),
-                           linked_project=linked_project, linked_projects=linked_projects)
+                           linked_project=linked_project, linked_projects=linked_projects,
+                           source_quote=source_quote)
 
 @app.route("/invoicing/<invoice_id>/edit", methods=["GET", "POST"])
 @role_required("invoicing")
@@ -1454,14 +1653,20 @@ def invoice_edit(invoice_id):
 @app.route("/invoicing/<invoice_id>/status", methods=["POST"])
 @role_required("invoicing")
 def invoice_status(invoice_id):
-    new_status  = request.form.get("status", "Draft")
-    amount_paid = request.form.get("amount_paid", "")
+    new_status       = request.form.get("status", "Draft")
+    amount_paid      = request.form.get("amount_paid", "")
+    payment_method   = request.form.get("payment_method", "")
+    payment_ref      = request.form.get("payment_reference", "")
     updates = {
         "meta/status":     new_status,
         "meta/updated_at": datetime.now(timezone.utc).isoformat()
     }
     if amount_paid:
         updates["meta/amount_paid"] = amount_paid
+    if payment_method:
+        updates["meta/payment_method"] = payment_method
+    if payment_ref:
+        updates["meta/payment_reference"] = payment_ref
     fb_update(f"/invoices/{invoice_id}", updates)
 
     # ── Auto-sync: re-read fresh meta then sync project + balance sheet ──────
@@ -2549,8 +2754,40 @@ def _sync_project_payment(project_number: str) -> None:
                             changed = True
                     if changed:
                         updates["payment_stages"] = stages
+                # Auto-advance project status based on payment received
+                contract_val   = _safe_float(pdata.get("contract_value", 0))
+                current_status = pdata.get("status", "Not Started")
+                if current_status not in ("Completed", "Cancelled"):
+                    if contract_val > 0 and total_paid >= contract_val - 0.01:
+                        updates["status"] = "Completed"
+                    elif total_paid > 0 and current_status == "Not Started":
+                        updates["status"] = "In Progress"
+
                 fb_update(f"/projects/{pid}", updates)
                 break
+
+def _auto_flag_overdue() -> int:
+    """Flip any Sent/Viewed/Partial invoice whose due_date < today to Overdue.
+    Returns the number of invoices updated.
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    raw = fb_get("/invoices") or {}
+    count = 0
+    if not isinstance(raw, dict):
+        return 0
+    for iid, inv in raw.items():
+        if not isinstance(inv, dict):
+            continue
+        m = inv.get("meta", {})
+        status   = m.get("status", "")
+        due_date = m.get("due_date", "")
+        if status in ("Sent", "Viewed", "Partial") and due_date and due_date < today:
+            fb_update(f"/invoices/{iid}", {
+                "meta/status":     "Overdue",
+                "meta/updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+            count += 1
+    return count
 
 def _upsert_revenue_entry(invoice_id: str, inv_meta: dict) -> None:
     """Create or update a balance-sheet revenue entry for a paid/partial invoice."""
@@ -2743,6 +2980,7 @@ def _parse_quote_form(form) -> dict:
         "date":                 form.get("date", datetime.now().strftime("%Y-%m-%d")),
         "valid_until":          form.get("valid_until", ""),
         "expected_completion":  form.get("expected_completion", ""),
+        "job_type":             form.get("job_type", ""),
         "service_types":        _parse_service_types(form),
         "priority":             form.get("priority", "Normal"),
         "is_expedited":         form.get("is_expedited") == "on",
@@ -3039,7 +3277,6 @@ def quote_win(quote_id):
 
     now_str  = datetime.now(timezone.utc).isoformat()
     today    = datetime.now().strftime("%Y-%m-%d")
-    due_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
     user     = session.get("user_email", "")
 
     # ── 1. Create Project ─────────────────────────────────────────────────────
@@ -3070,52 +3307,15 @@ def quote_win(quote_id):
     }
     pid = fb_push("/projects", project_data)
 
-    # ── 2. Create Invoice linked to the new project ───────────────────────────
-    inv_num   = _next_invoice_number()
-    inv_items = []
-    for item in quote.get("line_items", []):
-        inv_items.append({
-            "description": item.get("description", ""),
-            "quantity":    item.get("quantity", "1"),
-            "unit_price":  item.get("unit_price", "0"),
-            "amount":      item.get("total", item.get("amount", "0")),
-        })
-    invoice_data = {
-        "meta": {
-            "invoice_number": inv_num,
-            "invoice_date":   today,
-            "due_date":       due_date,
-            "client_name":    quote.get("client_name", ""),
-            "project_number": proj_num,
-            "status":         "Draft",
-            "subtotal":       str(quote.get("subtotal", "0")),
-            "tax_rate":       str(quote.get("tax_rate", "0")),
-            "tax_amount":     str(quote.get("tax_amount", "0")),
-            "total":          str(quote.get("total", "0")),
-            "amount_paid":    "0",
-            "notes":          quote.get("notes", ""),
-            "terms":          quote.get("terms", ""),
-            "payment_method": "",
-            "source_quote":   quote_id,
-            "created_at":     now_str,
-            "updated_at":     now_str,
-            "created_by":     user,
-        },
-        "line_items": inv_items,
-    }
-    iid = fb_push("/invoices", invoice_data)
-
-    # ── 3. Mark quote as Invoiced + store back-links ──────────────────────────
+    # ── 2. Mark quote as Converted + store back-link to project only ─────────
     fb_update(f"/job_forms/{quote_id}", {
-        "status":              "Invoiced",
+        "status":              "Converted",
         "linked_project_id":   pid,
         "linked_project_num":  proj_num,
-        "linked_invoice_id":   iid,
-        "linked_invoice_num":  inv_num,
         "updated_at":          now_str,
     })
 
-    flash(f"Quote won! Project {proj_num} and Invoice {inv_num} created.", "success")
+    flash(f"Quote won! Project {proj_num} created. Generate invoices from the project page.", "success")
     return redirect(url_for("project_detail", project_id=pid))
 
 @app.route("/quotes/<quote_id>/pdf")

@@ -48,12 +48,12 @@
           <div class="col-md-4">
             <label class="form-label">Invoice Date</label>
             <input type="date" name="invoice_date" class="form-control"
-                   value="{{ meta.get('invoice_date','') }}">
+                   value="{{ meta.get('invoice_date') or (now.strftime('%Y-%m-%d') if is_new else '') }}">
           </div>
           <div class="col-md-4">
             <label class="form-label">Due Date</label>
             <input type="date" name="due_date" class="form-control"
-                   value="{{ meta.get('due_date','') }}">
+                   value="{{ meta.get('due_date') or ((now + timedelta(days=30)).strftime('%Y-%m-%d') if is_new else '') }}">
           </div>
           <div class="col-md-6">
             <label class="form-label">Client</label>
@@ -66,7 +66,7 @@
           </div>
           <div class="col-md-6">
             <label class="form-label">Project</label>
-            <select name="project_number" class="form-select">
+            <select name="project_number" class="form-select" onchange="renderClientProjects()">
               <option value="">-- Select Project --</option>
               {% for p in projects %}
               <option value="{{ p.get('project_number','') }}"
@@ -79,24 +79,28 @@
               Default project for line items below.
             </div>
           </div>
-          <div class="col-12" id="clientProjectsPanel" style="display:none;">
-            <div class="border rounded p-2 ps-3" style="background:#f8fafc;">
-              <div class="small fw-bold text-muted mb-2">
-                <i class="bi bi-kanban me-1 text-teal"></i>Active projects for this client
-                <span class="fw-normal">— check any to bill on this invoice (one invoice can cover several projects)</span>
+          {% if not stage_idx %}
+          <div class="col-12" id="projectsPickerWrap" style="display:none;">
+            <div class="border rounded p-3" style="background:#f8fafc;">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="fw-600 small">
+                  <i class="bi bi-kanban me-1 text-teal"></i>Projects on this Invoice
+                </span>
+                <span class="text-muted small">Primary is always included — check others to add them</span>
               </div>
-              <div id="clientProjectsList" class="d-flex flex-wrap gap-3"></div>
+              <div id="clientProjectsList" class="row g-2"></div>
             </div>
           </div>
+          {% endif %}
           <div class="col-md-4">
             <label class="form-label">Status</label>
-            <select name="status" class="form-select">
+            <select name="status" id="invoiceStatus" class="form-select" onchange="togglePaymentFields()">
               {% for s in ['Draft','Sent','Viewed','Paid','Partial','Overdue','Cancelled'] %}
               <option value="{{ s }}" {{ 'selected' if meta.get('status','Draft') == s }}>{{ s }}</option>
               {% endfor %}
             </select>
           </div>
-          <div class="col-md-4">
+          <div class="col-md-4" id="paymentMethodWrap" style="display:none;">
             <label class="form-label">Payment Method</label>
             <select name="payment_method" class="form-select">
               <option value="">— Select —</option>
@@ -105,7 +109,7 @@
               {% endfor %}
             </select>
           </div>
-          <div class="col-md-4">
+          <div class="col-md-4" id="amountPaidWrap" style="display:none;">
             <label class="form-label">Amount Paid ($)</label>
             <input type="number" name="amount_paid" class="form-control"
                    value="{{ meta.get('amount_paid','0') }}" min="0" step="0.01">
@@ -250,33 +254,76 @@ const projectsData = [
 ];
 
 function renderClientProjects() {
-  const client = document.getElementById('clientSelect').value;
-  const panel  = document.getElementById('clientProjectsPanel');
-  const list   = document.getElementById('clientProjectsList');
+  const wrap = document.getElementById('projectsPickerWrap');
+  if (!wrap) return;   // stage_idx mode — no multi-project panel
+
+  const client  = document.getElementById('clientSelect').value;
+  const mainNum = document.querySelector('select[name="project_number"]').value;
+  const list    = document.getElementById('clientProjectsList');
   list.innerHTML = '';
-  const matches = projectsData.filter(p => p.client && p.client === client &&
-                                            !['Completed','Cancelled'].includes(p.status));
-  if (!client || matches.length === 0) { panel.style.display = 'none'; return; }
-  panel.style.display = '';
+
+  const matches = projectsData.filter(p =>
+    p.client === client &&
+    !['Completed', 'Cancelled'].includes(p.status)
+  );
+
+  // Only show the panel when there are 2+ active projects for this client
+  if (!client || matches.length < 2) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+
   matches.forEach(p => {
+    const isMain  = p.number === mainNum;
     const billable = p.outstanding > 0 ? p.outstanding : p.contract;
-    const id = 'cp_' + p.number.replace(/[^a-zA-Z0-9]/g, '_');
-    const wrap = document.createElement('div');
-    wrap.className = 'form-check';
-    wrap.innerHTML = `<input class="form-check-input" type="checkbox" id="${id}">
-      <label class="form-check-label small" for="${id}">
-        <strong>${p.number}</strong> — ${p.name}
-        <span class="text-muted">($${billable.toFixed(2)} outstanding)</span>
-      </label>`;
-    const cb = wrap.querySelector('input');
-    cb.dataset.number = p.number;
-    cb.dataset.name   = p.name;
-    cb.dataset.amount = billable.toFixed(2);
-    cb.addEventListener('change', () => {
-      if (cb.checked) addProjectLineItem(cb.dataset.number, cb.dataset.name, cb.dataset.amount);
-      else            removeProjectLineItem(cb.dataset.number);
-    });
-    list.appendChild(wrap);
+    const col = document.createElement('div');
+    col.className = 'col-md-6 col-lg-4';
+
+    if (isMain) {
+      // Primary project — always included, shown as a teal card (no checkbox)
+      col.innerHTML = `
+        <div class="d-flex align-items-center gap-2 p-2 border rounded"
+             style="background:#f0fdfa; border-color:#0D9488 !important;">
+          <i class="bi bi-check-circle-fill text-teal flex-shrink-0" style="font-size:1.1rem;"></i>
+          <div class="flex-fill min-width-0">
+            <div class="fw-bold small text-truncate">${p.number}</div>
+            <div class="text-muted text-truncate" style="font-size:0.72rem;">${p.name}</div>
+          </div>
+          <div class="text-end flex-shrink-0">
+            <div class="small fw-bold text-teal">$${billable.toFixed(2)}</div>
+            <div class="badge" style="font-size:0.6rem;background:#0D9488;color:#fff;">Primary</div>
+          </div>
+        </div>`;
+    } else {
+      // Additional project — checkbox to include/exclude
+      const cbId = 'cp_' + p.number.replace(/[^a-zA-Z0-9]/g, '_');
+      col.innerHTML = `
+        <label class="d-flex align-items-center gap-2 p-2 border rounded proj-pick-card"
+               for="${cbId}" style="cursor:pointer; transition:background .15s, border-color .15s;">
+          <input class="form-check-input flex-shrink-0 mt-0" type="checkbox" id="${cbId}"
+                 data-number="${p.number}" data-name="${p.name}" data-amount="${billable.toFixed(2)}">
+          <div class="flex-fill min-width-0">
+            <div class="fw-bold small text-truncate">${p.number}</div>
+            <div class="text-muted text-truncate" style="font-size:0.72rem;">${p.name}</div>
+          </div>
+          <div class="text-end flex-shrink-0">
+            <div class="small fw-bold text-muted">$${billable.toFixed(2)}</div>
+            <div class="text-muted" style="font-size:0.7rem;">outstanding</div>
+          </div>
+        </label>`;
+      const cb  = col.querySelector('input[type="checkbox"]');
+      const lbl = col.querySelector('label');
+      cb.addEventListener('change', () => {
+        if (cb.checked) {
+          lbl.style.background     = '#f0fdf4';
+          lbl.style.borderColor    = '#16A34A';
+          addProjectLineItem(cb.dataset.number, cb.dataset.name, cb.dataset.amount);
+        } else {
+          lbl.style.background  = '';
+          lbl.style.borderColor = '';
+          removeProjectLineItem(cb.dataset.number);
+        }
+      });
+    }
+    list.appendChild(col);
   });
 }
 
@@ -355,7 +402,15 @@ function removeRow(btn) {
     btn.closest('tr').remove(); calcTotals();
   }
 }
+function togglePaymentFields() {
+  const status = document.getElementById('invoiceStatus').value;
+  const show   = ['Paid', 'Partial'].includes(status);
+  document.getElementById('paymentMethodWrap').style.display = show ? '' : 'none';
+  document.getElementById('amountPaidWrap').style.display    = show ? '' : 'none';
+}
+
 calcTotals();
 renderClientProjects();
+togglePaymentFields();
 </script>
 {% endblock %}

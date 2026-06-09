@@ -132,7 +132,13 @@
               <td class="text-end fw-bold">${{ "{:,.2f}".format(meta.get('total',0)|float) }}</td>
               <td class="text-end text-success">${{ "{:,.2f}".format(meta.get('amount_paid',0)|float) }}</td>
               <td>{{ status_badge(meta.get('status')) }}</td>
-              <td onclick="event.stopPropagation()">
+              <td onclick="event.stopPropagation()" class="text-end" style="white-space:nowrap;">
+                {% if meta.get('status') in ('Sent','Viewed','Overdue','Partial') %}
+                <button class="btn btn-xs btn-success me-1" title="Mark as Paid"
+                        onclick="quickPay('{{ inv.firebase_id }}', '{{ meta.get('total',0) }}', this)">
+                  <i class="bi bi-check-circle"></i>
+                </button>
+                {% endif %}
                 <a href="{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}"
                    class="btn btn-xs btn-outline-secondary">
                   <i class="bi bi-eye"></i>
@@ -233,6 +239,20 @@
 
 {% block scripts %}
 <script>
+// ── Quick Pay ────────────────────────────────────────────────────────────────
+async function quickPay(invoiceId, total, btn) {
+  const fmt = v => '$' + parseFloat(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  if (!confirm(`Mark invoice as Paid (${fmt(total)})?`)) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  const form = new FormData();
+  form.append('status', 'Paid');
+  form.append('amount_paid', total);
+  const resp = await fetch(`/invoicing/${invoiceId}/status`, {method:'POST', body:form});
+  if (resp.ok || resp.redirected) { location.reload(); }
+  else { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-circle"></i>'; alert('Error — please try again.'); }
+}
+
 // ── Invoice filter quick-range ───────────────────────────────────────────────
 function localDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;

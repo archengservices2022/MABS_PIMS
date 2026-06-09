@@ -44,6 +44,15 @@
   </div>
 </div>
 
+{% set wf_step = 3 %}
+{% set wf_quote = source_quote %}
+{% set wf_quote_id = source_quote.firebase_id if source_quote else '' %}
+{% set wf_project = linked_project %}
+{% set wf_project_id = linked_project.firebase_id if linked_project else '' %}
+{% set wf_invoice = invoice %}
+{% set wf_invoice_id = invoice.firebase_id %}
+{% include '_workflow_tracker.html' %}
+
 <!-- AI Reminder Modal -->
 <div class="modal fade" id="reminderModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
@@ -78,201 +87,178 @@
 <div class="row g-3">
   <div class="col-lg-8">
     <!-- Invoice preview card -->
-    <div class="card-panel mb-3 invoice-preview">
-      <div class="d-flex justify-content-between mb-4">
+    {% set inv_status = meta.get('status','Draft') %}
+    {% set is_paid_inv = inv_status == 'Paid' %}
+    {% set amt_paid = meta.get('amount_paid',0)|float %}
+    {% set balance = meta.get('total',0)|float - amt_paid %}
+    <div class="mb-3" style="background:#fff; border:1px solid #E2E8F0; border-radius:12px; overflow:hidden; position:relative;">
+
+      {% if is_paid_inv %}
+      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);
+                  font-size:5rem;font-weight:900;color:rgba(16,185,129,.08);pointer-events:none;letter-spacing:.1em;z-index:0;">
+        PAID
+      </div>
+      {% endif %}
+
+      <!-- Header bar -->
+      <div style="background:#0D9488; padding:28px 32px; position:relative; z-index:1;">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div style="font-size:1.4rem; font-weight:800; color:#fff; letter-spacing:-.02em;">
+              {{ company.name }}
+            </div>
+            <div style="color:rgba(255,255,255,.75); font-size:0.8rem; margin-top:4px; line-height:1.6; white-space:pre-line;">{{ company.address }}</div>
+            <div style="color:rgba(255,255,255,.75); font-size:0.8rem;">{{ company.phone }} &nbsp;·&nbsp; {{ company.email }}</div>
+          </div>
+          <div class="text-end">
+            <div style="font-size:2rem; font-weight:900; color:#fff; letter-spacing:.08em;">INVOICE</div>
+            <div style="color:rgba(255,255,255,.9); font-weight:700; font-size:1rem;">{{ meta.get('invoice_number','') }}</div>
+            <div style="color:rgba(255,255,255,.7); font-size:0.78rem; margin-top:4px;">
+              Date: {{ meta.get('invoice_date','—') }}<br>
+              Due: {{ meta.get('due_date','—') }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bill To + Status strip -->
+      <div style="padding:20px 32px; background:#F8FAFC; border-bottom:1px solid #E2E8F0; display:flex; justify-content:space-between; align-items:flex-start; position:relative; z-index:1;">
         <div>
-          <div class="fw-bold fs-5">{{ company.name }}</div>
-          <div class="text-muted small" style="white-space:pre-line;">{{ company.address }}</div>
-          <div class="text-muted small">{{ company.phone }}</div>
-          <div class="text-muted small">{{ company.email }}</div>
+          <div style="font-size:0.65rem; font-weight:700; color:#94A3B8; letter-spacing:.1em; margin-bottom:4px;">BILL TO</div>
+          <div style="font-weight:700; font-size:1rem; color:#0F172A;">{{ meta.get('client_name','—') }}</div>
+          {% if meta.get('project_number') %}
+          <div style="font-size:0.8rem; color:#64748B;">Project: {{ meta.get('project_number') }}
+            {% if linked_project %} — {{ linked_project.get('project_name','') }}{% endif %}
+          </div>
+          {% endif %}
+          {% if meta.get('payment_stage') %}
+          <div style="font-size:0.78rem; color:#0D9488; margin-top:2px;">
+            <i class="bi bi-layers me-1"></i>{{ meta.get('payment_stage') }}
+          </div>
+          {% endif %}
         </div>
         <div class="text-end">
-          <div class="text-teal fw-bold fs-4">INVOICE</div>
-          <div class="fw-bold">{{ meta.get('invoice_number','') }}</div>
-          <div class="text-muted small">Date: {{ meta.get('invoice_date','—') }}</div>
-          <div class="text-muted small">Due: {{ meta.get('due_date','—') }}</div>
+          <span class="badge status-{{ inv_status|lower|replace(' ','-') }}" style="font-size:0.75rem; padding:5px 12px;">
+            {{ inv_status }}
+          </span>
+          {% if meta.get('payment_method') %}
+          <div style="font-size:0.75rem; color:#64748B; margin-top:4px;">
+            <i class="bi bi-credit-card me-1"></i>{{ meta.get('payment_method') }}
+            {% if meta.get('payment_reference') %} · {{ meta.get('payment_reference') }}{% endif %}
+          </div>
+          {% endif %}
         </div>
       </div>
 
-      <div class="mb-4">
-        <div class="text-muted small fw-bold mb-1">BILL TO</div>
-        <div class="fw-bold">{{ meta.get('client_name','—') }}</div>
-        {% if meta.get('project_number') %}
-        <div class="text-muted small">Project: {{ meta.get('project_number') }}</div>
-        {% endif %}
-      </div>
-
-      <div class="table-responsive">
-        <table class="table table-sm mb-0">
-          <thead class="table-light">
-            <tr><th>Description</th><th class="text-end">Qty</th><th class="text-end">Unit Price</th><th class="text-end">Amount</th></tr>
+      <!-- Line items -->
+      <div style="padding:0 32px; position:relative; z-index:1;">
+        <table style="width:100%; border-collapse:collapse; margin:0;">
+          <thead>
+            <tr style="background:#0F172A;">
+              <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:left; font-weight:600;">DESCRIPTION</th>
+              <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:center; font-weight:600;">QTY</th>
+              <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:right; font-weight:600;">UNIT PRICE</th>
+              <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:right; font-weight:600;">AMOUNT</th>
+            </tr>
           </thead>
           <tbody>
             {% for item in invoice.get('line_items',[]) %}
-            <tr>
-              <td>{{ item.get('description','') }}</td>
-              <td class="text-end">{{ item.get('quantity','') }}</td>
-              <td class="text-end">${{ "{:,.2f}".format(item.get('unit_price',0)|float) }}</td>
-              <td class="text-end">${{ "{:,.2f}".format(item.get('amount',0)|float) }}</td>
+            <tr style="border-bottom:1px solid #F1F5F9;">
+              <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">{{ item.get('description','') }}</td>
+              <td style="padding:14px 16px; color:#64748B; text-align:center;">{{ item.get('quantity','1') }}</td>
+              <td style="padding:14px 16px; color:#64748B; text-align:right;">${{ "{:,.2f}".format(item.get('unit_price',0)|float) }}</td>
+              <td style="padding:14px 16px; color:#1E293B; font-weight:600; text-align:right;">${{ "{:,.2f}".format(item.get('amount',0)|float) }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="4" class="text-muted text-center">No line items.</td></tr>
+            <tr><td colspan="4" style="padding:24px; text-align:center; color:#94A3B8;">No line items.</td></tr>
             {% endfor %}
           </tbody>
-          <tfoot>
-            <tr class="table-light">
-              <td colspan="3" class="text-end">Subtotal</td>
-              <td class="text-end">${{ "{:,.2f}".format(meta.get('subtotal',0)|float) }}</td>
-            </tr>
-            {% if meta.get('tax_rate',0)|float > 0 %}
-            <tr class="table-light">
-              <td colspan="3" class="text-end">Tax ({{ meta.get('tax_rate','0') }}%)</td>
-              <td class="text-end">${{ "{:,.2f}".format(meta.get('tax_amount',0)|float) }}</td>
-            </tr>
-            {% endif %}
-            <tr>
-              <td colspan="3" class="text-end"><strong>Total</strong></td>
-              <td class="text-end"><strong class="text-teal">${{ "{:,.2f}".format(meta.get('total',0)|float) }}</strong></td>
-            </tr>
-            <tr>
-              <td colspan="3" class="text-end">Amount Paid</td>
-              <td class="text-end text-success">${{ "{:,.2f}".format(meta.get('amount_paid',0)|float) }}</td>
-            </tr>
-            {% set balance = meta.get('total',0)|float - meta.get('amount_paid',0)|float %}
-            <tr>
-              <td colspan="3" class="text-end"><strong>Balance Due</strong></td>
-              <td class="text-end"><strong class="{{ 'text-danger' if balance > 0 else 'text-success' }}">${{ "{:,.2f}".format(balance) }}</strong></td>
-            </tr>
-          </tfoot>
         </table>
+      </div>
+
+      <!-- Totals -->
+      <div style="padding:16px 32px 24px; display:flex; justify-content:flex-end; position:relative; z-index:1;">
+        <div style="min-width:260px;">
+          {% if meta.get('tax_rate',0)|float > 0 %}
+          <div style="display:flex; justify-content:space-between; padding:6px 0; color:#64748B; font-size:0.85rem;">
+            <span>Subtotal</span><span>${{ "{:,.2f}".format(meta.get('subtotal',0)|float) }}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:6px 0; color:#64748B; font-size:0.85rem; border-bottom:1px solid #E2E8F0;">
+            <span>Tax ({{ meta.get('tax_rate','0') }}%)</span><span>${{ "{:,.2f}".format(meta.get('tax_amount',0)|float) }}</span>
+          </div>
+          {% endif %}
+          <div style="display:flex; justify-content:space-between; padding:10px 0; font-weight:700; font-size:1rem; border-bottom:2px solid #0D9488; margin-bottom:4px;">
+            <span>Total</span>
+            <span style="color:#0D9488;">${{ "{:,.2f}".format(meta.get('total',0)|float) }}</span>
+          </div>
+          {% if amt_paid > 0 %}
+          <div style="display:flex; justify-content:space-between; padding:6px 0; color:#10B981; font-size:0.85rem;">
+            <span>Amount Paid</span><span>${{ "{:,.2f}".format(amt_paid) }}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:8px 12px; border-radius:6px; font-weight:700; font-size:1rem;
+                      background:{{ '#F0FDF4' if balance <= 0 else '#FEF2F2' }}; margin-top:4px;">
+            <span style="color:{{ '#16A34A' if balance <= 0 else '#DC2626' }};">Balance Due</span>
+            <span style="color:{{ '#16A34A' if balance <= 0 else '#DC2626' }};">${{ "{:,.2f}".format(balance) }}</span>
+          </div>
+          {% endif %}
+        </div>
       </div>
 
       {% if meta.get('notes') or meta.get('terms') %}
-      <div class="mt-4 pt-3 border-top">
+      <div style="padding:16px 32px 24px; border-top:1px solid #E2E8F0; position:relative; z-index:1;">
         {% if meta.get('notes') %}
-        <div class="text-muted small"><strong>Notes:</strong> {{ meta.get('notes') }}</div>
+        <div style="font-size:0.8rem; color:#64748B;"><strong style="color:#475569;">Notes:</strong> {{ meta.get('notes') }}</div>
         {% endif %}
         {% if meta.get('terms') %}
-        <div class="text-muted small mt-1"><strong>Terms:</strong> {{ meta.get('terms') }}</div>
+        <div style="font-size:0.8rem; color:#64748B; margin-top:6px;"><strong style="color:#475569;">Terms:</strong> {{ meta.get('terms') }}</div>
         {% endif %}
       </div>
       {% endif %}
+
+      <!-- Footer -->
+      <div style="background:#F8FAFC; border-top:1px solid #E2E8F0; padding:14px 32px; text-align:center; position:relative; z-index:1;">
+        <div style="font-size:0.75rem; color:#94A3B8;">
+          Thank you for your business · {{ company.email }} · {{ company.phone }}
+        </div>
+      </div>
+
     </div>
   </div>
 
-  <!-- Payment Log -->
-  {% set payment_log = invoice.get('payment_log', []) %}
-  <div class="col-12">
-    <div class="card-panel mb-3">
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <h6 class="section-heading mb-0"><i class="bi bi-cash-stack me-1 text-teal"></i>Payments Received</h6>
-        <span class="text-muted small">{{ payment_log|length }} payment{{ 's' if payment_log|length != 1 }}</span>
-      </div>
-
-      <!-- Record Payment form -->
-      <form method="POST" action="{{ url_for('payment_add', invoice_id=invoice.firebase_id) }}"
-            class="row g-2 align-items-end mb-3 pb-3 border-bottom">
-        <div class="col-md-2">
-          <label class="form-label form-label-sm">Amount ($)</label>
-          <input type="number" name="amount" class="form-control form-control-sm"
-                 placeholder="0.00" min="0.01" step="0.01" required>
-        </div>
-        <div class="col-md-2">
-          <label class="form-label form-label-sm">Date</label>
-          <input type="date" name="date" class="form-control form-control-sm"
-                 value="{{ today_date }}">
-        </div>
-        <div class="col-md-2">
-          <label class="form-label form-label-sm">Method</label>
-          <select name="method" class="form-select form-select-sm">
-            <option value="">— Select —</option>
-            {% for m in ['Check','Wire Transfer','ACH','Cash','Zelle','Credit Card','Other'] %}
-            <option value="{{ m }}">{{ m }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-md-2">
-          <label class="form-label form-label-sm">Reference #</label>
-          <input type="text" name="reference" class="form-control form-control-sm" placeholder="Cheque / Wire #">
-        </div>
-        <div class="col-md-2">
-          <label class="form-label form-label-sm">Notes</label>
-          <input type="text" name="notes" class="form-control form-control-sm" placeholder="Optional">
-        </div>
-        <div class="col-md-2">
-          <button type="submit" class="btn btn-sm btn-success w-100">
-            <i class="bi bi-plus-lg me-1"></i>Record Payment
-          </button>
-        </div>
-      </form>
-
-      {% if payment_log %}
-      <div class="table-responsive">
-        <table class="table table-sm mb-0 align-middle">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Method</th>
-              <th>Reference</th>
-              <th>Notes</th>
-              <th class="text-end">Amount</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for p in payment_log %}
-            <tr>
-              <td>{{ p.get('date','—') }}</td>
-              <td>{{ p.get('method','—') or '—' }}</td>
-              <td class="text-muted small">{{ p.get('reference','—') or '—' }}</td>
-              <td class="text-muted small">{{ p.get('notes','') or '' }}</td>
-              <td class="text-end text-success fw-bold">${{ "{:,.2f}".format(p.get('amount',0)|float) }}</td>
-              <td>
-                <form method="POST"
-                      action="{{ url_for('payment_delete', invoice_id=invoice.firebase_id, idx=loop.index0) }}"
-                      onsubmit="return confirm('Remove this payment entry?');">
-                  <button type="submit" class="btn btn-xs btn-outline-danger">
-                    <i class="bi bi-trash"></i>
-                  </button>
-                </form>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-          <tfoot class="table-light fw-bold">
-            <tr>
-              <td colspan="4" class="text-end">Total Collected</td>
-              <td class="text-end text-success">${{ "{:,.2f}".format(meta.get('amount_paid',0)|float) }}</td>
-              <td></td>
-            </tr>
-            {% set balance = meta.get('total',0)|float - meta.get('amount_paid',0)|float %}
-            <tr>
-              <td colspan="4" class="text-end">Balance Due</td>
-              <td class="text-end {{ 'text-danger' if balance > 0 else 'text-success' }}">${{ "{:,.2f}".format(balance) }}</td>
-              <td></td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-      {% else %}
-      <div class="text-muted small text-center py-2">No payments recorded yet. Use the form above to log each payment received.</div>
-      {% endif %}
-    </div>
-  </div>
 
   <div class="col-lg-4">
     <div class="card-panel mb-3">
       <h6 class="section-heading">Update Status</h6>
       <form method="POST" action="{{ url_for('invoice_status', invoice_id=invoice.firebase_id) }}">
-        <select name="status" class="form-select form-select-sm mb-2">
+        <select name="status" id="detailStatusSelect" class="form-select form-select-sm mb-2"
+                onchange="toggleDetailAmtPaid()">
           {% for s in ['Draft','Sent','Viewed','Paid','Partial','Overdue','Cancelled'] %}
           <option value="{{ s }}" {{ 'selected' if meta.get('status','Draft') == s }}>{{ s }}</option>
           {% endfor %}
         </select>
-        <div class="mb-2">
-          <label class="form-label form-label-sm">Amount Paid ($)</label>
-          <input type="number" name="amount_paid" class="form-control form-control-sm"
-                 value="{{ meta.get('amount_paid','0') }}" min="0" step="0.01">
+        <div id="detailAmtPaidWrap"
+             style="display:{{ 'block' if meta.get('status','Draft') in ('Paid','Partial') else 'none' }};">
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Amount Paid ($)</label>
+            <input type="number" name="amount_paid" class="form-control form-control-sm"
+                   value="{{ meta.get('amount_paid','0') }}" min="0" step="0.01">
+          </div>
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Payment Method</label>
+            <select name="payment_method" class="form-select form-select-sm">
+              <option value="">— Select —</option>
+              {% set cur_method = meta.get('payment_method','') %}
+              {% for m in ['Check','Wire Transfer','ACH','Cash','Zelle','Credit Card','Other'] %}
+              <option value="{{ m }}" {{ 'selected' if cur_method == m }}>{{ m }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Reference # <span class="text-muted">(optional)</span></label>
+            <input type="text" name="payment_reference" class="form-control form-control-sm"
+                   value="{{ meta.get('payment_reference','') }}"
+                   placeholder="Check #, Wire ref, etc.">
+          </div>
         </div>
         <button type="submit" class="btn btn-sm btn-teal w-100">Update</button>
       </form>
@@ -304,8 +290,14 @@
         <span class="text-muted small d-block">{{ linked_project.get('project_name','') }}</span>
       </div>
       {% endif %}
+      {% if meta.get('payment_method') %}
       <div class="info-label mt-2">Payment Method</div>
-      <div class="info-value">{{ meta.get('payment_method','—') }}</div>
+      <div class="info-value">{{ meta.get('payment_method') }}</div>
+      {% endif %}
+      {% if meta.get('payment_reference') %}
+      <div class="info-label mt-2">Reference #</div>
+      <div class="info-value">{{ meta.get('payment_reference') }}</div>
+      {% endif %}
       <div class="info-label mt-2">Created</div>
       <div class="info-value small">{{ meta.get('created_at','—')[:19]|replace('T',' ') }}</div>
       <div class="info-label mt-2">Updated</div>
@@ -352,6 +344,13 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+function toggleDetailAmtPaid() {
+  const s = document.getElementById('detailStatusSelect').value;
+  document.getElementById('detailAmtPaidWrap').style.display =
+    (s === 'Paid' || s === 'Partial') ? 'block' : 'none';
+}
+</script>
 <script>
 function openDeleteModal() {
   document.getElementById('deleteConfirmInput').value = '';

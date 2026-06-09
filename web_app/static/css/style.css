@@ -549,6 +549,61 @@ body {
   margin: 0 auto 14px;
 }
 
+/* ══ WORKFLOW TRACKER (Quote → Project → Invoice) ═══════════════════════════ */
+.wf-bar {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--slate-200);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--slate-50);
+}
+.wf-step {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-right: 1px solid var(--slate-200);
+}
+.wf-step:last-child { border-right: none; }
+.wf-step.wf-active { background: #f0fdfa; border-top: 3px solid #0D9488; }
+.wf-step.wf-done   { background: #f0fdf4; }
+.wf-step.wf-pending { opacity: .65; }
+.wf-circle {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 0.9rem;
+  flex-shrink: 0;
+}
+.wf-step.wf-active  .wf-circle { background: #0D9488; color: #fff; }
+.wf-step.wf-done    .wf-circle { background: #16A34A; color: #fff; }
+.wf-step.wf-pending .wf-circle { background: var(--slate-200); color: var(--slate-500); }
+.wf-step.wf-warn { background: #fffbeb; border-top: 3px solid #F59E0B; }
+.wf-step.wf-warn .wf-circle { background: #F59E0B; color: #fff; }
+.wf-label {
+  font-size: 0.63rem; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--slate-500);
+  font-weight: 600; line-height: 1; margin-bottom: 3px;
+}
+.wf-num-link { font-weight: 700; font-size: 0.92rem; color: #0D9488; text-decoration: none; }
+.wf-num-link:hover { text-decoration: underline; }
+.wf-num-text { font-weight: 700; font-size: 0.92rem; color: var(--slate-700); }
+.wf-empty    { font-size: 0.8rem; color: var(--slate-400); font-style: italic; }
+.wf-connector {
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 6px; color: var(--slate-400); font-size: 1rem;
+  background: var(--slate-50); flex-shrink: 0;
+}
+@media (max-width: 576px) {
+  .wf-bar { flex-direction: column; }
+  .wf-step { border-right: none; border-bottom: 1px solid var(--slate-200); }
+  .wf-step:last-child { border-bottom: none; }
+  .wf-connector { transform: rotate(90deg); padding: 4px 0; }
+  .wf-step.wf-active { border-top: 3px solid #0D9488; }
+}
+
 /* ══ PRINT / PDF ════════════════════════════════════════════════════════════ */
 @media print {
   .sidebar, .topbar, .flash-container,

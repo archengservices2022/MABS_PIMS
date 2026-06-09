@@ -90,6 +90,15 @@
   </div>
 </div>
 
+{% set wf_step = 1 %}
+{% set wf_quote = quote %}
+{% set wf_quote_id = quote.firebase_id %}
+{% set wf_project = linked_project %}
+{% set wf_project_id = linked_project.firebase_id if linked_project else '' %}
+{% set wf_invoice = linked_invoice %}
+{% set wf_invoice_id = linked_invoice.firebase_id if linked_invoice else '' %}
+{% include '_workflow_tracker.html' %}
+
 <div class="row g-3">
   <div class="col-lg-8">
     <div class="card-panel mb-3">

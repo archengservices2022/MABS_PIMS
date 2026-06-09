@@ -34,6 +34,15 @@
   </div>
 </div>
 
+{% set wf_step = 2 %}
+{% set wf_quote = source_quote %}
+{% set wf_quote_id = source_quote.firebase_id if source_quote else '' %}
+{% set wf_project = project %}
+{% set wf_project_id = project.firebase_id %}
+{% set wf_invoice = project_invoices[0] if project_invoices else None %}
+{% set wf_invoice_id = project_invoices[0].firebase_id if project_invoices else '' %}
+{% include '_workflow_tracker.html' %}
+
 <!-- Tabs -->
 <ul class="nav nav-tabs mb-4" id="projDetailTabs">
   <li class="nav-item">
@@ -46,6 +55,15 @@
       <i class="bi bi-graph-up me-1"></i>P&amp;L
       {% if project_invoices %}
       <span class="badge bg-secondary ms-1">{{ project_invoices|length }}</span>
+      {% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-notes" id="notesTabLink">
+      <i class="bi bi-journal-text me-1"></i>Notes
+      {% set _log = project.get('activity_log') or [] %}
+      {% if _log %}
+      <span class="badge bg-secondary ms-1">{{ _log|length }}</span>
       {% endif %}
     </a>
   </li>
@@ -155,14 +173,48 @@
                 {% set st = s.get('status','Pending') %}
                 <tr>
                   <td>{{ s.get('name','') }}</td>
-                  <td class="text-end">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</td>
+                  <td class="text-end">
+                    <span id="amtDisplay_{{ loop.index0 }}">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</span>
+                    {% if st == 'Pending' %}
+                    <button type="button" class="btn btn-xs btn-outline-secondary ms-1"
+                            onclick="toggleAmtEdit({{ loop.index0 }})" title="Edit amount">
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    <form method="POST"
+                          action="{{ url_for('project_stage_set_amount', project_id=project.firebase_id, stage_idx=loop.index0) }}"
+                          id="amtForm_{{ loop.index0 }}" style="display:none; margin-top:4px;">
+                      <div class="d-flex gap-1 align-items-center justify-content-end">
+                        <input type="number" name="amount" class="form-control form-control-sm"
+                               value="{{ '%.2f'|format(s.get('amount',0)|float) }}"
+                               step="0.01" min="0" style="width:90px;">
+                        <button type="submit" class="btn btn-xs btn-teal" title="Save">
+                          <i class="bi bi-check-lg"></i>
+                        </button>
+                        <button type="button" class="btn btn-xs btn-outline-secondary"
+                                onclick="toggleAmtEdit({{ loop.index0 }})" title="Cancel">
+                          <i class="bi bi-x-lg"></i>
+                        </button>
+                      </div>
+                    </form>
+                    {% endif %}
+                  </td>
                   <td><span class="badge status-{{ status_class.get(st, st|lower|replace(' ','-')) }}">{{ st }}</span></td>
                   <td class="text-end">
                     {% if st == 'Pending' and loop.index0 == ns.first_pending %}
-                    <a href="{{ url_for('project_stage_invoice', project_id=project.firebase_id, stage_idx=loop.index0) }}"
-                       class="btn btn-xs btn-outline-teal">
-                      <i class="bi bi-receipt me-1"></i>Generate Invoice
-                    </a>
+                    {% set _stage_fmt = "{:,.2f}".format(s.get('amount',0)|float) %}
+                    <div class="d-flex gap-1 justify-content-end flex-wrap">
+                      <form method="POST" action="{{ url_for('project_stage_create_invoice', project_id=project.firebase_id, stage_idx=loop.index0) }}">
+                        <button type="submit" class="btn btn-xs btn-outline-teal" title="Create invoice for this stage">
+                          <i class="bi bi-receipt me-1"></i>Invoice
+                        </button>
+                      </form>
+                      <form method="POST" action="{{ url_for('project_stage_mark_paid', project_id=project.firebase_id, stage_idx=loop.index0) }}"
+                            onsubmit="return confirm('Mark ${{ _stage_fmt }} as paid?')">
+                        <button type="submit" class="btn btn-xs btn-success" title="Create invoice and mark as paid instantly">
+                          <i class="bi bi-check-circle me-1"></i>Mark Paid
+                        </button>
+                      </form>
+                    </div>
                     {% elif s.get('invoice_id') %}
                     <a href="{{ url_for('invoice_detail', invoice_id=s.get('invoice_id')) }}" class="text-muted small text-decoration-none">
                       View Invoice <i class="bi bi-box-arrow-up-right"></i>
@@ -187,9 +239,10 @@
           </a>
           <div class="text-muted small">{{ source_quote.get('project_name','') }}</div>
           <div class="text-muted small">Client: {{ source_quote.get('client_name','') }}</div>
-          <span class="badge status-{{ source_quote.get('status','not-started')|lower|replace(' ','-') }} mt-1">
-            {{ source_quote.get('status','') }}
-          </span>
+          {% set _sq_raw = source_quote.get('status','') %}
+          {% set _sq_display = 'Won' if _sq_raw in ('Invoiced','Converted') else _sq_raw %}
+          {% set _sq_cls = 'paid' if _sq_raw in ('Invoiced','Converted') else _sq_raw|lower|replace(' ','-') %}
+          <span class="badge status-{{ _sq_cls }} mt-1">{{ _sq_display }}</span>
         </div>
         {% endif %}
         <div class="card-panel mb-3">
@@ -360,6 +413,70 @@
     </div>
   </div>
 
+  <!-- ── Notes / Activity Log Tab ─────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-notes">
+    <div class="row g-3">
+      <div class="col-lg-8">
+
+        <!-- Add note form -->
+        <div class="card-panel mb-3">
+          <form method="POST" action="{{ url_for('project_note_add', project_id=project.firebase_id) }}">
+            <label class="form-label fw-600">Add Note</label>
+            <div class="d-flex gap-2">
+              <textarea name="note_text" class="form-control" rows="2"
+                        placeholder="Log a call, site visit, submission, client update…" required></textarea>
+              <button type="submit" class="btn btn-teal px-4 align-self-end">
+                <i class="bi bi-plus-lg me-1"></i>Add
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Activity log -->
+        {% set activity_log = project.get('activity_log') or [] %}
+        {% if activity_log %}
+        <div class="card-panel">
+          {% for note in activity_log|reverse %}
+          {% set note_idx = (activity_log|length - 1) - loop.index0 %}
+          <div class="d-flex gap-3 {{ 'pb-3 mb-3 border-bottom' if not loop.last }}">
+            <div class="flex-shrink-0">
+              <div style="width:34px;height:34px;border-radius:50%;background:#0D9488;color:#fff;
+                          display:flex;align-items:center;justify-content:center;font-size:0.8rem;font-weight:700;">
+                {{ (note.get('created_by','?')[0])|upper }}
+              </div>
+            </div>
+            <div class="flex-grow-1">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <span class="fw-600 small">{{ note.get('created_by','—') }}</span>
+                  <span class="text-muted small ms-2">
+                    {{ note.get('created_at','')[:10] }}
+                    {{ note.get('created_at','')[11:16] }}
+                  </span>
+                </div>
+                <form method="POST" action="{{ url_for('project_note_delete', project_id=project.firebase_id, idx=note_idx) }}"
+                      onsubmit="return confirm('Delete this note?')">
+                  <button type="submit" class="btn btn-xs btn-outline-danger">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </div>
+              <div class="mt-1" style="white-space:pre-wrap;">{{ note.get('text','') }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="card-panel text-center text-muted py-4">
+          <i class="bi bi-journal-text fs-2 d-block mb-2"></i>
+          No notes yet. Add your first note above.
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- ── Delete Confirmation Modal ─────────────────────────────────────────── -->
@@ -407,6 +524,24 @@
 
 {% block scripts %}
 <script>
+// Auto-open tab from URL hash (e.g. #tab-notes after adding a note)
+document.addEventListener('DOMContentLoaded', function () {
+  const hash = window.location.hash;
+  if (hash) {
+    const link = document.querySelector(`.nav-link[href="${hash}"]`);
+    if (link) new bootstrap.Tab(link).show();
+  }
+});
+
+function toggleAmtEdit(idx) {
+  const form = document.getElementById('amtForm_' + idx);
+  const disp = document.getElementById('amtDisplay_' + idx);
+  const open = form.style.display === 'none' || form.style.display === '';
+  form.style.display = open ? '' : 'none';
+  disp.style.display = open ? 'none' : '';
+  if (open) form.querySelector('input').focus();
+}
+
 function openDeleteModal() {
   document.getElementById('deleteConfirmInput').value = '';
   document.getElementById('deleteConfirmBtn').disabled = true;
