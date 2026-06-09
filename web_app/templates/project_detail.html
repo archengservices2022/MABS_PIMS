@@ -60,11 +60,36 @@
         <div class="card-panel mb-3">
           <h6 class="section-heading">Project Info</h6>
           <div class="row g-2">
-            <div class="col-sm-4"><div class="info-label">Client</div><div class="info-value">{{ project.get('client_name','—') }}</div></div>
+            <div class="col-sm-4"><div class="info-label">Client</div><div class="info-value">{{ project.get('client_name') or project.get('company','—') }}</div></div>
             <div class="col-sm-4"><div class="info-label">Start Date</div><div class="info-value">{{ project.get('start_date','—') }}</div></div>
             <div class="col-sm-4"><div class="info-label">End Date</div><div class="info-value">{{ project.get('end_date','—') or '—' }}</div></div>
-            <div class="col-sm-4"><div class="info-label">Assigned To</div><div class="info-value">{{ project.get('assigned_to','—') or '—' }}</div></div>
+            <div class="col-sm-4"><div class="info-label">Sales Person</div><div class="info-value">{{ project.get('sales') or project.get('assigned_to','—') or '—' }}</div></div>
+            <div class="col-sm-4"><div class="info-label">Job Type</div><div class="info-value">{{ project.get('job_type','—') or '—' }}</div></div>
             <div class="col-sm-4"><div class="info-label">Payment Stage</div><div class="info-value">{{ project.get('payment_category','—') or '—' }}</div></div>
+            {% if project.get('quote_number') or project.get('job_number') %}
+            <div class="col-sm-4"><div class="info-label">Quote Number</div><div class="info-value">{{ project.get('quote_number') or project.get('job_number') }}</div></div>
+            {% endif %}
+            {% if project.get('po_wo_number') %}
+            <div class="col-sm-4"><div class="info-label">PO / WO Number</div><div class="info-value">{{ project.get('po_wo_number') }}</div></div>
+            {% endif %}
+            {% if project.get('date_received') %}
+            <div class="col-sm-4"><div class="info-label">Date Received</div><div class="info-value">{{ project.get('date_received') }}</div></div>
+            {% endif %}
+            {% if project.get('plant') or project.get('plant_location') %}
+            <div class="col-sm-4"><div class="info-label">Plant (State)</div><div class="info-value">{{ project.get('plant') or project.get('plant_location') }}</div></div>
+            {% endif %}
+            {% if project.get('site_address') or project.get('project_site_address') %}
+            <div class="col-sm-8"><div class="info-label">Site Address</div><div class="info-value">{{ project.get('site_address') or project.get('project_site_address') }}</div></div>
+            {% endif %}
+            {% if project.get('mail_address') or project.get('client_address') %}
+            <div class="col-sm-8"><div class="info-label">Mail Address</div><div class="info-value">{{ project.get('mail_address') or project.get('client_address') }}</div></div>
+            {% endif %}
+            {% if project.get('scope_of_work') %}
+            <div class="col-12"><div class="info-label">Scope of Work</div><div class="info-value">{{ project.get('scope_of_work') }}</div></div>
+            {% endif %}
+            {% if project.get('expedite') == 'Yes' %}
+            <div class="col-sm-4"><div class="info-label">Expedite</div><div class="info-value"><span class="badge bg-warning text-dark">Yes — +50% Extra</span></div></div>
+            {% endif %}
             {% if project.get('description') %}
             <div class="col-12"><div class="info-label">Description</div><div class="info-value">{{ project.get('description') }}</div></div>
             {% endif %}

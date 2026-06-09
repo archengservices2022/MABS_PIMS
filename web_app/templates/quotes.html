@@ -24,6 +24,16 @@
     </a>
   </li>
   <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-followups" id="nav-followups">
+      <i class="bi bi-bell me-1"></i>Follow-ups
+      {% if follow_ups %}
+      <span class="badge ms-1" style="background:#DC2626;">{{ follow_ups|length }}</span>
+      {% elif upcoming_followups %}
+      <span class="badge ms-1 bg-secondary">{{ upcoming_followups|length }}</span>
+      {% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-export" id="nav-export">
       <i class="bi bi-download me-1"></i>Export
     </a>
@@ -35,24 +45,85 @@
   <!-- ══ TAB 1 — ALL QUOTES ══════════════════════════════════════════════════ -->
   <div class="tab-pane fade" id="tab-all">
 
-    <form class="d-flex gap-2 mb-3 flex-wrap align-items-center" method="GET">
-      <input type="text" name="q" class="form-control form-control-sm" style="max-width:220px;"
-             placeholder="Search quotes…" value="{{ search }}">
-      <select name="status" class="form-select form-select-sm" style="max-width:170px;">
-        <option value="">All Statuses</option>
-        {% for s in statuses %}
-        <option value="{{ s }}" {{ 'selected' if status_filter == s }}>{{ s }}</option>
-        {% endfor %}
-      </select>
-      <button class="btn btn-sm btn-outline-secondary" type="submit">
-        <i class="bi bi-search"></i>
-      </button>
-      {% if search or status_filter %}
-      <a href="{{ url_for('quotes') }}" class="btn btn-sm btn-outline-secondary">
-        <i class="bi bi-x-lg me-1"></i>Clear
-      </a>
-      {% endif %}
+    <form class="mb-3" method="GET" id="listFilterForm">
+      <!-- Row 1: text search + status + year + month -->
+      <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
+        <input type="text" name="q" class="form-control form-control-sm" style="max-width:200px;"
+               placeholder="Search quotes…" value="{{ search }}">
+        <select name="status" class="form-select form-select-sm" style="max-width:155px;">
+          <option value="">All Statuses</option>
+          {% for s in statuses %}
+          <option value="{{ s }}" {{ 'selected' if status_filter == s }}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <select name="year" class="form-select form-select-sm" style="max-width:105px;"
+                onchange="this.form.submit()">
+          <option value="">All Years</option>
+          {% for y in available_years %}
+          <option value="{{ y }}" {{ 'selected' if year_filter == y }}>{{ y }}</option>
+          {% endfor %}
+        </select>
+        {% if year_filter %}
+        <select name="month" class="form-select form-select-sm" style="max-width:130px;">
+          <option value="">All Months</option>
+          {% set month_names = ['January','February','March','April','May','June',
+                                'July','August','September','October','November','December'] %}
+          {% for i in range(1, 13) %}
+          <option value="{{ '%02d' % i }}" {{ 'selected' if month_filter == '%02d' % i }}>
+            {{ month_names[i-1] }}
+          </option>
+          {% endfor %}
+        </select>
+        {% endif %}
+      </div>
+
+      <!-- Row 2: date range -->
+      <div class="d-flex gap-2 flex-wrap align-items-center">
+        <span class="text-muted small" style="min-width:70px;">Date range:</span>
+        <input type="date" name="from" class="form-control form-control-sm" style="max-width:160px;"
+               value="{{ date_from }}" placeholder="From">
+        <span class="text-muted small">to</span>
+        <input type="date" name="to" class="form-control form-control-sm" style="max-width:160px;"
+               value="{{ date_to }}" placeholder="To">
+        <button type="button" class="btn btn-xs btn-outline-secondary"
+                onclick="setListRange('month')">This Month</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary"
+                onclick="setListRange('year')">This Year</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary"
+                onclick="setListRange('last30')">Last 30 Days</button>
+        <button class="btn btn-sm btn-outline-secondary" type="submit">
+          <i class="bi bi-search me-1"></i>Apply
+        </button>
+        {% if search or status_filter or year_filter or month_filter or date_from or date_to %}
+        <a href="{{ url_for('quotes') }}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-x-lg me-1"></i>Clear
+        </a>
+        {% endif %}
+      </div>
     </form>
+
+    {% if year_filter or month_filter or date_from or date_to %}
+    <div class="alert alert-light py-1 px-3 mb-3 small d-flex align-items-center gap-2"
+         style="border-left:3px solid #0D9488;">
+      <i class="bi bi-funnel text-teal"></i>
+      <span>
+        {% if date_from and date_to %}
+          Date range: <strong>{{ date_from }}</strong> to <strong>{{ date_to }}</strong>
+        {% elif date_from %}
+          From <strong>{{ date_from }}</strong>
+        {% elif date_to %}
+          Up to <strong>{{ date_to }}</strong>
+        {% elif month_filter %}
+          {% set month_names = ['January','February','March','April','May','June',
+                                'July','August','September','October','November','December'] %}
+          <strong>{{ month_names[month_filter|int - 1] }} {{ year_filter }}</strong>
+        {% else %}
+          Year: <strong>{{ year_filter }}</strong>
+        {% endif %}
+        &nbsp;·&nbsp; {{ quotes|length }} result{{ 's' if quotes|length != 1 else '' }}
+      </span>
+    </div>
+    {% endif %}
 
     <div class="card-panel">
       <div class="table-responsive">
@@ -82,6 +153,22 @@
                 <span class="badge status-{{ q.get('status','Not Started')|lower|replace(' ','-') }}">
                   {{ q.get('status','Not Started') }}
                 </span>
+                {% set exp_days = q.get('_days_until_expiry') %}
+                {% if exp_days is not none %}
+                  {% if exp_days <= 0 %}
+                    <span class="badge ms-1" style="background:#FEE2E2;color:#991B1B;border:1px solid #FECACA;" title="Expired">
+                      <i class="bi bi-clock-history me-1"></i>Expired
+                    </span>
+                  {% elif exp_days <= 3 %}
+                    <span class="badge ms-1" style="background:#FEE2E2;color:#991B1B;border:1px solid #FECACA;" title="Expires in {{ exp_days }} day(s)">
+                      <i class="bi bi-exclamation-circle me-1"></i>{{ exp_days }}d left
+                    </span>
+                  {% elif exp_days <= 7 %}
+                    <span class="badge ms-1" style="background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;" title="Expires in {{ exp_days }} days">
+                      <i class="bi bi-clock me-1"></i>{{ exp_days }}d left
+                    </span>
+                  {% endif %}
+                {% endif %}
               </td>
               <td class="text-end fw-bold">${{ "{:,.2f}".format(q.get('total',0)|float) }}</td>
               <td onclick="event.stopPropagation();" class="text-end">
@@ -172,11 +259,23 @@
                     <div class="form-check border rounded px-3 py-2 border-light svc-box" id="nsvBox_{{ loop.index }}">
                       <input class="form-check-input svc-cb" type="checkbox"
                              name="service_types[]" value="{{ st }}"
-                             id="nsv_{{ loop.index }}">
+                             id="nsv_{{ loop.index }}"
+                             {% if st == 'Other' %}data-other="true"{% endif %}>
                       <label class="form-check-label small fw-semibold" for="nsv_{{ loop.index }}">{{ st }}</label>
                     </div>
                   </div>
                   {% endfor %}
+                  <!-- Other specify — shown when Other is ticked -->
+                  <div class="col-12" id="otherSpecifyRowNew" style="display:none;">
+                    <div class="d-flex align-items-center gap-2 p-2 rounded border border-warning bg-warning bg-opacity-10">
+                      <i class="bi bi-pencil-square text-warning"></i>
+                      <label class="form-label mb-0 small fw-semibold text-nowrap">Please specify:</label>
+                      <input type="text" name="other_specify" id="otherSpecifyInputNew"
+                             class="form-control form-control-sm"
+                             placeholder="e.g. Surveying, Site Inspection, Consulting…"
+                             maxlength="80">
+                    </div>
+                  </div>
                 </div>
               </div>
               <div class="col-md-4">
@@ -262,9 +361,16 @@
               <label class="form-label">Notes</label>
               <textarea name="notes" class="form-control" rows="3"></textarea>
             </div>
-            <div class="mb-0">
+            <div class="mb-3">
               <label class="form-label">Terms &amp; Conditions</label>
               <textarea name="terms" class="form-control" rows="3">Thank you for your business!</textarea>
+            </div>
+            <div class="mb-0">
+              <label class="form-label">
+                <i class="bi bi-bell me-1 text-teal"></i>Follow-up Date
+                <span class="text-muted small fw-normal">— remind to follow up with client</span>
+              </label>
+              <input type="date" name="follow_up_date" class="form-control">
             </div>
           </div>
 
@@ -378,24 +484,207 @@
   </div><!-- /tab-salespeople -->
 
 
-  <!-- ══ TAB 4 — EXPORT ══════════════════════════════════════════════════════ -->
+  <!-- ══ TAB 4 — FOLLOW-UPS ════════════════════════════════════════════════ -->
+  <div class="tab-pane fade" id="tab-followups">
+
+    {% if follow_ups %}
+    <div class="alert py-2 px-3 mb-3 small d-flex align-items-center gap-2"
+         style="background:#FEF3C7;border-left:4px solid #F59E0B;color:#92400E;">
+      <i class="bi bi-bell-fill"></i>
+      <strong>{{ follow_ups|length }} quote{{ 's' if follow_ups|length != 1 else '' }}</strong>
+      need{{ '' if follow_ups|length != 1 else 's' }} follow-up today or are overdue.
+    </div>
+
+    <div class="card-panel">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0 align-middle">
+          <thead>
+            <tr>
+              <th>Quote #</th>
+              <th>Client</th>
+              <th>Project / Scope</th>
+              <th>Salesperson</th>
+              <th>Follow-up Date</th>
+              <th>Status</th>
+              <th class="text-end">Total</th>
+              <th style="min-width:180px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for q in follow_ups %}
+            <tr>
+              <td>
+                <a href="{{ url_for('quote_detail', quote_id=q.firebase_id) }}"
+                   class="fw-bold text-teal text-decoration-none">
+                  {{ q.get('job_number','—') }}
+                </a>
+              </td>
+              <td>{{ q.get('client_name','—') }}</td>
+              <td class="text-muted small">{{ (q.get('project_name','') or '—')[:40] }}</td>
+              <td class="text-muted small">{{ q.get('salesperson','—') }}</td>
+              <td>
+                {% set fu = q.get('follow_up_date','') %}
+                {% set od = q.get('_fu_days_overdue', 0) %}
+                {% if od == 0 %}
+                  <span class="badge" style="background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;">
+                    <i class="bi bi-bell me-1"></i>Today
+                  </span>
+                {% else %}
+                  <span class="badge" style="background:#FEE2E2;color:#991B1B;border:1px solid #FECACA;">
+                    <i class="bi bi-exclamation-circle me-1"></i>{{ od }}d overdue
+                  </span>
+                {% endif %}
+                <div class="text-muted small mt-1">{{ fu }}</div>
+              </td>
+              <td>
+                <span class="badge status-{{ q.get('status','Not Started')|lower|replace(' ','-') }}">
+                  {{ q.get('status','Not Started') }}
+                </span>
+              </td>
+              <td class="text-end fw-bold">${{ "{:,.2f}".format(q.get('total',0)|float) }}</td>
+              <td class="text-end">
+                <div class="d-flex gap-1 justify-content-end flex-wrap">
+                  <!-- Done -->
+                  <form method="POST"
+                        action="{{ url_for('quote_followup_done', quote_id=q.firebase_id) }}">
+                    <button type="submit" class="btn btn-xs btn-teal"
+                            title="Mark follow-up done — clears the reminder">
+                      <i class="bi bi-check-lg me-1"></i>Done
+                    </button>
+                  </form>
+                  <!-- Snooze -->
+                  <form method="POST"
+                        action="{{ url_for('quote_followup_snooze', quote_id=q.firebase_id) }}">
+                    <input type="hidden" name="days" value="7">
+                    <button type="submit" class="btn btn-xs btn-outline-secondary"
+                            title="Snooze — reschedule follow-up by 7 days">
+                      <i class="bi bi-alarm me-1"></i>+7d
+                    </button>
+                  </form>
+                  <!-- Open -->
+                  <a href="{{ url_for('quote_detail', quote_id=q.firebase_id) }}"
+                     class="btn btn-xs btn-outline-primary" title="Open quote">
+                    <i class="bi bi-arrow-right"></i>
+                  </a>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% else %}
+    <div class="card-panel mb-3">
+      <div class="empty-state py-4">
+        <i class="bi bi-bell-slash fs-1 d-block mb-2 text-muted"></i>
+        <div class="fw-semibold mb-1">No follow-ups due today</div>
+        <div class="text-muted small">
+          Set a follow-up date on any quote to get reminded here.<br>
+          Open a quote → Edit → Follow-up Date field.
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- ── Upcoming section ──────────────────────────────────────────────── -->
+    {% if upcoming_followups %}
+    <div class="d-flex align-items-center gap-2 mb-2 mt-2">
+      <span class="fw-semibold text-muted small text-uppercase" style="letter-spacing:.05em;">
+        <i class="bi bi-calendar-event me-1"></i>Upcoming — Next 14 Days
+      </span>
+      <span class="badge bg-secondary">{{ upcoming_followups|length }}</span>
+    </div>
+    <div class="card-panel">
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle">
+          <thead>
+            <tr>
+              <th>Quote #</th>
+              <th>Client</th>
+              <th>Project / Scope</th>
+              <th>Salesperson</th>
+              <th>Follow-up Date</th>
+              <th>Status</th>
+              <th class="text-end">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for q in upcoming_followups %}
+            {% set days_ahead = q.get('_fu_days_ahead', 0) %}
+            <tr>
+              <td>
+                <a href="{{ url_for('quote_detail', quote_id=q.firebase_id) }}"
+                   class="fw-bold text-teal text-decoration-none">
+                  {{ q.get('job_number','—') }}
+                </a>
+              </td>
+              <td>{{ q.get('client_name','—') }}</td>
+              <td class="text-muted small">{{ (q.get('project_name','') or '—')[:40] }}</td>
+              <td class="text-muted small">{{ q.get('salesperson','—') }}</td>
+              <td>
+                {% if days_ahead == 1 %}
+                  <span class="badge" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;">
+                    <i class="bi bi-calendar me-1"></i>Tomorrow
+                  </span>
+                {% else %}
+                  <span class="badge" style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0;">
+                    <i class="bi bi-calendar me-1"></i>In {{ days_ahead }} days
+                  </span>
+                {% endif %}
+                <div class="text-muted small mt-1">{{ q.get('follow_up_date','') }}</div>
+              </td>
+              <td>
+                <span class="badge status-{{ q.get('status','Not Started')|lower|replace(' ','-') }}">
+                  {{ q.get('status','Not Started') }}
+                </span>
+              </td>
+              <td class="text-end fw-bold">${{ "{:,.2f}".format(q.get('total',0)|float) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+  </div><!-- /tab-followups -->
+
+  <!-- ══ TAB 5 — EXPORT ══════════════════════════════════════════════════════ -->
   <div class="tab-pane fade" id="tab-export">
 
     <!-- Filter row -->
     <div class="card-panel mb-3">
-      <div class="d-flex align-items-center gap-3 flex-wrap">
-        <div>
-          <label class="form-label mb-1">Filter by Status</label>
-          <select id="exportStatus" class="form-select form-select-sm" style="width:200px;">
-            <option value="">All Statuses ({{ quotes|length }} records)</option>
+      <h6 class="section-heading mb-3">Export Filters <span class="text-muted fw-normal small">(optional)</span></h6>
+      <div class="row g-3 align-items-end">
+        <div class="col-sm-6 col-md-3">
+          <label class="form-label form-label-sm">Status</label>
+          <select id="exportStatus" class="form-select form-select-sm">
+            <option value="">All Statuses</option>
             {% for s in statuses %}
             <option value="{{ s }}">{{ s }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="text-muted small mt-3">
-          Select a status to filter the export, or leave blank to export everything.
+        <div class="col-sm-6 col-md-3">
+          <label class="form-label form-label-sm">From Date</label>
+          <input type="date" id="exportFrom" class="form-control form-control-sm">
         </div>
+        <div class="col-sm-6 col-md-3">
+          <label class="form-label form-label-sm">To Date</label>
+          <input type="date" id="exportTo" class="form-control form-control-sm">
+        </div>
+        <div class="col-sm-6 col-md-3">
+          <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setQuickRange('month')">This Month</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setQuickRange('year')">This Year</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearExportFilters()"><i class="bi bi-x-lg"></i> Clear</button>
+          </div>
+        </div>
+      </div>
+      <div class="mt-2 text-muted small" id="exportFilterSummary">
+        Leave blank to export all records.
       </div>
     </div>
 
@@ -464,7 +753,7 @@
 <script>
 // ── Activate correct tab from ?tab= URL param ─────────────────────────────────
 (function() {
-  const map = { all:'#tab-all', new:'#tab-new', salespeople:'#tab-salespeople', export:'#tab-export' };
+  const map = { all:'#tab-all', new:'#tab-new', salespeople:'#tab-salespeople', followups:'#tab-followups', export:'#tab-export' };
   const key    = new URLSearchParams(location.search).get('tab') || 'all';
   if (key === 'new') {
     window.location.replace('{{ url_for("quotes_new") }}');
@@ -484,13 +773,81 @@ document.getElementById('nav-new').addEventListener('click', function(e) {
   window.location.assign('{{ url_for("quotes_new") }}');
 });
 
-// ── Export links update when status filter changes ────────────────────────────
-document.getElementById('exportStatus').addEventListener('change', function() {
-  const qs = this.value ? '?status=' + encodeURIComponent(this.value) : '';
+// ── Local date helper — avoids UTC offset shifting the date ──────────────────
+function localDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// ── List date range quick-set ────────────────────────────────────────────────
+function setListRange(type) {
+  const form = document.getElementById('listFilterForm');
+  const fromEl = form.querySelector('[name="from"]');
+  const toEl   = form.querySelector('[name="to"]');
+  const now = new Date();
+  if (type === 'month') {
+    const y = now.getFullYear(), m = now.getMonth();
+    fromEl.value = localDate(new Date(y, m, 1));
+    toEl.value   = localDate(new Date(y, m + 1, 0));
+  } else if (type === 'year') {
+    const y = now.getFullYear();
+    fromEl.value = `${y}-01-01`;
+    toEl.value   = `${y}-12-31`;
+  } else if (type === 'last30') {
+    const from30 = new Date(now); from30.setDate(from30.getDate() - 30);
+    fromEl.value = localDate(from30);
+    toEl.value   = localDate(now);
+  }
+  form.submit();
+}
+
+// ── Export links — rebuild whenever any filter changes ───────────────────────
+function buildExportLinks() {
+  const status = document.getElementById('exportStatus').value;
+  const from   = document.getElementById('exportFrom').value;
+  const to     = document.getElementById('exportTo').value;
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (from)   params.set('from', from);
+  if (to)     params.set('to', to);
+  const qs = params.toString() ? '?' + params.toString() : '';
   document.getElementById('pdfLink').href   = '{{ url_for("quotes_export_pdf") }}'   + qs;
   document.getElementById('excelLink').href = '{{ url_for("quotes_export_excel") }}' + qs;
   document.getElementById('csvLink').href   = '{{ url_for("quotes_export") }}'       + qs;
-});
+
+  // Update summary text
+  const parts = [];
+  if (status) parts.push(`status: <strong>${status}</strong>`);
+  if (from)   parts.push(`from: <strong>${from}</strong>`);
+  if (to)     parts.push(`to: <strong>${to}</strong>`);
+  document.getElementById('exportFilterSummary').innerHTML =
+    parts.length ? '<i class="bi bi-funnel me-1"></i>Filtering by ' + parts.join(' · ') :
+                   'Leave blank to export all records.';
+}
+
+function setQuickRange(type) {
+  const now = new Date();
+  if (type === 'month') {
+    const y = now.getFullYear(), m = now.getMonth();
+    document.getElementById('exportFrom').value = localDate(new Date(y, m, 1));
+    document.getElementById('exportTo').value   = localDate(new Date(y, m + 1, 0));
+  } else if (type === 'year') {
+    const y = now.getFullYear();
+    document.getElementById('exportFrom').value = `${y}-01-01`;
+    document.getElementById('exportTo').value   = `${y}-12-31`;
+  }
+  buildExportLinks();
+}
+
+function clearExportFilters() {
+  document.getElementById('exportStatus').value = '';
+  document.getElementById('exportFrom').value   = '';
+  document.getElementById('exportTo').value     = '';
+  buildExportLinks();
+}
+
+['exportStatus','exportFrom','exportTo'].forEach(id =>
+  document.getElementById(id).addEventListener('change', buildExportLinks)
+);
 
 // ── Line item calculations (New Quote tab) ────────────────────────────────────
 function fmt(n) { return '$' + parseFloat(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
@@ -566,6 +923,15 @@ function delRow(btn) {
 function toggleSvcNew(cb) {
   const serviceName = cb.value;
   const box = cb.closest('.svc-box');
+
+  // Show/hide "Other — please specify" row
+  if (cb.dataset.other) {
+    const specRow = document.getElementById('otherSpecifyRowNew');
+    const specInp = document.getElementById('otherSpecifyInputNew');
+    specRow.style.display = cb.checked ? '' : 'none';
+    if (!cb.checked) specInp.value = '';
+  }
+
   if (cb.checked) {
     if (box) { box.classList.add('svc-selected'); box.classList.remove('border-light'); }
     const rows = document.querySelectorAll('.li-row');

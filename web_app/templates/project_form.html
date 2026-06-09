@@ -14,45 +14,130 @@
   <div class="row g-3">
     <div class="col-lg-8">
       <div class="card-panel mb-3">
-        <h6 class="section-heading">Project Details</h6>
+        <h6 class="section-heading">Basic Information</h6>
         <div class="row g-3">
           <div class="col-md-4">
             <label class="form-label">Project Number</label>
             <input type="text" name="project_number" class="form-control"
                    value="{{ project.get('project_number','') if project else '' }}"
-                   placeholder="e.g. PRJ-2025-001" required>
+                   placeholder="Auto-generated" readonly style="background:#EFF6FF;color:#2563EB;font-weight:700;">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Quote Number
+              <span id="quoteLookupSpinner" class="spinner-border spinner-border-sm text-teal ms-1" style="display:none;"></span>
+              <span id="quoteLookupOk" class="text-success small ms-1" style="display:none;"><i class="bi bi-check-circle-fill"></i> Auto-filled</span>
+              <span id="quoteLookupErr" class="text-danger small ms-1" style="display:none;"><i class="bi bi-x-circle"></i> Not found</span>
+            </label>
+            <input type="text" id="quoteNumberInput" name="quote_number" class="form-control"
+                   value="{{ project.get('quote_number','') or project.get('job_number','') if project else prefill_quote }}"
+                   placeholder="e.g. QT-202606-001" autocomplete="off">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">PO / WO Number</label>
+            <input type="text" name="po_wo_number" class="form-control"
+                   value="{{ project.get('po_wo_number','') if project else '' }}"
+                   placeholder="Enter PO or WO number">
           </div>
           <div class="col-md-8">
-            <label class="form-label">Project Name</label>
+            <label class="form-label">Project Name <span class="text-danger">*</span></label>
             <input type="text" name="project_name" class="form-control"
                    value="{{ project.get('project_name','') if project else '' }}"
-                   placeholder="Project name" required>
+                   placeholder="Enter descriptive project name" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Date Received</label>
+            <input type="date" name="date_received" class="form-control"
+                   value="{{ project.get('date_received','') if project else '' }}">
           </div>
           <div class="col-md-6">
-            <label class="form-label">Client</label>
+            <label class="form-label">Client <span class="text-danger">*</span></label>
             <select name="client_name" class="form-select">
               <option value="">-- Select Client --</option>
               {% for c in clients %}
               <option value="{{ c }}"
-                {{ 'selected' if project and project.get('client_name') == c }}>{{ c }}</option>
+                {{ 'selected' if project and (project.get('client_name') == c or project.get('company') == c) }}>{{ c }}</option>
               {% endfor %}
             </select>
           </div>
           <div class="col-md-6">
-            <label class="form-label">Assigned To</label>
-            <input type="text" name="assigned_to" class="form-control"
-                   value="{{ project.get('assigned_to','') if project else '' }}"
-                   placeholder="Team member name">
+            <label class="form-label">Sales Person</label>
+            <input type="text" name="sales" id="salesInput" class="form-control"
+                   value="{{ project.get('sales','') or project.get('assigned_to','') if project else '' }}"
+                   placeholder="Enter or select sales person"
+                   list="salesDatalist" autocomplete="off">
+            <datalist id="salesDatalist">
+              {% for sp in sales_people %}
+              <option value="{{ sp }}">
+              {% endfor %}
+            </datalist>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Site Address</label>
+            <input type="text" name="site_address" class="form-control"
+                   value="{{ project.get('site_address','') or project.get('project_site_address','') if project else '' }}"
+                   placeholder="Enter site address">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Mail Address</label>
+            <input type="text" name="mail_address" class="form-control"
+                   value="{{ project.get('mail_address','') or project.get('client_address','') if project else '' }}"
+                   placeholder="Enter mailing address">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Plant (State)</label>
+            {% set us_states = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA',
+              'HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS',
+              'MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA',
+              'RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC','PR','GU'] %}
+            <select name="plant" class="form-select">
+              <option value="">State / facility (e.g. MO, TX)</option>
+              {% for st in us_states %}
+              <option value="{{ st }}" {{ 'selected' if project and (project.get('plant') == st or project.get('plant_location') == st) }}>{{ st }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Job Type</label>
+            <select name="job_type" class="form-select">
+              <option value="">-- Select Job Type --</option>
+              {% for jt in ['Engineering Design','Construction','Inspection','Consultation',
+                            'Maintenance','Research','Drafting','Peer Review','Site Visit',
+                            'Report Preparation','Permit Drawings','Other'] %}
+              <option value="{{ jt }}" {{ 'selected' if project and project.get('job_type') == jt }}>{{ jt }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Scope of Work</label>
+            <input type="text" name="scope_of_work" class="form-control"
+                   value="{{ project.get('scope_of_work','') if project else '' }}"
+                   placeholder="Detailed scope of work (comma-separated)">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Expedite?</label>
+            <select name="expedite" class="form-select">
+              <option value="No" {{ 'selected' if not project or project.get('expedite','No') in ('No','') }}>No</option>
+              <option value="Yes" {{ 'selected' if project and project.get('expedite') == 'Yes' }}>Yes (+50% Extra)</option>
+            </select>
           </div>
           <div class="col-md-4">
             <label class="form-label">Start Date</label>
-            <input type="date" name="start_date" class="form-control"
-                   value="{{ project.get('start_date','') if project else '' }}">
+            <input type="date" name="start_date" id="startDateInput" class="form-control"
+                   value="{{ project.get('start_date','') if project else '' }}"
+                   oninput="calcEndDate()">
           </div>
           <div class="col-md-4">
-            <label class="form-label">End Date</label>
-            <input type="date" name="end_date" class="form-control"
-                   value="{{ project.get('end_date','') if project else '' }}">
+            <label class="form-label">Duration (days)</label>
+            <input type="number" id="durationInput" class="form-control"
+                   min="1" max="9999" placeholder="e.g. 30"
+                   value="" oninput="calcEndDate()">
+            <div class="form-text" id="durationNote" style="display:none;"></div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">End / Due Date</label>
+            <input type="date" name="end_date" id="endDateInput" class="form-control"
+                   value="{{ project.get('end_date','') if project else '' }}"
+                   oninput="calcDuration()">
           </div>
           <div class="col-md-4">
             <label class="form-label">Status</label>
@@ -64,12 +149,9 @@
             </select>
           </div>
           <div class="col-12">
-            <label class="form-label">Description</label>
-            <textarea name="description" class="form-control" rows="3">{{ project.get('description','') if project else '' }}</textarea>
-          </div>
-          <div class="col-12">
             <label class="form-label">Notes</label>
-            <textarea name="notes" class="form-control" rows="2">{{ project.get('notes','') if project else '' }}</textarea>
+            <textarea name="notes" class="form-control" rows="2"
+                      placeholder="Internal notes or comments">{{ project.get('notes','') if project else '' }}</textarea>
           </div>
         </div>
       </div>
@@ -350,6 +432,115 @@ document.addEventListener('DOMContentLoaded', function () {
     onInstallmentModeChange();
   } else {
     recalcPlanPreview();
+  }
+
+  // ── Duration / date calculator ───────────────────────────────────────────
+  function calcEndDate() {
+    const s = document.getElementById('startDateInput').value;
+    const d = parseInt(document.getElementById('durationInput').value) || 0;
+    if (!s || d < 1) return;
+    const end = new Date(s + 'T00:00:00');
+    end.setDate(end.getDate() + d);
+    document.getElementById('endDateInput').value =
+      end.getFullYear() + '-' +
+      String(end.getMonth()+1).padStart(2,'0') + '-' +
+      String(end.getDate()).padStart(2,'0');
+    showDurationNote();
+  }
+  function calcDuration() {
+    const s = document.getElementById('startDateInput').value;
+    const e = document.getElementById('endDateInput').value;
+    if (!s || !e) return;
+    const diff = Math.round((new Date(e) - new Date(s)) / 86400000);
+    if (diff > 0) {
+      document.getElementById('durationInput').value = diff;
+      showDurationNote();
+    }
+  }
+  function showDurationNote() {
+    const s = document.getElementById('startDateInput').value;
+    const e = document.getElementById('endDateInput').value;
+    const note = document.getElementById('durationNote');
+    if (!s || !e) { note.style.display='none'; return; }
+    const diff = Math.round((new Date(e) - new Date(s)) / 86400000);
+    const bdays = Math.round(diff * 5/7);
+    note.textContent = `${diff} calendar days · ~${bdays} business days`;
+    note.style.display = '';
+  }
+  // Calc duration from existing start/end on load
+  calcDuration();
+
+  // ── Quote auto-fill ──────────────────────────────────────────────────────
+  const qInput   = document.getElementById('quoteNumberInput');
+  const spinner  = document.getElementById('quoteLookupSpinner');
+  const okBadge  = document.getElementById('quoteLookupOk');
+  const errBadge = document.getElementById('quoteLookupErr');
+  if (!qInput) return;
+
+  function setOption(sel, val) {
+    // Try exact match first, then case-insensitive
+    for (const opt of sel.options) {
+      if (opt.value === val || opt.value.toLowerCase() === val.toLowerCase()) {
+        sel.value = opt.value; return;
+      }
+    }
+  }
+
+  function fillFromQuote(q) {
+    const f = document.querySelector('form');
+    if (q.project_name  && !f.querySelector('[name=project_name]').value)
+      f.querySelector('[name=project_name]').value  = q.project_name;
+    if (q.client_name)
+      setOption(f.querySelector('[name=client_name]'), q.client_name);
+    if (q.sales        && !f.querySelector('[name=sales]').value)
+      f.querySelector('[name=sales]').value         = q.sales;
+    if (q.site_address && !f.querySelector('[name=site_address]').value)
+      f.querySelector('[name=site_address]').value  = q.site_address;
+    if (q.mail_address && !f.querySelector('[name=mail_address]').value)
+      f.querySelector('[name=mail_address]').value  = q.mail_address;
+    if (q.plant)
+      setOption(f.querySelector('[name=plant]'), q.plant);
+    if (q.job_type)
+      setOption(f.querySelector('[name=job_type]'), q.job_type);
+    if (q.scope_of_work && !f.querySelector('[name=scope_of_work]').value)
+      f.querySelector('[name=scope_of_work]').value = q.scope_of_work;
+    if (q.expedite)
+      setOption(f.querySelector('[name=expedite]'), q.expedite);
+    if (q.contract_value && !f.querySelector('[name=contract_value]').value)
+      f.querySelector('[name=contract_value]').value = q.contract_value;
+    if (q.start_date   && !f.querySelector('[name=start_date]').value)
+      f.querySelector('[name=start_date]').value    = q.start_date;
+    if (q.end_date     && !f.querySelector('[name=end_date]').value)
+      f.querySelector('[name=end_date]').value      = q.end_date;
+    recalcPlanPreview();
+  }
+
+  async function lookupQuote(num) {
+    if (!num.trim()) return;
+    spinner.style.display = ''; okBadge.style.display = 'none'; errBadge.style.display = 'none';
+    try {
+      const res = await fetch(`/api/quote-by-number/${encodeURIComponent(num.trim())}`);
+      const data = await res.json();
+      spinner.style.display = 'none';
+      if (data.found) {
+        fillFromQuote(data);
+        okBadge.style.display = '';
+      } else {
+        errBadge.style.display = '';
+      }
+    } catch {
+      spinner.style.display = 'none';
+      errBadge.style.display = '';
+    }
+  }
+
+  qInput.addEventListener('blur', () => lookupQuote(qInput.value));
+  qInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lookupQuote(qInput.value); } });
+
+  // Auto-trigger if page was opened via "Convert to Project" button
+  const prefill = "{{ prefill_quote }}";
+  if (prefill && qInput.value) {
+    lookupQuote(qInput.value);
   }
 });
 </script>

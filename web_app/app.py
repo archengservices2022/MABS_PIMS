@@ -422,21 +422,85 @@ def quotes():
                     "updated_at": datetime.now(timezone.utc).isoformat()
                 })
                 fdata["status"] = "Expired"
+            # Expiry warning: days remaining for active quotes
+            if valid_until and fdata["status"] not in _QUOTE_TERMINAL:
+                try:
+                    from datetime import date as _date
+                    delta = (_date.fromisoformat(valid_until[:10]) - _date.today()).days
+                    fdata["_days_until_expiry"] = delta
+                except Exception:
+                    pass
             items.append(fdata)
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
 
-    search = request.args.get("q", "").strip().lower()
+    search        = request.args.get("q", "").strip().lower()
     status_filter = request.args.get("status", "")
+    year_filter   = request.args.get("year", "")
+    month_filter  = request.args.get("month", "")
+    date_from     = request.args.get("from", "")
+    date_to       = request.args.get("to", "")
+
     if search:
         items = [i for i in items if search in str(i).lower()]
     if status_filter:
         items = [i for i in items if i.get("status", "") == status_filter]
+    if year_filter:
+        items = [i for i in items if (i.get("date") or "").startswith(year_filter)]
+    if year_filter and month_filter:
+        prefix = f"{year_filter}-{month_filter.zfill(2)}"
+        items = [i for i in items if (i.get("date") or "").startswith(prefix)]
+    if date_from:
+        items = [i for i in items if (i.get("date") or "") >= date_from]
+    if date_to:
+        items = [i for i in items if (i.get("date") or "") <= date_to]
 
-    statuses   = ["Not Started", "In Progress", "Completed", "Invoiced", "Cancelled"]
+    # Build available years from all quote dates (before filtering)
+    all_items_raw = []
+    for fid, fdata in (fb_get("/job_forms") or {}).items() if isinstance(fb_get("/job_forms") or {}, dict) else []:
+        if fdata and isinstance(fdata, dict):
+            all_items_raw.append(fdata)
+    available_years = sorted(
+        {(d.get("date") or "")[:4] for d in all_items_raw if len((d.get("date") or "")) >= 4},
+        reverse=True
+    )
+
+    # Build follow-ups lists from ALL items (unaffected by list filters)
+    from datetime import date as _date, timedelta as _td
+    _today     = datetime.now().strftime("%Y-%m-%d")
+    _today_d   = _date.today()
+    _in14      = (_today_d + _td(days=14)).isoformat()
+    follow_ups = []       # due today or overdue
+    upcoming_followups = []  # due tomorrow → +14 days
+    for q in all_items_raw:
+        fu = q.get("follow_up_date", "")
+        if not fu or q.get("status", "") in _QUOTE_TERMINAL:
+            continue
+        q_copy = dict(q)
+        if fu <= _today:
+            try:
+                q_copy["_fu_days_overdue"] = (_today_d - _date.fromisoformat(fu[:10])).days
+            except Exception:
+                q_copy["_fu_days_overdue"] = 0
+            follow_ups.append(q_copy)
+        elif fu <= _in14:
+            try:
+                q_copy["_fu_days_ahead"] = (_date.fromisoformat(fu[:10]) - _today_d).days
+            except Exception:
+                q_copy["_fu_days_ahead"] = 0
+            upcoming_followups.append(q_copy)
+    follow_ups.sort(key=lambda x: x.get("follow_up_date", ""))
+    upcoming_followups.sort(key=lambda x: x.get("follow_up_date", ""))
+
+    statuses   = ["Not Started", "In Progress", "Completed", "Invoiced", "Cancelled", "Expired"]
     active_tab = request.args.get("tab", "all")
     today_date = datetime.now().strftime("%Y-%m-%d")
     return render_template("quotes.html", quotes=items, statuses=statuses,
                            search=search, status_filter=status_filter,
+                           year_filter=year_filter, month_filter=month_filter,
+                           date_from=date_from, date_to=date_to,
+                           available_years=available_years,
+                           follow_ups=follow_ups,
+                           upcoming_followups=upcoming_followups,
                            clients=_load_clients(), sales_people=_load_sales_people(),
                            active_tab=active_tab, today_date=today_date,
                            next_num=_next_quote_number())
@@ -453,8 +517,14 @@ def quotes_export():
             items.append(fdata)
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     status_filter = request.args.get("status", "")
+    date_from     = request.args.get("from", "")
+    date_to       = request.args.get("to", "")
     if status_filter:
         items = [i for i in items if i.get("status", "") == status_filter]
+    if date_from:
+        items = [i for i in items if (i.get("date") or "") >= date_from]
+    if date_to:
+        items = [i for i in items if (i.get("date") or "") <= date_to]
 
     output = io.StringIO()
     w = csv.writer(output)
@@ -487,6 +557,10 @@ def quotes_export_excel():
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     if request.args.get("status"):
         items = [i for i in items if i.get("status","") == request.args["status"]]
+    if request.args.get("from"):
+        items = [i for i in items if (i.get("date") or "") >= request.args["from"]]
+    if request.args.get("to"):
+        items = [i for i in items if (i.get("date") or "") <= request.args["to"]]
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -552,6 +626,10 @@ def quotes_export_pdf():
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     if request.args.get("status"):
         items = [i for i in items if i.get("status","") == request.args["status"]]
+    if request.args.get("from"):
+        items = [i for i in items if (i.get("date") or "") >= request.args["from"]]
+    if request.args.get("to"):
+        items = [i for i in items if (i.get("date") or "") <= request.args["to"]]
 
     buf = _io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
@@ -567,8 +645,17 @@ def quotes_export_pdf():
     sub_s   = ParagraphStyle("S", parent=styles["Normal"], fontSize=9,
                               textColor=colors.HexColor("#64748B"), spaceAfter=14)
     elems.append(Paragraph(f"{co.get('name','')} — Quote Report", title_s))
+    _pdf_from = request.args.get("from", "")
+    _pdf_to   = request.args.get("to", "")
+    _date_range = ""
+    if _pdf_from and _pdf_to:
+        _date_range = f"  ·  {_pdf_from} to {_pdf_to}"
+    elif _pdf_from:
+        _date_range = f"  ·  From {_pdf_from}"
+    elif _pdf_to:
+        _date_range = f"  ·  Up to {_pdf_to}"
     elems.append(Paragraph(
-        f"Generated {datetime.now().strftime('%B %d, %Y')}  ·  {len(items)} record{'s' if len(items)!=1 else ''}",
+        f"Generated {datetime.now().strftime('%B %d, %Y')}  ·  {len(items)} record{'s' if len(items)!=1 else ''}{_date_range}",
         sub_s))
 
     hdrs = ["Quote #","Client","Project / Scope","Salesperson","Date","Status","Total"]
@@ -710,7 +797,56 @@ def quote_detail(quote_id):
                 break
 
     return render_template("quote_detail.html", quote=data,
-                           linked_project=linked_project, linked_invoice=linked_invoice)
+                           linked_project=linked_project, linked_invoice=linked_invoice,
+                           ai_enabled=bool(_get_ai_client()))
+
+@app.route("/quotes/<quote_id>/followup-done", methods=["POST"])
+@role_required("quotes")
+def quote_followup_done(quote_id):
+    fb_update(f"/job_forms/{quote_id}", {
+        "follow_up_date": "",
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    })
+    flash("Follow-up marked as done.", "success")
+    return redirect(url_for("quotes", tab="followups"))
+
+@app.route("/quotes/<quote_id>/followup-snooze", methods=["POST"])
+@role_required("quotes")
+def quote_followup_snooze(quote_id):
+    from datetime import timedelta
+    days = int(request.form.get("days", 7))
+    new_date = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+    fb_update(f"/job_forms/{quote_id}", {
+        "follow_up_date": new_date,
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    })
+    flash(f"Follow-up snoozed — rescheduled to {new_date}.", "success")
+    return redirect(url_for("quotes", tab="followups"))
+
+@app.route("/quotes/<quote_id>/duplicate", methods=["POST"])
+@role_required("quotes")
+def quote_duplicate(quote_id):
+    original = fb_get(f"/job_forms/{quote_id}")
+    if not original or not isinstance(original, dict):
+        flash("Quote not found.", "danger")
+        return redirect(url_for("quotes"))
+    new_q = {k: v for k, v in original.items() if not k.startswith("firebase_")}
+    new_q["job_number"]   = _next_quote_number()
+    new_q["status"]       = "Not Started"
+    new_q["date"]         = datetime.now().strftime("%Y-%m-%d")
+    new_q["valid_until"]  = ""
+    new_q["created_at"]   = datetime.now(timezone.utc).isoformat()
+    new_q["updated_at"]   = datetime.now(timezone.utc).isoformat()
+    new_q["created_by"]   = session.get("user_email", "")
+    # Clear linked records — duplicate is a fresh quote
+    new_q.pop("linked_project_id", None)
+    new_q.pop("linked_invoice_id", None)
+    key = fb_push("/job_forms", new_q)
+    if key:
+        flash(f"Quote duplicated as {new_q['job_number']}.", "success")
+        return redirect(url_for("quote_detail", quote_id=key))
+    flash("Failed to duplicate quote.", "danger")
+    return redirect(url_for("quote_detail", quote_id=quote_id))
 
 @app.route("/quotes/<quote_id>/edit", methods=["GET", "POST"])
 @role_required("quotes")
@@ -792,12 +928,21 @@ def projects():
         st = i.get("status") or "Not Started"
         status_counts[st] = status_counts.get(st, 0) + 1
 
-    search = request.args.get("q", "").strip().lower()
+    search        = request.args.get("q", "").strip().lower()
     status_filter = request.args.get("status", "")
+    date_from     = request.args.get("from", "")
+    date_to       = request.args.get("to", "")
+    client_filter = request.args.get("client", "")
     if search:
         items = [i for i in items if search in str(i).lower()]
     if status_filter:
         items = [i for i in items if i.get("status", "") == status_filter]
+    if client_filter:
+        items = [i for i in items if i.get("client_name", "") == client_filter]
+    if date_from:
+        items = [i for i in items if (i.get("start_date") or i.get("created_at","")[:10]) >= date_from]
+    if date_to:
+        items = [i for i in items if (i.get("start_date") or i.get("created_at","")[:10]) <= date_to]
 
     statuses = ["Not Started", "Active", "In Progress", "On Hold", "Completed", "Cancelled"]
     clients = _load_clients()
@@ -805,6 +950,8 @@ def projects():
     active_tab = request.args.get("tab", "all-projects")
     return render_template("projects.html", projects=items, statuses=statuses,
                            search=search, status_filter=status_filter,
+                           date_from=date_from, date_to=date_to,
+                           client_filter=client_filter,
                            clients=clients, next_project_num=next_project_num,
                            active_tab=active_tab, status_counts=status_counts)
 
@@ -830,7 +977,10 @@ def project_new():
         fb_push("/projects", data)
         flash(f"Project {data['project_number']} created successfully.", "success")
         return redirect(url_for("projects", tab="all-projects"))
-    return render_template("project_form.html", project=None, clients=clients, is_new=True)
+    sales_people = [p.get("name","") for p in _load_sales_people() if p.get("name","")]
+    prefill_quote = request.args.get("from_quote", "")
+    return render_template("project_form.html", project=None, clients=clients,
+                           sales_people=sales_people, prefill_quote=prefill_quote, is_new=True)
 
 @app.route("/projects/<project_id>", methods=["GET"])
 @role_required("projects")
@@ -928,7 +1078,9 @@ def project_edit(project_id):
         fb_update(f"/projects/{project_id}", updated)
         flash("Project updated.", "success")
         return redirect(url_for("project_detail", project_id=project_id))
-    return render_template("project_form.html", project=data, clients=clients, is_new=False)
+    sales_people = [p.get("name","") for p in _load_sales_people() if p.get("name","")]
+    return render_template("project_form.html", project=data, clients=clients,
+                           sales_people=sales_people, prefill_quote="", is_new=False)
 
 @app.route("/projects/<project_id>/status", methods=["POST"])
 @role_required("projects")
@@ -975,6 +1127,19 @@ def project_delete(project_id):
     return redirect(url_for("projects"))
 
 # ── Routes: Projects Export ───────────────────────────────────────────────────
+def _filter_projects_export(items):
+    if request.args.get("status"):
+        items = [i for i in items if i.get("status","") == request.args["status"]]
+    if request.args.get("client"):
+        items = [i for i in items if i.get("client_name","") == request.args["client"]]
+    date_from = request.args.get("from","")
+    date_to   = request.args.get("to","")
+    if date_from:
+        items = [i for i in items if (i.get("start_date") or i.get("created_at","")[:10]) >= date_from]
+    if date_to:
+        items = [i for i in items if (i.get("start_date") or i.get("created_at","")[:10]) <= date_to]
+    return items
+
 @app.route("/projects/export/csv")
 @role_required("projects")
 def projects_export_csv():
@@ -985,8 +1150,7 @@ def projects_export_csv():
         if pdata and isinstance(pdata, dict):
             items.append(pdata)
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-    if request.args.get("status"):
-        items = [i for i in items if i.get("status","") == request.args["status"]]
+    items = _filter_projects_export(items)
     output = io.StringIO()
     w = csv.writer(output)
     w.writerow(["Project #","Name","Client","Start Date","End Date","Status",
@@ -1017,8 +1181,7 @@ def projects_export_excel():
         if pdata and isinstance(pdata, dict):
             items.append(pdata)
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-    if request.args.get("status"):
-        items = [i for i in items if i.get("status","") == request.args["status"]]
+    items = _filter_projects_export(items)
     wb = openpyxl.Workbook()
     ws = wb.active; ws.title = "Projects"
     hdr_fill = PatternFill(start_color="FF0F172A", end_color="FF0F172A", fill_type="solid")
@@ -1073,8 +1236,7 @@ def projects_export_pdf():
         if pdata and isinstance(pdata, dict):
             items.append(pdata)
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-    if request.args.get("status"):
-        items = [i for i in items if i.get("status","") == request.args["status"]]
+    items = _filter_projects_export(items)
     buf = _io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
                             leftMargin=0.5*inch, rightMargin=0.5*inch,
@@ -1145,12 +1307,24 @@ def invoicing():
             items.append(idata)
     items.sort(key=lambda x: x.get("meta", {}).get("created_at", ""), reverse=True)
 
-    search = request.args.get("q", "").strip().lower()
+    search        = request.args.get("q", "").strip().lower()
     status_filter = request.args.get("status", "")
+    date_from     = request.args.get("from", "")
+    date_to       = request.args.get("to", "")
+    client_filter = request.args.get("client", "")
     if search:
         items = [i for i in items if search in str(i).lower()]
     if status_filter:
         items = [i for i in items if i.get("meta", {}).get("status", "") == status_filter]
+    if client_filter:
+        items = [i for i in items if i.get("meta", {}).get("client_name", "") == client_filter]
+    if date_from:
+        items = [i for i in items if (i.get("meta", {}).get("invoice_date") or "") >= date_from]
+    if date_to:
+        items = [i for i in items if (i.get("meta", {}).get("invoice_date") or "") <= date_to]
+
+    # Build client list for filter dropdown
+    inv_clients = sorted({i.get("meta", {}).get("client_name", "") for i in items if i.get("meta", {}).get("client_name", "")})
 
     # Auto-mark overdue: any Sent/Viewed invoice past its due date
     today_str = datetime.now().strftime("%Y-%m-%d")
@@ -1168,6 +1342,8 @@ def invoicing():
     active_tab = request.args.get("tab", "all-invoices")
     return render_template("invoicing.html", invoices=items, statuses=statuses,
                            search=search, status_filter=status_filter,
+                           date_from=date_from, date_to=date_to,
+                           client_filter=client_filter, inv_clients=inv_clients,
                            active_tab=active_tab)
 
 @app.route("/invoicing/new", methods=["GET", "POST"])
@@ -1325,6 +1501,19 @@ def invoice_delete(invoice_id):
     return redirect(url_for("invoicing"))
 
 # ── Routes: Invoicing Export ──────────────────────────────────────────────────
+def _filter_invoices_export(items):
+    if request.args.get("status"):
+        items = [i for i in items if i.get("meta",{}).get("status","") == request.args["status"]]
+    if request.args.get("client"):
+        items = [i for i in items if i.get("meta",{}).get("client_name","") == request.args["client"]]
+    date_from = request.args.get("from","")
+    date_to   = request.args.get("to","")
+    if date_from:
+        items = [i for i in items if (i.get("meta",{}).get("invoice_date") or "") >= date_from]
+    if date_to:
+        items = [i for i in items if (i.get("meta",{}).get("invoice_date") or "") <= date_to]
+    return items
+
 @app.route("/invoicing/export/csv")
 @role_required("invoicing")
 def invoicing_export_csv():
@@ -1335,8 +1524,7 @@ def invoicing_export_csv():
         if idata and isinstance(idata, dict):
             items.append(idata)
     items.sort(key=lambda x: x.get("meta", {}).get("created_at", ""), reverse=True)
-    if request.args.get("status"):
-        items = [i for i in items if i.get("meta", {}).get("status","") == request.args["status"]]
+    items = _filter_invoices_export(items)
     output = io.StringIO()
     w = csv.writer(output)
     w.writerow(["Invoice #","Client","Project","Date","Due Date","Status",
@@ -1368,8 +1556,7 @@ def invoicing_export_excel():
         if idata and isinstance(idata, dict):
             items.append(idata)
     items.sort(key=lambda x: x.get("meta", {}).get("created_at", ""), reverse=True)
-    if request.args.get("status"):
-        items = [i for i in items if i.get("meta", {}).get("status","") == request.args["status"]]
+    items = _filter_invoices_export(items)
     wb = openpyxl.Workbook()
     ws = wb.active; ws.title = "Invoices"
     hdr_fill = PatternFill(start_color="FF0F172A", end_color="FF0F172A", fill_type="solid")
@@ -1425,8 +1612,7 @@ def invoicing_export_pdf():
         if idata and isinstance(idata, dict):
             items.append(idata)
     items.sort(key=lambda x: x.get("meta", {}).get("created_at", ""), reverse=True)
-    if request.args.get("status"):
-        items = [i for i in items if i.get("meta", {}).get("status","") == request.args["status"]]
+    items = _filter_invoices_export(items)
     buf = _io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
                             leftMargin=0.5*inch, rightMargin=0.5*inch,
@@ -1499,8 +1685,19 @@ def clients():
                 cdata["client_name"] = name
                 items.append(cdata)
     items.sort(key=lambda x: x.get("client_name", "").lower())
+    search = request.args.get("q", "").strip().lower()
+    tag_filter = request.args.get("tag", "")
+    # Collect all tags from full list before filtering so chips always show
+    all_tags = sorted({t for i in items for t in (i.get("tags") or []) if t})
+    if search:
+        items = [i for i in items if search in (
+            (i.get("client_name","") + " " + i.get("company","") + " " +
+             i.get("email","") + " " + i.get("phone",""))).lower()]
+    if tag_filter:
+        items = [i for i in items if tag_filter in (i.get("tags") or [])]
     active_tab = request.args.get("tab", "all-clients")
-    return render_template("clients.html", clients=items, active_tab=active_tab)
+    return render_template("clients.html", clients=items, active_tab=active_tab,
+                           search=search, tag_filter=tag_filter, all_tags=all_tags)
 
 @app.route("/clients/new", methods=["GET", "POST"])
 @role_required("invoicing")
@@ -1510,12 +1707,15 @@ def client_new():
         if not name:
             flash("Client name is required.", "danger")
             return render_template("client_form.html", client=None, is_new=True)
+        raw_tags = request.form.get("tags", "")
+        tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
         data = {
             "company":  request.form.get("company", ""),
             "email":    request.form.get("email", ""),
             "phone":    request.form.get("phone", ""),
             "address":  request.form.get("address", ""),
             "notes":    request.form.get("notes", ""),
+            "tags":     tags,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         fb_update(f"/clients/{name}", data)
@@ -1530,12 +1730,15 @@ def client_edit(client_name):
     data["client_name"] = client_name
     if request.method == "POST":
         new_name = request.form.get("client_name", client_name).strip()
+        raw_tags = request.form.get("tags", "")
+        tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
         updated = {
             "company":  request.form.get("company", ""),
             "email":    request.form.get("email", ""),
             "phone":    request.form.get("phone", ""),
             "address":  request.form.get("address", ""),
             "notes":    request.form.get("notes", ""),
+            "tags":     tags,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         if new_name != client_name:
@@ -1997,6 +2200,51 @@ Use placeholders like [Your Name] for signature. Do not use asterisks for format
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/ai/draft-quote-email/<quote_id>", methods=["POST"])
+@role_required("quotes")
+def ai_draft_quote_email(quote_id):
+    """Generate a professional covering email for sending a quote PDF to the client."""
+    ai_client = _get_ai_client()
+    if not ai_client:
+        return jsonify({"error": "AI not configured. Add your Anthropic API key in Settings → AI."})
+    quote = fb_get(f"/job_forms/{quote_id}")
+    if not quote:
+        return jsonify({"error": "Quote not found."}), 404
+    co       = company_info()
+    services = ", ".join(quote.get("service_types") or []) or "engineering services"
+    total    = _safe_float(quote.get("total", 0))
+    prompt   = f"""Write a concise professional email to accompany a quote PDF sent to a client.
+
+Sender company : {co.get('name', 'Our Company')}
+Client         : {quote.get('client_name', 'Client')}
+Quote number   : {quote.get('job_number', '')}
+Project / Scope: {quote.get('project_name', '')}
+Services       : {services}
+Quote total    : ${total:,.2f}
+Valid until    : {quote.get('valid_until', 'N/A')}
+Salesperson    : {quote.get('salesperson', '')}
+
+Write 3-4 short paragraphs:
+1. Greeting + purpose of the email
+2. Brief summary of the scope and quote total
+3. Validity period + invitation to discuss or ask questions
+4. Professional closing with [Your Name] placeholder
+
+Return JSON only: {{"subject": "...", "body": "..."}}
+No markdown, no asterisks in the body."""
+    try:
+        raw    = _ai_call(prompt, max_tokens=600)
+        import re as _re
+        match  = _re.search(r'\{.*\}', raw, _re.DOTALL)
+        parsed = json.loads(match.group()) if match else {}
+        subject = parsed.get("subject") or f"Quote {quote.get('job_number','')} — {quote.get('project_name','')}"
+        body    = parsed.get("body") or raw
+        return jsonify({"subject": subject, "body": body})
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/ai/cash-flow-summary", methods=["POST"])
 @role_required("financial")
 def ai_cash_flow_summary():
@@ -2171,6 +2419,47 @@ def api_next_invoice():
 def api_client(client_name):
     data = fb_get(f"/clients/{client_name}") or {}
     return jsonify(data)
+
+@app.route("/api/quote-by-number/<quote_number>")
+@login_required
+def api_quote_by_number(quote_number):
+    """Return quote data for a given job_number so the project form can auto-fill."""
+    raw = fb_get("/job_forms") or {}
+    if isinstance(raw, dict):
+        for qid, qdata in raw.items():
+            if isinstance(qdata, dict) and qdata.get("job_number", "").strip() == quote_number.strip():
+                # Map quote fields → project field names
+                def _parse_date(raw_d):
+                    if not raw_d:
+                        return ""
+                    for fmt in ("%m-%d-%Y", "%Y-%m-%d", "%m/%d/%Y"):
+                        try:
+                            from datetime import datetime as _dt
+                            return _dt.strptime(raw_d, fmt).strftime("%Y-%m-%d")
+                        except ValueError:
+                            continue
+                    return ""
+                cost_raw = qdata.get("engineering_costs", "") or "0"
+                try:
+                    cost_val = float(str(cost_raw).replace("$","").replace(",","").strip() or 0)
+                except ValueError:
+                    cost_val = 0.0
+                return jsonify({
+                    "found":          True,
+                    "project_name":   qdata.get("project_name", ""),
+                    "client_name":    qdata.get("client", ""),
+                    "sales":          qdata.get("sales", "") or qdata.get("sales_person", ""),
+                    "site_address":   qdata.get("project_site_address", ""),
+                    "mail_address":   qdata.get("client_address", ""),
+                    "plant":          qdata.get("plant", ""),
+                    "job_type":       qdata.get("job_type", ""),
+                    "scope_of_work":  qdata.get("scope_of_work", ""),
+                    "expedite":       "Yes" if qdata.get("expedite") else "No",
+                    "contract_value": f"{cost_val:.2f}",
+                    "start_date":     _parse_date(qdata.get("start_date", "")),
+                    "end_date":       _parse_date(qdata.get("due_date", "")),
+                })
+    return jsonify({"found": False})
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def _save_local_settings_key(key: str, value) -> None:
@@ -2420,6 +2709,17 @@ def _next_project_number() -> str:
     next_n = (max(nums) + 1) if nums else 1
     return f"{prefix}{next_n:03d}"
 
+def _parse_service_types(form) -> list:
+    """Return service_types list, substituting 'Other' with 'Other: {specify}' when filled."""
+    types = form.getlist("service_types[]")
+    if not types:
+        return None
+    specify = form.get("other_specify", "").strip()
+    if "Other" in types and specify:
+        idx = types.index("Other")
+        types[idx] = f"Other: {specify}"
+    return types
+
 def _parse_quote_form(form) -> dict:
     line_items = []
     descriptions = form.getlist("item_description[]")
@@ -2443,7 +2743,7 @@ def _parse_quote_form(form) -> dict:
         "date":                 form.get("date", datetime.now().strftime("%Y-%m-%d")),
         "valid_until":          form.get("valid_until", ""),
         "expected_completion":  form.get("expected_completion", ""),
-        "service_types":        form.getlist("service_types[]") or None,
+        "service_types":        _parse_service_types(form),
         "priority":             form.get("priority", "Normal"),
         "is_expedited":         form.get("is_expedited") == "on",
         "rush_rate":            form.get("rush_rate", "0"),
@@ -2455,6 +2755,7 @@ def _parse_quote_form(form) -> dict:
         "total":                form.get("total", "0"),
         "notes":                form.get("notes", ""),
         "terms":                form.get("terms", ""),
+        "follow_up_date":       form.get("follow_up_date", ""),
     }
 
 def _resolve_installment_plan(data: dict) -> tuple:
@@ -2516,21 +2817,36 @@ def _compute_payment_stages(contract_value: float, down_pct: float, installments
 
 def _parse_project_form(form) -> dict:
     return {
+        # ── identifiers (match desktop field names exactly) ──────────────────
         "project_number":  form.get("project_number", ""),
+        "quote_number":    form.get("quote_number", ""),
+        "po_wo_number":    form.get("po_wo_number", ""),
+        # ── project info ─────────────────────────────────────────────────────
         "project_name":    form.get("project_name", ""),
-        "client_name":     form.get("client_name", ""),
+        "company":         form.get("client_name", ""),   # desktop key = company
+        "client_name":     form.get("client_name", ""),   # keep for web queries
+        "site_address":    form.get("site_address", ""),
+        "mail_address":    form.get("mail_address", ""),
+        "date_received":   form.get("date_received", ""),
+        "plant":           form.get("plant", ""),          # 2-letter state code
+        "sales":           form.get("sales", ""),
+        "job_type":        form.get("job_type", ""),
+        "scope_of_work":   form.get("scope_of_work", ""),
+        "expedite":        form.get("expedite", "No"),
         "description":     form.get("description", ""),
+        "notes":           form.get("notes", ""),
+        # ── dates ────────────────────────────────────────────────────────────
         "status":          form.get("status", "Not Started"),
         "start_date":      form.get("start_date", ""),
         "end_date":        form.get("end_date", ""),
-        "contract_value":  form.get("contract_value", "0"),
-        "payment_category": form.get("payment_category", "Down Payment"),
-        "amount_paid":     form.get("amount_paid", "0"),
+        # ── financials ───────────────────────────────────────────────────────
+        "contract_value":       form.get("contract_value", "0"),
+        "project_amount":       form.get("contract_value", "0"),  # desktop key
+        "payment_category":     form.get("payment_category", "Down Payment"),
+        "amount_paid":          form.get("amount_paid", "0"),
         "down_payment_percent": form.get("down_payment_percent", "0"),
         "installment_count":    form.get("installment_count", "1"),
         "custom_installment_amounts": [a for a in form.getlist("custom_installment_amount[]") if str(a).strip()],
-        "notes":           form.get("notes", ""),
-        "assigned_to":     form.get("assigned_to", ""),
     }
 
 def _parse_invoice_form(form) -> dict:

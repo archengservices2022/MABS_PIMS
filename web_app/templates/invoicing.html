@@ -45,22 +45,50 @@
   <!-- ── Tab 1: All Invoices ────────────────────────────────────────────── -->
   <div class="tab-pane fade" id="tab-all-invoices">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-      <form class="d-flex gap-2 flex-wrap" method="GET">
-        <input type="text" name="q" value="{{ search }}" class="form-control form-control-sm"
-               placeholder="Search invoices..." style="width:200px;">
-        <select name="status" class="form-select form-select-sm" style="width:160px;">
-          <option value="">All Statuses</option>
-          {% for s in statuses %}
-          <option value="{{ s }}" {{ 'selected' if status_filter == s }}>{{ s }}</option>
-          {% endfor %}
-        </select>
-        <button type="submit" class="btn btn-sm btn-outline-secondary">
-          <i class="bi bi-search"></i> Filter
-        </button>
-        {% if search or status_filter %}
-        <a href="{{ url_for('invoicing') }}" class="btn btn-sm btn-outline-danger">
-          <i class="bi bi-x"></i> Clear
-        </a>
+      <form method="GET" id="invFilterForm">
+        <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
+          <input type="text" name="q" value="{{ search }}" class="form-control form-control-sm"
+                 placeholder="Search invoices…" style="width:200px;">
+          <select name="status" class="form-select form-select-sm" style="width:150px;">
+            <option value="">All Statuses</option>
+            {% for s in statuses %}
+            <option value="{{ s }}" {{ 'selected' if status_filter == s }}>{{ s }}</option>
+            {% endfor %}
+          </select>
+          <select name="client" class="form-select form-select-sm" style="width:190px;">
+            <option value="">All Clients</option>
+            {% for c in inv_clients %}
+            <option value="{{ c }}" {{ 'selected' if client_filter == c }}>{{ c }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+          <span class="text-muted small" style="min-width:75px;">Invoice date:</span>
+          <input type="date" name="from" value="{{ date_from }}" class="form-control form-control-sm" style="width:160px;">
+          <span class="text-muted small">to</span>
+          <input type="date" name="to" value="{{ date_to }}" class="form-control form-control-sm" style="width:160px;">
+          <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setInvRange('month')">This Month</button>
+          <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setInvRange('year')">This Year</button>
+          <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setInvRange('last30')">Last 30 Days</button>
+          <button type="submit" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-search me-1"></i>Apply
+          </button>
+          {% if search or status_filter or date_from or date_to or client_filter %}
+          <a href="{{ url_for('invoicing') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-x-lg me-1"></i>Clear
+          </a>
+          {% endif %}
+        </div>
+        {% if search or status_filter or date_from or date_to or client_filter %}
+        <div class="alert alert-light py-1 px-3 mt-2 small d-flex align-items-center gap-2"
+             style="border-left:3px solid #0D9488;">
+          <i class="bi bi-funnel text-teal"></i>
+          <span>
+            {% if date_from and date_to %}{{ date_from }} to {{ date_to }}{% elif date_from %}From {{ date_from }}{% elif date_to %}Up to {{ date_to }}{% endif %}
+            {% if status_filter %} · Status: <strong>{{ status_filter }}</strong>{% endif %}
+            {% if client_filter %} · Client: <strong>{{ client_filter }}</strong>{% endif %}
+          </span>
+        </div>
         {% endif %}
       </form>
     </div>
@@ -128,15 +156,34 @@
   <!-- ── Tab 2: New Invoice ──────────────────────────────────────────────── -->
   <!-- ── Tab 3: Export ───────────────────────────────────────────────────── -->
   <div class="tab-pane fade" id="tab-export">
-    <div class="mb-4">
-      <label class="form-label fw-600 small text-muted text-uppercase">Filter by Status</label>
-      <select id="invExportStatus" class="form-select form-select-sm" style="width:220px;"
-              onchange="updateInvExportLinks()">
-        <option value="">All Statuses</option>
-        {% for s in statuses %}
-        <option value="{{ s }}">{{ s }}</option>
-        {% endfor %}
-      </select>
+    <div class="card-panel mb-4">
+      <h6 class="section-heading mb-3">Filter Export</h6>
+      <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
+        <select id="invExportStatus" class="form-select form-select-sm" style="width:170px;"
+                onchange="buildInvExportLinks()">
+          <option value="">All Statuses</option>
+          {% for s in statuses %}
+          <option value="{{ s }}">{{ s }}</option>
+          {% endfor %}
+        </select>
+        <select id="invExportClient" class="form-select form-select-sm" style="width:200px;"
+                onchange="buildInvExportLinks()">
+          <option value="">All Clients</option>
+          {% for c in inv_clients %}
+          <option value="{{ c }}">{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="d-flex gap-2 flex-wrap align-items-center">
+        <span class="text-muted small" style="min-width:80px;">Invoice date:</span>
+        <input type="date" id="invExportFrom" class="form-control form-control-sm" style="width:160px;" oninput="buildInvExportLinks()">
+        <span class="text-muted small">to</span>
+        <input type="date" id="invExportTo" class="form-control form-control-sm" style="width:160px;" oninput="buildInvExportLinks()">
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setInvExportRange('month')">This Month</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setInvExportRange('year')">This Year</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setInvExportRange('last30')">Last 30 Days</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="clearInvExportFilters()">Clear</button>
+      </div>
     </div>
     <div class="row g-3">
       <div class="col-md-4">
@@ -144,7 +191,7 @@
           <div style="font-size:2.5rem;color:#DC2626;margin-bottom:12px;">
             <i class="bi bi-file-earmark-pdf-fill"></i>
           </div>
-          <h6 class="fw-700 mb-1">PDF Report</h6>
+          <h6 class="fw-bold mb-1">PDF Report</h6>
           <p class="text-muted small mb-3">Professional PDF invoice listing</p>
           <a id="invExportPdfLink" href="{{ url_for('invoicing_export_pdf') }}"
              class="btn btn-sm btn-danger w-100">
@@ -157,7 +204,7 @@
           <div style="font-size:2.5rem;color:#16A34A;margin-bottom:12px;">
             <i class="bi bi-file-earmark-spreadsheet-fill"></i>
           </div>
-          <h6 class="fw-700 mb-1">Excel Spreadsheet</h6>
+          <h6 class="fw-bold mb-1">Excel Spreadsheet</h6>
           <p class="text-muted small mb-3">Styled .xlsx with all invoice data</p>
           <a id="invExportExcelLink" href="{{ url_for('invoicing_export_excel') }}"
              class="btn btn-sm btn-success w-100">
@@ -170,7 +217,7 @@
           <div style="font-size:2.5rem;color:#2563EB;margin-bottom:12px;">
             <i class="bi bi-file-earmark-text-fill"></i>
           </div>
-          <h6 class="fw-700 mb-1">CSV Export</h6>
+          <h6 class="fw-bold mb-1">CSV Export</h6>
           <p class="text-muted small mb-3">Comma-separated values file</p>
           <a id="invExportCsvLink" href="{{ url_for('invoicing_export_csv') }}"
              class="btn btn-sm btn-primary w-100">
@@ -186,16 +233,69 @@
 
 {% block scripts %}
 <script>
-// ── Export link updater ──────────────────────────────────────────────────────
+// ── Invoice filter quick-range ───────────────────────────────────────────────
+function localDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function setInvRange(type) {
+  const form = document.getElementById('invFilterForm');
+  const fromEl = form.querySelector('[name="from"]');
+  const toEl   = form.querySelector('[name="to"]');
+  const now = new Date();
+  if (type === 'month') {
+    fromEl.value = localDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    toEl.value   = localDate(new Date(now.getFullYear(), now.getMonth()+1, 0));
+  } else if (type === 'year') {
+    fromEl.value = `${now.getFullYear()}-01-01`;
+    toEl.value   = `${now.getFullYear()}-12-31`;
+  } else if (type === 'last30') {
+    const f = new Date(now); f.setDate(f.getDate()-30);
+    fromEl.value = localDate(f);
+    toEl.value   = localDate(now);
+  }
+  form.submit();
+}
+
+// ── Export link builder ──────────────────────────────────────────────────────
 const INV_PDF_BASE   = "{{ url_for('invoicing_export_pdf') }}";
 const INV_EXCEL_BASE = "{{ url_for('invoicing_export_excel') }}";
 const INV_CSV_BASE   = "{{ url_for('invoicing_export_csv') }}";
-function updateInvExportLinks() {
+function buildInvExportLinks() {
+  const params = new URLSearchParams();
   const s = document.getElementById('invExportStatus').value;
-  const q = s ? '?status=' + encodeURIComponent(s) : '';
+  const c = document.getElementById('invExportClient').value;
+  const f = document.getElementById('invExportFrom').value;
+  const t = document.getElementById('invExportTo').value;
+  if (s) params.set('status', s);
+  if (c) params.set('client', c);
+  if (f) params.set('from', f);
+  if (t) params.set('to', t);
+  const q = params.toString() ? '?' + params.toString() : '';
   document.getElementById('invExportPdfLink').href   = INV_PDF_BASE   + q;
   document.getElementById('invExportExcelLink').href = INV_EXCEL_BASE + q;
   document.getElementById('invExportCsvLink').href   = INV_CSV_BASE   + q;
+}
+function setInvExportRange(type) {
+  const now = new Date();
+  if (type === 'month') {
+    document.getElementById('invExportFrom').value = localDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    document.getElementById('invExportTo').value   = localDate(new Date(now.getFullYear(), now.getMonth()+1, 0));
+  } else if (type === 'year') {
+    document.getElementById('invExportFrom').value = `${now.getFullYear()}-01-01`;
+    document.getElementById('invExportTo').value   = `${now.getFullYear()}-12-31`;
+  } else if (type === 'last30') {
+    const f = new Date(now); f.setDate(f.getDate()-30);
+    document.getElementById('invExportFrom').value = localDate(f);
+    document.getElementById('invExportTo').value   = localDate(now);
+  }
+  buildInvExportLinks();
+}
+function clearInvExportFilters() {
+  document.getElementById('invExportStatus').value = '';
+  document.getElementById('invExportClient').value = '';
+  document.getElementById('invExportFrom').value = '';
+  document.getElementById('invExportTo').value = '';
+  buildInvExportLinks();
 }
 
 // ── Tab activation ───────────────────────────────────────────────────────────

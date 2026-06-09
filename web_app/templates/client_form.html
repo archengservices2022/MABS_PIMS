@@ -40,6 +40,13 @@
           <textarea name="address" class="form-control" rows="3">{{ client.get('address','') if client else '' }}</textarea>
         </div>
         <div class="mb-3">
+          <label class="form-label">Tags</label>
+          <input type="text" name="tags" class="form-control"
+                 value="{{ (client.get('tags') or []) | join(', ') if client else '' }}"
+                 placeholder="Comma-separated tags, e.g. VIP, Contractor, Residential">
+          <div class="form-text">Separate multiple tags with commas.</div>
+        </div>
+        <div class="mb-3">
           <label class="form-label">Notes</label>
           <textarea name="notes" class="form-control" rows="2">{{ client.get('notes','') if client else '' }}</textarea>
         </div>

@@ -86,19 +86,41 @@
             <label class="form-label">Service Types <span class="text-muted small fw-normal">— select all that apply; each adds a line item</span></label>
             {% set all_services = ['Mechanical','Electrical','Civil','Structural','Plumbing','HVAC','Fire Protection','Geotechnical','Environmental','Other'] %}
             {% set selected_svcs = ((quote.get('service_types') or ([quote.get('service_type')] if quote.get('service_type') else [])) if quote else []) %}
+            {# Extract existing "Other: XYZ" specify text #}
+            {% set ns = namespace(other_val='', other_checked=false) %}
+            {% for svc in selected_svcs %}
+              {% if svc == 'Other' %}{% set ns.other_checked = true %}
+              {% elif svc.startswith('Other:') %}{% set ns.other_checked = true %}{% set ns.other_val = svc[6:]|trim %}
+              {% endif %}
+            {% endfor %}
             <div class="row g-2">
               {% for st in all_services %}
+              {% set is_other = (st == 'Other') %}
+              {% set is_checked = (ns.other_checked if is_other else st in selected_svcs) %}
               <div class="col-6 col-md-4 col-lg-3">
-                <div class="form-check border rounded px-3 py-2 h-100 {{ 'svc-selected' if st in selected_svcs else 'border-light' }}" id="svcBox_{{ loop.index }}">
+                <div class="form-check border rounded px-3 py-2 h-100 {{ 'svc-selected' if is_checked else 'border-light' }}" id="svcBox_{{ loop.index }}">
                   <input class="form-check-input" type="checkbox"
                          name="service_types[]" value="{{ st }}"
                          id="svc_{{ loop.index }}"
-                         {{ 'checked' if st in selected_svcs }}
+                         {{ 'checked' if is_checked }}
+                         {% if is_other %}data-other="true"{% endif %}
                          onchange="toggleServiceType(this, '{{ st }}', 'svcBox_{{ loop.index }}')">
                   <label class="form-check-label small fw-semibold" for="svc_{{ loop.index }}">{{ st }}</label>
                 </div>
               </div>
               {% endfor %}
+              <!-- Other specify — shown when Other is ticked -->
+              <div class="col-12" id="otherSpecifyRow"
+                   style="{{ '' if ns.other_checked else 'display:none;' }}">
+                <div class="d-flex align-items-center gap-2 p-2 rounded border border-warning bg-warning bg-opacity-10">
+                  <i class="bi bi-pencil-square text-warning"></i>
+                  <label class="form-label mb-0 small fw-semibold text-nowrap">Please specify:</label>
+                  <input type="text" name="other_specify" id="otherSpecifyInput"
+                         class="form-control form-control-sm"
+                         placeholder="e.g. Surveying, Site Inspection, Consulting…"
+                         maxlength="80" value="{{ ns.other_val }}">
+                </div>
+              </div>
             </div>
           </div>
           <div class="col-md-4">
@@ -213,6 +235,14 @@
         <div class="mb-3">
           <label class="form-label">Terms &amp; Conditions</label>
           <textarea name="terms" class="form-control" rows="3">{{ quote.get('terms','') if quote else 'Thank you for your business!' }}</textarea>
+        </div>
+        <div class="mb-0">
+          <label class="form-label">
+            <i class="bi bi-bell me-1 text-teal"></i>Follow-up Date
+            <span class="text-muted small fw-normal">— remind to follow up with client</span>
+          </label>
+          <input type="date" name="follow_up_date" class="form-control"
+                 value="{{ quote.get('follow_up_date','') if quote else '' }}">
         </div>
       </div>
 
@@ -339,10 +369,18 @@ function removeRow(btn) {
 
 function toggleServiceType(cb, serviceName, boxId) {
   const box = document.getElementById(boxId);
+
+  // Show/hide "Other — please specify" row
+  if (cb.dataset.other) {
+    const specRow = document.getElementById('otherSpecifyRow');
+    const specInp = document.getElementById('otherSpecifyInput');
+    specRow.style.display = cb.checked ? '' : 'none';
+    if (!cb.checked) specInp.value = '';
+  }
+
   if (cb.checked) {
     box.classList.add('svc-selected');
     box.classList.remove('border-light');
-    // Remove blank placeholder row if only one empty row exists
     const rows = document.querySelectorAll('.line-item-row');
     if (rows.length === 1) {
       const desc = rows[0].querySelector('input[name="item_description[]"]');
@@ -352,14 +390,12 @@ function toggleServiceType(cb, serviceName, boxId) {
   } else {
     box.classList.remove('svc-selected');
     box.classList.add('border-light');
-    // Remove the matching service line item row
     const rows = document.querySelectorAll('.line-item-row');
     for (const row of rows) {
       if (row.dataset.service === serviceName) {
         row.remove(); break;
       }
     }
-    // Ensure at least one blank row remains
     if (document.querySelectorAll('.line-item-row').length === 0) {
       addLineItem();
     }

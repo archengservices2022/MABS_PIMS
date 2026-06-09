@@ -22,6 +22,48 @@
 
   <!-- ── Tab 1: All Clients ─────────────────────────────────────────────── -->
   <div class="tab-pane fade" id="tab-all-clients">
+    <form method="GET" id="clientFilterForm" class="mb-3">
+      <input type="hidden" name="tab" value="all-clients">
+      <div class="d-flex gap-2 flex-wrap align-items-center">
+        <input type="text" name="q" value="{{ search }}" class="form-control form-control-sm"
+               placeholder="Search name, company, email…" style="width:240px;">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-search me-1"></i>Search
+        </button>
+        {% if search or tag_filter %}
+        <a href="{{ url_for('clients') }}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-x-lg me-1"></i>Clear
+        </a>
+        {% endif %}
+      </div>
+      {% if all_tags %}
+      <div class="d-flex flex-wrap gap-1 mt-2 align-items-center">
+        <span class="text-muted small me-1">Tags:</span>
+        <a href="{{ url_for('clients', q=search) }}"
+           class="badge {{ 'bg-teal' if not tag_filter else 'bg-light text-dark border' }} text-decoration-none">
+          All
+        </a>
+        {% for t in all_tags %}
+        <a href="{{ url_for('clients', q=search, tag=t) }}"
+           class="badge {{ 'bg-teal' if tag_filter == t else 'bg-light text-dark border' }} text-decoration-none">
+          {{ t }}
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if search or tag_filter %}
+      <div class="alert alert-light py-1 px-3 mt-2 small d-flex align-items-center gap-2"
+           style="border-left:3px solid #0D9488;">
+        <i class="bi bi-funnel"></i>
+        <span>
+          {% if search %}Search: <strong>{{ search }}</strong>{% endif %}
+          {% if tag_filter %} · Tag: <strong>{{ tag_filter }}</strong>{% endif %}
+          &nbsp;·&nbsp; {{ clients|length }} result{{ 's' if clients|length != 1 else '' }}
+        </span>
+      </div>
+      {% endif %}
+    </form>
+
     <div class="card-panel">
       <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
@@ -31,7 +73,7 @@
               <th>Company</th>
               <th>Email</th>
               <th>Phone</th>
-              <th>Address</th>
+              <th>Tags</th>
               <th></th>
             </tr>
           </thead>
@@ -47,8 +89,13 @@
               <td>{{ c.get('company','—') }}</td>
               <td>{{ c.get('email','—') }}</td>
               <td>{{ c.get('phone','—') }}</td>
-              <td class="text-muted small">
-                {{ (c.get('address','') or '')[:40] }}{{ '…' if (c.get('address','') or '')|length > 40 }}
+              <td>
+                {% for t in (c.get('tags') or []) %}
+                <a href="{{ url_for('clients', tag=t) }}"
+                   class="badge bg-light text-dark border text-decoration-none me-1">{{ t }}</a>
+                {% else %}
+                <span class="text-muted small">—</span>
+                {% endfor %}
               </td>
               <td>
                 <div class="d-flex gap-1">
@@ -67,7 +114,7 @@
             <tr>
               <td colspan="6" class="text-center text-muted py-5">
                 <i class="bi bi-people fs-2 d-block mb-2"></i>
-                No clients yet.
+                No clients found.
               </td>
             </tr>
             {% endfor %}
@@ -108,6 +155,12 @@
               <label class="form-label">Address</label>
               <textarea name="address" class="form-control" rows="3"
                         placeholder="Street address, city, state, zip"></textarea>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Tags</label>
+              <input type="text" name="tags" class="form-control"
+                     placeholder="Comma-separated tags, e.g. VIP, Contractor, Residential">
+              <div class="form-text">Separate multiple tags with commas.</div>
             </div>
             <div class="mb-3">
               <label class="form-label">Notes</label>

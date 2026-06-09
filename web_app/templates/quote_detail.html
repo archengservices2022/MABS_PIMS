@@ -58,6 +58,28 @@
       {% endif %}
     {% endif %}
 
+    <!-- Duplicate -->
+    <form method="POST" action="{{ url_for('quote_duplicate', quote_id=quote.firebase_id) }}"
+          onsubmit="return confirm('Duplicate this quote?\n\nA copy will be created as a new draft with the next quote number.');">
+      <button type="submit" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-copy me-1"></i>Duplicate
+      </button>
+    </form>
+
+    <!-- AI Draft Email -->
+    {% if ai_enabled %}
+    <button type="button" class="btn btn-sm btn-outline-teal" onclick="openEmailModal()">
+      <i class="bi bi-envelope-at me-1"></i>Draft Email
+    </button>
+    {% endif %}
+
+    {% if 'projects' in allowed_pages %}
+    <a href="{{ url_for('project_new') }}?from_quote={{ quote.get('job_number','') }}"
+       class="btn btn-sm btn-teal">
+      <i class="bi bi-kanban me-1"></i>Convert to Project
+    </a>
+    {% endif %}
+
     <a href="{{ url_for('quote_edit', quote_id=quote.firebase_id) }}" class="btn btn-sm btn-outline-primary">
       <i class="bi bi-pencil me-1"></i>Edit
     </a>
@@ -107,8 +129,34 @@
           <div class="info-value">
             {% set svcs = (quote.get('service_types') or ([quote.get('service_type')] if quote.get('service_type') else [])) %}
             {% if svcs %}
-              {% for svc in svcs %}<span class="badge bg-secondary me-1 mb-1">{{ svc }}</span>{% endfor %}
+              {% for svc in svcs %}
+                {% if svc.startswith('Other:') %}
+                  <span class="badge me-1 mb-1"
+                        style="background:#FEF9C3;color:#854D0E;border:1px solid #FDE68A;">
+                    <i class="bi bi-pencil-square me-1"></i>{{ svc }}
+                  </span>
+                {% else %}
+                  <span class="badge bg-secondary me-1 mb-1">{{ svc }}</span>
+                {% endif %}
+              {% endfor %}
             {% else %}—{% endif %}
+          </div>
+        </div>
+        <div class="col-sm-4">
+          <div class="info-label"><i class="bi bi-bell me-1 text-teal"></i>Follow-up Date</div>
+          <div class="info-value">
+            {% if quote.get('follow_up_date') %}
+              {{ quote.get('follow_up_date') }}
+              <form method="POST"
+                    action="{{ url_for('quote_followup_done', quote_id=quote.firebase_id) }}"
+                    class="d-inline ms-2">
+                <button type="submit" class="btn btn-xs btn-outline-secondary" title="Clear follow-up">
+                  <i class="bi bi-x"></i>
+                </button>
+              </form>
+            {% else %}
+              <span class="text-muted">Not set</span>
+            {% endif %}
           </div>
         </div>
         <div class="col-sm-8">
@@ -252,6 +300,63 @@
   </div>
 </div>
 
+<!-- Expiry warning banner -->
+{% set valid_until = quote.get('valid_until','') %}
+{% if valid_until and quote.get('status') not in ['Invoiced','Converted','Cancelled','Expired','Rejected'] %}
+  {% set today_parts = now_date.split('-') if now_date is defined else [] %}
+  <div id="expiryBanner" class="alert py-2 px-3 mb-3 small d-flex align-items-center gap-2"
+       style="border-left:4px solid #F59E0B;background:#FFFBEB;color:#92400E;"
+       data-valid="{{ valid_until }}">
+    <i class="bi bi-clock-history"></i>
+    <span>This quote is valid until <strong>{{ valid_until }}</strong>.
+    <span id="expiryCountdown"></span></span>
+  </div>
+{% endif %}
+
+<!-- AI Draft Email Modal -->
+{% if ai_enabled %}
+<div class="modal fade" id="emailModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header" style="background:#0F172A;color:white;">
+        <h5 class="modal-title">
+          <i class="bi bi-envelope-at me-2"></i>AI Draft Covering Email
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="emailLoading" class="text-center py-4">
+          <div class="spinner-border text-teal mb-2"></div>
+          <div class="text-muted small">Drafting email…</div>
+        </div>
+        <div id="emailResult" style="display:none;">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Subject</label>
+            <input type="text" id="emailSubject" class="form-control form-control-sm">
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Body</label>
+            <textarea id="emailBody" class="form-control" rows="12"></textarea>
+          </div>
+          <div class="text-muted small">
+            <i class="bi bi-info-circle me-1"></i>
+            Review and personalise before sending. Attach the quote PDF using the PDF button above.
+          </div>
+        </div>
+        <div id="emailError" class="alert alert-danger py-2 small" style="display:none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-outline-teal" id="emailCopyBtn"
+                style="display:none;" onclick="copyEmail()">
+          <i class="bi bi-clipboard me-1"></i>Copy to Clipboard
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <!-- Delete Modal -->
 <div class="modal fade" id="deleteModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
@@ -291,6 +396,7 @@
 
 {% block scripts %}
 <script>
+// ── Delete modal ─────────────────────────────────────────────────────────────
 function openDeleteModal() {
   document.getElementById('deleteConfirmInput').value = '';
   document.getElementById('deleteConfirmBtn').disabled = true;
@@ -300,5 +406,63 @@ function checkDeleteInput(input) {
   const expected = '{{ quote.get("job_number","") }}';
   document.getElementById('deleteConfirmBtn').disabled = input.value.trim() !== expected;
 }
+
+// ── Expiry countdown ──────────────────────────────────────────────────────────
+(function () {
+  const banner = document.getElementById('expiryBanner');
+  if (!banner) return;
+  const validUntil = banner.dataset.valid;
+  if (!validUntil) return;
+  const exp  = new Date(validUntil + 'T23:59:59');
+  const now  = new Date();
+  const diff = Math.floor((exp - now) / 86400000);
+  const el   = document.getElementById('expiryCountdown');
+  if (!el) return;
+  if (diff < 0)       { el.innerHTML = '<strong class="text-danger"> — Expired.</strong>'; banner.style.borderColor='#EF4444'; banner.style.background='#FEF2F2'; banner.style.color='#991B1B'; }
+  else if (diff === 0){ el.innerHTML = '<strong class="text-danger"> — Expires today!</strong>'; }
+  else if (diff <= 3) { el.innerHTML = `<strong class="text-danger"> — ${diff} day${diff>1?'s':''} remaining.</strong>`; }
+  else if (diff <= 7) { el.innerHTML = `<strong class="text-warning"> — ${diff} days remaining.</strong>`; }
+  else                { banner.style.display = 'none'; }
+})();
+
+// ── AI Draft Email ────────────────────────────────────────────────────────────
+{% if ai_enabled %}
+async function openEmailModal() {
+  const modal = new bootstrap.Modal(document.getElementById('emailModal'));
+  document.getElementById('emailLoading').style.display = '';
+  document.getElementById('emailResult').style.display  = 'none';
+  document.getElementById('emailError').style.display   = 'none';
+  document.getElementById('emailCopyBtn').style.display = 'none';
+  modal.show();
+  try {
+    const res  = await fetch('/ai/draft-quote-email/{{ quote.firebase_id }}', { method: 'POST' });
+    const data = await res.json();
+    document.getElementById('emailLoading').style.display = 'none';
+    if (data.error) {
+      document.getElementById('emailError').textContent   = data.error;
+      document.getElementById('emailError').style.display = '';
+      return;
+    }
+    document.getElementById('emailSubject').value         = data.subject || '';
+    document.getElementById('emailBody').value            = data.body    || '';
+    document.getElementById('emailResult').style.display  = '';
+    document.getElementById('emailCopyBtn').style.display = '';
+  } catch (e) {
+    document.getElementById('emailLoading').style.display = 'none';
+    document.getElementById('emailError').textContent     = 'Request failed. Please try again.';
+    document.getElementById('emailError').style.display   = '';
+  }
+}
+
+function copyEmail() {
+  const subj = document.getElementById('emailSubject').value;
+  const body = document.getElementById('emailBody').value;
+  navigator.clipboard.writeText(`Subject: ${subj}\n\n${body}`).then(() => {
+    const btn = document.getElementById('emailCopyBtn');
+    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copied!';
+    setTimeout(() => btn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy to Clipboard', 2000);
+  });
+}
+{% endif %}
 </script>
 {% endblock %}
