@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+{% block title %}Invoicing{% endblock %}
+{% block page_title %}Invoicing{% endblock %}
+
+{% set status_icons = {
+  'Draft':     ('bi-pencil',                'Not sent to client yet'),
+  'Sent':      ('bi-send',                  'Sent — awaiting payment'),
+  'Viewed':    ('bi-eye',                   'Client opened the invoice'),
+  'Paid':      ('bi-check-circle-fill',     'Payment received in full'),
+  'Partial':   ('bi-circle-half',           'Part payment received'),
+  'Overdue':   ('bi-exclamation-circle-fill','Past due date'),
+  'Cancelled': ('bi-x-circle',              'Cancelled'),
+} %}
+{% macro status_badge(status) %}
+  {% set st = status or 'Draft' %}
+  {% set icon, tip = status_icons.get(st, ('bi-circle', st)) %}
+  <span class="badge status-{{ st|lower|replace(' ','-') }}" title="{{ tip }}">
+    <i class="bi {{ icon }} me-1"></i>{{ st }}
+  </span>
+{% endmacro %}
+
+{% block content %}
+<!-- Tab nav -->
+<ul class="nav nav-tabs mb-4" id="invoiceTabs">
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-all-invoices">
+      <i class="bi bi-receipt me-1"></i>All Invoices
+      <span class="badge bg-secondary ms-1">{{ invoices|length }}</span>
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('invoice_new') }}">
+      <i class="bi bi-plus-square me-1"></i>New Invoice
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-export">
+      <i class="bi bi-download me-1"></i>Export
+    </a>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- ── Tab 1: All Invoices ────────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-all-invoices">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <form method="GET" id="invFilterForm">
+        <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
+          <input type="text" name="q" value="{{ search }}" class="form-control form-control-sm"
+                 placeholder="Search invoices…" style="width:200px;">
+          <select name="status" class="form-select form-select-sm" style="width:150px;">
+            <option value="">All Statuses</option>
+            {% for s in statuses %}
+            <option value="{{ s }}" {{ 'selected' if status_filter == s }}>{{ s }}</option>
+            {% endfor %}
+          </select>
+          <select name="client" class="form-select form-select-sm" style="width:190px;">
+            <option value="">All Clients</option>
+            {% for c in inv_clients %}
+            <option value="{{ c }}" {{ 'selected' if client_filter == c }}>{{ c }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+          <span class="text-muted small" style="min-width:75px;">Invoice date:</span>
+          <input type="date" name="from" value="{{ date_from }}" class="form-control form-control-sm" style="width:160px;">
+          <span class="text-muted small">to</span>
+          <input type="date" name="to" value="{{ date_to }}" class="form-control form-control-sm" style="width:160px;">
+          <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setInvRange('month')">This Month</button>
+          <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setInvRange('year')">This Year</button>
+          <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setInvRange('last30')">Last 30 Days</button>
+          <button type="submit" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-search me-1"></i>Apply
+          </button>
+          {% if search or status_filter or date_from or date_to or client_filter %}
+          <a href="{{ url_for('invoicing') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-x-lg me-1"></i>Clear
+          </a>
+          {% endif %}
+        </div>
+        {% if search or status_filter or date_from or date_to or client_filter %}
+        <div class="alert alert-light py-1 px-3 mt-2 small d-flex align-items-center gap-2"
+             style="border-left:3px solid #0D9488;">
+          <i class="bi bi-funnel text-teal"></i>
+          <span>
+            {% if date_from and date_to %}{{ date_from }} to {{ date_to }}{% elif date_from %}From {{ date_from }}{% elif date_to %}Up to {{ date_to }}{% endif %}
+            {% if status_filter %} · Status: <strong>{{ status_filter }}</strong>{% endif %}
+            {% if client_filter %} · Client: <strong>{{ client_filter }}</strong>{% endif %}
+          </span>
+        </div>
+        {% endif %}
+      </form>
+    </div>
+
+    <div class="card-panel">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead>
+            <tr>
+              <th>Invoice #</th>
+              <th>Client</th>
+              <th>Project</th>
+              <th>Date</th>
+              <th>Due Date</th>
+              <th class="text-end">Total</th>
+              <th class="text-end">Paid</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for inv in invoices %}
+            {% set meta = inv.get('meta', {}) %}
+            <tr onclick="location.href='{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}'"
+                style="cursor:pointer;">
+              <td><span class="fw-bold text-teal">{{ meta.get('invoice_number','—') }}</span></td>
+              <td>{{ meta.get('client_name','—') }}</td>
+              <td class="text-muted small">
+                {%- set main_proj = meta.get('project_number','') %}
+                {%- if main_proj %}
+                  {{ main_proj }}
+                {%- else %}
+                  {%- set line_projs = inv.get('line_items', []) | map(attribute='project_number') | select | unique | list %}
+                  {%- if line_projs %}
+                    <span title="{{ line_projs | join(', ') }}">{{ line_projs | join(', ') }}</span>
+                  {%- else %}—{%- endif %}
+                {%- endif %}
+              </td>
+              <td>{{ meta.get('invoice_date','—') }}</td>
+              <td>{{ meta.get('due_date','—') }}</td>
+              <td class="text-end fw-bold">${{ "{:,.2f}".format(meta.get('total',0)|float) }}</td>
+              <td class="text-end text-success">${{ "{:,.2f}".format(meta.get('amount_paid',0)|float) }}</td>
+              <td>{{ status_badge(meta.get('status')) }}</td>
+              <td onclick="event.stopPropagation()" class="text-end" style="white-space:nowrap;">
+                {% if meta.get('status') in ('Sent','Viewed','Overdue','Partial') %}
+                <button class="btn btn-xs btn-success me-1" title="Mark as Paid"
+                        onclick="quickPay('{{ inv.firebase_id }}', '{{ meta.get('total',0) }}', this)">
+                  <i class="bi bi-check-circle"></i>
+                </button>
+                {% endif %}
+                <a href="{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}"
+                   class="btn btn-xs btn-outline-secondary">
+                  <i class="bi bi-eye"></i>
+                </a>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="9" class="text-center text-muted py-5">
+                <i class="bi bi-receipt fs-2 d-block mb-2"></i>
+                No invoices found.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tab 2: New Invoice ──────────────────────────────────────────────── -->
+  <!-- ── Tab 3: Export ───────────────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-export">
+    <div class="card-panel mb-4">
+      <h6 class="section-heading mb-3">Filter Export</h6>
+      <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
+        <select id="invExportStatus" class="form-select form-select-sm" style="width:170px;"
+                onchange="buildInvExportLinks()">
+          <option value="">All Statuses</option>
+          {% for s in statuses %}
+          <option value="{{ s }}">{{ s }}</option>
+          {% endfor %}
+        </select>
+        <select id="invExportClient" class="form-select form-select-sm" style="width:200px;"
+                onchange="buildInvExportLinks()">
+          <option value="">All Clients</option>
+          {% for c in inv_clients %}
+          <option value="{{ c }}">{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="d-flex gap-2 flex-wrap align-items-center">
+        <span class="text-muted small" style="min-width:80px;">Invoice date:</span>
+        <input type="date" id="invExportFrom" class="form-control form-control-sm" style="width:160px;" oninput="buildInvExportLinks()">
+        <span class="text-muted small">to</span>
+        <input type="date" id="invExportTo" class="form-control form-control-sm" style="width:160px;" oninput="buildInvExportLinks()">
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setInvExportRange('month')">This Month</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setInvExportRange('year')">This Year</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setInvExportRange('last30')">Last 30 Days</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="clearInvExportFilters()">Clear</button>
+      </div>
+    </div>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="export-card">
+          <div style="font-size:2.5rem;color:#DC2626;margin-bottom:12px;">
+            <i class="bi bi-file-earmark-pdf-fill"></i>
+          </div>
+          <h6 class="fw-bold mb-1">PDF Report</h6>
+          <p class="text-muted small mb-3">Professional PDF invoice listing</p>
+          <a id="invExportPdfLink" href="{{ url_for('invoicing_export_pdf') }}"
+             class="btn btn-sm btn-danger w-100">
+            <i class="bi bi-download me-1"></i>Download PDF
+          </a>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="export-card">
+          <div style="font-size:2.5rem;color:#16A34A;margin-bottom:12px;">
+            <i class="bi bi-file-earmark-spreadsheet-fill"></i>
+          </div>
+          <h6 class="fw-bold mb-1">Excel Spreadsheet</h6>
+          <p class="text-muted small mb-3">Styled .xlsx with all invoice data</p>
+          <a id="invExportExcelLink" href="{{ url_for('invoicing_export_excel') }}"
+             class="btn btn-sm btn-success w-100">
+            <i class="bi bi-download me-1"></i>Download Excel
+          </a>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="export-card">
+          <div style="font-size:2.5rem;color:#2563EB;margin-bottom:12px;">
+            <i class="bi bi-file-earmark-text-fill"></i>
+          </div>
+          <h6 class="fw-bold mb-1">CSV Export</h6>
+          <p class="text-muted small mb-3">Comma-separated values file</p>
+          <a id="invExportCsvLink" href="{{ url_for('invoicing_export_csv') }}"
+             class="btn btn-sm btn-primary w-100">
+            <i class="bi bi-download me-1"></i>Download CSV
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Quick Pay ────────────────────────────────────────────────────────────────
+async function quickPay(invoiceId, total, btn) {
+  const fmt = v => '$' + parseFloat(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  if (!confirm(`Mark invoice as Paid (${fmt(total)})?`)) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  const form = new FormData();
+  form.append('status', 'Paid');
+  form.append('amount_paid', total);
+  const resp = await fetch(`/invoicing/${invoiceId}/status`, {method:'POST', body:form});
+  if (resp.ok || resp.redirected) { location.reload(); }
+  else { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-circle"></i>'; alert('Error — please try again.'); }
+}
+
+// ── Invoice filter quick-range ───────────────────────────────────────────────
+function localDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function setInvRange(type) {
+  const form = document.getElementById('invFilterForm');
+  const fromEl = form.querySelector('[name="from"]');
+  const toEl   = form.querySelector('[name="to"]');
+  const now = new Date();
+  if (type === 'month') {
+    fromEl.value = localDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    toEl.value   = localDate(new Date(now.getFullYear(), now.getMonth()+1, 0));
+  } else if (type === 'year') {
+    fromEl.value = `${now.getFullYear()}-01-01`;
+    toEl.value   = `${now.getFullYear()}-12-31`;
+  } else if (type === 'last30') {
+    const f = new Date(now); f.setDate(f.getDate()-30);
+    fromEl.value = localDate(f);
+    toEl.value   = localDate(now);
+  }
+  form.submit();
+}
+
+// ── Export link builder ──────────────────────────────────────────────────────
+const INV_PDF_BASE   = "{{ url_for('invoicing_export_pdf') }}";
+const INV_EXCEL_BASE = "{{ url_for('invoicing_export_excel') }}";
+const INV_CSV_BASE   = "{{ url_for('invoicing_export_csv') }}";
+function buildInvExportLinks() {
+  const params = new URLSearchParams();
+  const s = document.getElementById('invExportStatus').value;
+  const c = document.getElementById('invExportClient').value;
+  const f = document.getElementById('invExportFrom').value;
+  const t = document.getElementById('invExportTo').value;
+  if (s) params.set('status', s);
+  if (c) params.set('client', c);
+  if (f) params.set('from', f);
+  if (t) params.set('to', t);
+  const q = params.toString() ? '?' + params.toString() : '';
+  document.getElementById('invExportPdfLink').href   = INV_PDF_BASE   + q;
+  document.getElementById('invExportExcelLink').href = INV_EXCEL_BASE + q;
+  document.getElementById('invExportCsvLink').href   = INV_CSV_BASE   + q;
+}
+function setInvExportRange(type) {
+  const now = new Date();
+  if (type === 'month') {
+    document.getElementById('invExportFrom').value = localDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    document.getElementById('invExportTo').value   = localDate(new Date(now.getFullYear(), now.getMonth()+1, 0));
+  } else if (type === 'year') {
+    document.getElementById('invExportFrom').value = `${now.getFullYear()}-01-01`;
+    document.getElementById('invExportTo').value   = `${now.getFullYear()}-12-31`;
+  } else if (type === 'last30') {
+    const f = new Date(now); f.setDate(f.getDate()-30);
+    document.getElementById('invExportFrom').value = localDate(f);
+    document.getElementById('invExportTo').value   = localDate(now);
+  }
+  buildInvExportLinks();
+}
+function clearInvExportFilters() {
+  document.getElementById('invExportStatus').value = '';
+  document.getElementById('invExportClient').value = '';
+  document.getElementById('invExportFrom').value = '';
+  document.getElementById('invExportTo').value = '';
+  buildInvExportLinks();
+}
+
+// ── Tab activation ───────────────────────────────────────────────────────────
+const invTabParam = "{{ active_tab }}";
+const invAllTabs  = ["all-invoices", "export"];
+const invTarget   = invAllTabs.includes(invTabParam) ? invTabParam : "all-invoices";
+const invEl = document.querySelector('[href="#tab-' + invTarget + '"]');
+if (invEl) new bootstrap.Tab(invEl).show();
+
+document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
+  el.addEventListener('shown.bs.tab', e => {
+    const id = e.target.getAttribute('href').replace('#tab-', '');
+    const url = new URL(window.location);
+    url.searchParams.set('tab', id);
+    window.history.replaceState({}, '', url);
+  });
+});
+</script>
+{% endblock %}

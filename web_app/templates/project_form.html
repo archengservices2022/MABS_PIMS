@@ -1,0 +1,389 @@
+{% extends "base.html" %}
+{% block title %}{{ 'New Project' if is_new else 'Edit Project' }}{% endblock %}
+{% block page_title %}{{ 'New Project' if is_new else 'Edit Project' }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+  <a href="{{ url_for('projects') }}" class="btn btn-sm btn-outline-secondary me-2">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h5 class="mb-0">{{ 'Create New Project' if is_new else 'Edit Project' }}</h5>
+</div>
+
+<form method="POST">
+  <div class="row g-3">
+    <div class="col-lg-8">
+      <div class="card-panel mb-3">
+        <h6 class="section-heading">Basic Information</h6>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Project Number</label>
+            <input type="text" name="project_number" class="form-control"
+                   value="{{ project.get('project_number','') if project else (next_proj_num|default('')) }}"
+                   readonly style="background:#EFF6FF;color:#2563EB;font-weight:700;">
+            {% if is_new %}<div class="form-text">Auto-assigned on save</div>{% endif %}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Quote Number <span class="text-muted small fw-normal">(optional)</span>
+              <span id="quoteLookupSpinner" class="spinner-border spinner-border-sm text-teal ms-1" style="display:none;"></span>
+              <span id="quoteLookupOk" class="text-success small ms-1" style="display:none;"><i class="bi bi-check-circle-fill"></i> Auto-filled</span>
+              <span id="quoteLookupErr" class="text-danger small ms-1" style="display:none;"><i class="bi bi-x-circle"></i> Not found</span>
+            </label>
+            <input type="text" id="quoteNumberInput" name="quote_number" class="form-control"
+                   value="{{ project.get('quote_number','') or project.get('job_number','') if project else prefill_quote }}"
+                   placeholder="e.g. QT-202606-001 — leave blank if none" autocomplete="off">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">PO / WO Number</label>
+            <input type="text" name="po_wo_number" class="form-control"
+                   value="{{ project.get('po_wo_number','') if project else '' }}"
+                   placeholder="Enter PO or WO number">
+          </div>
+          <div class="col-md-8">
+            <label class="form-label">Project Name <span class="text-danger">*</span></label>
+            <input type="text" name="project_name" class="form-control"
+                   value="{{ project.get('project_name','') if project else '' }}"
+                   placeholder="Enter descriptive project name" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Date Received</label>
+            <input type="date" name="date_received" class="form-control"
+                   value="{{ project.get('date_received','') if project else '' }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Client <span class="text-danger">*</span></label>
+            <select name="client_name" class="form-select">
+              <option value="">-- Select Client --</option>
+              {% for c in clients %}
+              <option value="{{ c }}"
+                {{ 'selected' if project and (project.get('client_name') == c or project.get('company') == c) }}>{{ c }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Sales Person</label>
+            <select name="sales" class="form-select">
+              <option value="">-- Select Sales Person --</option>
+              {% for sp in sales_people %}
+              <option value="{{ sp }}"
+                {{ 'selected' if project and (project.get('sales') == sp or project.get('assigned_to') == sp) }}>{{ sp }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Site Address</label>
+            <input type="text" name="site_address" class="form-control"
+                   value="{{ project.get('site_address','') or project.get('project_site_address','') if project else '' }}"
+                   placeholder="Enter site address">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Mail Address</label>
+            <input type="text" name="mail_address" class="form-control"
+                   value="{{ project.get('mail_address','') or project.get('client_address','') if project else '' }}"
+                   placeholder="Enter mailing address">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Plant (State)</label>
+            {% set us_states = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA',
+              'HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS',
+              'MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA',
+              'RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC','PR','GU'] %}
+            <select name="plant" class="form-select">
+              <option value="">State / facility (e.g. MO, TX)</option>
+              {% for st in us_states %}
+              <option value="{{ st }}" {{ 'selected' if project and (project.get('plant') == st or project.get('plant_location') == st) }}>{{ st }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Job Type</label>
+            <select name="job_type" class="form-select">
+              <option value="">-- Select Job Type --</option>
+              {% for jt in ['Engineering Design','Construction','Inspection','Consultation',
+                            'Maintenance','Research','Drafting','Peer Review','Site Visit',
+                            'Report Preparation','Permit Drawings','Other'] %}
+              <option value="{{ jt }}" {{ 'selected' if project and project.get('job_type') == jt }}>{{ jt }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Scope of Work</label>
+            <input type="text" name="scope_of_work" class="form-control"
+                   value="{{ project.get('scope_of_work','') if project else '' }}"
+                   placeholder="Detailed scope of work (comma-separated)">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Expedite?</label>
+            <select name="expedite" class="form-select">
+              <option value="No" {{ 'selected' if not project or project.get('expedite','No') in ('No','') }}>No</option>
+              <option value="Yes" {{ 'selected' if project and project.get('expedite') == 'Yes' }}>Yes (+50% Extra)</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Start Date</label>
+            <input type="date" name="start_date" id="startDateInput" class="form-control"
+                   value="{{ project.get('start_date','') if project else now.strftime('%Y-%m-%d') }}"
+                   oninput="calcEndDate()">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Duration (days)</label>
+            <input type="number" id="durationInput" class="form-control"
+                   min="1" max="9999" placeholder="e.g. 30"
+                   value="" oninput="calcEndDate()">
+            <div class="form-text" id="durationNote" style="display:none;"></div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">End / Due Date</label>
+            <input type="date" name="end_date" id="endDateInput" class="form-control"
+                   value="{{ project.get('end_date','') if project else '' }}"
+                   oninput="calcDuration()">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Status</label>
+            <select name="status" class="form-select">
+              {% for s in ['Not Started','In Progress','On Hold','Completed','Cancelled'] %}
+              <option value="{{ s }}"
+                {{ 'selected' if project and project.get('status') == s }}>{{ s }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Notes</label>
+            <textarea name="notes" class="form-control" rows="2"
+                      placeholder="Internal notes or comments">{{ project.get('notes','') if project else '' }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card-panel mb-3">
+        <h6 class="section-heading">Financials</h6>
+        <div class="mb-2">
+          <label class="form-label">Contract Value ($)</label>
+          <input type="number" id="contractValue" name="contract_value" class="form-control"
+                 value="{{ project.get('contract_value','0') if project else '0' }}"
+                 min="0" step="0.01" oninput="updatePlanPreview()">
+        </div>
+        {% if not is_new %}
+        <div class="mb-2">
+          <label class="form-label">Amount Paid ($)</label>
+          <input type="number" name="amount_paid" class="form-control bg-light" readonly
+                 value="{{ '%.2f'|format(project.get('amount_paid', 0)|float) if project else '0.00' }}">
+          <div class="form-text">Auto-synced from invoices.</div>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="card-panel mb-3">
+        <h6 class="section-heading">Payment Plan</h6>
+        {% set existing_stages = project.get('payment_stages') if project else None %}
+        {% set plan_locked = existing_stages and (existing_stages|selectattr('status', 'ne', 'Pending')|list|length > 0) %}
+        {% if plan_locked %}
+        <div class="alert alert-warning py-2 px-3 small mb-0">
+          <i class="bi bi-lock-fill me-1"></i>Locked — an invoice has already been generated.
+        </div>
+        {% else %}
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <label class="form-label">Down Payment (%)</label>
+            <input type="number" id="downPaymentPct" name="down_payment_percent" class="form-control"
+                   value="{{ project.get('down_payment_percent', 0) if project else 0 }}"
+                   min="0" max="100" step="1" placeholder="0"
+                   oninput="updatePlanPreview()">
+            <div class="form-text">0 = no down payment</div>
+          </div>
+          <div class="col-6">
+            <label class="form-label">Balance Installments</label>
+            <select id="installmentCount" name="installment_count" class="form-select"
+                    onchange="updatePlanPreview()">
+              {% set curr = project.get('installment_count', 1)|int if project else 1 %}
+              <option value="1" {{ 'selected' if curr == 1 }}>1 — Single payment</option>
+              {% for n in range(2, 7) %}
+              <option value="{{ n }}" {{ 'selected' if curr == n }}>{{ n }} installments</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <!-- Live plan preview -->
+        <div id="planPreview" class="rounded" style="background:#F0FDFA; border:1px solid #99F6E4; padding:10px; font-size:0.82rem; display:none;">
+          <div class="fw-600 text-teal mb-1"><i class="bi bi-list-check me-1"></i>Payment stages preview</div>
+          <div id="planPreviewStages"></div>
+        </div>
+        {% endif %}
+        {% if existing_stages %}
+        <hr class="mt-3 mb-2">
+        <div class="small">
+          <div class="text-muted mb-1">Payment stages:</div>
+          {% for s in existing_stages %}
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span>{{ s.get('name','') }}</span>
+            <span>
+              <span class="fw-bold">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</span>
+              <span class="badge status-{{ {'Pending':'not-started','Invoiced':'invoiced','Paid':'paid','Partially Paid':'partial'}.get(s.get('status','Pending'), 'not-started') }} ms-1">
+                {{ s.get('status','Pending') }}
+              </span>
+            </span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="d-grid gap-2">
+        <button type="submit" class="btn btn-teal">
+          <i class="bi bi-check-lg me-1"></i>
+          {{ 'Create Project' if is_new else 'Save Changes' }}
+        </button>
+        <a href="{{ url_for('projects') }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </div>
+  </div>
+</form>
+
+<script>
+// ── Payment Plan live preview ────────────────────────────────────────────────
+function updatePlanPreview() {
+  const cv     = parseFloat(document.getElementById('contractValue')?.value) || 0;
+  const dpPct  = parseFloat(document.getElementById('downPaymentPct')?.value) || 0;
+  const inst   = parseInt(document.getElementById('installmentCount')?.value) || 1;
+  const wrap   = document.getElementById('planPreview');
+  const stages = document.getElementById('planPreviewStages');
+  if (!wrap || !stages || cv <= 0) { if (wrap) wrap.style.display='none'; return; }
+
+  const fmt = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const rows = [];
+  let remaining = cv;
+
+  if (dpPct > 0) {
+    const dp = Math.round(cv * dpPct / 100 * 100) / 100;
+    remaining = cv - dp;
+    rows.push(`<div class="d-flex justify-content-between py-1 border-bottom"><span>Down Payment (${dpPct}%)</span><span class="fw-600">${fmt(dp)}</span></div>`);
+  }
+
+  const share = Math.floor(remaining / inst * 100) / 100;
+  const last  = Math.round((remaining - share * (inst - 1)) * 100) / 100;
+  for (let i = 0; i < inst; i++) {
+    const label = dpPct > 0
+      ? (inst === 1 ? 'Balance Payment' : `Installment ${i+1} of ${inst}`)
+      : (inst === 1 ? 'Full Payment'    : `Installment ${i+1} of ${inst}`);
+    const amt = (i === inst - 1) ? last : share;
+    rows.push(`<div class="d-flex justify-content-between py-1 ${i<inst-1?'border-bottom':''}"><span>${label}</span><span class="fw-600">${fmt(amt)}</span></div>`);
+  }
+
+  stages.innerHTML = rows.join('');
+  wrap.style.display = 'block';
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  updatePlanPreview();
+  // ── Duration / date calculator ───────────────────────────────────────────
+  function calcEndDate() {
+    const s = document.getElementById('startDateInput').value;
+    const d = parseInt(document.getElementById('durationInput').value) || 0;
+    if (!s || d < 1) return;
+    const end = new Date(s + 'T00:00:00');
+    end.setDate(end.getDate() + d);
+    document.getElementById('endDateInput').value =
+      end.getFullYear() + '-' +
+      String(end.getMonth()+1).padStart(2,'0') + '-' +
+      String(end.getDate()).padStart(2,'0');
+    showDurationNote();
+  }
+  function calcDuration() {
+    const s = document.getElementById('startDateInput').value;
+    const e = document.getElementById('endDateInput').value;
+    if (!s || !e) return;
+    const diff = Math.round((new Date(e) - new Date(s)) / 86400000);
+    if (diff > 0) {
+      document.getElementById('durationInput').value = diff;
+      showDurationNote();
+    }
+  }
+  function showDurationNote() {
+    const s = document.getElementById('startDateInput').value;
+    const e = document.getElementById('endDateInput').value;
+    const note = document.getElementById('durationNote');
+    if (!s || !e) { note.style.display='none'; return; }
+    const diff = Math.round((new Date(e) - new Date(s)) / 86400000);
+    const bdays = Math.round(diff * 5/7);
+    note.textContent = `${diff} calendar days · ~${bdays} business days`;
+    note.style.display = '';
+  }
+  // Calc duration from existing start/end on load
+  calcDuration();
+
+  // ── Quote auto-fill ──────────────────────────────────────────────────────
+  const qInput   = document.getElementById('quoteNumberInput');
+  const spinner  = document.getElementById('quoteLookupSpinner');
+  const okBadge  = document.getElementById('quoteLookupOk');
+  const errBadge = document.getElementById('quoteLookupErr');
+  if (!qInput) return;
+
+  function setOption(sel, val) {
+    // Try exact match first, then case-insensitive
+    for (const opt of sel.options) {
+      if (opt.value === val || opt.value.toLowerCase() === val.toLowerCase()) {
+        sel.value = opt.value; return;
+      }
+    }
+  }
+
+  function fillFromQuote(q) {
+    const f = document.querySelector('form');
+    if (q.project_name  && !f.querySelector('[name=project_name]').value)
+      f.querySelector('[name=project_name]').value  = q.project_name;
+    if (q.client_name)
+      setOption(f.querySelector('[name=client_name]'), q.client_name);
+    if (q.sales        && !f.querySelector('[name=sales]').value)
+      f.querySelector('[name=sales]').value         = q.sales;
+    if (q.site_address && !f.querySelector('[name=site_address]').value)
+      f.querySelector('[name=site_address]').value  = q.site_address;
+    if (q.mail_address && !f.querySelector('[name=mail_address]').value)
+      f.querySelector('[name=mail_address]').value  = q.mail_address;
+    if (q.plant)
+      setOption(f.querySelector('[name=plant]'), q.plant);
+    if (q.job_type)
+      setOption(f.querySelector('[name=job_type]'), q.job_type);
+    if (q.scope_of_work && !f.querySelector('[name=scope_of_work]').value)
+      f.querySelector('[name=scope_of_work]').value = q.scope_of_work;
+    if (q.expedite)
+      setOption(f.querySelector('[name=expedite]'), q.expedite);
+    if (q.contract_value && !f.querySelector('[name=contract_value]').value)
+      f.querySelector('[name=contract_value]').value = q.contract_value;
+    if (q.start_date   && !f.querySelector('[name=start_date]').value)
+      f.querySelector('[name=start_date]').value    = q.start_date;
+    if (q.end_date     && !f.querySelector('[name=end_date]').value)
+      f.querySelector('[name=end_date]').value      = q.end_date;
+  }
+
+  async function lookupQuote(num) {
+    if (!num.trim()) return;
+    spinner.style.display = ''; okBadge.style.display = 'none'; errBadge.style.display = 'none';
+    try {
+      const res = await fetch(`/api/quote-by-number/${encodeURIComponent(num.trim())}`);
+      const data = await res.json();
+      spinner.style.display = 'none';
+      if (data.found) {
+        fillFromQuote(data);
+        okBadge.style.display = '';
+      } else {
+        errBadge.style.display = '';
+      }
+    } catch {
+      spinner.style.display = 'none';
+      errBadge.style.display = '';
+    }
+  }
+
+  qInput.addEventListener('blur', () => lookupQuote(qInput.value));
+  qInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lookupQuote(qInput.value); } });
+
+  // Auto-trigger if page was opened via "Convert to Project" button
+  const prefill = "{{ prefill_quote }}";
+  if (prefill && qInput.value) {
+    lookupQuote(qInput.value);
+  }
+});
+</script>
+{% endblock %}

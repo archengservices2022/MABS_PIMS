@@ -1,0 +1,678 @@
+{% extends "base.html" %}
+{% block title %}Financial{% endblock %}
+{% block page_title %}Financial Overview{% endblock %}
+
+{% set status_icons = {
+  'Draft':       ('bi-pencil',                  'Not sent to client yet'),
+  'Sent':        ('bi-send',                    'Sent — awaiting payment'),
+  'Viewed':      ('bi-eye',                     'Client has opened the invoice'),
+  'Paid':        ('bi-check-circle-fill',       'Payment received in full'),
+  'Partial':     ('bi-circle-half',             'Part payment received'),
+  'Overdue':     ('bi-exclamation-circle-fill', 'Past due date'),
+  'Cancelled':   ('bi-x-circle',               'Cancelled'),
+  'Not Started': ('bi-hourglass-split',         'Not yet started'),
+  'In Progress': ('bi-arrow-repeat',            'Currently in progress'),
+  'Completed':   ('bi-check-circle-fill',       'Completed'),
+} %}
+{% macro status_badge(status, fallback='Draft') %}
+  {% set st = status or fallback %}
+  {% set icon, tip = status_icons.get(st, ('bi-circle', st)) %}
+  <span class="badge status-{{ st|lower|replace(' ','-') }}" title="{{ tip }}">
+    <i class="bi {{ icon }} me-1"></i>{{ st }}
+  </span>
+{% endmacro %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+/* ── Financial page styles ─────────────────────────────────────── */
+.fin-tab-active { border-bottom: 3px solid var(--teal); }
+
+.metric-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.metric-block .metric-val {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.metric-block .metric-lbl {
+  font-size: 11px;
+  color: #64748B;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid #F1F5F9;
+}
+.summary-row:last-child { border-bottom: none; }
+
+.pnl-badge-pos { background:#DCFCE7; color:#15803D; border-radius:6px; padding:2px 8px; font-size:12px; font-weight:700; }
+.pnl-badge-neg { background:#FEE2E2; color:#B91C1C; border-radius:6px; padding:2px 8px; font-size:12px; font-weight:700; }
+
+.progress-thin { height: 6px; border-radius: 99px; background: #E2E8F0; overflow: hidden; }
+.progress-thin .fill { height: 100%; border-radius: 99px; transition: width .5s; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── Tab nav ──────────────────────────────────────────────────────────────── -->
+<ul class="nav nav-tabs mb-4" id="finTabs">
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-overview">
+      <i class="bi bi-graph-up me-1"></i>Overview
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-income">
+      <i class="bi bi-cash-stack me-1"></i>Income
+      {% if rev_list %}<span class="badge bg-secondary ms-1">{{ rev_list|length }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-expenses">
+      <i class="bi bi-receipt me-1"></i>Expenses
+      {% if expenses %}<span class="badge bg-secondary ms-1">{{ expenses|length }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-by-project">
+      <i class="bi bi-kanban me-1"></i>By Project
+    </a>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+<!-- ════════════════════════════════════════════════════════════════
+     OVERVIEW TAB
+═════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade" id="tab-overview">
+
+  <!-- Row 1 — 4 KPI cards -->
+  {% set collection_pct = ((total_paid / total_invoiced * 100) if total_invoiced > 0 else 0)|round|int %}
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-teal">
+        <div class="kpi-top"><span class="kpi-label">Total Invoiced</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
+        <div class="kpi-value">${{ "{:,.0f}".format(total_invoiced) }}</div>
+        <div class="kpi-sub">{{ rev_list|length }} paid entries</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-green">
+        <div class="kpi-top"><span class="kpi-label">Collected</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
+        <div class="kpi-value">${{ "{:,.0f}".format(total_paid) }}</div>
+        <div class="kpi-sub">{{ collection_pct }}% collection rate</div>
+        <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ collection_pct }}%"></div></div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-red">
+        <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
+        <div class="kpi-value">${{ "{:,.0f}".format(total_expenses) }}</div>
+        <div class="kpi-sub">{{ expenses|length }} entries</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card {{ 'kpi-green' if net_profit >= 0 else 'kpi-red' }}">
+        <div class="kpi-top"><span class="kpi-label">Net Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
+        <div class="kpi-value {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(net_profit) }}</div>
+        <div class="kpi-sub">revenue minus expenses</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 2 — Chart (left) + Summary panel (right) -->
+  <div class="row g-3 mb-3">
+    <div class="col-lg-8">
+      <div class="card-panel" style="height:100%;">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="panel-title mb-0">Revenue vs Expenses — Last 6 Months</h6>
+          <div class="d-flex gap-2 align-items-center">
+            <span class="d-flex align-items-center gap-1 small text-muted">
+              <span style="width:10px;height:10px;border-radius:2px;background:#0D9488;display:inline-block;"></span>Revenue
+            </span>
+            <span class="d-flex align-items-center gap-1 small text-muted">
+              <span style="width:10px;height:10px;border-radius:2px;background:#F87171;display:inline-block;"></span>Expenses
+            </span>
+          </div>
+        </div>
+        <canvas id="finChart" height="160"></canvas>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card-panel" style="height:100%;">
+        <h6 class="panel-title mb-3">Financial Summary</h6>
+
+        <div class="summary-row">
+          <span class="text-muted small">Total Invoiced</span>
+          <span class="fw-bold">${{ "{:,.0f}".format(total_invoiced) }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="text-muted small">Collected</span>
+          <span class="fw-bold text-success">${{ "{:,.0f}".format(total_paid) }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="text-muted small">Outstanding</span>
+          {% set outstanding = total_invoiced - total_paid %}
+          <span class="fw-bold {{ 'text-danger' if outstanding > 0 else 'text-success' }}">${{ "{:,.0f}".format(outstanding) }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="text-muted small">Expenses</span>
+          <span class="fw-bold text-danger">${{ "{:,.0f}".format(total_expenses) }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="text-muted small">Net Profit</span>
+          <span class="{{ 'pnl-badge-pos' if net_profit >= 0 else 'pnl-badge-neg' }}">${{ "{:,.0f}".format(net_profit) }}</span>
+        </div>
+
+        {% if total_invoiced > 0 %}
+        <div class="mt-3">
+          <div class="d-flex justify-content-between small mb-1">
+            <span class="text-muted">Collection Rate</span>
+            <span class="fw-semibold text-teal">{{ collection_pct }}%</span>
+          </div>
+          <div class="progress-thin"><div class="fill bg-teal" style="width:{{ collection_pct }}%;background:#0D9488;"></div></div>
+        </div>
+        {% endif %}
+
+        <!-- AI forecast -->
+        <div class="mt-3 pt-3" style="border-top:1px solid #F1F5F9;">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="small fw-semibold"><i class="bi bi-robot me-1 text-teal"></i>AI Cash Flow</span>
+            <button class="btn btn-xs btn-outline-teal" id="cashFlowBtn">
+              <i class="bi bi-magic me-1"></i>Forecast
+            </button>
+          </div>
+          <div id="cashFlowResult" class="text-muted" style="font-size:12px;line-height:1.5;">
+            Click to forecast next 90 days.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 3 — Two pie charts -->
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="card-panel">
+        <h6 class="panel-title mb-3">Invoice Status Breakdown</h6>
+        <div style="max-height:220px;display:flex;justify-content:center;">
+          <canvas id="invStatusChart"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card-panel">
+        <h6 class="panel-title mb-3">Expense by Category</h6>
+        <div style="max-height:220px;display:flex;justify-content:center;">
+          <canvas id="expCatChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /tab-overview -->
+
+
+<!-- ════════════════════════════════════════════════════════════════
+     INCOME TAB
+═════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade" id="tab-income">
+  <div class="card-panel">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="panel-title mb-0">Income — Paid &amp; Partial Invoices</h6>
+      <span class="text-muted small">Auto-populated from invoice payments</span>
+    </div>
+    {% if rev_list %}
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0 align-middle">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Invoice #</th>
+            <th>Client</th>
+            <th>Project</th>
+            <th>Status</th>
+            <th class="text-end">Invoice Total</th>
+            <th class="text-end">Amount Paid</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rev_list|sort(attribute='date', reverse=True) %}
+          <tr>
+            <td class="text-muted small">{{ r.get('date','—') }}</td>
+            <td>
+              {% if r.get('invoice_id') %}
+              <a href="{{ url_for('invoice_detail', invoice_id=r.get('invoice_id','')) }}"
+                 class="fw-bold text-teal text-decoration-none">{{ r.get('invoice_number','—') }}</a>
+              {% else %}
+              <span class="fw-bold text-teal">{{ r.get('invoice_number','—') }}</span>
+              {% endif %}
+            </td>
+            <td>{{ r.get('client_name','—') }}</td>
+            <td class="text-muted small">{{ r.get('project_number','—') or '—' }}</td>
+            <td>{{ status_badge(r.get('status'), 'Paid') }}</td>
+            <td class="text-end">${{ "{:,.2f}".format(r.get('total',0)|float) }}</td>
+            <td class="text-end fw-bold text-success">${{ "{:,.2f}".format(r.get('amount_paid',0)|float) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="table-light fw-bold">
+          <tr>
+            <td colspan="6" class="text-end">Total Collected</td>
+            <td class="text-end text-success">${{ "{:,.2f}".format(total_collected) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state py-5">
+      <i class="bi bi-cash-stack fs-1 d-block mb-2 text-muted"></i>
+      <div>No income recorded yet.</div>
+      <div class="text-muted small mt-1">Income entries are created automatically when invoices are marked Paid or Partial.</div>
+    </div>
+    {% endif %}
+  </div>
+</div><!-- /tab-income -->
+
+
+<!-- ════════════════════════════════════════════════════════════════
+     EXPENSES TAB
+═════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade" id="tab-expenses">
+  <div class="row g-3">
+
+    <!-- Left: AI extractor + Add form -->
+    <div class="col-lg-4">
+
+      <!-- AI extractor -->
+      <div class="card-panel mb-3" style="border-left:3px solid #0D9488;">
+        <h6 class="section-heading"><i class="bi bi-robot me-1 text-teal"></i>AI Extract from PDF</h6>
+        <p class="text-muted small mb-2">Upload a vendor bill — AI fills the form automatically.</p>
+        <div class="input-group input-group-sm">
+          <input type="file" id="pdfUploadInput" class="form-control form-control-sm" accept=".pdf">
+          <button class="btn btn-sm btn-teal" type="button" id="pdfExtractBtn">
+            <i class="bi bi-magic me-1"></i>Extract
+          </button>
+        </div>
+        <div id="pdfExtractStatus" class="small mt-2"></div>
+      </div>
+
+      <!-- Add expense form -->
+      <div class="card-panel">
+        <h6 class="section-heading">Add Expense</h6>
+        <form method="POST" action="{{ url_for('expense_new') }}" id="expenseForm">
+          <input type="hidden" name="_tab" value="expenses">
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Description *</label>
+            <input type="text" name="description" class="form-control form-control-sm" placeholder="e.g. Steel materials" required>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label form-label-sm">Amount ($) *</label>
+              <input type="number" name="amount" class="form-control form-control-sm" placeholder="0.00" min="0" step="0.01" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label form-label-sm">Date</label>
+              <input type="date" name="date" class="form-control form-control-sm" value="{{ today_date }}">
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label form-label-sm">Category</label>
+              <select name="category" class="form-select form-select-sm">
+                <option value="">Select...</option>
+                {% for cat in ['Labor','Materials','Equipment','Subcontractor','Overhead','Travel','Other'] %}
+                <option value="{{ cat }}">{{ cat }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label form-label-sm">Vendor</label>
+              <input type="text" name="vendor" class="form-control form-control-sm" placeholder="Vendor name">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Link to Project</label>
+            <select name="project_number" class="form-select form-select-sm">
+              <option value="">— Optional —</option>
+              {% for p in projects %}
+              <option value="{{ p.get('project_number','') }}">
+                {{ p.get('project_number','') }} — {{ p.get('project_name','') }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label form-label-sm">Notes</label>
+            <textarea name="notes" class="form-control form-control-sm" rows="2" placeholder="Optional notes"></textarea>
+          </div>
+          <button type="submit" class="btn btn-sm btn-teal w-100">
+            <i class="bi bi-plus-lg me-1"></i>Add Expense
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Right: Expense log -->
+    <div class="col-lg-8">
+      <div class="card-panel">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="panel-title mb-0">Expense Log</h6>
+          <span class="badge bg-secondary">{{ expenses|length }} entries — ${{ "{:,.0f}".format(total_expenses) }} total</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-hover table-sm mb-0 align-middle">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Category</th>
+                <th>Project</th>
+                <th>Vendor</th>
+                <th class="text-end">Amount</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for exp in expenses|sort(attribute='date', reverse=True) %}
+              <tr>
+                <td class="text-muted small">{{ exp.get('date','—') }}</td>
+                <td class="fw-medium">{{ exp.get('description','—') }}</td>
+                <td>
+                  <span class="badge" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;">
+                    {{ exp.get('category','—') }}
+                  </span>
+                </td>
+                <td class="text-muted small">{{ exp.get('project_number','—') or '—' }}</td>
+                <td class="text-muted small">{{ exp.get('vendor','—') }}</td>
+                <td class="text-end fw-semibold">${{ "{:,.2f}".format(exp.get('amount',0)|float) }}</td>
+                <td>
+                  {% if exp.get('firebase_id') %}
+                  <form method="POST" action="{{ url_for('expense_delete', exp_id=exp.firebase_id) }}"
+                        onsubmit="return confirm('Delete this expense?');">
+                    <button type="submit" class="btn btn-xs btn-outline-danger">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="7" class="text-center text-muted py-5">
+                  <i class="bi bi-receipt fs-2 d-block mb-2"></i>No expenses recorded yet.
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            {% if expenses %}
+            <tfoot class="fw-bold" style="background:#F8FAFC;border-top:2px solid #E2E8F0;">
+              <tr>
+                <td colspan="5" class="text-end text-muted small">Total</td>
+                <td class="text-end text-danger">${{ "{:,.2f}".format(total_expenses) }}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+            {% endif %}
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div><!-- /tab-expenses -->
+
+
+<!-- ════════════════════════════════════════════════════════════════
+     BY PROJECT TAB
+═════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade" id="tab-by-project">
+
+  {% if project_pnl %}
+  <!-- Summary KPI tiles -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-teal">
+        <div class="kpi-top"><span class="kpi-label">Total Invoiced</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
+        <div class="kpi-value">${{ "{:,.0f}".format(project_pnl|sum(attribute='invoiced')) }}</div>
+        <div class="kpi-sub">across all projects</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-green">
+        <div class="kpi-top"><span class="kpi-label">Total Collected</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
+        <div class="kpi-value">${{ "{:,.0f}".format(project_pnl|sum(attribute='paid')) }}</div>
+        <div class="kpi-sub">payments received</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-red">
+        <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
+        <div class="kpi-value">${{ "{:,.0f}".format(project_pnl|sum(attribute='expenses')) }}</div>
+        <div class="kpi-sub">project costs</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      {% set total_gp = project_pnl|sum(attribute='gross_profit') %}
+      <div class="kpi-card {{ 'kpi-green' if total_gp >= 0 else 'kpi-red' }}">
+        <div class="kpi-top"><span class="kpi-label">Gross Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
+        <div class="kpi-value {{ 'text-success' if total_gp >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(total_gp) }}</div>
+        <div class="kpi-sub">collected minus expenses</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-panel">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="panel-title mb-0">Profit &amp; Loss by Project</h6>
+      <span class="text-muted small">Click a row to open the project</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0 align-middle">
+        <thead>
+          <tr>
+            <th>Project #</th>
+            <th>Project Name</th>
+            <th>Client</th>
+            <th>Status</th>
+            <th class="text-end">Contract</th>
+            <th class="text-end">Invoiced</th>
+            <th class="text-end">Collected</th>
+            <th class="text-end">Expenses</th>
+            <th class="text-end">Gross Profit</th>
+            <th class="text-end">Margin</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in project_pnl|sort(attribute='project_number') %}
+          {% set margin = (row.gross_profit / row.paid * 100) if row.paid > 0 else 0 %}
+          <tr onclick="location.href='{{ url_for('project_detail', project_id=row.firebase_id) }}'" style="cursor:pointer;">
+            <td><span class="fw-bold text-teal">{{ row.project_number }}</span></td>
+            <td class="fw-medium">{{ row.project_name }}</td>
+            <td class="text-muted small">{{ row.client_name }}</td>
+            <td>{{ status_badge(row.status, 'Not Started') }}</td>
+            <td class="text-end">${{ "{:,.0f}".format(row.contract_value) }}</td>
+            <td class="text-end">${{ "{:,.0f}".format(row.invoiced) }}</td>
+            <td class="text-end text-success fw-semibold">${{ "{:,.0f}".format(row.paid) }}</td>
+            <td class="text-end text-danger">${{ "{:,.0f}".format(row.expenses) }}</td>
+            <td class="text-end fw-bold {{ 'text-success' if row.gross_profit >= 0 else 'text-danger' }}">
+              ${{ "{:,.0f}".format(row.gross_profit) }}
+            </td>
+            <td class="text-end">
+              <span class="badge {{ 'bg-success' if margin >= 20 else ('bg-warning text-dark' if margin >= 0 else 'bg-danger') }}">
+                {{ "%.0f"|format(margin) }}%
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="fw-bold" style="background:#F8FAFC;border-top:2px solid #E2E8F0;">
+          <tr>
+            <td colspan="4" class="text-end text-muted small">Totals</td>
+            <td class="text-end">${{ "{:,.0f}".format(project_pnl|sum(attribute='contract_value')) }}</td>
+            <td class="text-end">${{ "{:,.0f}".format(project_pnl|sum(attribute='invoiced')) }}</td>
+            <td class="text-end text-success fw-semibold">${{ "{:,.0f}".format(project_pnl|sum(attribute='paid')) }}</td>
+            <td class="text-end text-danger">${{ "{:,.0f}".format(project_pnl|sum(attribute='expenses')) }}</td>
+            <td class="text-end {{ 'text-success' if project_pnl|sum(attribute='gross_profit') >= 0 else 'text-danger' }}">
+              ${{ "{:,.0f}".format(project_pnl|sum(attribute='gross_profit')) }}
+            </td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="card-panel">
+    <div class="empty-state py-5">
+      <i class="bi bi-kanban fs-1 d-block mb-2 text-muted"></i>
+      No projects found.
+    </div>
+  </div>
+  {% endif %}
+
+</div><!-- /tab-by-project -->
+
+</div><!-- /tab-content -->
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Colour palettes ──────────────────────────────────────────────────────────
+const STATUS_COLORS = {
+  'Draft':     '#64748B', 'Sent':    '#2563EB', 'Viewed':   '#7C3AED',
+  'Paid':      '#16A34A', 'Partial': '#F59E0B', 'Overdue':  '#DC2626',
+  'Cancelled': '#DB2777',
+};
+const EXP_PALETTE = ['#2563EB','#16A34A','#F59E0B','#DC2626','#7C3AED','#0EA5E9','#DB2777','#0D9488'];
+function statusColors(labels) {
+  const fb = ['#2563EB','#16A34A','#F59E0B','#DC2626','#7C3AED','#0EA5E9','#DB2777'];
+  return labels.map((l, i) => STATUS_COLORS[l] || fb[i % fb.length]);
+}
+
+// ── Revenue vs Expenses bar chart ────────────────────────────────────────────
+const labels  = {{ chart_labels|safe }};
+const revenue = {{ chart_revenue|safe }};
+const expData = {{ chart_expenses|safe }};
+const chartEl = document.getElementById('finChart');
+if (chartEl) {
+  new Chart(chartEl, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Revenue Collected', data: revenue,  backgroundColor: '#0D9488', borderRadius: 5 },
+        { label: 'Expenses',          data: expData,  backgroundColor: '#F87171', borderRadius: 5 },
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: $${c.parsed.y.toLocaleString()}` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#94A3B8', font: { size: 11 } } },
+        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,.04)' },
+             ticks: { color: '#94A3B8', font: { size: 11 }, callback: v => '$' + (v >= 1000 ? (v/1000).toFixed(0)+'k' : v) } }
+      }
+    }
+  });
+}
+
+// ── Invoice Status donut ─────────────────────────────────────────────────────
+const invSL = {{ inv_status_labels|safe }};
+const invSD = {{ inv_status_data|safe }};
+if (invSL.length) {
+  new Chart(document.getElementById('invStatusChart'), {
+    type: 'doughnut',
+    data: { labels: invSL, datasets: [{ data: invSD, backgroundColor: statusColors(invSL), borderWidth: 2, hoverOffset: 6 }] },
+    options: { responsive: true, cutout: '60%',
+      plugins: { legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 12, padding: 10 } },
+                 tooltip: { callbacks: { label: c => ` ${c.label}: ${c.parsed}` } } } }
+  });
+}
+
+// ── Expense category donut ───────────────────────────────────────────────────
+const expCL = {{ exp_cat_labels|safe }};
+const expCD = {{ exp_cat_data|safe }};
+if (expCL.length) {
+  new Chart(document.getElementById('expCatChart'), {
+    type: 'doughnut',
+    data: { labels: expCL, datasets: [{ data: expCD, backgroundColor: EXP_PALETTE.slice(0, expCL.length), borderWidth: 2, hoverOffset: 6 }] },
+    options: { responsive: true, cutout: '60%',
+      plugins: { legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 12, padding: 10 } },
+                 tooltip: { callbacks: { label: c => ` ${c.label}: $${c.parsed.toLocaleString()}` } } } }
+  });
+}
+
+// ── AI PDF Extractor ─────────────────────────────────────────────────────────
+document.getElementById('pdfExtractBtn').addEventListener('click', async () => {
+  const file   = document.getElementById('pdfUploadInput').files[0];
+  const status = document.getElementById('pdfExtractStatus');
+  if (!file) { status.textContent = 'Please select a PDF file first.'; return; }
+  status.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Extracting...';
+  const fd = new FormData();
+  fd.append('pdf', file);
+  try {
+    const res  = await fetch('/ai/extract-pdf', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.error) { status.innerHTML = '<span class="text-danger">' + data.error + '</span>'; return; }
+    const form = document.getElementById('expenseForm');
+    if (data.description) form.querySelector('[name=description]').value = data.description;
+    if (data.amount)      form.querySelector('[name=amount]').value = data.amount;
+    if (data.date)        form.querySelector('[name=date]').value = data.date;
+    if (data.vendor)      form.querySelector('[name=vendor]').value = data.vendor;
+    if (data.category) {
+      const sel = form.querySelector('[name=category]');
+      for (let o of sel.options) if (o.value === data.category) { sel.value = data.category; break; }
+    }
+    status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Fields filled — review and save.</span>';
+  } catch(e) { status.innerHTML = '<span class="text-danger">Request failed.</span>'; }
+});
+
+// ── AI Cash Flow Forecast ────────────────────────────────────────────────────
+document.getElementById('cashFlowBtn').addEventListener('click', async () => {
+  const resultEl = document.getElementById('cashFlowResult');
+  resultEl.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generating...';
+  try {
+    const res  = await fetch('/ai/cash-flow-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ upcoming: [] })
+    });
+    const data = await res.json();
+    if (data.error) { resultEl.innerHTML = '<span class="text-danger">' + data.error + '</span>'; return; }
+    resultEl.innerHTML = data.summary;
+  } catch(e) { resultEl.innerHTML = '<span class="text-danger">Request failed.</span>'; }
+});
+
+// ── Tab persistence ──────────────────────────────────────────────────────────
+(function () {
+  const tabMap = { overview: '#tab-overview', income: '#tab-income', expenses: '#tab-expenses', 'by-project': '#tab-by-project' };
+  const initTab = "{{ active_tab or 'overview' }}";
+  const target  = tabMap[initTab] || '#tab-overview';
+  const el = document.querySelector(`.nav-link[href="${target}"]`);
+  if (el) new bootstrap.Tab(el).show();
+  document.querySelectorAll('#finTabs .nav-link').forEach(link => {
+    link.addEventListener('shown.bs.tab', e => {
+      const key = (e.target.getAttribute('href') || '').replace('#tab-', '');
+      const url = new URL(window.location);
+      url.searchParams.set('tab', key);
+      history.replaceState(null, '', url);
+    });
+  });
+})();
+</script>
+{% endblock %}

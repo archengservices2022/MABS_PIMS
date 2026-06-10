@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Clients{% endblock %}
+{% block page_title %}Clients{% endblock %}
+
+{% block content %}
+<!-- Tab nav -->
+<ul class="nav nav-tabs mb-4" id="clientTabs">
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-all-clients">
+      <i class="bi bi-people me-1"></i>All Clients
+      <span class="badge bg-secondary ms-1">{{ clients|length }}</span>
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-new-client">
+      <i class="bi bi-person-plus me-1"></i>New Client
+    </a>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- ── Tab 1: All Clients ─────────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-all-clients">
+    <form method="GET" id="clientFilterForm" class="mb-3">
+      <input type="hidden" name="tab" value="all-clients">
+      <div class="d-flex gap-2 flex-wrap align-items-center">
+        <input type="text" name="q" value="{{ search }}" class="form-control form-control-sm"
+               placeholder="Search name, company, email…" style="width:240px;">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-search me-1"></i>Search
+        </button>
+        {% if search or tag_filter %}
+        <a href="{{ url_for('clients') }}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-x-lg me-1"></i>Clear
+        </a>
+        {% endif %}
+      </div>
+      {% if all_tags %}
+      <div class="d-flex flex-wrap gap-1 mt-2 align-items-center">
+        <span class="text-muted small me-1">Tags:</span>
+        <a href="{{ url_for('clients', q=search) }}"
+           class="badge {{ 'bg-teal' if not tag_filter else 'bg-light text-dark border' }} text-decoration-none">
+          All
+        </a>
+        {% for t in all_tags %}
+        <a href="{{ url_for('clients', q=search, tag=t) }}"
+           class="badge {{ 'bg-teal' if tag_filter == t else 'bg-light text-dark border' }} text-decoration-none">
+          {{ t }}
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if search or tag_filter %}
+      <div class="alert alert-light py-1 px-3 mt-2 small d-flex align-items-center gap-2"
+           style="border-left:3px solid #0D9488;">
+        <i class="bi bi-funnel"></i>
+        <span>
+          {% if search %}Search: <strong>{{ search }}</strong>{% endif %}
+          {% if tag_filter %} · Tag: <strong>{{ tag_filter }}</strong>{% endif %}
+          &nbsp;·&nbsp; {{ clients|length }} result{{ 's' if clients|length != 1 else '' }}
+        </span>
+      </div>
+      {% endif %}
+    </form>
+
+    <div class="card-panel">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead>
+            <tr>
+              <th>Client Name</th>
+              <th>Company</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>Tags</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in clients %}
+            <tr>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="inv-avatar">{{ c.get('client_name','?')[0]|upper }}</div>
+                  <strong>{{ c.get('client_name','—') }}</strong>
+                </div>
+              </td>
+              <td>{{ c.get('company','—') }}</td>
+              <td>{{ c.get('email','—') }}</td>
+              <td>{{ c.get('phone','—') }}</td>
+              <td>
+                {% for t in (c.get('tags') or []) %}
+                <a href="{{ url_for('clients', tag=t) }}"
+                   class="badge bg-light text-dark border text-decoration-none me-1">{{ t }}</a>
+                {% else %}
+                <span class="text-muted small">—</span>
+                {% endfor %}
+              </td>
+              <td>
+                <div class="d-flex gap-1">
+                  <a href="{{ url_for('client_statement', client_name=c.client_name) }}"
+                     class="btn btn-xs btn-outline-danger" title="Client Statement PDF">
+                    <i class="bi bi-file-earmark-pdf"></i>
+                  </a>
+                  <a href="{{ url_for('client_edit', client_name=c.client_name) }}"
+                     class="btn btn-xs btn-outline-secondary" title="Edit">
+                    <i class="bi bi-pencil"></i>
+                  </a>
+                </div>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="6" class="text-center text-muted py-5">
+                <i class="bi bi-people fs-2 d-block mb-2"></i>
+                No clients found.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tab 2: New Client ───────────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-new-client">
+    <div class="row">
+      <div class="col-lg-6">
+        <div class="card-panel">
+          <h6 class="section-heading">Client Information</h6>
+          <form method="POST" action="{{ url_for('client_new') }}">
+            <div class="mb-3">
+              <label class="form-label">Client Name <span class="text-danger">*</span></label>
+              <input type="text" name="client_name" class="form-control"
+                     placeholder="Full name or company name" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Company</label>
+              <input type="text" name="company" class="form-control"
+                     placeholder="Company or organisation">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Email</label>
+              <input type="email" name="email" class="form-control"
+                     placeholder="email@example.com">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Phone</label>
+              <input type="text" name="phone" class="form-control"
+                     placeholder="+1 (555) 000-0000">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Address</label>
+              <textarea name="address" class="form-control" rows="3"
+                        placeholder="Street address, city, state, zip"></textarea>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Tags</label>
+              <input type="text" name="tags" class="form-control"
+                     placeholder="Comma-separated tags, e.g. VIP, Contractor, Residential">
+              <div class="form-text">Separate multiple tags with commas.</div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Notes</label>
+              <textarea name="notes" class="form-control" rows="2"
+                        placeholder="Internal notes about this client..."></textarea>
+            </div>
+            <div class="d-grid">
+              <button type="submit" class="btn btn-teal">
+                <i class="bi bi-check-lg me-1"></i>Save Client
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const clientTabParam = "{{ active_tab }}";
+const clientAllTabs  = ["all-clients", "new-client"];
+const clientTarget   = clientAllTabs.includes(clientTabParam) ? clientTabParam : "all-clients";
+const clientEl = document.querySelector('[href="#tab-' + clientTarget + '"]');
+if (clientEl) new bootstrap.Tab(clientEl).show();
+
+document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
+  el.addEventListener('shown.bs.tab', e => {
+    const id = e.target.getAttribute('href').replace('#tab-', '');
+    const url = new URL(window.location);
+    url.searchParams.set('tab', id);
+    window.history.replaceState({}, '', url);
+  });
+});
+</script>
+{% endblock %}

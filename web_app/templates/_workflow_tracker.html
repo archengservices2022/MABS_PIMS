@@ -1,0 +1,127 @@
+{# Workflow tracker bar — Quote (step 1) → Project (step 2) → Invoice (step 3)
+   Caller must set: wf_step, wf_quote, wf_quote_id, wf_project, wf_project_id,
+                    wf_invoice, wf_invoice_id  before {% include %} this file. #}
+
+{% set _inv_status = wf_invoice.get('meta',{}).get('status','') if wf_invoice else '' %}
+{% set _inv_is_draft = wf_invoice and _inv_status == 'Draft' %}
+
+<div class="wf-bar mb-4">
+
+  <!-- ── Step 1: Quote ───────────────────────────────────────────────── -->
+  {% set _q_state = 'wf-active' if wf_step == 1 else ('wf-done' if wf_quote else 'wf-pending') %}
+  <div class="wf-step {{ _q_state }}">
+    <div class="wf-circle">
+      {% if wf_step != 1 and wf_quote %}<i class="bi bi-check-lg"></i>{% else %}1{% endif %}
+    </div>
+    <div>
+      <div class="wf-label">Quote</div>
+      {% if wf_quote and wf_quote_id %}
+        {% if wf_step == 1 %}
+          <div class="wf-num-text">{{ wf_quote.get('job_number','') }}</div>
+        {% else %}
+          <a href="{{ url_for('quote_detail', quote_id=wf_quote_id) }}" class="wf-num-link">
+            {{ wf_quote.get('job_number','') }}
+          </a>
+        {% endif %}
+        {% set _qs = wf_quote.get('status','') %}
+        {% set _qs_display = 'Won' if _qs in ('Invoiced','Converted') else _qs %}
+        {% set _qs_cls    = 'paid' if _qs in ('Invoiced','Converted') else (_qs|lower|replace(' ','-')) %}
+        <div class="mt-1">
+          <span class="badge status-{{ _qs_cls }}">{{ _qs_display }}</span>
+        </div>
+      {% else %}
+        <div class="wf-empty">No quote</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="wf-connector"><i class="bi bi-chevron-right"></i></div>
+
+  <!-- ── Step 2: Project ─────────────────────────────────────────────── -->
+  {% set _p_state = 'wf-active' if wf_step == 2 else ('wf-done' if wf_project else 'wf-pending') %}
+  <div class="wf-step {{ _p_state }}">
+    <div class="wf-circle">
+      {% if wf_step != 2 and wf_project %}<i class="bi bi-check-lg"></i>{% else %}2{% endif %}
+    </div>
+    <div>
+      <div class="wf-label">Project</div>
+      {% if wf_project and wf_project_id %}
+        {% if wf_step == 2 %}
+          <div class="wf-num-text">{{ wf_project.get('project_number','') }}</div>
+        {% else %}
+          <a href="{{ url_for('project_detail', project_id=wf_project_id) }}" class="wf-num-link">
+            {{ wf_project.get('project_number','') }}
+          </a>
+        {% endif %}
+        <div class="mt-1">
+          <span class="badge status-{{ wf_project.get('status','')|lower|replace(' ','-') }}">
+            {{ wf_project.get('status','') }}
+          </span>
+        </div>
+      {% elif wf_step == 1 and 'projects' in allowed_pages and wf_quote %}
+        <div class="wf-empty mb-1">Not created</div>
+        <a href="{{ url_for('project_new') }}?from_quote={{ wf_quote.get('job_number','') }}"
+           class="btn btn-xs btn-teal mt-1">
+          <i class="bi bi-kanban me-1"></i>Start Project
+        </a>
+      {% else %}
+        <div class="wf-empty">Not created</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="wf-connector"><i class="bi bi-chevron-right"></i></div>
+
+  <!-- ── Step 3: Invoice ─────────────────────────────────────────────── -->
+  {% if wf_step == 3 %}
+    {% set _i_state = 'wf-active' %}
+  {% elif _inv_is_draft %}
+    {% set _i_state = 'wf-warn' %}
+  {% elif wf_invoice %}
+    {% set _i_state = 'wf-done' %}
+  {% else %}
+    {% set _i_state = 'wf-pending' %}
+  {% endif %}
+
+  <div class="wf-step {{ _i_state }}">
+    <div class="wf-circle">
+      {% if wf_step != 3 and wf_invoice and not _inv_is_draft %}
+        <i class="bi bi-check-lg"></i>
+      {% elif _inv_is_draft and wf_step != 3 %}
+        <i class="bi bi-clock"></i>
+      {% else %}
+        3
+      {% endif %}
+    </div>
+    <div>
+      <div class="wf-label">Invoice</div>
+      {% if wf_invoice and wf_invoice_id %}
+        {% if wf_step == 3 %}
+          <div class="wf-num-text">{{ wf_invoice.get('meta',{}).get('invoice_number','') }}</div>
+        {% else %}
+          <a href="{{ url_for('invoice_detail', invoice_id=wf_invoice_id) }}" class="wf-num-link">
+            {{ wf_invoice.get('meta',{}).get('invoice_number','') }}
+          </a>
+        {% endif %}
+        <div class="mt-1">
+          <span class="badge status-{{ _inv_status|lower|replace(' ','-') }}">{{ _inv_status }}</span>
+        </div>
+        {% if _inv_is_draft and wf_step != 3 and 'invoicing' in allowed_pages %}
+        <a href="{{ url_for('invoice_detail', invoice_id=wf_invoice_id) }}"
+           class="btn btn-xs btn-warning mt-1">
+          <i class="bi bi-envelope me-1"></i>Send Now
+        </a>
+        {% endif %}
+      {% elif wf_step == 2 and 'invoicing' in allowed_pages and wf_project and wf_project_id %}
+        <div class="wf-empty mb-1">Not invoiced</div>
+        <a href="{{ url_for('invoice_new') }}?project={{ wf_project.get('project_number','') }}&client={{ wf_project.get('client_name','') }}"
+           class="btn btn-xs btn-teal mt-1">
+          <i class="bi bi-receipt me-1"></i>New Invoice
+        </a>
+      {% else %}
+        <div class="wf-empty">Not invoiced</div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
