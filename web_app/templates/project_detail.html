@@ -169,9 +169,9 @@
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="section-heading mb-0">Payment Plan</h6>
             <div class="d-flex gap-2">
-              <button type="button" class="btn btn-xs btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editPaymentPlanModal"
-                      title="Edit payment plan amounts">
-                <i class="bi bi-pencil me-1"></i>Edit
+              <button type="button" class="btn btn-xs btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editPaymentPlanModal"
+                      title="Edit all payment stage amounts">
+                <i class="bi bi-pencil me-1"></i>Edit All Amounts
               </button>
             </div>
           </div>
@@ -202,7 +202,16 @@
                 {% set inv_data = invoice_map.get(inv_id, {}) %}
                 <tr>
                   <td>{{ s.get('name','') }}</td>
-                  <td class="text-end">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</td>
+                  <td class="text-end">
+                    <span id="stageAmount_{{ loop.index0 }}">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</span>
+                    {% if st == 'Not Invoiced' %}
+                    <button type="button" class="btn btn-xs btn-outline-primary ms-2" data-bs-toggle="modal" data-bs-target="#quickEditStageModal"
+                            onclick="prepareQuickEditStage({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }})"
+                            title="Edit amount">
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    {% endif %}
+                  </td>
                   <td><span class="badge status-{{ status_class.get(st, st|lower|replace(' ','-')) }}">{{ st }}</span></td>
                   <td class="text-end">{% set paid_amount = inv_data.get('paid', 0)|float if inv_data else 0 %}{% if paid_amount > 0 %}${{ "{:,.2f}".format(paid_amount) }}{% else %}—{% endif %}</td>
                   <td>{% if inv_id and (inv_num or inv_data.get('number')) %}<a href="{{ url_for('invoice_detail', invoice_id=inv_id) }}" class="text-decoration-none">{{ inv_num or inv_data.get('number') }}</a>{% else %}—{% endif %}</td>
@@ -546,6 +555,34 @@
   </div>
 </div>
 
+<!-- Quick Edit Stage Amount Modal -->
+<div class="modal fade" id="quickEditStageModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Stage Amount</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="quickEditStageForm">
+          <div class="mb-3">
+            <label class="form-label">Stage</label>
+            <input type="text" id="quickEditStageName" class="form-control" disabled>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Amount ($)</label>
+            <input type="number" id="quickEditStageAmount" class="form-control" step="0.01" min="0">
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveQuickEditStage()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Update Stage Payment Modal -->
 <div class="modal fade" id="updateStageModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
@@ -641,36 +678,42 @@ function openEditPaymentPlanModal() {
 
 function updateRemainingStages() {
   const downPaymentAmount = parseFloat(document.getElementById('editDownPaymentAmount').value) || 0;
-  const remainingForInstallments = contractValue - downPaymentAmount;
-  const installmentCount = currentStages.length - 1;
-  const perInstallment = installmentCount > 0 ? remainingForInstallments / installmentCount : 0;
 
   // Update down payment percentage
   const dpPercentage = Math.round((downPaymentAmount / contractValue) * 100);
   document.getElementById('downPaymentPercentageDisplay').textContent = `${dpPercentage}%`;
 
-  // Generate remaining stages inputs
+  // Generate editable inputs for all stages
   let html = '';
   for (let i = 1; i < currentStages.length; i++) {
     const isInvoiced = currentStages[i].status !== 'Not Invoiced';
-    const amount = isInvoiced ? currentStages[i].amount : perInstallment;
+    const amount = currentStages[i].amount || 0;
 
     html += `
-      <div class="mb-2">
-        <label class="form-label">${currentStages[i].name}</label>
-        <input type="number" class="form-control remainingStageInput" data-index="${i}" value="${amount.toFixed(2)}"
-               step="0.01" ${isInvoiced ? 'disabled title="Already invoiced - cannot edit"' : ''}/>
+      <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <label class="form-label mb-0">${currentStages[i].name}</label>
+          <span class="badge status-${isInvoiced ? 'invoiced' : 'not-started'}">${currentStages[i].status || 'Not Invoiced'}</span>
+        </div>
+        <input type="number" class="form-control stageAmountInput" data-index="${i}" value="${amount.toFixed(2)}"
+               step="0.01" ${isInvoiced ? 'disabled title="Already invoiced - cannot edit"' : ''}
+               oninput="calculateEditPlanTotal()"/>
       </div>
     `;
   }
   document.getElementById('editRemainingStagesContainer').innerHTML = html;
+
+  // Add input event listeners for real-time total calculation
+  document.querySelectorAll('.stageAmountInput').forEach(input => {
+    input.addEventListener('input', calculateEditPlanTotal);
+  });
 
   calculateEditPlanTotal();
 }
 
 function calculateEditPlanTotal() {
   let total = parseFloat(document.getElementById('editDownPaymentAmount').value) || 0;
-  document.querySelectorAll('.remainingStageInput').forEach(input => {
+  document.querySelectorAll('.stageAmountInput').forEach(input => {
     total += parseFloat(input.value) || 0;
   });
 
@@ -680,8 +723,10 @@ function calculateEditPlanTotal() {
 
   if (Math.abs(total - contractValue) > 0.01) {
     totalEl.classList.add('text-danger');
+    totalEl.classList.remove('text-success');
   } else {
     totalEl.classList.remove('text-danger');
+    totalEl.classList.add('text-success');
   }
 }
 
@@ -690,14 +735,14 @@ function saveEditedPaymentPlan() {
   let total = downPaymentAmount;
   const amounts = [{ index: 0, amount: downPaymentAmount }];
 
-  document.querySelectorAll('.remainingStageInput').forEach(input => {
+  document.querySelectorAll('.stageAmountInput').forEach(input => {
     const amount = parseFloat(input.value) || 0;
     total += amount;
     amounts.push({ index: parseInt(input.dataset.index), amount: amount });
   });
 
   if (Math.abs(total - contractValue) > 0.01) {
-    alert(`❌ Error: Total (${total.toFixed(2)}) must equal contract value (${contractValue.toFixed(2)})`);
+    alert(`❌ Error: Total ($${total.toFixed(2)}) must equal contract value ($${contractValue.toFixed(2)})`);
     return;
   }
 
@@ -763,6 +808,55 @@ function updateStagedPayment() {
     if (data.success) {
       alert('✅ Payment updated successfully');
       bootstrap.Modal.getInstance(document.getElementById('updateStageModal')).hide();
+      location.reload();
+    } else {
+      alert('❌ Error: ' + (data.error || 'Could not update'));
+    }
+  })
+  .catch(e => alert('❌ Error: ' + e.message));
+}
+
+function prepareQuickEditStage(idx, name, amount) {
+  document.getElementById('quickEditStageName').value = name;
+  document.getElementById('quickEditStageAmount').value = amount.toFixed(2);
+  document.getElementById('quickEditStageAmount').dataset.stageIndex = idx;
+  document.getElementById('quickEditStageAmount').focus();
+}
+
+function saveQuickEditStage() {
+  const idx = parseInt(document.getElementById('quickEditStageAmount').dataset.stageIndex);
+  const newAmount = parseFloat(document.getElementById('quickEditStageAmount').value) || 0;
+  const oldAmount = currentStages[idx].amount || 0;
+
+  if (Math.abs(newAmount - oldAmount) < 0.01) {
+    alert('⚠️ Amount not changed');
+    return;
+  }
+
+  // Update stage locally
+  currentStages[idx].amount = newAmount;
+
+  // Update the display
+  const amountDisplay = document.getElementById(`stageAmount_${idx}`);
+  if (amountDisplay) {
+    amountDisplay.textContent = '$' + newAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+
+  // Close modal and save to backend
+  bootstrap.Modal.getInstance(document.getElementById('quickEditStageModal')).hide();
+
+  // Save to backend
+  fetch(`/api/projects/${projectId}/payment-plan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      amounts: currentStages.map((s, i) => ({ index: i, amount: s.amount }))
+    })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      alert('✅ Amount updated successfully');
       location.reload();
     } else {
       alert('❌ Error: ' + (data.error || 'Could not update'));
