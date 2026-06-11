@@ -204,9 +204,9 @@
                   <td>{{ s.get('name','') }}</td>
                   <td class="text-end">
                     <span id="stageAmount_{{ loop.index0 }}">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</span>
-                    {% if st == 'Not Invoiced' %}
+                    {% if st == 'Not Invoiced' or st == 'Invoiced' %}
                     <button type="button" class="btn btn-xs btn-outline-primary ms-2" data-bs-toggle="modal" data-bs-target="#quickEditStageModal"
-                            onclick="prepareQuickEditStage({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }})"
+                            onclick="prepareQuickEditStage({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ st }}')"
                             title="Edit amount">
                       <i class="bi bi-pencil"></i>
                     </button>
@@ -220,6 +220,12 @@
                     <button type="button" class="btn btn-xs btn-outline-teal" onclick="quickInvoiceStage({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ project.firebase_id }}')"
                             title="Create invoice for this stage">
                       <i class="bi bi-receipt"></i>
+                    </button>
+                    {% elif st == 'Invoiced' %}
+                    <button type="button" class="btn btn-xs btn-outline-warning" data-bs-toggle="modal" data-bs-target="#updateInvoicedStageModal"
+                            onclick="prepareUpdateInvoicedStage({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ inv_id }}')"
+                            title="Update invoiced amount">
+                      <i class="bi bi-arrow-repeat"></i>
                     </button>
                     {% elif st == 'Paid' or st == 'Partially Paid' %}
                     <button type="button" class="btn btn-xs btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#updateStageModal"
@@ -555,6 +561,45 @@
   </div>
 </div>
 
+<!-- Update Invoiced Stage Modal -->
+<div class="modal fade" id="updateInvoicedStageModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2"></i>Update Invoiced Amount</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="updateInvoicedStageForm">
+          <div class="mb-3">
+            <label class="form-label">Stage</label>
+            <input type="text" id="updateInvoicedStageName" class="form-control" disabled>
+          </div>
+          <div class="row g-3">
+            <div class="col-sm-6">
+              <label class="form-label">Original Amount ($)</label>
+              <input type="number" id="updateInvoicedOriginalAmount" class="form-control" disabled>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label">New Amount ($)</label>
+              <input type="number" id="updateInvoicedNewAmount" class="form-control" step="0.01" min="0"
+                     oninput="updateRedistributionPreview()">
+            </div>
+          </div>
+          <div class="alert alert-info small mt-3">
+            <strong>📊 Redistribution Preview:</strong>
+            <div id="redistributionPreview" class="mt-2"></div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-warning" onclick="updateInvoicedStage()">Update & Redistribute</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Quick Edit Stage Amount Modal -->
 <div class="modal fade" id="quickEditStageModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered modal-sm">
@@ -816,10 +861,11 @@ function updateStagedPayment() {
   .catch(e => alert('❌ Error: ' + e.message));
 }
 
-function prepareQuickEditStage(idx, name, amount) {
+function prepareQuickEditStage(idx, name, amount, status) {
   document.getElementById('quickEditStageName').value = name;
   document.getElementById('quickEditStageAmount').value = amount.toFixed(2);
   document.getElementById('quickEditStageAmount').dataset.stageIndex = idx;
+  document.getElementById('quickEditStageAmount').dataset.status = status;
   document.getElementById('quickEditStageAmount').focus();
 }
 
@@ -857,6 +903,98 @@ function saveQuickEditStage() {
   .then(data => {
     if (data.success) {
       alert('✅ Amount updated successfully');
+      location.reload();
+    } else {
+      alert('❌ Error: ' + (data.error || 'Could not update'));
+    }
+  })
+  .catch(e => alert('❌ Error: ' + e.message));
+}
+
+function prepareUpdateInvoicedStage(idx, name, amount, invoiceId) {
+  document.getElementById('updateInvoicedStageName').value = name;
+  document.getElementById('updateInvoicedOriginalAmount').value = amount.toFixed(2);
+  document.getElementById('updateInvoicedNewAmount').value = amount.toFixed(2);
+  document.getElementById('updateInvoicedNewAmount').dataset.stageIndex = idx;
+  document.getElementById('updateInvoicedNewAmount').dataset.invoiceId = invoiceId;
+  updateRedistributionPreview();
+}
+
+function updateRedistributionPreview() {
+  const idx = parseInt(document.getElementById('updateInvoicedNewAmount').dataset.stageIndex);
+  const originalAmount = parseFloat(document.getElementById('updateInvoicedOriginalAmount').value) || 0;
+  const newAmount = parseFloat(document.getElementById('updateInvoicedNewAmount').value) || 0;
+  const difference = originalAmount - newAmount;
+
+  let preview = '';
+  if (difference > 0.01) {
+    preview = `<div class="text-success">✓ Reducing by $${difference.toFixed(2)}</div>`;
+    preview += '<div class="text-muted small mt-2">This amount will be distributed equally among remaining non-invoiced stages:</div>';
+
+    const uninvoicedStages = currentStages.filter((s, i) => i > idx && s.status === 'Not Invoiced');
+    if (uninvoicedStages.length > 0) {
+      const perStage = difference / uninvoicedStages.length;
+      uninvoicedStages.forEach(s => {
+        const newStageAmount = (s.amount || 0) + perStage;
+        preview += `<div class="text-muted small">• ${s.name}: $${(s.amount || 0).toFixed(2)} → $${newStageAmount.toFixed(2)}</div>`;
+      });
+    }
+  } else if (difference < -0.01) {
+    preview = `<div class="text-danger">⚠️ Increasing by $${Math.abs(difference).toFixed(2)}</div>`;
+    preview += '<div class="text-muted small mt-2">This amount will be subtracted equally from remaining non-invoiced stages.</div>';
+  } else {
+    preview = '<div class="text-secondary">No change</div>';
+  }
+
+  document.getElementById('redistributionPreview').innerHTML = preview;
+}
+
+function updateInvoicedStage() {
+  const idx = parseInt(document.getElementById('updateInvoicedNewAmount').dataset.stageIndex);
+  const invoiceId = document.getElementById('updateInvoicedNewAmount').dataset.invoiceId;
+  const originalAmount = parseFloat(document.getElementById('updateInvoicedOriginalAmount').value) || 0;
+  const newAmount = parseFloat(document.getElementById('updateInvoicedNewAmount').value) || 0;
+
+  if (Math.abs(newAmount - originalAmount) < 0.01) {
+    alert('⚠️ Amount not changed');
+    return;
+  }
+
+  // Update stage locally
+  const oldAmount = currentStages[idx].amount || 0;
+  const difference = oldAmount - newAmount;
+  currentStages[idx].amount = newAmount;
+
+  // Redistribute difference to remaining non-invoiced stages
+  const uninvoicedIndices = currentStages
+    .map((s, i) => i > idx && s.status === 'Not Invoiced' ? i : -1)
+    .filter(i => i >= 0);
+
+  if (uninvoicedIndices.length > 0) {
+    const perStage = difference / uninvoicedIndices.length;
+    uninvoicedIndices.forEach(i => {
+      currentStages[i].amount = (currentStages[i].amount || 0) + perStage;
+    });
+  }
+
+  // Close modal
+  bootstrap.Modal.getInstance(document.getElementById('updateInvoicedStageModal')).hide();
+
+  // Send to backend
+  fetch(`/api/projects/${projectId}/stage/${idx}/update-invoiced`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      invoiceId: invoiceId,
+      originalAmount: originalAmount,
+      newAmount: newAmount,
+      stages: currentStages.map((s, i) => ({ index: i, amount: s.amount }))
+    })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      alert('✅ Amount updated and invoice updated successfully');
       location.reload();
     } else {
       alert('❌ Error: ' + (data.error || 'Could not update'));

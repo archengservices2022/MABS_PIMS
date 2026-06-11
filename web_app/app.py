@@ -5057,6 +5057,61 @@ def update_project_stage(project_id, stage_idx):
     except Exception as e:
         return {"success": False, "error": str(e)}, 500
 
+@app.route("/api/projects/<project_id>/stage/<int:stage_idx>/update-invoiced", methods=["POST"])
+@role_required("projects")
+def update_invoiced_stage(project_id, stage_idx):
+    """Update an invoiced stage amount and redistribute remaining to non-invoiced stages"""
+    try:
+        data = request.get_json()
+        invoice_id = data.get("invoiceId", "")
+        new_amount = _safe_float(data.get("newAmount", 0))
+        original_amount = _safe_float(data.get("originalAmount", 0))
+        updated_stages = data.get("stages", [])
+
+        project = fb_get(f"/projects/{project_id}") or {}
+        stages = project.get("payment_stages", [])
+
+        if stage_idx >= len(stages):
+            return {"success": False, "error": "Invalid stage index"}, 400
+
+        # Update all stages with redistributed amounts
+        for stage_data in updated_stages:
+            idx = stage_data.get("index", 0)
+            if idx < len(stages):
+                stages[idx]["amount"] = _safe_float(stage_data.get("amount", 0))
+
+        project["payment_stages"] = stages
+        project["updated_at"] = datetime.now(timezone.utc).isoformat()
+        fb_update(f"/projects/{project_id}", project)
+
+        # Update the invoice if it exists
+        if invoice_id:
+            invoice = fb_get(f"/invoices/{invoice_id}") or {}
+            meta = invoice.get("meta", {})
+
+            # Update invoice amount
+            old_invoice_total = _safe_float(meta.get("total", 0))
+            amount_diff = original_amount - new_amount
+            new_invoice_total = old_invoice_total - amount_diff
+
+            meta["total"] = str(new_invoice_total)
+            meta["subtotal"] = str(new_invoice_total - _safe_float(meta.get("tax_amount", 0)))
+            invoice["meta"] = meta
+
+            # Update line items if they exist
+            line_items = invoice.get("line_items", [])
+            if line_items:
+                line_items[0]["amount"] = str(new_amount)
+                line_items[0]["unit_price"] = str(new_amount)
+                invoice["line_items"] = line_items
+
+            invoice["updated_at"] = datetime.now(timezone.utc).isoformat()
+            fb_update(f"/invoices/{invoice_id}", invoice)
+
+        return {"success": True, "message": "Invoiced amount updated and redistributed"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}, 500
+
 @app.route("/api/projects/<project_id>/stage/<int:stage_idx>/invoice", methods=["POST"])
 @role_required("projects")
 def quick_invoice_stage(project_id, stage_idx):
