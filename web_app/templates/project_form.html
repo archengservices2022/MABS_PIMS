@@ -498,30 +498,64 @@ function handleContractValueChange() {
     return;
   }
 
-  // Distribute difference equally to non-invoiced stages
+  // Smart redistribution: try equal distribution first, then handle shortfalls
   if (Math.abs(difference) > 0.01 && nonInvoicedCount > 0) {
     const perStageAmount = difference / nonInvoicedCount;
     console.log('Per stage adjustment:', perStageAmount);
-    let newTotal = 0;
 
-    stageElements.forEach((el) => {
+    // First pass: calculate actual amounts and identify shortfalls
+    let remainingDifference = difference;
+    const newAmounts = [];
+    const stageDataArray = [];
+
+    stageElements.forEach((el, idx) => {
+      const valueInput = el.querySelector('.stage-amount-value');
+      const status = el.dataset.stageStatus;
+      const currentAmount = parseFloat(valueInput.value) || 0;
+
+      if (status === 'Pending Invoice') {
+        const canDecrease = Math.min(Math.abs(perStageAmount), currentAmount);
+        const newAmount = Math.max(0, currentAmount + perStageAmount);
+        const actualDecrease = currentAmount - newAmount;
+
+        newAmounts.push(newAmount);
+        stageDataArray.push({
+          el: el,
+          oldAmount: currentAmount,
+          newAmount: newAmount,
+          canDecrease: canDecrease,
+          shortfall: Math.abs(perStageAmount) - canDecrease,
+          index: idx
+        });
+
+        remainingDifference -= actualDecrease;
+      } else {
+        newAmounts.push(currentAmount);
+      }
+    });
+
+    // Second pass: redistribute shortfalls to stages that can handle more
+    if (Math.abs(remainingDifference) > 0.01) {
+      const capacityStages = stageDataArray.filter(s => s.newAmount > 0);
+      if (capacityStages.length > 0) {
+        const redistributePerStage = remainingDifference / capacityStages.length;
+        capacityStages.forEach(stage => {
+          stage.newAmount = Math.max(0, stage.newAmount + redistributePerStage);
+        });
+      }
+    }
+
+    // Apply the calculated amounts
+    let newTotal = 0;
+    stageDataArray.forEach(stageData => {
+      const el = stageData.el;
       const valueInput = el.querySelector('.stage-amount-value');
       const displayEl = el.querySelector('.stage-amount-display');
-      const status = el.dataset.stageStatus;
 
       if (valueInput && displayEl) {
-        const currentAmount = parseFloat(valueInput.value) || 0;
-        let newAmount = currentAmount;
-
-        // Only adjust non-invoiced stages
-        if (status === 'Pending Invoice') {
-          newAmount = Math.max(0, currentAmount + perStageAmount);
-          console.log('Updating stage from', currentAmount, 'to', newAmount);
-        }
-
-        valueInput.value = newAmount.toFixed(2);
-        displayEl.textContent = '$' + newAmount.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-        newTotal += newAmount;
+        valueInput.value = stageData.newAmount.toFixed(2);
+        displayEl.textContent = '$' + stageData.newAmount.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+        newTotal += stageData.newAmount;
       }
     });
 
