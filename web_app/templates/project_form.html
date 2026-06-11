@@ -215,18 +215,18 @@
           <div class="text-muted mb-1">Payment stages:</div>
           {% set total_stage_amount = 0 %}
           {% for stage in existing_stages %}
-          {% set total_stage_amount = total_stage_amount + stage.get('amount', 0) %}
+          {% set total_stage_amount = total_stage_amount + (stage.get('amount', 0)|float) %}
           {% endfor %}
           {% for s in existing_stages %}
-          {% set is_invoiced = s.get('status','Pending') != 'Pending' %}
+          {% set is_invoiced = s.get('status','Pending Invoice') != 'Pending Invoice' %}
           <div class="d-flex justify-content-between align-items-center mb-2 p-2" style="background:#f8f9fa; border-radius:4px;">
             <div>
               <div class="fw-600">{{ s.get('name','') }}</div>
               <div class="text-muted small" id="stage-{{ loop.index0 }}-display">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</div>
             </div>
             <div class="d-flex gap-2 align-items-center">
-              <span class="badge status-{{ {'Pending':'not-started','Invoiced':'invoiced','Paid':'paid','Partially Paid':'partial'}.get(s.get('status','Pending'), 'not-started') }}">
-                {{ s.get('status','Pending') }}
+              <span class="badge status-{{ {'Pending Invoice':'not-started','Invoiced':'invoiced','Paid':'paid','Partially Paid':'partial'}.get(s.get('status','Pending Invoice'), 'not-started') }}">
+                {{ s.get('status','Pending Invoice') }}
               </span>
               {% if not is_invoiced %}
               <button type="button" class="btn btn-xs btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editStageModal"
