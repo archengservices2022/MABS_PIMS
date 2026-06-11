@@ -590,6 +590,19 @@ function handleContractValueChange() {
     }
 
     cvInput.dataset.originalValue = newValue;
+
+    // Recalculate down payment percentage based on first stage
+    const firstStage = stages[0];
+    if (firstStage && firstStage.valueInput) {
+      const dpAmount = firstStage.amount;
+      const calculatedDpPct = Math.round((dpAmount / newValue) * 100);
+
+      const dpInput = document.getElementById('downPaymentPct');
+      if (dpInput) {
+        dpInput.value = calculatedDpPct;
+        console.log('Updated down payment % to:', calculatedDpPct);
+      }
+    }
   }
 
   updatePlanPreview();
