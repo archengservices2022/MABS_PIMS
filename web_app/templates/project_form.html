@@ -219,10 +219,10 @@
 
           {% for s in existing_stages %}
           {% set is_invoiced = s.get('status','Pending Invoice') != 'Pending Invoice' %}
-          <div class="d-flex justify-content-between align-items-center mb-2 p-2" style="background:#f8f9fa; border-radius:4px;">
+          <div class="d-flex justify-content-between align-items-center mb-2 p-2" style="background:#f8f9fa; border-radius:4px;" data-stage-name="{{ s.get('name','') }}">
             <div>
               <div class="fw-600">{{ s.get('name','') }}</div>
-              <div class="text-muted small" id="stage-{{ loop.index0 }}-display">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</div>
+              <div class="text-muted small" id="stage-{{ loop.index0 }}-display" data-stage-amount="{{ s.get('amount',0)|float }}">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</div>
             </div>
             <div class="d-flex gap-2 align-items-center">
               <span class="badge status-{{ {'Pending Invoice':'not-started','Invoiced':'invoiced','Paid':'paid','Partially Paid':'partial'}.get(s.get('status','Pending Invoice'), 'not-started') }}">
@@ -316,33 +316,55 @@ function updatePlanPreview() {
 
   const fmt = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
   const rows = [];
-  let remaining = cv;
   previewStagesData = [];
 
-  if (dpPct > 0) {
-    const dp = Math.round(cv * dpPct / 100 * 100) / 100;
-    remaining = cv - dp;
-    previewStagesData.push({
-      name: `Down Payment (${dpPct}%)`,
-      amount: dp,
-      index: 0
-    });
-    rows.push(`<div class="d-flex justify-content-between py-1 border-bottom"><span>Down Payment (${dpPct}%)</span><span class="fw-600">${fmt(dp)}</span></div>`);
-  }
+  // Check if there are existing saved stages
+  const existingStagesEl = document.querySelector('[data-existing-stages]');
+  const hasExistingStages = existingStagesEl && existingStagesEl.dataset.existingStages === 'true';
 
-  const share = Math.floor(remaining / inst * 100) / 100;
-  const last  = Math.round((remaining - share * (inst - 1)) * 100) / 100;
-  for (let i = 0; i < inst; i++) {
-    const label = dpPct > 0
-      ? (inst === 1 ? 'Balance Payment' : `Installment ${i+1} of ${inst}`)
-      : (inst === 1 ? 'Full Payment'    : `Installment ${i+1} of ${inst}`);
-    const amt = (i === inst - 1) ? last : share;
-    previewStagesData.push({
-      name: label,
-      amount: amt,
-      index: previewStagesData.length
+  if (hasExistingStages) {
+    // Display actual saved payment stages
+    const existingStageElements = document.querySelectorAll('[data-stage-amount]');
+    existingStageElements.forEach((el, idx) => {
+      const stageName = el.closest('[data-stage-name]')?.dataset.stageName || `Stage ${idx+1}`;
+      const stageAmount = parseFloat(el.dataset.stageAmount) || 0;
+      previewStagesData.push({
+        name: stageName,
+        amount: stageAmount,
+        index: idx
+      });
+      const isLast = idx === existingStageElements.length - 1;
+      rows.push(`<div class="d-flex justify-content-between py-1 ${!isLast?'border-bottom':''}"><span>${stageName}</span><span class="fw-600">${fmt(stageAmount)}</span></div>`);
     });
-    rows.push(`<div class="d-flex justify-content-between py-1 ${i<inst-1?'border-bottom':''}"><span>${label}</span><span class="fw-600">${fmt(amt)}</span></div>`);
+  } else {
+    // Display calculated preview from down payment % and installments
+    let remaining = cv;
+
+    if (dpPct > 0) {
+      const dp = Math.round(cv * dpPct / 100 * 100) / 100;
+      remaining = cv - dp;
+      previewStagesData.push({
+        name: `Down Payment (${dpPct}%)`,
+        amount: dp,
+        index: 0
+      });
+      rows.push(`<div class="d-flex justify-content-between py-1 border-bottom"><span>Down Payment (${dpPct}%)</span><span class="fw-600">${fmt(dp)}</span></div>`);
+    }
+
+    const share = Math.floor(remaining / inst * 100) / 100;
+    const last  = Math.round((remaining - share * (inst - 1)) * 100) / 100;
+    for (let i = 0; i < inst; i++) {
+      const label = dpPct > 0
+        ? (inst === 1 ? 'Balance Payment' : `Installment ${i+1} of ${inst}`)
+        : (inst === 1 ? 'Full Payment'    : `Installment ${i+1} of ${inst}`);
+      const amt = (i === inst - 1) ? last : share;
+      previewStagesData.push({
+        name: label,
+        amount: amt,
+        index: previewStagesData.length
+      });
+      rows.push(`<div class="d-flex justify-content-between py-1 ${i<inst-1?'border-bottom':''}"><span>${label}</span><span class="fw-600">${fmt(amt)}</span></div>`);
+    }
   }
 
   stages.innerHTML = rows.join('');
@@ -353,11 +375,7 @@ function updatePlanPreview() {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
-  // Only show preview if no existing saved stages
-  const existingStagesEl = document.querySelector('[data-existing-stages]');
-  if (!existingStagesEl || existingStagesEl.dataset.existingStages === 'false') {
-    updatePlanPreview();
-  }
+  updatePlanPreview();
   // ── Duration / date calculator ───────────────────────────────────────────
   function calcEndDate() {
     const s = document.getElementById('startDateInput').value;
