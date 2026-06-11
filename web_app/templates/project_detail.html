@@ -203,14 +203,30 @@
                 <tr>
                   <td>{{ s.get('name','') }}</td>
                   <td class="text-end">
-                    <span id="stageAmount_{{ loop.index0 }}">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</span>
-                    {% if st == 'Not Invoiced' or st == 'Invoiced' %}
-                    <button type="button" class="btn btn-xs btn-outline-primary ms-2" data-bs-toggle="modal" data-bs-target="#quickEditStageModal"
-                            onclick="prepareQuickEditStage({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ st }}')"
-                            title="Edit amount">
-                      <i class="bi bi-pencil"></i>
-                    </button>
-                    {% endif %}
+                    <div id="amountDisplay_{{ loop.index0 }}" class="d-flex justify-content-end align-items-center gap-2">
+                      <span id="stageAmount_{{ loop.index0 }}">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</span>
+                      {% if st == 'Not Invoiced' or st == 'Invoiced' %}
+                      <button type="button" class="btn btn-xs btn-outline-primary"
+                              onclick="toggleInlineEdit({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ st }}', '{{ inv_id }}')"
+                              title="Edit amount">
+                        <i class="bi bi-pencil"></i>
+                      </button>
+                      {% endif %}
+                    </div>
+                    <div id="amountEdit_{{ loop.index0 }}" style="display:none;" class="d-flex justify-content-end align-items-center gap-2">
+                      <input type="number" id="amountInput_{{ loop.index0 }}" class="form-control form-control-sm" style="width:120px; max-width:100%;"
+                             step="0.01" min="0" value="{{ s.get('amount',0)|float }}">
+                      <button type="button" class="btn btn-xs btn-success"
+                              onclick="saveInlineEdit({{ loop.index0 }}, '{{ st }}', '{{ inv_id }}')"
+                              title="Save">
+                        <i class="bi bi-check"></i>
+                      </button>
+                      <button type="button" class="btn btn-xs btn-outline-secondary"
+                              onclick="cancelInlineEdit({{ loop.index0 }})"
+                              title="Cancel">
+                        <i class="bi bi-x"></i>
+                      </button>
+                    </div>
                   </td>
                   <td><span class="badge status-{{ status_class.get(st, st|lower|replace(' ','-')) }}">{{ st }}</span></td>
                   <td class="text-end">{% set paid_amount = inv_data.get('paid', 0)|float if inv_data else 0 %}{% if paid_amount > 0 %}${{ "{:,.2f}".format(paid_amount) }}{% else %}—{% endif %}</td>
@@ -600,34 +616,6 @@
   </div>
 </div>
 
-<!-- Quick Edit Stage Amount Modal -->
-<div class="modal fade" id="quickEditStageModal" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered modal-sm">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Stage Amount</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <form id="quickEditStageForm">
-          <div class="mb-3">
-            <label class="form-label">Stage</label>
-            <input type="text" id="quickEditStageName" class="form-control" disabled>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Amount ($)</label>
-            <input type="number" id="quickEditStageAmount" class="form-control" step="0.01" min="0">
-          </div>
-        </form>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" onclick="saveQuickEditStage()">Save</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <!-- Update Stage Payment Modal -->
 <div class="modal fade" id="updateStageModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
@@ -861,43 +849,82 @@ function updateStagedPayment() {
   .catch(e => alert('❌ Error: ' + e.message));
 }
 
-function prepareQuickEditStage(idx, name, amount, status) {
-  document.getElementById('quickEditStageName').value = name;
-  document.getElementById('quickEditStageAmount').value = amount.toFixed(2);
-  document.getElementById('quickEditStageAmount').dataset.stageIndex = idx;
-  document.getElementById('quickEditStageAmount').dataset.status = status;
-  document.getElementById('quickEditStageAmount').focus();
+function toggleInlineEdit(idx, name, amount, status, invoiceId) {
+  const displayDiv = document.getElementById(`amountDisplay_${idx}`);
+  const editDiv = document.getElementById(`amountEdit_${idx}`);
+  const input = document.getElementById(`amountInput_${idx}`);
+
+  // Hide display, show edit
+  displayDiv.style.display = 'none';
+  editDiv.style.display = 'flex';
+  input.value = amount.toFixed(2);
+  input.focus();
+  input.select();
+
+  // Store original values for cancel
+  input.dataset.originalAmount = amount;
+  input.dataset.status = status;
+  input.dataset.invoiceId = invoiceId;
 }
 
-function saveQuickEditStage() {
-  const idx = parseInt(document.getElementById('quickEditStageAmount').dataset.stageIndex);
-  const newAmount = parseFloat(document.getElementById('quickEditStageAmount').value) || 0;
-  const oldAmount = currentStages[idx].amount || 0;
+function cancelInlineEdit(idx) {
+  const displayDiv = document.getElementById(`amountDisplay_${idx}`);
+  const editDiv = document.getElementById(`amountEdit_${idx}`);
 
-  if (Math.abs(newAmount - oldAmount) < 0.01) {
+  displayDiv.style.display = 'flex';
+  editDiv.style.display = 'none';
+}
+
+function saveInlineEdit(idx, status, invoiceId) {
+  const input = document.getElementById(`amountInput_${idx}`);
+  const newAmount = parseFloat(input.value) || 0;
+  const originalAmount = parseFloat(input.dataset.originalAmount) || 0;
+
+  if (Math.abs(newAmount - originalAmount) < 0.01) {
     alert('⚠️ Amount not changed');
+    cancelInlineEdit(idx);
     return;
   }
 
   // Update stage locally
+  const oldAmount = currentStages[idx].amount || 0;
+  const difference = oldAmount - newAmount;
   currentStages[idx].amount = newAmount;
 
-  // Update the display
-  const amountDisplay = document.getElementById(`stageAmount_${idx}`);
-  if (amountDisplay) {
-    amountDisplay.textContent = '$' + newAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  // Redistribute difference if invoiced (to remaining non-invoiced stages)
+  if (status === 'Invoiced' && difference !== 0) {
+    const uninvoicedIndices = currentStages
+      .map((s, i) => i > idx && s.status === 'Not Invoiced' ? i : -1)
+      .filter(i => i >= 0);
+
+    if (uninvoicedIndices.length > 0) {
+      const perStage = difference / uninvoicedIndices.length;
+      uninvoicedIndices.forEach(i => {
+        currentStages[i].amount = (currentStages[i].amount || 0) + perStage;
+      });
+    }
   }
 
-  // Close modal and save to backend
-  bootstrap.Modal.getInstance(document.getElementById('quickEditStageModal')).hide();
-
   // Save to backend
-  fetch(`/api/projects/${projectId}/payment-plan`, {
+  const endpoint = status === 'Invoiced'
+    ? `/api/projects/${projectId}/stage/${idx}/update-invoiced`
+    : `/api/projects/${projectId}/payment-plan`;
+
+  const payload = status === 'Invoiced'
+    ? {
+        invoiceId: invoiceId,
+        originalAmount: originalAmount,
+        newAmount: newAmount,
+        stages: currentStages.map((s, i) => ({ index: i, amount: s.amount }))
+      }
+    : {
+        amounts: currentStages.map((s, i) => ({ index: i, amount: s.amount }))
+      };
+
+  fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      amounts: currentStages.map((s, i) => ({ index: i, amount: s.amount }))
-    })
+    body: JSON.stringify(payload)
   })
   .then(r => r.json())
   .then(data => {
@@ -906,9 +933,13 @@ function saveQuickEditStage() {
       location.reload();
     } else {
       alert('❌ Error: ' + (data.error || 'Could not update'));
+      cancelInlineEdit(idx);
     }
   })
-  .catch(e => alert('❌ Error: ' + e.message));
+  .catch(e => {
+    alert('❌ Error: ' + e.message);
+    cancelInlineEdit(idx);
+  });
 }
 
 function prepareUpdateInvoicedStage(idx, name, amount, invoiceId) {
