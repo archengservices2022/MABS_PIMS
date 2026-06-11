@@ -341,87 +341,39 @@
           <i class="bi bi-lock-fill"></i> Invoice fully paid — status locked
         </div>
         {% endif %}
+
+        <!-- PAYMENT FORM - SIMPLIFIED SEQUENTIAL DISTRIBUTION V3 -->
         <div id="paymentDetailsForm" style="display:{{ 'block' if meta.get('status','Draft') in ('Paid','Partial') else 'none' }}; background:#F0FDF4; border:1px solid #86EFAC; border-radius:8px; padding:16px; margin-top:12px; margin-bottom:12px;"
              data-total-invoice="{{ meta.get('total', 0) }}"
              data-amount-paid="{{ meta.get('amount_paid', 0) }}"
              data-tax-paid="{{ meta.get('tax_paid', 0) }}"
              data-tax-amount="{{ meta.get('tax_amount', 0) }}">
 
-          <!-- SIMPLIFIED PAYMENT FORM - NEW VERSION 2026-06-11 -->
-          TEST_MARKER_NEW_TEMPLATE_LOADS_HERE
-          <!-- Payment Amount Input -->
           {% set total_remaining = meta.get('total',0)|float - meta.get('amount_paid',0)|float - meta.get('tax_paid',0)|float %}
           <div class="mb-3">
             <label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Amount ($) <span class="text-danger">*</span></label>
-            <input type="number" name="amount" class="form-control form-control-sm"
-                   value="" min="0" step="0.01" id="invoiceAmountInput"
-                   data-max="{{ total_remaining }}"
-                   oninput="handlePaymentAmountChange()"
-                   onchange="handlePaymentAmountChange()"
-                   onblur="validatePaymentAmount()"
-                   {% if meta.get('status','Draft') == 'Paid' %}readonly{% endif %}>
+            <input type="number" name="amount" class="form-control form-control-sm" value="" min="0" step="0.01" id="invoiceAmountInput" data-max="{{ total_remaining }}" oninput="handlePaymentAmountChange()" onchange="handlePaymentAmountChange()" onblur="validatePaymentAmount()" {% if meta.get('status','Draft') == 'Paid' %}readonly{% endif %}>
             <div id="amountError" style="color:#DC2626; font-size:0.85rem; margin-top:4px; display:none;"></div>
-
-            <!-- Max and Remaining Balance below input -->
             <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:0.8rem; color:#00695C;">
               <span>Max: <strong>$<span id="displayMaxAmount">{{ "{:.2f}".format(total_remaining) }}</span></strong></span>
               <span>Rem: <strong>$<span id="paymentRemaining">{{ "{:.2f}".format(total_remaining) }}</span></strong></span>
             </div>
           </div>
 
-          <!-- Tax Payment Section (if tax exists) -->
           {% if meta.get('tax_amount',0)|float > 0 %}
           {% set tax_remaining = meta.get('tax_amount',0)|float - (meta.get('tax_paid',0)|float) %}
           {% if tax_remaining > 0 %}
-          <div style="border-top:2px solid #86EFAC; margin-top:12px; padding-top:12px;">
-            <div id="taxPaymentFields" style="display:none;">
-              <div class="mb-3" style="background:#FEF3C7; border:1px solid #FCD34D; border-radius:6px; padding:10px;">
-                <div style="font-size:0.75rem; color:#92400E;">Tax Remaining</div>
-                <div style="font-size:1.1rem; font-weight:700; color:#B45309;">
-                  $<span id="taxRemaining">{{ "{:.2f}".format(tax_remaining) }}</span>
-                </div>
-              </div>
-              <div class="mb-3">
-                <label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Tax Amount ($) <span class="text-danger">*</span></label>
-                <input type="number" name="tax_amount" class="form-control form-control-sm" id="taxAmountInput"
-                       value="" min="0" step="0.01" data-max="{{ tax_remaining }}"
-                       oninput="validateTaxAmountInput()"
-                       onchange="validateTaxAmountInput()">
-                <div id="taxAmountError" style="color:#DC2626; font-size:0.85rem; margin-top:4px; display:none;"></div>
-                <small class="text-muted">Max: ${{ "{:.2f}".format(tax_remaining) }}</small>
-              </div>
-            </div>
-          </div>
+          <div style="border-top:2px solid #86EFAC; margin-top:12px; padding-top:12px;"><div id="taxPaymentFields" style="display:none;"><div class="mb-3" style="background:#FEF3C7; border:1px solid #FCD34D; border-radius:6px; padding:10px;"><div style="font-size:0.75rem; color:#92400E;">Tax Remaining</div><div style="font-size:1.1rem; font-weight:700; color:#B45309;">$<span id="taxRemaining">{{ "{:.2f}".format(tax_remaining) }}</span></div></div><div class="mb-3"><label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Tax Amount ($) <span class="text-danger">*</span></label><input type="number" name="tax_amount" class="form-control form-control-sm" id="taxAmountInput" value="" min="0" step="0.01" data-max="{{ tax_remaining }}" oninput="validateTaxAmountInput()" onchange="validateTaxAmountInput()"><div id="taxAmountError" style="color:#DC2626; font-size:0.85rem; margin-top:4px; display:none;"></div></div></div></div>
           {% else %}
-          <!-- Tax Fully Paid -->
-          <div style="border-top:2px solid #86EFAC; margin-top:12px; padding-top:12px; background:#D1FAE5; border:1px solid #6EE7B7; border-radius:6px; padding:10px; margin-bottom:12px;">
-            <div style="font-size:0.85rem; color:#047857; font-weight:500;">
-              <i class="bi bi-check-circle-fill"></i> Tax Fully Paid
-            </div>
-          </div>
+          <div style="border-top:2px solid #86EFAC; margin-top:12px; padding-top:12px; background:#D1FAE5; border:1px solid #6EE7B7; border-radius:6px; padding:10px; margin-bottom:12px;"><div style="font-size:0.85rem; color:#047857; font-weight:500;"><i class="bi bi-check-circle-fill"></i> Tax Fully Paid</div></div>
           {% endif %}
           {% endif %}
 
-          <div class="mb-3">
-            <label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Payment Method</label>
-            <select name="method" class="form-select form-select-sm">
-              <option value="">— Select Method —</option>
-              {% for m in ['Check','Wire Transfer','ACH','Cash','Credit Card','Other'] %}
-              <option value="{{ m }}">{{ m }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Payment Date</label>
-            <input type="date" name="date" class="form-control form-control-sm"
-                   value="{{ today_date }}">
-          </div>
-          <div class="mb-0">
-            <label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Reference #</label>
-            <input type="text" name="reference" class="form-control form-control-sm"
-                   placeholder="Check #, Wire ref, etc.">
-          </div>
+          <div class="mb-3"><label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Payment Method</label><select name="method" class="form-select form-select-sm"><option value="">— Select Method —</option>{% for m in ['Check','Wire Transfer','ACH','Cash','Credit Card','Other'] %}<option value="{{ m }}">{{ m }}</option>{% endfor %}</select></div>
+          <div class="mb-3"><label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Payment Date</label><input type="date" name="date" class="form-control form-control-sm" value="{{ today_date }}"></div>
+          <div class="mb-0"><label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Reference #</label><input type="text" name="reference" class="form-control form-control-sm" placeholder="Check #, Wire ref, etc."></div>
         </div>
+
         <button type="button" class="btn btn-sm btn-teal w-100 mt-2" onclick="handleStatusUpdate()">Update</button>
       </form>
     </div>
@@ -957,3 +909,4 @@ function copyReminder() {
 }
 </script>
 {% endblock %}
+
