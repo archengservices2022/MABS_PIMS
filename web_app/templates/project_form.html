@@ -157,8 +157,7 @@
           <input type="number" id="contractValue" name="contract_value" class="form-control"
                  value="{{ project.get('contract_value','0') if project else '0' }}"
                  min="0" step="0.01" oninput="handleContractValueChange()"
-                 data-original-value="{{ project.get('contract_value','0')|float if project else 0 }}"
-                 data-all-invoiced="{{ has_invoiced and (existing_stages|selectattr('status', '!=', 'Invoiced')|selectattr('status', '!=', 'Paid')|selectattr('status', '!=', 'Partially Paid')|list|length == 0)|string|lower }}">
+                 data-original-value="{{ project.get('contract_value','0')|float if project else 0 }}">
         </div>
         {% if not is_new %}
         <div class="mb-2">
@@ -709,67 +708,6 @@ function validatePaymentPlanBeforeSubmit() {
     }
   }
   return true;
-}
-
-function handleContractValueChange() {
-  const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
-  const downPaymentPct = parseFloat(document.getElementById('downPaymentPct')?.value) || 0;
-  const installmentCount = parseInt(document.getElementById('installmentCount')?.value) || 1;
-
-  if (stageAmountsData.length > 0) {
-    // Check if there are invoiced stages
-    const hasInvoicedStages = stageAmountsData.some(s => s.status !== 'Pending');
-
-    if (hasInvoicedStages) {
-      // Lock invoiced stages, redistribute to non-invoiced stages
-      const invoicedTotal = stageAmountsData
-        .filter(s => s.status !== 'Pending')
-        .reduce((sum, s) => sum + s.amount, 0);
-      const nonInvoicedTotal = contractValue - invoicedTotal;
-      const nonInvoicedCount = stageAmountsData.filter(s => s.status === 'Pending').length;
-
-      if (nonInvoicedCount > 0) {
-        const sharePerStage = Math.floor(nonInvoicedTotal / nonInvoicedCount * 100) / 100;
-        let remaining = nonInvoicedTotal;
-
-        stageAmountsData.forEach((s, i) => {
-          if (s.status === 'Pending') {
-            const isLast = i === stageAmountsData.length - 1 ||
-                          stageAmountsData.slice(i + 1).every(x => x.status !== 'Pending');
-            s.amount = isLast ? remaining : sharePerStage;
-            remaining -= s.amount;
-          }
-        });
-
-        updatePaymentPlanDisplay();
-      }
-    } else {
-      // No invoiced stages - recalculate based on payment plan settings
-      const downPaymentAmount = Math.round(contractValue * downPaymentPct / 100 * 100) / 100;
-      const balanceAmount = contractValue - downPaymentAmount;
-      const sharePerStage = Math.floor(balanceAmount / Math.max(installmentCount, 1) * 100) / 100;
-      let remaining = balanceAmount;
-
-      if (downPaymentPct > 0 && stageAmountsData[0]?.name.includes('Down')) {
-        stageAmountsData[0].amount = downPaymentAmount;
-        remaining = balanceAmount;
-
-        for (let i = 1; i < stageAmountsData.length; i++) {
-          const isLast = i === stageAmountsData.length - 1;
-          stageAmountsData[i].amount = isLast ? remaining : sharePerStage;
-          remaining -= stageAmountsData[i].amount;
-        }
-      } else {
-        for (let i = 0; i < stageAmountsData.length; i++) {
-          const isLast = i === stageAmountsData.length - 1;
-          stageAmountsData[i].amount = isLast ? remaining : sharePerStage;
-          remaining -= stageAmountsData[i].amount;
-        }
-      }
-
-      updatePaymentPlanDisplay();
-    }
-  }
 }
 
 function openEditPreviewStageModal() {
