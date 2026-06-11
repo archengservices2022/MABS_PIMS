@@ -172,6 +172,7 @@
         <h6 class="section-heading">Payment Plan</h6>
         {% set existing_stages = project.get('payment_stages') if project else None %}
         {% set has_invoiced = existing_stages and (existing_stages|selectattr('status', 'in', ['Invoiced', 'Paid', 'Partially Paid'])|list|length > 0) %}
+        <div data-existing-stages="{{ (existing_stages|length > 0)|string|lower }}"></div>
         {% if has_invoiced %}
         <div class="alert alert-info py-2 px-3 small mb-3">
           <i class="bi bi-info-circle me-1"></i>Some stages have invoices. Invoiced stages are locked; non-invoiced stages will auto-adjust when contract value changes.
@@ -352,7 +353,11 @@ function updatePlanPreview() {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
-  updatePlanPreview();
+  // Only show preview if no existing saved stages
+  const existingStagesEl = document.querySelector('[data-existing-stages]');
+  if (!existingStagesEl || existingStagesEl.dataset.existingStages === 'false') {
+    updatePlanPreview();
+  }
   // ── Duration / date calculator ───────────────────────────────────────────
   function calcEndDate() {
     const s = document.getElementById('startDateInput').value;
