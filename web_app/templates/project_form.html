@@ -517,32 +517,23 @@ function handleContractValueChange() {
     return;
   }
 
-  // Proportional scaling: maintain the same percentage ratio for each stage
+  // Hybrid approach: down payment scales proportionally, remaining stages split equally
   if (Math.abs(difference) > 0.01 && nonInvoicedCount > 0) {
-    // Calculate current total of non-invoiced stages
-    let currentTotal = 0;
-    const nonInvoicedStages = [];
-
-    stageElements.forEach((el) => {
-      const valueInput = el.querySelector('.stage-amount-value');
+    // Get current down payment amount (first non-invoiced stage)
+    let downPaymentAmount = 0;
+    let remainingNonInvoicedCount = 0;
+    const currentTotal = stageElements.reduce((sum, el) => {
       const status = el.dataset.stageStatus;
-      const currentAmount = parseFloat(valueInput.value) || 0;
+      const currentAmount = parseFloat(el.querySelector('.stage-amount-value')?.value) || 0;
+      return status === 'Pending Invoice' ? sum + currentAmount : sum;
+    }, 0);
 
-      if (status === 'Pending Invoice') {
-        currentTotal += currentAmount;
-        nonInvoicedStages.push({
-          el: el,
-          valueInput: valueInput,
-          currentAmount: currentAmount
-        });
-      }
-    });
-
-    // Calculate scaling factor: how much to multiply each amount
-    const scalingFactor = currentTotal > 0 ? newValue / currentTotal : 1;
-    console.log('Proportional scaling factor:', scalingFactor, '(', currentTotal, '→', newValue, ')');
+    // Calculate down payment scaling factor
+    const downPaymentScaleFactor = currentTotal > 0 ? newValue / currentTotal : 1;
+    console.log('Hybrid approach: scaling factor =', downPaymentScaleFactor);
 
     const stages = [];
+    let isFirstNonInvoiced = true;
 
     stageElements.forEach((el) => {
       const valueInput = el.querySelector('.stage-amount-value');
@@ -551,15 +542,27 @@ function handleContractValueChange() {
       const currentAmount = parseFloat(valueInput.value) || 0;
 
       if (status === 'Pending Invoice') {
-        // Apply proportional scaling to maintain percentage ratio
-        const newAmount = Math.max(0, currentAmount * scalingFactor);
+        let newAmount;
+
+        if (isFirstNonInvoiced) {
+          // First non-invoiced stage (down payment): scale proportionally
+          newAmount = currentAmount * downPaymentScaleFactor;
+          downPaymentAmount = newAmount;
+          isFirstNonInvoiced = false;
+          console.log('Down payment scaled:', currentAmount, '→', newAmount);
+        } else {
+          // Remaining non-invoiced stages: will be calculated equally from remainder
+          remainingNonInvoicedCount++;
+          newAmount = 0; // Placeholder, will recalculate
+        }
 
         stages.push({
           el: el,
           valueInput: valueInput,
           displayEl: displayEl,
           amount: newAmount,
-          status: status
+          status: status,
+          isFirstStage: isFirstNonInvoiced ? true : false
         });
       } else {
         // Keep invoiced stages as-is
@@ -568,10 +571,26 @@ function handleContractValueChange() {
           valueInput: valueInput,
           displayEl: displayEl,
           amount: currentAmount,
-          status: status
+          status: status,
+          isFirstStage: false
         });
       }
     });
+
+    // Now distribute remaining amount equally among remaining non-invoiced stages
+    if (remainingNonInvoicedCount > 0) {
+      const remainingAmount = Math.max(0, newValue - downPaymentAmount);
+      const perStageAmount = remainingAmount / remainingNonInvoicedCount;
+      console.log('Remaining amount:', remainingAmount, 'per stage:', perStageAmount);
+
+      let stageIndex = 0;
+      stages.forEach(stage => {
+        if (stage.status === 'Pending Invoice' && !stage.isFirstStage && stageIndex !== 0) {
+          stage.amount = perStageAmount;
+        }
+        if (stage.status === 'Pending Invoice') stageIndex++;
+      });
+    }
 
     // Apply all calculated amounts and update display
     let newTotal = 0;
