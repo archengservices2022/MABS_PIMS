@@ -1155,14 +1155,6 @@ def project_edit(project_id):
             try:
                 import json
                 updated_stage_amounts = json.loads(updated_stage_amounts_json)
-                # Validate that total matches contract value
-                total_amount = sum(_safe_float(s.get("amount", 0)) for s in updated_stage_amounts)
-                contract_value = _safe_float(updated.get("contract_value", 0))
-
-                if abs(total_amount - contract_value) > 0.01:  # Allow 0.01 cent rounding
-                    flash(f"❌ Error: Payment plan total (${total_amount:.2f}) does not match contract value (${contract_value:.2f}). Please adjust amounts and try again.", "danger")
-                    return redirect(url_for("project_edit", project_id=project_id))
-
                 # Update payment stages with updated amounts (preserving status and other fields)
                 existing_stages = data.get("payment_stages") or []
                 for i, amount_data in enumerate(updated_stage_amounts):
@@ -1182,13 +1174,6 @@ def project_edit(project_id):
             try:
                 import json
                 custom_stage_amounts = json.loads(custom_stage_amounts_json)
-                # Validate that total matches contract value
-                total_amount = sum(_safe_float(s.get("amount", 0)) for s in custom_stage_amounts)
-                contract_value = _safe_float(updated.get("contract_value", 0))
-
-                if abs(total_amount - contract_value) > 0.01:  # Allow 0.01 cent rounding
-                    flash(f"❌ Error: Payment plan total (${total_amount:.2f}) does not match contract value (${contract_value:.2f}). Please adjust amounts and try again.", "danger")
-                    return redirect(url_for("project_edit", project_id=project_id))
 
                 # Update payment stages with custom amounts
                 existing_stages = data.get("payment_stages") or []
