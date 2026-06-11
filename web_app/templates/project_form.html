@@ -346,45 +346,52 @@ function handleContractValueChange() {
   const newValue = parseFloat(cvInput.value) || 0;
   const difference = newValue - oldValue;
 
-  // Get all stages and check if any are non-invoiced
+  // Get all stages
   const stageElements = document.querySelectorAll('.payment-stage');
-  const nonInvoicedStages = [];
+  if (stageElements.length === 0) {
+    updatePlanPreview();
+    return;
+  }
 
-  stageElements.forEach((el) => {
+  // Identify non-invoiced stages
+  const nonInvoicedIndices = [];
+  stageElements.forEach((el, idx) => {
     const status = el.dataset.stageStatus;
     if (status === 'Pending Invoice') {
-      nonInvoicedStages.push(el);
+      nonInvoicedIndices.push(idx);
     }
   });
 
-  // If all stages are invoiced, don't allow editing
-  if (nonInvoicedStages.length === 0 && stageElements.length > 0) {
+  // If all stages are invoiced, prevent editing
+  if (nonInvoicedIndices.length === 0 && stageElements.length > 0) {
     alert('❌ Cannot edit contract value: all payment stages are already invoiced.');
     cvInput.value = oldValue;
     return;
   }
 
   // Distribute difference to non-invoiced stages
-  if (Math.abs(difference) > 0.01 && nonInvoicedStages.length > 0) {
-    const perStage = difference / nonInvoicedStages.length;
+  if (Math.abs(difference) > 0.01 && nonInvoicedIndices.length > 0) {
+    const perStage = difference / nonInvoicedIndices.length;
     let newTotal = 0;
 
-    nonInvoicedStages.forEach((el) => {
-      const valueInput = el.querySelector('.stage-amount-value');
+    // Update non-invoiced stages
+    nonInvoicedIndices.forEach((idx) => {
+      const el = stageElements[idx];
       const displayEl = el.querySelector('.stage-amount-display');
-      if (valueInput && displayEl) {
+      const valueInput = el.querySelector('.stage-amount-value');
+
+      if (displayEl && valueInput) {
         const currentAmount = parseFloat(valueInput.value) || 0;
         const newAmount = Math.max(0, currentAmount + perStage);
-        valueInput.value = newAmount;
+        valueInput.value = newAmount.toFixed(2);
         displayEl.textContent = '$' + newAmount.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
         newTotal += newAmount;
       }
     });
 
-    // Also add invoiced stages to total
-    stageElements.forEach((el) => {
-      const status = el.dataset.stageStatus;
-      if (status !== 'Pending Invoice') {
+    // Add invoiced stages to total
+    stageElements.forEach((el, idx) => {
+      if (!nonInvoicedIndices.includes(idx)) {
         const valueInput = el.querySelector('.stage-amount-value');
         if (valueInput) {
           newTotal += parseFloat(valueInput.value) || 0;
