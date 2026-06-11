@@ -519,78 +519,66 @@ function handleContractValueChange() {
 
   // Hybrid approach: down payment scales proportionally, remaining stages split equally
   if (Math.abs(difference) > 0.01 && nonInvoicedCount > 0) {
-    // Get current down payment amount (first non-invoiced stage)
-    let downPaymentAmount = 0;
-    let remainingNonInvoicedCount = 0;
+    // Calculate current total of all non-invoiced stages
     const currentTotal = stageElements.reduce((sum, el) => {
       const status = el.dataset.stageStatus;
       const currentAmount = parseFloat(el.querySelector('.stage-amount-value')?.value) || 0;
       return status === 'Pending Invoice' ? sum + currentAmount : sum;
     }, 0);
 
-    // Calculate down payment scaling factor
-    const downPaymentScaleFactor = currentTotal > 0 ? newValue / currentTotal : 1;
-    console.log('Hybrid approach: scaling factor =', downPaymentScaleFactor);
+    const scaleFactor = currentTotal > 0 ? newValue / currentTotal : 1;
+    console.log('Hybrid approach: scaling factor =', scaleFactor, '(', currentTotal, '→', newValue, ')');
 
     const stages = [];
-    let isFirstNonInvoiced = true;
+    let firstNonInvoicedAmount = 0;
+    let remainingNonInvoicedCount = 0;
 
+    // First pass: identify first non-invoiced stage and count others
+    let foundFirstNonInvoiced = false;
+    stageElements.forEach((el) => {
+      const status = el.dataset.stageStatus;
+      const currentAmount = parseFloat(el.querySelector('.stage-amount-value')?.value) || 0;
+
+      if (status === 'Pending Invoice') {
+        if (!foundFirstNonInvoiced) {
+          firstNonInvoicedAmount = currentAmount * scaleFactor;
+          foundFirstNonInvoiced = true;
+        } else {
+          remainingNonInvoicedCount++;
+        }
+      }
+    });
+
+    const remainingAmount = Math.max(0, newValue - firstNonInvoicedAmount);
+    const perStageAmount = remainingNonInvoicedCount > 0 ? remainingAmount / remainingNonInvoicedCount : 0;
+    console.log('Down payment:', firstNonInvoicedAmount, ', Remaining per stage:', perStageAmount);
+
+    // Second pass: build stages array with calculated amounts
+    let assignedFirstNonInvoiced = false;
     stageElements.forEach((el) => {
       const valueInput = el.querySelector('.stage-amount-value');
       const displayEl = el.querySelector('.stage-amount-display');
       const status = el.dataset.stageStatus;
       const currentAmount = parseFloat(valueInput.value) || 0;
+      let newAmount = currentAmount;
 
       if (status === 'Pending Invoice') {
-        let newAmount;
-
-        if (isFirstNonInvoiced) {
-          // First non-invoiced stage (down payment): scale proportionally
-          newAmount = currentAmount * downPaymentScaleFactor;
-          downPaymentAmount = newAmount;
-          isFirstNonInvoiced = false;
-          console.log('Down payment scaled:', currentAmount, '→', newAmount);
+        if (!assignedFirstNonInvoiced) {
+          newAmount = firstNonInvoicedAmount;
+          assignedFirstNonInvoiced = true;
         } else {
-          // Remaining non-invoiced stages: will be calculated equally from remainder
-          remainingNonInvoicedCount++;
-          newAmount = 0; // Placeholder, will recalculate
+          newAmount = perStageAmount;
         }
-
-        stages.push({
-          el: el,
-          valueInput: valueInput,
-          displayEl: displayEl,
-          amount: newAmount,
-          status: status,
-          isFirstStage: isFirstNonInvoiced ? true : false
-        });
-      } else {
-        // Keep invoiced stages as-is
-        stages.push({
-          el: el,
-          valueInput: valueInput,
-          displayEl: displayEl,
-          amount: currentAmount,
-          status: status,
-          isFirstStage: false
-        });
       }
-    });
 
-    // Now distribute remaining amount equally among remaining non-invoiced stages
-    if (remainingNonInvoicedCount > 0) {
-      const remainingAmount = Math.max(0, newValue - downPaymentAmount);
-      const perStageAmount = remainingAmount / remainingNonInvoicedCount;
-      console.log('Remaining amount:', remainingAmount, 'per stage:', perStageAmount);
-
-      let stageIndex = 0;
-      stages.forEach(stage => {
-        if (stage.status === 'Pending Invoice' && !stage.isFirstStage && stageIndex !== 0) {
-          stage.amount = perStageAmount;
-        }
-        if (stage.status === 'Pending Invoice') stageIndex++;
+      stages.push({
+        el: el,
+        valueInput: valueInput,
+        displayEl: displayEl,
+        amount: newAmount,
+        status: status
       });
-    }
+    });
 
     // Apply all calculated amounts and update display
     let newTotal = 0;
