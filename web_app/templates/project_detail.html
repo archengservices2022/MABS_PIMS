@@ -943,9 +943,27 @@ function saveInlineEdit(idx, status, invoiceId) {
   .then(r => r.json())
   .then(data => {
     if (data.success) {
-      // Update UI immediately without alert or reload
+      // Update UI immediately for all changed stages
       const fmt = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+      // Update the edited stage
       stageAmountDisplay.textContent = fmt(newAmount);
+
+      // Update all remaining adjusted stages
+      remainingUninvoiced.forEach(i => {
+        const stageDisplay = document.getElementById(`stageAmount_${i}`);
+        const stageInput = document.getElementById(`amountInput_${i}`);
+        if (stageDisplay) {
+          stageDisplay.textContent = fmt(currentStages[i].amount);
+        }
+        // Update dataset for next edit
+        if (stageInput) {
+          stageInput.dataset.originalAmount = currentStages[i].amount;
+        }
+      });
+
+      // Update dataset for current stage
+      input.dataset.originalAmount = newAmount;
 
       // Close edit mode
       displaySpan.style.display = 'inline-flex';
