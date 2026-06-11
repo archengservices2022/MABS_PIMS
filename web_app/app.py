@@ -1149,9 +1149,36 @@ def project_edit(project_id):
         updated["installment_mode"]           = mode
         updated["custom_installment_amounts"] = custom_amounts or []
 
-        # Handle custom stage amounts from frontend
+        # Handle updated stage amounts from contract value auto-adjustment
+        updated_stage_amounts_json = request.form.get("updated_stage_amounts", "")
+        if updated_stage_amounts_json:
+            try:
+                import json
+                updated_stage_amounts = json.loads(updated_stage_amounts_json)
+                # Validate that total matches contract value
+                total_amount = sum(_safe_float(s.get("amount", 0)) for s in updated_stage_amounts)
+                contract_value = _safe_float(updated.get("contract_value", 0))
+
+                if abs(total_amount - contract_value) > 0.01:  # Allow 0.01 cent rounding
+                    flash(f"❌ Error: Payment plan total (${total_amount:.2f}) does not match contract value (${contract_value:.2f}). Please adjust amounts and try again.", "danger")
+                    return redirect(url_for("project_edit", project_id=project_id))
+
+                # Update payment stages with updated amounts (preserving status and other fields)
+                existing_stages = data.get("payment_stages") or []
+                for i, amount_data in enumerate(updated_stage_amounts):
+                    if i < len(existing_stages) and isinstance(existing_stages[i], dict):
+                        existing_stages[i]["amount"] = _safe_float(amount_data.get("amount", 0))
+                        # Preserve status and other fields
+                        if "status" in amount_data:
+                            existing_stages[i]["status"] = amount_data.get("status")
+
+                updated["payment_stages"] = existing_stages
+            except (json.JSONDecodeError, ValueError):
+                flash("Error processing updated payment amounts.", "warning")
+
+        # Handle custom stage amounts from frontend (for new customizations)
         custom_stage_amounts_json = request.form.get("custom_stage_amounts", "")
-        if custom_stage_amounts_json:
+        if custom_stage_amounts_json and not updated_stage_amounts_json:
             try:
                 import json
                 custom_stage_amounts = json.loads(custom_stage_amounts_json)
@@ -1181,7 +1208,7 @@ def project_edit(project_id):
         else:
             # No custom amounts provided, use standard logic
             existing_stages = data.get("payment_stages") or []
-            plan_in_progress = any(s.get("status") != "Pending" for s in existing_stages if isinstance(s, dict))
+            plan_in_progress = any(s.get("status") != "Pending Invoice" for s in existing_stages if isinstance(s, dict))
             if plan_in_progress:
                 # Stages already have invoices/payments against them — keep the plan intact
                 flash("Payment plan kept as-is because one or more stages are already invoiced.", "info")

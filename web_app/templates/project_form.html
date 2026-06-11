@@ -10,7 +10,7 @@
   <h5 class="mb-0">{{ 'Create New Project' if is_new else 'Edit Project' }}</h5>
 </div>
 
-<form method="POST">
+<form method="POST" onsubmit="captureUpdatedStages(event)">
   <div class="row g-3">
     <div class="col-lg-8">
       <div class="card-panel mb-3">
@@ -307,6 +307,39 @@
 // ── Payment Plan live preview ────────────────────────────────────────────────
 let previewStagesData = [];
 
+function captureUpdatedStages(event) {
+  // Collect updated stage amounts from DOM
+  const stageElements = document.querySelectorAll('.payment-stage');
+  const updatedStages = [];
+
+  stageElements.forEach((el, idx) => {
+    const valueInput = el.querySelector('.stage-amount-value');
+    const displayEl = el.querySelector('.stage-amount-display');
+    const status = el.dataset.stageStatus;
+
+    if (valueInput && displayEl) {
+      const amount = parseFloat(valueInput.value) || 0;
+      const name = el.querySelector('.fw-600')?.textContent || `Stage ${idx+1}`;
+
+      updatedStages.push({
+        name: name.trim(),
+        amount: amount,
+        status: status,
+        invoice_id: el.dataset.invoiceId || ""
+      });
+    }
+  });
+
+  // Add updated stages as hidden input if there are any
+  if (updatedStages.length > 0) {
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'hidden';
+    hiddenInput.name = 'updated_stage_amounts';
+    hiddenInput.value = JSON.stringify(updatedStages);
+    event.target.appendChild(hiddenInput);
+  }
+}
+
 function handleContractValueChange() {
   const cvInput = document.getElementById('contractValue');
   const oldValue = parseFloat(cvInput.dataset.originalValue) || 0;
@@ -334,6 +367,8 @@ function handleContractValueChange() {
   // Distribute difference to non-invoiced stages
   if (Math.abs(difference) > 0.01 && nonInvoicedStages.length > 0) {
     const perStage = difference / nonInvoicedStages.length;
+    let newTotal = 0;
+
     nonInvoicedStages.forEach((el) => {
       const valueInput = el.querySelector('.stage-amount-value');
       const displayEl = el.querySelector('.stage-amount-display');
@@ -342,8 +377,27 @@ function handleContractValueChange() {
         const newAmount = Math.max(0, currentAmount + perStage);
         valueInput.value = newAmount;
         displayEl.textContent = '$' + newAmount.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+        newTotal += newAmount;
       }
     });
+
+    // Also add invoiced stages to total
+    stageElements.forEach((el) => {
+      const status = el.dataset.stageStatus;
+      if (status !== 'Pending Invoice') {
+        const valueInput = el.querySelector('.stage-amount-value');
+        if (valueInput) {
+          newTotal += parseFloat(valueInput.value) || 0;
+        }
+      }
+    });
+
+    // Update total display
+    const totalEl = document.getElementById('totalStageAmount');
+    if (totalEl) {
+      totalEl.textContent = '$' + newTotal.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    }
+
     cvInput.dataset.originalValue = newValue;
   }
 
