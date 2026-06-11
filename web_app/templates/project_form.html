@@ -1063,6 +1063,31 @@ function saveCustomPreviewStages() {
 
   customInput.value = JSON.stringify(previewStagesData.map(s => ({ amount: s.amount })));
 
+  // If this is an edit form, also update the actual payment-stage elements
+  const stageElements = document.querySelectorAll('.payment-stage');
+  if (stageElements.length > 0) {
+    stageElements.forEach((el, idx) => {
+      if (idx < previewStagesData.length) {
+        const valueInput = el.querySelector('.stage-amount-value');
+        const displayEl = el.querySelector('.stage-amount-display');
+        if (valueInput && displayEl) {
+          valueInput.value = previewStagesData[idx].amount.toFixed(2);
+          displayEl.textContent = '$' + previewStagesData[idx].amount.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+        }
+      }
+    });
+
+    // Update total display
+    let newTotal = 0;
+    document.querySelectorAll('.stage-amount-value').forEach(input => {
+      newTotal += parseFloat(input.value) || 0;
+    });
+    const totalEl = document.getElementById('totalStageAmount');
+    if (totalEl) {
+      totalEl.textContent = '$' + newTotal.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    }
+  }
+
   // Close modal
   const modal = bootstrap.Modal.getInstance(document.getElementById('customizeStagesModal'));
   if (modal) modal.hide();
