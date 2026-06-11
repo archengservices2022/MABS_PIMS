@@ -498,64 +498,68 @@ function handleContractValueChange() {
     return;
   }
 
-  // Smart redistribution: try equal distribution first, then handle shortfalls
+  // Smart equal distribution: apply equal amount to each stage, handle shortfalls
   if (Math.abs(difference) > 0.01 && nonInvoicedCount > 0) {
     const perStageAmount = difference / nonInvoicedCount;
     console.log('Per stage adjustment:', perStageAmount);
 
-    // First pass: calculate actual amounts and identify shortfalls
-    let remainingDifference = difference;
-    const newAmounts = [];
-    const stageDataArray = [];
+    // First pass: apply equal amount to all non-invoiced stages
+    let totalShortfall = 0;
+    const stages = [];
 
-    stageElements.forEach((el, idx) => {
+    stageElements.forEach((el) => {
       const valueInput = el.querySelector('.stage-amount-value');
+      const displayEl = el.querySelector('.stage-amount-display');
       const status = el.dataset.stageStatus;
       const currentAmount = parseFloat(valueInput.value) || 0;
 
       if (status === 'Pending Invoice') {
-        const canDecrease = Math.min(Math.abs(perStageAmount), currentAmount);
-        const newAmount = Math.max(0, currentAmount + perStageAmount);
-        const actualDecrease = currentAmount - newAmount;
+        // Try to apply equal adjustment
+        let newAmount = currentAmount + perStageAmount;
 
-        newAmounts.push(newAmount);
-        stageDataArray.push({
+        // If would go negative, set to 0 and track the shortfall
+        if (newAmount < 0) {
+          totalShortfall += Math.abs(newAmount);
+          newAmount = 0;
+        }
+
+        stages.push({
           el: el,
-          oldAmount: currentAmount,
-          newAmount: newAmount,
-          canDecrease: canDecrease,
-          shortfall: Math.abs(perStageAmount) - canDecrease,
-          index: idx
+          valueInput: valueInput,
+          displayEl: displayEl,
+          amount: newAmount,
+          status: status
         });
-
-        remainingDifference -= actualDecrease;
       } else {
-        newAmounts.push(currentAmount);
+        // Keep invoiced stages as-is
+        stages.push({
+          el: el,
+          valueInput: valueInput,
+          displayEl: displayEl,
+          amount: currentAmount,
+          status: status
+        });
       }
     });
 
-    // Second pass: redistribute shortfalls to stages that can handle more
-    if (Math.abs(remainingDifference) > 0.01) {
-      const capacityStages = stageDataArray.filter(s => s.newAmount > 0);
-      if (capacityStages.length > 0) {
-        const redistributePerStage = remainingDifference / capacityStages.length;
-        capacityStages.forEach(stage => {
-          stage.newAmount = Math.max(0, stage.newAmount + redistributePerStage);
+    // Second pass: redistribute any shortfall among stages that have positive amounts
+    if (totalShortfall > 0.01) {
+      const positiveStages = stages.filter(s => s.amount > 0 && s.status === 'Pending Invoice');
+      if (positiveStages.length > 0) {
+        const redistPerStage = totalShortfall / positiveStages.length;
+        positiveStages.forEach(stage => {
+          stage.amount = Math.max(0, stage.amount - redistPerStage);
         });
       }
     }
 
-    // Apply the calculated amounts
+    // Apply all calculated amounts and update display
     let newTotal = 0;
-    stageDataArray.forEach(stageData => {
-      const el = stageData.el;
-      const valueInput = el.querySelector('.stage-amount-value');
-      const displayEl = el.querySelector('.stage-amount-display');
-
-      if (valueInput && displayEl) {
-        valueInput.value = stageData.newAmount.toFixed(2);
-        displayEl.textContent = '$' + stageData.newAmount.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-        newTotal += stageData.newAmount;
+    stages.forEach(stage => {
+      if (stage.valueInput && stage.displayEl) {
+        stage.valueInput.value = stage.amount.toFixed(2);
+        stage.displayEl.textContent = '$' + stage.amount.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+        newTotal += stage.amount;
       }
     });
 
