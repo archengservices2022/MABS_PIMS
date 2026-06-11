@@ -796,7 +796,6 @@ function saveEditedPaymentPlan() {
   .then(r => r.json())
   .then(data => {
     if (data.success) {
-      alert('✅ Payment plan updated successfully');
       location.reload();
     } else {
       alert('❌ Error: ' + (data.error || 'Could not update'));
