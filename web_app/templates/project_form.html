@@ -154,10 +154,16 @@
         <h6 class="section-heading">Financials</h6>
         <div class="mb-2">
           <label class="form-label">Contract Value ($)</label>
-          <input type="number" id="contractValue" name="contract_value" class="form-control"
-                 value="{{ project.get('contract_value','0') if project else '0' }}"
-                 min="0" step="0.01" oninput="handleContractValueChange()"
-                 data-original-value="{{ project.get('contract_value','0')|float if project else 0 }}">
+          <div class="d-flex gap-2">
+            <input type="number" id="contractValue" name="contract_value" class="form-control"
+                   value="{{ project.get('contract_value','0') if project else '0' }}"
+                   min="0" step="0.01" oninput="handleContractValueChange()"
+                   data-original-value="{{ project.get('contract_value','0')|float if project else 0 }}">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="handleContractValueChange()"
+                    title="Auto-adjust payment stages to match contract value">
+              <i class="bi bi-arrow-repeat"></i> Adjust
+            </button>
+          </div>
         </div>
         {% if not is_new %}
         <div class="mb-2">
@@ -472,6 +478,8 @@ function handleContractValueChange() {
   const oldValue = parseFloat(cvInput.dataset.originalValue) || 0;
   const newValue = parseFloat(cvInput.value) || 0;
   const difference = newValue - oldValue;
+
+  console.log('Contract value change:', oldValue, '→', newValue, 'Difference:', difference);
 
   console.log('Contract value changed:', oldValue, '->', newValue, 'Difference:', difference);
 
