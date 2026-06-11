@@ -990,7 +990,8 @@ def project_new():
     if request.method == "POST":
         data = _parse_project_form(request.form)
 
-        # Validate custom stage amounts if provided
+        # Check for custom stage amounts from frontend
+        custom_stage_amounts = None
         custom_stage_amounts_json = request.form.get("custom_stage_amounts", "")
         if custom_stage_amounts_json:
             try:
@@ -1003,7 +1004,7 @@ def project_new():
                     flash(f"❌ Error: Payment plan total (${total_amount:.2f}) does not match contract value (${contract_value:.2f}). Please adjust amounts and try again.", "danger")
                     return redirect(url_for("project_new"))
             except (json.JSONDecodeError, ValueError):
-                pass
+                custom_stage_amounts = None
 
         # Always generate project number server-side to prevent duplicates
         data["project_number"] = _next_project_number()
@@ -1013,8 +1014,24 @@ def project_new():
         data["installment_count"]          = installments
         data["installment_mode"]           = mode
         data["custom_installment_amounts"] = custom_amounts or []
-        data["payment_stages"] = _compute_payment_stages(
-            _safe_float(data["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
+
+        # If custom amounts provided from frontend, use them directly
+        if custom_stage_amounts:
+            # Create payment stages from custom amounts
+            payment_stages = []
+            for idx, amount_data in enumerate(custom_stage_amounts):
+                payment_stages.append({
+                    "name": amount_data.get("name", f"Stage {idx+1}"),
+                    "amount": _safe_float(amount_data.get("amount", 0)),
+                    "status": "Not Invoiced",
+                    "invoice_id": "",
+                    "invoice_number": ""
+                })
+            data["payment_stages"] = payment_stages
+        else:
+            # Otherwise compute stages based on down payment and installments
+            data["payment_stages"] = _compute_payment_stages(
+                _safe_float(data["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
         data["created_at"] = datetime.now(timezone.utc).isoformat()
         data["updated_at"] = datetime.now(timezone.utc).isoformat()
         data["created_by"] = session.get("user_email", "")
