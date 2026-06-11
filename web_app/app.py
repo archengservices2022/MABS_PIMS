@@ -1174,7 +1174,7 @@ def project_edit(project_id):
                 flash("Error processing custom payment amounts. Using default distribution.", "warning")
 
                 existing_stages = data.get("payment_stages") or []
-                plan_in_progress = any(s.get("status") != "Pending" for s in existing_stages if isinstance(s, dict))
+                plan_in_progress = any(s.get("status") != "Pending Invoice" for s in existing_stages if isinstance(s, dict))
                 if not plan_in_progress:
                     updated["payment_stages"] = _compute_payment_stages(
                         _safe_float(updated["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
