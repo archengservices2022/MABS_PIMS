@@ -1151,6 +1151,7 @@ def project_edit(project_id):
 
         # Handle updated stage amounts from contract value auto-adjustment
         updated_stage_amounts_json = request.form.get("updated_stage_amounts", "")
+        amounts_updated = False
         if updated_stage_amounts_json:
             try:
                 import json
@@ -1165,33 +1166,31 @@ def project_edit(project_id):
                             existing_stages[i]["status"] = amount_data.get("status")
 
                 updated["payment_stages"] = existing_stages
+                amounts_updated = True
             except (json.JSONDecodeError, ValueError):
                 flash("Error processing updated payment amounts.", "warning")
 
         # Handle custom stage amounts from frontend (for new customizations)
-        custom_stage_amounts_json = request.form.get("custom_stage_amounts", "")
-        if custom_stage_amounts_json and not updated_stage_amounts_json:
-            try:
-                import json
-                custom_stage_amounts = json.loads(custom_stage_amounts_json)
+        if not amounts_updated:
+            custom_stage_amounts_json = request.form.get("custom_stage_amounts", "")
+            if custom_stage_amounts_json:
+                try:
+                    import json
+                    custom_stage_amounts = json.loads(custom_stage_amounts_json)
 
-                # Update payment stages with custom amounts
-                existing_stages = data.get("payment_stages") or []
-                for i, amount_data in enumerate(custom_stage_amounts):
-                    if i < len(existing_stages) and isinstance(existing_stages[i], dict):
-                        existing_stages[i]["amount"] = _safe_float(amount_data.get("amount", 0))
+                    # Update payment stages with custom amounts
+                    existing_stages = data.get("payment_stages") or []
+                    for i, amount_data in enumerate(custom_stage_amounts):
+                        if i < len(existing_stages) and isinstance(existing_stages[i], dict):
+                            existing_stages[i]["amount"] = _safe_float(amount_data.get("amount", 0))
 
-                updated["payment_stages"] = existing_stages
-            except (json.JSONDecodeError, ValueError):
-                flash("Error processing custom payment amounts. Using default distribution.", "warning")
+                    updated["payment_stages"] = existing_stages
+                    amounts_updated = True
+                except (json.JSONDecodeError, ValueError):
+                    flash("Error processing custom payment amounts. Using default distribution.", "warning")
 
-                existing_stages = data.get("payment_stages") or []
-                plan_in_progress = any(s.get("status") != "Pending Invoice" for s in existing_stages if isinstance(s, dict))
-                if not plan_in_progress:
-                    updated["payment_stages"] = _compute_payment_stages(
-                        _safe_float(updated["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
-        else:
-            # No custom amounts provided, use standard logic
+        # If amounts were not customized, use standard distribution logic
+        if not amounts_updated:
             existing_stages = data.get("payment_stages") or []
             plan_in_progress = any(s.get("status") != "Pending Invoice" for s in existing_stages if isinstance(s, dict))
             if plan_in_progress:
