@@ -744,15 +744,11 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    // Check if custom amounts are already saved and lock the button
+    // Custom amounts can be edited anytime - no locking
     const form = document.querySelector('form');
     const customInput = form.querySelector('input[name="custom_stage_amounts"]');
     if (customInput && customInput.value) {
-      editPreviewBtn.disabled = true;
-      editPreviewBtn.innerHTML = '<i class="bi bi-lock me-1"></i>Amounts Locked';
-      editPreviewBtn.classList.remove('btn-outline-primary');
-      editPreviewBtn.classList.add('btn-outline-secondary');
-      editPreviewBtn.title = 'Custom amounts can only be edited in the Project Details tab after creation';
+      // Custom amounts already exist, button is ready to edit them again
     }
   }
 });
@@ -828,20 +824,10 @@ function saveCustomPreviewStages() {
   const modal = bootstrap.Modal.getInstance(document.getElementById('customizeStagesModal'));
   if (modal) modal.hide();
 
-  // Lock the customization - disable the button and show read-only indicator
-  const editBtn = document.getElementById('editPreviewBtn');
-  if (editBtn) {
-    editBtn.disabled = true;
-    editBtn.innerHTML = '<i class="bi bi-lock me-1"></i>Amounts Locked';
-    editBtn.classList.remove('btn-outline-primary');
-    editBtn.classList.add('btn-outline-secondary');
-    editBtn.title = 'Custom amounts can only be edited in the Project Details tab after creation';
-  }
-
   // Update the preview display with new amounts and percentages
   updatePaymentPreviewDisplay();
 
-  alert('✅ Custom payment amounts saved and locked. Click "Create Project" to proceed.\n\nTo edit these amounts later, use the Project Details tab.');
+  alert('✅ Custom payment amounts saved. You can edit them anytime before creating the project.');
 }
 
 function updatePaymentPreviewDisplay() {
