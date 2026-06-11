@@ -915,21 +915,21 @@ document.addEventListener('DOMContentLoaded', () => {
   // Listen to contract value changes for auto-distribution (real-time)
   const cvInput = document.getElementById('contractValue');
   if (cvInput) {
-    cvInput.addEventListener('input', handleContractValueChange);
-    cvInput.addEventListener('change', handleContractValueChange);
+    cvInput.addEventListener('input', () => handleContractValueChange());
+    cvInput.addEventListener('change', () => handleContractValueChange());
   }
 
   // Listen to down payment % and installment changes for preview updates (real-time)
   const dpInput = document.getElementById('downPaymentPct');
   if (dpInput) {
-    dpInput.addEventListener('input', updatePlanPreview);
-    dpInput.addEventListener('change', updatePlanPreview);
+    dpInput.addEventListener('input', () => updatePlanPreview());
+    dpInput.addEventListener('change', () => updatePlanPreview());
   }
 
   const instInput = document.getElementById('installmentCount');
   if (instInput) {
-    instInput.addEventListener('input', updatePlanPreview);
-    instInput.addEventListener('change', updatePlanPreview);
+    instInput.addEventListener('input', () => updatePlanPreview());
+    instInput.addEventListener('change', () => updatePlanPreview());
   }
 
   // Handle "Customize Amounts" button for new projects
