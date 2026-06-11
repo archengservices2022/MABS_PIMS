@@ -203,29 +203,23 @@
                 <tr>
                   <td>{{ s.get('name','') }}</td>
                   <td class="text-end">
-                    <span id="amountDisplay_{{ loop.index0 }}" style="display:flex; justify-content:flex-end; align-items:center; gap:8px;">
-                      <span id="stageAmount_{{ loop.index0 }}">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</span>
+                    <span id="amountDisplay_{{ loop.index0 }}" style="display:inline-flex; align-items:center; gap:8px;">
+                      <span id="stageAmount_{{ loop.index0 }}" style="cursor:pointer;" onclick="toggleInlineEdit({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ st }}', '{{ inv_id }}')">
+                        ${{ "{:,.2f}".format(s.get('amount',0)|float) }}
+                      </span>
                       {% if st == 'Not Invoiced' or st == 'Invoiced' %}
                       <button type="button" class="btn btn-xs btn-outline-primary"
                               onclick="toggleInlineEdit({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ st }}', '{{ inv_id }}')"
-                              title="Edit amount">
+                              title="Edit amount (click or press Enter)">
                         <i class="bi bi-pencil"></i>
                       </button>
                       {% endif %}
                     </span>
-                    <span id="amountEdit_{{ loop.index0 }}" style="display:none; justify-content:flex-end; align-items:center; gap:8px;">
-                      <input type="number" id="amountInput_{{ loop.index0 }}" class="form-control form-control-sm"
-                             step="0.01" min="0" value="{{ s.get('amount',0)|float }}" style="width:100px;">
-                      <button type="button" class="btn btn-xs btn-success"
-                              onclick="saveInlineEdit({{ loop.index0 }}, '{{ st }}', '{{ inv_id }}')"
-                              title="Save">
-                        <i class="bi bi-check"></i>
-                      </button>
-                      <button type="button" class="btn btn-xs btn-outline-secondary"
-                              onclick="cancelInlineEdit({{ loop.index0 }})"
-                              title="Cancel">
-                        <i class="bi bi-x"></i>
-                      </button>
+                    <span id="amountEdit_{{ loop.index0 }}" style="display:none; align-items:center;">
+                      $<input type="number" id="amountInput_{{ loop.index0 }}" class="form-control form-control-sm"
+                             step="0.01" min="0" value="{{ s.get('amount',0)|float }}" style="width:80px; display:inline-block;"
+                             onkeydown="handleEditKeydown(event, {{ loop.index0 }}, '{{ st }}', '{{ inv_id }}')"
+                             onblur="saveInlineEdit({{ loop.index0 }}, '{{ st }}', '{{ inv_id }}')">
                     </span>
                   </td>
                   <td><span class="badge status-{{ status_class.get(st, st|lower|replace(' ','-')) }}">{{ st }}</span></td>
@@ -856,33 +850,41 @@ function toggleInlineEdit(idx, name, amount, status, invoiceId) {
 
   // Hide display, show edit
   displaySpan.style.display = 'none';
-  editSpan.style.display = 'flex';
+  editSpan.style.display = 'inline-flex';
   input.value = amount.toFixed(2);
   input.focus();
   input.select();
 
-  // Store original values for cancel
+  // Store original values
   input.dataset.originalAmount = amount;
   input.dataset.status = status;
   input.dataset.invoiceId = invoiceId;
 }
 
-function cancelInlineEdit(idx) {
-  const displaySpan = document.getElementById(`amountDisplay_${idx}`);
-  const editSpan = document.getElementById(`amountEdit_${idx}`);
-
-  displaySpan.style.display = 'flex';
-  editSpan.style.display = 'none';
+function handleEditKeydown(event, idx, status, invoiceId) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    saveInlineEdit(idx, status, invoiceId);
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    const displaySpan = document.getElementById(`amountDisplay_${idx}`);
+    const editSpan = document.getElementById(`amountEdit_${idx}`);
+    displaySpan.style.display = 'inline-flex';
+    editSpan.style.display = 'none';
+  }
 }
 
 function saveInlineEdit(idx, status, invoiceId) {
   const input = document.getElementById(`amountInput_${idx}`);
+  const displaySpan = document.getElementById(`amountDisplay_${idx}`);
+  const editSpan = document.getElementById(`amountEdit_${idx}`);
   const newAmount = parseFloat(input.value) || 0;
   const originalAmount = parseFloat(input.dataset.originalAmount) || 0;
 
+  // If amount unchanged, just close edit mode
   if (Math.abs(newAmount - originalAmount) < 0.01) {
-    alert('⚠️ Amount not changed');
-    cancelInlineEdit(idx);
+    displaySpan.style.display = 'inline-flex';
+    editSpan.style.display = 'none';
     return;
   }
 
@@ -933,12 +935,14 @@ function saveInlineEdit(idx, status, invoiceId) {
       location.reload();
     } else {
       alert('❌ Error: ' + (data.error || 'Could not update'));
-      cancelInlineEdit(idx);
+      displaySpan.style.display = 'inline-flex';
+      editSpan.style.display = 'none';
     }
   })
   .catch(e => {
     alert('❌ Error: ' + e.message);
-    cancelInlineEdit(idx);
+    displaySpan.style.display = 'inline-flex';
+    editSpan.style.display = 'none';
   });
 }
 
