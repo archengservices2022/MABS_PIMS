@@ -517,13 +517,31 @@ function handleContractValueChange() {
     return;
   }
 
-  // Smart equal distribution: apply equal amount to each stage, handle shortfalls
+  // Proportional scaling: maintain the same percentage ratio for each stage
   if (Math.abs(difference) > 0.01 && nonInvoicedCount > 0) {
-    const perStageAmount = difference / nonInvoicedCount;
-    console.log('Per stage adjustment:', perStageAmount);
+    // Calculate current total of non-invoiced stages
+    let currentTotal = 0;
+    const nonInvoicedStages = [];
 
-    // First pass: apply equal amount to all non-invoiced stages
-    let totalShortfall = 0;
+    stageElements.forEach((el) => {
+      const valueInput = el.querySelector('.stage-amount-value');
+      const status = el.dataset.stageStatus;
+      const currentAmount = parseFloat(valueInput.value) || 0;
+
+      if (status === 'Pending Invoice') {
+        currentTotal += currentAmount;
+        nonInvoicedStages.push({
+          el: el,
+          valueInput: valueInput,
+          currentAmount: currentAmount
+        });
+      }
+    });
+
+    // Calculate scaling factor: how much to multiply each amount
+    const scalingFactor = currentTotal > 0 ? newValue / currentTotal : 1;
+    console.log('Proportional scaling factor:', scalingFactor, '(', currentTotal, '→', newValue, ')');
+
     const stages = [];
 
     stageElements.forEach((el) => {
@@ -533,14 +551,8 @@ function handleContractValueChange() {
       const currentAmount = parseFloat(valueInput.value) || 0;
 
       if (status === 'Pending Invoice') {
-        // Try to apply equal adjustment
-        let newAmount = currentAmount + perStageAmount;
-
-        // If would go negative, set to 0 and track the shortfall
-        if (newAmount < 0) {
-          totalShortfall += Math.abs(newAmount);
-          newAmount = 0;
-        }
+        // Apply proportional scaling to maintain percentage ratio
+        const newAmount = Math.max(0, currentAmount * scalingFactor);
 
         stages.push({
           el: el,
@@ -560,17 +572,6 @@ function handleContractValueChange() {
         });
       }
     });
-
-    // Second pass: redistribute any shortfall among stages that have positive amounts
-    if (totalShortfall > 0.01) {
-      const positiveStages = stages.filter(s => s.amount > 0 && s.status === 'Pending Invoice');
-      if (positiveStages.length > 0) {
-        const redistPerStage = totalShortfall / positiveStages.length;
-        positiveStages.forEach(stage => {
-          stage.amount = Math.max(0, stage.amount - redistPerStage);
-        });
-      }
-    }
 
     // Apply all calculated amounts and update display
     let newTotal = 0;
