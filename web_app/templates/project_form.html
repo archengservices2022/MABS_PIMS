@@ -255,6 +255,12 @@
             </div>
             {% endif %}
           </div>
+          {% if not has_invoiced %}
+          <button type="button" class="btn btn-sm btn-outline-primary w-100 mt-3" id="editExistingStagesBtn"
+                  onclick="editExistingPaymentStages()">
+            <i class="bi bi-pencil me-1"></i>Edit Amounts
+          </button>
+          {% endif %}
         </div>
         {% endif %}
       </div>
@@ -337,6 +343,114 @@ function captureUpdatedStages(event) {
     hiddenInput.value = JSON.stringify(updatedStages);
     event.target.appendChild(hiddenInput);
   }
+}
+
+function editExistingPaymentStages() {
+  // Collect current stage amounts from the DOM
+  const stageElements = document.querySelectorAll('.payment-stage');
+  const stages = [];
+
+  stageElements.forEach((el) => {
+    const valueInput = el.querySelector('.stage-amount-value');
+    const nameEl = el.querySelector('.fw-600');
+    const status = el.dataset.stageStatus;
+
+    if (valueInput && nameEl) {
+      stages.push({
+        name: nameEl.textContent.trim(),
+        amount: parseFloat(valueInput.value) || 0,
+        status: status
+      });
+    }
+  });
+
+  if (stages.length === 0) {
+    alert('No payment stages found to edit');
+    return;
+  }
+
+  // Create a simple modal for editing
+  let html = '<div style="max-height:400px; overflow-y:auto;">';
+  stages.forEach((stage, idx) => {
+    const disabled = stage.status !== 'Pending Invoice' ? 'disabled' : '';
+    html += `
+      <div class="mb-3">
+        <label class="form-label mb-1">${stage.name}</label>
+        <input type="number" class="form-control editStageAmount" data-index="${idx}"
+               value="${stage.amount.toFixed(2)}" step="0.01" ${disabled}
+               oninput="updateEditStagesTotl()">
+      </div>
+    `;
+  });
+  html += '<div class="alert alert-info mt-3"><strong>Total:</strong> <span id="editStagesTotal">$0.00</span></div>';
+  html += '</div>';
+
+  // Show in a modal (or use a simple prompt-like approach)
+  const modal = document.createElement('div');
+  modal.innerHTML = `
+    <div style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:10000;">
+      <div style="background:white; border-radius:8px; padding:20px; max-width:400px; width:90%;">
+        <h5 class="mb-3">Edit Payment Stage Amounts</h5>
+        ${html}
+        <div class="d-flex gap-2 mt-4">
+          <button type="button" class="btn btn-secondary flex-grow-1" onclick="this.closest('[style*=fixed]').remove()">Cancel</button>
+          <button type="button" class="btn btn-primary flex-grow-1" onclick="saveEditedStages(this)">Save</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  // Calculate initial total
+  updateEditStagesTotal();
+}
+
+function updateEditStagesTotal() {
+  let total = 0;
+  document.querySelectorAll('.editStageAmount:not(:disabled)').forEach(input => {
+    total += parseFloat(input.value) || 0;
+  });
+  const totalEl = document.getElementById('editStagesTotal');
+  if (totalEl) {
+    totalEl.textContent = '$' + total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+}
+
+function saveEditedStages(btn) {
+  const stageElements = document.querySelectorAll('.payment-stage');
+  const editInputs = document.querySelectorAll('.editStageAmount');
+
+  editInputs.forEach((input, idx) => {
+    const newAmount = parseFloat(input.value) || 0;
+    const stageEl = stageElements[idx];
+
+    if (stageEl) {
+      const valueInput = stageEl.querySelector('.stage-amount-value');
+      const displayEl = stageEl.querySelector('.stage-amount-display');
+
+      if (valueInput && displayEl) {
+        valueInput.value = newAmount.toFixed(2);
+        displayEl.textContent = '$' + newAmount.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+      }
+    }
+  });
+
+  // Update total
+  let newTotal = 0;
+  document.querySelectorAll('.stage-amount-value').forEach(input => {
+    newTotal += parseFloat(input.value) || 0;
+  });
+
+  const totalEl = document.getElementById('totalStageAmount');
+  if (totalEl) {
+    totalEl.textContent = '$' + newTotal.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+
+  // Close modal
+  btn.closest('[style*=fixed]').remove();
+
+  // Update preview
+  updatePlanPreview();
 }
 
 function handleContractValueChange() {
