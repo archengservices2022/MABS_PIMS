@@ -351,8 +351,12 @@ function captureUpdatedStages(event) {
       hiddenInput.name = 'updated_stage_amounts';
       hiddenInput.value = JSON.stringify(updatedStages);
       form.appendChild(hiddenInput);
+
+      console.log('Captured updated payment stages:', updatedStages);
     }
   }
+
+  // Form will submit normally after this function completes
 }
 
 function editExistingPaymentStages() {
