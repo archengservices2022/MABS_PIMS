@@ -10,7 +10,7 @@
   <h5 class="mb-0">{{ 'Create New Project' if is_new else 'Edit Project' }}</h5>
 </div>
 
-<form method="POST" onsubmit="captureUpdatedStages(event)">
+<form method="POST" onsubmit="return captureUpdatedStages(event)">
   <div class="row g-3">
     <div class="col-lg-8">
       <div class="card-panel mb-3">
@@ -368,7 +368,8 @@ function captureUpdatedStages(event) {
     }
   }
 
-  // Form will submit normally after this function completes
+  // Allow form to submit
+  return true;
 }
 
 function editExistingPaymentStages() {
