@@ -602,6 +602,13 @@ function handleContractValueChange() {
         dpInput.value = calculatedDpPct;
         console.log('Updated down payment % to:', calculatedDpPct);
       }
+
+      // Also update the stage name in the DOM to reflect the new percentage
+      const stageName = firstStage.el.querySelector('.fw-600');
+      if (stageName) {
+        stageName.textContent = `Down Payment (${calculatedDpPct}%)`;
+        console.log('Updated stage name to:', `Down Payment (${calculatedDpPct}%)`);
+      }
     }
   }
 
