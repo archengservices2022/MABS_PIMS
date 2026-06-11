@@ -912,9 +912,10 @@ function openEditPreviewStageModal() {
 document.addEventListener('DOMContentLoaded', () => {
   initPaymentStagesData();
 
-  // Listen to contract value changes for auto-distribution
+  // Listen to contract value changes for auto-distribution (real-time)
   const cvInput = document.getElementById('contractValue');
   if (cvInput) {
+    cvInput.addEventListener('input', handleContractValueChange);
     cvInput.addEventListener('change', handleContractValueChange);
   }
 
