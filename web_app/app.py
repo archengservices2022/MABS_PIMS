@@ -4977,6 +4977,9 @@ def update_project_payment_plan(project_id):
     try:
         data = request.get_json()
         amounts = data.get("amounts", [])
+        invoice_id = data.get("invoiceId", "")
+        original_amount = _safe_float(data.get("originalAmount", 0))
+        new_amount = _safe_float(data.get("newAmount", 0))
 
         project = fb_get(f"/projects/{project_id}") or {}
         stages = project.get("payment_stages", [])
@@ -4987,17 +4990,39 @@ def update_project_payment_plan(project_id):
         if abs(total - contract_value) > 0.01:
             return {"success": False, "error": f"Total ({total:.2f}) must equal contract value ({contract_value:.2f})"}
 
-        # Update stages with new amounts
+        # Update all stages with new amounts
         for amount_data in amounts:
             idx = amount_data.get("index", 0)
             if idx < len(stages):
-                # Only update uninvoiced stages
-                if stages[idx].get("status") == "Not Invoiced":
-                    stages[idx]["amount"] = _safe_float(amount_data.get("amount", 0))
+                stages[idx]["amount"] = _safe_float(amount_data.get("amount", 0))
 
         project["payment_stages"] = stages
         project["updated_at"] = datetime.now(timezone.utc).isoformat()
         fb_update(f"/projects/{project_id}", project)
+
+        # Update invoice if this was an invoiced stage
+        if invoice_id:
+            invoice = fb_get(f"/invoices/{invoice_id}") or {}
+            meta = invoice.get("meta", {})
+
+            # Update invoice amount
+            amount_diff = new_amount - original_amount
+            old_invoice_total = _safe_float(meta.get("total", 0))
+            new_invoice_total = old_invoice_total + amount_diff
+
+            meta["total"] = str(new_invoice_total)
+            meta["subtotal"] = str(new_invoice_total - _safe_float(meta.get("tax_amount", 0)))
+            invoice["meta"] = meta
+
+            # Update line items if they exist
+            line_items = invoice.get("line_items", [])
+            if line_items:
+                line_items[0]["amount"] = str(new_amount)
+                line_items[0]["unit_price"] = str(new_amount)
+                invoice["line_items"] = line_items
+
+            invoice["updated_at"] = datetime.now(timezone.utc).isoformat()
+            fb_update(f"/invoices/{invoice_id}", invoice)
 
         return {"success": True, "message": "Payment plan updated"}
     except Exception as e:

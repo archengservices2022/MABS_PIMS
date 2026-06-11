@@ -905,38 +905,35 @@ function saveInlineEdit(idx, status, invoiceId) {
 
   // Update stage locally
   const oldAmount = currentStages[idx].amount || 0;
-  const difference = oldAmount - newAmount;
+  const difference = newAmount - oldAmount;  // Positive if increase, negative if decrease
   currentStages[idx].amount = newAmount;
 
-  // Redistribute difference if invoiced (to remaining non-invoiced stages)
-  if (status === 'Invoiced' && difference !== 0) {
-    const uninvoicedIndices = currentStages
-      .map((s, i) => i > idx && s.status === 'Not Invoiced' ? i : -1)
-      .filter(i => i >= 0);
+  // Auto-redistribute to remaining non-invoiced stages to keep total = contract value
+  const remainingUninvoiced = currentStages
+    .map((s, i) => i > idx && s.status === 'Not Invoiced' ? i : -1)
+    .filter(i => i >= 0);
 
-    if (uninvoicedIndices.length > 0) {
-      const perStage = difference / uninvoicedIndices.length;
-      uninvoicedIndices.forEach(i => {
-        currentStages[i].amount = (currentStages[i].amount || 0) + perStage;
-      });
-    }
+  if (remainingUninvoiced.length > 0 && difference !== 0) {
+    const perStage = difference / remainingUninvoiced.length;
+    remainingUninvoiced.forEach(i => {
+      currentStages[i].amount = Math.max(0, (currentStages[i].amount || 0) - perStage);
+    });
   }
 
   // Save to backend
-  const endpoint = status === 'Invoiced'
-    ? `/api/projects/${projectId}/stage/${idx}/update-invoiced`
-    : `/api/projects/${projectId}/payment-plan`;
+  // Always send all stages since we redistribute across all remaining non-invoiced stages
+  const endpoint = `/api/projects/${projectId}/payment-plan`;
 
-  const payload = status === 'Invoiced'
-    ? {
-        invoiceId: invoiceId,
-        originalAmount: originalAmount,
-        newAmount: newAmount,
-        stages: currentStages.map((s, i) => ({ index: i, amount: s.amount }))
-      }
-    : {
-        amounts: currentStages.map((s, i) => ({ index: i, amount: s.amount }))
-      };
+  const payload = {
+    amounts: currentStages.map((s, i) => ({ index: i, amount: s.amount }))
+  };
+
+  // If this is an invoiced stage, also update the invoice
+  if (status === 'Invoiced' && invoiceId) {
+    payload.invoiceId = invoiceId;
+    payload.originalAmount = originalAmount;
+    payload.newAmount = newAmount;
+  }
 
   fetch(endpoint, {
     method: 'POST',
