@@ -341,96 +341,35 @@
           <i class="bi bi-lock-fill"></i> Invoice fully paid — status locked
         </div>
         {% endif %}
-        <div id="paymentDetailsForm" style="display:{{ 'block' if meta.get('status','Draft') in ('Paid','Partial') else 'none' }}; background:#F0FDF4; border:1px solid #86EFAC; border-radius:8px; padding:16px; margin-top:12px; margin-bottom:12px;">
+        <div id="paymentDetailsForm" style="display:{{ 'block' if meta.get('status','Draft') in ('Paid','Partial') else 'none' }}; background:#F0FDF4; border:1px solid #86EFAC; border-radius:8px; padding:16px; margin-top:12px; margin-bottom:12px;"
+             data-total-invoice="{{ meta.get('total', 0) }}"
+             data-amount-paid="{{ meta.get('amount_paid', 0) }}"
+             data-tax-paid="{{ meta.get('tax_paid', 0) }}"
+             data-tax-amount="{{ meta.get('tax_amount', 0) }}">
 
-          <!-- Payment Type Selector (Projects + Tax) -->
+          <!-- SIMPLIFIED PAYMENT FORM - NEW VERSION 2026-06-11 -->
+          TEST_MARKER_NEW_TEMPLATE_LOADS_HERE
+          <!-- Payment Amount Input -->
+          {% set total_remaining = meta.get('total',0)|float - meta.get('amount_paid',0)|float - meta.get('tax_paid',0)|float %}
           <div class="mb-3">
-            <label class="form-label form-label-sm" style="color:#374151; font-weight:500; margin-bottom:8px;">Payment Type <span class="text-danger">*</span></label>
-            <select class="form-select form-select-sm" onchange="updatePaymentTypeProject()" id="paymentTypeSelect">
-              <option value="">— Select Payment Type —</option>
+            <label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Amount ($) <span class="text-danger">*</span></label>
+            <input type="number" name="amount" class="form-control form-control-sm"
+                   value="" min="0" step="0.01" id="invoiceAmountInput"
+                   data-max="{{ total_remaining }}"
+                   oninput="handlePaymentAmountChange()"
+                   onchange="handlePaymentAmountChange()"
+                   onblur="validatePaymentAmount()"
+                   {% if meta.get('status','Draft') == 'Paid' %}readonly{% endif %}>
+            <div id="amountError" style="color:#DC2626; font-size:0.85rem; margin-top:4px; display:none;"></div>
 
-              {% if linked_projects|length > 1 %}
-              <!-- Multi-Project: Show each project (project amount only, excluding tax) -->
-              {% for proj in linked_projects %}
-              {% set project_amount = meta.get('total',0)|float - meta.get('tax_amount',0)|float %}
-              {% set proj_remaining = (proj.get('_share', 1.0) * project_amount) - (proj.get('_paid', 0)|float) %}
-              {% if proj_remaining > 0 %}
-              <option value="project:{{ proj.get('project_number','') }}"
-                      data-type="project"
-                      data-project-number="{{ proj.get('project_number','') }}"
-                      data-project-name="{{ proj.get('project_name','') }}"
-                      data-remaining="{{ proj_remaining }}">
-                {{ proj.get('project_name','') }} - ${{ "{:.2f}".format(proj_remaining) }} Remaining
-              </option>
-              {% endif %}
-              {% endfor %}
-              {% elif linked_projects|length == 1 %}
-              <!-- Single Project: Show project name instead of "Line Items" (project amount only, excluding tax) -->
-              {% set single_proj = linked_projects[0] %}
-              {% set project_total = meta.get('total',0)|float - meta.get('tax_amount',0)|float %}
-              {% set single_max = project_total - (meta.get('amount_paid',0)|float) %}
-              {% if single_max > 0 %}
-              <option value="project:{{ single_proj.get('project_number','') }}"
-                      data-type="project"
-                      data-project-number="{{ single_proj.get('project_number','') }}"
-                      data-project-name="{{ single_proj.get('project_name','') }}"
-                      data-remaining="{{ single_max }}"
-                      selected>
-                {{ single_proj.get('project_name','') }} - ${{ "{:.2f}".format(single_max) }} Remaining
-              </option>
-              {% endif %}
-              {% endif %}
-
-              <!-- Tax Payment Option -->
-              {% if meta.get('tax_amount',0)|float > 0 %}
-              {% set tax_remaining = meta.get('tax_amount',0)|float - (meta.get('tax_paid',0)|float) %}
-              {% if tax_remaining > 0 %}
-              <option value="tax" data-type="tax" data-remaining="{{ tax_remaining }}">
-                Tax Payment - ${{ "{:.2f}".format(tax_remaining) }} Remaining
-              </option>
-              {% endif %}
-              {% endif %}
-            </select>
+            <!-- Max and Remaining Balance below input -->
+            <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:0.8rem; color:#00695C;">
+              <span>Max: <strong>$<span id="displayMaxAmount">{{ "{:.2f}".format(total_remaining) }}</span></strong></span>
+              <span>Rem: <strong>$<span id="paymentRemaining">{{ "{:.2f}".format(total_remaining) }}</span></strong></span>
+            </div>
           </div>
 
-          <!-- Invoice Payment Section with Remaining Balance on Right -->
-          <div id="invoicePaymentFields">
-            {% if linked_projects|length == 1 %}
-            <!-- Single Project: Show max directly (project only, excluding tax) -->
-            {% set project_total = meta.get('total',0)|float - meta.get('tax_amount',0)|float %}
-            {% set single_max = project_total - (meta.get('amount_paid',0)|float) %}
-
-            <!-- Amount Input -->
-            <div class="mb-3">
-              <label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Amount ($) <span class="text-danger">*</span></label>
-              <input type="number" name="amount" class="form-control form-control-sm"
-                     value="" min="0" step="0.01" id="invoiceAmountInput"
-                     data-max="{{ single_max }}"
-                     oninput="validateAmountInput()"
-                     onchange="validateAmountInput()">
-              <div id="amountError" style="color:#DC2626; font-size:0.85rem; margin-top:4px; display:none;"></div>
-
-              <!-- Max and Remaining Balance below input -->
-              <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:0.8rem; color:#00695C;">
-                <span>Max: <strong>$<span id="displayMaxAmount">{{ "{:.2f}".format(single_max) }}</span></strong></span>
-                <span id="selectedPaymentInfo">Rem: <strong>$<span id="paymentRemaining">0.00</span></strong></span>
-              </div>
-            </div>
-            {% else %}
-            <!-- Multi-project: Standard layout -->
-            <div class="mb-3">
-              <label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Amount ($) <span class="text-danger">*</span></label>
-              <input type="number" name="amount" class="form-control form-control-sm"
-                     value="" min="0" step="0.01" max="{{ single_max }}" id="invoiceAmountInput"
-                     oninput="validateAmountInput()"
-                     onchange="validateAmountInput()"
-                     onblur="validateAmountInput()">
-              <div id="amountError" style="color:#DC2626; font-size:0.85rem; margin-top:4px; display:none;"></div>
-            </div>
-            {% endif %}
-          </div>
-
-          <!-- Tax Payment Section (Separate) -->
+          <!-- Tax Payment Section (if tax exists) -->
           {% if meta.get('tax_amount',0)|float > 0 %}
           {% set tax_remaining = meta.get('tax_amount',0)|float - (meta.get('tax_paid',0)|float) %}
           {% if tax_remaining > 0 %}
@@ -598,8 +537,74 @@
 <script>
 function toggleDetailAmtPaid() {
   const s = document.getElementById('detailStatusSelect').value;
-  document.getElementById('paymentDetailsForm').style.display =
-    (s === 'Paid' || s === 'Partial') ? 'block' : 'none';
+  const paymentForm = document.getElementById('paymentDetailsForm');
+  const amountInput = document.getElementById('invoiceAmountInput');
+
+  paymentForm.style.display = (s === 'Paid' || s === 'Partial') ? 'block' : 'none';
+
+  if (s === 'Paid' && amountInput) {
+    // Auto-fill remaining amount for Paid status
+    const totalAmount = parseFloat(paymentForm.dataset.totalInvoice || '0');
+    const amountPaid = parseFloat(paymentForm.dataset.amountPaid || '0');
+    const taxPaid = parseFloat(paymentForm.dataset.taxPaid || '0');
+    const remaining = totalAmount - amountPaid - taxPaid;
+
+    amountInput.value = remaining.toFixed(2);
+    amountInput.readOnly = true;
+    document.getElementById('displayMaxAmount').textContent = remaining.toFixed(2);
+    document.getElementById('paymentRemaining').textContent = remaining.toFixed(2);
+  } else if (amountInput) {
+    // For Partial, allow user input
+    amountInput.readOnly = false;
+    amountInput.value = '';
+    handlePaymentAmountChange();
+  }
+}
+
+// Handle payment amount change
+function handlePaymentAmountChange() {
+  const amountInput = document.getElementById('invoiceAmountInput');
+  const paymentForm = document.getElementById('paymentDetailsForm');
+
+  if (!amountInput || !paymentForm) return;
+
+  const totalAmount = parseFloat(paymentForm.dataset.totalInvoice || '0');
+  const amountPaid = parseFloat(paymentForm.dataset.amountPaid || '0');
+  const taxPaid = parseFloat(paymentForm.dataset.taxPaid || '0');
+  const remaining = totalAmount - amountPaid - taxPaid;
+
+  const amount = parseFloat(amountInput.value || '0');
+  const newRemaining = Math.max(0, remaining - amount);
+
+  document.getElementById('displayMaxAmount').textContent = remaining.toFixed(2);
+  document.getElementById('paymentRemaining').textContent = newRemaining.toFixed(2);
+
+  validatePaymentAmount();
+}
+
+// Validate payment amount
+function validatePaymentAmount() {
+  const amountInput = document.getElementById('invoiceAmountInput');
+  const paymentForm = document.getElementById('paymentDetailsForm');
+  const errorDiv = document.getElementById('amountError');
+
+  if (!amountInput || !paymentForm) return true;
+
+  const totalAmount = parseFloat(paymentForm.dataset.totalInvoice || '0');
+  const amountPaid = parseFloat(paymentForm.dataset.amountPaid || '0');
+  const taxPaid = parseFloat(paymentForm.dataset.taxPaid || '0');
+  const maxAmount = totalAmount - amountPaid - taxPaid;
+  const amount = parseFloat(amountInput.value || '0');
+
+  if (amount > maxAmount && maxAmount > 0) {
+    errorDiv.style.display = 'block';
+    errorDiv.textContent = `Amount cannot exceed maximum of $${maxAmount.toFixed(2)}`;
+    amountInput.value = maxAmount.toFixed(2);
+    return false;
+  } else {
+    errorDiv.style.display = 'none';
+  }
+  return true;
 }
 
 // Handle payment type selection (project or tax)
@@ -838,115 +843,46 @@ function validatePaymentAmount() {
 function handleStatusUpdate() {
   const paymentForm = document.getElementById('paymentDetailsForm');
   const statusForm = document.getElementById('statusForm');
-  const paymentTypeSelect = document.getElementById('paymentTypeSelect');
+  const statusSelect = document.getElementById('detailStatusSelect');
 
-  // Check if payment form is visible
-  if (paymentForm.style.display !== 'none') {
-    if (!paymentTypeSelect || !paymentTypeSelect.value) {
-      alert('Please select a payment type');
+  // Check if payment form is visible (Partial or Paid status)
+  if (paymentForm.style.display !== 'none' && statusSelect) {
+    const status = statusSelect.value;
+    const amountInput = document.getElementById('invoiceAmountInput');
+    const amount = (amountInput && amountInput.value) ? parseFloat(amountInput.value) : 0;
+
+    if (amount <= 0) {
+      alert('Please enter payment amount');
       return;
     }
 
-    const selectedOption = paymentTypeSelect.options[paymentTypeSelect.selectedIndex];
-    const paymentType = selectedOption.dataset.type;
-    const projectNumber = selectedOption.dataset.projectNumber || '';
+    // Get form fields
+    const formData = new FormData(statusForm);
+    formData.append('amount', amount);
+    formData.append('status', status);
 
-    if (paymentType === 'project') {
-      // Submit project payment
-      const invoiceAmount = document.getElementById('invoiceAmountInput').value.trim();
-      if (!invoiceAmount) {
-        alert('Please enter payment amount');
-        return;
+    const method_el = paymentForm.querySelector('select[name="method"]');
+    const date_el = paymentForm.querySelector('input[name="date"]');
+    const reference_el = paymentForm.querySelector('input[name="reference"]');
+
+    if (method_el && method_el.value) formData.append('method', method_el.value);
+    if (date_el && date_el.value) formData.append('date', date_el.value);
+    if (reference_el && reference_el.value) formData.append('reference', reference_el.value);
+
+    // Submit to sequential distribution endpoint
+    fetch('/invoicing/{{ invoice.firebase_id }}/payment/sequential', {
+      method: 'POST',
+      body: formData,
+      credentials: 'include'
+    }).then(res => {
+      if (res.ok) {
+        window.isEditingPayment = false;
+        window.location.reload();
+      } else {
+        alert('Payment recording failed');
       }
-
-      if (!validatePaymentAmount()) {
-        return;
-      }
-
-      const formData = new FormData(statusForm);
-      formData.append('amount', invoiceAmount);
-      if (projectNumber) formData.append('project_number', projectNumber);
-
-      // Add other fields
-      const method_el = paymentForm.querySelector('select[name="method"]');
-      const date_el = paymentForm.querySelector('input[name="date"]');
-      const reference_el = paymentForm.querySelector('input[name="reference"]');
-      const notes_el = paymentForm.querySelector('textarea[name="notes"]');
-
-      if (method_el && method_el.value) formData.append('method', method_el.value);
-      if (date_el && date_el.value) formData.append('date', date_el.value);
-      if (reference_el && reference_el.value) formData.append('reference', reference_el.value);
-      if (notes_el && notes_el.value) formData.append('notes', notes_el.value);
-
-      // Check if editing or creating new payment
-      let endpoint = '/invoicing/{{ invoice.firebase_id }}/payment/add';
-      if (window.isEditingPayment && window.editPaymentContext && window.editPaymentContext.type === 'invoice') {
-        endpoint = `/invoicing/{{ invoice.firebase_id }}/payment/${window.editPaymentContext.index}/edit`;
-      }
-
-      fetch(endpoint, {
-        method: 'POST',
-        body: formData,
-        credentials: 'include'
-      }).then(res => {
-        if (res.ok) {
-          window.isEditingPayment = false;
-          window.location.reload();
-        }
-        else alert('Payment recording failed');
-      }).catch(err => alert('Error: ' + err));
-      return;
-
-    } else if (paymentType === 'tax') {
-      // Submit tax payment
-      const taxAmount = document.getElementById('invoiceAmountInput').value.trim();
-      if (!taxAmount) {
-        alert('Please enter tax payment amount');
-        return;
-      }
-
-      const formData = new FormData();
-      formData.append('amount', taxAmount);
-
-      // Add other fields
-      const method_el = paymentForm.querySelector('select[name="method"]');
-      const date_el = paymentForm.querySelector('input[name="date"]');
-      const reference_el = paymentForm.querySelector('input[name="reference"]');
-      const notes_el = paymentForm.querySelector('textarea[name="notes"]');
-
-      if (method_el && method_el.value) formData.append('method', method_el.value);
-      if (date_el && date_el.value) formData.append('date', date_el.value);
-      if (reference_el && reference_el.value) formData.append('reference', reference_el.value);
-      if (notes_el && notes_el.value) formData.append('notes', notes_el.value);
-
-      // Check if editing or creating new payment
-      let endpoint = '/invoicing/{{ invoice.firebase_id }}/tax/add';
-      if (window.isEditingPayment && window.editPaymentContext && window.editPaymentContext.type === 'tax') {
-        endpoint = `/invoicing/{{ invoice.firebase_id }}/tax/payment/edit/${window.editPaymentContext.index}`;
-      }
-
-      console.log('Submitting tax payment to:', endpoint, 'Amount:', taxAmount);
-
-      fetch(endpoint, {
-        method: 'POST',
-        body: formData,
-        credentials: 'include'
-      }).then(res => {
-        console.log('Response status:', res.status);
-        if (res.ok) {
-          window.isEditingPayment = false;
-          window.location.reload();
-        } else {
-          return res.text().then(text => {
-            alert('Tax payment recording failed: ' + res.status + ' - ' + text);
-          });
-        }
-      }).catch(err => {
-        console.error('Error:', err);
-        alert('Error submitting tax payment: ' + err);
-      });
-      return;
-    }
+    }).catch(err => alert('Error: ' + err));
+    return;
   }
 
   // Submit status form normally if no payment

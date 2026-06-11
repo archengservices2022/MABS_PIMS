@@ -4452,6 +4452,248 @@ def tax_payment_add(invoice_id):
 
     return jsonify({"success": True, "amount": amount}), 200
 
+@app.route("/invoicing/<invoice_id>/payment/full", methods=["POST"])
+@role_required("invoicing")
+def payment_full(invoice_id):
+    """Record a full invoice payment distributed proportionally across projects."""
+    inv_data = fb_get(f"/invoices/{invoice_id}") or {}
+    log = inv_data.get("payment_log", [])
+    if not isinstance(log, list):
+        log = []
+
+    amount = _safe_float(request.form.get("amount", 0))
+    if amount <= 0:
+        return jsonify({"error": "Invalid payment amount"}), 400
+
+    # Get all linked projects
+    linked_projects = inv_data.get("meta", {}).get("linked_projects", [])
+    invoice_total = _safe_float(inv_data.get("meta", {}).get("total", 0))
+    tax_amount = _safe_float(inv_data.get("meta", {}).get("tax_amount", 0))
+    project_subtotal = invoice_total - tax_amount
+
+    # Distribute payment proportionally across projects (based on REMAINING amounts)
+    payment_date = request.form.get("date", datetime.now().strftime("%Y-%m-%d"))
+    payment_method = request.form.get("method", "")
+    payment_reference = request.form.get("reference", "")
+    payment_notes = request.form.get("notes", "")
+
+    if project_subtotal > 0 and linked_projects:
+        # Calculate each project's remaining amount from invoice items and payments
+        meta_items = inv_data.get("meta", {}).get("items", [])
+        project_remainings = {}
+        total_remaining = 0
+
+        if isinstance(meta_items, list):
+            for proj_info in linked_projects:
+                if not isinstance(proj_info, dict):
+                    continue
+
+                project_number = proj_info.get("project_number", "")
+                if not project_number:
+                    continue
+
+                # Find this project's original amount from invoice items
+                proj_amount = 0
+                for item in meta_items:
+                    if isinstance(item, dict) and item.get("project_number") == project_number:
+                        proj_amount = _safe_float(item.get("amount", 0))
+                        break
+
+                if proj_amount <= 0:
+                    continue
+
+                # Calculate how much this project has already been paid
+                proj_paid = sum(
+                    _safe_float(p.get("amount", 0))
+                    for p in log
+                    if p.get("project_number") == project_number
+                )
+
+                # Calculate remaining amount for this project
+                proj_remaining = max(0, proj_amount - proj_paid)
+                if proj_remaining > 0:
+                    project_remainings[project_number] = proj_remaining
+                    total_remaining += proj_remaining
+
+        # Distribute payment proportionally across remaining amounts
+        if total_remaining > 0:
+            for project_number, remaining in project_remainings.items():
+                # Calculate this project's share of the payment based on remaining amount
+                project_share = (remaining / total_remaining) * amount
+
+                # Create payment entry for this project
+                payment_entry = {
+                    "amount":     str(project_share),
+                    "date":       payment_date,
+                    "method":     payment_method,
+                    "reference":  payment_reference,
+                    "notes":      payment_notes,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "project_number": project_number,
+                }
+                log.append(payment_entry)
+    else:
+        # Single project or no projects - just add the amount
+        payment_entry = {
+            "amount":     str(amount),
+            "date":       payment_date,
+            "method":     payment_method,
+            "reference":  payment_reference,
+            "notes":      payment_notes,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        proj_num = inv_data.get("meta", {}).get("project_number", "")
+        if proj_num:
+            payment_entry["project_number"] = proj_num
+        log.append(payment_entry)
+
+    amount_paid = sum(_safe_float(p.get("amount", 0)) for p in log)
+    fresh_inv = dict(inv_data)
+    fresh_inv["payment_log"] = log
+    new_status = _calculate_invoice_status(fresh_inv)
+
+    fb_update(f"/invoices/{invoice_id}", {
+        "payment_log":      log,
+        "meta/amount_paid": str(amount_paid),
+        "meta/status":      new_status,
+        "meta/updated_at":  datetime.now(timezone.utc).isoformat(),
+    })
+
+    # Update project stage payment statuses based on payments
+    _update_project_stage_payment_status(invoice_id)
+
+    for proj_num in _invoice_linked_projects(inv_data):
+        _sync_project_payment(proj_num)
+        if new_status == "Paid":
+            _auto_complete_project_if_paid(proj_num)
+
+    fresh_meta = (fb_get(f"/invoices/{invoice_id}") or {}).get("meta", {})
+    _upsert_revenue_entry(invoice_id, fresh_meta)
+
+    return jsonify({"success": True, "amount": amount}), 200
+
+@app.route("/invoicing/<invoice_id>/payment/sequential", methods=["POST"])
+@role_required("invoicing")
+def payment_sequential(invoice_id):
+    """Record payment distributed sequentially across projects then tax."""
+    inv_data = fb_get(f"/invoices/{invoice_id}") or {}
+    meta = inv_data.get("meta", {}) or {}
+
+    amount = _safe_float(request.form.get("amount", 0))
+    status = request.form.get("status", "Partial")
+
+    if amount <= 0:
+        return jsonify({"error": "Invalid payment amount"}), 400
+
+    payment_log = inv_data.get("payment_log", [])
+    if not isinstance(payment_log, list):
+        payment_log = []
+
+    # Get invoice details
+    linked_projects = meta.get("linked_projects", [])
+    meta_items = meta.get("items", []) or []
+    tax_amount = _safe_float(meta.get("tax_amount", 0))
+
+    remaining_to_distribute = amount
+
+    # Step 1: Distribute sequentially to projects
+    if remaining_to_distribute > 0 and linked_projects:
+        for proj_info in linked_projects:
+            if not isinstance(proj_info, dict) or remaining_to_distribute <= 0:
+                continue
+
+            project_number = proj_info.get("project_number", "")
+            if not project_number:
+                continue
+
+            # Find project amount from items
+            proj_amount = 0
+            for item in meta_items:
+                if isinstance(item, dict) and item.get("project_number") == project_number:
+                    proj_amount = _safe_float(item.get("amount", 0))
+                    break
+
+            if proj_amount <= 0:
+                continue
+
+            # Calculate how much this project has already received
+            proj_received = sum(
+                _safe_float(p.get("amount", 0))
+                for p in payment_log
+                if p.get("project_number") == project_number
+            )
+
+            # How much more does this project need?
+            proj_needs = max(0, proj_amount - proj_received)
+
+            if proj_needs > 0:
+                # Distribute amount to this project
+                distribute_to_proj = min(proj_needs, remaining_to_distribute)
+
+                payment_entry = {
+                    "amount":     str(distribute_to_proj),
+                    "date":       request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+                    "method":     request.form.get("method", ""),
+                    "reference":  request.form.get("reference", ""),
+                    "notes":      request.form.get("notes", ""),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "project_number": project_number,
+                }
+                payment_log.append(payment_entry)
+                remaining_to_distribute -= distribute_to_proj
+
+    # Step 2: Distribute remaining to tax
+    if remaining_to_distribute > 0 and tax_amount > 0:
+        tax_log = inv_data.get("tax_payments", [])
+        if not isinstance(tax_log, list):
+            tax_log = []
+
+        tax_received = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+        tax_needs = max(0, tax_amount - tax_received)
+
+        if tax_needs > 0:
+            distribute_to_tax = min(tax_needs, remaining_to_distribute)
+            tax_log.append({
+                "amount":     str(distribute_to_tax),
+                "date":       request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+                "method":     request.form.get("method", ""),
+                "reference":  request.form.get("reference", ""),
+                "notes":      request.form.get("notes", ""),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+            remaining_to_distribute -= distribute_to_tax
+
+        fb_update(f"/invoices/{invoice_id}", {"tax_payments": tax_log})
+
+    # Calculate totals and update invoice
+    amount_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+    tax_paid = sum(_safe_float(p.get("amount", 0)) for p in inv_data.get("tax_payments", []))
+
+    fresh_inv = dict(inv_data)
+    fresh_inv["payment_log"] = payment_log
+    new_status = _calculate_invoice_status(fresh_inv)
+
+    fb_update(f"/invoices/{invoice_id}", {
+        "payment_log":      payment_log,
+        "meta/amount_paid": str(amount_paid),
+        "meta/tax_paid":    str(tax_paid),
+        "meta/status":      new_status,
+        "meta/updated_at":  datetime.now(timezone.utc).isoformat(),
+    })
+
+    # Update project stage payment statuses
+    _update_project_stage_payment_status(invoice_id)
+
+    for proj_num in _invoice_linked_projects(inv_data):
+        _sync_project_payment(proj_num)
+        if new_status == "Paid":
+            _auto_complete_project_if_paid(proj_num)
+
+    fresh_meta = (fb_get(f"/invoices/{invoice_id}") or {}).get("meta", {})
+    _upsert_revenue_entry(invoice_id, fresh_meta)
+
+    return jsonify({"success": True, "amount": amount}), 200
+
 @app.route("/invoicing/<invoice_id>/payment/delete/<int:idx>", methods=["POST"])
 @role_required("invoicing")
 def payment_delete(invoice_id, idx):
