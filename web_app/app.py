@@ -1061,6 +1061,11 @@ def project_detail(project_id):
     raw_stages = data.get("payment_stages")
     if not (isinstance(raw_stages, list) and raw_stages and all(isinstance(s, dict) for s in raw_stages)):
         data["payment_stages"] = []
+    else:
+        # Normalize old "Not Invoiced" status to "Pending Invoice"
+        for stage in data["payment_stages"]:
+            if stage.get("status") == "Not Invoiced":
+                stage["status"] = "Pending Invoice"
 
     # Load invoices linked to this project (directly, or via per-line-item
     # project overrides on invoices that span multiple projects)
@@ -1130,6 +1135,11 @@ def project_edit(project_id):
     raw_stages = data.get("payment_stages")
     if not (isinstance(raw_stages, list) and raw_stages and all(isinstance(s, dict) for s in raw_stages)):
         data["payment_stages"] = []
+    else:
+        # Normalize old "Not Invoiced" status to "Pending Invoice"
+        for stage in data["payment_stages"]:
+            if stage.get("status") == "Not Invoiced":
+                stage["status"] = "Pending Invoice"
     if request.method == "POST":
         updated = _parse_project_form(request.form)
         down_pct = _safe_float(updated.get("down_payment_percent", 0))
