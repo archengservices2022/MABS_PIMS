@@ -989,6 +989,22 @@ def project_new():
     clients = _load_clients()
     if request.method == "POST":
         data = _parse_project_form(request.form)
+
+        # Validate custom stage amounts if provided
+        custom_stage_amounts_json = request.form.get("custom_stage_amounts", "")
+        if custom_stage_amounts_json:
+            try:
+                import json
+                custom_stage_amounts = json.loads(custom_stage_amounts_json)
+                total_amount = sum(_safe_float(s.get("amount", 0)) for s in custom_stage_amounts)
+                contract_value = _safe_float(data.get("contract_value", 0))
+
+                if abs(total_amount - contract_value) > 0.01:
+                    flash(f"❌ Error: Payment plan total (${total_amount:.2f}) does not match contract value (${contract_value:.2f}). Please adjust amounts and try again.", "danger")
+                    return redirect(url_for("project_new"))
+            except (json.JSONDecodeError, ValueError):
+                pass
+
         # Always generate project number server-side to prevent duplicates
         data["project_number"] = _next_project_number()
         down_pct = _safe_float(data.get("down_payment_percent", 0))
@@ -1106,19 +1122,49 @@ def project_edit(project_id):
         updated["installment_mode"]           = mode
         updated["custom_installment_amounts"] = custom_amounts or []
 
-        existing_stages = data.get("payment_stages") or []
-        plan_in_progress = any(s.get("status") != "Pending" for s in existing_stages if isinstance(s, dict))
-        if plan_in_progress:
-            # Stages already have invoices/payments against them — keep the plan intact
-            # so we don't orphan those links; only the financial totals get updated.
-            flash("Payment plan kept as-is because one or more stages are already invoiced.", "info")
+        # Handle custom stage amounts from frontend
+        custom_stage_amounts_json = request.form.get("custom_stage_amounts", "")
+        if custom_stage_amounts_json:
+            try:
+                import json
+                custom_stage_amounts = json.loads(custom_stage_amounts_json)
+                # Validate that total matches contract value
+                total_amount = sum(_safe_float(s.get("amount", 0)) for s in custom_stage_amounts)
+                contract_value = _safe_float(updated.get("contract_value", 0))
+
+                if abs(total_amount - contract_value) > 0.01:  # Allow 0.01 cent rounding
+                    flash(f"❌ Error: Payment plan total (${total_amount:.2f}) does not match contract value (${contract_value:.2f}). Please adjust amounts and try again.", "danger")
+                    return redirect(url_for("project_edit", project_id=project_id))
+
+                # Update payment stages with custom amounts
+                existing_stages = data.get("payment_stages") or []
+                for i, amount_data in enumerate(custom_stage_amounts):
+                    if i < len(existing_stages) and isinstance(existing_stages[i], dict):
+                        existing_stages[i]["amount"] = _safe_float(amount_data.get("amount", 0))
+
+                updated["payment_stages"] = existing_stages
+            except (json.JSONDecodeError, ValueError):
+                flash("Error processing custom payment amounts. Using default distribution.", "warning")
+
+                existing_stages = data.get("payment_stages") or []
+                plan_in_progress = any(s.get("status") != "Pending" for s in existing_stages if isinstance(s, dict))
+                if not plan_in_progress:
+                    updated["payment_stages"] = _compute_payment_stages(
+                        _safe_float(updated["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
         else:
-            updated["payment_stages"] = _compute_payment_stages(
-                _safe_float(updated["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
+            existing_stages = data.get("payment_stages") or []
+            plan_in_progress = any(s.get("status") != "Pending" for s in existing_stages if isinstance(s, dict))
+            if plan_in_progress:
+                # Stages already have invoices/payments against them — keep the plan intact
+                # so we don't orphan those links; only the financial totals get updated.
+                flash("Payment plan kept as-is because one or more stages are already invoiced.", "info")
+            else:
+                updated["payment_stages"] = _compute_payment_stages(
+                    _safe_float(updated["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
 
         updated["updated_at"] = datetime.now(timezone.utc).isoformat()
         fb_update(f"/projects/{project_id}", updated)
-        flash("Project updated.", "success")
+        flash("Project updated successfully.", "success")
         return redirect(url_for("project_detail", project_id=project_id))
     sales_people = [p.get("name","") for p in _load_sales_people() if p.get("name","")]
     return render_template("project_form.html", project=data, clients=clients,
@@ -1911,13 +1957,16 @@ def invoice_new():
     print(f"prefill_proj='{prefill_proj}'", flush=True)
     print(f"Condition check: stage_idx != '' = {stage_idx != ''}, prefill_items length = {len(prefill_items) if isinstance(prefill_items, list) else 0}", flush=True)
 
+    # Lock unit price if loading from project payment stages
+    lock_unit_price = isinstance(prefill_items, list) and len(prefill_items) > 0
+
     return render_template("invoice_form.html", invoice=None, clients=clients,
                            projects=projects, next_num=next_num, is_new=True,
                            prefill_proj=prefill_proj, prefill_client=prefill_client,
                            prefill_name=prefill_name, prefill_amount=prefill_amount,
                            prefill_items=prefill_items,
                            stage_idx=stage_idx, stage_name=stage_name, stage_amount=stage_amount,
-                           invoiced_stages_map=invoiced_stages_map)
+                           invoiced_stages_map=invoiced_stages_map, lock_unit_price=lock_unit_price)
 
 @app.route("/invoicing/<invoice_id>", methods=["GET"])
 @role_required("invoicing")
@@ -2019,8 +2068,12 @@ def invoice_edit(invoice_id):
             _upsert_revenue_entry(invoice_id, updated["meta"])
         flash("Invoice updated.", "success")
         return redirect(url_for("invoice_detail", invoice_id=invoice_id))
+    # Lock unit price if invoice has linked projects (created from payment stages)
+    linked_projects = data.get("meta", {}).get("linked_projects", [])
+    lock_unit_price = isinstance(linked_projects, list) and len(linked_projects) > 0
+
     return render_template("invoice_form.html", invoice=data, clients=clients,
-                           projects=projects, next_num=None, is_new=False)
+                           projects=projects, next_num=None, is_new=False, lock_unit_price=lock_unit_price)
 
 @app.route("/invoicing/<invoice_id>/status", methods=["POST"])
 @role_required("invoicing")
@@ -4591,10 +4644,17 @@ def payment_sequential(invoice_id):
 
     # Get invoice details
     linked_projects = meta.get("linked_projects", [])
-    meta_items = meta.get("items", []) or []
+    # Items are in line_items, not meta.items
+    line_items = inv_data.get("line_items", []) or []
     tax_amount = _safe_float(meta.get("tax_amount", 0))
+    main_project = meta.get("project_number", "")
 
     remaining_to_distribute = amount
+
+    # Initialize tax_log - will be updated in Step 2 if needed
+    tax_log = inv_data.get("tax_payments", [])
+    if not isinstance(tax_log, list):
+        tax_log = []
 
     # Step 1: Distribute sequentially to projects
     if remaining_to_distribute > 0 and linked_projects:
@@ -4606,12 +4666,13 @@ def payment_sequential(invoice_id):
             if not project_number:
                 continue
 
-            # Find project amount from items
+            # Find project amount from line items
             proj_amount = 0
-            for item in meta_items:
-                if isinstance(item, dict) and item.get("project_number") == project_number:
-                    proj_amount = _safe_float(item.get("amount", 0))
-                    break
+            for item in line_items:
+                if isinstance(item, dict):
+                    item_proj = item.get("project_number", "").strip() or main_project
+                    if item_proj == project_number:
+                        proj_amount += _safe_float(item.get("amount", 0))
 
             if proj_amount <= 0:
                 continue
@@ -4644,10 +4705,6 @@ def payment_sequential(invoice_id):
 
     # Step 2: Distribute remaining to tax
     if remaining_to_distribute > 0 and tax_amount > 0:
-        tax_log = inv_data.get("tax_payments", [])
-        if not isinstance(tax_log, list):
-            tax_log = []
-
         tax_received = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
         tax_needs = max(0, tax_amount - tax_received)
 
@@ -4667,7 +4724,7 @@ def payment_sequential(invoice_id):
 
     # Calculate totals and update invoice
     amount_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
-    tax_paid = sum(_safe_float(p.get("amount", 0)) for p in inv_data.get("tax_payments", []))
+    tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
 
     fresh_inv = dict(inv_data)
     fresh_inv["payment_log"] = payment_log
@@ -4785,6 +4842,10 @@ def payment_edit(invoice_id, idx):
     # Update project stage payment statuses based on payments
     _update_project_stage_payment_status(invoice_id)
 
+    # Sync project payments for all linked projects
+    for proj_num in _invoice_linked_projects(inv_data):
+        _sync_project_payment(proj_num)
+
     return jsonify({"success": True}), 200
 
 @app.route("/invoicing/<invoice_id>/tax/payment/edit/<int:idx>", methods=["POST"])
@@ -4821,6 +4882,10 @@ def tax_payment_edit(invoice_id, idx):
     })
     # Update project stage payment statuses based on payments
     _update_project_stage_payment_status(invoice_id)
+
+    # Sync project payments for all linked projects
+    for proj_num in _invoice_linked_projects(inv_data):
+        _sync_project_payment(proj_num)
 
     return jsonify({"success": True}), 200
 
@@ -4903,6 +4968,164 @@ def _send_overdue_reminder_email(invoice_id: str, invoice: dict):
         return True, f"Reminder sent to {client_email}."
     except Exception as exc:
         return False, str(exc)
+
+# ── Payment Plan Management API ────────────────────────────────────────────────
+@app.route("/api/projects/<project_id>/payment-plan", methods=["POST"])
+@role_required("projects")
+def update_project_payment_plan(project_id):
+    """Update payment plan amounts and redistribute to stages"""
+    try:
+        data = request.get_json()
+        amounts = data.get("amounts", [])
+
+        project = fb_get(f"/projects/{project_id}") or {}
+        stages = project.get("payment_stages", [])
+        contract_value = _safe_float(project.get("contract_value", 0))
+
+        # Validate total equals contract value
+        total = sum(_safe_float(a.get("amount", 0)) for a in amounts)
+        if abs(total - contract_value) > 0.01:
+            return {"success": False, "error": f"Total ({total:.2f}) must equal contract value ({contract_value:.2f})"}
+
+        # Update stages with new amounts
+        for amount_data in amounts:
+            idx = amount_data.get("index", 0)
+            if idx < len(stages):
+                # Only update uninvoiced stages
+                if stages[idx].get("status") == "Not Invoiced":
+                    stages[idx]["amount"] = _safe_float(amount_data.get("amount", 0))
+
+        project["payment_stages"] = stages
+        project["updated_at"] = datetime.now(timezone.utc).isoformat()
+        fb_update(f"/projects/{project_id}", project)
+
+        return {"success": True, "message": "Payment plan updated"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}, 500
+
+@app.route("/api/projects/<project_id>/stage/<int:stage_idx>/update", methods=["POST"])
+@role_required("projects")
+def update_project_stage(project_id, stage_idx):
+    """Update a single stage payment amount"""
+    try:
+        data = request.get_json()
+        new_amount = _safe_float(data.get("newAmount", 0))
+        original_amount = _safe_float(data.get("originalAmount", 0))
+        paid_amount = _safe_float(data.get("paidAmount", 0))
+
+        project = fb_get(f"/projects/{project_id}") or {}
+        stages = project.get("payment_stages", [])
+
+        if stage_idx >= len(stages):
+            return {"success": False, "error": "Invalid stage index"}, 400
+
+        # Update the stage amount
+        old_amount = stages[stage_idx].get("amount", 0)
+        stages[stage_idx]["amount"] = new_amount
+
+        # If there's an invoice for this stage, update it
+        invoice_id = stages[stage_idx].get("invoice_id", "")
+        if invoice_id:
+            invoice = fb_get(f"/invoices/{invoice_id}") or {}
+            meta = invoice.get("meta", {})
+
+            # Update the invoice total
+            old_invoice_total = _safe_float(meta.get("total", 0))
+            amount_diff = new_amount - original_amount
+            new_invoice_total = old_invoice_total + amount_diff
+
+            meta["total"] = str(new_invoice_total)
+            meta["subtotal"] = str(new_invoice_total - _safe_float(meta.get("tax_amount", 0)))
+            invoice["meta"] = meta
+            fb_update(f"/invoices/{invoice_id}", invoice)
+
+        # Redistribute remaining amounts to uninvoiced stages
+        amount_diff = new_amount - original_amount
+        remaining_uninvoiced = [i for i in range(len(stages))
+                               if i > stage_idx and stages[i].get("status") == "Not Invoiced"]
+
+        if remaining_uninvoiced and abs(amount_diff) > 0.01:
+            per_stage = amount_diff / len(remaining_uninvoiced)
+            for idx in remaining_uninvoiced:
+                stages[idx]["amount"] = _safe_float(stages[idx].get("amount", 0)) + per_stage
+
+        project["payment_stages"] = stages
+        project["updated_at"] = datetime.now(timezone.utc).isoformat()
+        fb_update(f"/projects/{project_id}", project)
+
+        return {"success": True, "message": "Stage updated"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}, 500
+
+@app.route("/api/projects/<project_id>/stage/<int:stage_idx>/invoice", methods=["POST"])
+@role_required("projects")
+def quick_invoice_stage(project_id, stage_idx):
+    """Quickly create an invoice for a specific payment stage"""
+    try:
+        data = request.get_json()
+        stage_name = data.get("stageName", "")
+        amount = _safe_float(data.get("amount", 0))
+
+        project = fb_get(f"/projects/{project_id}") or {}
+        stages = project.get("payment_stages", [])
+
+        if stage_idx >= len(stages):
+            return {"success": False, "error": "Invalid stage index"}, 400
+
+        stage = stages[stage_idx]
+
+        # Create invoice data
+        invoice_number = _next_invoice_number()
+        tax_rate = _safe_float(project.get("tax_rate", 0))
+        tax_amount = (amount * tax_rate) / 100
+        total = amount + tax_amount
+
+        invoice_data = {
+            "meta": {
+                "invoice_number": invoice_number,
+                "invoice_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                "due_date": (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d"),
+                "client_name": project.get("client_name", ""),
+                "project_number": project.get("project_number", ""),
+                "payment_stage_index": stage_idx,
+                "linked_projects": [project_id],
+                "subtotal": str(amount),
+                "tax_rate": str(tax_rate),
+                "tax_amount": str(tax_amount),
+                "total": str(total),
+                "amount_paid": "0",
+                "status": "Issued",
+                "terms": project.get("invoice_terms", "Thank you for your business!"),
+                "notes": f"Payment for: {stage_name}"
+            },
+            "line_items": [
+                {
+                    "project": project_id,
+                    "description": stage_name,
+                    "qty": 1,
+                    "unit_price": str(amount),
+                    "amount": str(amount)
+                }
+            ],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        # Save invoice
+        invoice_id = fb_push("/invoices", invoice_data)
+
+        # Update project stage with invoice reference
+        stage["status"] = "Invoiced"
+        stage["invoice_id"] = invoice_id
+        stage["invoice_number"] = invoice_number
+        stages[stage_idx] = stage
+        project["payment_stages"] = stages
+        project["updated_at"] = datetime.now(timezone.utc).isoformat()
+        fb_update(f"/projects/{project_id}", project)
+
+        return {"success": True, "invoice_id": invoice_id, "invoice_number": invoice_number}
+    except Exception as e:
+        return {"success": False, "error": str(e)}, 500
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
