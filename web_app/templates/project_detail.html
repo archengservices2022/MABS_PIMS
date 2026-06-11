@@ -653,6 +653,20 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+/* Hide number input spinner arrows */
+#amountInput_0::-webkit-outer-spin-button,
+#amountInput_0::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type=number] {
+  -moz-appearance: textfield;
+}
+</style>
 <script>
 const projectId = '{{ project.firebase_id }}';
 const contractValue = {{ project.get('contract_value', 0)|float }};
@@ -878,6 +892,7 @@ function saveInlineEdit(idx, status, invoiceId) {
   const input = document.getElementById(`amountInput_${idx}`);
   const displaySpan = document.getElementById(`amountDisplay_${idx}`);
   const editSpan = document.getElementById(`amountEdit_${idx}`);
+  const stageAmountDisplay = document.getElementById(`stageAmount_${idx}`);
   const newAmount = parseFloat(input.value) || 0;
   const originalAmount = parseFloat(input.dataset.originalAmount) || 0;
 
@@ -931,9 +946,15 @@ function saveInlineEdit(idx, status, invoiceId) {
   .then(r => r.json())
   .then(data => {
     if (data.success) {
-      alert('✅ Amount updated successfully');
-      location.reload();
+      // Update UI immediately without alert or reload
+      const fmt = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      stageAmountDisplay.textContent = fmt(newAmount);
+
+      // Close edit mode
+      displaySpan.style.display = 'inline-flex';
+      editSpan.style.display = 'none';
     } else {
+      // Show error only on failure
       alert('❌ Error: ' + (data.error || 'Could not update'));
       displaySpan.style.display = 'inline-flex';
       editSpan.style.display = 'none';
