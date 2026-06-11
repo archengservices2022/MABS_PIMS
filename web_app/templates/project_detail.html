@@ -203,7 +203,7 @@
                 <tr>
                   <td>{{ s.get('name','') }}</td>
                   <td class="text-end">
-                    <div id="amountDisplay_{{ loop.index0 }}" class="d-flex justify-content-end align-items-center gap-2">
+                    <span id="amountDisplay_{{ loop.index0 }}" style="display:flex; justify-content:flex-end; align-items:center; gap:8px;">
                       <span id="stageAmount_{{ loop.index0 }}">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</span>
                       {% if st == 'Not Invoiced' or st == 'Invoiced' %}
                       <button type="button" class="btn btn-xs btn-outline-primary"
@@ -212,10 +212,10 @@
                         <i class="bi bi-pencil"></i>
                       </button>
                       {% endif %}
-                    </div>
-                    <div id="amountEdit_{{ loop.index0 }}" style="display:none;" class="d-flex justify-content-end align-items-center gap-2">
-                      <input type="number" id="amountInput_{{ loop.index0 }}" class="form-control form-control-sm" style="width:120px; max-width:100%;"
-                             step="0.01" min="0" value="{{ s.get('amount',0)|float }}">
+                    </span>
+                    <span id="amountEdit_{{ loop.index0 }}" style="display:none; justify-content:flex-end; align-items:center; gap:8px;">
+                      <input type="number" id="amountInput_{{ loop.index0 }}" class="form-control form-control-sm"
+                             step="0.01" min="0" value="{{ s.get('amount',0)|float }}" style="width:100px;">
                       <button type="button" class="btn btn-xs btn-success"
                               onclick="saveInlineEdit({{ loop.index0 }}, '{{ st }}', '{{ inv_id }}')"
                               title="Save">
@@ -226,7 +226,7 @@
                               title="Cancel">
                         <i class="bi bi-x"></i>
                       </button>
-                    </div>
+                    </span>
                   </td>
                   <td><span class="badge status-{{ status_class.get(st, st|lower|replace(' ','-')) }}">{{ st }}</span></td>
                   <td class="text-end">{% set paid_amount = inv_data.get('paid', 0)|float if inv_data else 0 %}{% if paid_amount > 0 %}${{ "{:,.2f}".format(paid_amount) }}{% else %}—{% endif %}</td>
@@ -850,13 +850,13 @@ function updateStagedPayment() {
 }
 
 function toggleInlineEdit(idx, name, amount, status, invoiceId) {
-  const displayDiv = document.getElementById(`amountDisplay_${idx}`);
-  const editDiv = document.getElementById(`amountEdit_${idx}`);
+  const displaySpan = document.getElementById(`amountDisplay_${idx}`);
+  const editSpan = document.getElementById(`amountEdit_${idx}`);
   const input = document.getElementById(`amountInput_${idx}`);
 
   // Hide display, show edit
-  displayDiv.style.display = 'none';
-  editDiv.style.display = 'flex';
+  displaySpan.style.display = 'none';
+  editSpan.style.display = 'flex';
   input.value = amount.toFixed(2);
   input.focus();
   input.select();
@@ -868,11 +868,11 @@ function toggleInlineEdit(idx, name, amount, status, invoiceId) {
 }
 
 function cancelInlineEdit(idx) {
-  const displayDiv = document.getElementById(`amountDisplay_${idx}`);
-  const editDiv = document.getElementById(`amountEdit_${idx}`);
+  const displaySpan = document.getElementById(`amountDisplay_${idx}`);
+  const editSpan = document.getElementById(`amountEdit_${idx}`);
 
-  displayDiv.style.display = 'flex';
-  editDiv.style.display = 'none';
+  displaySpan.style.display = 'flex';
+  editSpan.style.display = 'none';
 }
 
 function saveInlineEdit(idx, status, invoiceId) {
