@@ -156,8 +156,7 @@
           <label class="form-label">Contract Value ($)</label>
           <input type="number" id="contractValue" name="contract_value" class="form-control"
                  value="{{ project.get('contract_value','0') if project else '0' }}"
-                 min="0" step="0.01" oninput="updatePlanPreview()"
-                 onchange="handleContractValueChange()">
+                 min="0" step="0.01" oninput="updatePlanPreview()">
         </div>
         {% if not is_new %}
         <div class="mb-2">
@@ -213,7 +212,7 @@
         {% endif %}
         {% if existing_stages %}
         <hr class="mt-3 mb-2">
-        <div class="small" data-existing-stages="true" data-old-contract-value="{{ project.get('contract_value', 0) }}">
+        <div class="small">
           <div class="text-muted mb-1">Payment stages:</div>
           {% set total_stage_amount = 0 %}
           {% for stage in existing_stages %}
@@ -354,67 +353,8 @@ function updatePlanPreview() {
   wrap.style.display = 'block';
 }
 
-// Handle contract value changes for existing projects
-function handleContractValueChange() {
-  const existingStagesDiv = document.querySelector('[data-existing-stages]');
-  if (!existingStagesDiv) return; // Only for existing projects
-
-  const oldValue = parseFloat(existingStagesDiv.dataset.oldContractValue) || 0;
-  const newValue = parseFloat(document.getElementById('contractValue').value) || 0;
-
-  if (Math.abs(oldValue - newValue) < 0.01) return; // No change
-
-  const stageDisplay = document.querySelector('.table table tbody');
-  if (!stageDisplay) return;
-
-  const rows = stageDisplay.querySelectorAll('tr');
-  let totalOldAmount = 0;
-  const stages = [];
-
-  // Collect existing stages
-  rows.forEach((row, idx) => {
-    const amountText = row.querySelector('td:nth-child(2)')?.textContent.trim() || '$0.00';
-    const amount = parseFloat(amountText.replace('$', '').replace(/,/g, '')) || 0;
-    const statusBadge = row.querySelector('.badge')?.textContent.trim() || 'Not Invoiced';
-
-    totalOldAmount += amount;
-    stages.push({
-      index: idx,
-      originalAmount: amount,
-      status: statusBadge
-    });
-  });
-
-  // Find invoiced and non-invoiced stages
-  const invoicedIndices = stages.filter(s => s.status === 'Invoiced' || s.status === 'Paid').map(s => s.index);
-  const uninvoicedIndices = stages.filter(s => s.status === 'Not Invoiced').map(s => s.index);
-
-  if (uninvoicedIndices.length === 0) {
-    alert('⚠️ All stages are invoiced. Cannot auto-adjust.');
-    return;
-  }
-
-  // Calculate how much to redistribute
-  const difference = newValue - oldValue;
-  const perStageAdjust = difference / uninvoicedIndices.length;
-
-  // Update display (will be saved when form is submitted)
-  alert(`✓ Contract value changed from $${oldValue.toFixed(2)} to $${newValue.toFixed(2)}\n\nNon-invoiced stages will be auto-adjusted by $${perStageAdjust.toFixed(2)} each when you save.\n\nInvoiced stages remain locked.`);
-
-  // Store the new contract value
-  existingStagesDiv.dataset.newContractValue = newValue;
-}
-
 document.addEventListener('DOMContentLoaded', function () {
   updatePlanPreview();
-
-  // Store old contract value for existing projects
-  const cvInput = document.getElementById('contractValue');
-  const existingStagesDiv = document.querySelector('[data-existing-stages]');
-  if (existingStagesDiv && cvInput) {
-    existingStagesDiv.dataset.oldContractValue = cvInput.value;
-  }
-
   // ── Duration / date calculator ───────────────────────────────────────────
   function calcEndDate() {
     const s = document.getElementById('startDateInput').value;
