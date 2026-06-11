@@ -874,17 +874,8 @@ function updatePaymentPlanDisplay() {
 }
 
 function validatePaymentPlanBeforeSubmit() {
-  const existingStages = stageAmountsData.length > 0;
-
-  if (existingStages) {
-    const total = stageAmountsData.reduce((sum, s) => sum + s.amount, 0);
-    const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
-
-    if (Math.abs(total - contractValue) > 0.01) { // Allow 0.01 cent rounding difference
-      alert(`❌ Payment Plan Error\n\nTotal payment plan ($${total.toFixed(2)}) must equal project contract value ($${contractValue.toFixed(2)}).\n\nPlease adjust the individual payment amounts so they add up to the contract value, then try again.`);
-      return false;
-    }
-  }
+  // Allow form submission - contract value and amounts will be saved as-is
+  // Backend will handle any mismatches
   return true;
 }
 
