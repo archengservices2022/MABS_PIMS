@@ -1153,14 +1153,37 @@ def project_edit(project_id):
                         _safe_float(updated["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
         else:
             existing_stages = data.get("payment_stages") or []
-            plan_in_progress = any(s.get("status") != "Pending" for s in existing_stages if isinstance(s, dict))
-            if plan_in_progress:
-                # Stages already have invoices/payments against them — keep the plan intact
-                # so we don't orphan those links; only the financial totals get updated.
-                flash("Payment plan kept as-is because one or more stages are already invoiced.", "info")
+            old_contract_value = _safe_float(data.get("contract_value", 0))
+            new_contract_value = _safe_float(updated.get("contract_value", 0))
+
+            # Check if contract value changed
+            if abs(new_contract_value - old_contract_value) > 0.01:
+                # Auto-adjust non-invoiced stages to match new contract value
+                invoiced_stages = [i for i, s in enumerate(existing_stages) if s.get("status") in ["Invoiced", "Paid", "Partially Paid"]]
+                uninvoiced_stages = [i for i, s in enumerate(existing_stages) if s.get("status") not in ["Invoiced", "Paid", "Partially Paid"]]
+
+                if uninvoiced_stages:
+                    # Calculate difference and redistribute
+                    difference = new_contract_value - old_contract_value
+                    per_stage_adjust = difference / len(uninvoiced_stages)
+
+                    for idx in uninvoiced_stages:
+                        if idx < len(existing_stages):
+                            existing_stages[idx]["amount"] = max(0, _safe_float(existing_stages[idx].get("amount", 0)) + per_stage_adjust)
+
+                    updated["payment_stages"] = existing_stages
+                    flash(f"✓ Contract value updated. Non-invoiced stages auto-adjusted by ${per_stage_adjust:,.2f} each.", "success")
+                else:
+                    flash("⚠️ All stages are invoiced. Contract value changed but payment plan remains locked.", "warning")
             else:
-                updated["payment_stages"] = _compute_payment_stages(
-                    _safe_float(updated["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
+                # No contract value change
+                plan_in_progress = any(s.get("status") != "Pending" for s in existing_stages if isinstance(s, dict))
+                if plan_in_progress:
+                    # Stages already have invoices/payments against them — keep the plan intact
+                    flash("Payment plan kept as-is because one or more stages are already invoiced.", "info")
+                else:
+                    updated["payment_stages"] = _compute_payment_stages(
+                        _safe_float(updated["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
 
         updated["updated_at"] = datetime.now(timezone.utc).isoformat()
         fb_update(f"/projects/{project_id}", updated)
