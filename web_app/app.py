@@ -1023,7 +1023,7 @@ def project_new():
                 payment_stages.append({
                     "name": amount_data.get("name", f"Stage {idx+1}"),
                     "amount": _safe_float(amount_data.get("amount", 0)),
-                    "status": "Not Invoiced",
+                    "status": "Pending Invoice",
                     "invoice_id": "",
                     "invoice_number": ""
                 })
@@ -1223,7 +1223,7 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
     stages  = project.get("payment_stages") or []
     if not (0 <= stage_idx < len(stages)) or not isinstance(stages[stage_idx], dict):
         return None, "Stage not found."
-    first_pending = next((i for i, s in enumerate(stages) if s.get("status") == "Not Invoiced"), None)
+    first_pending = next((i for i, s in enumerate(stages) if s.get("status") == "Pending Invoice"), None)
     if first_pending is None or stage_idx != first_pending:
         return None, "That stage isn't ready yet — complete earlier stages first."
 
@@ -1327,7 +1327,7 @@ def project_stage_set_amount(project_id, stage_idx):
     )
     other_pending = [
         i for i, s in enumerate(stages)
-        if i != stage_idx and isinstance(s, dict) and s.get("status") == "Not Invoiced"
+        if i != stage_idx and isinstance(s, dict) and s.get("status") == "Pending Invoice"
     ]
     if other_pending and contract_value > 0:
         remaining = round(contract_value - locked_sum - new_amount, 2)
@@ -1834,7 +1834,7 @@ def invoice_new():
                             # Find first pending stage
                             found_pending = False
                             for idx, stage in enumerate(stages):
-                                if isinstance(stage, dict) and stage.get("status") == "Not Invoiced":
+                                if isinstance(stage, dict) and stage.get("status") == "Pending Invoice":
                                     stage_idx_raw = str(idx)
                                     stage_name = stage.get("name", f"Stage {idx + 1}")
                                     found_pending = True
@@ -2160,7 +2160,7 @@ def invoice_delete(invoice_id):
     if project_number and payment_stage_index is not None:
         # Single project with single stage
         print(f"Reverting single stage: {project_number} stage {payment_stage_index}", flush=True)
-        _mark_project_stage(project_number, payment_stage_index, "Not Invoiced")
+        _mark_project_stage(project_number, payment_stage_index, "Pending Invoice")
     else:
         # Multiple projects - check linked_projects first, then line items
         linked_projects = meta.get("linked_projects", [])
@@ -2172,7 +2172,7 @@ def invoice_delete(invoice_id):
                     stage_idx = lp.get("payment_stage_index")
                     print(f"Processing linked project: proj_num={proj_num}, stage_idx={stage_idx}", flush=True)
                     if proj_num and stage_idx is not None:
-                        _mark_project_stage(proj_num, stage_idx, "Not Invoiced")
+                        _mark_project_stage(proj_num, stage_idx, "Pending Invoice")
         else:
             # Fallback: check line items for older invoices
             line_items = inv_data.get("line_items", [])
@@ -2184,7 +2184,7 @@ def invoice_delete(invoice_id):
                         stage_idx = item.get("stage_index")
                         print(f"Processing line item: proj_num={proj_num}, stage_idx={stage_idx}", flush=True)
                         if proj_num and stage_idx is not None:
-                            _mark_project_stage(proj_num, stage_idx, "Not Invoiced")
+                            _mark_project_stage(proj_num, stage_idx, "Pending Invoice")
 
     # Delete associated revenue entries
     all_revenue = fb_get("/balance_sheet_revenue") or {}
@@ -3274,8 +3274,8 @@ def _mark_project_stage(project_number: str, stage_index: int, status: str, invo
         stages[stage_index]["invoice_id"] = invoice_id
     if invoice_number is not None:
         stages[stage_index]["invoice_number"] = invoice_number
-    # When reverting to "Not Invoiced", clear the invoice tracking fields
-    if status == "Not Invoiced":
+    # When reverting to "Pending Invoice", clear the invoice tracking fields
+    if status == "Pending Invoice":
         print(f"[MARK_STAGE] Clearing invoice_id and invoice_number", flush=True)
         stages[stage_index].pop("invoice_id", None)
         stages[stage_index].pop("invoice_number", None)
@@ -3712,20 +3712,20 @@ def _compute_payment_stages(contract_value: float, down_pct: float, installments
     if down_pct > 0:
         down_amt = round(contract_value * down_pct / 100.0, 2)
         stages.append({"name": f"Down Payment ({down_pct:.0f}%)", "amount": down_amt,
-                       "status": "Not Invoiced", "invoice_id": ""})
+                       "status": "Pending Invoice", "invoice_id": ""})
         remaining = round(contract_value - down_amt, 2)
 
     custom_amounts = [round(max(0.0, a), 2) for a in (custom_amounts or []) if a > 0]
     if custom_amounts:
         for i, amt in enumerate(custom_amounts):
             stages.append({"name": f"Installment {i+1} of {len(custom_amounts)}", "amount": amt,
-                           "status": "Not Invoiced", "invoice_id": ""})
+                           "status": "Pending Invoice", "invoice_id": ""})
         return stages
 
     installments = max(1, min(int(installments or 1), 6))
     if installments <= 1:
         label = "Final Payment" if down_pct > 0 else "Full Payment"
-        stages.append({"name": label, "amount": remaining, "status": "Not Invoiced", "invoice_id": ""})
+        stages.append({"name": label, "amount": remaining, "status": "Pending Invoice", "invoice_id": ""})
     else:
         per_installment = round(remaining / installments, 2)
         running = 0.0
@@ -3733,7 +3733,7 @@ def _compute_payment_stages(contract_value: float, down_pct: float, installments
             amt = per_installment if i < installments - 1 else round(remaining - running, 2)
             running += amt
             stages.append({"name": f"Installment {i+1} of {installments}", "amount": amt,
-                           "status": "Not Invoiced", "invoice_id": ""})
+                           "status": "Pending Invoice", "invoice_id": ""})
     return stages
 
 def _parse_project_form(form) -> dict:
@@ -5084,7 +5084,7 @@ def update_project_stage(project_id, stage_idx):
         # Redistribute remaining amounts to uninvoiced stages
         amount_diff = new_amount - original_amount
         remaining_uninvoiced = [i for i in range(len(stages))
-                               if i > stage_idx and stages[i].get("status") == "Not Invoiced"]
+                               if i > stage_idx and stages[i].get("status") == "Pending Invoice"]
 
         if remaining_uninvoiced and abs(amount_diff) > 0.01:
             per_stage = amount_diff / len(remaining_uninvoiced)

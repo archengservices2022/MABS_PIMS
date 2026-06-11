@@ -161,7 +161,7 @@
         {% if stages %}
         {% set ns = namespace(first_pending=none) %}
         {% for s in stages %}
-          {% if ns.first_pending is none and s.get('status') == 'Not Invoiced' %}
+          {% if ns.first_pending is none and s.get('status') == 'Pending Invoice' %}
             {% set ns.first_pending = loop.index0 %}
           {% endif %}
         {% endfor %}
@@ -188,7 +188,7 @@
                 </tr>
               </thead>
               <tbody>
-                {% set status_class = {'Not Invoiced':'not-started','Invoiced':'invoiced','Partially Paid':'partial','Paid':'paid'} %}
+                {% set status_class = {'Pending Invoice':'not-started','Invoiced':'invoiced','Partially Paid':'partial','Paid':'paid'} %}
                 {% set invoice_map = {} %}
                 {% for inv in project_invoices %}
                   {% if inv.firebase_id not in invoice_map %}
@@ -196,7 +196,7 @@
                   {% endif %}
                 {% endfor %}
                 {% for s in stages %}
-                {% set st = s.get('status') or 'Not Invoiced' %}
+                {% set st = s.get('status') or 'Pending Invoice' %}
                 {% set inv_id = s.get('invoice_id', '') %}
                 {% set inv_num = s.get('invoice_number', '') %}
                 {% set inv_data = invoice_map.get(inv_id, {}) %}
@@ -207,7 +207,7 @@
                       <span id="stageAmount_{{ loop.index0 }}" style="cursor:pointer;" onclick="toggleInlineEdit({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ st }}', '{{ inv_id }}')">
                         ${{ "{:,.2f}".format(s.get('amount',0)|float) }}
                       </span>
-                      {% if st == 'Not Invoiced' or st == 'Invoiced' %}
+                      {% if st == 'Pending Invoice' or st == 'Invoiced' %}
                       <button type="button" class="btn btn-xs btn-outline-primary"
                               onclick="toggleInlineEdit({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ st }}', '{{ inv_id }}')"
                               title="Edit amount (click or press Enter)">
@@ -226,7 +226,7 @@
                   <td class="text-end">{% set paid_amount = inv_data.get('paid', 0)|float if inv_data else 0 %}{% if paid_amount > 0 %}${{ "{:,.2f}".format(paid_amount) }}{% else %}—{% endif %}</td>
                   <td>{% if inv_id and (inv_num or inv_data.get('number')) %}<a href="{{ url_for('invoice_detail', invoice_id=inv_id) }}" class="text-decoration-none">{{ inv_num or inv_data.get('number') }}</a>{% else %}—{% endif %}</td>
                   <td class="text-center">
-                    {% if st == 'Not Invoiced' %}
+                    {% if st == 'Pending Invoice' %}
                     <button type="button" class="btn btn-xs btn-outline-teal" onclick="quickInvoiceStage({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ project.firebase_id }}')"
                             title="Create invoice for this stage">
                       <i class="bi bi-receipt"></i>
@@ -727,14 +727,14 @@ function updateRemainingStages() {
   // Generate editable inputs for all stages
   let html = '';
   for (let i = 1; i < currentStages.length; i++) {
-    const isInvoiced = currentStages[i].status !== 'Not Invoiced';
+    const isInvoiced = currentStages[i].status !== 'Pending Invoice';
     const amount = currentStages[i].amount || 0;
 
     html += `
       <div class="mb-3">
         <div class="d-flex justify-content-between align-items-center mb-1">
           <label class="form-label mb-0">${currentStages[i].name}</label>
-          <span class="badge status-${isInvoiced ? 'invoiced' : 'not-started'}">${currentStages[i].status || 'Not Invoiced'}</span>
+          <span class="badge status-${isInvoiced ? 'invoiced' : 'not-started'}">${currentStages[i].status || 'Pending Invoice'}</span>
         </div>
         <input type="number" class="form-control stageAmountInput" data-index="${i}" value="${amount.toFixed(2)}"
                step="0.01" ${isInvoiced ? 'disabled title="Already invoiced - cannot edit"' : ''}
@@ -862,15 +862,18 @@ function toggleInlineEdit(idx, name, amount, status, invoiceId) {
   const editSpan = document.getElementById(`amountEdit_${idx}`);
   const input = document.getElementById(`amountInput_${idx}`);
 
+  // Use current amount from currentStages (reflects any edits), fallback to parameter
+  const currentAmount = currentStages[idx] ? (currentStages[idx].amount || amount) : amount;
+
   // Hide display, show edit
   displaySpan.style.display = 'none';
   editSpan.style.display = 'inline-flex';
-  input.value = amount.toFixed(2);
+  input.value = currentAmount.toFixed(2);
   input.focus();
   input.select();
 
   // Store original values
-  input.dataset.originalAmount = amount;
+  input.dataset.originalAmount = currentAmount;
   input.dataset.status = status;
   input.dataset.invoiceId = invoiceId;
 }
@@ -910,7 +913,7 @@ function saveInlineEdit(idx, status, invoiceId) {
 
   // Auto-redistribute to remaining non-invoiced stages to keep total = contract value
   const remainingUninvoiced = currentStages
-    .map((s, i) => i > idx && s.status === 'Not Invoiced' ? i : -1)
+    .map((s, i) => i > idx && s.status === 'Pending Invoice' ? i : -1)
     .filter(i => i >= 0);
 
   if (remainingUninvoiced.length > 0 && difference !== 0) {
@@ -968,6 +971,9 @@ function saveInlineEdit(idx, status, invoiceId) {
       // Close edit mode
       displaySpan.style.display = 'inline-flex';
       editSpan.style.display = 'none';
+
+      // Reload page after successful save
+      setTimeout(() => location.reload(), 300);
     } else {
       // Show error only on failure
       alert('❌ Error: ' + (data.error || 'Could not update'));
@@ -1002,7 +1008,7 @@ function updateRedistributionPreview() {
     preview = `<div class="text-success">✓ Reducing by $${difference.toFixed(2)}</div>`;
     preview += '<div class="text-muted small mt-2">This amount will be distributed equally among remaining non-invoiced stages:</div>';
 
-    const uninvoicedStages = currentStages.filter((s, i) => i > idx && s.status === 'Not Invoiced');
+    const uninvoicedStages = currentStages.filter((s, i) => i > idx && s.status === 'Pending Invoice');
     if (uninvoicedStages.length > 0) {
       const perStage = difference / uninvoicedStages.length;
       uninvoicedStages.forEach(s => {
@@ -1038,7 +1044,7 @@ function updateInvoicedStage() {
 
   // Redistribute difference to remaining non-invoiced stages
   const uninvoicedIndices = currentStages
-    .map((s, i) => i > idx && s.status === 'Not Invoiced' ? i : -1)
+    .map((s, i) => i > idx && s.status === 'Pending Invoice' ? i : -1)
     .filter(i => i >= 0);
 
   if (uninvoicedIndices.length > 0) {

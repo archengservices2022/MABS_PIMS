@@ -132,7 +132,7 @@
                   <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="{{ item.get('description','') }}" required></td>
                   <td>{{ project_select(item.get('project_number','')) }}</td>
                   <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="{{ item.get('quantity','1') }}" min="0" step="any" oninput="calcRow(this)"></td>
-                  <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="{{ item.get('unit_price','0') }}" min="0" step="0.01" oninput="calcRow(this)"></td>
+                  <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="{{ item.get('unit_price','0') }}" min="0" step="0.01" oninput="calcRow(this)" {% if lock_unit_price %}readonly{% endif %}></td>
                   <td><input type="text" class="form-control form-control-sm item-total bg-light" value="{{ item.get('amount','0') }}" readonly></td>
                   <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>
                 </tr>
