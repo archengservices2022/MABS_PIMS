@@ -155,18 +155,11 @@
         <div class="mb-2">
           <label class="form-label">Contract Value ($)</label>
           {% set all_invoiced = existing_stages and (existing_stages|selectattr('status', 'ne', 'Pending Invoice')|list|length == existing_stages|length) %}
-          <div class="d-flex gap-2">
-            <input type="number" id="contractValue" name="contract_value" class="form-control"
-                   value="{{ project.get('contract_value','0') if project else '0' }}"
-                   min="0" step="0.01" oninput="handleContractValueChange(); updatePlanPreview();"
-                   data-original-value="{{ project.get('contract_value','0')|float if project else 0 }}"
-                   {% if all_invoiced %}disabled title="Cannot edit: all payment stages are invoiced"{% endif %}>
-            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="handleContractValueChange()"
-                    title="Auto-adjust payment stages to match contract value"
-                    {% if all_invoiced %}disabled{% endif %}>
-              <i class="bi bi-arrow-repeat"></i> Adjust
-            </button>
-          </div>
+          <input type="number" id="contractValue" name="contract_value" class="form-control"
+                 value="{{ project.get('contract_value','0') if project else '0' }}"
+                 min="0" step="0.01" oninput="(function() { try { handleContractValueChange(); } catch(e) { console.error('handleContractValueChange error:', e); } updatePlanPreview(); })();"
+                 data-original-value="{{ project.get('contract_value','0')|float if project else 0 }}"
+                 {% if all_invoiced %}disabled title="Cannot edit: all payment stages are invoiced"{% endif %}>
           {% if all_invoiced %}
           <small class="text-muted d-block mt-1"><i class="bi bi-lock me-1"></i>Contract value is locked because all payment stages are invoiced.</small>
           {% endif %}
@@ -185,12 +178,12 @@
         <h6 class="section-heading">Payment Plan</h6>
         {% set existing_stages = project.get('payment_stages') if project else None %}
         {% set has_invoiced = existing_stages and (existing_stages|selectattr('status', 'in', ['Invoiced', 'Paid', 'Partially Paid'])|list|length > 0) %}
-        <div data-existing-stages="{{ (existing_stages|length > 0)|string|lower }}"></div>
+        <div data-existing-stages="{{ (existing_stages and existing_stages|length > 0)|string|lower }}"></div>
         {% if has_invoiced %}
         <div class="alert alert-info py-2 px-3 small mb-3">
           <i class="bi bi-info-circle me-1"></i>Some stages have invoices. Invoiced stages are locked; non-invoiced stages will auto-adjust when contract value changes.
         </div>
-        {% else %}
+        {% endif %}
         <div class="row g-2 mb-3">
           <div class="col-6">
             <label class="form-label">Down Payment (%)</label>
@@ -212,7 +205,7 @@
             </select>
           </div>
         </div>
-        <!-- Live plan preview -->
+        <!-- Live plan preview - always visible for real-time updates -->
         <div id="planPreview" class="rounded" style="background:#F0FDFA; border:1px solid #99F6E4; padding:10px; font-size:0.82rem; display:none;">
           <div class="fw-600 text-teal mb-1"><i class="bi bi-list-check me-1"></i>Payment stages preview</div>
           <div id="planPreviewStages"></div>
@@ -222,59 +215,6 @@
             </button>
           </div>
         </div>
-        {% endif %}
-        {% if existing_stages %}
-        <hr class="mt-3 mb-2">
-        <div class="small">
-          <div class="text-muted mb-1">Payment stages:</div>
-          {% set amounts = existing_stages|map(attribute='amount')|map('float')|list %}
-          {% set total_stage_amount = amounts|sum %}
-
-          {% for s in existing_stages %}
-          {% set is_invoiced = s.get('status','Pending Invoice') != 'Pending Invoice' %}
-          <div class="d-flex justify-content-between align-items-center mb-2 p-2 payment-stage" style="background:#f8f9fa; border-radius:4px;" data-stage-index="{{ loop.index0 }}" data-stage-status="{{ s.get('status','Pending Invoice') }}">
-            <div>
-              <div class="fw-600">{{ s.get('name','') }}</div>
-              <div class="text-muted small stage-amount-display">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</div>
-              <input type="hidden" class="stage-amount-value" value="{{ s.get('amount',0)|float }}">
-            </div>
-            <div class="d-flex gap-2 align-items-center">
-              <span class="badge status-{{ {'Pending Invoice':'not-started','Invoiced':'invoiced','Paid':'paid','Partially Paid':'partial'}.get(s.get('status','Pending Invoice'), 'not-started') }}">
-                {{ s.get('status','Pending Invoice') }}
-              </span>
-              {% if not is_invoiced %}
-              <button type="button" class="btn btn-xs btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editStageModal"
-                      onclick="prepareEditStage({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }})">
-                <i class="bi bi-pencil"></i>
-              </button>
-              {% endif %}
-            </div>
-          </div>
-          {% endfor %}
-          <div class="p-2 mt-2" style="background:#e8f5e9; border-radius:4px; border:1px solid #c8e6c9;">
-            <div class="d-flex justify-content-between">
-              <span class="fw-600">Total Payment Plan:</span>
-              <span class="fw-700" id="totalStageAmount">${{ "{:,.2f}".format(total_stage_amount) }}</span>
-            </div>
-            <div class="d-flex justify-content-between text-muted small mt-1">
-              <span>Contract Value:</span>
-              <span id="contractValueDisplay">${{ "{:,.2f}".format(project.get('contract_value',0)|float) if project else '$0.00' }}</span>
-            </div>
-            {% if total_stage_amount != (project.get('contract_value',0)|float if project else 0) %}
-            <div class="text-danger small mt-2">
-              <i class="bi bi-exclamation-circle me-1"></i>
-              Payment plan total must equal contract value. Adjust individual stage amounts.
-            </div>
-            {% endif %}
-          </div>
-          {% if not has_invoiced %}
-          <button type="button" class="btn btn-sm btn-outline-primary w-100 mt-3" id="editExistingStagesBtn"
-                  onclick="editExistingPaymentStages()">
-            <i class="bi bi-pencil me-1"></i>Edit Amounts
-          </button>
-          {% endif %}
-        </div>
-        {% endif %}
       </div>
 
       <div class="d-grid gap-2">
@@ -325,8 +265,26 @@
 let previewStagesData = [];
 
 function captureUpdatedStages(event) {
-  // First check if there are payment-stage elements (existing project)
+  const form = event.target;
+
+  // Check if preview amounts are available (new or edited project with preview)
+  if (previewStagesData && previewStagesData.length > 0) {
+    console.log('captureUpdatedStages: Using preview amounts:', previewStagesData);
+
+    // Send preview amounts as custom_stage_amounts
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'hidden';
+    hiddenInput.name = 'custom_stage_amounts';
+    hiddenInput.value = JSON.stringify(previewStagesData);
+    form.appendChild(hiddenInput);
+
+    console.log('✓ Captured preview amounts and added as custom_stage_amounts');
+    return true;
+  }
+
+  // Otherwise try to capture from payment-stage elements (existing project)
   const stageElements = document.querySelectorAll('.payment-stage');
+  console.log('captureUpdatedStages: Found', stageElements.length, 'stage elements');
 
   if (stageElements.length > 0) {
     // Existing project - capture from payment-stage elements
@@ -341,19 +299,21 @@ function captureUpdatedStages(event) {
         const amount = parseFloat(valueInput.value) || 0;
         const name = el.querySelector('.fw-600')?.textContent || `Stage ${idx+1}`;
 
+        console.log(`Stage ${idx}: name="${name.trim()}", amount=${amount}, status=${status}`);
+
         updatedStages.push({
           name: name.trim(),
           amount: amount,
           status: status,
           invoice_id: el.dataset.invoiceId || ""
         });
+      } else {
+        console.log(`Stage ${idx}: Missing valueInput or displayEl`);
       }
     });
 
     // Add updated stages as hidden input if there are any
     if (updatedStages.length > 0) {
-      const form = event.target;
-
       // Remove old updated_stage_amounts input if exists
       const oldInput = form.querySelector('input[name="updated_stage_amounts"]');
       if (oldInput) oldInput.remove();
@@ -364,8 +324,12 @@ function captureUpdatedStages(event) {
       hiddenInput.value = JSON.stringify(updatedStages);
       form.appendChild(hiddenInput);
 
-      console.log('Captured updated payment stages:', updatedStages);
+      console.log('✓ Captured and added hidden input "updated_stage_amounts" with:', JSON.stringify(updatedStages, null, 2));
+    } else {
+      console.log('✗ No stages captured!');
     }
+  } else {
+    console.log('captureUpdatedStages: No existing stages found');
   }
 
   // Allow form to submit
@@ -486,9 +450,7 @@ function handleContractValueChange() {
   const newValue = parseFloat(cvInput.value) || 0;
   const difference = newValue - oldValue;
 
-  console.log('Contract value change:', oldValue, '→', newValue, 'Difference:', difference);
-
-  console.log('Contract value changed:', oldValue, '->', newValue, 'Difference:', difference);
+  console.log('handleContractValueChange() called:', oldValue, '→', newValue, 'Difference:', difference);
 
   // Get all payment stage elements
   const stageElements = document.querySelectorAll('.payment-stage');
@@ -584,9 +546,13 @@ function handleContractValueChange() {
     let newTotal = 0;
     stages.forEach(stage => {
       if (stage.valueInput && stage.displayEl) {
+        const oldAmount = stage.valueInput.value;
         stage.valueInput.value = stage.amount.toFixed(2);
         stage.displayEl.textContent = '$' + stage.amount.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+        console.log('Updated stage amount:', oldAmount, '→', stage.amount.toFixed(2));
         newTotal += stage.amount;
+      } else {
+        console.log('Stage missing valueInput or displayEl:', stage);
       }
     });
 
@@ -595,6 +561,8 @@ function handleContractValueChange() {
     if (totalEl) {
       totalEl.textContent = '$' + newTotal.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
       console.log('Updated total to:', newTotal);
+    } else {
+      console.log('totalStageAmount element not found');
     }
 
     cvInput.dataset.originalValue = newValue;
@@ -796,6 +764,57 @@ function initPaymentStagesData() {
     { index: {{ loop.index0 }}, name: '{{ s.get('name','') }}', amount: {{ s.get('amount',0)|float }}, status: '{{ s.get('status','Pending') }}' },
     {% endfor %}
   ];
+
+  // Recalculate down payment % from first stage if editing
+  const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
+  if (stageAmountsData.length > 0 && contractValue > 0) {
+    const firstStageAmount = stageAmountsData[0].amount || 0;
+    const calculatedDpPct = Math.round((firstStageAmount / contractValue) * 100);
+    const dpInput = document.getElementById('downPaymentPct');
+    if (dpInput) {
+      dpInput.value = calculatedDpPct;
+    }
+
+    // Also update stage name with correct percentage
+    stageAmountsData[0].name = `Down Payment (${calculatedDpPct}%)`;
+    console.log('Updated stage name to:', stageAmountsData[0].name);
+
+    // Update the DOM display of the first payment stage name
+    const firstStageNameEl = document.querySelector('.payment-stage:first-child .fw-600');
+    if (firstStageNameEl) {
+      firstStageNameEl.textContent = `Down Payment (${calculatedDpPct}%)`;
+    }
+
+    // Load saved custom amounts into preview data
+    previewStagesData = stageAmountsData.map(s => ({
+      name: s.name,
+      amount: s.amount,
+      index: s.index
+    }));
+
+    // Trigger preview update with saved amounts
+    setTimeout(() => {
+      const wrap = document.getElementById('planPreview');
+      const stages = document.getElementById('planPreviewStages');
+      if (wrap && stages) {
+        const fmt = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+        const rows = [];
+        let total = 0;
+        previewStagesData.forEach((stage, idx) => {
+          if (idx === 0) {
+            rows.push(`<div class="d-flex justify-content-between py-1 border-bottom"><span>${stage.name}</span><span class="fw-600">${fmt(stage.amount)}</span></div>`);
+          } else {
+            rows.push(`<div class="d-flex justify-content-between py-1 ${idx < previewStagesData.length-1 ? 'border-bottom' : ''}"><span>${stage.name}</span><span class="fw-600">${fmt(stage.amount)}</span></div>`);
+          }
+          total += stage.amount;
+        });
+        stages.innerHTML = rows.join('');
+        const editContainer = document.getElementById('previewEditContainer');
+        if (editContainer) editContainer.style.display = 'block';
+        wrap.style.display = 'block';
+      }
+    }, 100);
+  }
   {% endif %}
 }
 

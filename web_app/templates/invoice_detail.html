@@ -317,7 +317,10 @@
       <div class="info-value">{{ meta.get('payment_reference') }}</div>
       {% endif %}
       <div class="info-label mt-2">Created</div>
-      <div class="info-value small">{{ meta.get('created_at','—')[:19]|replace('T',' ') }}</div>
+      <div class="info-value small">
+        {%- set created = meta.get('created_at') or meta.get('updated_at') or meta.get('invoice_date') %}
+        {{ created[:19]|replace('T',' ') if created else '—' }}
+      </div>
       <div class="info-label mt-2">Updated</div>
       <div class="info-value small">{{ meta.get('updated_at','—')[:19]|replace('T',' ') }}</div>
     </div>
@@ -339,6 +342,7 @@
               <th style="padding:10px 12px; text-align:left; font-weight:700; color:#374151; border:none;">Date</th>
               <th style="padding:10px 12px; text-align:right; font-weight:700; color:#374151; border:none;">Amount</th>
               <th style="padding:10px 12px; text-align:left; font-weight:700; color:#374151; border:none;">Stage</th>
+              <th style="padding:10px 12px; text-align:left; font-weight:700; color:#374151; border:none;">Status</th>
               <th style="padding:10px 12px; text-align:left; font-weight:700; color:#374151; border:none;">Method</th>
               <th style="padding:10px 12px; text-align:center; font-weight:700; color:#374151; border:none;">Action</th>
             </tr>
@@ -355,6 +359,10 @@
               <td style="padding:10px 12px; color:#475569;">{{ payment.get('date','—') }}</td>
               <td style="padding:10px 12px; text-align:right; font-weight:600; color:#15803D;">${{ "{:,.2f}".format(payment.get('amount',0)|float) }}</td>
               <td style="padding:10px 12px; color:#475569;">{{ payment.get('stage_name', 'Invoice Payment') }}</td>
+              <td style="padding:10px 12px; color:#475569;">
+                {% set status = payment.get('stage_status', 'Invoiced') %}
+                <span class="badge status-{{ status|lower|replace(' ','-') }}">{{ status }}</span>
+              </td>
               <td style="padding:10px 12px; color:#475569;">{{ payment.get('method','—') }}</td>
               <td style="padding:10px 12px; text-align:center;">
                 <button type="button" class="btn btn-xs btn-outline-primary" title="Edit"
@@ -667,10 +675,20 @@ function deletePayment(type, index) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include'
-  }).then(res => {
-    if (res.ok) window.location.reload();
-    else alert('Failed to delete payment');
-  }).catch(err => alert('Error: ' + err));
+  })
+  .then(res => {
+    if (res.ok) {
+      // Reload invoice detail page to show updated payment history
+      setTimeout(() => {
+        window.location.reload();
+      }, 100);
+    } else {
+      return res.json().then(data => {
+        throw new Error(data.error || 'Failed to delete payment');
+      });
+    }
+  })
+  .catch(err => alert('❌ Error: ' + err.message));
 }
 
 function scrollToEditPaymentForm(button) {
@@ -773,34 +791,23 @@ function validateAmountInput() {
   }
 }
 
-function validatePaymentAmount() {
-  const amountInput = document.getElementById('invoiceAmountInput');
-  const amount = parseFloat(amountInput.value) || 0;
-
-  let maxAmount = parseFloat(amountInput.dataset.max);
-
-  if (maxAmount && amount > maxAmount) {
-    alert(`Payment amount cannot exceed $${maxAmount.toFixed(2)}`);
-    amountInput.value = maxAmount.toFixed(2);
-    return false;
-  }
-  return true;
-}
-
 function handleStatusUpdate() {
   const paymentForm = document.getElementById('paymentDetailsForm');
   const statusForm = document.getElementById('statusForm');
   const statusSelect = document.getElementById('detailStatusSelect');
+  const amountInput = document.getElementById('invoiceAmountInput');
 
-  // Check if we're editing an existing payment OR if payment form is visible with status dropdown
+  // Check if we're editing an existing payment
   const isEditing = window.isEditingPayment && window.editPaymentContext;
-  const hasPaymentForm = paymentForm.style.display !== 'none';
 
-  if ((hasPaymentForm && statusSelect) || isEditing) {
-    const amountInput = document.getElementById('invoiceAmountInput');
-    const amount = (amountInput && amountInput.value) ? parseFloat(amountInput.value) : 0;
+  // Check if user entered a payment amount
+  const amount = (amountInput && amountInput.value) ? parseFloat(amountInput.value) : 0;
+  const isPaymentSubmission = amount > 0;
 
-    if (amount <= 0) {
+  console.log('handleStatusUpdate:', { amount, isPaymentSubmission, isEditing });
+
+  if (isPaymentSubmission || isEditing) {
+    if (amount <= 0 && !isEditing) {
       alert('Please enter payment amount');
       return;
     }
@@ -839,25 +846,54 @@ function handleStatusUpdate() {
         if (res.ok) {
           window.isEditingPayment = false;
           window.editPaymentContext = null;
-          window.location.reload();
+          // Get project ID from the page context if available
+          const projectLink = document.querySelector('a[href*="/projects/"]');
+          const projectId = projectLink ? projectLink.href.split('/projects/')[1] : null;
+          setTimeout(() => {
+            if (projectId) {
+              window.location.href = `/projects/${projectId}`;
+            } else {
+              window.location.reload();
+            }
+          }, 1000);
         } else {
           res.json().then(data => alert('Payment update failed: ' + (data.error || 'Unknown error')));
         }
       }).catch(err => alert('Error: ' + err));
-    } else if (hasPaymentForm && statusSelect) {
+    } else if (isPaymentSubmission) {
       // Submit to sequential distribution endpoint for new payments
-      fetch('/invoicing/{{ invoice.firebase_id }}/payment/sequential', {
+      console.log('Submitting payment:', { amount, status });
+      const paymentUrl = '/invoicing/{{ invoice.firebase_id }}/payment/sequential';
+      console.log('Payment URL:', paymentUrl);
+
+      fetch(paymentUrl, {
         method: 'POST',
         body: formData,
         credentials: 'include'
-      }).then(res => {
+      })
+      .then(async res => {
+        console.log('Payment response:', res.status, res.ok);
         if (res.ok) {
+          console.log('Payment recorded successfully, reloading...');
           window.isEditingPayment = false;
-          window.location.reload();
+          // Get project ID from the page context if available
+          const projectLink = document.querySelector('a[href*="/projects/"]');
+          const projectId = projectLink ? projectLink.href.split('/projects/')[1] : null;
+          // Wait longer for Firebase to persist before reload
+          setTimeout(() => {
+            console.log('Reloading page...');
+            window.location.reload();
+          }, 1000);
         } else {
-          alert('Payment recording failed');
+          const data = await res.json();
+          console.error('Payment failed:', data);
+          alert('❌ Payment recording failed: ' + (data.error || 'Unknown error'));
         }
-      }).catch(err => alert('Error: ' + err));
+      })
+      .catch(err => {
+        console.error('Payment submission error:', err);
+        alert('❌ Error: ' + err.message);
+      });
     }
     return;
   }
