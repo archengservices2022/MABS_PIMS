@@ -46,18 +46,30 @@
     <div>
       <div class="wf-label">Project</div>
       {% if wf_project and wf_project_id %}
-        {% if wf_step == 2 %}
+        {% if wf_project.get('_is_multiple') %}
           <div class="wf-num-text">{{ wf_project.get('project_number','') }}</div>
+          <div class="mt-1">
+            <span class="badge bg-info" title="Multiple projects in this invoice">
+              <i class="bi bi-diagram-3 me-1"></i>{{ wf_project.get('_count', '') }} projects
+            </span>
+          </div>
+        {% elif wf_step == 2 %}
+          <div class="wf-num-text">{{ wf_project.get('project_number','') }}</div>
+          <div class="mt-1">
+            <span class="badge status-{{ wf_project.get('status','')|lower|replace(' ','-') }}">
+              {{ wf_project.get('status','') }}
+            </span>
+          </div>
         {% else %}
           <a href="{{ url_for('project_detail', project_id=wf_project_id) }}" class="wf-num-link">
             {{ wf_project.get('project_number','') }}
           </a>
+          <div class="mt-1">
+            <span class="badge status-{{ wf_project.get('status','')|lower|replace(' ','-') }}">
+              {{ wf_project.get('status','') }}
+            </span>
+          </div>
         {% endif %}
-        <div class="mt-1">
-          <span class="badge status-{{ wf_project.get('status','')|lower|replace(' ','-') }}">
-            {{ wf_project.get('status','') }}
-          </span>
-        </div>
       {% elif wf_step == 1 and 'projects' in allowed_pages and wf_quote %}
         <div class="wf-empty mb-1">Not created</div>
         <a href="{{ url_for('project_new') }}?from_quote={{ wf_quote.get('job_number','') }}"

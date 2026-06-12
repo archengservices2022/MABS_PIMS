@@ -10,7 +10,8 @@
   <h5 class="mb-0">{{ 'Create New Project' if is_new else 'Edit Project' }}</h5>
 </div>
 
-<form method="POST">
+<form method="POST" onsubmit="return captureUpdatedStages(event)">
+  <input type="hidden" name="source_quote_id" value="{{ prefill_quote_id|default('') }}">
   <div class="row g-3">
     <div class="col-lg-8">
       <div class="card-panel mb-3">
@@ -48,7 +49,7 @@
           <div class="col-md-4">
             <label class="form-label">Date Received</label>
             <input type="date" name="date_received" class="form-control"
-                   value="{{ project.get('date_received','') if project else '' }}">
+                   value="{{ project.get('date_received','') if project else now.strftime('%Y-%m-%d') }}">
           </div>
           <div class="col-md-6">
             <label class="form-label">Client <span class="text-danger">*</span></label>
@@ -62,15 +63,13 @@
           </div>
           <div class="col-md-6">
             <label class="form-label">Sales Person</label>
-            <input type="text" name="sales" id="salesInput" class="form-control"
-                   value="{{ project.get('sales','') or project.get('assigned_to','') if project else '' }}"
-                   placeholder="Enter or select sales person"
-                   list="salesDatalist" autocomplete="off">
-            <datalist id="salesDatalist">
+            <select name="sales" class="form-select">
+              <option value="">-- Select Sales Person --</option>
               {% for sp in sales_people %}
-              <option value="{{ sp }}">
+              <option value="{{ sp }}"
+                {{ 'selected' if project and (project.get('sales') == sp or project.get('assigned_to') == sp) }}>{{ sp }}</option>
               {% endfor %}
-            </datalist>
+            </select>
           </div>
           <div class="col-md-6">
             <label class="form-label">Site Address</label>
@@ -84,7 +83,7 @@
                    value="{{ project.get('mail_address','') or project.get('client_address','') if project else '' }}"
                    placeholder="Enter mailing address">
           </div>
-          <div class="col-md-6">
+          <div class="col-12">
             <label class="form-label">Plant (State)</label>
             {% set us_states = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA',
               'HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS',
@@ -97,29 +96,107 @@
               {% endfor %}
             </select>
           </div>
-          <div class="col-md-6">
-            <label class="form-label">Job Type</label>
-            <select name="job_type" class="form-select">
-              <option value="">-- Select Job Type --</option>
-              {% for jt in ['Engineering Design','Construction','Inspection','Consultation',
-                            'Maintenance','Research','Drafting','Peer Review','Site Visit',
-                            'Report Preparation','Permit Drawings','Other'] %}
-              <option value="{{ jt }}" {{ 'selected' if project and project.get('job_type') == jt }}>{{ jt }}</option>
+          <div class="col-12">
+            <label class="form-label">Service Types <span class="text-muted small fw-normal">— select all that apply</span></label>
+            {% set all_services = ['Mechanical','Electrical','Civil','Structural','Plumbing','HVAC','Fire Protection','Geotechnical','Environmental','Other'] %}
+            {% set selected_svcs = (project.get('service_types') or []) if project else [] %}
+            {% set ns = namespace(other_val='', other_checked=false) %}
+            {% for svc in selected_svcs %}
+              {% if svc == 'Other' %}{% set ns.other_checked = true %}
+              {% elif svc.startswith('Other:') %}{% set ns.other_checked = true %}{% set ns.other_val = svc[6:]|trim %}
+              {% endif %}
+            {% endfor %}
+            <div class="row g-2">
+              {% for st in all_services %}
+              {% set is_other = (st == 'Other') %}
+              {% set is_checked = (ns.other_checked if is_other else st in selected_svcs) %}
+              <div class="col-6 col-md-4 col-lg-3">
+                <div class="form-check border rounded px-3 py-2 h-100 {{ 'svc-selected' if is_checked else 'border-light' }}" id="projSvcBox_{{ loop.index }}">
+                  <input class="form-check-input" type="checkbox"
+                         name="service_types[]" value="{{ st }}"
+                         id="projSvc_{{ loop.index }}"
+                         {{ 'checked' if is_checked }}
+                         {% if is_other %}data-other="true"{% endif %}
+                         onchange="toggleServiceType(this, 'projSvcBox_{{ loop.index }}')">
+                  <label class="form-check-label small fw-semibold" for="projSvc_{{ loop.index }}">{{ st }}</label>
+                </div>
+              </div>
               {% endfor %}
-            </select>
+              <div class="col-12" id="otherSpecifyRow"
+                   style="{{ '' if ns.other_checked else 'display:none;' }}">
+                <div class="d-flex align-items-center gap-2 p-2 rounded border border-warning bg-warning bg-opacity-10">
+                  <i class="bi bi-pencil-square text-warning"></i>
+                  <label class="form-label mb-0 small fw-semibold text-nowrap">Please specify:</label>
+                  <input type="text" name="other_specify" id="otherSpecifyInput"
+                         class="form-control form-control-sm"
+                         placeholder="e.g. Surveying, Site Inspection, Consulting…"
+                         maxlength="80" value="{{ ns.other_val }}"
+                         oninput="updateOtherCostRowLabel(this)">
+                </div>
+              </div>
+            </div>
+          </div>
+          {% if is_new %}
+          <div class="col-12" id="serviceCostSection" style="display:none;">
+            <label class="form-label">Service Cost Breakdown <span class="text-muted small fw-normal">— enter a cost for each selected service</span></label>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-1">
+                <thead>
+                  <tr>
+                    <th>Service</th>
+                    <th style="width:160px;">Cost ($)</th>
+                  </tr>
+                </thead>
+                <tbody id="serviceCostBody"></tbody>
+                <tfoot>
+                  <tr>
+                    <td class="text-end fw-600">Subtotal</td>
+                    <td class="fw-600" id="serviceCostTotal">$0.00</td>
+                  </tr>
+                  <tr id="serviceCostRushRow" class="text-warning" style="display:none;">
+                    <td class="text-end fw-600"><i class="bi bi-lightning-charge-fill me-1"></i>Rush Fee</td>
+                    <td class="fw-600" id="serviceCostRushAmt">$0.00</td>
+                  </tr>
+                  <tr class="border-top">
+                    <td class="text-end fw-700">Contract Value</td>
+                    <td class="fw-700 text-teal" id="serviceCostGrandTotal">$0.00</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <div class="form-text">Updates "Contract Value ($)" automatically as you enter costs.</div>
+          </div>
+          {% endif %}
+          <div class="col-12">
+            <div class="p-3 rounded border {{ 'border-warning bg-warning bg-opacity-10' if project and project.get('expedite') == 'Yes' else 'border-light bg-light' }}"
+                 id="expeditedBox">
+              <div class="d-flex align-items-center gap-3 flex-wrap">
+                <div class="form-check mb-0">
+                  <input class="form-check-input" type="checkbox" name="expedite" id="expeditedCheck" value="Yes"
+                         {{ 'checked' if project and project.get('expedite') == 'Yes' }}
+                         onchange="toggleExpedited(this)">
+                  <label class="form-check-label fw-bold" for="expeditedCheck">
+                    <i class="bi bi-lightning-charge-fill text-warning me-1"></i>Expedited / Rush Order
+                  </label>
+                </div>
+                <div class="d-flex align-items-center gap-2" id="rushRateField"
+                     style="{{ '' if project and project.get('expedite') == 'Yes' else 'display:none!important;' }}">
+                  <label class="form-label mb-0 small">Rush Surcharge (%)</label>
+                  <input type="number" name="rush_rate" id="rushRate" class="form-control form-control-sm text-end"
+                         style="width:90px;" min="0" max="100" step="0.5"
+                         value="{{ project.get('rush_rate','50') if project else '50' }}"
+                         oninput="recalcServiceCosts()">
+                  <input type="hidden" name="rush_fee" id="rushFeeInput"
+                         value="{{ project.get('rush_fee','0') if project else '0' }}">
+                </div>
+              </div>
+            </div>
           </div>
           <div class="col-12">
             <label class="form-label">Scope of Work</label>
             <input type="text" name="scope_of_work" class="form-control"
                    value="{{ project.get('scope_of_work','') if project else '' }}"
                    placeholder="Detailed scope of work (comma-separated)">
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Expedite?</label>
-            <select name="expedite" class="form-select">
-              <option value="No" {{ 'selected' if not project or project.get('expedite','No') in ('No','') }}>No</option>
-              <option value="Yes" {{ 'selected' if project and project.get('expedite') == 'Yes' }}>Yes (+50% Extra)</option>
-            </select>
           </div>
           <div class="col-md-4">
             <label class="form-label">Start Date</label>
@@ -163,9 +240,15 @@
         <h6 class="section-heading">Financials</h6>
         <div class="mb-2">
           <label class="form-label">Contract Value ($)</label>
+          {% set all_invoiced = existing_stages and (existing_stages|selectattr('status', 'ne', 'Pending Invoice')|list|length == existing_stages|length) %}
           <input type="number" id="contractValue" name="contract_value" class="form-control"
                  value="{{ project.get('contract_value','0') if project else '0' }}"
-                 min="0" step="0.01" oninput="updatePlanPreview()">
+                 min="0" step="0.01" oninput="(function() { try { handleContractValueChange(); } catch(e) { console.error('handleContractValueChange error:', e); } updatePlanPreview(); })();"
+                 data-original-value="{{ project.get('contract_value','0')|float if project else 0 }}"
+                 {% if all_invoiced %}disabled title="Cannot edit: all payment stages are invoiced"{% endif %}>
+          {% if all_invoiced %}
+          <small class="text-muted d-block mt-1"><i class="bi bi-lock me-1"></i>Contract value is locked because all payment stages are invoiced.</small>
+          {% endif %}
         </div>
         {% if not is_new %}
         <div class="mb-2">
@@ -180,12 +263,13 @@
       <div class="card-panel mb-3">
         <h6 class="section-heading">Payment Plan</h6>
         {% set existing_stages = project.get('payment_stages') if project else None %}
-        {% set plan_locked = existing_stages and (existing_stages|selectattr('status', 'ne', 'Pending')|list|length > 0) %}
-        {% if plan_locked %}
-        <div class="alert alert-warning py-2 px-3 small mb-0">
-          <i class="bi bi-lock-fill me-1"></i>Locked — an invoice has already been generated.
+        {% set has_invoiced = existing_stages and (existing_stages|selectattr('status', 'in', ['Invoiced', 'Paid', 'Partially Paid'])|list|length > 0) %}
+        <div data-existing-stages="{{ (existing_stages and existing_stages|length > 0)|string|lower }}"></div>
+        {% if has_invoiced %}
+        <div class="alert alert-info py-2 px-3 small mb-3">
+          <i class="bi bi-info-circle me-1"></i>Some stages have invoices. Invoiced stages are locked; non-invoiced stages will auto-adjust when contract value changes.
         </div>
-        {% else %}
+        {% endif %}
         <div class="row g-2 mb-3">
           <div class="col-6">
             <label class="form-label">Down Payment (%)</label>
@@ -207,33 +291,20 @@
             </select>
           </div>
         </div>
-        <!-- Live plan preview -->
+        <!-- Live plan preview - always visible for real-time updates -->
         <div id="planPreview" class="rounded" style="background:#F0FDFA; border:1px solid #99F6E4; padding:10px; font-size:0.82rem; display:none;">
           <div class="fw-600 text-teal mb-1"><i class="bi bi-list-check me-1"></i>Payment stages preview</div>
           <div id="planPreviewStages"></div>
-        </div>
-        {% endif %}
-        {% if existing_stages %}
-        <hr class="mt-3 mb-2">
-        <div class="small">
-          <div class="text-muted mb-1">Payment stages:</div>
-          {% for s in existing_stages %}
-          <div class="d-flex justify-content-between align-items-center mb-1">
-            <span>{{ s.get('name','') }}</span>
-            <span>
-              <span class="fw-bold">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</span>
-              <span class="badge status-{{ {'Pending':'not-started','Invoiced':'invoiced','Paid':'paid','Partially Paid':'partial'}.get(s.get('status','Pending'), 'not-started') }} ms-1">
-                {{ s.get('status','Pending') }}
-              </span>
-            </span>
+          <div id="previewEditContainer" style="margin-top:10px; display:none;">
+            <button type="button" class="btn btn-sm btn-outline-primary w-100" id="editPreviewBtn">
+              <i class="bi bi-pencil me-1"></i>Customize Amounts
+            </button>
           </div>
-          {% endfor %}
         </div>
-        {% endif %}
       </div>
 
       <div class="d-grid gap-2">
-        <button type="submit" class="btn btn-teal">
+        <button type="submit" class="btn btn-teal" onclick="return validatePaymentPlanBeforeSubmit()">
           <i class="bi bi-check-lg me-1"></i>
           {{ 'Create Project' if is_new else 'Save Changes' }}
         </button>
@@ -243,23 +314,395 @@
   </div>
 </form>
 
+<!-- Edit Payment Stage Modal -->
+<div class="modal fade" id="editStageModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Payment Stage</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Stage Name</label>
+          <input type="text" id="editStageName" class="form-control" readonly style="background:#f5f5f5;">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Stage Amount ($)</label>
+          <input type="number" id="editStageAmount" class="form-control" min="0" step="0.01" placeholder="0.00"
+                 oninput="validateStageAmount()">
+          <div class="form-text text-muted mt-1" id="stageValidationMsg"></div>
+        </div>
+        <div class="alert alert-info small mb-0">
+          <i class="bi bi-info-circle me-1"></i>
+          <span id="amountConstraintMsg"></span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="saveStageBtn" onclick="saveStageAmount()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Payment Plan live preview ────────────────────────────────────────────────
+let previewStagesData = [];
+
+function captureUpdatedStages(event) {
+  const form = event.target;
+
+  // Check if preview amounts are available (new or edited project with preview)
+  if (previewStagesData && previewStagesData.length > 0) {
+    console.log('captureUpdatedStages: Using preview amounts:', previewStagesData);
+
+    // Send preview amounts as custom_stage_amounts
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'hidden';
+    hiddenInput.name = 'custom_stage_amounts';
+    hiddenInput.value = JSON.stringify(previewStagesData);
+    form.appendChild(hiddenInput);
+
+    console.log('✓ Captured preview amounts and added as custom_stage_amounts');
+    return true;
+  }
+
+  // Otherwise try to capture from payment-stage elements (existing project)
+  const stageElements = document.querySelectorAll('.payment-stage');
+  console.log('captureUpdatedStages: Found', stageElements.length, 'stage elements');
+
+  if (stageElements.length > 0) {
+    // Existing project - capture from payment-stage elements
+    const updatedStages = [];
+
+    stageElements.forEach((el, idx) => {
+      const valueInput = el.querySelector('.stage-amount-value');
+      const displayEl = el.querySelector('.stage-amount-display');
+      const status = el.dataset.stageStatus;
+
+      if (valueInput && displayEl) {
+        const amount = parseFloat(valueInput.value) || 0;
+        const name = el.querySelector('.fw-600')?.textContent || `Stage ${idx+1}`;
+
+        console.log(`Stage ${idx}: name="${name.trim()}", amount=${amount}, status=${status}`);
+
+        updatedStages.push({
+          name: name.trim(),
+          amount: amount,
+          status: status,
+          invoice_id: el.dataset.invoiceId || ""
+        });
+      } else {
+        console.log(`Stage ${idx}: Missing valueInput or displayEl`);
+      }
+    });
+
+    // Add updated stages as hidden input if there are any
+    if (updatedStages.length > 0) {
+      // Remove old updated_stage_amounts input if exists
+      const oldInput = form.querySelector('input[name="updated_stage_amounts"]');
+      if (oldInput) oldInput.remove();
+
+      const hiddenInput = document.createElement('input');
+      hiddenInput.type = 'hidden';
+      hiddenInput.name = 'updated_stage_amounts';
+      hiddenInput.value = JSON.stringify(updatedStages);
+      form.appendChild(hiddenInput);
+
+      console.log('✓ Captured and added hidden input "updated_stage_amounts" with:', JSON.stringify(updatedStages, null, 2));
+    } else {
+      console.log('✗ No stages captured!');
+    }
+  } else {
+    console.log('captureUpdatedStages: No existing stages found');
+  }
+
+  // Allow form to submit
+  return true;
+}
+
+function editExistingPaymentStages() {
+  // Collect current stage amounts from the DOM
+  const stageElements = document.querySelectorAll('.payment-stage');
+  const stages = [];
+
+  stageElements.forEach((el) => {
+    const valueInput = el.querySelector('.stage-amount-value');
+    const nameEl = el.querySelector('.fw-600');
+    const status = el.dataset.stageStatus;
+
+    if (valueInput && nameEl) {
+      stages.push({
+        name: nameEl.textContent.trim(),
+        amount: parseFloat(valueInput.value) || 0,
+        status: status
+      });
+    }
+  });
+
+  if (stages.length === 0) {
+    alert('No payment stages found to edit');
+    return;
+  }
+
+  // Create a simple modal for editing
+  let html = '<div style="max-height:400px; overflow-y:auto;">';
+  stages.forEach((stage, idx) => {
+    const disabled = stage.status !== 'Pending Invoice' ? 'disabled' : '';
+    html += `
+      <div class="mb-3">
+        <label class="form-label mb-1">${stage.name}</label>
+        <input type="number" class="form-control editStageAmount" data-index="${idx}"
+               value="${stage.amount.toFixed(2)}" step="0.01" ${disabled}
+               oninput="updateEditStagesTotl()">
+      </div>
+    `;
+  });
+  html += '<div class="alert alert-info mt-3"><strong>Total:</strong> <span id="editStagesTotal">$0.00</span></div>';
+  html += '</div>';
+
+  // Show in a modal (or use a simple prompt-like approach)
+  const modal = document.createElement('div');
+  modal.innerHTML = `
+    <div style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:10000;">
+      <div style="background:white; border-radius:8px; padding:20px; max-width:400px; width:90%;">
+        <h5 class="mb-3">Edit Payment Stage Amounts</h5>
+        ${html}
+        <div class="d-flex gap-2 mt-4">
+          <button type="button" class="btn btn-secondary flex-grow-1" onclick="this.closest('[style*=fixed]').remove()">Cancel</button>
+          <button type="button" class="btn btn-primary flex-grow-1" onclick="saveEditedStages(this)">Save</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  // Calculate initial total
+  updateEditStagesTotal();
+}
+
+function updateEditStagesTotal() {
+  let total = 0;
+  document.querySelectorAll('.editStageAmount:not(:disabled)').forEach(input => {
+    total += parseFloat(input.value) || 0;
+  });
+  const totalEl = document.getElementById('editStagesTotal');
+  if (totalEl) {
+    totalEl.textContent = '$' + total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+}
+
+function saveEditedStages(btn) {
+  const stageElements = document.querySelectorAll('.payment-stage');
+  const editInputs = document.querySelectorAll('.editStageAmount');
+
+  editInputs.forEach((input, idx) => {
+    const newAmount = parseFloat(input.value) || 0;
+    const stageEl = stageElements[idx];
+
+    if (stageEl) {
+      const valueInput = stageEl.querySelector('.stage-amount-value');
+      const displayEl = stageEl.querySelector('.stage-amount-display');
+
+      if (valueInput && displayEl) {
+        valueInput.value = newAmount.toFixed(2);
+        displayEl.textContent = '$' + newAmount.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+      }
+    }
+  });
+
+  // Update total
+  let newTotal = 0;
+  document.querySelectorAll('.stage-amount-value').forEach(input => {
+    newTotal += parseFloat(input.value) || 0;
+  });
+
+  const totalEl = document.getElementById('totalStageAmount');
+  if (totalEl) {
+    totalEl.textContent = '$' + newTotal.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+
+  // Close modal
+  btn.closest('[style*=fixed]').remove();
+
+  // Update preview
+  updatePlanPreview();
+}
+
+function handleContractValueChange() {
+  const cvInput = document.getElementById('contractValue');
+  const oldValue = parseFloat(cvInput.dataset.originalValue) || 0;
+  const newValue = parseFloat(cvInput.value) || 0;
+  const difference = newValue - oldValue;
+
+  console.log('handleContractValueChange() called:', oldValue, '→', newValue, 'Difference:', difference);
+
+  // Get all payment stage elements
+  const stageElements = document.querySelectorAll('.payment-stage');
+  console.log('Found', stageElements.length, 'stage elements');
+
+  if (stageElements.length === 0) {
+    console.log('No stages found, just updating preview');
+    updatePlanPreview();
+    return;
+  }
+
+  // Count non-invoiced stages
+  let nonInvoicedCount = 0;
+  stageElements.forEach((el) => {
+    if (el.dataset.stageStatus === 'Pending Invoice') {
+      nonInvoicedCount++;
+    }
+  });
+
+  console.log('Non-invoiced stages:', nonInvoicedCount);
+
+  // If all invoiced, prevent change
+  if (nonInvoicedCount === 0 && stageElements.length > 0) {
+    alert('❌ Cannot edit contract value: all payment stages are already invoiced.');
+    cvInput.value = oldValue;
+    return;
+  }
+
+  // Hybrid approach: down payment scales proportionally, remaining stages split equally
+  if (Math.abs(difference) > 0.01 && nonInvoicedCount > 0) {
+    // Calculate current total of all non-invoiced stages
+    const currentTotal = stageElements.reduce((sum, el) => {
+      const status = el.dataset.stageStatus;
+      const currentAmount = parseFloat(el.querySelector('.stage-amount-value')?.value) || 0;
+      return status === 'Pending Invoice' ? sum + currentAmount : sum;
+    }, 0);
+
+    const scaleFactor = currentTotal > 0 ? newValue / currentTotal : 1;
+    console.log('Hybrid approach: scaling factor =', scaleFactor, '(', currentTotal, '→', newValue, ')');
+
+    const stages = [];
+    let firstNonInvoicedAmount = 0;
+    let remainingNonInvoicedCount = 0;
+
+    // First pass: identify first non-invoiced stage and count others
+    let foundFirstNonInvoiced = false;
+    stageElements.forEach((el) => {
+      const status = el.dataset.stageStatus;
+      const currentAmount = parseFloat(el.querySelector('.stage-amount-value')?.value) || 0;
+
+      if (status === 'Pending Invoice') {
+        if (!foundFirstNonInvoiced) {
+          firstNonInvoicedAmount = currentAmount * scaleFactor;
+          foundFirstNonInvoiced = true;
+        } else {
+          remainingNonInvoicedCount++;
+        }
+      }
+    });
+
+    const remainingAmount = Math.max(0, newValue - firstNonInvoicedAmount);
+    const perStageAmount = remainingNonInvoicedCount > 0 ? remainingAmount / remainingNonInvoicedCount : 0;
+    console.log('Down payment:', firstNonInvoicedAmount, ', Remaining per stage:', perStageAmount);
+
+    // Second pass: build stages array with calculated amounts
+    let assignedFirstNonInvoiced = false;
+    stageElements.forEach((el) => {
+      const valueInput = el.querySelector('.stage-amount-value');
+      const displayEl = el.querySelector('.stage-amount-display');
+      const status = el.dataset.stageStatus;
+      const currentAmount = parseFloat(valueInput.value) || 0;
+      let newAmount = currentAmount;
+
+      if (status === 'Pending Invoice') {
+        if (!assignedFirstNonInvoiced) {
+          newAmount = firstNonInvoicedAmount;
+          assignedFirstNonInvoiced = true;
+        } else {
+          newAmount = perStageAmount;
+        }
+      }
+
+      stages.push({
+        el: el,
+        valueInput: valueInput,
+        displayEl: displayEl,
+        amount: newAmount,
+        status: status
+      });
+    });
+
+    // Apply all calculated amounts and update display
+    let newTotal = 0;
+    stages.forEach(stage => {
+      if (stage.valueInput && stage.displayEl) {
+        const oldAmount = stage.valueInput.value;
+        stage.valueInput.value = stage.amount.toFixed(2);
+        stage.displayEl.textContent = '$' + stage.amount.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+        console.log('Updated stage amount:', oldAmount, '→', stage.amount.toFixed(2));
+        newTotal += stage.amount;
+      } else {
+        console.log('Stage missing valueInput or displayEl:', stage);
+      }
+    });
+
+    // Update total display
+    const totalEl = document.getElementById('totalStageAmount');
+    if (totalEl) {
+      totalEl.textContent = '$' + newTotal.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+      console.log('Updated total to:', newTotal);
+    } else {
+      console.log('totalStageAmount element not found');
+    }
+
+    cvInput.dataset.originalValue = newValue;
+
+    // Recalculate down payment percentage based on first stage
+    const firstStage = stages[0];
+    if (firstStage && firstStage.valueInput) {
+      const dpAmount = firstStage.amount;
+      const calculatedDpPct = Math.round((dpAmount / newValue) * 100);
+
+      const dpInput = document.getElementById('downPaymentPct');
+      if (dpInput) {
+        dpInput.value = calculatedDpPct;
+        console.log('Updated down payment % to:', calculatedDpPct);
+      }
+
+      // Also update the stage name in the DOM to reflect the new percentage
+      const stageName = firstStage.el.querySelector('.fw-600');
+      if (stageName) {
+        stageName.textContent = `Down Payment (${calculatedDpPct}%)`;
+        console.log('Updated stage name to:', `Down Payment (${calculatedDpPct}%)`);
+      }
+    }
+  }
+
+  updatePlanPreview();
+}
+
 function updatePlanPreview() {
   const cv     = parseFloat(document.getElementById('contractValue')?.value) || 0;
   const dpPct  = parseFloat(document.getElementById('downPaymentPct')?.value) || 0;
   const inst   = parseInt(document.getElementById('installmentCount')?.value) || 1;
   const wrap   = document.getElementById('planPreview');
   const stages = document.getElementById('planPreviewStages');
+  const editContainer = document.getElementById('previewEditContainer');
+
   if (!wrap || !stages || cv <= 0) { if (wrap) wrap.style.display='none'; return; }
 
   const fmt = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
   const rows = [];
+  previewStagesData = [];
+
+  // Always calculate preview from current down payment % and installment count
+  // This ensures the preview updates whenever contract value changes
   let remaining = cv;
 
   if (dpPct > 0) {
     const dp = Math.round(cv * dpPct / 100 * 100) / 100;
     remaining = cv - dp;
+    previewStagesData.push({
+      name: `Down Payment (${dpPct}%)`,
+      amount: dp,
+      index: 0
+    });
     rows.push(`<div class="d-flex justify-content-between py-1 border-bottom"><span>Down Payment (${dpPct}%)</span><span class="fw-600">${fmt(dp)}</span></div>`);
   }
 
@@ -270,11 +713,149 @@ function updatePlanPreview() {
       ? (inst === 1 ? 'Balance Payment' : `Installment ${i+1} of ${inst}`)
       : (inst === 1 ? 'Full Payment'    : `Installment ${i+1} of ${inst}`);
     const amt = (i === inst - 1) ? last : share;
+    previewStagesData.push({
+      name: label,
+      amount: amt,
+      index: previewStagesData.length
+    });
     rows.push(`<div class="d-flex justify-content-between py-1 ${i<inst-1?'border-bottom':''}"><span>${label}</span><span class="fw-600">${fmt(amt)}</span></div>`);
   }
 
   stages.innerHTML = rows.join('');
+  if (editContainer) {
+    editContainer.style.display = 'block';
+  }
   wrap.style.display = 'block';
+}
+
+function toggleServiceType(cb, boxId) {
+  const box = document.getElementById(boxId);
+  if (cb.dataset.other) {
+    const specRow = document.getElementById('otherSpecifyRow');
+    const specInp = document.getElementById('otherSpecifyInput');
+    specRow.style.display = cb.checked ? '' : 'none';
+    if (!cb.checked) specInp.value = '';
+  }
+  if (cb.checked) {
+    box.classList.add('svc-selected');
+    box.classList.remove('border-light');
+    addServiceCostRow(cb.value);
+    if (cb.dataset.other) updateOtherCostRowLabel(document.getElementById('otherSpecifyInput'));
+  } else {
+    box.classList.remove('svc-selected');
+    box.classList.add('border-light');
+    removeServiceCostRow(cb.value);
+  }
+  recalcServiceCosts();
+}
+
+// ── Service Cost Breakdown (feeds Contract Value) ────────────────────────────
+function addServiceCostRow(serviceName) {
+  const body = document.getElementById('serviceCostBody');
+  if (!body) return;
+  if (body.querySelector(`tr[data-service="${serviceName}"]`)) return;
+  const row = document.createElement('tr');
+  row.dataset.service = serviceName;
+
+  const td1 = document.createElement('td');
+  td1.textContent = serviceName;
+
+  const td2 = document.createElement('td');
+  const inp = document.createElement('input');
+  inp.type = 'number';
+  inp.min = '0';
+  inp.step = '0.01';
+  inp.value = '0';
+  inp.className = 'form-control form-control-sm svc-cost-input';
+  inp.oninput = recalcServiceCosts;
+  td2.appendChild(inp);
+
+  row.appendChild(td1);
+  row.appendChild(td2);
+  body.appendChild(row);
+}
+
+function removeServiceCostRow(serviceName) {
+  const body = document.getElementById('serviceCostBody');
+  if (!body) return;
+  const row = body.querySelector(`tr[data-service="${serviceName}"]`);
+  if (row) row.remove();
+}
+
+function updateOtherCostRowLabel(specInp) {
+  const body = document.getElementById('serviceCostBody');
+  if (!body || !specInp) return;
+  const row = body.querySelector('tr[data-service="Other"]');
+  if (!row) return;
+  const td1 = row.querySelector('td');
+  if (!td1) return;
+  const text = specInp.value.trim();
+  td1.textContent = text ? `Other: ${text}` : 'Other';
+}
+
+function toggleExpedited(chk) {
+  const rateField = document.getElementById('rushRateField');
+  const box       = document.getElementById('expeditedBox');
+  if (chk.checked) {
+    rateField.style.removeProperty('display');
+    box.classList.replace('border-light', 'border-warning');
+    box.classList.add('bg-warning', 'bg-opacity-10');
+  } else {
+    rateField.style.display = 'none';
+    box.classList.replace('border-warning', 'border-light');
+    box.classList.remove('bg-warning', 'bg-opacity-10');
+  }
+  recalcServiceCosts();
+}
+
+function recalcServiceCosts() {
+  const body          = document.getElementById('serviceCostBody');
+  const section       = document.getElementById('serviceCostSection');
+  const expeditedChk  = document.getElementById('expeditedCheck');
+  const rushRateInp   = document.getElementById('rushRate');
+  const rushFeeInput  = document.getElementById('rushFeeInput');
+
+  const expedited = expeditedChk ? expeditedChk.checked : false;
+  const rushRate  = expedited ? (parseFloat(rushRateInp?.value) || 0) : 0;
+
+  let subtotal = 0;
+  let hasRows  = false;
+  if (body) {
+    const inputs = body.querySelectorAll('.svc-cost-input');
+    hasRows = inputs.length > 0;
+    inputs.forEach(inp => subtotal += parseFloat(inp.value) || 0);
+  }
+
+  const rushFee    = subtotal * (rushRate / 100);
+  const grandTotal = subtotal + rushFee;
+
+  if (rushFeeInput) rushFeeInput.value = rushFee.toFixed(2);
+
+  if (!body || !section) return;
+
+  const fmtUsd = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  const totalEl = document.getElementById('serviceCostTotal');
+  if (totalEl) totalEl.textContent = fmtUsd(subtotal);
+
+  const rushRow = document.getElementById('serviceCostRushRow');
+  const rushAmt = document.getElementById('serviceCostRushAmt');
+  if (rushRow) rushRow.style.display = (expedited && rushRate > 0) ? '' : 'none';
+  if (rushAmt) rushAmt.textContent = fmtUsd(rushFee);
+
+  const grandEl = document.getElementById('serviceCostGrandTotal');
+  if (grandEl) grandEl.textContent = fmtUsd(grandTotal);
+
+  section.style.display = hasRows ? '' : 'none';
+
+  if (hasRows) {
+    const cvField = document.getElementById('contractValue');
+    if (cvField) {
+      cvField.value = grandTotal.toFixed(2);
+      try { handleContractValueChange(); } catch (e) { console.error('handleContractValueChange error:', e); }
+      updatePlanPreview();
+    }
+  }
 }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -331,6 +912,23 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
+  function setServiceTypes(types) {
+    let otherText = '';
+    for (const t of types) {
+      let value = t;
+      if (t.startsWith('Other:')) { value = 'Other'; otherText = t.slice(6).trim(); }
+      const cb = document.querySelector(`input[name="service_types[]"][value="${value}"]`);
+      if (cb && !cb.checked) {
+        cb.checked = true;
+        cb.dispatchEvent(new Event('change'));
+      }
+    }
+    if (otherText) {
+      const specInp = document.getElementById('otherSpecifyInput');
+      if (specInp) specInp.value = otherText;
+    }
+  }
+
   function fillFromQuote(q) {
     const f = document.querySelector('form');
     if (q.project_name  && !f.querySelector('[name=project_name]').value)
@@ -345,14 +943,24 @@ document.addEventListener('DOMContentLoaded', function () {
       f.querySelector('[name=mail_address]').value  = q.mail_address;
     if (q.plant)
       setOption(f.querySelector('[name=plant]'), q.plant);
-    if (q.job_type)
-      setOption(f.querySelector('[name=job_type]'), q.job_type);
+    if (q.service_types && q.service_types.length)
+      setServiceTypes(q.service_types);
+    if (q.expedite === 'Yes') {
+      const expChk = document.getElementById('expeditedCheck');
+      const rateInp = document.getElementById('rushRate');
+      if (rateInp && q.rush_rate) rateInp.value = q.rush_rate;
+      if (expChk && !expChk.checked) {
+        expChk.checked = true;
+        expChk.dispatchEvent(new Event('change'));
+      }
+    }
     if (q.scope_of_work && !f.querySelector('[name=scope_of_work]').value)
       f.querySelector('[name=scope_of_work]').value = q.scope_of_work;
-    if (q.expedite)
-      setOption(f.querySelector('[name=expedite]'), q.expedite);
-    if (q.contract_value && !f.querySelector('[name=contract_value]').value)
-      f.querySelector('[name=contract_value]').value = q.contract_value;
+    if (q.contract_value) {
+      const cvField = f.querySelector('[name=contract_value]');
+      if (!cvField.value || parseFloat(cvField.value) === 0)
+        cvField.value = q.contract_value;
+    }
     if (q.start_date   && !f.querySelector('[name=start_date]').value)
       f.querySelector('[name=start_date]').value    = q.start_date;
     if (q.end_date     && !f.querySelector('[name=end_date]').value)
@@ -387,5 +995,426 @@ document.addEventListener('DOMContentLoaded', function () {
     lookupQuote(qInput.value);
   }
 });
+
+// ── Payment Plan Stage Editing ──────────────────────────────────────────────────
+let currentEditStageIndex = null;
+let stageAmountsData = [];
+
+function initPaymentStagesData() {
+  {% if existing_stages %}
+  stageAmountsData = [
+    {% for s in existing_stages %}
+    { index: {{ loop.index0 }}, name: '{{ s.get('name','') }}', amount: {{ s.get('amount',0)|float }}, status: '{{ s.get('status','Pending') }}' },
+    {% endfor %}
+  ];
+
+  // Recalculate down payment % from first stage if editing
+  const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
+  if (stageAmountsData.length > 0 && contractValue > 0) {
+    const firstStageAmount = stageAmountsData[0].amount || 0;
+    const calculatedDpPct = Math.round((firstStageAmount / contractValue) * 100);
+    const dpInput = document.getElementById('downPaymentPct');
+    if (dpInput) {
+      dpInput.value = calculatedDpPct;
+    }
+
+    // Also update stage name with correct percentage
+    stageAmountsData[0].name = `Down Payment (${calculatedDpPct}%)`;
+    console.log('Updated stage name to:', stageAmountsData[0].name);
+
+    // Update the DOM display of the first payment stage name
+    const firstStageNameEl = document.querySelector('.payment-stage:first-child .fw-600');
+    if (firstStageNameEl) {
+      firstStageNameEl.textContent = `Down Payment (${calculatedDpPct}%)`;
+    }
+
+    // Load saved custom amounts into preview data
+    previewStagesData = stageAmountsData.map(s => ({
+      name: s.name,
+      amount: s.amount,
+      index: s.index
+    }));
+
+    // Trigger preview update with saved amounts
+    setTimeout(() => {
+      const wrap = document.getElementById('planPreview');
+      const stages = document.getElementById('planPreviewStages');
+      if (wrap && stages) {
+        const fmt = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+        const rows = [];
+        let total = 0;
+        previewStagesData.forEach((stage, idx) => {
+          if (idx === 0) {
+            rows.push(`<div class="d-flex justify-content-between py-1 border-bottom"><span>${stage.name}</span><span class="fw-600">${fmt(stage.amount)}</span></div>`);
+          } else {
+            rows.push(`<div class="d-flex justify-content-between py-1 ${idx < previewStagesData.length-1 ? 'border-bottom' : ''}"><span>${stage.name}</span><span class="fw-600">${fmt(stage.amount)}</span></div>`);
+          }
+          total += stage.amount;
+        });
+        stages.innerHTML = rows.join('');
+        const editContainer = document.getElementById('previewEditContainer');
+        if (editContainer) editContainer.style.display = 'block';
+        wrap.style.display = 'block';
+      }
+    }, 100);
+  }
+  {% endif %}
+}
+
+function prepareEditStage(index, name, amount) {
+  currentEditStageIndex = index;
+  document.getElementById('editStageName').value = name;
+  document.getElementById('editStageAmount').value = amount.toFixed(2);
+
+  const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
+  const otherStagesTotal = stageAmountsData
+    .filter((s, i) => i !== index)
+    .reduce((sum, s) => sum + s.amount, 0);
+  const maxAmount = contractValue - otherStagesTotal;
+
+  document.getElementById('amountConstraintMsg').textContent =
+    `Max for this stage: $${maxAmount.toFixed(2)} (to match contract value of $${contractValue.toFixed(2)})`;
+
+  validateStageAmount();
+}
+
+function validateStageAmount() {
+  const amount = parseFloat(document.getElementById('editStageAmount').value) || 0;
+  const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
+  const otherStagesTotal = stageAmountsData
+    .filter((s, i) => i !== currentEditStageIndex)
+    .reduce((sum, s) => sum + s.amount, 0);
+  const maxAmount = contractValue - otherStagesTotal;
+  const msgEl = document.getElementById('stageValidationMsg');
+  const saveBtn = document.getElementById('saveStageBtn');
+
+  if (amount > maxAmount) {
+    msgEl.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>Amount exceeds max of $${maxAmount.toFixed(2)}</span>`;
+    msgEl.style.color = '#dc2626';
+    saveBtn.disabled = true;
+  } else if (amount <= 0) {
+    msgEl.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>Amount must be greater than $0</span>`;
+    saveBtn.disabled = true;
+  } else {
+    msgEl.innerHTML = `<span class="text-success"><i class="bi bi-check-circle me-1"></i>Valid amount</span>`;
+    saveBtn.disabled = false;
+  }
+}
+
+function saveStageAmount() {
+  const newAmount = parseFloat(document.getElementById('editStageAmount').value) || 0;
+  if (currentEditStageIndex !== null && newAmount > 0) {
+    stageAmountsData[currentEditStageIndex].amount = newAmount;
+    updatePaymentPlanDisplay();
+
+    // Create hidden input for backend
+    const form = document.querySelector('form');
+    let stageAmountsInput = form.querySelector('input[name="custom_stage_amounts"]');
+    if (!stageAmountsInput) {
+      stageAmountsInput = document.createElement('input');
+      stageAmountsInput.type = 'hidden';
+      stageAmountsInput.name = 'custom_stage_amounts';
+      form.appendChild(stageAmountsInput);
+    }
+    stageAmountsInput.value = JSON.stringify(stageAmountsData);
+
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('editStageModal'));
+    modal.hide();
+  }
+}
+
+function updatePaymentPlanDisplay() {
+  const total = stageAmountsData.reduce((sum, s) => sum + s.amount, 0);
+  const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
+
+  document.getElementById('totalStageAmount').textContent = `$${total.toFixed(2)}`;
+
+  // Update individual stage displays
+  stageAmountsData.forEach((s, i) => {
+    const el = document.getElementById(`stage-${i}-display`);
+    if (el) el.textContent = `$${s.amount.toFixed(2)}`;
+  });
+
+  // Show validation message
+  const mismatchEl = document.querySelector('[id*="totalStageAmount"]').parentElement.parentElement.querySelector('[class*="text-danger"]');
+  if (total !== contractValue) {
+    if (!mismatchEl) {
+      const msg = document.createElement('div');
+      msg.className = 'text-danger small mt-2';
+      msg.innerHTML = `<i class="bi bi-exclamation-circle me-1"></i>Mismatch: Payment plan total ($${total.toFixed(2)}) ≠ Contract value ($${contractValue.toFixed(2)})`;
+      document.querySelector('[id*="totalStageAmount"]').parentElement.parentElement.appendChild(msg);
+    }
+  } else if (mismatchEl) {
+    mismatchEl.remove();
+  }
+}
+
+function validatePaymentPlanBeforeSubmit() {
+  // Allow form submission - contract value and amounts will be saved as-is
+  // Backend will handle any mismatches
+  return true;
+}
+
+function openEditPreviewStageModal() {
+  // Show modal to edit preview stages
+  const modal = new bootstrap.Modal(document.getElementById('editStageModal'));
+
+  // For new projects, we need to handle preview editing
+  document.getElementById('editStageName').value = '';
+  document.getElementById('editStageAmount').value = '';
+
+  const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
+  document.getElementById('amountConstraintMsg').textContent =
+    `Max total: $${contractValue.toFixed(2)} (contract value)`;
+
+  modal.show();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initPaymentStagesData();
+
+  // Listen to contract value changes for auto-distribution (real-time)
+  const cvInput = document.getElementById('contractValue');
+  if (cvInput) {
+    cvInput.addEventListener('input', () => handleContractValueChange());
+    cvInput.addEventListener('change', () => handleContractValueChange());
+  }
+
+  // Listen to down payment % and installment changes for preview updates (real-time)
+  const dpInput = document.getElementById('downPaymentPct');
+  if (dpInput) {
+    dpInput.addEventListener('input', () => updatePlanPreview());
+    dpInput.addEventListener('change', () => updatePlanPreview());
+  }
+
+  const instInput = document.getElementById('installmentCount');
+  if (instInput) {
+    instInput.addEventListener('input', () => updatePlanPreview());
+    instInput.addEventListener('change', () => updatePlanPreview());
+  }
+
+  // Handle "Customize Amounts" button for new projects
+  const editPreviewBtn = document.getElementById('editPreviewBtn');
+  if (editPreviewBtn) {
+    editPreviewBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+
+      // Show a custom dialog for editing preview stages
+      const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
+
+      if (previewStagesData.length === 0) {
+        alert('Please select a payment plan first');
+        return;
+      }
+
+      // Create a simple form to edit all stages
+      let html = '<div class="mb-3"><h6>Customize Payment Amounts</h6>';
+      let totalEdited = 0;
+
+      previewStagesData.forEach((stage, i) => {
+        html += `
+          <div class="mb-2">
+            <label class="form-label small">${stage.name}</label>
+            <input type="number" class="form-control form-control-sm stage-input"
+                   data-index="${i}" value="${stage.amount.toFixed(2)}"
+                   min="0" step="0.01"
+                   oninput="updatePreviewStageTotals()">
+            <div class="form-text small text-muted">Current: $${stage.amount.toFixed(2)}</div>
+          </div>
+        `;
+        totalEdited += stage.amount;
+      });
+
+      html += `
+        <div class="p-2 mt-2" style="background:#e8f5e9; border-radius:4px;">
+          <div class="d-flex justify-content-between small">
+            <span>Total:</span>
+            <span id="previewTotal" class="fw-600">$${totalEdited.toFixed(2)}</span>
+          </div>
+          <div class="d-flex justify-content-between small text-muted">
+            <span>Contract Value:</span>
+            <span>$${contractValue.toFixed(2)}</span>
+          </div>
+          <div id="previewValidationMsg"></div>
+        </div>
+      `;
+
+      // Show in a modal or alert
+      const customModal = document.createElement('div');
+      customModal.className = 'modal fade';
+      customModal.id = 'customizeStagesModal';
+      customModal.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Customize Payment Amounts</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              ${html}
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="button" class="btn btn-primary" onclick="saveCustomPreviewStages()">Save Amounts</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(customModal);
+      const modal = new bootstrap.Modal(customModal);
+      modal.show();
+
+      // Clean up modal after hidden
+      customModal.addEventListener('hidden.bs.modal', () => {
+        customModal.remove();
+      });
+    });
+
+    // Custom amounts can be edited anytime - no locking
+    const form = document.querySelector('form');
+    const customInput = form.querySelector('input[name="custom_stage_amounts"]');
+    if (customInput && customInput.value) {
+      // Custom amounts already exist, button is ready to edit them again
+    }
+  }
+});
+
+function updatePreviewStageTotals() {
+  const inputs = document.querySelectorAll('.stage-input');
+  let total = 0;
+  inputs.forEach(input => {
+    total += parseFloat(input.value) || 0;
+  });
+
+  const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
+  const totalEl = document.getElementById('previewTotal');
+  const msgEl = document.getElementById('previewValidationMsg');
+
+  if (totalEl) totalEl.textContent = `$${total.toFixed(2)}`;
+
+  if (msgEl) {
+    if (Math.abs(total - contractValue) > 0.01) {
+      msgEl.innerHTML = `<div class="text-danger small mt-2"><i class="bi bi-exclamation-circle me-1"></i>Total payment plan must equal project contract value ($${contractValue.toFixed(2)})</div>`;
+    } else {
+      msgEl.innerHTML = `<div class="text-success small mt-2"><i class="bi bi-check-circle me-1"></i>✓ Total matches project contract value</div>`;
+    }
+  }
+}
+
+function saveCustomPreviewStages() {
+  const inputs = document.querySelectorAll('.stage-input');
+  const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
+  let total = 0;
+  const customAmounts = [];
+
+  inputs.forEach((input, i) => {
+    const amount = parseFloat(input.value) || 0;
+    total += amount;
+    if (i < previewStagesData.length) {
+      previewStagesData[i].amount = amount;
+      customAmounts.push({ index: i, amount: amount });
+    }
+  });
+
+  if (Math.abs(total - contractValue) > 0.01) {
+    alert(`❌ Error: Total payment plan ($${total.toFixed(2)}) must equal project contract value ($${contractValue.toFixed(2)})\n\nPlease adjust the amounts so they add up correctly.`);
+    return;
+  }
+
+  // Recalculate down payment percentage if first stage is down payment
+  if (previewStagesData.length > 0 && previewStagesData[0].name.includes('Down Payment')) {
+    const downPaymentAmount = previewStagesData[0].amount;
+    const calculatedPercentage = Math.round((downPaymentAmount / contractValue) * 100);
+    previewStagesData[0].name = `Down Payment (${calculatedPercentage}%)`;
+
+    // Update the Down Payment (%) input field
+    const dpInput = document.getElementById('downPaymentPct');
+    if (dpInput) {
+      dpInput.value = calculatedPercentage;
+    }
+  }
+
+  // Store custom amounts in hidden input
+  const form = document.querySelector('form');
+  let customInput = form.querySelector('input[name="custom_stage_amounts"]');
+  if (!customInput) {
+    customInput = document.createElement('input');
+    customInput.type = 'hidden';
+    customInput.name = 'custom_stage_amounts';
+    form.appendChild(customInput);
+  }
+
+  customInput.value = JSON.stringify(previewStagesData.map(s => ({ amount: s.amount })));
+
+  // If this is an edit form, also update the actual payment-stage elements
+  const stageElements = document.querySelectorAll('.payment-stage');
+  if (stageElements.length > 0) {
+    stageElements.forEach((el, idx) => {
+      if (idx < previewStagesData.length) {
+        const valueInput = el.querySelector('.stage-amount-value');
+        const displayEl = el.querySelector('.stage-amount-display');
+        if (valueInput && displayEl) {
+          valueInput.value = previewStagesData[idx].amount.toFixed(2);
+          displayEl.textContent = '$' + previewStagesData[idx].amount.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+        }
+      }
+    });
+
+    // Update total display
+    let newTotal = 0;
+    document.querySelectorAll('.stage-amount-value').forEach(input => {
+      newTotal += parseFloat(input.value) || 0;
+    });
+    const totalEl = document.getElementById('totalStageAmount');
+    if (totalEl) {
+      totalEl.textContent = '$' + newTotal.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    }
+  }
+
+  // Close modal
+  const modal = bootstrap.Modal.getInstance(document.getElementById('customizeStagesModal'));
+  if (modal) modal.hide();
+
+  // Update the preview display with new amounts and percentages
+  updatePaymentPreviewDisplay();
+}
+
+function updatePaymentPreviewDisplay() {
+  const fmt = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const stages = document.getElementById('planPreviewStages');
+  if (!stages || previewStagesData.length === 0) return;
+
+  const rows = [];
+  previewStagesData.forEach((stage, i) => {
+    rows.push(`<div class="d-flex justify-content-between py-1 ${i < previewStagesData.length - 1 ? 'border-bottom' : ''}"><span>${stage.name}</span><span class="fw-600">${fmt(stage.amount)}</span></div>`);
+  });
+
+  stages.innerHTML = rows.join('');
+
+  // Update down payment percentage if down payment was customized
+  updateDownPaymentPercentage();
+}
+
+function updateDownPaymentPercentage() {
+  if (previewStagesData.length === 0) return;
+
+  const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
+  const firstStage = previewStagesData[0];
+
+  // Check if first stage is a down payment
+  if (firstStage.name && firstStage.name.includes('Down Payment')) {
+    const downPaymentAmount = firstStage.amount;
+    const calculatedPercentage = (downPaymentAmount / contractValue) * 100;
+    const roundedPercentage = Math.round(calculatedPercentage);
+
+    // Update the Down Payment (%) input
+    const dpInput = document.getElementById('downPaymentPct');
+    if (dpInput) {
+      dpInput.value = roundedPercentage;
+    }
+  }
+}
 </script>
 {% endblock %}

@@ -12,7 +12,11 @@
   'Cancelled': ('bi-x-circle',              'Cancelled'),
 } %}
 {% macro status_badge(status) %}
-  {% set st = status or 'Draft' %}
+  {% if status %}
+    {% set st = status %}
+  {% else %}
+    {% set st = 'Draft' %}
+  {% endif %}
   {% set icon, tip = status_icons.get(st, ('bi-circle', st)) %}
   <span class="badge status-{{ st|lower|replace(' ','-') }}" title="{{ tip }}">
     <i class="bi {{ icon }} me-1"></i>{{ st }}
@@ -130,12 +134,16 @@
               <td>{{ meta.get('invoice_date','—') }}</td>
               <td>{{ meta.get('due_date','—') }}</td>
               <td class="text-end fw-bold">${{ "{:,.2f}".format(meta.get('total',0)|float) }}</td>
-              <td class="text-end text-success">${{ "{:,.2f}".format(meta.get('amount_paid',0)|float) }}</td>
+              <td class="text-end text-success">
+                {%- set line_paid = meta.get('amount_paid',0)|float -%}
+                {%- set tax_paid = inv.get('tax_payments',[])|map(attribute='amount')|map('float')|sum -%}
+                ${{ "{:,.2f}".format(line_paid + tax_paid) }}
+              </td>
               <td>{{ status_badge(meta.get('status')) }}</td>
               <td onclick="event.stopPropagation()" class="text-end" style="white-space:nowrap;">
                 {% if meta.get('status') in ('Sent','Viewed','Overdue','Partial') %}
                 <button class="btn btn-xs btn-success me-1" title="Mark as Paid"
-                        onclick="quickPay('{{ inv.firebase_id }}', '{{ meta.get('total',0) }}', this)">
+                        onclick="quickPay('{{ inv.firebase_id }}', {{ meta.get('total',0)|float }}, {{ meta.get('amount_paid',0)|float }}, this)">
                   <i class="bi bi-check-circle"></i>
                 </button>
                 {% endif %}
@@ -154,6 +162,23 @@
             </tr>
             {% endfor %}
           </tbody>
+          <tfoot>
+            {% set total_all = invoices|map(attribute='meta')|map(attribute='total')|map('float')|sum %}
+            {% set paid_all = invoices|map(attribute='meta')|map(attribute='amount_paid')|map('float')|sum %}
+            {% set ns = namespace(tax_paid_all=0) %}
+            {% for inv in invoices %}
+              {% set ns.tax_paid_all = ns.tax_paid_all + (inv.get('tax_payments', [])|map(attribute='amount')|map('float')|sum) %}
+            {% endfor %}
+            {% set total_paid_with_tax = paid_all + ns.tax_paid_all %}
+            {% if invoices %}
+            <tr style="font-weight:700; border-top:2px solid #E2E8F0;">
+              <td colspan="5">Totals</td>
+              <td class="text-end">${{ "{:,.2f}".format(total_all) }}</td>
+              <td class="text-end text-success">${{ "{:,.2f}".format(total_paid_with_tax) }}</td>
+              <td colspan="2"></td>
+            </tr>
+            {% endif %}
+          </tfoot>
         </table>
       </div>
     </div>
@@ -240,17 +265,34 @@
 {% block scripts %}
 <script>
 // ── Quick Pay ────────────────────────────────────────────────────────────────
-async function quickPay(invoiceId, total, btn) {
+async function quickPay(invoiceId, total, amountPaid, btn) {
   const fmt = v => '$' + parseFloat(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-  if (!confirm(`Mark invoice as Paid (${fmt(total)})?`)) return;
+  const remaining = Math.max(0, total - amountPaid);
+
+  if (remaining <= 0.01) {
+    alert('✅ Invoice is already fully paid');
+    return;
+  }
+
+  if (!confirm(`Record $${remaining.toFixed(2)} payment to complete invoice?`)) return;
+
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
   const form = new FormData();
-  form.append('status', 'Paid');
-  form.append('amount_paid', total);
-  const resp = await fetch(`/invoicing/${invoiceId}/status`, {method:'POST', body:form});
-  if (resp.ok || resp.redirected) { location.reload(); }
-  else { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-circle"></i>'; alert('Error — please try again.'); }
+  form.append('amount', remaining.toFixed(2));
+  form.append('date', new Date().toISOString().split('T')[0]); // Today's date
+  form.append('method', 'Quick Pay');
+
+  const resp = await fetch(`/invoicing/${invoiceId}/payment/sequential`, {method:'POST', body:form});
+
+  if (resp.ok) {
+    location.reload();
+  } else {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-check-circle"></i>';
+    alert('❌ Error recording payment');
+  }
 }
 
 // ── Invoice filter quick-range ───────────────────────────────────────────────

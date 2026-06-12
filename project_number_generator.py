@@ -5497,7 +5497,25 @@ class ProjectNumberGeneratorTab(QtWidgets.QWidget):
             
             _log.info("No projects selected")
         
-        self.load_selected_btn.setEnabled(len(self.selected_projects) > 0)
+        has_invoiceable_projects = False
+        if len(self.selected_projects) > 0:
+            try:
+                from main import FirebaseManager
+                existing_invoices = FirebaseManager.load_invoices() or []
+            except Exception:
+                existing_invoices = []
+
+            for row in range(self.projects_table.rowCount()):
+                item = self.projects_table.item(row, 1)
+                if item:
+                    project_data = item.data(QtCore.Qt.UserRole)
+                    if project_data and project_data.get("project_number", "") in self.selected_projects:
+                        stage_info = _detect_payment_stage(project_data, existing_invoices)
+                        if stage_info["stage"] is not None:
+                            has_invoiceable_projects = True
+                            break
+
+        self.load_selected_btn.setEnabled(has_invoiceable_projects)
         
     def update_stats(self):
         """Update statistics cards based on ALL active filters"""
@@ -6399,8 +6417,20 @@ class ProjectNumberGeneratorTab(QtWidgets.QWidget):
             QMenu::separator { height: 1px; background: #f1f5f9; margin: 4px 8px; }
         """)
         invoice_action = menu.addAction("Generate Stage Invoice")
-        invoice_action.triggered.connect(
-            lambda checked=False, p=project: self.load_projects_to_invoice_direct([p]))
+
+        try:
+            from main import FirebaseManager
+            existing_invoices = FirebaseManager.load_invoices() or []
+        except Exception:
+            existing_invoices = []
+
+        stage_info = _detect_payment_stage(project, existing_invoices)
+        if stage_info["stage"] is None:
+            invoice_action.setEnabled(False)
+            invoice_action.setText("Generate Stage Invoice  (Fully Invoiced)")
+        else:
+            invoice_action.triggered.connect(
+                lambda checked=False, p=project: self.load_projects_to_invoice_direct([p]))
         history_action = menu.addAction("Payment History")
         history_action.triggered.connect(
             lambda checked=False, p=project: self.show_payment_history(p))

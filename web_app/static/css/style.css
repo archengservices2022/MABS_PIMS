@@ -409,6 +409,11 @@ body {
 .status-on-hold     { background:#FEF9C3; color:#A16207; }
 .status-overdue     { background:#FEE2E2; color:#B91C1C; }
 .status-cancelled   { background:#FFE4E6; color:#BE123C; }
+.status-converted   { background:#DCFCE7; color:#15803D; }
+.status-approved    { background:#DCFCE7; color:#15803D; }
+.status-in-review   { background:var(--violet-l);  color:#1D4ED8; }
+.status-rejected    { background:#FEE2E2; color:#B91C1C; }
+.status-expired     { background:#FFE4E6; color:#BE123C; }
 
 .badge-role-admin    { background:#FEE2E2; color:#B91C1C; }
 .badge-role-projects { background:var(--violet-l); color:#1D4ED8; }

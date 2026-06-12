@@ -19,10 +19,20 @@
   </div>
   <div class="d-flex gap-2 flex-wrap">
     {% if 'invoicing' in allowed_pages %}
-    <a href="{{ url_for('invoice_new') }}?project={{ project.get('project_number','') }}&client={{ project.get('client_name','') }}"
-       class="btn btn-sm btn-teal">
-      <i class="bi bi-receipt me-1"></i>New Invoice
+    {% if has_pending_stage %}
+    <a href="{{ url_for('invoice_new') }}?project={{ project.get('project_number','') }}&client={{ project.get('client_name','') }}&stage_idx={{ next_stage_idx }}&stage_name={{ next_stage_name|urlencode }}&stage_amount={{ next_stage_amount }}"
+       class="btn btn-sm btn-teal"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="Create invoice for next payment stage">
+      <i class="bi bi-receipt me-1"></i>Create Invoice
     </a>
+    {% else %}
+    <span class="btn btn-sm btn-teal opacity-50" style="cursor: not-allowed;"
+          data-bs-toggle="tooltip" data-bs-placement="bottom"
+          title="All payment stages have been invoiced">
+      <i class="bi bi-receipt me-1"></i>Create Invoice
+    </span>
+    {% endif %}
     {% endif %}
     <a href="{{ url_for('project_edit', project_id=project.firebase_id) }}" class="btn btn-sm btn-outline-primary">
       <i class="bi bi-pencil me-1"></i>Edit
@@ -82,7 +92,24 @@
             <div class="col-sm-4"><div class="info-label">Start Date</div><div class="info-value">{{ project.get('start_date','—') }}</div></div>
             <div class="col-sm-4"><div class="info-label">End Date</div><div class="info-value">{{ project.get('end_date','—') or '—' }}</div></div>
             <div class="col-sm-4"><div class="info-label">Sales Person</div><div class="info-value">{{ project.get('sales') or project.get('assigned_to','—') or '—' }}</div></div>
-            <div class="col-sm-4"><div class="info-label">Job Type</div><div class="info-value">{{ project.get('job_type','—') or '—' }}</div></div>
+            {% set svcs = project.get('service_types') or [] %}
+            {% if svcs %}
+            <div class="col-12">
+              <div class="info-label">Service Types</div>
+              <div class="info-value">
+                {% for svc in svcs %}
+                  {% if svc.startswith('Other:') %}
+                    <span class="badge me-1 mb-1"
+                          style="background:#FEF9C3;color:#854D0E;border:1px solid #FDE68A;">
+                      <i class="bi bi-pencil-square me-1"></i>{{ svc }}
+                    </span>
+                  {% else %}
+                    <span class="badge bg-secondary me-1 mb-1">{{ svc }}</span>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
             <div class="col-sm-4"><div class="info-label">Payment Stage</div><div class="info-value">{{ project.get('payment_category','—') or '—' }}</div></div>
             {% if project.get('quote_number') or project.get('job_number') %}
             <div class="col-sm-4"><div class="info-label">Quote Number</div><div class="info-value">{{ project.get('quote_number') or project.get('job_number') }}</div></div>
@@ -151,12 +178,20 @@
         {% if stages %}
         {% set ns = namespace(first_pending=none) %}
         {% for s in stages %}
-          {% if ns.first_pending is none and s.get('status') == 'Pending' %}
+          {% if ns.first_pending is none and s.get('status') == 'Pending Invoice' %}
             {% set ns.first_pending = loop.index0 %}
           {% endif %}
         {% endfor %}
         <div class="card-panel mt-3">
-          <h6 class="section-heading">Payment Plan</h6>
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="section-heading mb-0">Payment Plan</h6>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-xs btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editPaymentPlanModal"
+                      title="Edit all payment stage amounts">
+                <i class="bi bi-pencil me-1"></i>Edit All Amounts
+              </button>
+            </div>
+          </div>
           <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
               <thead>
@@ -164,61 +199,77 @@
                   <th>Stage</th>
                   <th class="text-end">Amount</th>
                   <th>Status</th>
-                  <th class="text-end"></th>
+                  <th class="text-end">Paid Amount</th>
+                  <th>Invoice Number</th>
+                  <th class="text-center">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {% set status_class = {'Pending':'not-started','Invoiced':'invoiced','Paid':'paid','Partially Paid':'partial'} %}
+                {% set status_class = {'Pending Invoice':'not-started','Invoiced':'invoiced','Partially Paid':'partial','Paid':'paid','Overdue':'overdue'} %}
+                {% set invoice_map = {} %}
+                {% for inv in project_invoices %}
+                  {% if inv.firebase_id not in invoice_map %}
+                    {% set _ = invoice_map.update({inv.firebase_id: {'number': inv.get('meta', {}).get('invoice_number', ''), 'paid': inv.get('meta', {}).get('amount_paid', 0), 'total': inv.get('meta', {}).get('total', 0)}}) %}
+                  {% endif %}
+                {% endfor %}
                 {% for s in stages %}
-                {% set st = s.get('status','Pending') %}
+                {% set st = s.get('_display_status') or s.get('status') or 'Pending Invoice' %}
+                {% set inv_id = s.get('invoice_id', '') %}
+                {% set inv_num = s.get('invoice_number', '') %}
+                {% set inv_data = invoice_map.get(inv_id, {}) %}
+                {% set stage_name = s.get('name','') %}
+                {# Auto-calculate correct percentage for first stage #}
+                {% if loop.index0 == 0 and 'Down Payment' in stage_name %}
+                  {% set contract_val = project.get('contract_value',0)|float %}
+                  {% set stage_amount = s.get('amount',0)|float %}
+                  {% if contract_val > 0 %}
+                    {% set correct_pct = ((stage_amount / contract_val) * 100)|round|int %}
+                    {% set stage_name = 'Down Payment (' + correct_pct|string + '%)' %}
+                  {% endif %}
+                {% endif %}
                 <tr>
-                  <td>{{ s.get('name','') }}</td>
+                  <td>{{ stage_name }}</td>
                   <td class="text-end">
-                    <span id="amtDisplay_{{ loop.index0 }}">${{ "{:,.2f}".format(s.get('amount',0)|float) }}</span>
-                    {% if st == 'Pending' %}
-                    <button type="button" class="btn btn-xs btn-outline-secondary ms-1"
-                            onclick="toggleAmtEdit({{ loop.index0 }})" title="Edit amount">
-                      <i class="bi bi-pencil"></i>
-                    </button>
-                    <form method="POST"
-                          action="{{ url_for('project_stage_set_amount', project_id=project.firebase_id, stage_idx=loop.index0) }}"
-                          id="amtForm_{{ loop.index0 }}" style="display:none; margin-top:4px;">
-                      <div class="d-flex gap-1 align-items-center justify-content-end">
-                        <input type="number" name="amount" class="form-control form-control-sm"
-                               value="{{ '%.2f'|format(s.get('amount',0)|float) }}"
-                               step="0.01" min="0" style="width:90px;">
-                        <button type="submit" class="btn btn-xs btn-teal" title="Save">
-                          <i class="bi bi-check-lg"></i>
-                        </button>
-                        <button type="button" class="btn btn-xs btn-outline-secondary"
-                                onclick="toggleAmtEdit({{ loop.index0 }})" title="Cancel">
-                          <i class="bi bi-x-lg"></i>
-                        </button>
-                      </div>
-                    </form>
-                    {% endif %}
+                    <span id="amountDisplay_{{ loop.index0 }}" style="display:inline-flex; align-items:center; gap:8px;">
+                      <span id="stageAmount_{{ loop.index0 }}" style="cursor:pointer;" onclick="{% if st == 'Pending Invoice' %}toggleInlineEdit({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ st }}', '{{ inv_id }}'){% endif %}">
+                        ${{ "{:,.2f}".format(s.get('amount',0)|float) }}
+                      </span>
+                      {% if st in ('Pending Invoice', 'Invoiced', 'Partially Paid', 'Overdue') %}
+                      <button type="button" class="btn btn-xs btn-outline-primary"
+                              onclick="toggleInlineEdit({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ st }}', '{{ inv_id }}')"
+                              title="Edit amount (click or press Enter)">
+                        <i class="bi bi-pencil"></i>
+                      </button>
+                      {% endif %}
+                    </span>
+                    <span id="amountEdit_{{ loop.index0 }}" style="display:none; align-items:center;">
+                      $<input type="number" id="amountInput_{{ loop.index0 }}" class="form-control form-control-sm"
+                             step="0.01" min="0" value="{{ s.get('amount',0)|float }}" style="width:80px; display:inline-block;"
+                             onkeydown="handleEditKeydown(event, {{ loop.index0 }}, '{{ st }}', '{{ inv_id }}')"
+                             onblur="saveInlineEdit({{ loop.index0 }}, '{{ st }}', '{{ inv_id }}')">
+                    </span>
                   </td>
                   <td><span class="badge status-{{ status_class.get(st, st|lower|replace(' ','-')) }}">{{ st }}</span></td>
-                  <td class="text-end">
-                    {% if st == 'Pending' and loop.index0 == ns.first_pending %}
-                    {% set _stage_fmt = "{:,.2f}".format(s.get('amount',0)|float) %}
-                    <div class="d-flex gap-1 justify-content-end flex-wrap">
-                      <form method="POST" action="{{ url_for('project_stage_create_invoice', project_id=project.firebase_id, stage_idx=loop.index0) }}">
-                        <button type="submit" class="btn btn-xs btn-outline-teal" title="Create invoice for this stage">
-                          <i class="bi bi-receipt me-1"></i>Invoice
-                        </button>
-                      </form>
-                      <form method="POST" action="{{ url_for('project_stage_mark_paid', project_id=project.firebase_id, stage_idx=loop.index0) }}"
-                            onsubmit="return confirm('Mark ${{ _stage_fmt }} as paid?')">
-                        <button type="submit" class="btn btn-xs btn-success" title="Create invoice and mark as paid instantly">
-                          <i class="bi bi-check-circle me-1"></i>Mark Paid
-                        </button>
-                      </form>
-                    </div>
-                    {% elif s.get('invoice_id') %}
-                    <a href="{{ url_for('invoice_detail', invoice_id=s.get('invoice_id')) }}" class="text-muted small text-decoration-none">
-                      View Invoice <i class="bi bi-box-arrow-up-right"></i>
-                    </a>
+                  <td class="text-end">{% set paid_amount = inv_data.get('paid', 0)|float if inv_data else 0 %}{% if paid_amount > 0 %}${{ "{:,.2f}".format(paid_amount) }}{% else %}—{% endif %}</td>
+                  <td>{% if inv_id and (inv_num or inv_data.get('number')) %}<a href="{{ url_for('invoice_detail', invoice_id=inv_id) }}" class="text-decoration-none">{{ inv_num or inv_data.get('number') }}</a>{% else %}—{% endif %}</td>
+                  <td class="text-center">
+                    {% if st == 'Pending Invoice' %}
+                    <button type="button" class="btn btn-xs btn-outline-teal" onclick="quickInvoiceStage({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ project.firebase_id }}')"
+                            title="Create invoice for this stage">
+                      <i class="bi bi-receipt"></i>
+                    </button>
+                    {% elif st == 'Invoiced' %}
+                    <button type="button" class="btn btn-xs btn-outline-warning" onclick="quickUpdateInvoicedStage({{ loop.index0 }}, '{{ inv_id }}', {{ s.get('amount',0)|float }})" title="Update invoiced amount">
+                      <i class="bi bi-arrow-repeat"></i>
+                    </button>
+                    {% elif st == 'Partially Paid' %}
+                    <button type="button" class="btn btn-xs btn-outline-warning" onclick="quickUpdateInvoicedStage({{ loop.index0 }}, '{{ inv_id }}', {{ s.get('amount',0)|float }})" title="Update invoiced amount">
+                      <i class="bi bi-arrow-repeat"></i>
+                    </button>
+                    {% elif st == 'Overdue' %}
+                    <button type="button" class="btn btn-xs btn-outline-danger" onclick="quickUpdateInvoicedStage({{ loop.index0 }}, '{{ inv_id }}', {{ s.get('amount',0)|float }})" title="Update invoiced amount (overdue)">
+                      <i class="bi bi-arrow-repeat"></i>
+                    </button>
                     {% endif %}
                   </td>
                 </tr>
@@ -309,10 +360,6 @@
         <div class="card-panel">
           <div class="panel-header d-flex justify-content-between align-items-center">
             <h6 class="panel-title mb-0">Invoices</h6>
-            {% if 'invoicing' in allowed_pages %}
-            <a href="{{ url_for('invoice_new') }}?project={{ project.get('project_number','') }}&client={{ project.get('client_name','') }}"
-               class="btn btn-xs btn-teal"><i class="bi bi-plus-lg"></i> New</a>
-            {% endif %}
           </div>
           {% if project_invoices %}
           <div class="table-responsive">
@@ -330,6 +377,7 @@
                 {% for inv in project_invoices %}
                 {% set m = inv.get('meta', {}) %}
                 {% set share = inv.get('_project_share', 1.0) %}
+                {% set tax_paid = inv.get('tax_payments',[])|map(attribute='amount')|map('float')|sum %}
                 <tr onclick="location.href='{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}'"
                     style="cursor:pointer;">
                   <td>
@@ -341,14 +389,14 @@
                     {% endif %}
                   </td>
                   <td>{{ m.get('invoice_date','—') }}</td>
-                  <td><span class="badge status-{{ m.get('status','Draft')|lower|replace(' ','-') }}">{{ m.get('status','Draft') }}</span></td>
+                  <td><span class="badge status-{{ inv.get('_display_status', m.get('status','Draft'))|lower|replace(' ','-') }}">{{ inv.get('_display_status', m.get('status','Draft')) }}</span></td>
                   <td class="text-end">
                     ${{ "{:,.0f}".format(m.get('total',0)|float * share) }}
                     {% if share < 0.999 %}
                     <div class="text-muted" style="font-size:0.75em;">of ${{ "{:,.0f}".format(m.get('total',0)|float) }} invoice total</div>
                     {% endif %}
                   </td>
-                  <td class="text-end text-success">${{ "{:,.0f}".format(m.get('amount_paid',0)|float * share) }}</td>
+                  <td class="text-end text-success">${{ "{:,.0f}".format((m.get('amount_paid',0)|float + tax_paid) * share) }}</td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -520,16 +568,150 @@
     </div>
   </div>
 </div>
+<!-- Edit Payment Plan Modal -->
+<div class="modal fade" id="editPaymentPlanModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Payment Plan</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="editPaymentForm">
+          <div class="mb-3">
+            <label class="form-label">Down Payment Amount ($)</label>
+            <input type="number" id="editDownPaymentAmount" class="form-control" step="0.01" min="0"
+                   oninput="updateRemainingStages()">
+            <small class="text-muted" id="downPaymentPercentageDisplay"></small>
+          </div>
+          <div id="editRemainingStagesContainer"></div>
+          <div class="alert alert-info small mt-3">
+            <i class="bi bi-info-circle me-1"></i>
+            <strong>Total Plan:</strong> <span id="editPlanTotal">$0.00</span> / <span id="editContractValue">$0.00</span>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveEditedPaymentPlan()">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Update Invoiced Stage Modal -->
+<div class="modal fade" id="updateInvoicedStageModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2"></i>Update Invoiced Amount</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="updateInvoicedStageForm">
+          <div class="mb-3">
+            <label class="form-label">Stage</label>
+            <input type="text" id="updateInvoicedStageName" class="form-control" disabled>
+          </div>
+          <div class="row g-3">
+            <div class="col-sm-6">
+              <label class="form-label">Original Amount ($)</label>
+              <input type="number" id="updateInvoicedOriginalAmount" class="form-control" disabled>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label">New Amount ($)</label>
+              <input type="number" id="updateInvoicedNewAmount" class="form-control" step="0.01" min="0"
+                     oninput="updateRedistributionPreview()">
+            </div>
+          </div>
+          <div class="alert alert-info small mt-3">
+            <strong>📊 Redistribution Preview:</strong>
+            <div id="redistributionPreview" class="mt-2"></div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-warning" onclick="updateInvoicedStage()">Update & Redistribute</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Update Stage Payment Modal -->
+<div class="modal fade" id="updateStageModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2"></i>Update Payment Amount</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="updateStageForm">
+          <div class="mb-3">
+            <label class="form-label">Stage</label>
+            <input type="text" id="updateStageName" class="form-control" disabled>
+          </div>
+          <div class="row g-3">
+            <div class="col-sm-6">
+              <label class="form-label">Original Amount ($)</label>
+              <input type="number" id="updateStageOriginalAmount" class="form-control" disabled>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label">Already Paid ($)</label>
+              <input type="number" id="updateStagePaidAmount" class="form-control" disabled>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">New Amount ($)</label>
+            <input type="number" id="updateStageNewAmount" class="form-control" step="0.01" min="0"
+                   oninput="updateRemainingForStage()">
+            <small class="text-muted" id="updateStageRemainingDisplay"></small>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="updateStagedPayment()">Update</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
+<style>
+/* Hide number input spinner arrows */
+#amountInput_0::-webkit-outer-spin-button,
+#amountInput_0::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type=number] {
+  -moz-appearance: textfield;
+}
+</style>
 <script>
+const projectId = '{{ project.firebase_id }}';
+const contractValue = {{ project.get('contract_value', 0)|float }};
+let currentStages = {{ project.get('payment_stages', [])|tojson }};
+
 // Auto-open tab from URL hash (e.g. #tab-notes after adding a note)
 document.addEventListener('DOMContentLoaded', function () {
   const hash = window.location.hash;
   if (hash) {
     const link = document.querySelector(`.nav-link[href="${hash}"]`);
     if (link) new bootstrap.Tab(link).show();
+  }
+
+  // Set up edit payment plan modal
+  const editModal = document.getElementById('editPaymentPlanModal');
+  if (editModal) {
+    editModal.addEventListener('show.bs.modal', openEditPaymentPlanModal);
   }
 });
 
@@ -550,6 +732,508 @@ function openDeleteModal() {
 function checkDeleteInput(input) {
   const expected = '{{ project.get("project_number","") }}';
   document.getElementById('deleteConfirmBtn').disabled = input.value.trim() !== expected;
+}
+
+// Payment Plan Edit Functions
+function openEditPaymentPlanModal() {
+  if (!currentStages || currentStages.length === 0) return;
+
+  const downPaymentStage = currentStages[0];
+  const downPaymentInput = document.getElementById('editDownPaymentAmount');
+  downPaymentInput.value = (downPaymentStage.amount || 0).toFixed(2);
+
+  // Disable down payment input if it's paid
+  if (downPaymentStage.status === 'Paid') {
+    downPaymentInput.disabled = true;
+  } else {
+    downPaymentInput.disabled = false;
+  }
+
+  document.getElementById('editContractValue').textContent = '$' + contractValue.toFixed(2);
+
+  updateRemainingStages();
+}
+
+function updateRemainingStages() {
+  const downPaymentAmount = parseFloat(document.getElementById('editDownPaymentAmount').value) || 0;
+
+  // Update down payment percentage
+  const dpPercentage = Math.round((downPaymentAmount / contractValue) * 100);
+  document.getElementById('downPaymentPercentageDisplay').textContent = `${dpPercentage}%`;
+
+  // Generate editable inputs for all stages
+  let html = '';
+  for (let i = 1; i < currentStages.length; i++) {
+    const isInvoiced = currentStages[i].status !== 'Pending Invoice';
+    const isPaid = currentStages[i].status === 'Paid';
+    const amount = currentStages[i].amount || 0;
+
+    html += `
+      <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <label class="form-label mb-0">${currentStages[i].name}</label>
+          <span class="badge status-${isInvoiced ? 'invoiced' : 'not-started'}">${currentStages[i].status || 'Pending Invoice'}</span>
+        </div>
+        <input type="number" class="form-control stageAmountInput" data-index="${i}" value="${amount.toFixed(2)}"
+               step="0.01" oninput="autoRedistributeStages(${i})" ${isPaid ? 'disabled' : ''}/>
+      </div>
+    `;
+  }
+  document.getElementById('editRemainingStagesContainer').innerHTML = html;
+
+  calculateEditPlanTotal();
+}
+
+function autoRedistributeStages(changedIndex) {
+  // Get the changed amount (either down payment or a stage)
+  let changedAmount = 0;
+  let originalAmount = 0;
+
+  if (changedIndex === 0) {
+    // Down payment changed
+    changedAmount = parseFloat(document.getElementById('editDownPaymentAmount').value) || 0;
+    originalAmount = currentStages[0].amount || 0;
+  } else {
+    // A stage changed
+    const input = document.querySelector(`.stageAmountInput[data-index="${changedIndex}"]`);
+    changedAmount = parseFloat(input?.value) || 0;
+    originalAmount = currentStages[changedIndex].amount || 0;
+  }
+
+  const delta = changedAmount - originalAmount;
+
+  // Only redistribute if a non-invoiced stage was changed
+  // Invoiced stages can be edited but don't trigger redistribution
+  const changedStageIsInvoiced = changedIndex > 0 && currentStages[changedIndex].status !== 'Pending Invoice';
+  if (changedStageIsInvoiced) {
+    calculateEditPlanTotal();
+    return;
+  }
+
+  // Find NON-INVOICED stages only (excluding the one that was just changed)
+  const nonInvoicedIndices = [];
+  for (let i = 1; i < currentStages.length; i++) {
+    const isInvoiced = currentStages[i].status !== 'Pending Invoice';
+    if (!isInvoiced && i !== changedIndex) {
+      nonInvoicedIndices.push(i);
+    }
+  }
+
+  // If no other non-invoiced stages to adjust, just update total
+  if (nonInvoicedIndices.length === 0) {
+    calculateEditPlanTotal();
+    return;
+  }
+
+  // Distribute the delta equally among remaining NON-INVOICED stages
+  const deltaPerStage = delta / nonInvoicedIndices.length;
+
+  nonInvoicedIndices.forEach((idx, position) => {
+    const input = document.querySelector(`.stageAmountInput[data-index="${idx}"]`);
+    if (input) {
+      const currentValue = parseFloat(input.value) || currentStages[idx].amount || 0;
+      // For last stage, account for rounding
+      const adjustment = (position === nonInvoicedIndices.length - 1)
+        ? (delta - (deltaPerStage * (nonInvoicedIndices.length - 1)))
+        : deltaPerStage;
+      const newAmount = currentValue - adjustment;
+      input.value = Math.max(0, newAmount).toFixed(2);
+    }
+  });
+
+  calculateEditPlanTotal();
+}
+
+function calculateEditPlanTotal() {
+  const downPaymentAmount = parseFloat(document.getElementById('editDownPaymentAmount').value) || 0;
+  let total = downPaymentAmount;
+  document.querySelectorAll('.stageAmountInput').forEach(input => {
+    total += parseFloat(input.value) || 0;
+  });
+
+  // Update down payment percentage
+  const dpPercentage = Math.round((downPaymentAmount / contractValue) * 100);
+  document.getElementById('downPaymentPercentageDisplay').textContent = `${dpPercentage}%`;
+
+  const totalEl = document.getElementById('editPlanTotal');
+  const totalText = '$' + total.toFixed(2);
+  totalEl.textContent = totalText;
+
+  if (Math.abs(total - contractValue) > 0.01) {
+    totalEl.classList.add('text-danger');
+    totalEl.classList.remove('text-success');
+  } else {
+    totalEl.classList.remove('text-danger');
+    totalEl.classList.add('text-success');
+  }
+}
+
+function saveEditedPaymentPlan() {
+  const downPaymentAmount = parseFloat(document.getElementById('editDownPaymentAmount').value) || 0;
+  let total = downPaymentAmount;
+  const amounts = [{ index: 0, amount: downPaymentAmount }];
+
+  document.querySelectorAll('.stageAmountInput').forEach(input => {
+    const amount = parseFloat(input.value) || 0;
+    total += amount;
+    amounts.push({ index: parseInt(input.dataset.index), amount: amount });
+  });
+
+  if (Math.abs(total - contractValue) > 0.01) {
+    alert(`❌ Error: Total ($${total.toFixed(2)}) must equal contract value ($${contractValue.toFixed(2)})`);
+    return;
+  }
+
+  // Send update to backend
+  fetch(`/api/projects/${projectId}/payment-plan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amounts: amounts })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      location.reload();
+    } else {
+      alert('❌ Error: ' + (data.error || 'Could not update'));
+    }
+  })
+  .catch(e => alert('❌ Error: ' + e.message));
+}
+
+function prepareUpdateStage(idx, name, amount, paidAmount) {
+  document.getElementById('updateStageName').value = name;
+  document.getElementById('updateStageOriginalAmount').value = amount.toFixed(2);
+  document.getElementById('updateStagePaidAmount').value = paidAmount.toFixed(2);
+  document.getElementById('updateStageNewAmount').value = amount.toFixed(2);
+  document.getElementById('updateStageNewAmount').dataset.stageIndex = idx;
+  updateRemainingForStage();
+}
+
+function updateRemainingForStage() {
+  const originalAmount = parseFloat(document.getElementById('updateStageOriginalAmount').value) || 0;
+  const newAmount = parseFloat(document.getElementById('updateStageNewAmount').value) || 0;
+  const diff = originalAmount - newAmount;
+
+  const remainingEl = document.getElementById('updateStageRemainingDisplay');
+  if (diff > 0.01) {
+    remainingEl.innerHTML = `<span class="text-warning">⚠️ Amount reduced by $${diff.toFixed(2)}</span>`;
+  } else if (diff < -0.01) {
+    remainingEl.innerHTML = `<span class="text-danger">⚠️ Amount increased by $${Math.abs(diff).toFixed(2)}</span>`;
+  } else {
+    remainingEl.textContent = 'No change';
+  }
+}
+
+// ── Quick Update Invoiced Stage ────────────────────────────────────────────
+async function quickUpdateInvoicedStage(stageIdx, invoiceId, newAmount) {
+  if (!invoiceId) { alert('❌ No invoice linked'); return; }
+
+  try {
+    const form = new FormData();
+    form.append('new_amount', newAmount);
+
+    const resp = await fetch(`/api/invoices/${invoiceId}/update-amount`, {
+      method: 'POST',
+      body: form
+    });
+
+    if (resp.ok) {
+      // Redirect to invoice details
+      setTimeout(() => {
+        window.location.href = `/invoicing/${invoiceId}`;
+      }, 100);
+    } else {
+      const data = await resp.json();
+      alert('❌ Error: ' + (data.error || 'Could not update invoice'));
+    }
+  } catch (e) {
+    alert('❌ Error: ' + e.message);
+  }
+}
+
+function updateStagedPayment() {
+  const stageIdx = parseInt(document.getElementById('updateStageNewAmount').dataset.stageIndex);
+  const originalAmount = parseFloat(document.getElementById('updateStageOriginalAmount').value) || 0;
+  const paidAmount = parseFloat(document.getElementById('updateStagePaidAmount').value) || 0;
+  const newAmount = parseFloat(document.getElementById('updateStageNewAmount').value) || 0;
+
+  fetch(`/api/projects/${projectId}/stage/${stageIdx}/update`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      originalAmount: originalAmount,
+      newAmount: newAmount,
+      paidAmount: paidAmount
+    })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      alert('✅ Payment updated successfully');
+      bootstrap.Modal.getInstance(document.getElementById('updateStageModal')).hide();
+      location.reload();
+    } else {
+      alert('❌ Error: ' + (data.error || 'Could not update'));
+    }
+  })
+  .catch(e => alert('❌ Error: ' + e.message));
+}
+
+function toggleInlineEdit(idx, name, amount, status, invoiceId) {
+  const displaySpan = document.getElementById(`amountDisplay_${idx}`);
+  const editSpan = document.getElementById(`amountEdit_${idx}`);
+  const input = document.getElementById(`amountInput_${idx}`);
+
+  // Use current amount from currentStages (reflects any edits), fallback to parameter
+  const currentAmount = currentStages[idx] ? (currentStages[idx].amount || amount) : amount;
+
+  // Hide display, show edit
+  displaySpan.style.display = 'none';
+  editSpan.style.display = 'inline-flex';
+  input.value = currentAmount.toFixed(2);
+  input.focus();
+  input.select();
+
+  // Store original values
+  input.dataset.originalAmount = currentAmount;
+  input.dataset.status = status;
+  input.dataset.invoiceId = invoiceId;
+}
+
+function handleEditKeydown(event, idx, status, invoiceId) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    saveInlineEdit(idx, status, invoiceId);
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    const displaySpan = document.getElementById(`amountDisplay_${idx}`);
+    const editSpan = document.getElementById(`amountEdit_${idx}`);
+    displaySpan.style.display = 'inline-flex';
+    editSpan.style.display = 'none';
+  }
+}
+
+function saveInlineEdit(idx, status, invoiceId) {
+  const input = document.getElementById(`amountInput_${idx}`);
+  const displaySpan = document.getElementById(`amountDisplay_${idx}`);
+  const editSpan = document.getElementById(`amountEdit_${idx}`);
+  const stageAmountDisplay = document.getElementById(`stageAmount_${idx}`);
+  const newAmount = parseFloat(input.value) || 0;
+  const originalAmount = parseFloat(input.dataset.originalAmount) || 0;
+
+  // If amount unchanged, just close edit mode
+  if (Math.abs(newAmount - originalAmount) < 0.01) {
+    displaySpan.style.display = 'inline-flex';
+    editSpan.style.display = 'none';
+    return;
+  }
+
+  // Update stage locally
+  const oldAmount = currentStages[idx].amount || 0;
+  const difference = newAmount - oldAmount;  // Positive if increase, negative if decrease
+  currentStages[idx].amount = newAmount;
+
+  // Recalculate down payment percentage for first stage if it's the down payment
+  if (idx === 0 && currentStages[idx].name && currentStages[idx].name.includes('Down Payment')) {
+    const dpPercent = Math.round((newAmount / contractValue) * 100);
+    const baseName = currentStages[idx].name.split('(')[0].trim();
+    currentStages[idx].name = `${baseName} (${dpPercent}%)`;
+  }
+
+  // Auto-redistribute to remaining non-invoiced stages to keep total = contract value
+  const remainingUninvoiced = currentStages
+    .map((s, i) => i > idx && s.status === 'Pending Invoice' ? i : -1)
+    .filter(i => i >= 0);
+
+  if (remainingUninvoiced.length > 0 && difference !== 0) {
+    const perStage = difference / remainingUninvoiced.length;
+    remainingUninvoiced.forEach(i => {
+      currentStages[i].amount = Math.max(0, (currentStages[i].amount || 0) - perStage);
+    });
+  }
+
+  // Save to backend
+  // Always send all stages since we redistribute across all remaining non-invoiced stages
+  const endpoint = `/api/projects/${projectId}/payment-plan`;
+
+  const payload = {
+    amounts: currentStages.map((s, i) => ({ index: i, amount: s.amount }))
+  };
+
+  // Don't update invoice here - let user click Update button in modal to update invoice
+  // Just save the stage amount change, which will trigger page reload
+  // and show Update button if amounts differ from invoice
+
+  fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      // Update UI immediately for all changed stages
+      const fmt = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+      // Update the edited stage
+      stageAmountDisplay.textContent = fmt(newAmount);
+
+      // Update all remaining adjusted stages
+      remainingUninvoiced.forEach(i => {
+        const stageDisplay = document.getElementById(`stageAmount_${i}`);
+        const stageInput = document.getElementById(`amountInput_${i}`);
+        if (stageDisplay) {
+          stageDisplay.textContent = fmt(currentStages[i].amount);
+        }
+        // Update dataset for next edit
+        if (stageInput) {
+          stageInput.dataset.originalAmount = currentStages[i].amount;
+        }
+      });
+
+      // Update dataset for current stage
+      input.dataset.originalAmount = newAmount;
+
+      // Close edit mode
+      displaySpan.style.display = 'inline-flex';
+      editSpan.style.display = 'none';
+
+      // Reload page after successful save
+      setTimeout(() => location.reload(), 300);
+    } else {
+      // Show error only on failure
+      alert('❌ Error: ' + (data.error || 'Could not update'));
+      displaySpan.style.display = 'inline-flex';
+      editSpan.style.display = 'none';
+    }
+  })
+  .catch(e => {
+    alert('❌ Error: ' + e.message);
+    displaySpan.style.display = 'inline-flex';
+    editSpan.style.display = 'none';
+  });
+}
+
+function prepareUpdateInvoicedStage(idx, name, amount, invoiceId) {
+  document.getElementById('updateInvoicedStageName').value = name;
+  document.getElementById('updateInvoicedOriginalAmount').value = amount.toFixed(2);
+  document.getElementById('updateInvoicedNewAmount').value = amount.toFixed(2);
+  document.getElementById('updateInvoicedNewAmount').dataset.stageIndex = idx;
+  document.getElementById('updateInvoicedNewAmount').dataset.invoiceId = invoiceId;
+  updateRedistributionPreview();
+}
+
+function updateRedistributionPreview() {
+  const idx = parseInt(document.getElementById('updateInvoicedNewAmount').dataset.stageIndex);
+  const originalAmount = parseFloat(document.getElementById('updateInvoicedOriginalAmount').value) || 0;
+  const newAmount = parseFloat(document.getElementById('updateInvoicedNewAmount').value) || 0;
+  const difference = originalAmount - newAmount;
+
+  // Update stage name with new percentage if it's the down payment (first stage)
+  if (idx === 0 && currentStages[0] && currentStages[0].name.includes('Down Payment')) {
+    const contractValue = contractValue || 1; // fallback to prevent division by zero
+    const newPercentage = Math.round((newAmount / contractValue) * 100);
+    const stageName = document.getElementById('updateInvoicedStageName');
+    if (stageName) {
+      stageName.value = `Down Payment (${newPercentage}%)`;
+    }
+  }
+
+  let preview = '';
+  if (difference > 0.01) {
+    preview = `<div class="text-success">✓ Reducing by $${difference.toFixed(2)}</div>`;
+    preview += '<div class="text-muted small mt-2">This amount will be distributed equally among remaining non-invoiced stages:</div>';
+
+    const uninvoicedStages = currentStages.filter((s, i) => i > idx && s.status === 'Pending Invoice');
+    if (uninvoicedStages.length > 0) {
+      const perStage = difference / uninvoicedStages.length;
+      uninvoicedStages.forEach(s => {
+        const newStageAmount = (s.amount || 0) + perStage;
+        preview += `<div class="text-muted small">• ${s.name}: $${(s.amount || 0).toFixed(2)} → $${newStageAmount.toFixed(2)}</div>`;
+      });
+    }
+  } else if (difference < -0.01) {
+    preview = `<div class="text-danger">⚠️ Increasing by $${Math.abs(difference).toFixed(2)}</div>`;
+    preview += '<div class="text-muted small mt-2">This amount will be subtracted equally from remaining non-invoiced stages.</div>';
+  } else {
+    preview = '<div class="text-secondary">No change</div>';
+  }
+
+  document.getElementById('redistributionPreview').innerHTML = preview;
+}
+
+function updateInvoicedStage() {
+  const idx = parseInt(document.getElementById('updateInvoicedNewAmount').dataset.stageIndex);
+  const invoiceId = document.getElementById('updateInvoicedNewAmount').dataset.invoiceId;
+  const originalAmount = parseFloat(document.getElementById('updateInvoicedOriginalAmount').value) || 0;
+  const newAmount = parseFloat(document.getElementById('updateInvoicedNewAmount').value) || 0;
+
+  if (Math.abs(newAmount - originalAmount) < 0.01) {
+    // Just close the modal silently if amount hasn't changed
+    bootstrap.Modal.getInstance(document.getElementById('updateInvoicedStageModal')).hide();
+    return;
+  }
+
+  // Update stage locally
+  const oldAmount = currentStages[idx].amount || 0;
+  const difference = oldAmount - newAmount;
+  currentStages[idx].amount = newAmount;
+
+  // Redistribute difference to remaining non-invoiced stages
+  const uninvoicedIndices = currentStages
+    .map((s, i) => i > idx && s.status === 'Pending Invoice' ? i : -1)
+    .filter(i => i >= 0);
+
+  if (uninvoicedIndices.length > 0) {
+    const perStage = difference / uninvoicedIndices.length;
+    uninvoicedIndices.forEach(i => {
+      currentStages[i].amount = (currentStages[i].amount || 0) + perStage;
+    });
+  }
+
+  // Close modal
+  bootstrap.Modal.getInstance(document.getElementById('updateInvoicedStageModal')).hide();
+
+  // Send to backend
+  fetch(`/api/projects/${projectId}/stage/${idx}/update-invoiced`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      invoiceId: invoiceId,
+      originalAmount: originalAmount,
+      newAmount: newAmount,
+      stages: currentStages.map((s, i) => ({ index: i, amount: s.amount }))
+    })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      // Redirect to invoice detail page
+      window.location.href = `/invoicing/${invoiceId}`;
+    } else {
+      alert('❌ Error: ' + (data.error || 'Could not update'));
+    }
+  })
+  .catch(e => alert('❌ Error: ' + e.message));
+}
+
+function quickInvoiceStage(idx, stageName, amount, projectId) {
+  fetch(`/api/projects/${projectId}/stage/${idx}/invoice`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stageIndex: idx, stageName: stageName, amount: amount })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      // Redirect to invoice detail page
+      window.location.href = `/invoicing/${data.invoice_id}`;
+    } else {
+      alert('❌ Error: ' + (data.error || 'Could not create invoice'));
+    }
+  })
+  .catch(e => alert('❌ Error: ' + e.message));
 }
 </script>
 {% endblock %}
