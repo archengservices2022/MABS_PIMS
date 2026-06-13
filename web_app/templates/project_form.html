@@ -11,7 +11,10 @@
 </div>
 
 <form method="POST" onsubmit="return captureUpdatedStages(event)">
+<<<<<<< HEAD
   <input type="hidden" name="source_quote_id" value="{{ prefill_quote_id|default('') }}">
+=======
+>>>>>>> fix/project-payment-tracking
   <div class="row g-3">
     <div class="col-lg-8">
       <div class="card-panel mb-3">
@@ -49,7 +52,11 @@
           <div class="col-md-4">
             <label class="form-label">Date Received</label>
             <input type="date" name="date_received" class="form-control"
+<<<<<<< HEAD
                    value="{{ project.get('date_received','') if project else now.strftime('%Y-%m-%d') }}">
+=======
+                   value="{{ project.get('date_received','') if project else '' }}">
+>>>>>>> fix/project-payment-tracking
           </div>
           <div class="col-md-6">
             <label class="form-label">Client <span class="text-danger">*</span></label>
@@ -83,7 +90,11 @@
                    value="{{ project.get('mail_address','') or project.get('client_address','') if project else '' }}"
                    placeholder="Enter mailing address">
           </div>
+<<<<<<< HEAD
           <div class="col-12">
+=======
+          <div class="col-md-6">
+>>>>>>> fix/project-payment-tracking
             <label class="form-label">Plant (State)</label>
             {% set us_states = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA',
               'HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS',
@@ -96,6 +107,7 @@
               {% endfor %}
             </select>
           </div>
+<<<<<<< HEAD
           <div class="col-12">
             <label class="form-label">Service Types <span class="text-muted small fw-normal">— select all that apply</span></label>
             {% set all_services = ['Mechanical','Electrical','Civil','Structural','Plumbing','HVAC','Fire Protection','Geotechnical','Environmental','Other'] %}
@@ -191,6 +203,18 @@
                 </div>
               </div>
             </div>
+=======
+          <div class="col-md-6">
+            <label class="form-label">Job Type</label>
+            <select name="job_type" class="form-select">
+              <option value="">-- Select Job Type --</option>
+              {% for jt in ['Engineering Design','Construction','Inspection','Consultation',
+                            'Maintenance','Research','Drafting','Peer Review','Site Visit',
+                            'Report Preparation','Permit Drawings','Other'] %}
+              <option value="{{ jt }}" {{ 'selected' if project and project.get('job_type') == jt }}>{{ jt }}</option>
+              {% endfor %}
+            </select>
+>>>>>>> fix/project-payment-tracking
           </div>
           <div class="col-12">
             <label class="form-label">Scope of Work</label>
@@ -728,6 +752,7 @@ function updatePlanPreview() {
   wrap.style.display = 'block';
 }
 
+<<<<<<< HEAD
 function toggleServiceType(cb, boxId) {
   const box = document.getElementById(boxId);
   if (cb.dataset.other) {
@@ -858,6 +883,8 @@ function recalcServiceCosts() {
   }
 }
 
+=======
+>>>>>>> fix/project-payment-tracking
 document.addEventListener('DOMContentLoaded', function () {
   updatePlanPreview();
   // ── Duration / date calculator ───────────────────────────────────────────
@@ -912,6 +939,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
+<<<<<<< HEAD
   function setServiceTypes(types) {
     let otherText = '';
     for (const t of types) {
@@ -929,6 +957,8 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
+=======
+>>>>>>> fix/project-payment-tracking
   function fillFromQuote(q) {
     const f = document.querySelector('form');
     if (q.project_name  && !f.querySelector('[name=project_name]').value)
@@ -943,6 +973,7 @@ document.addEventListener('DOMContentLoaded', function () {
       f.querySelector('[name=mail_address]').value  = q.mail_address;
     if (q.plant)
       setOption(f.querySelector('[name=plant]'), q.plant);
+<<<<<<< HEAD
     if (q.service_types && q.service_types.length)
       setServiceTypes(q.service_types);
     if (q.expedite === 'Yes') {
@@ -961,6 +992,16 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!cvField.value || parseFloat(cvField.value) === 0)
         cvField.value = q.contract_value;
     }
+=======
+    if (q.job_type)
+      setOption(f.querySelector('[name=job_type]'), q.job_type);
+    if (q.scope_of_work && !f.querySelector('[name=scope_of_work]').value)
+      f.querySelector('[name=scope_of_work]').value = q.scope_of_work;
+    if (q.expedite)
+      setOption(f.querySelector('[name=expedite]'), q.expedite);
+    if (q.contract_value && !f.querySelector('[name=contract_value]').value)
+      f.querySelector('[name=contract_value]').value = q.contract_value;
+>>>>>>> fix/project-payment-tracking
     if (q.start_date   && !f.querySelector('[name=start_date]').value)
       f.querySelector('[name=start_date]').value    = q.start_date;
     if (q.end_date     && !f.querySelector('[name=end_date]').value)

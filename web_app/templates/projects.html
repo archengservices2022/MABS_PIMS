@@ -53,6 +53,7 @@
         </a>
       </div>
       {% endfor %}
+<<<<<<< HEAD
       {% if overdue_count %}
       <div class="col-6 col-md-3 col-lg-2">
         <a href="{{ url_for('projects', overdue=1, tab='all-projects') }}" class="text-decoration-none">
@@ -68,6 +69,8 @@
         </a>
       </div>
       {% endif %}
+=======
+>>>>>>> fix/project-payment-tracking
     </div>
     {% endif %}
     <form method="GET" id="projFilterForm">
@@ -100,21 +103,32 @@
         <button type="submit" class="btn btn-sm btn-outline-secondary">
           <i class="bi bi-search me-1"></i>Apply
         </button>
+<<<<<<< HEAD
         {% if search or status_filter or overdue_filter or date_from or date_to or client_filter %}
+=======
+        {% if search or status_filter or date_from or date_to or client_filter %}
+>>>>>>> fix/project-payment-tracking
         <a href="{{ url_for('projects') }}" class="btn btn-sm btn-outline-secondary">
           <i class="bi bi-x-lg me-1"></i>Clear
         </a>
         {% endif %}
       </div>
     </form>
+<<<<<<< HEAD
         {% if search or status_filter or overdue_filter or date_from or date_to or client_filter %}
+=======
+        {% if search or status_filter or date_from or date_to or client_filter %}
+>>>>>>> fix/project-payment-tracking
         <div class="alert alert-light py-1 px-3 mt-2 small d-flex align-items-center gap-2"
              style="border-left:3px solid #0D9488;">
           <i class="bi bi-funnel text-teal"></i>
           <span>
             {% if date_from and date_to %}{{ date_from }} to {{ date_to }}{% elif date_from %}From {{ date_from }}{% elif date_to %}Up to {{ date_to }}{% endif %}
             {% if status_filter %} · Status: <strong>{{ status_filter }}</strong>{% endif %}
+<<<<<<< HEAD
             {% if overdue_filter %} · <strong class="text-danger">Overdue payments only</strong>{% endif %}
+=======
+>>>>>>> fix/project-payment-tracking
             {% if client_filter %} · Client: <strong>{{ client_filter }}</strong>{% endif %}
             &nbsp;·&nbsp; {{ projects|length }} result{{ 's' if projects|length != 1 else '' }}
           </span>
@@ -151,16 +165,23 @@
               <td class="text-muted">{{ p.get('client_name','—') }}</td>
               <td>{{ p.get('start_date','—') }}</td>
               <td class="text-end fw-bold">${{ "{:,.0f}".format(p.get('contract_value',0)|float) }}</td>
+<<<<<<< HEAD
               <td class="text-end text-success">${{ "{:,.0f}".format(p.get('amount_paid',0)|float) }}</td>
+=======
+              <td class="text-end text-success">${{ "{:,.0f}".format(p.get('_calculated_paid',0)|float) }}</td>
+>>>>>>> fix/project-payment-tracking
               <td>
                 <span class="badge status-{{ p.get('status','Not Started')|lower|replace(' ','-') }}">
                   {{ p.get('status','Not Started') }}
                 </span>
+<<<<<<< HEAD
                 {% if p.get('_has_overdue') %}
                 <span class="badge status-overdue" title="A payment stage is past its invoice due date">
                   <i class="bi bi-exclamation-triangle-fill"></i> Overdue
                 </span>
                 {% endif %}
+=======
+>>>>>>> fix/project-payment-tracking
               </td>
               <td onclick="event.stopPropagation(); location.href='{{ url_for('project_detail', project_id=p.firebase_id) }}'">
                 <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}"

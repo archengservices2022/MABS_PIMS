@@ -26,16 +26,39 @@
 
     {% set already_won = quote.get('status','') in ['Converted','Invoiced'] %}
 
+<<<<<<< HEAD
     {% if already_won %}
+=======
+    <!-- WIN QUOTE — one click creates Project + Invoice -->
+    {% if 'projects' in allowed_pages and 'invoicing' in allowed_pages and not already_won %}
+    <form method="POST" action="{{ url_for('quote_win', quote_id=quote.firebase_id) }}"
+          onsubmit="return confirm('Win this quote?\n\nThis will create a Project and an Invoice at the same time.');">
+      <button type="submit" class="btn btn-sm btn-success fw-bold">
+        <i class="bi bi-trophy-fill me-1"></i>Win Quote
+      </button>
+    </form>
+    {% elif already_won %}
+>>>>>>> fix/project-payment-tracking
     <span class="btn btn-sm btn-outline-success disabled">
       <i class="bi bi-check2-circle me-1"></i>Won
     </span>
     {% else %}
+<<<<<<< HEAD
       {% if 'projects' in allowed_pages %}
       <a href="{{ url_for('project_new') }}?from_quote={{ quote.get('job_number','') }}"
          class="btn btn-sm btn-teal">
         <i class="bi bi-kanban me-1"></i>Convert to Project
       </a>
+=======
+      <!-- Fallback: individual convert buttons if only one role -->
+      {% if 'projects' in allowed_pages %}
+      <form method="POST" action="{{ url_for('quote_to_project', quote_id=quote.firebase_id) }}"
+            onsubmit="return confirm('Create a Project from this quote?');">
+        <button type="submit" class="btn btn-sm btn-outline-success">
+          <i class="bi bi-kanban me-1"></i>→ Project
+        </button>
+      </form>
+>>>>>>> fix/project-payment-tracking
       {% endif %}
       {% if 'invoicing' in allowed_pages %}
       <form method="POST" action="{{ url_for('quote_to_invoice', quote_id=quote.firebase_id) }}"
@@ -62,6 +85,16 @@
     </button>
     {% endif %}
 
+<<<<<<< HEAD
+=======
+    {% if 'projects' in allowed_pages %}
+    <a href="{{ url_for('project_new') }}?from_quote={{ quote.get('job_number','') }}"
+       class="btn btn-sm btn-teal">
+      <i class="bi bi-kanban me-1"></i>Convert to Project
+    </a>
+    {% endif %}
+
+>>>>>>> fix/project-payment-tracking
     <a href="{{ url_for('quote_edit', quote_id=quote.firebase_id) }}" class="btn btn-sm btn-outline-primary">
       <i class="bi bi-pencil me-1"></i>Edit
     </a>

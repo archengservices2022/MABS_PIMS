@@ -317,9 +317,12 @@ def dashboard():
         float(str(i.get("meta", {}).get("amount_paid", 0) or 0).replace(",", ""))
         for i in inv_list if isinstance(i, dict)
     )
+<<<<<<< HEAD
     total_paid += sum(
         _safe_float(p.get("amount", 0)) for i in inv_list for p in i.get("tax_payments", [])
     )
+=======
+>>>>>>> fix/project-payment-tracking
     total_outstanding = total_invoiced - total_paid
 
     active_projects = sum(1 for p in proj_list
@@ -797,7 +800,11 @@ def quote_detail(quote_id):
         abort(404)
     data["firebase_id"] = quote_id
 
+<<<<<<< HEAD
     # Linked project — via linked_project_id, or fall back to searching by source_quote
+=======
+    # Linked project — stored by quote_win, or fall back to searching by source_quote
+>>>>>>> fix/project-payment-tracking
     linked_project = None
     lpid = data.get("linked_project_id")
     if lpid:
@@ -947,12 +954,31 @@ def project_to_quote(project_id):
 @role_required("projects")
 def projects():
     raw = fb_get("/projects") or {}
+<<<<<<< HEAD
     raw_inv = fb_get("/invoices") or {}
+=======
+    raw_invoices = fb_get("/invoices") or {}
+>>>>>>> fix/project-payment-tracking
     items = []
     for pid, pdata in (raw.items() if isinstance(raw, dict) else []):
         if pdata and isinstance(pdata, dict):
             pdata["firebase_id"] = pid
+<<<<<<< HEAD
             pdata["_has_overdue"] = _project_has_overdue_stage(pdata.get("payment_stages"), raw_inv)
+=======
+
+            # Calculate paid amount for this project using sequential allocation
+            proj_num = pdata.get("project_number", "")
+            paid_amount = 0
+            if proj_num and isinstance(raw_invoices, dict):
+                for iid, inv in raw_invoices.items():
+                    if isinstance(inv, dict):
+                        # Use sequential allocation to get amount paid to this project
+                        allocation = _allocate_payments_sequentially(inv)
+                        if proj_num in allocation:
+                            paid_amount += allocation[proj_num]
+            pdata["_calculated_paid"] = paid_amount
+>>>>>>> fix/project-payment-tracking
             items.append(pdata)
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
 
@@ -960,11 +986,17 @@ def projects():
     for i in items:
         st = i.get("status") or "Not Started"
         status_counts[st] = status_counts.get(st, 0) + 1
+<<<<<<< HEAD
     overdue_count = sum(1 for i in items if i.get("_has_overdue"))
 
     search        = request.args.get("q", "").strip().lower()
     status_filter = request.args.get("status", "")
     overdue_filter = request.args.get("overdue", "")
+=======
+
+    search        = request.args.get("q", "").strip().lower()
+    status_filter = request.args.get("status", "")
+>>>>>>> fix/project-payment-tracking
     date_from     = request.args.get("from", "")
     date_to       = request.args.get("to", "")
     client_filter = request.args.get("client", "")
@@ -972,8 +1004,11 @@ def projects():
         items = [i for i in items if search in str(i).lower()]
     if status_filter:
         items = [i for i in items if i.get("status", "") == status_filter]
+<<<<<<< HEAD
     if overdue_filter:
         items = [i for i in items if i.get("_has_overdue")]
+=======
+>>>>>>> fix/project-payment-tracking
     if client_filter:
         items = [i for i in items if i.get("client_name", "") == client_filter]
     if date_from:
@@ -987,7 +1022,10 @@ def projects():
     active_tab = request.args.get("tab", "all-projects")
     return render_template("projects.html", projects=items, statuses=statuses,
                            search=search, status_filter=status_filter,
+<<<<<<< HEAD
                            overdue_filter=overdue_filter, overdue_count=overdue_count,
+=======
+>>>>>>> fix/project-payment-tracking
                            date_from=date_from, date_to=date_to,
                            client_filter=client_filter,
                            clients=clients, next_project_num=next_project_num,
@@ -1000,6 +1038,7 @@ def project_new():
     if request.method == "POST":
         data = _parse_project_form(request.form)
 
+<<<<<<< HEAD
         # If arriving from "Convert to Project", resolve the source quote and
         # guard against converting the same quote into a second project.
         source_quote_id = request.form.get("source_quote_id", "").strip()
@@ -1009,6 +1048,8 @@ def project_new():
                   f"{source_quote.get('linked_project_num','')}.", "info")
             return redirect(url_for("project_detail", project_id=source_quote["linked_project_id"]))
 
+=======
+>>>>>>> fix/project-payment-tracking
         # Check for custom stage amounts from frontend
         custom_stage_amounts = None
         custom_stage_amounts_json = request.form.get("custom_stage_amounts", "")
@@ -1054,6 +1095,7 @@ def project_new():
         data["created_at"] = datetime.now(timezone.utc).isoformat()
         data["updated_at"] = datetime.now(timezone.utc).isoformat()
         data["created_by"] = session.get("user_email", "")
+<<<<<<< HEAD
 
         if source_quote:
             data["source_quote"]     = source_quote_id
@@ -1072,10 +1114,14 @@ def project_new():
                   f"{source_quote.get('job_number','')}.", "success")
             return redirect(url_for("project_detail", project_id=pid))
 
+=======
+        fb_push("/projects", data)
+>>>>>>> fix/project-payment-tracking
         flash(f"Project {data['project_number']} created successfully.", "success")
         return redirect(url_for("projects", tab="all-projects"))
     sales_people = [p.get("name","") for p in _load_sales_people() if p.get("name","")]
     prefill_quote = request.args.get("from_quote", "")
+<<<<<<< HEAD
     prefill_quote_id, prefill_quote_data = _find_quote_by_number(prefill_quote)
     if prefill_quote_data and prefill_quote_data.get("linked_project_id"):
         flash(f"Quote {prefill_quote} was already converted to Project "
@@ -1085,6 +1131,11 @@ def project_new():
     return render_template("project_form.html", project=None, clients=clients,
                            sales_people=sales_people, prefill_quote=prefill_quote,
                            prefill_quote_id=prefill_quote_id or "",
+=======
+    next_proj_num = _next_project_number()
+    return render_template("project_form.html", project=None, clients=clients,
+                           sales_people=sales_people, prefill_quote=prefill_quote,
+>>>>>>> fix/project-payment-tracking
                            is_new=True, next_proj_num=next_proj_num)
 
 @app.route("/projects/<project_id>", methods=["GET"])
@@ -1113,17 +1164,56 @@ def project_detail(project_id):
         # First, build a map of invoices by stage
         raw_inv = fb_get("/invoices") or {}
         stage_invoices = {}
+<<<<<<< HEAD
+=======
+        print(f"[PROJECT_DETAIL] proj_num={proj_num}, total_invoices={len(raw_inv)}", flush=True)
+>>>>>>> fix/project-payment-tracking
         if isinstance(raw_inv, dict):
             for iid, inv in raw_inv.items():
                 if not isinstance(inv, dict):
                     continue
                 inv_meta = inv.get("meta", {}) or {}
+<<<<<<< HEAD
                 if inv_meta.get("project_number") == proj_num:
                     stage_idx = inv_meta.get("payment_stage_index", -1)
+=======
+                stage_idx = None
+                is_multi_project = False
+
+                # Check if this is a multi-project invoice
+                linked_projects = inv_meta.get("linked_projects", [])
+                if isinstance(linked_projects, list) and len(linked_projects) > 0:
+                    is_multi_project = True
+                    for linked in linked_projects:
+                        # Handle both old format (string) and new format (dict)
+                        if isinstance(linked, dict) and linked.get("project_number") == proj_num:
+                            stage_idx = linked.get("payment_stage_index")
+                            print(f"[PROJECT_DETAIL] Multi-project invoice {iid}: proj={proj_num}, stage_idx={stage_idx}, inv_num={inv_meta.get('invoice_number', 'N/A')}", flush=True)
+                            if stage_idx is not None:
+                                if stage_idx not in stage_invoices:
+                                    stage_invoices[stage_idx] = []
+                                stage_invoices[stage_idx].append(inv)
+                                break
+                        elif isinstance(linked, str) and linked == proj_num:
+                            # Old format: just project_number string, use payment_stage_index from meta
+                            stage_idx = inv_meta.get("payment_stage_index")
+                            print(f"[PROJECT_DETAIL] Multi-project invoice {iid} (old format): proj={proj_num}, stage_idx={stage_idx}, inv_num={inv_meta.get('invoice_number', 'N/A')}", flush=True)
+                            if stage_idx is not None:
+                                if stage_idx not in stage_invoices:
+                                    stage_invoices[stage_idx] = []
+                                stage_invoices[stage_idx].append(inv)
+                                break
+
+                # Check single-project invoices (only if not multi-project)
+                if not is_multi_project and inv_meta.get("project_number") == proj_num:
+                    stage_idx = inv_meta.get("payment_stage_index", -1)
+                    print(f"[PROJECT_DETAIL] Single-project invoice {iid}: proj={proj_num}, stage_idx={stage_idx}, inv_num={inv_meta.get('invoice_number', 'N/A')}", flush=True)
+>>>>>>> fix/project-payment-tracking
                     if stage_idx >= 0:
                         if stage_idx not in stage_invoices:
                             stage_invoices[stage_idx] = []
                         stage_invoices[stage_idx].append(inv)
+<<<<<<< HEAD
 
         today_str = datetime.now().strftime("%Y-%m-%d")
         for idx, stage in enumerate(data["payment_stages"]):
@@ -1160,6 +1250,48 @@ def project_detail(project_id):
                     stage["_display_status"] = "Overdue"
                 else:
                     stage["_display_status"] = stage_status
+=======
+        print(f"[PROJECT_DETAIL] stage_invoices={stage_invoices}", flush=True)
+        print(f"[PROJECT_DETAIL] All invoices in database:", flush=True)
+        for iid, inv in raw_inv.items():
+            inv_meta = inv.get("meta", {}) or {}
+            print(f"  Invoice {inv_meta.get('invoice_number')}: project={inv_meta.get('project_number')}, stage_idx={inv_meta.get('payment_stage_index')}, linked={inv_meta.get('linked_projects')}", flush=True)
+
+        for idx, stage in enumerate(data["payment_stages"]):
+            stage_amount = _safe_float(stage.get("amount", 0))
+            print(f"[PROJECT_DETAIL] Stage {idx} ({stage.get('name', 'N/A')}): amount={stage_amount}, in_stage_invoices={idx in stage_invoices}", flush=True)
+
+            # If no invoice created for this stage, status is "Pending Invoice"
+            if idx not in stage_invoices:
+                stage["_display_status"] = "Pending Invoice"
+                stage["_display_paid_amount"] = 0
+                print(f"[PROJECT_DETAIL] Stage {idx} -> Pending Invoice (no invoice)", flush=True)
+            else:
+                # Calculate amount paid from all invoices for this stage
+                # For multi-project invoices, use sequential allocation
+                # Tax payments are excluded - they're tracked separately
+                amount_paid = 0
+                for inv in stage_invoices[idx]:
+                    inv_meta = inv.get("meta", {}) or {}
+                    # Use sequential allocation for this invoice
+                    allocation = _allocate_payments_sequentially(inv)
+                    if proj_num in allocation:
+                        amount_paid += allocation[proj_num]
+
+                # Store the display paid amount for the template
+                stage["_display_paid_amount"] = amount_paid
+
+                # Calculate status based on actual paid vs total
+                if amount_paid >= (stage_amount - 0.01):
+                    stage["_display_status"] = "Paid"
+                    print(f"[PROJECT_DETAIL] Stage {idx} -> Paid (amount_paid={amount_paid})", flush=True)
+                elif amount_paid > 0:
+                    stage["_display_status"] = "Partially Paid"
+                    print(f"[PROJECT_DETAIL] Stage {idx} -> Partially Paid (amount_paid={amount_paid})", flush=True)
+                else:
+                    stage["_display_status"] = "Invoiced"
+                    print(f"[PROJECT_DETAIL] Stage {idx} -> Invoiced (no payment)", flush=True)
+>>>>>>> fix/project-payment-tracking
 
     # Load invoices linked to this project (directly, or via per-line-item
     # project overrides on invoices that span multiple projects)
@@ -1189,10 +1321,25 @@ def project_detail(project_id):
                 project_expenses.append(edata)
     project_expenses.sort(key=lambda x: x.get("date", ""), reverse=True)
 
+<<<<<<< HEAD
     # P&L totals — invoices spanning multiple projects only count their prorated share here
     # Use subtotal (before tax) for invoiced amount; add tax_payments separately to collected
     inv_total   = sum(_safe_float(i.get("meta",{}).get("subtotal", 0)) * i.get("_project_share", 1.0) for i in project_invoices)
     inv_paid    = sum((_safe_float(i.get("meta",{}).get("amount_paid", 0)) + sum(_safe_float(tp.get("amount", 0)) for tp in i.get("tax_payments", []))) * i.get("_project_share", 1.0) for i in project_invoices)
+=======
+    # P&L totals — use sequential allocation for multi-project invoices
+    inv_total   = sum(_safe_float(i.get("meta",{}).get("subtotal", 0)) * i.get("_project_share", 1.0) for i in project_invoices)
+
+    # Calculate paid using sequential allocation (project payments only, not tax)
+    inv_paid = 0
+    for i in project_invoices:
+        allocation = _allocate_payments_sequentially(i)
+        proj_num = proj_num  # Use the current project number from outer scope
+        if proj_num in allocation:
+            inv_paid += allocation[proj_num]
+        # Note: Tax payments are NOT included in financial progress
+        # Tax is tracked separately and shown in invoice details
+>>>>>>> fix/project-payment-tracking
     exp_total   = sum(_safe_float(e.get("amount", 0))                     for e in project_expenses)
     gross_profit = inv_paid - exp_total
 
@@ -1857,8 +2004,14 @@ def create_bulk_invoices():
             inv_id = fb_push("/invoices", invoice_data)
             created_invoice_ids.append(inv_id)
 
+<<<<<<< HEAD
             # Mark stage as Invoiced
             _mark_project_stage(proj_num, next_stage_idx, "Invoiced", invoice_id=inv_id)
+=======
+            # Mark stage as Invoiced with invoice_number
+            invoice_number = invoice_data["meta"]["invoice_number"]
+            _mark_project_stage(proj_num, next_stage_idx, "Invoiced", invoice_id=inv_id, invoice_number=invoice_number)
+>>>>>>> fix/project-payment-tracking
 
         if created_invoice_ids:
             flash(f"Created {len(created_invoice_ids)} invoice(s) successfully.", "success")
@@ -1880,6 +2033,13 @@ def invoice_new():
         data = _parse_invoice_form(request.form)
         project_number = data["meta"].get("project_number", "")
 
+<<<<<<< HEAD
+=======
+        # DEBUG: Check if payment_stage_index is in form
+        payment_stage_index = request.form.get("payment_stage_index", "")
+        print(f"[INVOICE_NEW POST] payment_stage_index from form: '{payment_stage_index}'", flush=True)
+
+>>>>>>> fix/project-payment-tracking
         # Get all projects and invoices for validation
         all_projects = fb_get("/projects") or {}
         raw_invoices = fb_get("/invoices") or {}
@@ -1974,6 +2134,11 @@ def invoice_new():
         if stage_idx_raw != "":
             data["meta"]["payment_stage_index"] = int(stage_idx_raw)
             data["meta"]["payment_stage"]       = stage_name
+<<<<<<< HEAD
+=======
+            # Save linked_projects for detection on project_detail page
+            data["meta"]["linked_projects"] = [{"project_number": data["meta"].get("project_number", ""), "payment_stage_index": int(stage_idx_raw)}]
+>>>>>>> fix/project-payment-tracking
 
         inv_id = fb_push("/invoices", data)
         invoice_number = data["meta"].get("invoice_number", "")
@@ -2139,8 +2304,14 @@ def invoice_detail(invoice_id):
                 pdata = dict(pdata)
                 pdata["firebase_id"] = pid
                 pdata["_share"] = _invoice_project_share(data, num)
+<<<<<<< HEAD
                 # Calculate amount paid to this specific project
                 proj_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number") == num)
+=======
+                # Calculate amount paid using sequential allocation for multi-project invoices
+                allocation = _allocate_payments_sequentially(data)
+                proj_paid = allocation.get(num, 0)
+>>>>>>> fix/project-payment-tracking
                 pdata["_paid"] = proj_paid
                 if num == proj_num:
                     linked_project = pdata
@@ -2160,6 +2331,10 @@ def invoice_detail(invoice_id):
                     continue
                 if pdata.get("project_number") == proj_num:
                     payment_copy["project_name"] = pdata.get("project_name", "")
+<<<<<<< HEAD
+=======
+                    payment_copy["project_firebase_id"] = pid
+>>>>>>> fix/project-payment-tracking
                     # Find the stage name and status from payment_stages
                     stages = pdata.get("payment_stages", [])
                     if isinstance(stages, list):
@@ -2680,7 +2855,10 @@ def client_statement(client_name):
 
     total_invoiced = sum(_safe_float(i.get("meta",{}).get("total", 0)) for i in inv_list)
     total_paid     = sum(_safe_float(i.get("meta",{}).get("amount_paid", 0)) for i in inv_list)
+<<<<<<< HEAD
     total_paid    += sum(_safe_float(p.get("amount", 0)) for i in inv_list for p in i.get("tax_payments", []))
+=======
+>>>>>>> fix/project-payment-tracking
     balance_due    = total_invoiced - total_paid
 
     buf = _io.BytesIO()
@@ -3335,6 +3513,7 @@ def api_client(client_name):
     data = fb_get(f"/clients/{client_name}") or {}
     return jsonify(data)
 
+<<<<<<< HEAD
 def _find_quote_by_number(job_number: str):
     """Look up a /job_forms quote by its job_number. Returns (firebase_id, data) or (None, None)."""
     job_number = (job_number or "").strip()
@@ -3365,15 +3544,55 @@ def _quote_to_project_fields(quote: dict) -> dict:
         "end_date":       quote.get("expected_completion", ""),
     }
 
+=======
+>>>>>>> fix/project-payment-tracking
 @app.route("/api/quote-by-number/<quote_number>")
 @login_required
 def api_quote_by_number(quote_number):
     """Return quote data for a given job_number so the project form can auto-fill."""
+<<<<<<< HEAD
     _, qdata = _find_quote_by_number(quote_number)
     if qdata:
         fields = _quote_to_project_fields(qdata)
         fields["found"] = True
         return jsonify(fields)
+=======
+    raw = fb_get("/job_forms") or {}
+    if isinstance(raw, dict):
+        for qid, qdata in raw.items():
+            if isinstance(qdata, dict) and qdata.get("job_number", "").strip() == quote_number.strip():
+                # Map quote fields → project field names
+                def _parse_date(raw_d):
+                    if not raw_d:
+                        return ""
+                    for fmt in ("%m-%d-%Y", "%Y-%m-%d", "%m/%d/%Y"):
+                        try:
+                            from datetime import datetime as _dt
+                            return _dt.strptime(raw_d, fmt).strftime("%Y-%m-%d")
+                        except ValueError:
+                            continue
+                    return ""
+                cost_raw = qdata.get("engineering_costs", "") or "0"
+                try:
+                    cost_val = float(str(cost_raw).replace("$","").replace(",","").strip() or 0)
+                except ValueError:
+                    cost_val = 0.0
+                return jsonify({
+                    "found":          True,
+                    "project_name":   qdata.get("project_name", ""),
+                    "client_name":    qdata.get("client", ""),
+                    "sales":          qdata.get("sales", "") or qdata.get("sales_person", ""),
+                    "site_address":   qdata.get("project_site_address", ""),
+                    "mail_address":   qdata.get("client_address", ""),
+                    "plant":          qdata.get("plant", ""),
+                    "job_type":       qdata.get("job_type", ""),
+                    "scope_of_work":  qdata.get("scope_of_work", ""),
+                    "expedite":       "Yes" if qdata.get("expedite") else "No",
+                    "contract_value": f"{cost_val:.2f}",
+                    "start_date":     _parse_date(qdata.get("start_date", "")),
+                    "end_date":       _parse_date(qdata.get("due_date", "")),
+                })
+>>>>>>> fix/project-payment-tracking
     return jsonify({"found": False})
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -3545,6 +3764,86 @@ def _calculate_invoice_status(inv_data: dict) -> str:
     else:
         return "Sent"
 
+<<<<<<< HEAD
+=======
+def _allocate_payments_sequentially(invoice_data: dict) -> dict:
+    """Allocate multi-project invoice payments sequentially to projects.
+
+    For multi-project invoices, payments fill projects in order:
+    Project A (until complete) → Project B (until complete) → Tax
+
+    Returns dict mapping project_number to total amount paid for that project.
+    """
+    meta = invoice_data.get("meta", {}) or {}
+    linked_projects = meta.get("linked_projects", [])
+
+    # If not multi-project, return original allocation
+    if not linked_projects or len(linked_projects) < 2:
+        payment_log = invoice_data.get("payment_log", [])
+        if isinstance(payment_log, list):
+            result = {}
+            for p in payment_log:
+                proj = p.get("project_number", "")
+                if proj:
+                    result[proj] = result.get(proj, 0) + _safe_float(p.get("amount", 0))
+            return result
+        return {}
+
+    # Get all payments sorted by date
+    payment_log = invoice_data.get("payment_log", [])
+    if not isinstance(payment_log, list):
+        payment_log = []
+    payments = sorted(payment_log, key=lambda p: p.get("date", ""))
+
+    # Sort linked_projects by project_number for consistent sequential order
+    linked_projects = sorted(linked_projects, key=lambda lp: lp.get("project_number", ""))
+
+    # Build sequential allocation of projects with their amounts
+    raw_projects = fb_get("/projects") or {}
+    project_amounts = []
+    for linked_proj in linked_projects:
+        proj_num = linked_proj.get("project_number", "")
+        stage_idx = linked_proj.get("payment_stage_index", 0)
+
+        # Find project amount from payment_stages
+        for pid, pdata in (raw_projects.items() if isinstance(raw_projects, dict) else []):
+            if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
+                stages = pdata.get("payment_stages", [])
+                if isinstance(stages, list) and 0 <= stage_idx < len(stages):
+                    stage = stages[stage_idx]
+                    if isinstance(stage, dict):
+                        amount = _safe_float(stage.get("amount", 0))
+                        project_amounts.append((proj_num, amount))
+                break
+
+    # Allocate payments sequentially
+    allocation = {}
+    remaining_payment = 0
+    payment_idx = 0
+
+    for proj_num, proj_amount in project_amounts:
+        allocation[proj_num] = 0
+        proj_paid = 0
+
+        # Fill this project from payments
+        while proj_paid < proj_amount and payment_idx < len(payments):
+            if remaining_payment == 0:
+                remaining_payment = _safe_float(payments[payment_idx].get("amount", 0))
+                payment_idx += 1
+
+            # Take from remaining_payment
+            take = min(remaining_payment, proj_amount - proj_paid)
+            allocation[proj_num] += take
+            proj_paid += take
+            remaining_payment -= take
+
+    # Any remaining payment goes to "tax"
+    if remaining_payment > 0:
+        allocation["_tax"] = remaining_payment
+
+    return allocation
+
+>>>>>>> fix/project-payment-tracking
 def _update_project_stage_payment_status(invoice_id: str) -> None:
     """Update project stage statuses based on invoice payments.
 
@@ -3743,6 +4042,7 @@ def _upsert_revenue_entry(invoice_id: str, inv_meta: dict) -> None:
         fb_push("/balance_sheet_revenue", entry)
 
 def _auto_complete_project_if_paid(project_number: str) -> None:
+<<<<<<< HEAD
     """Mark project Completed once its amount paid covers the full contract value.
 
     Paying off a single installment (out of several) must not flip the whole
@@ -3751,10 +4051,23 @@ def _auto_complete_project_if_paid(project_number: str) -> None:
     """
     if not project_number:
         return
+=======
+    """Mark project Completed if every invoice linked to it is now Paid."""
+    if not project_number:
+        return
+    raw_inv = fb_get("/invoices") or {}
+    linked = [v.get("meta", {}) for v in raw_inv.values()
+              if isinstance(v, dict) and project_number in _invoice_linked_projects(v)]
+    if not linked:
+        return
+    if not all(m.get("status", "") == "Paid" for m in linked):
+        return
+>>>>>>> fix/project-payment-tracking
     raw_proj = fb_get("/projects") or {}
     for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
         if isinstance(pdata, dict) and pdata.get("project_number", "") == project_number:
             if pdata.get("status", "") not in ("Completed", "Cancelled"):
+<<<<<<< HEAD
                 contract_val = _safe_float(pdata.get("contract_value", 0))
                 total_paid   = _safe_float(pdata.get("amount_paid", 0))
                 if contract_val > 0 and total_paid >= contract_val - 0.01:
@@ -3783,6 +4096,14 @@ def _project_has_overdue_stage(payment_stages, raw_inv: dict) -> bool:
             return True
     return False
 
+=======
+                fb_update(f"/projects/{pid}", {
+                    "status": "Completed",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
+            break
+
+>>>>>>> fix/project-payment-tracking
 def _load_clients() -> List[str]:
     raw = fb_get("/clients") or {}
     if isinstance(raw, dict):
@@ -3921,6 +4242,10 @@ def _parse_quote_form(form) -> dict:
         "date":                 form.get("date", datetime.now().strftime("%Y-%m-%d")),
         "valid_until":          form.get("valid_until", ""),
         "expected_completion":  form.get("expected_completion", ""),
+<<<<<<< HEAD
+=======
+        "job_type":             form.get("job_type", ""),
+>>>>>>> fix/project-payment-tracking
         "service_types":        _parse_service_types(form),
         "priority":             form.get("priority", "Normal"),
         "is_expedited":         form.get("is_expedited") == "on",
@@ -4008,11 +4333,17 @@ def _parse_project_form(form) -> dict:
         "date_received":   form.get("date_received", ""),
         "plant":           form.get("plant", ""),          # 2-letter state code
         "sales":           form.get("sales", ""),
+<<<<<<< HEAD
         "service_types":   _parse_service_types(form),
         "scope_of_work":   form.get("scope_of_work", ""),
         "expedite":        form.get("expedite", "No"),
         "rush_rate":       form.get("rush_rate", "0"),
         "rush_fee":        form.get("rush_fee", "0"),
+=======
+        "job_type":        form.get("job_type", ""),
+        "scope_of_work":   form.get("scope_of_work", ""),
+        "expedite":        form.get("expedite", "No"),
+>>>>>>> fix/project-payment-tracking
         "description":     form.get("description", ""),
         "notes":           form.get("notes", ""),
         # ── dates ────────────────────────────────────────────────────────────
@@ -4143,6 +4474,48 @@ def _invoice_linked_projects(invoice_data: dict) -> set:
     return linked
 
 # ── Routes: Workflow conversions ─────────────────────────────────────────────
+<<<<<<< HEAD
+=======
+@app.route("/quotes/<quote_id>/to-project", methods=["POST"])
+@role_required("projects")
+def quote_to_project(quote_id):
+    quote = fb_get(f"/job_forms/{quote_id}")
+    if not quote:
+        abort(404)
+    proj_num = _next_project_number()
+    project_data = {
+        "project_number":   proj_num,
+        "project_name":     quote.get("project_name", quote.get("description", "")),
+        "client_name":      quote.get("client_name", ""),
+        "description":      quote.get("description", ""),
+        "status":           "In Progress",
+        "start_date":       datetime.now().strftime("%Y-%m-%d"),
+        "end_date":         "",
+        "contract_value":   str(quote.get("total", "0")),
+        "payment_category": "Down Payment",
+        "down_payment_percent":       0.0,
+        "installment_count":          1,
+        "installment_mode":           "equal",
+        "custom_installment_amounts": [],
+        "payment_stages":   _compute_payment_stages(_safe_float(quote.get("total", "0")), 0.0, 1),
+        "amount_paid":      "0",
+        "notes":            quote.get("notes", ""),
+        "assigned_to":      quote.get("salesperson", ""),
+        "source_quote":     quote_id,
+        "source_quote_num": quote.get("job_number", ""),
+        "created_at":       datetime.now(timezone.utc).isoformat(),
+        "updated_at":       datetime.now(timezone.utc).isoformat(),
+        "created_by":       session.get("user_email", ""),
+    }
+    pid = fb_push("/projects", project_data)
+    fb_update(f"/job_forms/{quote_id}", {
+        "status":     "Converted",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    flash(f"Quote converted to Project {proj_num}.", "success")
+    return redirect(url_for("project_detail", project_id=pid))
+
+>>>>>>> fix/project-payment-tracking
 @app.route("/quotes/<quote_id>/to-invoice", methods=["POST"])
 @role_required("invoicing")
 def quote_to_invoice(quote_id):
@@ -4198,6 +4571,60 @@ def quote_to_invoice(quote_id):
     flash(f"Invoice {inv_num} created from quote.", "success")
     return redirect(url_for("invoice_detail", invoice_id=iid))
 
+<<<<<<< HEAD
+=======
+@app.route("/quotes/<quote_id>/win", methods=["POST"])
+@role_required("quotes")
+def quote_win(quote_id):
+    """Win a quote in one click: creates Project + Invoice simultaneously."""
+    quote = fb_get(f"/job_forms/{quote_id}")
+    if not quote:
+        abort(404)
+
+    now_str  = datetime.now(timezone.utc).isoformat()
+    today    = datetime.now().strftime("%Y-%m-%d")
+    user     = session.get("user_email", "")
+
+    # ── 1. Create Project ─────────────────────────────────────────────────────
+    proj_num = _next_project_number()
+    project_data = {
+        "project_number":   proj_num,
+        "project_name":     quote.get("project_name", quote.get("description", "")),
+        "client_name":      quote.get("client_name", ""),
+        "description":      quote.get("description", ""),
+        "status":           "In Progress",
+        "start_date":       today,
+        "end_date":         quote.get("expected_completion", ""),
+        "contract_value":   str(quote.get("total", "0")),
+        "payment_category": "Down Payment",
+        "down_payment_percent":       0.0,
+        "installment_count":          1,
+        "installment_mode":           "equal",
+        "custom_installment_amounts": [],
+        "payment_stages":   _compute_payment_stages(_safe_float(quote.get("total", "0")), 0.0, 1),
+        "amount_paid":      "0",
+        "notes":            quote.get("notes", ""),
+        "assigned_to":      quote.get("salesperson", ""),
+        "source_quote":     quote_id,
+        "source_quote_num": quote.get("job_number", ""),
+        "created_at":       now_str,
+        "updated_at":       now_str,
+        "created_by":       user,
+    }
+    pid = fb_push("/projects", project_data)
+
+    # ── 2. Mark quote as Converted + store back-link to project only ─────────
+    fb_update(f"/job_forms/{quote_id}", {
+        "status":              "Converted",
+        "linked_project_id":   pid,
+        "linked_project_num":  proj_num,
+        "updated_at":          now_str,
+    })
+
+    flash(f"Quote won! Project {proj_num} created. Generate invoices from the project page.", "success")
+    return redirect(url_for("project_detail", project_id=pid))
+
+>>>>>>> fix/project-payment-tracking
 @app.route("/quotes/<quote_id>/pdf")
 @role_required("quotes")
 def quote_pdf(quote_id):
@@ -4846,6 +5273,7 @@ def payment_sequential(invoice_id):
     if not linked_projects and main_project:
         linked_projects = [{"project_number": main_project, "payment_stage_index": meta.get("payment_stage_index", 0)}]
 
+<<<<<<< HEAD
     # Step 1: Distribute to project (main project invoice)
     # Use main_project first, or fallback to first linked_projects
     primary_project = main_project
@@ -4889,6 +5317,13 @@ def payment_sequential(invoice_id):
 
     # Fallback: if still have remaining_to_distribute and linked_projects, distribute there too
     elif remaining_to_distribute > 0 and linked_projects:
+=======
+    # Sort linked_projects by project_number for consistent sequential order (001 before 002)
+    linked_projects = sorted(linked_projects, key=lambda lp: lp.get("project_number", ""))
+
+    # Step 1: Distribute to linked projects sequentially
+    if remaining_to_distribute > 0 and linked_projects:
+>>>>>>> fix/project-payment-tracking
         for proj_info in linked_projects:
             if not isinstance(proj_info, dict) or remaining_to_distribute <= 0:
                 continue
@@ -5430,9 +5865,17 @@ def quick_invoice_stage(project_id, stage_idx):
         # Create invoice
         invoice_id = fb_push("/invoices", invoice_data)
         invoice_number = invoice_data["meta"].get("invoice_number", "")
+<<<<<<< HEAD
 
         # Mark stage as invoiced
         _mark_project_stage(proj_num, stage_idx, "Invoiced", invoice_id=invoice_id, invoice_number=invoice_number)
+=======
+        print(f"[QUICK_INVOICE] Created invoice {invoice_id} ({invoice_number}) for project {proj_num}, stage {stage_idx}", flush=True)
+
+        # Mark stage as invoiced
+        _mark_project_stage(proj_num, stage_idx, "Invoiced", invoice_id=invoice_id, invoice_number=invoice_number)
+        print(f"[QUICK_INVOICE] Marked stage {stage_idx} as Invoiced", flush=True)
+>>>>>>> fix/project-payment-tracking
 
         return {"success": True, "invoice_id": invoice_id, "invoice_number": invoice_number}, 200
     except Exception as e:
