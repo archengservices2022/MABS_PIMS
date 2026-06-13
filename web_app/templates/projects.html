@@ -135,7 +135,7 @@
               <td class="text-muted">{{ p.get('client_name','—') }}</td>
               <td>{{ p.get('start_date','—') }}</td>
               <td class="text-end fw-bold">${{ "{:,.0f}".format(p.get('contract_value',0)|float) }}</td>
-              <td class="text-end text-success">${{ "{:,.0f}".format(p.get('amount_paid',0)|float) }}</td>
+              <td class="text-end text-success">${{ "{:,.0f}".format(p.get('_calculated_paid',0)|float) }}</td>
               <td>
                 <span class="badge status-{{ p.get('status','Not Started')|lower|replace(' ','-') }}">
                   {{ p.get('status','Not Started') }}

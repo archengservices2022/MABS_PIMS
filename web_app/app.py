@@ -944,10 +944,23 @@ def project_to_quote(project_id):
 @role_required("projects")
 def projects():
     raw = fb_get("/projects") or {}
+    raw_invoices = fb_get("/invoices") or {}
     items = []
     for pid, pdata in (raw.items() if isinstance(raw, dict) else []):
         if pdata and isinstance(pdata, dict):
             pdata["firebase_id"] = pid
+
+            # Calculate paid amount for this project using sequential allocation
+            proj_num = pdata.get("project_number", "")
+            paid_amount = 0
+            if proj_num and isinstance(raw_invoices, dict):
+                for iid, inv in raw_invoices.items():
+                    if isinstance(inv, dict):
+                        # Use sequential allocation to get amount paid to this project
+                        allocation = _allocate_payments_sequentially(inv)
+                        if proj_num in allocation:
+                            paid_amount += allocation[proj_num]
+            pdata["_calculated_paid"] = paid_amount
             items.append(pdata)
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
 
@@ -1071,40 +1084,87 @@ def project_detail(project_id):
         # First, build a map of invoices by stage
         raw_inv = fb_get("/invoices") or {}
         stage_invoices = {}
+        print(f"[PROJECT_DETAIL] proj_num={proj_num}, total_invoices={len(raw_inv)}", flush=True)
         if isinstance(raw_inv, dict):
             for iid, inv in raw_inv.items():
                 if not isinstance(inv, dict):
                     continue
                 inv_meta = inv.get("meta", {}) or {}
-                if inv_meta.get("project_number") == proj_num:
+                stage_idx = None
+                is_multi_project = False
+
+                # Check if this is a multi-project invoice
+                linked_projects = inv_meta.get("linked_projects", [])
+                if isinstance(linked_projects, list) and len(linked_projects) > 0:
+                    is_multi_project = True
+                    for linked in linked_projects:
+                        # Handle both old format (string) and new format (dict)
+                        if isinstance(linked, dict) and linked.get("project_number") == proj_num:
+                            stage_idx = linked.get("payment_stage_index")
+                            print(f"[PROJECT_DETAIL] Multi-project invoice {iid}: proj={proj_num}, stage_idx={stage_idx}, inv_num={inv_meta.get('invoice_number', 'N/A')}", flush=True)
+                            if stage_idx is not None:
+                                if stage_idx not in stage_invoices:
+                                    stage_invoices[stage_idx] = []
+                                stage_invoices[stage_idx].append(inv)
+                                break
+                        elif isinstance(linked, str) and linked == proj_num:
+                            # Old format: just project_number string, use payment_stage_index from meta
+                            stage_idx = inv_meta.get("payment_stage_index")
+                            print(f"[PROJECT_DETAIL] Multi-project invoice {iid} (old format): proj={proj_num}, stage_idx={stage_idx}, inv_num={inv_meta.get('invoice_number', 'N/A')}", flush=True)
+                            if stage_idx is not None:
+                                if stage_idx not in stage_invoices:
+                                    stage_invoices[stage_idx] = []
+                                stage_invoices[stage_idx].append(inv)
+                                break
+
+                # Check single-project invoices (only if not multi-project)
+                if not is_multi_project and inv_meta.get("project_number") == proj_num:
                     stage_idx = inv_meta.get("payment_stage_index", -1)
+                    print(f"[PROJECT_DETAIL] Single-project invoice {iid}: proj={proj_num}, stage_idx={stage_idx}, inv_num={inv_meta.get('invoice_number', 'N/A')}", flush=True)
                     if stage_idx >= 0:
                         if stage_idx not in stage_invoices:
                             stage_invoices[stage_idx] = []
                         stage_invoices[stage_idx].append(inv)
+        print(f"[PROJECT_DETAIL] stage_invoices={stage_invoices}", flush=True)
+        print(f"[PROJECT_DETAIL] All invoices in database:", flush=True)
+        for iid, inv in raw_inv.items():
+            inv_meta = inv.get("meta", {}) or {}
+            print(f"  Invoice {inv_meta.get('invoice_number')}: project={inv_meta.get('project_number')}, stage_idx={inv_meta.get('payment_stage_index')}, linked={inv_meta.get('linked_projects')}", flush=True)
 
         for idx, stage in enumerate(data["payment_stages"]):
             stage_amount = _safe_float(stage.get("amount", 0))
+            print(f"[PROJECT_DETAIL] Stage {idx} ({stage.get('name', 'N/A')}): amount={stage_amount}, in_stage_invoices={idx in stage_invoices}", flush=True)
 
-            # Calculate amount paid from all invoices for this stage
-            amount_paid = 0
-            if idx in stage_invoices:
-                for inv in stage_invoices[idx]:
-                    # Sum invoice payments (amount_paid + tax_payments)
-                    inv_meta = inv.get("meta", {}) or {}
-                    amount_paid += _safe_float(inv_meta.get("amount_paid", 0))
-                    # Also add any tax payments
-                    tax_payments = inv.get("tax_payments", [])
-                    if isinstance(tax_payments, list):
-                        amount_paid += sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
-
-            # Calculate status based on actual paid vs total
-            if amount_paid >= (stage_amount - 0.01):
-                stage["_display_status"] = "Paid"
-            elif amount_paid > 0:
-                stage["_display_status"] = "Partially Paid"
+            # If no invoice created for this stage, status is "Pending Invoice"
+            if idx not in stage_invoices:
+                stage["_display_status"] = "Pending Invoice"
+                stage["_display_paid_amount"] = 0
+                print(f"[PROJECT_DETAIL] Stage {idx} -> Pending Invoice (no invoice)", flush=True)
             else:
-                stage["_display_status"] = "Invoiced"
+                # Calculate amount paid from all invoices for this stage
+                # For multi-project invoices, use sequential allocation
+                # Tax payments are excluded - they're tracked separately
+                amount_paid = 0
+                for inv in stage_invoices[idx]:
+                    inv_meta = inv.get("meta", {}) or {}
+                    # Use sequential allocation for this invoice
+                    allocation = _allocate_payments_sequentially(inv)
+                    if proj_num in allocation:
+                        amount_paid += allocation[proj_num]
+
+                # Store the display paid amount for the template
+                stage["_display_paid_amount"] = amount_paid
+
+                # Calculate status based on actual paid vs total
+                if amount_paid >= (stage_amount - 0.01):
+                    stage["_display_status"] = "Paid"
+                    print(f"[PROJECT_DETAIL] Stage {idx} -> Paid (amount_paid={amount_paid})", flush=True)
+                elif amount_paid > 0:
+                    stage["_display_status"] = "Partially Paid"
+                    print(f"[PROJECT_DETAIL] Stage {idx} -> Partially Paid (amount_paid={amount_paid})", flush=True)
+                else:
+                    stage["_display_status"] = "Invoiced"
+                    print(f"[PROJECT_DETAIL] Stage {idx} -> Invoiced (no payment)", flush=True)
 
     # Load invoices linked to this project (directly, or via per-line-item
     # project overrides on invoices that span multiple projects)
@@ -1134,10 +1194,18 @@ def project_detail(project_id):
                 project_expenses.append(edata)
     project_expenses.sort(key=lambda x: x.get("date", ""), reverse=True)
 
-    # P&L totals — invoices spanning multiple projects only count their prorated share here
-    # Use subtotal (before tax) for invoiced amount; add tax_payments separately to collected
+    # P&L totals — use sequential allocation for multi-project invoices
     inv_total   = sum(_safe_float(i.get("meta",{}).get("subtotal", 0)) * i.get("_project_share", 1.0) for i in project_invoices)
-    inv_paid    = sum((_safe_float(i.get("meta",{}).get("amount_paid", 0)) + sum(_safe_float(tp.get("amount", 0)) for tp in i.get("tax_payments", []))) * i.get("_project_share", 1.0) for i in project_invoices)
+
+    # Calculate paid using sequential allocation (project payments only, not tax)
+    inv_paid = 0
+    for i in project_invoices:
+        allocation = _allocate_payments_sequentially(i)
+        proj_num = proj_num  # Use the current project number from outer scope
+        if proj_num in allocation:
+            inv_paid += allocation[proj_num]
+        # Note: Tax payments are NOT included in financial progress
+        # Tax is tracked separately and shown in invoice details
     exp_total   = sum(_safe_float(e.get("amount", 0))                     for e in project_expenses)
     gross_profit = inv_paid - exp_total
 
@@ -1802,8 +1870,9 @@ def create_bulk_invoices():
             inv_id = fb_push("/invoices", invoice_data)
             created_invoice_ids.append(inv_id)
 
-            # Mark stage as Invoiced
-            _mark_project_stage(proj_num, next_stage_idx, "Invoiced", invoice_id=inv_id)
+            # Mark stage as Invoiced with invoice_number
+            invoice_number = invoice_data["meta"]["invoice_number"]
+            _mark_project_stage(proj_num, next_stage_idx, "Invoiced", invoice_id=inv_id, invoice_number=invoice_number)
 
         if created_invoice_ids:
             flash(f"Created {len(created_invoice_ids)} invoice(s) successfully.", "success")
@@ -1824,6 +1893,10 @@ def invoice_new():
     if request.method == "POST":
         data = _parse_invoice_form(request.form)
         project_number = data["meta"].get("project_number", "")
+
+        # DEBUG: Check if payment_stage_index is in form
+        payment_stage_index = request.form.get("payment_stage_index", "")
+        print(f"[INVOICE_NEW POST] payment_stage_index from form: '{payment_stage_index}'", flush=True)
 
         # Get all projects and invoices for validation
         all_projects = fb_get("/projects") or {}
@@ -1919,6 +1992,8 @@ def invoice_new():
         if stage_idx_raw != "":
             data["meta"]["payment_stage_index"] = int(stage_idx_raw)
             data["meta"]["payment_stage"]       = stage_name
+            # Save linked_projects for detection on project_detail page
+            data["meta"]["linked_projects"] = [{"project_number": data["meta"].get("project_number", ""), "payment_stage_index": int(stage_idx_raw)}]
 
         inv_id = fb_push("/invoices", data)
         invoice_number = data["meta"].get("invoice_number", "")
@@ -2084,8 +2159,9 @@ def invoice_detail(invoice_id):
                 pdata = dict(pdata)
                 pdata["firebase_id"] = pid
                 pdata["_share"] = _invoice_project_share(data, num)
-                # Calculate amount paid to this specific project
-                proj_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number") == num)
+                # Calculate amount paid using sequential allocation for multi-project invoices
+                allocation = _allocate_payments_sequentially(data)
+                proj_paid = allocation.get(num, 0)
                 pdata["_paid"] = proj_paid
                 if num == proj_num:
                     linked_project = pdata
@@ -2105,6 +2181,7 @@ def invoice_detail(invoice_id):
                     continue
                 if pdata.get("project_number") == proj_num:
                     payment_copy["project_name"] = pdata.get("project_name", "")
+                    payment_copy["project_firebase_id"] = pid
                     # Find the stage name and status from payment_stages
                     stages = pdata.get("payment_stages", [])
                     if isinstance(stages, list):
@@ -3489,6 +3566,83 @@ def _calculate_invoice_status(inv_data: dict) -> str:
     else:
         return "Sent"
 
+def _allocate_payments_sequentially(invoice_data: dict) -> dict:
+    """Allocate multi-project invoice payments sequentially to projects.
+
+    For multi-project invoices, payments fill projects in order:
+    Project A (until complete) → Project B (until complete) → Tax
+
+    Returns dict mapping project_number to total amount paid for that project.
+    """
+    meta = invoice_data.get("meta", {}) or {}
+    linked_projects = meta.get("linked_projects", [])
+
+    # If not multi-project, return original allocation
+    if not linked_projects or len(linked_projects) < 2:
+        payment_log = invoice_data.get("payment_log", [])
+        if isinstance(payment_log, list):
+            result = {}
+            for p in payment_log:
+                proj = p.get("project_number", "")
+                if proj:
+                    result[proj] = result.get(proj, 0) + _safe_float(p.get("amount", 0))
+            return result
+        return {}
+
+    # Get all payments sorted by date
+    payment_log = invoice_data.get("payment_log", [])
+    if not isinstance(payment_log, list):
+        payment_log = []
+    payments = sorted(payment_log, key=lambda p: p.get("date", ""))
+
+    # Sort linked_projects by project_number for consistent sequential order
+    linked_projects = sorted(linked_projects, key=lambda lp: lp.get("project_number", ""))
+
+    # Build sequential allocation of projects with their amounts
+    raw_projects = fb_get("/projects") or {}
+    project_amounts = []
+    for linked_proj in linked_projects:
+        proj_num = linked_proj.get("project_number", "")
+        stage_idx = linked_proj.get("payment_stage_index", 0)
+
+        # Find project amount from payment_stages
+        for pid, pdata in (raw_projects.items() if isinstance(raw_projects, dict) else []):
+            if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
+                stages = pdata.get("payment_stages", [])
+                if isinstance(stages, list) and 0 <= stage_idx < len(stages):
+                    stage = stages[stage_idx]
+                    if isinstance(stage, dict):
+                        amount = _safe_float(stage.get("amount", 0))
+                        project_amounts.append((proj_num, amount))
+                break
+
+    # Allocate payments sequentially
+    allocation = {}
+    remaining_payment = 0
+    payment_idx = 0
+
+    for proj_num, proj_amount in project_amounts:
+        allocation[proj_num] = 0
+        proj_paid = 0
+
+        # Fill this project from payments
+        while proj_paid < proj_amount and payment_idx < len(payments):
+            if remaining_payment == 0:
+                remaining_payment = _safe_float(payments[payment_idx].get("amount", 0))
+                payment_idx += 1
+
+            # Take from remaining_payment
+            take = min(remaining_payment, proj_amount - proj_paid)
+            allocation[proj_num] += take
+            proj_paid += take
+            remaining_payment -= take
+
+    # Any remaining payment goes to "tax"
+    if remaining_payment > 0:
+        allocation["_tax"] = remaining_payment
+
+    return allocation
+
 def _update_project_stage_payment_status(invoice_id: str) -> None:
     """Update project stage statuses based on invoice payments.
 
@@ -4859,49 +5013,11 @@ def payment_sequential(invoice_id):
     if not linked_projects and main_project:
         linked_projects = [{"project_number": main_project, "payment_stage_index": meta.get("payment_stage_index", 0)}]
 
-    # Step 1: Distribute to project (main project invoice)
-    # Use main_project first, or fallback to first linked_projects
-    primary_project = main_project
-    if not primary_project and linked_projects and isinstance(linked_projects, list):
-        primary_project = linked_projects[0].get("project_number", "")
+    # Sort linked_projects by project_number for consistent sequential order (001 before 002)
+    linked_projects = sorted(linked_projects, key=lambda lp: lp.get("project_number", ""))
 
-    if remaining_to_distribute > 0 and primary_project:
-        # Calculate total project invoice amount from line items (excluding tax)
-        proj_amount = 0
-        for item in line_items:
-            if isinstance(item, dict):
-                proj_amount += _safe_float(item.get("amount", 0))
-
-        if proj_amount > 0:
-            # Calculate how much this project has already received
-            proj_received = sum(
-                _safe_float(p.get("amount", 0))
-                for p in payment_log
-                if p.get("project_number") == primary_project
-            )
-
-            # How much more does this project need?
-            proj_needs = max(0, proj_amount - proj_received)
-
-            if proj_needs > 0:
-                # Distribute amount to this project
-                distribute_to_proj = min(proj_needs, remaining_to_distribute)
-
-                payment_entry = {
-                    "amount":     str(distribute_to_proj),
-                    "date":       request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
-                    "method":     request.form.get("method", ""),
-                    "reference":  request.form.get("reference", ""),
-                    "notes":      request.form.get("notes", ""),
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "project_number": primary_project,
-                }
-                payment_log.append(payment_entry)
-                remaining_to_distribute -= distribute_to_proj
-                log.info(f"[PAYMENT_DIST] Recorded ${distribute_to_proj} payment for project {primary_project}")
-
-    # Fallback: if still have remaining_to_distribute and linked_projects, distribute there too
-    elif remaining_to_distribute > 0 and linked_projects:
+    # Step 1: Distribute to linked projects sequentially
+    if remaining_to_distribute > 0 and linked_projects:
         for proj_info in linked_projects:
             if not isinstance(proj_info, dict) or remaining_to_distribute <= 0:
                 continue
@@ -5443,9 +5559,11 @@ def quick_invoice_stage(project_id, stage_idx):
         # Create invoice
         invoice_id = fb_push("/invoices", invoice_data)
         invoice_number = invoice_data["meta"].get("invoice_number", "")
+        print(f"[QUICK_INVOICE] Created invoice {invoice_id} ({invoice_number}) for project {proj_num}, stage {stage_idx}", flush=True)
 
         # Mark stage as invoiced
         _mark_project_stage(proj_num, stage_idx, "Invoiced", invoice_id=invoice_id, invoice_number=invoice_number)
+        print(f"[QUICK_INVOICE] Marked stage {stage_idx} as Invoiced", flush=True)
 
         return {"success": True, "invoice_id": invoice_id, "invoice_number": invoice_number}, 200
     except Exception as e:
