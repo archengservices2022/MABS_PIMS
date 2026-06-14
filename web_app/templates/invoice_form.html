@@ -1,0 +1,455 @@
+{% extends "base.html" %}
+{% block title %}{{ 'New Invoice' if is_new else 'Edit Invoice' }}{% endblock %}
+{% block page_title %}{{ 'New Invoice' if is_new else 'Edit Invoice' }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+  <a href="{{ url_for('invoicing') }}" class="btn btn-sm btn-outline-secondary me-2">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h5 class="mb-0">{{ 'Create New Invoice' if is_new else 'Edit Invoice' }}</h5>
+</div>
+
+{% set meta = invoice.get('meta', {}) if invoice else {} %}
+{% set stage_idx = stage_idx|default('') %}
+{% set stage_name = stage_name|default('') %}
+{% set stage_amount = stage_amount|default('') %}
+
+{% macro project_select(selected) %}
+<select name="item_project[]" class="form-select form-select-sm">
+  <option value="">— invoice project —</option>
+  {% for p in projects %}
+  <option value="{{ p.get('project_number','') }}" {{ 'selected' if selected == p.get('project_number','') }}>{{ p.get('project_number','') }}</option>
+  {% endfor %}
+</select>
+{% endmacro %}
+
+<form method="POST">
+  {% if stage_idx != '' %}
+  <input type="hidden" name="payment_stage_index" value="{{ stage_idx }}">
+  <input type="hidden" name="payment_stage" value="{{ stage_name }}">
+  <div class="alert alert-info py-2 px-3 mb-3 small">
+    <i class="bi bi-info-circle me-1"></i>
+    Generating invoice for payment plan stage <strong>{{ stage_name }}</strong>
+    (${{ "{:,.2f}".format(stage_amount|float) }}). This invoice will be linked to that stage.
+  </div>
+  {% endif %}
+  <div class="row g-3">
+    <div class="col-lg-8">
+
+      <div class="card-panel mb-3">
+        <h6 class="section-heading">Invoice Details</h6>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Invoice Number</label>
+            <input type="text" name="invoice_number" class="form-control"
+                   value="{{ meta.get('invoice_number', next_num or '') }}" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Invoice Date</label>
+            <input type="date" name="invoice_date" class="form-control"
+                   value="{{ meta.get('invoice_date') or (now.strftime('%Y-%m-%d') if is_new else '') }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Due Date</label>
+            <input type="date" name="due_date" class="form-control"
+                   value="{{ meta.get('due_date') or ((now + timedelta(days=30)).strftime('%Y-%m-%d') if is_new else '') }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Client</label>
+            <select name="client_name" id="clientSelect" class="form-select" onchange="renderClientProjects()">
+              <option value="">-- Select Client --</option>
+              {% for c in clients %}
+              <option value="{{ c }}" {{ 'selected' if (meta.get('client_name') or prefill_client|default('')) == c }}>{{ c }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Project</label>
+            <select name="project_number" class="form-select" onchange="renderClientProjects()">
+              <option value="">-- Select Project --</option>
+              {% for p in projects %}
+              <option value="{{ p.get('project_number','') }}"
+                {{ 'selected' if (meta.get('project_number') or prefill_proj|default('')) == p.get('project_number','') }}>
+                {{ p.get('project_number','') }} — {{ p.get('project_name','') }}
+              </option>
+              {% endfor %}
+            </select>
+            <div class="form-text small">
+              Default project for line items below.
+            </div>
+          </div>
+          <div class="col-12" id="projectsPickerWrap" style="display:none;">
+            <div class="border rounded p-2 ps-3" style="background:#f8fafc;">
+              <div class="small fw-bold text-muted mb-2">
+                <i class="bi bi-kanban me-1 text-teal"></i>Active projects for this client
+                <span class="fw-normal">— check any to also bill on this invoice (one invoice can cover several projects)</span>
+              </div>
+              <div id="clientProjectsList" class="row g-2"></div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Status</label>
+            <select name="status" id="invoiceStatus" class="form-select" onchange="togglePaymentFields()">
+              {% for s in ['Draft','Sent','Viewed','Paid','Partial','Overdue','Cancelled'] %}
+              <option value="{{ s }}" {{ 'selected' if meta.get('status','Draft') == s }}>{{ s }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4" id="paymentMethodWrap" style="display:none;">
+            <label class="form-label">Payment Method</label>
+            <select name="payment_method" class="form-select">
+              <option value="">— Select —</option>
+              {% for pm in ['Check','Wire Transfer','ACH','Cash','Zelle','Credit Card','Other'] %}
+              <option value="{{ pm }}" {{ 'selected' if meta.get('payment_method') == pm }}>{{ pm }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4" id="amountPaidWrap" style="display:none;">
+            <label class="form-label">Amount Paid ($)</label>
+            <input type="number" name="amount_paid" class="form-control"
+                   value="{{ meta.get('amount_paid','0') }}" min="0" step="0.01">
+          </div>
+        </div>
+      </div>
+
+      <div class="card-panel mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="section-heading mb-0">Line Items</h6>
+          <button type="button" class="btn btn-sm btn-outline-teal" onclick="addLineItem()">
+            <i class="bi bi-plus-lg"></i> Add Item
+          </button>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th style="width:33%">Description</th>
+                <th style="width:20%">Project <i class="bi bi-info-circle text-muted" title="Override which project this line item bills to — useful when one invoice covers multiple projects"></i></th>
+                <th style="width:10%">Qty</th>
+                <th style="width:15%">Unit Price</th>
+                <th style="width:15%">Amount</th>
+                <th style="width:7%"></th>
+              </tr>
+            </thead>
+            <tbody id="lineItemsBody">
+              {% set items = invoice.get('line_items', []) if invoice else [] %}
+              <!-- DEBUG: items={items|length}, stage_idx='{stage_idx}', prefill_items={prefill_items|length}, prefill_proj='{prefill_proj}' -->
+              {% if items %}
+                {% for item in items %}
+                <tr class="line-item-row">
+                  <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="{{ item.get('description','') }}" required></td>
+                  <td>{{ project_select(item.get('project_number','')) }}</td>
+                  <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="{{ item.get('quantity','1') }}" min="0" step="any" oninput="calcRow(this)"></td>
+                  <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="{{ item.get('unit_price','0') }}" min="0" step="0.01" oninput="calcRow(this)" {% if lock_unit_price %}readonly{% endif %}></td>
+                  <td><input type="text" class="form-control form-control-sm item-total bg-light" value="{{ item.get('amount','0') }}" readonly></td>
+                  <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>
+                </tr>
+                {% endfor %}
+              {% elif stage_idx != '' %}
+              <tr class="line-item-row">
+                <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="{{ prefill_name }} — {{ stage_name }}" placeholder="Description" required></td>
+                <td>{{ project_select(prefill_proj|default('')) }}</td>
+                <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
+                <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="{{ stage_amount }}" min="0" step="0.01" oninput="calcRow(this)"></td>
+                <td><input type="text" class="form-control form-control-sm item-total bg-light" value="{{ '%.2f'|format(stage_amount|float) }}" readonly></td>
+                <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>
+              </tr>
+              {% elif prefill_items and prefill_items|length > 0 %}
+                {% for item in prefill_items %}
+                <tr class="line-item-row">
+                  <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="{{ item.get('description','') }}" placeholder="Description" required></td>
+                  <td>
+                    {{ project_select(item.get('project','')) }}
+                    <input type="hidden" name="item_stage_index[]" value="{{ item.get('stage_index','') if item.get('stage_index') is not none else '' }}">
+                  </td>
+                  <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
+                  <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="{{ item.get('amount','0') }}" min="0" step="0.01" oninput="calcRow(this)"></td>
+                  <td><input type="text" class="form-control form-control-sm item-total bg-light" value="{{ '%.2f'|format(item.get('amount',0)|float) }}" readonly></td>
+                  <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>
+                </tr>
+                {% endfor %}
+              {% elif prefill_proj|default('') %}
+              <tr class="line-item-row">
+                <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="{{ prefill_name }} — {{ prefill_proj }}" placeholder="Description" required></td>
+                <td>{{ project_select(prefill_proj|default('')) }}</td>
+                <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
+                <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="{{ prefill_amount }}" min="0" step="0.01" oninput="calcRow(this)"></td>
+                <td><input type="text" class="form-control form-control-sm item-total bg-light" value="{{ '%.2f'|format(prefill_amount|float) if prefill_amount else '0.00' }}" readonly></td>
+                <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>
+              </tr>
+              {% else %}
+              <tr class="line-item-row">
+                <td><input type="text" name="item_description[]" class="form-control form-control-sm" placeholder="Description" required></td>
+                <td>{{ project_select(prefill_proj|default('')) }}</td>
+                <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
+                <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="0" min="0" step="0.01" oninput="calcRow(this)"></td>
+                <td><input type="text" class="form-control form-control-sm item-total bg-light" value="0.00" readonly></td>
+                <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card-panel">
+        <h6 class="section-heading">Notes &amp; Terms</h6>
+        <div class="mb-3">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-control" rows="2">{{ meta.get('notes','') }}</textarea>
+        </div>
+        <div>
+          <label class="form-label">Terms &amp; Conditions</label>
+          <textarea name="terms" class="form-control" rows="2">{{ meta.get('terms','Thank you for your business!') }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card-panel mb-3">
+        <h6 class="section-heading">Totals</h6>
+        <div class="d-flex justify-content-between mb-2">
+          <span>Subtotal</span>
+          <strong id="subtotalDisplay">$0.00</strong>
+          <input type="hidden" name="subtotal" id="subtotalInput" value="{{ meta.get('subtotal','0') }}">
+        </div>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span>Tax Rate (%)</span>
+          <input type="number" name="tax_rate" id="taxRate" class="form-control form-control-sm text-end"
+                 style="width:80px;" value="{{ meta.get('tax_rate','0') }}"
+                 min="0" max="100" step="0.01" oninput="calcTotals()">
+        </div>
+        <div class="d-flex justify-content-between mb-2">
+          <span>Tax</span>
+          <strong id="taxDisplay">$0.00</strong>
+          <input type="hidden" name="tax_amount" id="taxInput">
+        </div>
+        <hr>
+        <div class="d-flex justify-content-between">
+          <strong>Total</strong>
+          <strong id="totalDisplay" class="text-teal fs-5">$0.00</strong>
+          <input type="hidden" name="total" id="totalInput">
+        </div>
+      </div>
+
+      <div class="d-grid gap-2">
+        <button type="submit" class="btn btn-teal">
+          <i class="bi bi-check-lg me-1"></i>
+          {{ 'Create Invoice' if is_new else 'Save Changes' }}
+        </button>
+        <a href="{{ url_for('invoicing') }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const projectOptionsHtml = '<option value="">— invoice project —</option>' +
+  [{% for p in projects %}{{ p.get('project_number','')|tojson }}{{ ',' if not loop.last }}{% endfor %}]
+    .map(num => `<option value="${num}">${num}</option>`).join('');
+
+// Client -> active-projects picker: lets one invoice cover several of a
+// client's projects without hand-building each line item from scratch.
+const projectsData = [
+{% for p in projects %}
+  {number: {{ p.get('project_number','')|tojson }},
+   name: {{ p.get('project_name','')|tojson }},
+   client: {{ p.get('client_name','')|tojson }},
+   status: {{ p.get('status','')|tojson }},
+   outstanding: {{ ((p.get('contract_value',0)|float(0)) - (p.get('amount_paid',0)|float(0))) }},
+   contract: {{ (p.get('contract_value',0)|float(0)) }}}{{ ',' if not loop.last }}
+{% endfor %}
+];
+
+// Project numbers that already have a line item on this invoice (whether
+// pre-loaded server-side via "select multiple projects -> load to invoice",
+// or added earlier through this picker) — used so the picker reflects what's
+// already on the invoice instead of overlapping/duplicating it.
+function getIncludedProjectNumbers() {
+  const set = new Set();
+  document.querySelectorAll('#lineItemsBody select[name="item_project[]"]').forEach(sel => {
+    if (sel.value) set.add(sel.value);
+  });
+  return set;
+}
+
+function findLineItemRowByProject(number) {
+  return [...document.querySelectorAll('#lineItemsBody tr.line-item-row')].find(row => {
+    const sel = row.querySelector('select[name="item_project[]"]');
+    return sel && sel.value === number;
+  });
+}
+
+function renderClientProjects() {
+  const wrap = document.getElementById('projectsPickerWrap');
+  if (!wrap) return;   // stage_idx mode — no multi-project panel
+
+  const client  = document.getElementById('clientSelect').value;
+  const mainNum = document.querySelector('select[name="project_number"]').value;
+  const list    = document.getElementById('clientProjectsList');
+  list.innerHTML = '';
+
+  const matches = projectsData.filter(p =>
+    p.client === client &&
+    !['Completed', 'Cancelled'].includes(p.status)
+  );
+
+  // Only show the panel when there are 2+ active projects for this client
+  if (!client || matches.length < 2) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+
+  const includedProjects = getIncludedProjectNumbers();
+
+  matches.forEach(p => {
+    const isMain  = p.number === mainNum;
+    const billable = p.outstanding > 0 ? p.outstanding : p.contract;
+    const col = document.createElement('div');
+    col.className = 'col-md-6 col-lg-4';
+
+    if (isMain) {
+      // Primary project — always included, shown as a teal card (no checkbox)
+      col.innerHTML = `
+        <div class="d-flex align-items-center gap-2 p-2 border rounded"
+             style="background:#f0fdfa; border-color:#0D9488 !important;">
+          <i class="bi bi-check-circle-fill text-teal flex-shrink-0" style="font-size:1.1rem;"></i>
+          <div class="flex-fill min-width-0">
+            <div class="fw-bold small text-truncate">${p.number}</div>
+            <div class="text-muted text-truncate" style="font-size:0.72rem;">${p.name}</div>
+          </div>
+          <div class="text-end flex-shrink-0">
+            <div class="small fw-bold text-teal">$${billable.toFixed(2)}</div>
+            <div class="badge" style="font-size:0.6rem;background:#0D9488;color:#fff;">Primary</div>
+          </div>
+        </div>`;
+    } else {
+      // Additional project — checkbox to include/exclude. Pre-check it (and
+      // mark it "added") when it's already on the invoice as a line item,
+      // e.g. from the "select multiple projects -> load to invoice" flow.
+      const alreadyIncluded = includedProjects.has(p.number);
+      const cbId = 'cp_' + p.number.replace(/[^a-zA-Z0-9]/g, '_');
+      col.innerHTML = `
+        <label class="d-flex align-items-center gap-2 p-2 border rounded proj-pick-card"
+               for="${cbId}" style="cursor:pointer; transition:background .15s, border-color .15s;${alreadyIncluded ? ' background:#f0fdf4; border-color:#16A34A;' : ''}">
+          <input class="form-check-input flex-shrink-0 mt-0" type="checkbox" id="${cbId}"
+                 data-number="${p.number}" data-name="${p.name}" data-amount="${billable.toFixed(2)}"${alreadyIncluded ? ' checked' : ''}>
+          <div class="flex-fill min-width-0">
+            <div class="fw-bold small text-truncate">${p.number}</div>
+            <div class="text-muted text-truncate" style="font-size:0.72rem;">${p.name}</div>
+          </div>
+          <div class="text-end flex-shrink-0">
+            <div class="small fw-bold text-muted">$${billable.toFixed(2)}</div>
+            <div class="text-muted" style="font-size:0.7rem;">${alreadyIncluded ? 'added' : 'outstanding'}</div>
+          </div>
+        </label>`;
+      const cb  = col.querySelector('input[type="checkbox"]');
+      const lbl = col.querySelector('label');
+      cb.addEventListener('change', () => {
+        if (cb.checked) {
+          lbl.style.background     = '#f0fdf4';
+          lbl.style.borderColor    = '#16A34A';
+          addProjectLineItem(cb.dataset.number, cb.dataset.name, cb.dataset.amount);
+        } else {
+          lbl.style.background  = '';
+          lbl.style.borderColor = '';
+          removeProjectLineItem(cb.dataset.number);
+        }
+      });
+    }
+    list.appendChild(col);
+  });
+}
+
+function addProjectLineItem(number, name, amount) {
+  // Already on the invoice (e.g. pre-loaded via "select multiple projects ->
+  // load to invoice") — don't add a second, duplicate line item.
+  if (findLineItemRowByProject(number)) return;
+
+  const tbody = document.getElementById('lineItemsBody');
+  const price = parseFloat(amount || 0) || 0;
+  const row   = document.createElement('tr');
+  row.className = 'line-item-row';
+  row.dataset.autoProject = number;
+  row.innerHTML = `
+    <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="${name} — ${number}" required></td>
+    <td><select name="item_project[]" class="form-select form-select-sm">${projectOptionsHtml}</select></td>
+    <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
+    <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="${price.toFixed(2)}" min="0" step="0.01" oninput="calcRow(this)"></td>
+    <td><input type="text" class="form-control form-control-sm item-total bg-light" value="${price.toFixed(2)}" readonly></td>
+    <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>`;
+  tbody.appendChild(row);
+  row.querySelector('select[name="item_project[]"]').value = number;
+
+  // If the only other row is still the untouched blank starter row, drop it
+  // so the picker doesn't leave a stray empty line item behind.
+  const rows = tbody.querySelectorAll('tr.line-item-row');
+  if (rows.length === 2) {
+    const other = [...rows].find(r => r !== row);
+    const desc  = other.querySelector('input[name="item_description[]"]');
+    if (other && !other.dataset.autoProject && desc && !desc.value.trim()) other.remove();
+  }
+  calcTotals();
+}
+
+function removeProjectLineItem(number) {
+  const row = findLineItemRowByProject(number);
+  if (row && document.querySelectorAll('.line-item-row').length > 1) {
+    row.remove();
+    calcTotals();
+  } else if (row) {
+    row.remove();
+    addLineItem();
+  }
+}
+function fmt(n) { return '$' + parseFloat(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+function calcRow(input) {
+  const row   = input.closest('tr');
+  const qty   = parseFloat(row.querySelector('.item-qty').value   || 0);
+  const price = parseFloat(row.querySelector('.item-price').value || 0);
+  row.querySelector('.item-total').value = (qty * price).toFixed(2);
+  calcTotals();
+}
+function calcTotals() {
+  let sub = 0;
+  document.querySelectorAll('.item-total').forEach(el => sub += parseFloat(el.value||0));
+  const tax   = sub * (parseFloat(document.getElementById('taxRate').value||0) / 100);
+  const total = sub + tax;
+  document.getElementById('subtotalDisplay').textContent = fmt(sub);
+  document.getElementById('taxDisplay').textContent      = fmt(tax);
+  document.getElementById('totalDisplay').textContent    = fmt(total);
+  document.getElementById('subtotalInput').value = sub.toFixed(2);
+  document.getElementById('taxInput').value      = tax.toFixed(2);
+  document.getElementById('totalInput').value    = total.toFixed(2);
+}
+function addLineItem() {
+  const tbody = document.getElementById('lineItemsBody');
+  const row   = document.createElement('tr');
+  row.className = 'line-item-row';
+  row.innerHTML = `
+    <td><input type="text" name="item_description[]" class="form-control form-control-sm" placeholder="Description" required></td>
+    <td><select name="item_project[]" class="form-select form-select-sm">${projectOptionsHtml}</select></td>
+    <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
+    <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="0" min="0" step="0.01" oninput="calcRow(this)"></td>
+    <td><input type="text" class="form-control form-control-sm item-total bg-light" value="0.00" readonly></td>
+    <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>`;
+  tbody.appendChild(row);
+}
+function removeRow(btn) {
+  if (document.querySelectorAll('.line-item-row').length > 1) {
+    btn.closest('tr').remove(); calcTotals();
+  }
+}
+function togglePaymentFields() {
+  const status = document.getElementById('invoiceStatus').value;
+  const show   = ['Paid', 'Partial'].includes(status);
+  document.getElementById('paymentMethodWrap').style.display = show ? '' : 'none';
+  document.getElementById('amountPaidWrap').style.display    = show ? '' : 'none';
+}
+
+calcTotals();
+renderClientProjects();
+togglePaymentFields();
+</script>
+{% endblock %}
