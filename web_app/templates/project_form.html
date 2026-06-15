@@ -10,7 +10,7 @@
   <h5 class="mb-0">{{ 'Create New Project' if is_new else 'Edit Project' }}</h5>
 </div>
 
-<form method="POST" onsubmit="return captureUpdatedStages(event)">
+<form method="POST" id="projectForm" onsubmit="return captureUpdatedStages(event)">
   <input type="hidden" name="source_quote_id" value="{{ prefill_quote_id|default('') }}">
   <div class="row g-3">
     <div class="col-lg-8">
@@ -925,12 +925,26 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     if (otherText) {
       const specInp = document.getElementById('otherSpecifyInput');
-      if (specInp) specInp.value = otherText;
+      if (specInp) {
+        specInp.value = otherText;
+        updateOtherCostRowLabel(specInp);
+      }
     }
   }
 
+  function setServiceCosts(costs) {
+    const body = document.getElementById('serviceCostBody');
+    if (!body || !costs) return;
+    for (const [service, amount] of Object.entries(costs)) {
+      const row = body.querySelector(`tr[data-service="${service}"]`);
+      const inp = row && row.querySelector('.svc-cost-input');
+      if (inp && (parseFloat(inp.value) || 0) === 0) inp.value = amount;
+    }
+    recalcServiceCosts();
+  }
+
   function fillFromQuote(q) {
-    const f = document.querySelector('form');
+    const f = document.getElementById('projectForm');
     if (q.project_name  && !f.querySelector('[name=project_name]').value)
       f.querySelector('[name=project_name]').value  = q.project_name;
     if (q.client_name)
@@ -945,6 +959,8 @@ document.addEventListener('DOMContentLoaded', function () {
       setOption(f.querySelector('[name=plant]'), q.plant);
     if (q.service_types && q.service_types.length)
       setServiceTypes(q.service_types);
+    if (q.service_costs)
+      setServiceCosts(q.service_costs);
     if (q.expedite === 'Yes') {
       const expChk = document.getElementById('expeditedCheck');
       const rateInp = document.getElementById('rushRate');
@@ -1108,7 +1124,7 @@ function saveStageAmount() {
     updatePaymentPlanDisplay();
 
     // Create hidden input for backend
-    const form = document.querySelector('form');
+    const form = document.getElementById('projectForm');
     let stageAmountsInput = form.querySelector('input[name="custom_stage_amounts"]');
     if (!stageAmountsInput) {
       stageAmountsInput = document.createElement('input');
@@ -1273,7 +1289,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Custom amounts can be edited anytime - no locking
-    const form = document.querySelector('form');
+    const form = document.getElementById('projectForm');
     const customInput = form.querySelector('input[name="custom_stage_amounts"]');
     if (customInput && customInput.value) {
       // Custom amounts already exist, button is ready to edit them again
@@ -1337,7 +1353,7 @@ function saveCustomPreviewStages() {
   }
 
   // Store custom amounts in hidden input
-  const form = document.querySelector('form');
+  const form = document.getElementById('projectForm');
   let customInput = form.querySelector('input[name="custom_stage_amounts"]');
   if (!customInput) {
     customInput = document.createElement('input');

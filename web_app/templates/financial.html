@@ -24,8 +24,99 @@
 
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
 /* ── Financial page styles ─────────────────────────────────────── */
+/* Custom dropdown styles */
+.custom-dropdown {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+.custom-dropdown input {
+  width: 100%;
+  padding-right: 35px !important;
+}
+
+.custom-dropdown .dropdown-arrow {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  pointer-events: none;
+  color: #666;
+  font-size: 12px;
+}
+
+.custom-dropdown input:focus + .dropdown-arrow {
+  color: #0d9488;
+}
+
+.dropdown-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #ccc;
+  border-top: none;
+  max-height: 200px;
+  overflow-y: auto;
+  display: none;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.dropdown-list.show {
+  display: block;
+}
+
+.dropdown-list .option {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.dropdown-list .option:hover {
+  background-color: #f0fdf4;
+  color: #0d9488;
+}
+
+.dropdown-list .option.selected {
+  background-color: #d1fae5;
+  color: #0d9488;
+}
+
+/* Clickable expense names in Balance Sheet */
+a[href*="filter_expense"] {
+  border-bottom: 1px solid #0d9488;
+  transition: all 0.2s;
+}
+
+a[href*="filter_expense"]:hover {
+  color: #0d7c59;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+/* Month selection in Annual Summary */
+.month-header {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.month-header:hover {
+  background-color: #e2e8f0 !important;
+}
+
+.month-header.selected {
+  background-color: #1f2937 !important;
+  color: white !important;
+  font-weight: 700 !important;
+}
 .fin-tab-active { border-bottom: 3px solid var(--teal); }
 
 .metric-block {
@@ -86,6 +177,11 @@
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-by-project">
       <i class="bi bi-kanban me-1"></i>By Project
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-balance-sheet">
+      <i class="bi bi-file-earmark-text me-1"></i>Balance Sheet
     </a>
   </li>
 </ul>
@@ -175,6 +271,16 @@
           <span class="text-muted small">Net Profit</span>
           <span class="{{ 'pnl-badge-pos' if net_profit >= 0 else 'pnl-badge-neg' }}">${{ "{:,.0f}".format(net_profit) }}</span>
         </div>
+        {% if total_labor_cost and total_labor_cost > 0 %}
+        <div class="summary-row">
+          <span class="text-muted small">Labor Cost <i class="bi bi-info-circle" title="From Employees time tracking (hours × hourly rate)"></i></span>
+          <span class="fw-bold text-danger">${{ "{:,.0f}".format(total_labor_cost) }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="text-muted small">Net Profit (after Labor)</span>
+          <span class="{{ 'pnl-badge-pos' if net_profit_after_labor >= 0 else 'pnl-badge-neg' }}">${{ "{:,.0f}".format(net_profit_after_labor) }}</span>
+        </div>
+        {% endif %}
 
         {% if total_invoiced > 0 %}
         <div class="mt-3">
@@ -244,6 +350,8 @@
             <th>Client</th>
             <th>Project</th>
             <th>Status</th>
+            <th class="text-end">Subtotal</th>
+            <th class="text-end">Tax</th>
             <th class="text-end">Invoice Total</th>
             <th class="text-end">Amount Paid</th>
           </tr>
@@ -261,16 +369,25 @@
               {% endif %}
             </td>
             <td>{{ r.get('client_name','—') }}</td>
-            <td class="text-muted small">{{ r.get('project_number','—') or '—' }}</td>
+            <td class="text-muted small">
+              {% set linked = r.get('linked_projects', [r.get('project_number', '')]) %}
+              {% if linked and linked|length > 0 %}
+                {{ linked|join(', ') }}
+              {% else %}
+                {{ r.get('project_number','—') or '—' }}
+              {% endif %}
+            </td>
             <td>{{ status_badge(r.get('status'), 'Paid') }}</td>
-            <td class="text-end">${{ "{:,.2f}".format(r.get('total',0)|float) }}</td>
-            <td class="text-end fw-bold text-success">${{ "{:,.2f}".format(r.get('amount_paid',0)|float) }}</td>
+            <td class="text-end">${{ "{:,.2f}".format((r.get('total',0)|float) - (r.get('tax_amount',0)|float)) }}</td>
+            <td class="text-end text-muted">${{ "{:,.2f}".format(r.get('tax_amount',0)|float) }}</td>
+            <td class="text-end fw-bold">${{ "{:,.2f}".format(r.get('total',0)|float) }}</td>
+            <td class="text-end fw-bold text-success">${{ "{:,.2f}".format(r.get('total',0)|float) }}</td>
           </tr>
           {% endfor %}
         </tbody>
         <tfoot class="table-light fw-bold">
           <tr>
-            <td colspan="6" class="text-end">Total Collected</td>
+            <td colspan="7" class="text-end">Total Collected (including tax)</td>
             <td class="text-end text-success">${{ "{:,.2f}".format(total_collected) }}</td>
           </tr>
         </tfoot>
@@ -291,6 +408,12 @@
      EXPENSES TAB
 ═════════════════════════════════════════════════════════════════ -->
 <div class="tab-pane fade" id="tab-expenses">
+  {% if filter_expense %}
+  <div class="alert alert-info mb-3" style="background: #d1fae5; border-color: #0d9488; color: #065f46;">
+    <i class="bi bi-funnel me-2"></i><strong>Filtered:</strong> Showing only "{{ filter_expense }}" expenses
+    <a href="{{ url_for('financial', tab='expenses') }}" class="btn btn-sm btn-link" style="float: right; color: #0d9488;">Clear Filter</a>
+  </div>
+  {% endif %}
   <div class="row g-3">
 
     <!-- Left: AI extractor + Add form -->
@@ -315,9 +438,171 @@
         <form method="POST" action="{{ url_for('expense_new') }}" id="expenseForm">
           <input type="hidden" name="_tab" value="expenses">
           <div class="mb-2">
-            <label class="form-label form-label-sm">Description *</label>
-            <input type="text" name="description" class="form-control form-control-sm" placeholder="e.g. Steel materials" required>
+            <label class="form-label form-label-sm">Expense Type *</label>
+            <div class="custom-dropdown">
+              <input type="text" name="expense_type" id="expenseType" class="form-control form-control-sm" placeholder="Type or select..." required autocomplete="off">
+              <span class="dropdown-arrow">▼</span>
+              <div class="dropdown-list" id="expenseTypeDropdown"></div>
+            </div>
           </div>
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Category *</label>
+            <div class="custom-dropdown">
+              <input type="text" name="category" id="categorySelect" class="form-control form-control-sm" placeholder="Type or select..." required autocomplete="off">
+              <span class="dropdown-arrow">▼</span>
+              <div class="dropdown-list" id="categoryDropdown"></div>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Expense Name *</label>
+            <div class="custom-dropdown">
+              <input type="text" name="expense_name" id="expenseNameSelect" class="form-control form-control-sm" placeholder="Type or select..." required autocomplete="off">
+              <span class="dropdown-arrow">▼</span>
+              <div class="dropdown-list" id="expenseNameDropdown"></div>
+            </div>
+          </div>
+
+          <script>
+            // Data from backend
+            const categoriesByType = {{ categories_by_type|safe }};
+            const expenseNamesByCategory = {{ expense_names_by_category|safe }};
+            const expenseTypesList = {{ expense_types|tojson }};
+
+            // Initialize expense type dropdown
+            function initExpenseTypeDropdown() {
+              const dropdown = document.getElementById('expenseTypeDropdown');
+              dropdown.innerHTML = '';
+              expenseTypesList.forEach(type => {
+                const div = document.createElement('div');
+                div.className = 'option';
+                div.textContent = type;
+                div.onclick = () => {
+                  document.getElementById('expenseType').value = type;
+                  dropdown.classList.remove('show');
+                  updateCategoryList(type);
+                };
+                dropdown.appendChild(div);
+              });
+            }
+
+            // Expense Type: Click to open, Type to filter
+            const expenseTypeInput = document.getElementById('expenseType');
+            const expenseTypeDropdown = document.getElementById('expenseTypeDropdown');
+            const expenseTypeArrow = expenseTypeInput.parentElement.querySelector('.dropdown-arrow');
+
+            expenseTypeArrow.addEventListener('click', () => {
+              expenseTypeDropdown.classList.toggle('show');
+              expenseTypeInput.focus();
+            });
+
+            expenseTypeInput.addEventListener('focus', () => {
+              expenseTypeDropdown.classList.add('show');
+            });
+
+            expenseTypeInput.addEventListener('input', function() {
+              const filter = this.value.toLowerCase();
+              expenseTypeDropdown.classList.add('show');
+              Array.from(expenseTypeDropdown.children).forEach(option => {
+                option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
+              });
+              updateCategoryList(this.value);
+            });
+
+            document.addEventListener('click', (e) => {
+              if (!e.target.closest('.custom-dropdown')) {
+                expenseTypeDropdown.classList.remove('show');
+                document.getElementById('categoryDropdown').classList.remove('show');
+                document.getElementById('expenseNameDropdown').classList.remove('show');
+              }
+            });
+
+            // Category dropdown
+            const categoryInput = document.getElementById('categorySelect');
+            const categoryDropdown = document.getElementById('categoryDropdown');
+            const categoryArrow = categoryInput.parentElement.querySelector('.dropdown-arrow');
+
+            categoryArrow.addEventListener('click', () => {
+              categoryDropdown.classList.toggle('show');
+              categoryInput.focus();
+            });
+
+            categoryInput.addEventListener('focus', () => {
+              categoryDropdown.classList.add('show');
+            });
+
+            categoryInput.addEventListener('input', function() {
+              const filter = this.value.toLowerCase();
+              categoryDropdown.classList.add('show');
+              Array.from(categoryDropdown.children).forEach(option => {
+                option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
+              });
+              updateExpenseNameList(this.value);
+            });
+
+            function updateCategoryList(selectedType) {
+              const dropdown = document.getElementById('categoryDropdown');
+              dropdown.innerHTML = '';
+              categoryInput.value = '';
+
+              if (selectedType && categoriesByType[selectedType]) {
+                categoriesByType[selectedType].forEach(cat => {
+                  const div = document.createElement('div');
+                  div.className = 'option';
+                  div.textContent = cat;
+                  div.onclick = () => {
+                    categoryInput.value = cat;
+                    dropdown.classList.remove('show');
+                    updateExpenseNameList(cat);
+                  };
+                  dropdown.appendChild(div);
+                });
+              }
+            }
+
+            // Expense Name dropdown
+            const expenseNameInput = document.getElementById('expenseNameSelect');
+            const expenseNameDropdown = document.getElementById('expenseNameDropdown');
+            const expenseNameArrow = expenseNameInput.parentElement.querySelector('.dropdown-arrow');
+
+            expenseNameArrow.addEventListener('click', () => {
+              expenseNameDropdown.classList.toggle('show');
+              expenseNameInput.focus();
+            });
+
+            expenseNameInput.addEventListener('focus', () => {
+              expenseNameDropdown.classList.add('show');
+            });
+
+            expenseNameInput.addEventListener('input', function() {
+              const filter = this.value.toLowerCase();
+              expenseNameDropdown.classList.add('show');
+              Array.from(expenseNameDropdown.children).forEach(option => {
+                option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
+              });
+            });
+
+            function updateExpenseNameList(selectedCategory) {
+              const dropdown = document.getElementById('expenseNameDropdown');
+              dropdown.innerHTML = '';
+              expenseNameInput.value = '';
+
+              if (selectedCategory && expenseNamesByCategory[selectedCategory]) {
+                expenseNamesByCategory[selectedCategory].forEach(name => {
+                  const div = document.createElement('div');
+                  div.className = 'option';
+                  div.textContent = name;
+                  div.onclick = () => {
+                    expenseNameInput.value = name;
+                    dropdown.classList.remove('show');
+                  };
+                  dropdown.appendChild(div);
+                });
+              }
+            }
+
+            // Initialize
+            initExpenseTypeDropdown();
+          </script>
           <div class="row g-2 mb-2">
             <div class="col-6">
               <label class="form-label form-label-sm">Amount ($) *</label>
@@ -328,20 +613,9 @@
               <input type="date" name="date" class="form-control form-control-sm" value="{{ today_date }}">
             </div>
           </div>
-          <div class="row g-2 mb-2">
-            <div class="col-6">
-              <label class="form-label form-label-sm">Category</label>
-              <select name="category" class="form-select form-select-sm">
-                <option value="">Select...</option>
-                {% for cat in ['Labor','Materials','Equipment','Subcontractor','Overhead','Travel','Other'] %}
-                <option value="{{ cat }}">{{ cat }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-6">
-              <label class="form-label form-label-sm">Vendor</label>
-              <input type="text" name="vendor" class="form-control form-control-sm" placeholder="Vendor name">
-            </div>
+          <div class="mb-2">
+            <label class="form-label form-label-sm">Vendor</label>
+            <input type="text" name="vendor" class="form-control form-control-sm" placeholder="Vendor name">
           </div>
           <div class="mb-2">
             <label class="form-label form-label-sm">Link to Project</label>
@@ -377,10 +651,11 @@
             <thead>
               <tr>
                 <th>Date</th>
-                <th>Description</th>
+                <th>Expense Type</th>
+                <th>Expense Name</th>
                 <th>Category</th>
-                <th>Project</th>
                 <th>Vendor</th>
+                <th>Project</th>
                 <th class="text-end">Amount</th>
                 <th></th>
               </tr>
@@ -389,14 +664,19 @@
               {% for exp in expenses|sort(attribute='date', reverse=True) %}
               <tr>
                 <td class="text-muted small">{{ exp.get('date','—') }}</td>
-                <td class="fw-medium">{{ exp.get('description','—') }}</td>
-                <td>
+                <td class="small">
+                  <span class="badge" style="background:#F3E8FF;color:#7E22CE;border:1px solid #E9D5FF;">
+                    {{ exp.get('expense_type','—') }}
+                  </span>
+                </td>
+                <td class="fw-medium">{{ exp.get('expense_name','—') or exp.get('description','—') }}</td>
+                <td class="small">
                   <span class="badge" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;">
                     {{ exp.get('category','—') }}
                   </span>
                 </td>
-                <td class="text-muted small">{{ exp.get('project_number','—') or '—' }}</td>
                 <td class="text-muted small">{{ exp.get('vendor','—') }}</td>
+                <td class="text-muted small">{{ exp.get('project_number','—') or '—' }}</td>
                 <td class="text-end fw-semibold">${{ "{:,.2f}".format(exp.get('amount',0)|float) }}</td>
                 <td>
                   {% if exp.get('firebase_id') %}
@@ -411,7 +691,7 @@
               </tr>
               {% else %}
               <tr>
-                <td colspan="7" class="text-center text-muted py-5">
+                <td colspan="8" class="text-center text-muted py-5">
                   <i class="bi bi-receipt fs-2 d-block mb-2"></i>No expenses recorded yet.
                 </td>
               </tr>
@@ -491,6 +771,10 @@
             <th class="text-end">Collected</th>
             <th class="text-end">Expenses</th>
             <th class="text-end">Gross Profit</th>
+            {% if total_labor_cost and total_labor_cost > 0 %}
+            <th class="text-end">Labor Cost</th>
+            <th class="text-end">Net Profit</th>
+            {% endif %}
             <th class="text-end">Margin</th>
           </tr>
         </thead>
@@ -509,6 +793,12 @@
             <td class="text-end fw-bold {{ 'text-success' if row.gross_profit >= 0 else 'text-danger' }}">
               ${{ "{:,.0f}".format(row.gross_profit) }}
             </td>
+            {% if total_labor_cost and total_labor_cost > 0 %}
+            <td class="text-end text-danger">${{ "{:,.0f}".format(row.labor_cost) }}</td>
+            <td class="text-end fw-bold {{ 'text-success' if row.net_profit >= 0 else 'text-danger' }}">
+              ${{ "{:,.0f}".format(row.net_profit) }}
+            </td>
+            {% endif %}
             <td class="text-end">
               <span class="badge {{ 'bg-success' if margin >= 20 else ('bg-warning text-dark' if margin >= 0 else 'bg-danger') }}">
                 {{ "%.0f"|format(margin) }}%
@@ -527,6 +817,12 @@
             <td class="text-end {{ 'text-success' if project_pnl|sum(attribute='gross_profit') >= 0 else 'text-danger' }}">
               ${{ "{:,.0f}".format(project_pnl|sum(attribute='gross_profit')) }}
             </td>
+            {% if total_labor_cost and total_labor_cost > 0 %}
+            <td class="text-end text-danger">${{ "{:,.0f}".format(project_pnl|sum(attribute='labor_cost')) }}</td>
+            <td class="text-end {{ 'text-success' if project_pnl|sum(attribute='net_profit') >= 0 else 'text-danger' }}">
+              ${{ "{:,.0f}".format(project_pnl|sum(attribute='net_profit')) }}
+            </td>
+            {% endif %}
             <td></td>
           </tr>
         </tfoot>
@@ -543,6 +839,454 @@
   {% endif %}
 
 </div><!-- /tab-by-project -->
+
+<!-- ════════════════════════════════════════════════════════════════
+     BALANCE SHEET TAB
+═════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade" id="tab-balance-sheet">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h4 class="mb-1">Balance Sheet</h4>
+      <p class="text-muted small mb-0">Track revenue, expenses and salaries — all in one place</p>
+    </div>
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#yearCalendarModal" style="background: #f0fdf4; color: #0f766e; border-color: #bbf7d0; font-weight: 900;">
+        📅 {{ selected_year }}
+      </button>
+      <button class="btn btn-sm btn-outline-success" onclick="exportBalanceSheet()">
+        <i class="bi bi-download me-1"></i>Export
+      </button>
+    </div>
+  </div>
+
+  <!-- Year Calendar Modal -->
+  <div class="modal fade" id="yearCalendarModal" tabindex="-1" aria-labelledby="yearCalendarLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="yearCalendarLabel">Select Year</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <!-- Navigation Controls -->
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+            <button type="button" id="yearPrevBtn" class="btn btn-sm btn-outline-secondary" style="width: 36px; height: 36px; padding: 0; display: flex; align-items: center; justify-content: center;">
+              <i class="bi bi-chevron-left"></i>
+            </button>
+            <h6 id="yearRangeDisplay" style="font-weight: 700; color: #334155; margin: 0; min-width: 120px; text-align: center; font-size: 13px;">
+              2016 - 2027
+            </h6>
+            <button type="button" id="yearNextBtn" class="btn btn-sm btn-outline-secondary" style="width: 36px; height: 36px; padding: 0; display: flex; align-items: center; justify-content: center;">
+              <i class="bi bi-chevron-right"></i>
+            </button>
+          </div>
+
+          <!-- Year Grid (3x3) -->
+          <div id="yearGridContainer" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+            <!-- Years will be populated by JavaScript -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Year selector functionality
+    document.addEventListener('DOMContentLoaded', function() {
+      const availableYears = {{ available_years|tojson }}.sort((a, b) => a - b);
+      const selectedYear = {{ selected_year|tojson }};
+      const currentYear = new Date().getFullYear();
+      const yearsPerPage = 9; // 3x3 grid
+
+      // Calculate initial page to show current year
+      let currentPageIndex = 0;
+      const currentYearIndex = availableYears.indexOf(currentYear);
+      if (currentYearIndex >= 0) {
+        currentPageIndex = Math.floor(currentYearIndex / yearsPerPage);
+      }
+
+      function renderYearGrid() {
+        const startIdx = currentPageIndex * yearsPerPage;
+        const endIdx = startIdx + yearsPerPage;
+        const yearsToShow = availableYears.slice(startIdx, endIdx);
+
+        // Update range display
+        if (yearsToShow.length > 0) {
+          document.getElementById('yearRangeDisplay').textContent =
+            yearsToShow[0] + ' - ' + yearsToShow[yearsToShow.length - 1];
+        }
+
+        // Populate grid
+        const container = document.getElementById('yearGridContainer');
+        container.innerHTML = '';
+        yearsToShow.forEach(year => {
+          const link = document.createElement('a');
+          link.href = '?tab=balance-sheet&year=' + year;
+          link.className = 'year-cell ' + (year === selectedYear ? 'active' : '');
+
+          // Different styles for current year vs selected year
+          let bgColor = '#ffffff';
+          let borderColor = '#e2e8f0';
+          let textColor = '#334155';
+
+          if (year === currentYear) {
+            // Current year: light blue background
+            bgColor = '#dbeafe';
+            borderColor = '#3b82f6';
+            textColor = '#1e40af';
+          }
+          if (year === selectedYear) {
+            // Selected year: green background (takes precedence)
+            bgColor = '#f0fdf4';
+            borderColor = '#16a34a';
+            textColor = '#15803d';
+          }
+
+          link.style.cssText = `
+            padding: 20px;
+            background: ${bgColor};
+            border: 2px solid ${borderColor};
+            border-radius: 8px;
+            text-align: center;
+            font-weight: 700;
+            color: ${textColor};
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: block;
+          `;
+          link.textContent = year;
+          link.addEventListener('mouseenter', function() {
+            this.style.background = '#f0fdf4';
+            this.style.borderColor = '#16a34a';
+            this.style.color = '#15803d';
+          });
+          link.addEventListener('mouseleave', function() {
+            if (year === currentYear && year !== selectedYear) {
+              this.style.background = '#dbeafe';
+              this.style.borderColor = '#3b82f6';
+              this.style.color = '#1e40af';
+            } else if (year !== selectedYear) {
+              this.style.background = '#ffffff';
+              this.style.borderColor = '#e2e8f0';
+              this.style.color = '#334155';
+            }
+          });
+          if (year === selectedYear) {
+            link.style.background = '#f0fdf4';
+            link.style.borderColor = '#16a34a';
+            link.style.color = '#15803d';
+          }
+          container.appendChild(link);
+        });
+
+        // Update button states
+        document.getElementById('yearPrevBtn').disabled = currentPageIndex === 0;
+        document.getElementById('yearNextBtn').disabled = endIdx >= availableYears.length;
+
+        // Update button opacity
+        document.getElementById('yearPrevBtn').style.opacity = currentPageIndex === 0 ? '0.5' : '1';
+        document.getElementById('yearNextBtn').style.opacity = endIdx >= availableYears.length ? '0.5' : '1';
+      }
+
+      document.getElementById('yearPrevBtn').addEventListener('click', function() {
+        if (currentPageIndex > 0) {
+          currentPageIndex--;
+          renderYearGrid();
+        }
+      });
+
+      document.getElementById('yearNextBtn').addEventListener('click', function() {
+        if ((currentPageIndex + 1) * yearsPerPage < availableYears.length) {
+          currentPageIndex++;
+          renderYearGrid();
+        }
+      });
+
+      // Initial render
+      renderYearGrid();
+    });
+
+    // Month selection in Annual Financial Summary
+    document.addEventListener('DOMContentLoaded', function() {
+      const monthHeaders = document.querySelectorAll('.month-header');
+      monthHeaders.forEach(header => {
+        header.addEventListener('click', function(e) {
+          e.preventDefault();
+          // Remove selected class from all months
+          monthHeaders.forEach(h => h.classList.remove('selected'));
+          // Add selected class to clicked month
+          this.classList.add('selected');
+        });
+      });
+    });
+  </script>
+
+  <style>
+
+  </style>
+
+  <!-- Stat Cards Row -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-green">
+        <div class="kpi-top"><span class="kpi-label">Total Revenue</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
+        <div class="kpi-value text-success">${{ "{:,.2f}".format(total_revenue | default(0)) }}</div>
+        <div class="kpi-sub">from paid invoices</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-red">
+        <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
+        <div class="kpi-value text-danger">${{ "{:,.2f}".format(total_expenses | default(0)) }}</div>
+        <div class="kpi-sub">{{ expenses | length }} entries</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-blue">
+        <div class="kpi-top"><span class="kpi-label">Total Salaries</span><i class="bi bi-people kpi-icon-sm"></i></div>
+        <div class="kpi-value" style="color: #3b82f6;">${{ "{:,.2f}".format(total_salaries | default(0)) }}</div>
+        <div class="kpi-sub">{{ (salaries_domestic | length) + (salaries_international | length) }} employees</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card {{ 'kpi-green' if (total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0)) >= 0 else 'kpi-red' }}">
+        <div class="kpi-top"><span class="kpi-label">Net Profit/Loss</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
+        <div class="kpi-value {{ 'text-success' if (total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0)) >= 0 else 'text-danger' }}">${{ "{:,.2f}".format((total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0))) }}</div>
+        <div class="kpi-sub">revenue minus expenses & salaries</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Annual Financial Summary Table -->
+  <div class="card mb-4">
+    <div class="card-header bg-light">
+      <h6 class="mb-0">Annual Financial Summary</h6>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 annual-table">
+          <thead class="table-light">
+            <tr>
+              <th style="width: 100px; text-align: left; font-weight: 800;">Metric</th>
+              <th class="month-header" data-month="1" style="width: 70px;">Jan</th>
+              <th class="month-header" data-month="2" style="width: 70px;">Feb</th>
+              <th class="month-header" data-month="3" style="width: 70px;">Mar</th>
+              <th class="month-header" data-month="4" style="width: 70px;">Apr</th>
+              <th class="month-header" data-month="5" style="width: 70px;">May</th>
+              <th class="month-header" data-month="6" style="width: 70px;">Jun</th>
+              <th class="month-header" data-month="7" style="width: 70px;">Jul</th>
+              <th class="month-header" data-month="8" style="width: 70px;">Aug</th>
+              <th class="month-header" data-month="9" style="width: 70px;">Sep</th>
+              <th class="month-header" data-month="10" style="width: 70px;">Oct</th>
+              <th class="month-header" data-month="11" style="width: 70px;">Nov</th>
+              <th class="month-header" data-month="12" style="width: 70px;">Dec</th>
+              <th style="width: 80px; background: #f0fdf4; color: #0f766e;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th style="text-align: left; background: #f8fafc; color: #27ae60; font-weight: 700; padding: 8px;">↗ REVENUE</th>
+              <td>${{ (annual_revenue.get(1, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_revenue.get(2, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_revenue.get(3, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_revenue.get(4, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_revenue.get(5, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_revenue.get(6, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_revenue.get(7, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_revenue.get(8, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_revenue.get(9, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_revenue.get(10, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_revenue.get(11, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_revenue.get(12, 0) | float) | round(2) }}</td>
+              <td style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ (total_revenue | default(0)) | round(2) }}</td>
+            </tr>
+            <tr>
+              <th style="text-align: left; background: #f8fafc; color: #e74c3c; font-weight: 700; padding: 8px;">⊖ EXPENSES</th>
+              <td>${{ (annual_expenses.get(1, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_expenses.get(2, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_expenses.get(3, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_expenses.get(4, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_expenses.get(5, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_expenses.get(6, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_expenses.get(7, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_expenses.get(8, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_expenses.get(9, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_expenses.get(10, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_expenses.get(11, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_expenses.get(12, 0) | float) | round(2) }}</td>
+              <td style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ (total_expenses | default(0)) | round(2) }}</td>
+            </tr>
+            <tr>
+              <th style="text-align: left; background: #f8fafc; color: #27ae60; font-weight: 700; padding: 8px;">◑ NET P/L</th>
+              <td>${{ (annual_netpl.get(1, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_netpl.get(2, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_netpl.get(3, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_netpl.get(4, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_netpl.get(5, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_netpl.get(6, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_netpl.get(7, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_netpl.get(8, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_netpl.get(9, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_netpl.get(10, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_netpl.get(11, 0) | float) | round(2) }}</td>
+              <td>${{ (annual_netpl.get(12, 0) | float) | round(2) }}</td>
+              <td style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ ((total_revenue | default(0)) - (total_expenses | default(0))) | round(2) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .annual-table thead th {
+      background: #f8fafc;
+      color: #475569;
+      font-weight: 700;
+      font-size: 12px;
+      padding: 8px 4px;
+      border-bottom: 1px solid #e2e8f0;
+      border-right: 1px solid #e2e8f0;
+      text-align: center;
+    }
+    .annual-table thead th:last-child {
+      border-right: none;
+    }
+    .annual-table tbody td {
+      text-align: center;
+      font-size: 12px;
+      padding: 8px 4px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .annual-table tbody tr:nth-child(odd) {
+      background: #f8fafc;
+    }
+  </style>
+
+  <!-- Divider Section -->
+  <div style="margin: 32px 0; padding: 0;">
+    <div style="height: 1px; background: linear-gradient(90deg, transparent, #e2e8f0 20%, #e2e8f0 80%, transparent); margin: 24px 0;"></div>
+  </div>
+
+  <!-- Salaries & Expenses Layout (2-column) -->
+  <div class="row mb-4 g-3">
+    <!-- LEFT: Salaries Section -->
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h6 class="mb-0">SALARY</h6>
+        </div>
+        <div class="card-body">
+          <!-- Inside America Table -->
+          <div class="mb-3">
+            <div style="border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden;">
+              <div style="font-weight: 700; padding: 8px 12px; border-bottom: 1px solid #cbd5e1;">
+                Inside America
+              </div>
+              <table class="table table-sm mb-0" style="border: none;">
+                <thead>
+                  <tr style="background: #f1f5f9; border-bottom: 1px solid #cbd5e1;">
+                    <th style="padding: 8px 12px; text-align: left; font-weight: 600; border-right: 1px solid #cbd5e1;">Emp. Nm</th>
+                    <th style="padding: 8px 12px; text-align: right; font-weight: 600;">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% if salaries_domestic %}
+                    {% for sal in salaries_domestic | sort(attribute='amount', reverse=true) %}
+                    <tr style="border-bottom: 1px solid #e2e8f0;">
+                      <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #e2e8f0;">{{ sal.get('name', '—') }}</td>
+                      <td style="padding: 8px 12px; text-align: right;">${{ (sal.get('amount', 0) | float) | round(2) }}</td>
+                    </tr>
+                    {% endfor %}
+                  {% endif %}
+                  <tr style="background: #f0fdf4; border-bottom: none; border-top: 2px solid #cbd5e1; font-weight: 700;">
+                    <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #cbd5e1;">Total</td>
+                    <td style="padding: 8px 12px; text-align: right; color: #15803d;">${{ (salaries_domestic | sum(attribute='amount') | float) | round(2) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Outside America Table -->
+          <div>
+            <div style="border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden;">
+              <div style="font-weight: 700; padding: 8px 12px; border-bottom: 1px solid #cbd5e1;">
+                Outside America
+              </div>
+              <table class="table table-sm mb-0" style="border: none;">
+                <thead>
+                  <tr style="background: #f1f5f9; border-bottom: 1px solid #cbd5e1;">
+                    <th style="padding: 8px 12px; text-align: left; font-weight: 600; border-right: 1px solid #cbd5e1;">Emp. Nm</th>
+                    <th style="padding: 8px 12px; text-align: right; font-weight: 600;">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% if salaries_international %}
+                    {% for sal in salaries_international | sort(attribute='amount', reverse=true) %}
+                    <tr style="border-bottom: 1px solid #e2e8f0;">
+                      <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #e2e8f0;">{{ sal.get('name', '—') }}</td>
+                      <td style="padding: 8px 12px; text-align: right;">${{ (sal.get('amount', 0) | float) | round(2) }}</td>
+                    </tr>
+                    {% endfor %}
+                  {% endif %}
+                  <tr style="background: #f0fdf4; border-bottom: none; border-top: 2px solid #cbd5e1; font-weight: 700;">
+                    <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #cbd5e1;">Total</td>
+                    <td style="padding: 8px 12px; text-align: right; color: #15803d;">${{ (salaries_international | sum(attribute='amount') | float) | round(2) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Expense Break-down Section -->
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h6 class="mb-0">EXPENSE BREAK-DOWN</h6>
+        </div>
+        <div class="card-body">
+          <div style="border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden;">
+            <table class="table table-sm mb-0" style="border: none;">
+              <thead>
+                <tr style="background: #f1f5f9; border-bottom: 1px solid #cbd5e1;">
+                  <th style="padding: 8px 12px; text-align: left; font-weight: 600; border-right: 1px solid #cbd5e1;">Expense Item</th>
+                  <th style="padding: 8px 12px; text-align: right; font-weight: 600;">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% if expenses_filtered %}
+                  {% for exp in expenses_filtered | sort(attribute='amount', reverse=true) %}
+                  {% set exp_name = exp.get('expense_name', '') or exp.get('description', '—') %}
+                  <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #e2e8f0;">
+                      <a href="{{ url_for('financial', tab='expenses', filter_expense=exp_name) }}" style="color: #0d9488; text-decoration: none; cursor: pointer; font-weight: 500;">
+                        {{ exp_name }}
+                      </a>
+                    </td>
+                    <td style="padding: 8px 12px; text-align: right;">${{ (exp.get('amount', 0) | float) | round(2) }}</td>
+                  </tr>
+                  {% endfor %}
+                {% endif %}
+                <tr style="background: #f0fdf4; border-bottom: none; border-top: 2px solid #cbd5e1; font-weight: 700;">
+                  <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #cbd5e1;">Total</td>
+                  <td style="padding: 8px 12px; text-align: right; color: #15803d;">${{ (total_expenses | default(0)) | round(2) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+</div><!-- /tab-balance-sheet -->
 
 </div><!-- /tab-content -->
 {% endblock %}
@@ -660,7 +1404,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
 
 // ── Tab persistence ──────────────────────────────────────────────────────────
 (function () {
-  const tabMap = { overview: '#tab-overview', income: '#tab-income', expenses: '#tab-expenses', 'by-project': '#tab-by-project' };
+  const tabMap = { overview: '#tab-overview', income: '#tab-income', expenses: '#tab-expenses', 'by-project': '#tab-by-project', 'balance-sheet': '#tab-balance-sheet' };
   const initTab = "{{ active_tab or 'overview' }}";
   const target  = tabMap[initTab] || '#tab-overview';
   const el = document.querySelector(`.nav-link[href="${target}"]`);
@@ -674,5 +1418,27 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     });
   });
 })();
+
+// Export Balance Sheet to Excel
+function exportBalanceSheet() {
+  // Get year from URL parameter, or from the button text, or default to current year
+  const urlParams = new URLSearchParams(window.location.search);
+  let year = urlParams.get('year');
+
+  if (!year) {
+    // Try to get from the year button
+    const yearBtn = document.querySelector('[data-bs-target="#yearCalendarModal"]');
+    if (yearBtn) {
+      const btnText = yearBtn.textContent.trim();
+      year = btnText.split(' ').pop(); // Get last word from button text
+    }
+  }
+
+  if (!year) {
+    year = new Date().getFullYear(); // Default to current year
+  }
+
+  window.location.href = `/export/balance-sheet?year=${year}`;
+}
 </script>
 {% endblock %}

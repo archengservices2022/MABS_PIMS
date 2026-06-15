@@ -342,7 +342,6 @@
               <th style="padding:10px 12px; text-align:left; font-weight:700; color:#374151; border:none;">Date</th>
               <th style="padding:10px 12px; text-align:right; font-weight:700; color:#374151; border:none;">Amount</th>
               <th style="padding:10px 12px; text-align:left; font-weight:700; color:#374151; border:none;">Stage</th>
-              <th style="padding:10px 12px; text-align:left; font-weight:700; color:#374151; border:none;">Status</th>
               <th style="padding:10px 12px; text-align:left; font-weight:700; color:#374151; border:none;">Method</th>
               <th style="padding:10px 12px; text-align:center; font-weight:700; color:#374151; border:none;">Action</th>
             </tr>
@@ -351,7 +350,13 @@
             {% for payment in enriched_payment_log %}
             <tr style="border-bottom:1px solid #F1F5F9; background:white;">
               <td style="padding:10px 12px; color:#1E293B; font-weight:500;">
+                {% if payment.get('project_firebase_id') %}
+                <a href="{{ url_for('project_detail', project_id=payment.get('project_firebase_id')) }}" class="text-decoration-none text-teal fw-bold" title="View project details">
+                  {{ payment.get('project_number','—') }}
+                </a>
+                {% else %}
                 <div>{{ payment.get('project_number','—') }}</div>
+                {% endif %}
                 {% if payment.get('project_name') %}
                 <div style="font-size:0.8rem; color:#6B7280;">{{ payment.get('project_name') }}</div>
                 {% endif %}
@@ -359,10 +364,6 @@
               <td style="padding:10px 12px; color:#475569;">{{ payment.get('date','—') }}</td>
               <td style="padding:10px 12px; text-align:right; font-weight:600; color:#15803D;">${{ "{:,.2f}".format(payment.get('amount',0)|float) }}</td>
               <td style="padding:10px 12px; color:#475569;">{{ payment.get('stage_name', 'Invoice Payment') }}</td>
-              <td style="padding:10px 12px; color:#475569;">
-                {% set status = payment.get('stage_status', 'Invoiced') %}
-                <span class="badge status-{{ status|lower|replace(' ','-') }}">{{ status }}</span>
-              </td>
               <td style="padding:10px 12px; color:#475569;">{{ payment.get('method','—') }}</td>
               <td style="padding:10px 12px; text-align:center;">
                 <button type="button" class="btn btn-xs btn-outline-primary" title="Edit"
@@ -846,16 +847,10 @@ function handleStatusUpdate() {
         if (res.ok) {
           window.isEditingPayment = false;
           window.editPaymentContext = null;
-          // Get project ID from the page context if available
-          const projectLink = document.querySelector('a[href*="/projects/"]');
-          const projectId = projectLink ? projectLink.href.split('/projects/')[1] : null;
+          // Stay on invoice details page - just reload to show updated amounts
           setTimeout(() => {
-            if (projectId) {
-              window.location.href = `/projects/${projectId}`;
-            } else {
-              window.location.reload();
-            }
-          }, 1000);
+            window.location.reload();
+          }, 500);
         } else {
           res.json().then(data => alert('Payment update failed: ' + (data.error || 'Unknown error')));
         }
@@ -879,11 +874,11 @@ function handleStatusUpdate() {
           // Get project ID from the page context if available
           const projectLink = document.querySelector('a[href*="/projects/"]');
           const projectId = projectLink ? projectLink.href.split('/projects/')[1] : null;
-          // Wait longer for Firebase to persist before reload
+          // Reload immediately to show updated payment in both invoice and project details
           setTimeout(() => {
             console.log('Reloading page...');
             window.location.reload();
-          }, 1000);
+          }, 200);
         } else {
           const data = await res.json();
           console.error('Payment failed:', data);

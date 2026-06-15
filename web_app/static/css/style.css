@@ -179,16 +179,19 @@ body {
 .accent-blue  { --item-accent: #2563EB; }
 .accent-green { --item-accent: #10B981; }
 .accent-amber { --item-accent: #B45309; }
+.accent-purple { --item-accent: #7C3AED; }
 
 .nav-item.accent-teal.active  { background: rgba(15,118,110,.18); }
 .nav-item.accent-blue.active  { background: rgba(37,99,235,.18);  }
 .nav-item.accent-green.active { background: rgba(16,185,129,.18); }
 .nav-item.accent-amber.active { background: rgba(180,83,9,.18);   }
+.nav-item.accent-purple.active { background: rgba(124,58,237,.18); }
 
 .nav-item.accent-teal.active::before  { background: #0F766E; }
 .nav-item.accent-blue.active::before  { background: #2563EB; }
 .nav-item.accent-green.active::before { background: #10B981; }
 .nav-item.accent-amber.active::before { background: #B45309; }
+.nav-item.accent-purple.active::before { background: #7C3AED; }
 
 /* Sub nav */
 .nav-item.nav-sub { height: 40px; }
@@ -414,11 +417,17 @@ body {
 .status-in-review   { background:var(--violet-l);  color:#1D4ED8; }
 .status-rejected    { background:#FEE2E2; color:#B91C1C; }
 .status-expired     { background:#FFE4E6; color:#BE123C; }
+.status-pending     { background:#FEF9C3; color:#A16207; }
+.status-active      { background:#DCFCE7; color:#15803D; }
+.status-inactive    { background:var(--slate-100); color:var(--slate-600); }
+.status-open        { background:#FEF9C3; color:#A16207; }
+.status-closed      { background:var(--slate-100); color:var(--slate-600); }
 
 .badge-role-admin    { background:#FEE2E2; color:#B91C1C; }
 .badge-role-projects { background:var(--violet-l); color:#1D4ED8; }
 .badge-role-finance  { background:#DCFCE7; color:#15803D; }
 .badge-role-sales    { background:#F3E8FF; color:#6D28D9; }
+.badge-role-engineer { background:#E0F2FE; color:#0369A1; }
 
 /* ══ BUTTONS ════════════════════════════════════════════════════════════════ */
 .btn-teal {

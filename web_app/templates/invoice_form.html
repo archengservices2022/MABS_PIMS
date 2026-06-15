@@ -24,7 +24,7 @@
 </select>
 {% endmacro %}
 
-<form method="POST">
+<form method="POST" id="invoiceForm">
   {% if stage_idx != '' %}
   <input type="hidden" name="payment_stage_index" value="{{ stage_idx }}">
   <input type="hidden" name="payment_stage" value="{{ stage_name }}">
@@ -172,7 +172,10 @@
               {% elif prefill_proj|default('') %}
               <tr class="line-item-row">
                 <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="{{ prefill_name }} — {{ prefill_proj }}" placeholder="Description" required></td>
-                <td>{{ project_select(prefill_proj|default('')) }}</td>
+                <td>
+                  {{ project_select(prefill_proj|default('')) }}
+                  <input type="hidden" name="item_stage_index[]" value="">
+                </td>
                 <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
                 <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="{{ prefill_amount }}" min="0" step="0.01" oninput="calcRow(this)"></td>
                 <td><input type="text" class="form-control form-control-sm item-total bg-light" value="{{ '%.2f'|format(prefill_amount|float) if prefill_amount else '0.00' }}" readonly></td>
@@ -181,7 +184,10 @@
               {% else %}
               <tr class="line-item-row">
                 <td><input type="text" name="item_description[]" class="form-control form-control-sm" placeholder="Description" required></td>
-                <td>{{ project_select(prefill_proj|default('')) }}</td>
+                <td>
+                  {{ project_select(prefill_proj|default('')) }}
+                  <input type="hidden" name="item_stage_index[]" value="">
+                </td>
                 <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
                 <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="0" min="0" step="0.01" oninput="calcRow(this)"></td>
                 <td><input type="text" class="form-control form-control-sm item-total bg-light" value="0.00" readonly></td>
@@ -260,7 +266,10 @@ const projectsData = [
    client: {{ p.get('client_name','')|tojson }},
    status: {{ p.get('status','')|tojson }},
    outstanding: {{ ((p.get('contract_value',0)|float(0)) - (p.get('amount_paid',0)|float(0))) }},
-   contract: {{ (p.get('contract_value',0)|float(0)) }}}{{ ',' if not loop.last }}
+   contract: {{ (p.get('contract_value',0)|float(0)) }},
+   stageIdx: {{ (p.get('next_stage_idx') if p.get('next_stage_idx') is not none else '')|tojson }},
+   stageName: {{ (p.get('next_stage_name',''))|tojson }},
+   stageAmount: {{ (p.get('next_stage_amount',0)|float) }}}{{ ',' if not loop.last }}
 {% endfor %}
 ];
 
@@ -288,7 +297,7 @@ function renderClientProjects() {
   if (!wrap) return;   // stage_idx mode — no multi-project panel
 
   const client  = document.getElementById('clientSelect').value;
-  const mainNum = document.querySelector('select[name="project_number"]').value;
+  const mainNum = document.querySelector('#invoiceForm select[name="project_number"]').value;
   const list    = document.getElementById('clientProjectsList');
   list.innerHTML = '';
 
@@ -304,8 +313,9 @@ function renderClientProjects() {
   const includedProjects = getIncludedProjectNumbers();
 
   matches.forEach(p => {
-    const isMain  = p.number === mainNum;
-    const billable = p.outstanding > 0 ? p.outstanding : p.contract;
+    const isMain   = p.number === mainNum;
+    const hasStage = p.stageName && p.stageAmount > 0;
+    const billable = hasStage ? p.stageAmount : (p.outstanding > 0 ? p.outstanding : p.contract);
     const col = document.createElement('div');
     col.className = 'col-md-6 col-lg-4';
 
@@ -330,18 +340,20 @@ function renderClientProjects() {
       // e.g. from the "select multiple projects -> load to invoice" flow.
       const alreadyIncluded = includedProjects.has(p.number);
       const cbId = 'cp_' + p.number.replace(/[^a-zA-Z0-9]/g, '_');
+      const badgeLabel = alreadyIncluded ? 'added' : (hasStage ? p.stageName : 'outstanding');
       col.innerHTML = `
         <label class="d-flex align-items-center gap-2 p-2 border rounded proj-pick-card"
                for="${cbId}" style="cursor:pointer; transition:background .15s, border-color .15s;${alreadyIncluded ? ' background:#f0fdf4; border-color:#16A34A;' : ''}">
           <input class="form-check-input flex-shrink-0 mt-0" type="checkbox" id="${cbId}"
-                 data-number="${p.number}" data-name="${p.name}" data-amount="${billable.toFixed(2)}"${alreadyIncluded ? ' checked' : ''}>
+                 data-number="${p.number}" data-name="${p.name}" data-amount="${billable.toFixed(2)}"
+                 data-stage-idx="${p.stageIdx}" data-stage-name="${hasStage ? p.stageName : ''}"${alreadyIncluded ? ' checked' : ''}>
           <div class="flex-fill min-width-0">
             <div class="fw-bold small text-truncate">${p.number}</div>
             <div class="text-muted text-truncate" style="font-size:0.72rem;">${p.name}</div>
           </div>
           <div class="text-end flex-shrink-0">
             <div class="small fw-bold text-muted">$${billable.toFixed(2)}</div>
-            <div class="text-muted" style="font-size:0.7rem;">${alreadyIncluded ? 'added' : 'outstanding'}</div>
+            <div class="text-muted text-truncate" style="font-size:0.7rem;max-width:120px;">${badgeLabel}</div>
           </div>
         </label>`;
       const cb  = col.querySelector('input[type="checkbox"]');
@@ -350,7 +362,7 @@ function renderClientProjects() {
         if (cb.checked) {
           lbl.style.background     = '#f0fdf4';
           lbl.style.borderColor    = '#16A34A';
-          addProjectLineItem(cb.dataset.number, cb.dataset.name, cb.dataset.amount);
+          addProjectLineItem(cb.dataset.number, cb.dataset.name, cb.dataset.amount, cb.dataset.stageIdx, cb.dataset.stageName);
         } else {
           lbl.style.background  = '';
           lbl.style.borderColor = '';
@@ -362,19 +374,23 @@ function renderClientProjects() {
   });
 }
 
-function addProjectLineItem(number, name, amount) {
+function addProjectLineItem(number, name, amount, stageIdx, stageName) {
   // Already on the invoice (e.g. pre-loaded via "select multiple projects ->
   // load to invoice") — don't add a second, duplicate line item.
   if (findLineItemRowByProject(number)) return;
 
   const tbody = document.getElementById('lineItemsBody');
   const price = parseFloat(amount || 0) || 0;
+  const description = stageName ? `${name} — ${stageName}` : `${name} — ${number}`;
   const row   = document.createElement('tr');
   row.className = 'line-item-row';
   row.dataset.autoProject = number;
   row.innerHTML = `
-    <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="${name} — ${number}" required></td>
-    <td><select name="item_project[]" class="form-select form-select-sm">${projectOptionsHtml}</select></td>
+    <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="${description}" required></td>
+    <td>
+      <select name="item_project[]" class="form-select form-select-sm">${projectOptionsHtml}</select>
+      <input type="hidden" name="item_stage_index[]" value="${stageIdx || ''}">
+    </td>
     <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
     <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="${price.toFixed(2)}" min="0" step="0.01" oninput="calcRow(this)"></td>
     <td><input type="text" class="form-control form-control-sm item-total bg-light" value="${price.toFixed(2)}" readonly></td>
@@ -429,7 +445,10 @@ function addLineItem() {
   row.className = 'line-item-row';
   row.innerHTML = `
     <td><input type="text" name="item_description[]" class="form-control form-control-sm" placeholder="Description" required></td>
-    <td><select name="item_project[]" class="form-select form-select-sm">${projectOptionsHtml}</select></td>
+    <td>
+      <select name="item_project[]" class="form-select form-select-sm">${projectOptionsHtml}</select>
+      <input type="hidden" name="item_stage_index[]" value="">
+    </td>
     <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
     <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="0" min="0" step="0.01" oninput="calcRow(this)"></td>
     <td><input type="text" class="form-control form-control-sm item-total bg-light" value="0.00" readonly></td>

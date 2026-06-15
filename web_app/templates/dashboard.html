@@ -151,6 +151,52 @@
 </div>
 {% endif %}
 
+<!-- ── Team Status (Employees module) ──────────────────────────────────────── -->
+{% if 'employees' in allowed_pages and (clocked_in_now or pending_time_off) %}
+<div class="row g-3 mb-3">
+
+  {% if clocked_in_now %}
+  <div class="col-lg-6">
+    <div class="card-panel" style="height:100%;">
+      <div class="panel-header d-flex justify-content-between align-items-center mb-2">
+        <h6 class="panel-title mb-0"><i class="bi bi-record-circle-fill text-success me-1"></i>Clocked In Now ({{ clocked_in_now|length }})</h6>
+        <a href="{{ url_for('employees') }}#team" class="text-teal small">Team →</a>
+      </div>
+      {% for e in clocked_in_now %}
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+        <div>
+          <div class="fw-500 small">{{ e.employee_name }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ e.project_name or e.project_number or 'General / Admin' }}</div>
+        </div>
+        <div class="text-muted small">Since {{ e.clock_in[11:16] }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if pending_time_off %}
+  <div class="col-lg-6">
+    <div class="card-panel" style="height:100%;">
+      <div class="panel-header d-flex justify-content-between align-items-center mb-2">
+        <h6 class="panel-title mb-0"><i class="bi bi-calendar-event text-warning me-1"></i>Pending Time Off ({{ pending_time_off|length }})</h6>
+        <a href="{{ url_for('employees') }}#time-off" class="text-teal small">Review →</a>
+      </div>
+      {% for r in pending_time_off[:5] %}
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+        <div>
+          <div class="fw-500 small">{{ r.employee_name }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ r.type }} · {{ r.start_date }} → {{ r.end_date }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endif %}
+
 <!-- ── Project Pipeline ───────────────────────────────────────────────────────── -->
 {% if 'projects' in allowed_pages %}
 {% set ns_pipe = namespace(has_items=false) %}

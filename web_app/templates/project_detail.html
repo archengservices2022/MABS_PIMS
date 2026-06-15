@@ -162,13 +162,16 @@
             </div>
           </div>
           {% if project.get('contract_value',0)|float > 0 %}
-          {% set pct = [(project.get('amount_paid',0)|float / project.get('contract_value',0)|float * 100), 100]|min %}
+          {% set amount_paid = project.get('amount_paid',0)|float %}
+          {% set contract_val = project.get('contract_value',0)|float %}
+          {% set pct = (amount_paid / contract_val * 100) if contract_val > 0 else 0 %}
+          {% set pct = [pct, 100]|min %}
           <div class="mt-3">
             <div class="d-flex justify-content-between small text-muted mb-1">
-              <span>Payment Progress</span><span>{{ "%.0f"|format(pct) }}%</span>
+              <span>Payment Progress</span><span>{{ "%.1f"|format(pct) }}%</span>
             </div>
             <div class="progress" style="height:8px;">
-              <div class="progress-bar bg-teal" style="width:{{ pct }}%"></div>
+              <div class="progress-bar bg-teal" style="width:{{ "%.1f"|format(pct) }}%"></div>
             </div>
           </div>
           {% endif %}
@@ -250,7 +253,7 @@
                     </span>
                   </td>
                   <td><span class="badge status-{{ status_class.get(st, st|lower|replace(' ','-')) }}">{{ st }}</span></td>
-                  <td class="text-end">{% set paid_amount = inv_data.get('paid', 0)|float if inv_data else 0 %}{% if paid_amount > 0 %}${{ "{:,.2f}".format(paid_amount) }}{% else %}—{% endif %}</td>
+                  <td class="text-end">{% set paid_amount = s.get('amount_paid', 0)|float %}{% if paid_amount > 0 %}${{ "{:,.2f}".format(paid_amount) }}{% else %}—{% endif %}</td>
                   <td>{% if inv_id and (inv_num or inv_data.get('number')) %}<a href="{{ url_for('invoice_detail', invoice_id=inv_id) }}" class="text-decoration-none">{{ inv_num or inv_data.get('number') }}</a>{% else %}—{% endif %}</td>
                   <td class="text-center">
                     {% if st == 'Pending Invoice' %}
@@ -350,6 +353,24 @@
           <div class="kpi-top"><span class="kpi-label">Gross Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
           <div class="kpi-value {{ 'text-success' if gross_profit >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(gross_profit) }}</div>
           <div class="kpi-sub">collected minus expenses</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Labor KPI row (from Employees time tracking) -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-xl-3">
+        <div class="kpi-card kpi-amber">
+          <div class="kpi-top"><span class="kpi-label">Labor Cost</span><i class="bi bi-person-badge kpi-icon-sm"></i></div>
+          <div class="kpi-value">${{ "{:,.0f}".format(labor_total_cost) }}</div>
+          <div class="kpi-sub">{{ "%.1f"|format(labor_total_minutes/60) }} hrs logged</div>
+        </div>
+      </div>
+      <div class="col-6 col-xl-3">
+        <div class="kpi-card {{ 'kpi-green' if net_profit >= 0 else 'kpi-blue' }}">
+          <div class="kpi-top"><span class="kpi-label">Net Profit</span><i class="bi bi-graph-up kpi-icon-sm"></i></div>
+          <div class="kpi-value {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(net_profit) }}</div>
+          <div class="kpi-sub">gross profit minus labor</div>
         </div>
       </div>
     </div>
@@ -455,6 +476,54 @@
           </div>
           {% else %}
           <div class="empty-state py-3"><i class="bi bi-receipt fs-2 d-block mb-2"></i>No expenses linked to this project.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Labor hours/cost for this project -->
+    <div class="row g-3 mt-3">
+      <div class="col-12">
+        <div class="card-panel">
+          <div class="panel-header d-flex justify-content-between align-items-center">
+            <h6 class="panel-title mb-0">Labor</h6>
+            {% if 'employees' in allowed_pages %}
+            <a href="{{ url_for('employees') }}#team" class="text-teal small">Employees →</a>
+            {% endif %}
+          </div>
+          {% if labor_by_employee %}
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th class="text-end">Hours</th>
+                  <th class="text-end">Rate</th>
+                  <th class="text-end">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for emp, d in labor_by_employee.items() %}
+                <tr>
+                  <td>{{ emp }}</td>
+                  <td class="text-end">{{ "%.1f"|format(d.minutes/60) }} h</td>
+                  <td class="text-end">${{ "{:,.2f}".format(d.rate) }}/h</td>
+                  <td class="text-end text-danger">${{ "{:,.0f}".format(d.cost) }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+              <tfoot class="table-light fw-bold">
+                <tr>
+                  <td>Total</td>
+                  <td class="text-end">{{ "%.1f"|format(labor_total_minutes/60) }} h</td>
+                  <td></td>
+                  <td class="text-end text-danger">${{ "{:,.0f}".format(labor_total_cost) }}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          {% else %}
+          <div class="empty-state py-3"><i class="bi bi-clock-history fs-2 d-block mb-2"></i>No time logged against this project yet.</div>
           {% endif %}
         </div>
       </div>
@@ -775,7 +844,7 @@ function updateRemainingStages() {
           <span class="badge status-${isInvoiced ? 'invoiced' : 'not-started'}">${currentStages[i].status || 'Pending Invoice'}</span>
         </div>
         <input type="number" class="form-control stageAmountInput" data-index="${i}" value="${amount.toFixed(2)}"
-               step="0.01" oninput="autoRedistributeStages(${i})" ${isPaid ? 'disabled' : ''}/>
+               step="0.01" oninput="calculateEditPlanTotal()" ${isPaid ? 'disabled' : ''}/>
       </div>
     `;
   }
@@ -1029,9 +1098,49 @@ function saveInlineEdit(idx, status, invoiceId) {
     return;
   }
 
-  // Update stage locally
+  // Save original amounts BEFORE any changes
   const oldAmount = currentStages[idx].amount || 0;
+  const originalStageAmounts = currentStages.map(s => s.amount || 0);
+
   const difference = newAmount - oldAmount;  // Positive if increase, negative if decrease
+
+  // Find remaining non-invoiced stages to check if they can absorb redistribution
+  const remainingUninvoiced = currentStages
+    .map((s, i) => i !== idx && s.status === 'Pending Invoice' ? i : -1)
+    .filter(i => i >= 0);
+
+  // Validate redistribution is possible
+  if (remainingUninvoiced.length > 0 && difference !== 0) {
+    const perStage = difference / remainingUninvoiced.length;
+    let canRedistribute = true;
+    let errorMessage = '';
+
+    remainingUninvoiced.forEach(i => {
+      const projectedAmount = (currentStages[i].amount || 0) - perStage;
+      if (projectedAmount < -0.01) {  // Allow small rounding differences
+        canRedistribute = false;
+        errorMessage = `Not enough available amount in other stages. ${currentStages[i].name || `Stage ${i+1}`} would become $${projectedAmount.toFixed(2)}`;
+      }
+    });
+
+    if (!canRedistribute) {
+      // Show error and DON'T make any changes
+      alert(`❌ Error: Cannot change to $${newAmount.toFixed(2)}. ${errorMessage}`);
+      displaySpan.style.display = 'inline-flex';
+      editSpan.style.display = 'none';
+      input.value = oldAmount.toFixed(2);
+      return;
+    }
+  } else if (remainingUninvoiced.length === 0 && difference !== 0) {
+    // No other stages to redistribute to - cannot change
+    alert(`❌ Error: Cannot change to $${newAmount.toFixed(2)}. No other stages available to redistribute.`);
+    displaySpan.style.display = 'inline-flex';
+    editSpan.style.display = 'none';
+    input.value = oldAmount.toFixed(2);
+    return;
+  }
+
+  // Now update stage locally only if validation passed
   currentStages[idx].amount = newAmount;
 
   // Recalculate down payment percentage for first stage if it's the down payment
@@ -1041,11 +1150,7 @@ function saveInlineEdit(idx, status, invoiceId) {
     currentStages[idx].name = `${baseName} (${dpPercent}%)`;
   }
 
-  // Auto-redistribute to remaining non-invoiced stages to keep total = contract value
-  const remainingUninvoiced = currentStages
-    .map((s, i) => i > idx && s.status === 'Pending Invoice' ? i : -1)
-    .filter(i => i >= 0);
-
+  // Auto-redistribute to remaining non-invoiced stages (ALL except the one being edited)
   if (remainingUninvoiced.length > 0 && difference !== 0) {
     const perStage = difference / remainingUninvoiced.length;
     remainingUninvoiced.forEach(i => {
