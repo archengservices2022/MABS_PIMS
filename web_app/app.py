@@ -3347,34 +3347,6 @@ def financial():
     for _mk in monthly_payment_details:
         monthly_payment_details[_mk].sort(key=lambda x: x.get("paid_date", ""))
 
-    # ── Monthly expense details for drill-down ────────────────────────────────
-    monthly_expense_details = {str(i): [] for i in range(1, 13)}
-    for _exp in exp_list_all:
-        _ds = (_exp.get("date") or "")[:10]
-        try:
-            _d = datetime.fromisoformat(_ds)
-            if _d.year == current_year:
-                monthly_expense_details[str(_d.month)].append({
-                    "name":     _exp.get("expense_name") or _exp.get("description") or "—",
-                    "category": _exp.get("category") or _exp.get("expense_type") or "—",
-                    "amount":   _safe_float(_exp.get("amount", 0)),
-                    "date":     _ds,
-                })
-        except Exception:
-            pass
-
-    # ── Monthly outstanding (A/R) details for drill-down ─────────────────────
-    monthly_outstanding_details = {str(i): [] for i in range(1, 13)}
-    for _bucket in aging_buckets.values():
-        for _entry in _bucket:
-            _ds = (_entry.get("invoice_date") or "")[:10]
-            try:
-                _d = datetime.fromisoformat(_ds)
-                if _d.year == current_year:
-                    monthly_outstanding_details[str(_d.month)].append(_entry)
-            except Exception:
-                pass
-
     # ── Chart data for overview pie charts ────────────────────────────────────
     inv_status_counts = {}
     for i in inv_list:
@@ -3552,6 +3524,33 @@ def financial():
 
     aging_totals = {k: sum(e["balance"] for e in v) for k, v in aging_buckets.items()}
     aging_total_outstanding = sum(aging_totals.values())
+
+    # ── Monthly drill-down detail blocks (needs aging_buckets + salaries_domestic) ──
+    monthly_expense_details = {str(i): [] for i in range(1, 13)}
+    for _exp in exp_list_all:
+        _ds = (_exp.get("date") or "")[:10]
+        try:
+            _d = datetime.fromisoformat(_ds)
+            if _d.year == current_year:
+                monthly_expense_details[str(_d.month)].append({
+                    "name":     _exp.get("expense_name") or _exp.get("description") or "—",
+                    "category": _exp.get("category") or _exp.get("expense_type") or "—",
+                    "amount":   _safe_float(_exp.get("amount", 0)),
+                    "date":     _ds,
+                })
+        except Exception:
+            pass
+
+    monthly_outstanding_details = {str(i): [] for i in range(1, 13)}
+    for _bucket in aging_buckets.values():
+        for _entry in _bucket:
+            _ds = (_entry.get("invoice_date") or "")[:10]
+            try:
+                _d = datetime.fromisoformat(_ds)
+                if _d.year == current_year:
+                    monthly_outstanding_details[str(_d.month)].append(_entry)
+            except Exception:
+                pass
 
     today_date = datetime.now().strftime("%Y-%m-%d")
     active_tab = request.args.get("tab", "overview")
