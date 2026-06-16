@@ -1,0 +1,657 @@
+{% extends "base.html" %}
+{% block title %}Employees{% endblock %}
+{% block page_title %}Employees{% endblock %}
+
+{% block head %}
+<style>
+.timeclock-status { font-size: 22px; font-weight: 800; }
+#elapsedTimer { font-size: 32px; font-weight: 800; color: var(--slate-900); letter-spacing: .04em; font-family: 'Inter', monospace; }
+.team-input { min-width: 90px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<ul class="nav nav-tabs mb-4" id="empTabs">
+  <li class="nav-item">
+    <a class="nav-link active" data-bs-toggle="tab" href="#tab-clock">
+      <i class="bi bi-clock-history me-1"></i>My Time Clock
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-time-off">
+      <i class="bi bi-calendar-event me-1"></i>Time Off
+      {% if user_role == 'admin' and pending_time_off %}
+      <span class="badge bg-danger ms-1">{{ pending_time_off|length }}</span>
+      {% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-profile">
+      <i class="bi bi-person-circle me-1"></i>Profile
+    </a>
+  </li>
+  {% if user_role == 'admin' %}
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-team">
+      <i class="bi bi-people me-1"></i>Team
+    </a>
+  </li>
+  {% endif %}
+</ul>
+
+<div class="tab-content">
+
+<!-- ════════════════════════════════════════════════════════════════
+     MY TIME CLOCK
+═════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade show active" id="tab-clock">
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-teal">
+        <div class="kpi-top"><span class="kpi-label">Today</span><i class="bi bi-sun-fill kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ "%.1f"|format(my_today_minutes/60) }} h</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-green">
+        <div class="kpi-top"><span class="kpi-label">This Week</span><i class="bi bi-calendar-week kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ "%.1f"|format(my_week_minutes/60) }} h</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-amber">
+        <div class="kpi-top"><span class="kpi-label">This Month</span><i class="bi bi-calendar-month kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ "%.1f"|format(my_month_minutes/60) }} h</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-blue">
+        <div class="kpi-top"><span class="kpi-label">This Year</span><i class="bi bi-calendar-range kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ "%.1f"|format(my_year_minutes/60) }} h</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-lg-4">
+      <div class="card-panel text-center h-100 d-flex flex-column justify-content-center">
+        {% if my_open_entry and my_open_entry.date < today_str %}
+        <div class="alert alert-warning text-start py-2 mb-3">
+          <div class="small mb-2"><i class="bi bi-exclamation-triangle-fill me-1"></i>You're still clocked in from {{ my_open_entry.date }} ({{ my_open_entry.project_name or my_open_entry.project_number or 'General / Admin' }}).</div>
+          <form method="post" action="{{ url_for('employee_close_entry', entry_id=my_open_entry.firebase_id) }}" class="d-flex gap-2">
+            <input type="datetime-local" name="clock_out" value="{{ my_open_entry.date }}T17:00" class="form-control form-control-sm" style="width:auto;">
+            <button type="submit" class="btn btn-sm btn-outline-warning"><i class="bi bi-stop-circle"></i> Close it out</button>
+          </form>
+        </div>
+        {% endif %}
+        {% if my_open_entry %}
+        <div class="kpi-label mb-2">CURRENTLY CLOCKED IN</div>
+        <div class="timeclock-status text-success mb-1">
+          <i class="bi bi-record-circle-fill text-danger"></i>
+          {{ my_open_entry.project_name or my_open_entry.project_number or 'General / Admin' }}
+        </div>
+        <div id="elapsedTimer" class="mb-3" data-clock-in="{{ my_open_entry.clock_in }}">00:00:00</div>
+        <form method="post" action="{{ url_for('employee_clock_out') }}">
+          <textarea name="notes" class="form-control form-control-sm mb-2" rows="2" placeholder="What did you work on? (optional)"></textarea>
+          <button type="submit" class="btn btn-danger w-100"><i class="bi bi-stop-circle me-1"></i>Clock Out</button>
+        </form>
+        {% if active_projects %}
+        <form method="post" action="{{ url_for('employee_switch_project') }}" class="d-flex gap-2 mt-2">
+          <select name="project_number" class="form-select form-select-sm">
+            {% if my_open_entry.project_number %}
+            <option value="">General / Admin</option>
+            {% endif %}
+            {% for p in active_projects %}
+            {% if p.project_number != my_open_entry.project_number %}
+            <option value="{{ p.project_number }}">{{ p.project_number }} — {{ p.project_name }}</option>
+            {% endif %}
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-repeat"></i> Switch</button>
+        </form>
+        {% endif %}
+        {% else %}
+        <div class="kpi-label mb-2">STATUS</div>
+        <div class="timeclock-status text-muted mb-3"><i class="bi bi-pause-circle"></i> Clocked Out</div>
+        <form method="post" action="{{ url_for('employee_clock_in') }}">
+          <select name="project_number" class="form-select form-select-sm mb-2">
+            <option value="" {% if not last_project_number %}selected{% endif %}>General / Admin</option>
+            {% for p in active_projects %}
+            <option value="{{ p.project_number }}" {% if p.project_number == last_project_number %}selected{% endif %}>{{ p.project_number }} — {{ p.project_name }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-success w-100"><i class="bi bi-play-circle me-1"></i>Clock In</button>
+        </form>
+        {% endif %}
+
+        <hr class="my-3">
+        <button type="button" class="btn btn-link btn-sm text-decoration-none p-0" data-bs-toggle="collapse" data-bs-target="#logTimeForm">
+          <i class="bi bi-pencil-square me-1"></i>Log time manually
+        </button>
+        <div class="collapse mt-2" id="logTimeForm">
+          <form method="post" action="{{ url_for('employee_log_time') }}" class="text-start">
+            <div class="mb-2">
+              <label class="form-label small mb-1">Date</label>
+              <input type="date" name="date" class="form-control form-control-sm" value="{{ today_str }}" max="{{ today_str }}" required>
+            </div>
+            <div class="mb-2">
+              <label class="form-label small mb-1">Project</label>
+              <select name="project_number" class="form-select form-select-sm">
+                <option value="">General / Admin</option>
+                {% for p in active_projects %}
+                <option value="{{ p.project_number }}">{{ p.project_number }} — {{ p.project_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-2">
+              <label class="form-label small mb-1">Hours</label>
+              <input type="number" name="hours" step="0.25" min="0.25" max="24" class="form-control form-control-sm" placeholder="e.g. 2.5" required>
+            </div>
+            <div class="mb-2">
+              <label class="form-label small mb-1">What did you work on? (optional)</label>
+              <textarea name="notes" class="form-control form-control-sm" rows="2"></textarea>
+            </div>
+            <button type="submit" class="btn btn-outline-teal btn-sm w-100"><i class="bi bi-plus-circle me-1"></i>Log Time</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-8">
+      <div class="card-panel h-100">
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+          <h6 class="panel-title mb-0">Hours by Project — {{ my_period_label }}</h6>
+          <div class="d-flex align-items-center gap-2">
+            <select id="myPeriodSelect" class="form-select form-select-sm" style="width:auto;">
+              <option value="week"  {% if my_period == 'week'  %}selected{% endif %}>This Week</option>
+              <option value="month" {% if my_period == 'month' %}selected{% endif %}>This Month</option>
+              <option value="year"  {% if my_period == 'year'  %}selected{% endif %}>This Year</option>
+              <option value="custom" {% if my_period == 'custom' %}selected{% endif %}>Custom Range</option>
+            </select>
+            <input type="date" id="myPeriodCustomStart" class="form-control form-control-sm" style="width:auto;{% if my_period != 'custom' %} display:none;{% endif %}" value="{{ my_period_start if my_period == 'custom' else '' }}">
+            <input type="date" id="myPeriodCustomEnd" class="form-control form-control-sm" style="width:auto;{% if my_period != 'custom' %} display:none;{% endif %}" value="{{ my_period_end if my_period == 'custom' else '' }}">
+            <button type="button" id="myPeriodCustomApply" class="btn btn-sm btn-outline-secondary" style="{% if my_period != 'custom' %}display:none;{% endif %}">Apply</button>
+          </div>
+        </div>
+        {% if my_period_by_project %}
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Project</th><th class="text-end">Hours</th></tr></thead>
+          <tbody>
+          {% for proj, minutes in my_period_by_project.items() %}
+            <tr><td>{{ proj }}</td><td class="text-end">{{ "%.1f"|format(minutes/60) }} h</td></tr>
+          {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr class="fw-bold border-top">
+              <td>Total</td><td class="text-end">{{ "%.1f"|format(my_period_minutes/60) }} h</td>
+            </tr>
+          </tfoot>
+        </table>
+        {% else %}
+        <p class="text-muted small mb-0">No completed time entries for this period yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card-panel">
+    <h6 class="panel-title mb-3">Today's Entries</h6>
+    {% if my_today_entries %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead>
+          <tr><th>Project</th><th>Clock In</th><th>Clock Out</th><th class="text-end">Duration</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+        {% for e in my_today_entries|sort(attribute='clock_in') %}
+          <tr>
+            <td>{{ e.project_name or e.project_number or 'General / Admin' }}</td>
+            {% if e.get('source') == 'manual' %}
+            <td colspan="2" class="text-muted small"><i class="bi bi-pencil-square me-1"></i>Manually logged</td>
+            {% else %}
+            <td>{{ e.clock_in[11:16] }}</td>
+            <td>{{ e.clock_out[11:16] if e.clock_out else '—' }}</td>
+            {% endif %}
+            <td class="text-end">{{ "%.1f"|format(e.duration_minutes/60) }} h</td>
+            <td class="text-muted small">{{ e.notes or '—' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted small mb-0">No completed time entries for today yet.</p>
+    {% endif %}
+  </div>
+</div><!-- /tab-clock -->
+
+
+<!-- ════════════════════════════════════════════════════════════════
+     TIME OFF
+═════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade" id="tab-time-off">
+  <div class="row g-3">
+    <div class="col-lg-5">
+      <div class="card-panel">
+        <h6 class="panel-title mb-3">Request Time Off</h6>
+        <form method="post" action="{{ url_for('employee_time_off_new') }}">
+          <div class="mb-2">
+            <label class="form-label small">Type</label>
+            <select name="type" class="form-select form-select-sm">
+              <option>Vacation</option>
+              <option>Sick</option>
+              <option>Personal</option>
+              <option>Unpaid</option>
+            </select>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small">Start Date</label>
+              <input type="date" name="start_date" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label small">End Date</label>
+              <input type="date" name="end_date" class="form-control form-control-sm" required>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">Reason (optional)</label>
+            <textarea name="reason" class="form-control form-control-sm" rows="2"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-send me-1"></i>Submit Request</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="col-lg-7">
+      <div class="card-panel">
+        <h6 class="panel-title mb-3">My Requests</h6>
+        {% if my_time_off %}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0 align-middle">
+            <thead><tr><th>Type</th><th>Dates</th><th>Reason</th><th>Status</th></tr></thead>
+            <tbody>
+            {% for r in my_time_off %}
+            <tr>
+              <td>{{ r.type }}</td>
+              <td>{{ r.start_date }} → {{ r.end_date }}</td>
+              <td class="text-muted small">{{ r.reason or '—' }}</td>
+              <td><span class="badge status-{{ r.status|lower }}">{{ r.status }}</span></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-muted small mb-0">No time off requests yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if user_role == 'admin' %}
+  <div class="card-panel mt-3">
+    <h6 class="panel-title mb-3">Pending Approvals</h6>
+    {% if pending_time_off %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead>
+          <tr><th>Employee</th><th>Type</th><th>Dates</th><th>Reason</th><th>Requested</th><th class="text-end">Action</th></tr>
+        </thead>
+        <tbody>
+        {% for r in pending_time_off %}
+        <tr>
+          <td>{{ r.employee_name }}</td>
+          <td>{{ r.type }}</td>
+          <td>{{ r.start_date }} → {{ r.end_date }}</td>
+          <td class="text-muted small">{{ r.reason or '—' }}</td>
+          <td class="text-muted small">{{ r.requested_at[:10] }}</td>
+          <td class="text-end">
+            <form method="post" action="{{ url_for('employee_time_off_action', request_id=r.firebase_id, action='approve') }}" class="d-inline">
+              <button type="submit" class="btn btn-xs btn-outline-success"><i class="bi bi-check-lg"></i> Approve</button>
+            </form>
+            <form method="post" action="{{ url_for('employee_time_off_action', request_id=r.firebase_id, action='reject') }}" class="d-inline">
+              <button type="submit" class="btn btn-xs btn-outline-danger"><i class="bi bi-x-lg"></i> Reject</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted small mb-0">No pending requests.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</div><!-- /tab-time-off -->
+
+
+<!-- ════════════════════════════════════════════════════════════════
+     PROFILE
+═════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade" id="tab-profile">
+  <div class="row g-3">
+    <div class="col-lg-4">
+      <div class="card-panel text-center">
+        <div class="rounded-circle d-inline-flex align-items-center justify-content-center mb-3"
+             style="width:72px;height:72px;font-size:28px;font-weight:700;background:#CCFBF1;color:#0F766E;">
+          {{ (user_name or 'U')[0]|upper }}
+        </div>
+        <h5 class="mb-1">{{ user_name }}</h5>
+        <div class="text-muted small mb-2">{{ user_email }}</div>
+        <span class="badge badge-role-{{ user_role }}">{{ user_role|capitalize }}</span>
+      </div>
+    </div>
+    <div class="col-lg-8">
+      <div class="card-panel">
+        <h6 class="panel-title mb-3">Employee Details</h6>
+        <table class="table table-sm mb-0">
+          <tbody>
+            <tr><th style="width:160px;">Department</th><td>{{ profile_user.get('department') or '—' }}</td></tr>
+            <tr><th>Hire Date</th><td>{{ profile_user.get('hire_date') or '—' }}</td></tr>
+            <tr>
+              <th>Status</th>
+              <td><span class="badge status-{{ profile_user.get('employee_status','Active')|lower }}">{{ profile_user.get('employee_status','Active') }}</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="text-muted small mt-3 mb-0"><i class="bi bi-info-circle me-1"></i>Contact an admin to update these details.</p>
+      </div>
+    </div>
+  </div>
+</div><!-- /tab-profile -->
+
+
+{% if user_role == 'admin' %}
+<!-- ════════════════════════════════════════════════════════════════
+     TEAM (admin only)
+═════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade" id="tab-team">
+
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-teal">
+        <div class="kpi-top"><span class="kpi-label">Employees</span><i class="bi bi-people-fill kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ all_users|length }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-green">
+        <div class="kpi-top"><span class="kpi-label">Clocked In Now</span><i class="bi bi-record-circle-fill kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ open_entries_by_uid|length }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-amber">
+        <div class="kpi-top"><span class="kpi-label">Pending Time Off</span><i class="bi bi-calendar-event kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ pending_time_off|length }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-red">
+        <div class="kpi-top"><span class="kpi-label">Needs Attention</span><i class="bi bi-exclamation-triangle-fill kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ stale_open_entries|length }}</div>
+      </div>
+    </div>
+  </div>
+
+  {% if stale_open_entries %}
+  <div class="card-panel mb-3">
+    <h6 class="panel-title mb-3 text-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>Open Time Entries Needing Attention</h6>
+    <p class="text-muted small">These clock-ins were never closed out and are still open from a previous day. Pick a clock-out time and close them so hours totals stay accurate.</p>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Employee</th>
+            <th>Project</th>
+            <th>Clock In</th>
+            <th>Clock Out</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for e in stale_open_entries %}
+        <tr>
+          <td class="fw-semibold">{{ e.employee_name }}</td>
+          <td>{{ e.project_name or e.project_number or 'General / Admin' }}</td>
+          <td class="text-muted small">{{ e.date }} {{ e.clock_in[11:16] }}</td>
+          <td>
+            <form id="close-entry-{{ e.firebase_id }}" method="post" action="{{ url_for('employee_close_entry', entry_id=e.firebase_id) }}" class="d-flex gap-2">
+              <input type="datetime-local" name="clock_out" value="{{ e._suggested_close }}" class="form-control form-control-sm" style="width:auto;">
+            </form>
+          </td>
+          <td class="text-end">
+            <button type="submit" form="close-entry-{{ e.firebase_id }}" class="btn btn-xs btn-outline-danger"><i class="bi bi-stop-circle"></i> Close</button>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card-panel mb-3">
+    <h6 class="panel-title mb-3">Employee Directory</h6>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th>Department</th>
+            <th>Hourly Rate</th>
+            <th>Hire Date</th>
+            <th>Currently Working On</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for u in all_users %}
+        {% set open_entry = open_entries_by_uid.get(u.firebase_uid) %}
+        <tr>
+          <td class="fw-semibold">{{ u.username }}</td>
+          <td class="text-muted small">{{ u.email }}</td>
+          <td><span class="badge badge-role-{{ u.role }}">{{ u.role|capitalize }}</span></td>
+          <td>
+            <select name="employee_status" form="emp-form-{{ u.firebase_uid }}" class="form-select form-select-sm team-input">
+              <option value="Active" {% if u.get('employee_status','Active') == 'Active' %}selected{% endif %}>Active</option>
+              <option value="Inactive" {% if u.get('employee_status') == 'Inactive' %}selected{% endif %}>Inactive</option>
+            </select>
+          </td>
+          <td>
+            <input type="text" name="department" form="emp-form-{{ u.firebase_uid }}" value="{{ u.get('department','') }}" class="form-control form-control-sm team-input">
+          </td>
+          <td>
+            <input type="number" step="0.01" min="0" name="hourly_rate" form="emp-form-{{ u.firebase_uid }}" value="{{ u.get('hourly_rate', 0) }}" class="form-control form-control-sm team-input">
+          </td>
+          <td>
+            <input type="date" name="hire_date" form="emp-form-{{ u.firebase_uid }}" value="{{ u.get('hire_date','') }}" class="form-control form-control-sm team-input">
+          </td>
+          <td>
+            {% if open_entry %}
+            <span class="badge status-open"><i class="bi bi-record-circle-fill me-1"></i>{{ open_entry.project_name or open_entry.project_number or 'General / Admin' }}</span>
+            {% else %}
+            <span class="text-muted small">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <form id="emp-form-{{ u.firebase_uid }}" method="post" action="{{ url_for('employee_update', uid=u.firebase_uid) }}" class="d-inline">
+              <button type="submit" class="btn btn-xs btn-outline-teal"><i class="bi bi-check2"></i> Save</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card-panel">
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+      <h6 class="panel-title mb-0">Hours by Project — {{ period_label }}</h6>
+      <div class="d-flex align-items-center gap-2">
+        <select id="periodSelect" class="form-select form-select-sm" style="width:auto;">
+          <option value="week"  {% if period == 'week'  %}selected{% endif %}>This Week</option>
+          <option value="month" {% if period == 'month' %}selected{% endif %}>This Month</option>
+          <option value="year"  {% if period == 'year'  %}selected{% endif %}>This Year</option>
+          <option value="custom" {% if period == 'custom' %}selected{% endif %}>Custom Range</option>
+        </select>
+        <input type="date" id="periodCustomStart" class="form-control form-control-sm" style="width:auto;{% if period != 'custom' %} display:none;{% endif %}" value="{{ period_start if period == 'custom' else '' }}">
+        <input type="date" id="periodCustomEnd" class="form-control form-control-sm" style="width:auto;{% if period != 'custom' %} display:none;{% endif %}" value="{{ period_end if period == 'custom' else '' }}">
+        <button type="button" id="periodCustomApply" class="btn btn-sm btn-outline-secondary" style="{% if period != 'custom' %}display:none;{% endif %}">Apply</button>
+        <a href="{{ url_for('employee_export_hours', period=period, start=period_start, end=period_end) }}" class="btn btn-sm btn-outline-teal">
+          <i class="bi bi-download me-1"></i>Export CSV
+        </a>
+      </div>
+    </div>
+    {% if hours_by_project %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead><tr><th>Project</th><th>By Employee</th><th class="text-end">Total Hours</th></tr></thead>
+        <tbody>
+        {% for proj, data in hours_by_project.items() %}
+        <tr>
+          <td>{{ proj }}</td>
+          <td class="text-muted small">
+            {% for emp, minutes in data.items() if emp != '_total' %}{{ emp }}: {{ "%.1f"|format(minutes/60) }}h{% if not loop.last %}, {% endif %}{% endfor %}
+          </td>
+          <td class="text-end fw-bold">{{ "%.1f"|format(data['_total']/60) }} h</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted small mb-0">No completed time entries for this period yet.</p>
+    {% endif %}
+  </div>
+</div><!-- /tab-team -->
+{% endif %}
+
+</div><!-- /tab-content -->
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Live elapsed-time counter for an active clock-in
+(function () {
+  const el = document.getElementById('elapsedTimer');
+  if (!el) return;
+  const start = new Date(el.dataset.clockIn);
+  function tick() {
+    const diff = Math.max(0, Date.now() - start.getTime());
+    const totalSec = Math.floor(diff / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    el.textContent = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
+
+// Tab persistence via URL hash (so redirects like #time-off open the right tab)
+(function () {
+  const tabMap = { clock: '#tab-clock', 'time-off': '#tab-time-off', profile: '#tab-profile', team: '#tab-team' };
+  const hash = (window.location.hash || '').replace('#', '');
+  const target = tabMap[hash];
+  if (target) {
+    const el = document.querySelector(`#empTabs .nav-link[href="${target}"]`);
+    if (el) new bootstrap.Tab(el).show();
+  }
+  document.querySelectorAll('#empTabs .nav-link').forEach(link => {
+    link.addEventListener('shown.bs.tab', e => {
+      const key = (e.target.getAttribute('href') || '').replace('#tab-', '');
+      history.replaceState(null, '', '#' + key);
+    });
+  });
+})();
+
+// Hours-by-project period selector (Team tab)
+(function () {
+  const select = document.getElementById('periodSelect');
+  if (!select) return;
+  const startInput = document.getElementById('periodCustomStart');
+  const endInput = document.getElementById('periodCustomEnd');
+  const applyBtn = document.getElementById('periodCustomApply');
+
+  function goTo(period, start, end) {
+    const params = new URLSearchParams(window.location.search);
+    params.set('period', period);
+    if (period === 'custom') {
+      params.set('start', start || '');
+      params.set('end', end || '');
+    } else {
+      params.delete('start');
+      params.delete('end');
+    }
+    window.location.href = '{{ url_for("employees") }}?' + params.toString() + '#tab-team';
+  }
+
+  select.addEventListener('change', function () {
+    if (this.value === 'custom') {
+      startInput.style.display = '';
+      endInput.style.display = '';
+      applyBtn.style.display = '';
+    } else {
+      goTo(this.value);
+    }
+  });
+
+  if (applyBtn) {
+    applyBtn.addEventListener('click', function () {
+      if (startInput.value && endInput.value) {
+        goTo('custom', startInput.value, endInput.value);
+      }
+    });
+  }
+})();
+
+// Hours-by-project period selector (My Time Clock tab)
+(function () {
+  const select = document.getElementById('myPeriodSelect');
+  if (!select) return;
+  const startInput = document.getElementById('myPeriodCustomStart');
+  const endInput = document.getElementById('myPeriodCustomEnd');
+  const applyBtn = document.getElementById('myPeriodCustomApply');
+
+  function goTo(period, start, end) {
+    const params = new URLSearchParams(window.location.search);
+    params.set('myperiod', period);
+    if (period === 'custom') {
+      params.set('mystart', start || '');
+      params.set('myend', end || '');
+    } else {
+      params.delete('mystart');
+      params.delete('myend');
+    }
+    window.location.href = '{{ url_for("employees") }}?' + params.toString() + '#tab-clock';
+  }
+
+  select.addEventListener('change', function () {
+    if (this.value === 'custom') {
+      startInput.style.display = '';
+      endInput.style.display = '';
+      applyBtn.style.display = '';
+    } else {
+      goTo(this.value);
+    }
+  });
+
+  if (applyBtn) {
+    applyBtn.addEventListener('click', function () {
+      if (startInput.value && endInput.value) {
+        goTo('custom', startInput.value, endInput.value);
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

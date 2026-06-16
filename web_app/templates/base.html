@@ -78,6 +78,14 @@
     </a>
     {% endif %}
 
+    {% if 'payroll' in allowed_pages %}
+    <a href="{{ url_for('payroll') }}"
+       class="nav-item accent-orange {% if request.endpoint == 'payroll' %}active{% endif %}">
+      <span class="nav-icon"><i class="bi bi-cash-coin"></i></span>
+      <span class="nav-label">Payroll</span>
+    </a>
+    {% endif %}
+
     {% if 'financial' in allowed_pages %}
     <a href="{{ url_for('financial') }}"
        class="nav-item accent-teal {% if request.endpoint == 'financial' %}active{% endif %}">

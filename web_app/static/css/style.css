@@ -180,18 +180,21 @@ body {
 .accent-green { --item-accent: #10B981; }
 .accent-amber { --item-accent: #B45309; }
 .accent-purple { --item-accent: #7C3AED; }
+.accent-orange { --item-accent: #EA580C; }
 
 .nav-item.accent-teal.active  { background: rgba(15,118,110,.18); }
 .nav-item.accent-blue.active  { background: rgba(37,99,235,.18);  }
 .nav-item.accent-green.active { background: rgba(16,185,129,.18); }
 .nav-item.accent-amber.active { background: rgba(180,83,9,.18);   }
 .nav-item.accent-purple.active { background: rgba(124,58,237,.18); }
+.nav-item.accent-orange.active { background: rgba(234,88,12,.18); }
 
 .nav-item.accent-teal.active::before  { background: #0F766E; }
 .nav-item.accent-blue.active::before  { background: #2563EB; }
 .nav-item.accent-green.active::before { background: #10B981; }
 .nav-item.accent-amber.active::before { background: #B45309; }
 .nav-item.accent-purple.active::before { background: #7C3AED; }
+.nav-item.accent-orange.active::before { background: #EA580C; }
 
 /* Sub nav */
 .nav-item.nav-sub { height: 40px; }

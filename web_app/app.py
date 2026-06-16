@@ -75,10 +75,10 @@ except Exception as exc:
 
 # ── Role helpers ──────────────────────────────────────────────────────────────
 ROLE_PAGES = {
-    "admin":    ["dashboard", "quotes", "projects", "invoicing", "financial", "settings", "employees"],
+    "admin":    ["dashboard", "quotes", "projects", "invoicing", "payroll", "financial", "settings", "employees"],
     "sales":    ["quotes", "employees"],
     "projects": ["projects", "invoicing", "employees"],
-    "finance":  ["financial", "employees"],
+    "finance":  ["financial", "payroll", "employees"],
     "engineer": ["employees"],
 }
 
@@ -191,6 +191,22 @@ def _ai_call(prompt: str, system: str = "", max_tokens: int = 1024) -> str:
     if system:
         kwargs["system"] = system
     resp = client.messages.create(**kwargs)
+    return resp.content[0].text.strip()
+
+
+def _ai_call_with_image(prompt: str, image_b64: str, media_type: str, max_tokens: int = 1024) -> str:
+    """Run a single Claude vision call with an image; returns the text or raises RuntimeError."""
+    client = _get_ai_client()
+    if not client:
+        raise RuntimeError("No Anthropic API key configured. Add it in Settings → AI.")
+    msgs = [{
+        "role": "user",
+        "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_b64}},
+            {"type": "text", "text": prompt},
+        ],
+    }]
+    resp = client.messages.create(model="claude-haiku-4-5-20251001", max_tokens=max_tokens, messages=msgs)
     return resp.content[0].text.strip()
 
 
@@ -1350,7 +1366,24 @@ def project_edit(project_id):
                     _safe_float(updated["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
 
         updated["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        # Guard: if the project already has payments, don't let a form submission silently
+        # downgrade its status to "Not Started". Preserve any manually-set status above "Not Started"
+        # for paid/partially-paid projects; _sync_project_payment below will then correct it upward.
+        existing_status = data.get("status", "Not Started")
+        existing_paid   = _safe_float(data.get("amount_paid", 0))
+        new_status       = updated.get("status", "Not Started")
+        if existing_paid > 0 and new_status == "Not Started" and existing_status not in ("Not Started", "Cancelled"):
+            updated["status"] = existing_status
+
         fb_update(f"/projects/{project_id}", updated)
+
+        # Re-sync payment-derived status so that a fully-paid project always shows Completed.
+        proj_num = updated.get("project_number", data.get("project_number", ""))
+        if proj_num:
+            _sync_project_payment(proj_num)
+            _auto_complete_project_if_paid(proj_num)
+
         flash("Project updated successfully.", "success")
         return redirect(url_for("project_detail", project_id=project_id))
     sales_people = [p.get("name","") for p in _load_sales_people() if p.get("name","")]
@@ -2863,6 +2896,82 @@ def client_statement(client_name):
     return Response(buf.getvalue(), mimetype="application/pdf",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
+# ── Routes: Payroll ───────────────────────────────────────────────────────────
+@app.route("/payroll")
+@role_required("payroll")
+def payroll():
+    # Get filter parameters from URL
+    employee_filter = request.args.get("employee", "")
+    year_filter = request.args.get("year", "")
+    region_filter = request.args.get("region", "")
+
+    return render_template("payroll.html",
+        employee_filter=employee_filter,
+        year_filter=year_filter,
+        region_filter=region_filter)
+
+@app.route("/api/payroll/salaries", methods=["GET"])
+@login_required
+def get_salaries():
+    salaries_data = fb_get("/balance_sheet_salary") or {}
+    salaries = []
+    if isinstance(salaries_data, dict):
+        for sid, sdata in salaries_data.items():
+            if isinstance(sdata, dict):
+                sdata["firebase_id"] = sid
+                salaries.append(sdata)
+
+    search    = request.args.get("search", "").lower()
+    region    = request.args.get("region", "")
+    date_from = request.args.get("date_from", "")
+    date_to   = request.args.get("date_to", "")
+
+    filtered = salaries
+    if search:
+        filtered = [s for s in filtered if search in s.get("employee_name", "").lower()]
+    if region:
+        filtered = [s for s in filtered if s.get("region", "") == region]
+    if date_from:
+        filtered = [s for s in filtered if s.get("date", "") >= date_from]
+    if date_to:
+        filtered = [s for s in filtered if s.get("date", "") <= date_to]
+
+    return jsonify({"salaries": filtered})
+
+@app.route("/api/payroll/salaries", methods=["POST"])
+@login_required
+def create_salary():
+    data = request.json
+    date_str = data.get("date", "")
+    try:
+        year = int(date_str[:4]) if date_str else datetime.now().year
+    except (ValueError, IndexError):
+        year = datetime.now().year
+
+    region = data.get("region", "Inside America")
+    if region == "USA":
+        region = "Inside America"
+    elif region == "International":
+        region = "Outside America"
+
+    sal_data = {
+        "employee_name": data.get("employee_name"),
+        "date":          date_str,
+        "amount":        float(data.get("amount", 0)),
+        "notes":         data.get("notes", ""),
+        "region":        region,
+        "year":          year,
+        "created_at":    datetime.now(timezone.utc).isoformat(),
+    }
+    fb_push("/balance_sheet_salary", sal_data)
+    return jsonify({"success": True})
+
+@app.route("/api/payroll/salaries/<sal_id>", methods=["DELETE"])
+@login_required
+def delete_salary(sal_id):
+    fb_delete(f"/balance_sheet_salary/{sal_id}")
+    return jsonify({"success": True})
+
 # ── Routes: Financial ─────────────────────────────────────────────────────────
 @app.route("/financial")
 @role_required("financial")
@@ -2904,14 +3013,16 @@ def financial():
                     "firebase_id": item.get("firebase_id", ""),
                     "date": item.get("date", ""),
                     "vendor": item.get("vendor", ""),
-                    "project_number": item.get("project_number", "")
+                    "project_number": item.get("project_number", ""),
+                    "notes": item.get("notes", ""),
+                    "receipt_filename": item.get("receipt_filename", "")
                 }
             grouped[exp_name]["amount"] += amount
         return list(grouped.values())
 
-    # Keep full expense list for expense tab (all data)
-    exp_list = group_expenses_by_name(exp_list_raw)
-    exp_list_all = list(exp_list)  # Full list for expense tab
+    # Keep BOTH versions: raw for expense tab (all individual entries), grouped for balance sheet
+    exp_list_all = sorted(exp_list_raw, key=lambda x: x.get("date", ""), reverse=True)  # Full list for expense tab (all individual entries, NOT consolidated, sorted newest first)
+    exp_list_grouped_all = group_expenses_by_name(exp_list_raw)  # Consolidated for reference
 
     # Filter expenses by selected year for balance sheet
     def filter_by_year(items, year_val):
@@ -3049,6 +3160,7 @@ def financial():
             current_year = _now.year
     else:
         current_year = _now.year
+    selected_year = current_year
     annual_revenue = {i: 0.0 for i in range(1, 13)}  # Months 1-12
     annual_expenses = {i: 0.0 for i in range(1, 13)}
 
@@ -3098,59 +3210,51 @@ def financial():
     for p in projects_list:
         pnum = p.get("project_number", "")
 
-        # Calculate INVOICED and COLLECTED (with tax) from actual invoices
+        # Calculate INVOICED and COLLECTED from invoices (including tax)
         p_invoiced = 0
-        p_collected = 0  # COLLECTED = invoiced amounts (with tax) for stages that have been paid
-        p_stages = p.get("payment_stages", [])
+        p_collected = 0
+
         invoices_dict = fb_get("/invoices") or {}
+        if isinstance(invoices_dict, dict):
+            for inv_id, inv_data in invoices_dict.items():
+                if not isinstance(inv_data, dict):
+                    continue
+                inv_meta = inv_data.get("meta", {}) or {}
+                inv_status = inv_meta.get("status", "Draft")
 
-        # For each stage, check if there's an actual invoice for it
-        if isinstance(p_stages, list):
-            for stage_idx, stage in enumerate(p_stages):
-                if isinstance(stage, dict):
-                    stage_amount_paid = _safe_float(stage.get("amount_paid", 0))
+                # Skip Draft invoices
+                if inv_status == "Draft":
+                    continue
 
-                    # Check if this stage has an actual invoice (not Draft)
-                    stage_invoiced_amount = 0
-                    if isinstance(invoices_dict, dict):
-                        for inv_id, inv_data in invoices_dict.items():
-                            if not isinstance(inv_data, dict):
-                                continue
-                            inv_meta = inv_data.get("meta", {}) or {}
-                            inv_status = inv_meta.get("status", "Draft")
+                inv_total = _safe_float(inv_meta.get("total", 0))
+                inv_tax = _safe_float(inv_meta.get("tax_amount", 0))
+                payment_log = inv_data.get("payment_log", []) or []
+                tax_log = inv_data.get("tax_payments", []) or []
 
-                            # Skip Draft invoices - only count sent/viewed/paid/etc
-                            if inv_status == "Draft":
-                                continue
+                # Check if this invoice is for this project (in payment_log)
+                project_paid = 0
+                project_tax_paid = 0
+                if isinstance(payment_log, list):
+                    for payment in payment_log:
+                        if isinstance(payment, dict) and payment.get("project_number") == pnum:
+                            project_paid += _safe_float(payment.get("amount", 0))
 
-                            # Check if this invoice is for this project and stage
-                            if inv_meta.get("project_number", "") == pnum and inv_meta.get("payment_stage_index") == stage_idx:
-                                # Single-project invoice
-                                stage_invoiced_amount = _safe_float(inv_meta.get("total", 0))
-                                p_invoiced += stage_invoiced_amount
-                                break
-                            elif pnum in _invoice_linked_projects(inv_data):
-                                # Multi-project invoice - check if this stage is in the linked projects
-                                linked = inv_data.get("meta", {}).get("linked_projects", [])
-                                if isinstance(linked, list):
-                                    for lp in linked:
-                                        if isinstance(lp, dict) and lp.get("project_number") == pnum and lp.get("payment_stage_index") == stage_idx:
-                                            # Add project's share of the invoice
-                                            inv_total = _safe_float(inv_meta.get("total", 0))
-                                            project_share = _invoice_project_share(inv_data, pnum)
-                                            stage_invoiced_amount = project_share * inv_total
-                                            p_invoiced += stage_invoiced_amount
-                                            break
-                            if stage_invoiced_amount > 0:
-                                break
+                # Check tax payments for this project (if project is in invoice, include proportional tax)
+                if project_paid > 0 and isinstance(tax_log, list) and inv_tax > 0:
+                    # Project has payments, so include proportional tax
+                    # Calculate project's share of invoice
+                    total_paid_all = sum(_safe_float(p.get("amount", 0)) for p in payment_log if isinstance(p, dict))
+                    if total_paid_all > 0:
+                        project_share = project_paid / total_paid_all
+                        project_tax_paid = project_share * inv_tax
 
-                    # COLLECTED = invoiced amount (with tax) for stages that have been paid
-                    if stage_amount_paid > 0 and stage_invoiced_amount > 0:
-                        p_collected += stage_invoiced_amount
-                    elif stage_amount_paid > 0:
-                        # Stage paid but no invoice found (shouldn't happen), use payment amount
-                        p_collected += stage_amount_paid
+                # If this project has payments in this invoice, add to invoiced and collected (with tax)
+                if project_paid > 0:
+                    p_invoiced += project_paid + project_tax_paid
+                    p_collected += project_paid + project_tax_paid
 
+        p_contract = _safe_float(p.get("contract_value",0))
+        p_not_invoiced = p_contract - p_invoiced
         p_expenses = sum(_safe_float(e.get("amount",0))                     for e in exp_list if e.get("project_number","") == pnum)
         p_gross_profit = p_collected - p_expenses
         p_labor_cost = labor_cost_by_project.get(pnum, 0.0)
@@ -3159,8 +3263,9 @@ def financial():
             "project_name":   p.get("project_name",""),
             "client_name":    p.get("client_name",""),
             "status":         p.get("status",""),
-            "contract_value": _safe_float(p.get("contract_value",0)),
+            "contract_value": p_contract,
             "invoiced":       p_invoiced,
+            "not_invoiced":   p_not_invoiced,
             "paid":           p_collected,
             "expenses":       p_expenses,
             "gross_profit":   p_gross_profit,
@@ -3169,6 +3274,76 @@ def financial():
             "firebase_id":    p.get("firebase_id",""),
         })
     project_pnl.sort(key=lambda x: x["project_number"], reverse=True)
+
+    # ── Monthly payment drill-down for Balance Sheet ──────────────────────────
+    _proj_num_to_id = {p.get("project_number", ""): p.get("firebase_id", "") for p in projects_list}
+    _proj_num_to_data = {p.get("project_number", ""): p for p in projects_list}
+    monthly_payment_details = {str(i): [] for i in range(1, 13)}
+    for _inv in inv_list:
+        _inv_id   = _inv.get("firebase_id", "")
+        _inv_meta = _inv.get("meta", {}) or {}
+        _inv_num  = _inv_meta.get("invoice_number", "")
+        _inv_total = _safe_float(_inv_meta.get("total", 0))
+        for _pay in (_inv.get("payment_log", []) or []):
+            _pay_ds = _pay.get("date", "") or ""
+            try:
+                _pay_dt = datetime.fromisoformat(_pay_ds[:10])
+                if _pay_dt.year == current_year:
+                    _mkey = str(_pay_dt.month)
+                    _proj_num = _pay.get("project_number", "") or _inv_meta.get("project_number", "")
+                    _stage = _pay.get("stage_name", "") or _inv_meta.get("payment_stage", "")
+
+                    # If stage still empty, try to look it up from project payment_stages
+                    if not _stage:
+                        _stage_idx = _pay.get("stage_index")
+                        if _stage_idx is None:
+                            _stage_idx = _inv_meta.get("payment_stage_index")
+                        if _stage_idx is not None:
+                            try:
+                                _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
+                                _proj_data = _proj_num_to_data.get(_proj_num, {})
+                                _p_stages = _proj_data.get("payment_stages", [])
+                                if isinstance(_p_stages, list) and 0 <= _stage_idx < len(_p_stages):
+                                    _stage = _p_stages[_stage_idx].get("name", f"Stage {_stage_idx + 1}")
+                            except (ValueError, TypeError, IndexError):
+                                if _stage_idx is not None:
+                                    try:
+                                        _stage_idx = int(_stage_idx)
+                                        _stage = f"Stage {_stage_idx + 1}"
+                                    except (ValueError, TypeError):
+                                        pass
+
+                    monthly_payment_details[_mkey].append({
+                        "project_number": _proj_num,
+                        "project_id":     _proj_num_to_id.get(_proj_num, ""),
+                        "invoice_id":     _inv_id,
+                        "invoice_number": _inv_num,
+                        "stage":          _stage or "—",
+                        "total_amount":   _inv_total,
+                        "paid_amount":    _safe_float(_pay.get("amount", 0)),
+                        "paid_date":      _pay_ds,
+                    })
+            except Exception:
+                pass
+        for _tpay in (_inv.get("tax_payments", []) or []):
+            _tpay_ds = _tpay.get("date", "") or ""
+            try:
+                _tpay_dt = datetime.fromisoformat(_tpay_ds[:10])
+                if _tpay_dt.year == current_year:
+                    monthly_payment_details[str(_tpay_dt.month)].append({
+                        "project_number": "TAX",
+                        "project_id":     "",
+                        "invoice_id":     _inv_id,
+                        "invoice_number": _inv_num,
+                        "stage":          "Tax Payment",
+                        "total_amount":   _safe_float(_inv_meta.get("tax_amount", 0)),
+                        "paid_amount":    _safe_float(_tpay.get("amount", 0)),
+                        "paid_date":      _tpay_ds,
+                    })
+            except Exception:
+                pass
+    for _mk in monthly_payment_details:
+        monthly_payment_details[_mk].sort(key=lambda x: x.get("paid_date", ""))
 
     # ── Chart data for overview pie charts ────────────────────────────────────
     inv_status_counts = {}
@@ -3182,7 +3357,7 @@ def financial():
         exp_cats[cat] = exp_cats.get(cat, 0) + _safe_float(e.get("amount", 0))
 
     # Load salaries data for Balance Sheet
-    salaries = fb_get("/balance_sheet_salaries") or {}
+    salaries = fb_get("/balance_sheet_salary") or {}
     salaries_domestic_raw = []
     salaries_international_raw = []
     total_salaries = 0.0
@@ -3203,20 +3378,33 @@ def financial():
     salaries_domestic_raw = filter_by_year(salaries_domestic_raw, selected_year)
     salaries_international_raw = filter_by_year(salaries_international_raw, selected_year)
 
-    # Group salaries by name and sum amounts
-    def group_by_name(items):
-        """Group items by name and sum amounts"""
+    # Group salaries by name, sum amounts, track latest date; sort by date desc
+    def group_by_name(items, entries_tracking=None):
         grouped = {}
+        if entries_tracking is None:
+            entries_tracking = {}
         for item in items:
-            name = item.get("name", "—")
+            name = item.get("employee_name") or item.get("name", "—")
             amount = _safe_float(item.get("amount", 0))
+            date = item.get("date", "")
             if name not in grouped:
-                grouped[name] = {"name": name, "amount": 0}
+                grouped[name] = {"name": name, "amount": 0, "date": date}
+                entries_tracking[name] = []
+            else:
+                if date > grouped[name].get("date", ""):
+                    grouped[name]["date"] = date
             grouped[name]["amount"] += amount
-        return list(grouped.values())
+            entries_tracking[name].append({
+                "date": date,
+                "amount": amount,
+                "notes": item.get("notes", "")
+            })
+        return sorted(grouped.values(), key=lambda x: x.get("date", ""), reverse=True), entries_tracking
 
-    salaries_domestic = group_by_name(salaries_domestic_raw)
-    salaries_international = group_by_name(salaries_international_raw)
+    salary_entries_domestic = {}
+    salary_entries_international = {}
+    salaries_domestic, salary_entries_domestic = group_by_name(salaries_domestic_raw, salary_entries_domestic)
+    salaries_international, salary_entries_international = group_by_name(salaries_international_raw, salary_entries_international)
 
     # Calculate totals for Balance Sheet
     total_revenue = total_paid
@@ -3226,6 +3414,30 @@ def financial():
     expense_types = custom_categories.get("expense_type", []) if isinstance(custom_categories.get("expense_type"), list) else []
     categories_by_type = custom_categories.get("Categories", {}) if isinstance(custom_categories.get("Categories"), dict) else {}
     expense_names_by_category = custom_categories.get("expense_names", {}) if isinstance(custom_categories.get("expense_names"), dict) else {}
+
+    # Flat list of all categories for expense filter dropdown
+    all_categories = []
+    for cats in categories_by_type.values():
+        for cat in cats:
+            if cat not in all_categories:
+                all_categories.append(cat)
+
+    # exp_list is already grouped by group_expenses_by_name(), use it directly
+    # Build expense_entries_by_name for drill-down from raw filtered data
+    expense_entries_by_name = {}
+    for e in exp_list_raw_filtered:
+        name = e.get("expense_name", "") or e.get("description", "—") or "—"
+        if name not in expense_entries_by_name:
+            expense_entries_by_name[name] = []
+        expense_entries_by_name[name].append({
+            "date": e.get("date", ""),
+            "amount": _safe_float(e.get("amount", 0)),
+            "category": e.get("category", ""),
+            "vendor": e.get("vendor", ""),
+            "notes": e.get("notes", "")
+        })
+    # Use the already-grouped exp_list as expenses_grouped, sorted by date
+    expenses_grouped = sorted(exp_list, key=lambda x: x.get("date", ""), reverse=True)
 
     # Get list of available years from invoices and expenses
     available_years = set()
@@ -3279,8 +3491,13 @@ def financial():
         project_pnl=project_pnl,
         salaries_domestic=salaries_domestic,
         salaries_international=salaries_international,
+        salary_entries_domestic=json.dumps(salary_entries_domestic),
+        salary_entries_international=json.dumps(salary_entries_international),
         available_years=available_years,
         expense_types=expense_types,
+        all_categories=all_categories,
+        expenses_grouped=expenses_grouped,
+        expense_entries=json.dumps(expense_entries_by_name),
         categories_by_type=json.dumps(categories_by_type),
         expense_names_by_category=json.dumps(expense_names_by_category),
         today_date=today_date,
@@ -3290,6 +3507,7 @@ def financial():
         exp_cat_labels=json.dumps(list(exp_cats.keys())),
         exp_cat_data=json.dumps(list(exp_cats.values())),
         ai_enabled=bool(_get_ai_client()),
+        monthly_payment_details=json.dumps(monthly_payment_details),
     )
 
 @app.route("/financial/expense/new", methods=["POST"])
@@ -3309,11 +3527,22 @@ def expense_new():
         "created_at":     datetime.now(timezone.utc).isoformat(),
         "updated_at":     datetime.now(timezone.utc).isoformat(),
     }
+    # Handle receipt upload (base64 encoding)
+    if 'receipt' in request.files:
+        file = request.files['receipt']
+        if file and file.filename:
+            try:
+                file_content = file.read()
+                base64_content = base64.b64encode(file_content).decode('utf-8')
+                data['receipt_base64'] = base64_content
+                data['receipt_filename'] = file.filename
+                data['receipt_type'] = file.content_type
+            except Exception as e:
+                app.logger.error(f"Receipt upload error: {e}")
     # Save to both locations: main /expenses and /balance_sheet_expenses for backwards compatibility
     exp_id = fb_push("/expenses", data)
     fb_push("/balance_sheet_expenses", {**data, "firebase_id": exp_id})
-    flash("Expense added.", "success")
-    return redirect(url_for("financial", tab="expenses"))
+    return jsonify({"success": True, "expense_id": exp_id})
 
 @app.route("/financial/expense/<exp_id>/delete", methods=["POST"])
 @role_required("financial")
@@ -3321,6 +3550,51 @@ def expense_delete(exp_id):
     fb_delete(f"/balance_sheet_expenses/{exp_id}")
     flash("Expense deleted.", "success")
     return redirect(url_for("financial", tab="expenses"))
+
+@app.route("/financial/expense/<exp_id>/edit", methods=["POST"])
+@role_required("financial")
+def expense_edit(exp_id):
+    data = {
+        "expense_type":   request.form.get("expense_type", ""),
+        "expense_name":   request.form.get("expense_name", ""),
+        "description":    request.form.get("expense_name", ""),
+        "amount":         request.form.get("amount", "0"),
+        "category":       request.form.get("category", ""),
+        "date":           request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+        "vendor":         request.form.get("vendor", ""),
+        "project_number": request.form.get("project_number", ""),
+        "notes":          request.form.get("notes", ""),
+        "updated_at":     datetime.now(timezone.utc).isoformat(),
+    }
+    # Handle receipt upload (base64 encoding) - only overwrite if a new file is provided
+    if 'receipt' in request.files:
+        file = request.files['receipt']
+        if file and file.filename:
+            try:
+                file_content = file.read()
+                data['receipt_base64'] = base64.b64encode(file_content).decode('utf-8')
+                data['receipt_filename'] = file.filename
+                data['receipt_type'] = file.content_type
+            except Exception as e:
+                app.logger.error(f"Receipt upload error: {e}")
+    fb_update(f"/balance_sheet_expenses/{exp_id}", data)
+    return jsonify({"success": True, "expense_id": exp_id})
+
+@app.route("/api/expense/<exp_id>/receipt", methods=["GET"])
+@role_required("financial")
+def get_expense_receipt(exp_id):
+    """Retrieve receipt from Firebase"""
+    expenses = fb_get("/balance_sheet_expenses") or {}
+    if isinstance(expenses, dict) and exp_id in expenses:
+        exp = expenses[exp_id]
+        if isinstance(exp, dict) and 'receipt_base64' in exp:
+            return jsonify({
+                "success": True,
+                "receipt": exp.get('receipt_base64'),
+                "fileType": exp.get('receipt_type', 'image/jpeg'),
+                "filename": exp.get('receipt_filename', 'receipt')
+            })
+    return jsonify({"success": False, "error": "Receipt not found"})
 
 @app.route("/export/balance-sheet", methods=["GET"])
 @role_required("financial")
@@ -3385,20 +3659,19 @@ def export_balance_sheet():
 
         # Build salary data
         if isinstance(salaries_data, dict):
-            for region_name, employees in salaries_data.items():
-                if isinstance(employees, list):
-                    target_dict = salary_inside if "inside" in region_name.lower() else salary_outside
-                    for emp in employees:
-                        if isinstance(emp, dict):
-                            date_str = emp.get("date", "")
-                            try:
-                                e_year = int(date_str[:4])
-                                if e_year == year:
-                                    name = emp.get("employee_name", "—")
-                                    amt = _safe_float(emp.get("amount", 0))
-                                    target_dict[name] = target_dict.get(name, 0) + amt
-                            except (ValueError, IndexError, TypeError):
-                                pass
+            for salary_id, sal_data in salaries_data.items():
+                if isinstance(sal_data, dict):
+                    date_str = sal_data.get("date", "")
+                    try:
+                        s_year = int(date_str[:4])
+                        if s_year == year:
+                            name = sal_data.get("name") or sal_data.get("employee_name", "—")
+                            amt = _safe_float(sal_data.get("amount", 0))
+                            region = sal_data.get("region", "").lower()
+                            target_dict = salary_inside if "inside" in region or "usa" in region else salary_outside
+                            target_dict[name] = target_dict.get(name, 0) + amt
+                    except (ValueError, IndexError, TypeError):
+                        pass
 
         total_revenue = sum(monthly_revenue)
         total_expenses = sum(monthly_expenses)
@@ -4223,37 +4496,63 @@ def settings_ai():
 @app.route("/ai/extract-pdf", methods=["POST"])
 @role_required("financial")
 def ai_extract_pdf():
-    """Extract expense fields from an uploaded PDF using Claude."""
-    if not PYPDF_AVAILABLE:
-        return jsonify({"error": "pypdf not installed on server"}), 500
+    """Extract expense fields from an uploaded receipt (PDF or image) using Claude."""
     f = request.files.get("pdf")
     if not f:
         return jsonify({"error": "No file uploaded"}), 400
-    try:
-        reader = _PdfReader(f)
-        text = "\n".join(page.extract_text() or "" for page in reader.pages)[:4000]
-    except Exception as e:
-        return jsonify({"error": f"Could not read PDF: {e}"}), 400
-    prompt = f"""Extract expense information from this document text and return ONLY valid JSON with these fields:
-description, amount (number, no currency symbol), date (YYYY-MM-DD or blank), category (one of: Labor, Materials, Equipment, Subcontractor, Overhead, Travel, Other), vendor.
-If a field is not found leave it blank. Return only the JSON object, nothing else.
+
+    custom_categories = fb_get("/custom_categories") or {}
+    expense_types = custom_categories.get("expense_type", []) if isinstance(custom_categories.get("expense_type"), list) else []
+    categories_by_type = custom_categories.get("Categories", {}) if isinstance(custom_categories.get("Categories"), dict) else {}
+
+    type_hint = f"Pick from these expense types if one fits: {expense_types}. " if expense_types else ""
+    cat_hint = f"Pick from these categories if one fits: {sorted(set(c for cats in categories_by_type.values() for c in cats))}. " if categories_by_type else ""
+
+    fields_prompt = f"""Return ONLY valid JSON with these fields:
+expense_name (short description of the expense), expense_type (a general type/department for this expense; {type_hint}otherwise make a reasonable guess), category (a specific category for this expense; {cat_hint}otherwise pick one of: Labor, Materials, Equipment, Subcontractor, Overhead, Travel, Other), amount (number, no currency symbol), date (YYYY-MM-DD or blank), vendor.
+If a field is not found leave it blank. Return only the JSON object, nothing else."""
+
+    content_type = (f.content_type or "").lower()
+
+    if content_type.startswith("image/"):
+        try:
+            image_b64 = base64.b64encode(f.read()).decode("utf-8")
+        except Exception as e:
+            return jsonify({"error": f"Could not read image: {e}"}), 400
+        prompt = f"This image is a receipt or invoice. {fields_prompt}"
+        try:
+            result = _ai_call_with_image(prompt, image_b64, content_type)
+        except RuntimeError as e:
+            return jsonify({"error": str(e)}), 503
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    else:
+        if not PYPDF_AVAILABLE:
+            return jsonify({"error": "pypdf not installed on server"}), 500
+        try:
+            reader = _PdfReader(f)
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)[:4000]
+        except Exception as e:
+            return jsonify({"error": f"Could not read PDF: {e}"}), 400
+        prompt = f"""Extract expense information from this document text. {fields_prompt}
 
 Document text:
 {text}"""
+        try:
+            result = _ai_call(prompt)
+        except RuntimeError as e:
+            return jsonify({"error": str(e)}), 503
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
     try:
-        result = _ai_call(prompt)
-        data = json.loads(result)
-        return jsonify(data)
+        return jsonify(json.loads(result))
     except json.JSONDecodeError:
         import re
         m = re.search(r'\{.*\}', result, re.DOTALL)
         if m:
             return jsonify(json.loads(m.group(0)))
         return jsonify({"error": "AI returned unexpected format", "raw": result}), 500
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 503
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/ai/draft-reminder/<invoice_id>", methods=["POST"])
@@ -6377,6 +6676,21 @@ def payment_sequential(invoice_id):
                 # Distribute amount to this project
                 distribute_to_proj = min(proj_needs, remaining_to_distribute)
 
+                # Determine stage name - try multiple sources
+                _stage_name = meta.get("payment_stage", "")
+                _stage_idx = meta.get("payment_stage_index")
+
+                # Convert stage_index to int if available
+                if _stage_idx is not None:
+                    try:
+                        _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
+                    except (ValueError, TypeError):
+                        _stage_idx = None
+
+                # If stage_name is empty but we have stage_index, generate a fallback
+                if not _stage_name and _stage_idx is not None:
+                    _stage_name = f"Stage {_stage_idx + 1}"
+
                 payment_entry = {
                     "amount":     str(distribute_to_proj),
                     "date":       request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
@@ -6387,8 +6701,8 @@ def payment_sequential(invoice_id):
                     "project_number": main_project,
                     # Metadata for tracking
                     "invoice_number": meta.get("invoice_number", ""),
-                    "stage_name": meta.get("payment_stage", ""),
-                    "stage_index": meta.get("payment_stage_index", ""),
+                    "stage_name": _stage_name,
+                    "stage_index": _stage_idx or "",
                 }
                 payment_log.append(payment_entry)
                 remaining_to_distribute -= distribute_to_proj
@@ -6397,12 +6711,22 @@ def payment_sequential(invoice_id):
     # Fallback: if still have remaining_to_distribute and linked_projects, distribute there too
     elif remaining_to_distribute > 0 and linked_projects:
         # SORT linked_projects by project number (001, 002, 003...) before distributing
-        sorted_projects = sorted(linked_projects, key=lambda x: int(x.get("project_number", "")[-3:]) if x.get("project_number", "")[-3:].isdigit() else x.get("project_number", ""))
+        # Handle both dict and string formats
+        def get_sort_key(x):
+            proj_num = x.get("project_number", "") if isinstance(x, dict) else x
+            if proj_num and proj_num[-3:].isdigit():
+                return int(proj_num[-3:])
+            return proj_num
+        sorted_projects = sorted(linked_projects, key=get_sort_key)
         for proj_info in sorted_projects:
-            if not isinstance(proj_info, dict) or remaining_to_distribute <= 0:
+            if remaining_to_distribute <= 0:
                 continue
 
-            project_number = proj_info.get("project_number", "")
+            # Handle both dict and string formats for project_info
+            if isinstance(proj_info, dict):
+                project_number = proj_info.get("project_number", "")
+            else:
+                project_number = proj_info
             if not project_number:
                 continue
 
@@ -6431,6 +6755,21 @@ def payment_sequential(invoice_id):
                 # Distribute amount to this project
                 distribute_to_proj = min(proj_needs, remaining_to_distribute)
 
+                # Determine stage name - try multiple sources
+                _stage_name = meta.get("payment_stage", "")
+                _stage_idx = meta.get("payment_stage_index")
+
+                # Convert stage_index to int if available
+                if _stage_idx is not None:
+                    try:
+                        _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
+                    except (ValueError, TypeError):
+                        _stage_idx = None
+
+                # If stage_name is empty but we have stage_index, generate a fallback
+                if not _stage_name and _stage_idx is not None:
+                    _stage_name = f"Stage {_stage_idx + 1}"
+
                 payment_entry = {
                     "amount":     str(distribute_to_proj),
                     "date":       request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
@@ -6441,8 +6780,8 @@ def payment_sequential(invoice_id):
                     "project_number": project_number,
                     # Metadata for tracking
                     "invoice_number": meta.get("invoice_number", ""),
-                    "stage_name": meta.get("payment_stage", ""),
-                    "stage_index": meta.get("payment_stage_index", ""),
+                    "stage_name": _stage_name,
+                    "stage_index": _stage_idx or "",
                 }
                 payment_log.append(payment_entry)
                 remaining_to_distribute -= distribute_to_proj
