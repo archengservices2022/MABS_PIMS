@@ -439,67 +439,27 @@ class JobFormTab(QtWidgets.QWidget):
             pass
         
     def calculate_next_job_numbers_numeric(self):
-        """Calculate next available quote numbers based ONLY on main sequence with proper rollover logic"""
+        """Log the next available QT-YYYYMM-XXX quote number for debugging."""
+        from datetime import datetime
+        now = datetime.now()
+        prefix = f"QT-{now.strftime('%Y%m')}-"
+
         if not self.job_forms:
-            _log.info("   Starting fresh: QuoteA001")
-            return
-        
-        from collections import defaultdict
-        
-        # Dictionary to store highest sequence for each category
-        category_sequences = defaultdict(int)
-        
-        # Find highest sequence for each category (ignoring suffixes)
-        for job in self.job_forms:
-            job_num = job.get('job_number', '').upper()
-            
-            if 'QUOTE' not in job_num:
-                continue
-            
-            # Extract category and sequence
-            # Pattern: QUOTE + optional category + numbers
-            match = re.match(r'^QUOTE([A-Z]?)(\d+)', job_num)
-            if match:
-                category = match.group(1) or 'A'  # Default to 'A' if no category
-                seq_str = match.group(2)
-                
-                try:
-                    # Convert to integer (026 becomes 26)
-                    seq_num = int(seq_str)
-                    
-                    # Update if this is higher than current max
-                    if seq_num > category_sequences[category]:
-                        category_sequences[category] = seq_num
-                except ValueError:
-                    continue
-        
-        _log.info("   Next Available Quote Numbers (by Category and Sequence ONLY):")
-        _log.debug("---")
-        
-        if not category_sequences:
-            _log.debug("No Quote numbers found. Starting at QuoteA001")
+            _log.info("   Starting fresh: %s001", prefix)
             return
 
-        for category in sorted(category_sequences.keys()):
-            current_max = category_sequences[category]
-            if current_max >= 999:
-                if category == 'Z':
-                    all_max = max(category_sequences.values())
-                    next_sequence = all_max + 1
-                    next_category = 'A'
-                    _log.debug("Z999 rollover — new cycle at: Quote%s%03d", next_category, next_sequence)
-                else:
-                    next_category = chr(ord(category) + 1)
-                    if next_category in category_sequences:
-                        next_sequence = category_sequences[next_category] + 1
-                        if next_sequence >= 1000:
-                            continue
-                    else:
-                        next_sequence = 1
-                    _log.debug("Category rollover — next: Quote%s%03d", next_category, next_sequence)
-            else:
-                next_sequence = current_max + 1
-                _log.debug("Category %s — highest: %03d, next: %03d", category, current_max, next_sequence)
+        max_seq = 0
+        for job in self.job_forms:
+            num = (job.get('job_number') or '').strip()
+            if num.upper().startswith(prefix.upper()):
+                try:
+                    seq = int(num[len(prefix):])
+                    if seq > max_seq:
+                        max_seq = seq
+                except ValueError:
+                    pass
+
+        _log.info("   Next quote number: %s%03d", prefix, max_seq + 1)
                 
     def update_client_filter_menu(self):
         """Update client filter menu with unique client names from CURRENTLY FILTERED quote overview"""
@@ -9932,139 +9892,30 @@ class JobFormDialog(QtWidgets.QDialog):
             self.expedite_amount_edit.setPlaceholderText("Select Yes or No for expedite")
 
     def generate_job_number(self):
-        """Generate professional quote number - automatically transition to next category at 999"""
+        """Generate quote number in QT-YYYYMM-XXX format matching the web app."""
+        from datetime import datetime
+        now = datetime.now()
+        prefix = f"QT-{now.strftime('%Y%m')}-"
 
         # Prefer owner_tab (reliable for both embedded and popup modes)
         parent = self.owner_tab if hasattr(self, 'owner_tab') and self.owner_tab else self.parent()
-        if not hasattr(parent, 'job_forms') or not parent.job_forms:
-            job_number = "QuoteA001"
-            self.job_number_edit.setText(job_number)
-            self.auto_generate_enabled = False
-            return job_number
-        
-        # Dictionary to track highest sequence for each category
-        category_sequences = {}
-        
-        # First pass: Find highest sequence for each category
-        for job in parent.job_forms:
-            job_num = job.get('job_number', '').upper()
-            
-            if 'QUOTE' not in job_num:
-                continue
-            
-            # Extract category and sequence (ignoring suffixes)
-            match = re.match(r'^QUOTE([A-Z]?)(\d+)', job_num)
-            if match:
-                category = match.group(1) or 'A'  # Default to 'A' if no category
-                seq_str = match.group(2)
-                
+        job_forms = getattr(parent, 'job_forms', None) or []
+
+        # Find the highest sequential number already used this month
+        max_seq = 0
+        for job in job_forms:
+            num = (job.get('job_number') or '').strip()
+            if num.upper().startswith(prefix.upper()):
                 try:
-                    # Convert to integer (remove leading zeros)
-                    seq_num = int(seq_str)
-                    
-                    # Update if this is higher than current max for this category
-                    if category not in category_sequences or seq_num > category_sequences[category]:
-                        category_sequences[category] = seq_num
+                    seq = int(num[len(prefix):])
+                    if seq > max_seq:
+                        max_seq = seq
                 except ValueError:
-                    continue
-        
-        # If no categories found, start with A001
-        if not category_sequences:
-            job_number = "QuoteA001"
-            self.job_number_edit.setText(job_number)
-            self.auto_generate_enabled = False
-            return job_number
-        
-        # Get all used categories sorted alphabetically
-        sorted_categories = sorted(category_sequences.keys())
-        
-        # Start with the last (highest) category
-        current_category = sorted_categories[-1]
-        current_max_seq = category_sequences[current_category]
-        
-        # Check if we need to roll over
-        if current_max_seq >= 999:
-            # Category is full (reached 999)
-            
-            if current_category == 'Z':
-                # We've reached Z999 - wrap around to A but continue sequence
-                # Find the absolute highest sequence across all categories
-                all_max_seq = max(category_sequences.values())
-                
-                if all_max_seq >= 999:
-                    # All categories are at 999 or more, start a new cycle
-                    next_category = 'A'
-                    next_sequence = all_max_seq + 1
-                    job_number = f"Quote{next_category}{next_sequence:03d}"
-                else:
-                    # Find next available category that isn't at 999 yet
-                    for cat in sorted(category_sequences.keys()):
-                        if category_sequences[cat] < 999:
-                            next_category = cat
-                            next_sequence = category_sequences[cat] + 1
-                            break
-                    else:
-                        # All categories at 999, start new with A
-                        next_category = 'A'
-                        next_sequence = all_max_seq + 1
-                    
-                    job_number = f"Quote{next_category}{next_sequence:03d}"
-            else:
-                # Move to next letter in alphabet
-                next_category = chr(ord(current_category) + 1)
-                
-                # Check if next category already exists
-                if next_category in category_sequences:
-                    next_sequence = category_sequences[next_category] + 1
-                    
-                    # If next sequence would be 1000 or more, skip to next available category
-                    if next_sequence >= 1000:
-                        # Find next available category with sequence < 999
-                        next_category = None
-                        for i in range(ord(next_category), ord('Z') + 1):
-                            cat = chr(i)
-                            if cat not in category_sequences:
-                                next_category = cat
-                                next_sequence = 1
-                                break
-                            elif category_sequences[cat] < 999:
-                                next_category = cat
-                                next_sequence = category_sequences[cat] + 1
-                                break
-                        
-                        # If no category found, wrap to A
-                        if next_category is None:
-                            next_category = 'A'
-                            next_sequence = max(category_sequences.values()) + 1
-                else:
-                    # Start new category at 001
-                    next_sequence = 1
-                
-                job_number = f"Quote{next_category}{next_sequence:03d}"
-        else:
-            # Continue in current category
-            next_sequence = current_max_seq + 1
-            
-            # Check if we're hitting 1000 (shouldn't happen with our logic)
-            if next_sequence >= 1000:
-                # Move to next category
-                if current_category == 'Z':
-                    next_category = 'A'
-                    next_sequence = max(category_sequences.values()) + 1
-                else:
-                    next_category = chr(ord(current_category) + 1)
-                    next_sequence = 1
-                
-                job_number = f"Quote{next_category}{next_sequence:03d}"
-            else:
-                job_number = f"Quote{current_category}{next_sequence:03d}"
-        
-        # Set the quote number in the field
+                    pass
+
+        job_number = f"{prefix}{max_seq + 1:03d}"
         self.job_number_edit.setText(job_number)
-        
-        # Disable auto-generation after manual generation
         self.auto_generate_enabled = False
-        
         return job_number
 
     def get_next_category_sequence_ignore_suffixes(self, category):
@@ -10260,12 +10111,12 @@ class JobFormDialog(QtWidgets.QDialog):
             
             # ⭐⭐ NEW: Validate quote number format
             job_number = job_data['job_number'].strip()
-            if not job_number.upper().startswith('QUOTE'):
+            if not (job_number.upper().startswith('QT-') or job_number.upper().startswith('QUOTE')):
                 QtWidgets.QMessageBox.warning(
                     self,
                     "Invalid Quote Number",
-                    "Quote Number must start with 'Quote'!\n\n"
-                    "Examples: QuoteA001, QuoteB002, QuoteC003\n"
+                    "Quote Number must start with 'QT-'!\n\n"
+                    "Example: QT-202606-001\n"
                     f"You entered: {job_number}"
                 )
                 return
