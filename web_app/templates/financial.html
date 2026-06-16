@@ -150,13 +150,162 @@ a[href*="filter_expense"]:hover {
 
 .progress-thin { height: 6px; border-radius: 99px; background: #E2E8F0; overflow: hidden; }
 .progress-thin .fill { height: 100%; border-radius: 99px; transition: width .5s; }
+
+/* ── Finance Filter Bar ─────────────────────────────────────────── */
+.fin-filter-bar {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  border-radius: 14px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.18);
+}
+.ffb-label {
+  font-size: 9px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .1em; color: #64748b; margin-bottom: 5px;
+}
+.ffb-divider {
+  width: 1px; background: #1e3a52; margin: 0 6px; align-self: stretch; min-height: 44px;
+}
+.yr-pill {
+  display: inline-flex; align-items: center;
+  padding: 4px 14px; border-radius: 20px;
+  border: 1.5px solid #334155; background: transparent;
+  color: #94a3b8; font-size: 13px; font-weight: 700;
+  text-decoration: none; cursor: pointer; transition: all .18s; white-space: nowrap;
+}
+.yr-pill:hover { border-color: #0D9488; color: #0D9488; }
+.yr-pill.yr-active { background: #0D9488; border-color: #0D9488; color: #fff; box-shadow: 0 0 0 3px rgba(13,148,136,.2); }
+.yr-pill.yr-current:not(.yr-active) { border-color: #3b82f6; color: #60a5fa; }
+.range-pill, .mo-pill {
+  display: inline-flex; align-items: center;
+  padding: 4px 11px; border-radius: 20px;
+  border: 1.5px solid #334155; background: transparent;
+  color: #94a3b8; font-size: 11px; font-weight: 600;
+  cursor: pointer; transition: all .18s; user-select: none; white-space: nowrap;
+}
+.range-pill:hover { border-color: #f59e0b; color: #f59e0b; }
+.range-pill.rp-active { background: #f59e0b; border-color: #f59e0b; color: #1f2937; }
+.mo-pill:hover { border-color: #8b5cf6; color: #a78bfa; }
+.mo-pill.mp-active { background: #8b5cf6; border-color: #8b5cf6; color: #fff; }
+.ffb-date {
+  background: #1e293b; border: 1.5px solid #334155;
+  color: #e2e8f0; border-radius: 7px; padding: 4px 8px;
+  font-size: 11px; width: 130px;
+}
+.ffb-date:focus { outline: none; border-color: #0D9488; }
+.fin-active-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #083344; border: 1px solid #0e7490;
+  color: #67e8f9; border-radius: 20px; padding: 3px 10px;
+  font-size: 11px; font-weight: 600;
+}
+/* Income tab status pills */
+.status-pill-btn {
+  display: inline-flex; align-items: center;
+  padding: 4px 12px; border-radius: 20px;
+  border: 1.5px solid #e2e8f0; background: #f8fafc;
+  color: #64748b; font-size: 11px; font-weight: 600;
+  cursor: pointer; transition: all .18s; user-select: none;
+}
+.status-pill-btn:hover { border-color: #0D9488; color: #0D9488; }
+.status-pill-btn.sp-active { background: #0D9488; border-color: #0D9488; color: #fff; }
+.status-pill-btn[data-status="Paid"].sp-active { background: #16a34a; border-color: #16a34a; }
+.status-pill-btn[data-status="Partial"].sp-active { background: #f59e0b; border-color: #f59e0b; color: #1f2937; }
+/* Aging bucket filter pills */
+.bucket-pill {
+  display: inline-flex; align-items: center;
+  padding: 4px 12px; border-radius: 20px;
+  border: 1.5px solid #e2e8f0; background: #fff;
+  color: #64748b; font-size: 11px; font-weight: 600;
+  cursor: pointer; transition: all .18s; user-select: none;
+}
+.bucket-pill:hover { border-color: #6b7280; color: #374151; }
+.bucket-pill.bp-active { color: #fff; }
+.bucket-pill[data-bucket="current"].bp-active { background: #16a34a; border-color: #16a34a; }
+.bucket-pill[data-bucket="1_30"].bp-active   { background: #ca8a04; border-color: #ca8a04; }
+.bucket-pill[data-bucket="31_60"].bp-active  { background: #ea580c; border-color: #ea580c; }
+.bucket-pill[data-bucket="61_90"].bp-active  { background: #dc2626; border-color: #dc2626; }
+.bucket-pill[data-bucket="90plus"].bp-active { background: #7f1d1d; border-color: #7f1d1d; }
+.aging-filter-bar {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  padding: 10px 14px; background: #f8fafc; border-radius: 10px;
+  border: 1px solid #e2e8f0; margin-bottom: 16px;
+}
 </style>
 {% endblock %}
 
 {% block content %}
 
+<!-- ── Global Finance Filter Bar ─────────────────────────────────────────── -->
+{% set current_year_val = today_date[:4]|int %}
+<div class="fin-filter-bar">
+  <div class="d-flex gap-2 align-items-start flex-wrap">
+
+    <!-- Year pills -->
+    <div>
+      <div class="ffb-label"><i class="bi bi-calendar3 me-1"></i>Year</div>
+      <div class="d-flex gap-1 flex-wrap">
+        {% for yr in available_years|sort(reverse=True) %}
+        <a href="?tab={{ active_tab or 'overview' }}&year={{ yr }}"
+           class="yr-pill {{ 'yr-active' if yr == selected_year }} {{ 'yr-current' if yr == current_year_val and yr != selected_year }}">{{ yr }}</a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="ffb-divider d-none d-md-block"></div>
+
+    <!-- Quick range pills -->
+    <div>
+      <div class="ffb-label"><i class="bi bi-lightning-charge me-1"></i>Quick Filter</div>
+      <div class="d-flex gap-1 flex-wrap" id="rangeGroup">
+        <span class="range-pill" data-range="this-month">This Month</span>
+        <span class="range-pill" data-range="last-month">Last Month</span>
+        <span class="range-pill" data-range="this-quarter">This Quarter</span>
+        <span class="range-pill" data-range="ytd">Year to Date</span>
+        <span class="range-pill rp-active" data-range="all">All</span>
+      </div>
+    </div>
+
+    <div class="ffb-divider d-none d-md-block"></div>
+
+    <!-- Month pills -->
+    <div>
+      <div class="ffb-label"><i class="bi bi-calendar-month me-1"></i>Month</div>
+      <div class="d-flex gap-1 flex-wrap" id="monthGroup">
+        {% for mn in ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
+        <span class="mo-pill" data-month="{{ loop.index }}">{{ mn }}</span>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="ffb-divider d-none d-lg-block"></div>
+
+    <!-- Custom date range -->
+    <div>
+      <div class="ffb-label"><i class="bi bi-calendar-range me-1"></i>Custom Range</div>
+      <div class="d-flex gap-2 align-items-center flex-wrap">
+        <input type="date" id="ffbFrom" class="ffb-date">
+        <span style="color:#475569;">→</span>
+        <input type="date" id="ffbTo" class="ffb-date">
+        <button onclick="applyCustomRange()" style="background:#0D9488;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;">Apply</button>
+        <button onclick="clearFinFilter()" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;">Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active filter chip -->
+  <div id="finActiveChip" class="mt-2" style="display:none;">
+    <span class="fin-active-chip">
+      <i class="bi bi-funnel-fill"></i>
+      <span id="finActiveChipText">Filtered</span>
+      <span onclick="clearFinFilter()" style="cursor:pointer;opacity:.7;margin-left:2px;">✕</span>
+    </span>
+    <span style="font-size:11px;color:#475569;margin-left:6px;">Filtering Income, Expenses &amp; Aging</span>
+  </div>
+</div>
+
 <!-- ── Tab nav ──────────────────────────────────────────────────────────────── -->
-<ul class="nav nav-tabs mb-4" id="finTabs">
+<ul class="nav nav-tabs mb-3" id="finTabs">
   <li class="nav-item">
     <a class="nav-link {{ 'active' if active_tab in ('overview', '') else '' }}" data-bs-toggle="tab" href="#tab-overview">
       <i class="bi bi-graph-up me-1"></i>Overview
@@ -348,10 +497,30 @@ a[href*="filter_expense"]:hover {
 ═════════════════════════════════════════════════════════════════ -->
 <div class="tab-pane fade {{ 'show active' if active_tab == 'income' else '' }}" id="tab-income">
   <div class="card-panel">
-    <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
       <h6 class="panel-title mb-0">Income — Paid &amp; Partial Invoices</h6>
-      <span class="text-muted small">Auto-populated from invoice payments</span>
+      <span class="text-muted small" id="incomeCountInfo">{{ rev_list|length }} entries</span>
     </div>
+
+    <!-- Income Filter Bar -->
+    <div class="d-flex gap-2 align-items-center flex-wrap mb-3 pb-2" style="border-bottom:1px solid #f1f5f9;">
+      <input type="text" id="incomeSearch" placeholder="Search client / invoice..." class="form-control form-control-sm" style="width:200px;" oninput="reFilterIncome()">
+      <div class="d-flex gap-1 flex-wrap ms-1" id="incomeStatusGroup">
+        <span class="status-pill-btn sp-active" data-status="all">All</span>
+        <span class="status-pill-btn" data-status="Paid"><i class="bi bi-check-circle-fill me-1" style="color:#16a34a;"></i>Paid</span>
+        <span class="status-pill-btn" data-status="Partial"><i class="bi bi-circle-half me-1" style="color:#f59e0b;"></i>Partial</span>
+      </div>
+      <select id="incomeMonthFilter" class="form-select form-select-sm ms-1" style="width:130px;" onchange="reFilterIncome()">
+        <option value="">All Months</option>
+        {% for mn in ['January','February','March','April','May','June','July','August','September','October','November','December'] %}
+        <option value="{{ '%02d'|format(loop.index) }}">{{ mn }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn btn-xs btn-outline-secondary ms-auto" onclick="clearIncomeFilter()">
+        <i class="bi bi-x me-1"></i>Clear
+      </button>
+    </div>
+
     {% if rev_list %}
     <div class="table-responsive">
       <table class="table table-hover table-sm mb-0 align-middle">
@@ -368,9 +537,12 @@ a[href*="filter_expense"]:hover {
             <th class="text-end">Amount Paid</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="incomeTableBody">
           {% for r in rev_list|sort(attribute='date', reverse=True) %}
-          <tr>
+          <tr class="inc-row"
+              data-date="{{ r.get('date','') }}"
+              data-status="{{ r.get('status','') }}"
+              data-search="{{ r.get('client_name','')|lower }} {{ r.get('invoice_number','')|lower }}">
             <td class="text-muted small">{{ r.get('date','—') }}</td>
             <td>
               {% if r.get('invoice_id') %}
@@ -404,6 +576,9 @@ a[href*="filter_expense"]:hover {
           </tr>
         </tfoot>
       </table>
+    </div>
+    <div id="incomeNoResults" class="text-center text-muted py-4" style="display:none;">
+      <i class="bi bi-search fs-4 d-block mb-2"></i>No entries match the current filter.
     </div>
     {% else %}
     <div class="empty-state py-5">
@@ -1469,187 +1644,193 @@ function viewReceipt(expId) {
      BALANCE SHEET TAB
 ═════════════════════════════════════════════════════════════════ -->
 <div class="tab-pane fade {{ 'show active' if active_tab == 'balance-sheet' else '' }}" id="tab-balance-sheet">
+
   <!-- Header -->
-  <div class="d-flex justify-content-between align-items-center mb-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
       <h4 class="mb-1">Balance Sheet</h4>
-      <p class="text-muted small mb-0">Track revenue, expenses and salaries — all in one place</p>
+      <p class="text-muted small mb-0">Revenue, expenses &amp; salaries for <strong>{{ selected_year }}</strong></p>
     </div>
-    <div class="d-flex gap-2">
-      <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#yearCalendarModal" style="background: #f0fdf4; color: #0f766e; border-color: #bbf7d0; font-weight: 900;">
-        📅 {{ selected_year }}
-      </button>
-      <button class="btn btn-sm btn-outline-success" onclick="exportBalanceSheet()">
-        <i class="bi bi-download me-1"></i>Export
-      </button>
-    </div>
+    <button class="btn btn-sm btn-outline-success" onclick="exportBalanceSheet()">
+      <i class="bi bi-download me-1"></i>Export
+    </button>
   </div>
 
-  <!-- Year Calendar Modal -->
-  <div class="modal fade" id="yearCalendarModal" tabindex="-1" aria-labelledby="yearCalendarLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="yearCalendarLabel">Select Year</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <!-- Navigation Controls -->
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
-            <button type="button" id="yearPrevBtn" class="btn btn-sm btn-outline-secondary" style="width: 36px; height: 36px; padding: 0; display: flex; align-items: center; justify-content: center;">
-              <i class="bi bi-chevron-left"></i>
-            </button>
-            <h6 id="yearRangeDisplay" style="font-weight: 700; color: #334155; margin: 0; min-width: 120px; text-align: center; font-size: 13px;">
-              2016 - 2027
-            </h6>
-            <button type="button" id="yearNextBtn" class="btn btn-sm btn-outline-secondary" style="width: 36px; height: 36px; padding: 0; display: flex; align-items: center; justify-content: center;">
-              <i class="bi bi-chevron-right"></i>
-            </button>
-          </div>
+  <!-- Balance Sheet Filter Bar -->
+  <div class="fin-filter-bar mb-3">
+    <div class="d-flex gap-2 align-items-start flex-wrap">
 
-          <!-- Year Grid (3x3) -->
-          <div id="yearGridContainer" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-            <!-- Years will be populated by JavaScript -->
-          </div>
+      <!-- Year pills -->
+      <div>
+        <div class="ffb-label"><i class="bi bi-calendar3 me-1"></i>Year</div>
+        <div class="d-flex gap-1 flex-wrap">
+          {% set bs_cur_yr = today_date[:4]|int %}
+          {% for yr in available_years|sort(reverse=True) %}
+          <a href="?tab=balance-sheet&year={{ yr }}"
+             class="yr-pill {{ 'yr-active' if yr == selected_year }} {{ 'yr-current' if yr == bs_cur_yr and yr != selected_year }}">{{ yr }}</a>
+          {% endfor %}
         </div>
       </div>
+
+      <div class="ffb-divider d-none d-md-block"></div>
+
+      <!-- Quarter pills -->
+      <div>
+        <div class="ffb-label"><i class="bi bi-grid me-1"></i>Quarter</div>
+        <div class="d-flex gap-1 flex-wrap" id="bsQuarterGroup">
+          <span class="bs-q-pill" data-months="1,2,3">Q1 <small style="opacity:.7;">Jan–Mar</small></span>
+          <span class="bs-q-pill" data-months="4,5,6">Q2 <small style="opacity:.7;">Apr–Jun</small></span>
+          <span class="bs-q-pill" data-months="7,8,9">Q3 <small style="opacity:.7;">Jul–Sep</small></span>
+          <span class="bs-q-pill" data-months="10,11,12">Q4 <small style="opacity:.7;">Oct–Dec</small></span>
+        </div>
+      </div>
+
+      <div class="ffb-divider d-none d-md-block"></div>
+
+      <!-- Month pills -->
+      <div>
+        <div class="ffb-label"><i class="bi bi-calendar-month me-1"></i>Month — click to drill down</div>
+        <div class="d-flex gap-1 flex-wrap" id="bsMonthGroup">
+          {% for mn in ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
+          <span class="bs-mo-pill" data-month="{{ loop.index }}">{{ mn }}</span>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="ms-auto d-flex align-items-end pb-1">
+        <span onclick="bsClearSelection()" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;">
+          <i class="bi bi-x me-1"></i>Clear
+        </span>
+      </div>
+    </div>
+
+    <!-- Active selection chip -->
+    <div id="bsActiveChip" class="mt-2" style="display:none;">
+      <span class="fin-active-chip">
+        <i class="bi bi-funnel-fill"></i>
+        <span id="bsActiveChipText"></span>
+        <span onclick="bsClearSelection()" style="cursor:pointer;opacity:.7;margin-left:3px;">✕</span>
+      </span>
+      <span style="font-size:11px;color:#475569;margin-left:6px;">Click any revenue cell in the table to view details</span>
     </div>
   </div>
 
   <script>
-    // Year selector functionality
-    document.addEventListener('DOMContentLoaded', function() {
-      const availableYears = {{ available_years|tojson }}.sort((a, b) => a - b);
-      const selectedYear = {{ selected_year|tojson }};
-      const currentYear = new Date().getFullYear();
-      const yearsPerPage = 9; // 3x3 grid
+  (function() {
+    var BS_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-      // Calculate initial page to show current year
-      let currentPageIndex = 0;
-      const currentYearIndex = availableYears.indexOf(currentYear);
-      if (currentYearIndex >= 0) {
-        currentPageIndex = Math.floor(currentYearIndex / yearsPerPage);
-      }
-
-      function renderYearGrid() {
-        const startIdx = currentPageIndex * yearsPerPage;
-        const endIdx = startIdx + yearsPerPage;
-        const yearsToShow = availableYears.slice(startIdx, endIdx);
-
-        // Update range display
-        if (yearsToShow.length > 0) {
-          document.getElementById('yearRangeDisplay').textContent =
-            yearsToShow[0] + ' - ' + yearsToShow[yearsToShow.length - 1];
-        }
-
-        // Populate grid
-        const container = document.getElementById('yearGridContainer');
-        container.innerHTML = '';
-        yearsToShow.forEach(year => {
-          const link = document.createElement('a');
-          link.href = '?tab=balance-sheet&year=' + year;
-          link.className = 'year-cell ' + (year === selectedYear ? 'active' : '');
-
-          // Different styles for current year vs selected year
-          let bgColor = '#ffffff';
-          let borderColor = '#e2e8f0';
-          let textColor = '#334155';
-
-          if (year === currentYear) {
-            // Current year: light blue background
-            bgColor = '#dbeafe';
-            borderColor = '#3b82f6';
-            textColor = '#1e40af';
-          }
-          if (year === selectedYear) {
-            // Selected year: green background (takes precedence)
-            bgColor = '#f0fdf4';
-            borderColor = '#16a34a';
-            textColor = '#15803d';
-          }
-
-          link.style.cssText = `
-            padding: 20px;
-            background: ${bgColor};
-            border: 2px solid ${borderColor};
-            border-radius: 8px;
-            text-align: center;
-            font-weight: 700;
-            color: ${textColor};
-            cursor: pointer;
-            transition: all 0.2s;
-            text-decoration: none;
-            display: block;
-          `;
-          link.textContent = year;
-          link.addEventListener('mouseenter', function() {
-            this.style.background = '#f0fdf4';
-            this.style.borderColor = '#16a34a';
-            this.style.color = '#15803d';
-          });
-          link.addEventListener('mouseleave', function() {
-            if (year === currentYear && year !== selectedYear) {
-              this.style.background = '#dbeafe';
-              this.style.borderColor = '#3b82f6';
-              this.style.color = '#1e40af';
-            } else if (year !== selectedYear) {
-              this.style.background = '#ffffff';
-              this.style.borderColor = '#e2e8f0';
-              this.style.color = '#334155';
-            }
-          });
-          if (year === selectedYear) {
-            link.style.background = '#f0fdf4';
-            link.style.borderColor = '#16a34a';
-            link.style.color = '#15803d';
-          }
-          container.appendChild(link);
-        });
-
-        // Update button states
-        document.getElementById('yearPrevBtn').disabled = currentPageIndex === 0;
-        document.getElementById('yearNextBtn').disabled = endIdx >= availableYears.length;
-
-        // Update button opacity
-        document.getElementById('yearPrevBtn').style.opacity = currentPageIndex === 0 ? '0.5' : '1';
-        document.getElementById('yearNextBtn').style.opacity = endIdx >= availableYears.length ? '0.5' : '1';
-      }
-
-      document.getElementById('yearPrevBtn').addEventListener('click', function() {
-        if (currentPageIndex > 0) {
-          currentPageIndex--;
-          renderYearGrid();
-        }
+    // Highlight a set of month columns in the annual table
+    function bsHighlightColumns(months) {
+      document.querySelectorAll('.month-header').forEach(function(h) {
+        var mo = parseInt(h.getAttribute('data-month'));
+        var active = months.indexOf(mo) !== -1;
+        h.style.background   = active ? '#0D9488' : '';
+        h.style.color        = active ? '#fff'    : '';
+        h.style.borderRadius = active ? '4px'     : '';
       });
-
-      document.getElementById('yearNextBtn').addEventListener('click', function() {
-        if ((currentPageIndex + 1) * yearsPerPage < availableYears.length) {
-          currentPageIndex++;
-          renderYearGrid();
-        }
+      document.querySelectorAll('.annual-revenue-cell').forEach(function(c) {
+        var mo = parseInt(c.getAttribute('data-month'));
+        c.style.background = (months.indexOf(mo) !== -1) ? '#f0fdf4' : '';
       });
+    }
 
-      // Initial render
-      renderYearGrid();
+    function bsClearHighlights() {
+      document.querySelectorAll('.month-header').forEach(function(h) { h.style.background=''; h.style.color=''; });
+      document.querySelectorAll('.annual-revenue-cell').forEach(function(c) { c.style.background=''; });
+      var panel = document.getElementById('monthPaymentsPanel');
+      if (panel) panel.style.display = 'none';
+      document.querySelectorAll('.annual-revenue-cell').forEach(function(c){ c.classList.remove('active-month-cell'); });
+    }
+
+    function showChip(text) {
+      var chip = document.getElementById('bsActiveChip');
+      var txt  = document.getElementById('bsActiveChipText');
+      if (chip) chip.style.display = '';
+      if (txt)  txt.textContent = text;
+    }
+    function hideChip() {
+      var chip = document.getElementById('bsActiveChip');
+      if (chip) chip.style.display = 'none';
+    }
+
+    window.bsClearSelection = function() {
+      document.querySelectorAll('.bs-q-pill').forEach(function(p){ p.classList.remove('bsq-active'); });
+      document.querySelectorAll('.bs-mo-pill').forEach(function(p){ p.classList.remove('bsm-active'); });
+      bsClearHighlights();
+      hideChip();
+    };
+
+    // Quarter pills
+    document.querySelectorAll('.bs-q-pill').forEach(function(pill) {
+      pill.addEventListener('click', function() {
+        var already = this.classList.contains('bsq-active');
+        document.querySelectorAll('.bs-q-pill').forEach(function(p){ p.classList.remove('bsq-active'); });
+        document.querySelectorAll('.bs-mo-pill').forEach(function(p){ p.classList.remove('bsm-active'); });
+        if (already) { bsClearHighlights(); hideChip(); return; }
+        this.classList.add('bsq-active');
+        var months = this.dataset.months.split(',').map(Number);
+        bsHighlightColumns(months);
+        var qlabel = this.textContent.trim().split(' ')[0]; // "Q1", "Q2" etc
+        showChip(qlabel + ' — ' + {{ selected_year }});
+        var panel = document.getElementById('monthPaymentsPanel');
+        if (panel) panel.style.display = 'none';
+      });
     });
 
-    // Month selection in Annual Financial Summary
+    // Month pills
+    document.querySelectorAll('.bs-mo-pill').forEach(function(pill) {
+      pill.addEventListener('click', function() {
+        var mo = parseInt(this.dataset.month);
+        var already = this.classList.contains('bsm-active');
+        document.querySelectorAll('.bs-mo-pill').forEach(function(p){ p.classList.remove('bsm-active'); });
+        document.querySelectorAll('.bs-q-pill').forEach(function(p){ p.classList.remove('bsq-active'); });
+        if (already) { bsClearHighlights(); hideChip(); return; }
+        this.classList.add('bsm-active');
+        bsHighlightColumns([mo]);
+        showChip(BS_MONTHS[mo-1] + ' ' + {{ selected_year }});
+        // Open drill-down for this month
+        if (typeof showMonthPayments === 'function') {
+          showMonthPayments(mo);
+        }
+      });
+    });
+
+    // Clicking a month header in the table → sync the BS month pills
     document.addEventListener('DOMContentLoaded', function() {
-      const monthHeaders = document.querySelectorAll('.month-header');
-      monthHeaders.forEach(header => {
-        header.addEventListener('click', function(e) {
-          e.preventDefault();
-          // Remove selected class from all months
-          monthHeaders.forEach(h => h.classList.remove('selected'));
-          // Add selected class to clicked month
-          this.classList.add('selected');
+      document.querySelectorAll('.month-header').forEach(function(h) {
+        h.addEventListener('click', function() {
+          var mo = parseInt(this.getAttribute('data-month'));
+          document.querySelectorAll('.bs-mo-pill').forEach(function(p){
+            p.classList.toggle('bsm-active', parseInt(p.dataset.month) === mo);
+          });
+          document.querySelectorAll('.bs-q-pill').forEach(function(p){ p.classList.remove('bsq-active'); });
+          bsHighlightColumns([mo]);
+          showChip(BS_MONTHS[mo-1] + ' ' + {{ selected_year }});
         });
       });
     });
+  })();
   </script>
 
   <style>
-
+  .bs-q-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 12px; border-radius: 20px;
+    border: 1.5px solid #334155; background: transparent;
+    color: #94a3b8; font-size: 12px; font-weight: 700;
+    cursor: pointer; transition: all .18s; user-select: none;
+  }
+  .bs-q-pill:hover { border-color: #f59e0b; color: #f59e0b; }
+  .bs-q-pill.bsq-active { background: #f59e0b; border-color: #f59e0b; color: #1f2937; }
+  .bs-mo-pill {
+    display: inline-flex; align-items: center;
+    padding: 4px 10px; border-radius: 16px;
+    border: 1.5px solid #334155; background: transparent;
+    color: #94a3b8; font-size: 11px; font-weight: 600;
+    cursor: pointer; transition: all .18s; user-select: none;
+  }
+  .bs-mo-pill:hover { border-color: #0D9488; color: #0D9488; }
+  .bs-mo-pill.bsm-active { background: #0D9488; border-color: #0D9488; color: #fff; box-shadow: 0 0 0 3px rgba(13,148,136,.2); }
   </style>
 
   <!-- Stat Cards Row -->
@@ -1696,8 +1877,9 @@ function viewReceipt(expId) {
 
   <!-- Annual Financial Summary Table -->
   <div class="card mb-4">
-    <div class="card-header bg-light">
-      <h6 class="mb-0">Annual Financial Summary <small class="text-muted fw-normal ms-2" style="font-size:12px;">Click any revenue amount to view payment details</small></h6>
+    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+      <h6 class="mb-0">Annual Financial Summary — {{ selected_year }} <small class="text-muted fw-normal ms-2" style="font-size:12px;">Click a revenue cell or use Month pills above to drill down</small></h6>
+      <span id="bsMonthLabel" class="badge" style="background:#0D9488;color:#fff;font-size:11px;padding:4px 10px;display:none;"></span>
     </div>
     <div class="card-body p-0">
       <div class="table-responsive">
@@ -1810,6 +1992,30 @@ function viewReceipt(expId) {
       </div>
     </div>
 
+    <!-- Due This Month Section -->
+    <div class="mb-3" id="monthDueSection" style="display:none;">
+      <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#7C3AED; padding:6px 0; border-bottom:2px solid #DDD6FE; margin-bottom:8px;">
+        <i class="bi bi-calendar-event me-1"></i>Due This Month (Payment Deadlines)
+      </div>
+      <div class="table-responsive">
+        <table class="table mb-0" style="font-size:12px;">
+          <thead style="background:#4C1D95; color:#fff;">
+            <tr>
+              <th style="padding:8px 12px; color:#fff;">Invoice</th>
+              <th style="padding:8px 12px; color:#fff;">Client</th>
+              <th style="padding:8px 12px; color:#fff;">Invoice Date</th>
+              <th style="padding:8px 12px; color:#fff; text-align:center;">Net Terms</th>
+              <th style="padding:8px 12px; color:#fff; text-align:center;">Due Date</th>
+              <th style="padding:8px 12px; color:#fff; text-align:center;">Status</th>
+              <th style="padding:8px 12px; color:#fff; text-align:right;">Balance Due</th>
+            </tr>
+          </thead>
+          <tbody id="monthDueTbody"></tbody>
+          <tfoot id="monthDueTfoot" style="background:#F5F3FF; border-top:2px solid #DDD6FE;"></tfoot>
+        </table>
+      </div>
+    </div>
+
     <!-- Expenses Section -->
     <div class="mb-3" id="monthExpensesSection" style="display:none;">
       <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#DC2626; padding:6px 0; border-bottom:2px solid #FECACA; margin-bottom:8px;">
@@ -1859,6 +2065,7 @@ function viewReceipt(expId) {
     var monthlyExpenseDetails    = {{ monthly_expense_details | safe }};
     var monthlySalaryDetails     = {{ monthly_salary_details | safe }};
     var monthlyOutstandingDetails= {{ monthly_outstanding_details | safe }};
+    var monthlyDueDetails        = {{ monthly_due_details | safe }};
     var monthNames = {1:'January',2:'February',3:'March',4:'April',5:'May',6:'June',7:'July',8:'August',9:'September',10:'October',11:'November',12:'December'};
     var activeMonth = null;
     var fmt = function(n){ return '$' + parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); };
@@ -1943,7 +2150,45 @@ function viewReceipt(expId) {
         outSec.style.display = 'none';
       }
 
-      /* ── 3. Expenses ── */
+      /* ── 3. Due This Month ── */
+      var due = monthlyDueDetails[mkey] || [];
+      var dueSec = document.getElementById('monthDueSection');
+      if (due.length > 0) {
+        dueSec.style.display = '';
+        var today = new Date(); today.setHours(0,0,0,0);
+        var dRows = due.map(function(e, idx) {
+          var invLink = e.firebase_id
+            ? '<a href="/invoicing/'+encodeURIComponent(e.firebase_id)+'" style="color:#7C3AED;font-weight:700;text-decoration:none;">'+(e.invoice_number||'—')+'</a>'
+            : (e.invoice_number||'—');
+          var dueDt = e.due_date ? new Date(e.due_date) : null;
+          var daysText = '—';
+          if (dueDt) {
+            dueDt.setHours(0,0,0,0);
+            var diff = Math.round((dueDt - today) / 86400000);
+            if (diff < 0) daysText = '<span style="color:#DC2626;font-weight:700;">'+ Math.abs(diff) +' days overdue</span>';
+            else if (diff === 0) daysText = '<span style="color:#D97706;font-weight:700;">Due today</span>';
+            else daysText = '<span style="color:#059669;">Due in '+diff+' day'+(diff===1?'':'s')+'</span>';
+          }
+          var statusColor = {'Sent':'#0369a1','Viewed':'#7C3AED','Partial':'#D97706','Overdue':'#DC2626'}[e.status] || '#6b7280';
+          var bg = idx%2===0?'#faf5ff':'#f5f0ff';
+          return '<tr style="background:'+bg+';border-bottom:1px solid #DDD6FE;">'
+            +'<td style="padding:8px 12px;">'+invLink+'</td>'
+            +'<td style="padding:8px 12px;">'+(e.client_name||'—')+'</td>'
+            +'<td style="padding:8px 12px;color:#6b7280;">'+(e.invoice_date||'—')+'</td>'
+            +'<td style="padding:8px 12px;text-align:center;">'+(e.net_terms?'Net '+e.net_terms:'—')+'</td>'
+            +'<td style="padding:8px 12px;text-align:center;color:#374151;">'+(e.due_date||'—')+'</td>'
+            +'<td style="padding:8px 12px;text-align:center;"><span style="color:'+statusColor+';font-weight:600;">'+(e.status||'—')+'</span></td>'
+            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#7C3AED;">'+fmt(e.balance)+'</td></tr>';
+        });
+        document.getElementById('monthDueTbody').innerHTML = dRows.join('');
+        var totalDue = due.reduce(function(s,e){return s+parseFloat(e.balance||0);},0);
+        document.getElementById('monthDueTfoot').innerHTML = '<tr><td colspan="6" style="padding:8px 12px;font-weight:700;">Total Due This Month — '+due.length+' invoice(s)</td>'
+          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#7C3AED;font-size:13px;">'+fmt(totalDue)+'</td></tr>';
+      } else {
+        dueSec.style.display = 'none';
+      }
+
+      /* ── 5. Expenses ── */
       var expenses = monthlyExpenseDetails[mkey] || [];
       var expSec = document.getElementById('monthExpensesSection');
       if (expenses.length > 0) {
@@ -1964,7 +2209,7 @@ function viewReceipt(expId) {
         expSec.style.display = 'none';
       }
 
-      /* ── 4. Salaries ── */
+      /* ── 6. Salaries ── */
       var salaries = monthlySalaryDetails[mkey] || [];
       var salSec = document.getElementById('monthSalariesSection');
       if (salaries.length > 0) {
@@ -2316,8 +2561,70 @@ function viewReceipt(expId) {
 ═════════════════════════════════════════════════════════════════ -->
 <div class="tab-pane fade {{ 'show active' if active_tab == 'aging' else '' }}" id="tab-aging">
 
-  <h5 class="fw-bold mb-1">Accounts Receivable Aging</h5>
-  <p class="text-muted small mb-4">Outstanding invoices grouped by how overdue they are. Based on each invoice's due date (Invoice Date + Net Terms).</p>
+  <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-2">
+    <div>
+      <h5 class="fw-bold mb-1">Accounts Receivable Aging</h5>
+      <p class="text-muted small mb-0">Outstanding invoices by how overdue they are. Based on due date (Invoice Date + Net Terms).</p>
+    </div>
+    <span class="badge" style="background:#FEF3C7;color:#92400E;font-size:12px;padding:6px 12px;border-radius:8px;">
+      <i class="bi bi-clock-history me-1"></i>As of today
+    </span>
+  </div>
+
+  <!-- Aging Filter Bar (dark, consistent with global bar) -->
+  <div class="fin-filter-bar mb-3">
+    <div class="d-flex gap-2 align-items-start flex-wrap">
+
+      <!-- Bucket pills -->
+      <div>
+        <div class="ffb-label"><i class="bi bi-layers me-1"></i>Aging Bucket</div>
+        <div class="d-flex gap-1 flex-wrap" id="agingBucketGroup">
+          <span class="bucket-pill bp-active" data-bucket="all" style="border-color:#334155;background:transparent;color:#94a3b8;">All Buckets</span>
+          <span class="bucket-pill" data-bucket="current" style="border-color:#334155;background:transparent;color:#94a3b8;">Current</span>
+          <span class="bucket-pill" data-bucket="1_30" style="border-color:#334155;background:transparent;color:#94a3b8;">1–30 Days</span>
+          <span class="bucket-pill" data-bucket="31_60" style="border-color:#334155;background:transparent;color:#94a3b8;">31–60 Days</span>
+          <span class="bucket-pill" data-bucket="61_90" style="border-color:#334155;background:transparent;color:#94a3b8;">61–90 Days</span>
+          <span class="bucket-pill" data-bucket="90plus" style="border-color:#334155;background:transparent;color:#94a3b8;">90+ Days</span>
+        </div>
+      </div>
+
+      <div class="ffb-divider d-none d-md-block"></div>
+
+      <!-- Due date range -->
+      <div>
+        <div class="ffb-label"><i class="bi bi-calendar-range me-1"></i>Due Date Range</div>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <input type="date" id="agingDueFrom" class="ffb-date" placeholder="Due from">
+          <span style="color:#475569;">→</span>
+          <input type="date" id="agingDueTo" class="ffb-date" placeholder="Due to">
+          <button onclick="applyAgingDateRange()" style="background:#DC2626;color:#fff;border:none;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;">Apply</button>
+        </div>
+      </div>
+
+      <div class="ffb-divider d-none d-md-block"></div>
+
+      <!-- Search + clear -->
+      <div>
+        <div class="ffb-label"><i class="bi bi-search me-1"></i>Search</div>
+        <div class="d-flex gap-2 align-items-center">
+          <input type="text" id="agingSearch" placeholder="Client or invoice #..." class="ffb-date" style="width:190px;" oninput="filterAging()">
+          <button onclick="clearAgingFilter()" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;">
+            <i class="bi bi-x me-1"></i>Clear
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Active filter chip -->
+    <div id="agingActiveChip" class="mt-2" style="display:none;">
+      <span class="fin-active-chip">
+        <i class="bi bi-funnel-fill"></i>
+        <span id="agingActiveChipText">Filtered</span>
+        <span onclick="clearAgingFilter()" style="cursor:pointer;opacity:.7;margin-left:3px;">✕</span>
+      </span>
+    </div>
+  </div>
 
   <!-- Aging summary cards -->
   <div class="row g-3 mb-4">
@@ -2349,11 +2656,11 @@ function viewReceipt(expId) {
   <!-- Aging detail table -->
   {% for key, label, badge_cls, hint in buckets %}
   {% if aging_buckets[key] %}
-  <div class="card-panel mb-3">
+  <div class="card-panel mb-3 aging-bucket-section" data-bucket="{{ key }}">
     <div class="d-flex align-items-center mb-3 gap-2">
       <span class="badge {{ badge_cls }}">{{ label }}</span>
       <span class="fw-bold">{{ hint }}</span>
-      <span class="ms-auto text-muted small">${{ "{:,.2f}".format(aging_totals[key]) }} total</span>
+      <span class="ms-auto text-muted small">${{ "{:,.2f}".format(aging_totals[key]) }} total · {{ aging_buckets[key]|length }} invoice{{ 's' if aging_buckets[key]|length != 1 }}</span>
     </div>
     <div style="overflow-x:auto;">
       <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
@@ -2370,7 +2677,11 @@ function viewReceipt(expId) {
         </thead>
         <tbody>
           {% for e in aging_buckets[key]|sort(attribute='days_overdue', reverse=True) %}
-          <tr style="border-bottom:1px solid #F1F5F9;">
+          <tr class="aging-row" data-bucket="{{ key }}"
+              data-date="{{ e.invoice_date or '' }}"
+              data-due-date="{{ e.due_date or '' }}"
+              data-search="{{ (e.invoice_number or '')|lower }} {{ (e.client_name or '')|lower }}"
+              style="border-bottom:1px solid #F1F5F9;">
             <td style="padding:8px 12px;">
               <a href="{{ url_for('invoice_detail', invoice_id=e.firebase_id) }}" class="text-teal fw-bold text-decoration-none">
                 {{ e.invoice_number }}
@@ -2523,7 +2834,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
 
 // ── Tab persistence ──────────────────────────────────────────────────────────
 (function () {
-  const tabMap = { overview: '#tab-overview', income: '#tab-income', expenses: '#tab-expenses', 'by-project': '#tab-by-project', 'balance-sheet': '#tab-balance-sheet' };
+  const tabMap = { overview: '#tab-overview', income: '#tab-income', expenses: '#tab-expenses', 'new-expense': '#tab-new-expense', 'by-project': '#tab-by-project', 'balance-sheet': '#tab-balance-sheet', aging: '#tab-aging' };
   const initTab = "{{ active_tab or 'overview' }}";
   const target  = tabMap[initTab] || '#tab-overview';
   const el = document.querySelector(`.nav-link[href="${target}"]`);
@@ -2539,6 +2850,268 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
       }
     });
   });
+})();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GLOBAL FINANCE FILTER BAR
+// ══════════════════════════════════════════════════════════════════════════════
+(function () {
+  var gFrom = null, gTo = null;
+
+  function parseDate(s) {
+    if (!s) return null;
+    var d = new Date(s + 'T00:00:00');
+    return isNaN(d.getTime()) ? null : d;
+  }
+  function fmtDate(d) {
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  function startOf(d) { var r=new Date(d); r.setHours(0,0,0,0); return r; }
+
+  function getRangeFor(mode) {
+    var now = new Date(), y = now.getFullYear(), m = now.getMonth();
+    if (mode==='this-month')   return { from:new Date(y,m,1),    to:new Date(y,m+1,0)   };
+    if (mode==='last-month')   return { from:new Date(y,m-1,1),  to:new Date(y,m,0)     };
+    if (mode==='this-quarter') { var q=Math.floor(m/3); return { from:new Date(y,q*3,1), to:new Date(y,q*3+3,0) }; }
+    if (mode==='ytd')          return { from:new Date(y,0,1),    to:now                 };
+    return { from:null, to:null };
+  }
+
+  function rowVisible(row, from, to) {
+    var ds = row.getAttribute('data-date') || '';
+    if (!ds) return from===null;
+    var d = parseDate(ds);
+    if (!d) return true;
+    if (from && startOf(d) < startOf(from)) return false;
+    if (to   && startOf(d) > startOf(to))   return false;
+    return true;
+  }
+
+  // ── Income filtering ──────────────────────────────────────────────
+  function doFilterIncome(from, to) {
+    var rows  = document.querySelectorAll('#incomeTableBody tr.inc-row');
+    var q     = ((document.getElementById('incomeSearch') || {}).value || '').toLowerCase();
+    var moVal = ((document.getElementById('incomeMonthFilter') || {}).value || '');
+    var stBtn = document.querySelector('#incomeStatusGroup .status-pill-btn.sp-active');
+    var stFilter = stBtn ? stBtn.dataset.status : 'all';
+    var shown = 0;
+    rows.forEach(function(r) {
+      var vis = rowVisible(r, from, to);
+      if (vis && q) vis = (r.getAttribute('data-search')||'').includes(q);
+      if (vis && stFilter !== 'all') vis = (r.getAttribute('data-status')||'') === stFilter;
+      if (vis && moVal) {
+        var ds = (r.getAttribute('data-date')||'');
+        vis = ds.length >= 7 && ds.substring(5,7) === moVal;
+      }
+      r.style.display = vis ? '' : 'none';
+      if (vis) shown++;
+    });
+    var ci = document.getElementById('incomeCountInfo');
+    if (ci) ci.textContent = shown + ' / ' + rows.length + ' entries';
+    var nr = document.getElementById('incomeNoResults');
+    if (nr) nr.style.display = (shown===0 && rows.length>0) ? '' : 'none';
+  }
+
+  window.reFilterIncome = function() { doFilterIncome(gFrom, gTo); };
+
+  window.clearIncomeFilter = function() {
+    var s = document.getElementById('incomeSearch'); if(s) s.value='';
+    var mf = document.getElementById('incomeMonthFilter'); if(mf) mf.value='';
+    document.querySelectorAll('#incomeStatusGroup .status-pill-btn').forEach(function(b){
+      b.classList.toggle('sp-active', b.dataset.status==='all');
+    });
+    doFilterIncome(gFrom, gTo);
+  };
+
+  // Income status pills
+  document.querySelectorAll('#incomeStatusGroup .status-pill-btn').forEach(function(pill) {
+    pill.addEventListener('click', function() {
+      document.querySelectorAll('#incomeStatusGroup .status-pill-btn').forEach(function(b){ b.classList.remove('sp-active'); });
+      this.classList.add('sp-active');
+      doFilterIncome(gFrom, gTo);
+    });
+  });
+
+  // ── Expenses re-filter (integrates with existing applyExpenseFilters) ──
+  function doFilterExpenses(from, to) {
+    if (typeof applyExpenseFilters === 'function') {
+      // Temporarily inject date range into expense filter inputs
+      var fi = document.getElementById('expenseDateFrom');
+      var ti = document.getElementById('expenseDateTo');
+      if (from && fi && !fi.value) fi.value = fmtDate(from);
+      if (to   && ti && !ti.value) ti.value = fmtDate(to);
+      applyExpenseFilters();
+    }
+  }
+
+  // ── Aging filtering ──────────────────────────────────────────────
+  var activeBucket = 'all';
+  var agingDueFrom = null, agingDueTo = null;
+
+  function doFilterAging(globalFrom, globalTo) {
+    var q = ((document.getElementById('agingSearch') || {}).value || '').toLowerCase();
+    var sections = document.querySelectorAll('.aging-bucket-section');
+    var totalShown = 0;
+    sections.forEach(function(sec) {
+      var bk = sec.getAttribute('data-bucket');
+      var secVis = (activeBucket === 'all' || activeBucket === bk);
+      if (!secVis) { sec.style.display = 'none'; return; }
+      var rows = sec.querySelectorAll('tr.aging-row');
+      var secShown = 0;
+      rows.forEach(function(r) {
+        var vis = true;
+        // Global invoice date filter
+        if (globalFrom || globalTo) vis = rowVisible(r, globalFrom, globalTo);
+        // Aging-specific due date filter (from agingDueFrom/To)
+        if (vis && (agingDueFrom || agingDueTo)) {
+          var dueDs = r.getAttribute('data-due-date') || '';
+          if (dueDs) {
+            var dueD = parseDate(dueDs);
+            if (dueD) {
+              if (agingDueFrom && startOf(dueD) < startOf(agingDueFrom)) vis = false;
+              if (agingDueTo   && startOf(dueD) > startOf(agingDueTo))   vis = false;
+            }
+          }
+        }
+        // Search
+        if (vis && q) vis = (r.getAttribute('data-search')||'').includes(q);
+        r.style.display = vis ? '' : 'none';
+        if (vis) secShown++;
+      });
+      sec.style.display = (secShown > 0) ? '' : 'none';
+      totalShown += secShown;
+    });
+    // Update aging chip
+    var chip = document.getElementById('agingActiveChip');
+    var chipTxt = document.getElementById('agingActiveChipText');
+    var hasFilter = q || agingDueFrom || agingDueTo || activeBucket !== 'all';
+    if (chip) chip.style.display = hasFilter ? '' : 'none';
+    if (chipTxt && hasFilter) {
+      var parts = [];
+      if (activeBucket !== 'all') parts.push('Bucket: ' + activeBucket);
+      if (agingDueFrom || agingDueTo) parts.push('Due: ' + (agingDueFrom ? fmtDate(agingDueFrom) : '…') + ' → ' + (agingDueTo ? fmtDate(agingDueTo) : '…'));
+      if (q) parts.push('Search: "' + q + '"');
+      chipTxt.textContent = parts.join(' · ') + ' (' + totalShown + ' shown)';
+    }
+  }
+
+  window.filterAging = function() { doFilterAging(gFrom, gTo); };
+
+  window.applyAgingDateRange = function() {
+    agingDueFrom = parseDate((document.getElementById('agingDueFrom')||{}).value||'');
+    agingDueTo   = parseDate((document.getElementById('agingDueTo')||{}).value||'');
+    doFilterAging(gFrom, gTo);
+  };
+
+  window.clearAgingFilter = function() {
+    var s = document.getElementById('agingSearch'); if(s) s.value='';
+    var fi = document.getElementById('agingDueFrom'); if(fi) fi.value='';
+    var ti = document.getElementById('agingDueTo');   if(ti) ti.value='';
+    agingDueFrom = null; agingDueTo = null;
+    activeBucket = 'all';
+    document.querySelectorAll('.bucket-pill').forEach(function(p){
+      p.classList.toggle('bp-active', p.dataset.bucket==='all');
+      // Reset to dark theme inactive style
+      if (p.dataset.bucket !== 'all') { p.style.background='transparent'; p.style.color='#94a3b8'; }
+    });
+    var chip = document.getElementById('agingActiveChip');
+    if (chip) chip.style.display = 'none';
+    doFilterAging(gFrom, gTo);
+  };
+
+  // Bucket pill clicks
+  document.querySelectorAll('.bucket-pill').forEach(function(pill) {
+    pill.addEventListener('click', function() {
+      activeBucket = this.dataset.bucket;
+      document.querySelectorAll('.bucket-pill').forEach(function(p){ p.classList.remove('bp-active'); });
+      this.classList.add('bp-active');
+      doFilterAging(gFrom, gTo);
+    });
+  });
+
+  // ── Master apply ──────────────────────────────────────────────────
+  function applyAll(from, to, label) {
+    gFrom = from ? startOf(from) : null;
+    gTo   = to   ? startOf(to)   : null;
+    doFilterIncome(gFrom, gTo);
+    doFilterAging(gFrom, gTo);
+    // Active chip
+    var chip = document.getElementById('finActiveChip');
+    var chipTxt = document.getElementById('finActiveChipText');
+    if (chip) { chip.style.display = label ? '' : 'none'; }
+    if (chipTxt && label) chipTxt.textContent = label;
+  }
+
+  window.clearFinFilter = function() {
+    gFrom = null; gTo = null;
+    document.querySelectorAll('.range-pill').forEach(function(p){ p.classList.toggle('rp-active', p.dataset.range==='all'); });
+    document.querySelectorAll('.mo-pill').forEach(function(p){ p.classList.remove('mp-active'); });
+    var fi=document.getElementById('ffbFrom'); if(fi) fi.value='';
+    var ti=document.getElementById('ffbTo');   if(ti) ti.value='';
+    applyAll(null, null, null);
+  };
+
+  window.applyCustomRange = function() {
+    var from = parseDate((document.getElementById('ffbFrom')||{}).value||'');
+    var to   = parseDate((document.getElementById('ffbTo')||{}).value||'');
+    if (!from && !to) { clearFinFilter(); return; }
+    document.querySelectorAll('.range-pill').forEach(function(p){ p.classList.remove('rp-active'); });
+    document.querySelectorAll('.mo-pill').forEach(function(p){ p.classList.remove('mp-active'); });
+    var label = (from ? fmtDate(from) : '…') + ' → ' + (to ? fmtDate(to) : '…');
+    applyAll(from, to, label);
+  };
+
+  // Range pills
+  document.querySelectorAll('.range-pill').forEach(function(pill) {
+    pill.addEventListener('click', function() {
+      document.querySelectorAll('.range-pill').forEach(function(p){ p.classList.remove('rp-active'); });
+      document.querySelectorAll('.mo-pill').forEach(function(p){ p.classList.remove('mp-active'); });
+      this.classList.add('rp-active');
+      var fi=document.getElementById('ffbFrom'); if(fi) fi.value='';
+      var ti=document.getElementById('ffbTo');   if(ti) ti.value='';
+      var mode = this.dataset.range;
+      if (mode==='all') { clearFinFilter(); return; }
+      var range = getRangeFor(mode);
+      var mns = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      var nowMo = mns[new Date().getMonth()], nowQ = 'Q'+(Math.floor(new Date().getMonth()/3)+1);
+      var labels = {'this-month':'This Month ('+nowMo+')','last-month':'Last Month','this-quarter':'This Quarter ('+nowQ+')','ytd':'Year to Date'};
+      applyAll(range.from, range.to, labels[mode]||mode);
+    });
+  });
+
+  // Month pills
+  document.querySelectorAll('.mo-pill').forEach(function(pill) {
+    pill.addEventListener('click', function() {
+      var mo = parseInt(this.dataset.month);
+      var already = this.classList.contains('mp-active');
+      document.querySelectorAll('.mo-pill').forEach(function(p){ p.classList.remove('mp-active'); });
+      document.querySelectorAll('.range-pill').forEach(function(p){ p.classList.remove('rp-active'); });
+      var fi=document.getElementById('ffbFrom'); if(fi) fi.value='';
+      var ti=document.getElementById('ffbTo');   if(ti) ti.value='';
+      if (already) { clearFinFilter(); return; }
+      this.classList.add('mp-active');
+      var yr = {{ selected_year }};
+      var from = new Date(yr, mo-1, 1);
+      var to   = new Date(yr, mo, 0);
+      var mns = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      applyAll(from, to, mns[mo-1]+' '+yr);
+    });
+  });
+
+  // Auto-apply year filter on page load (if year != current full range)
+  document.addEventListener('DOMContentLoaded', function() {
+    var urlYear = parseInt(new URLSearchParams(window.location.search).get('year') || '0');
+    var curYear = new Date().getFullYear();
+    if (urlYear && urlYear !== curYear) {
+      var from = new Date(urlYear, 0, 1);
+      var to   = new Date(urlYear, 11, 31);
+      // Silent filter (no chip – year pills already show selection)
+      gFrom = startOf(from); gTo = startOf(to);
+      doFilterIncome(gFrom, gTo);
+      doFilterAging(gFrom, gTo);
+    }
+  });
+
 })();
 
 // Export Balance Sheet to Excel

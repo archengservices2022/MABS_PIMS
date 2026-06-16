@@ -3541,14 +3541,26 @@ def financial():
         except Exception:
             pass
 
+    # Group outstanding by invoice_date month (invoices issued that month)
     monthly_outstanding_details = {str(i): [] for i in range(1, 13)}
+    # Group outstanding by due_date month (invoices DUE that month)
+    monthly_due_details = {str(i): [] for i in range(1, 13)}
     for _bucket in aging_buckets.values():
         for _entry in _bucket:
+            # By invoice date
             _ds = (_entry.get("invoice_date") or "")[:10]
             try:
                 _d = datetime.fromisoformat(_ds)
                 if _d.year == current_year:
                     monthly_outstanding_details[str(_d.month)].append(_entry)
+            except Exception:
+                pass
+            # By due date
+            _ds2 = (_entry.get("due_date") or "")[:10]
+            try:
+                _d2 = datetime.fromisoformat(_ds2)
+                if _d2.year == current_year:
+                    monthly_due_details[str(_d2.month)].append(_entry)
             except Exception:
                 pass
 
@@ -3600,6 +3612,7 @@ def financial():
         monthly_expense_details=json.dumps(monthly_expense_details),
         monthly_salary_details=json.dumps(monthly_salary_details),
         monthly_outstanding_details=json.dumps(monthly_outstanding_details),
+        monthly_due_details=json.dumps(monthly_due_details),
         aging_buckets=aging_buckets,
         aging_totals=aging_totals,
         aging_total_outstanding=aging_total_outstanding,
