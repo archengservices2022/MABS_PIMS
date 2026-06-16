@@ -1,0 +1,554 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% set status_icons = {
+  'Draft':       ('bi-pencil',              'Draft — not sent to client yet'),
+  'Sent':        ('bi-send',                'Sent — awaiting client payment'),
+  'Viewed':      ('bi-eye',                 'Viewed — client has opened the invoice'),
+  'Paid':        ('bi-check-circle-fill',   'Paid — payment received in full'),
+  'Partial':     ('bi-circle-half',         'Partial — part payment received'),
+  'Overdue':     ('bi-exclamation-circle-fill', 'Overdue — past due date'),
+  'Cancelled':   ('bi-x-circle',            'Cancelled'),
+  'Not Started': ('bi-hourglass-split',     'Not yet started'),
+  'In Progress': ('bi-arrow-repeat',        'Currently in progress'),
+  'Active':      ('bi-lightning-charge',    'Active'),
+  'On Hold':     ('bi-pause-circle',        'On hold'),
+  'Completed':   ('bi-check-circle-fill',   'Completed'),
+  'Invoiced':    ('bi-receipt',             'Invoiced'),
+} %}
+{% macro status_badge(status, fallback='Draft') %}
+  {% set st = status or fallback %}
+  {% set icon, tip = status_icons.get(st, ('bi-circle', st)) %}
+  <span class="badge status-{{ st|lower|replace(' ','-') }}" title="{{ tip }}">
+    <i class="bi {{ icon }} me-1"></i>{{ st }}
+  </span>
+{% endmacro %}
+
+{% block content %}
+
+<!-- ── Alert Banners ─────────────────────────────────────────────────────────── -->
+{% if overdue_count > 0 or expiring_count > 0 %}
+<div class="d-flex flex-column gap-2 mb-3">
+  {% if overdue_count > 0 %}
+  <div class="alert alert-danger d-flex align-items-center justify-content-between py-2 mb-0">
+    <div>
+      <i class="bi bi-exclamation-triangle-fill me-2"></i>
+      <strong>{{ overdue_count }} overdue invoice{{ 's' if overdue_count != 1 }}</strong>
+      — payment past due date.
+      {% if 'invoicing' in allowed_pages %}
+      <a href="{{ url_for('invoicing', status='Overdue') }}" class="alert-link ms-2">View →</a>
+      {% endif %}
+    </div>
+    {% if 'invoicing' in allowed_pages %}
+    <form method="POST" action="{{ url_for('send_overdue_reminders') }}" class="ms-3">
+      <button type="submit" class="btn btn-sm btn-danger"
+              onclick="return confirm('Send reminder emails to all {{ overdue_count }} overdue clients?');">
+        <i class="bi bi-envelope-exclamation me-1"></i>Send Reminders
+      </button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if expiring_count > 0 %}
+  <div class="alert alert-warning d-flex align-items-center py-2 mb-0">
+    <i class="bi bi-clock-fill me-2"></i>
+    <strong>{{ expiring_count }} quote{{ 's' if expiring_count != 1 }}</strong>
+    expiring within 7 days — follow up now.
+    {% if 'quotes' in allowed_pages %}
+    <a href="{{ url_for('quotes') }}" class="alert-link ms-2">View quotes →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ── Quick Actions ────────────────────────────────────────────────────────── -->
+<div class="d-flex align-items-center gap-2 mb-4 flex-wrap">
+  <span class="text-muted small fw-500 me-1">Quick Actions:</span>
+  {% if 'quotes' in allowed_pages %}
+  <a href="{{ url_for('quotes_new') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-file-earmark-plus me-1"></i>New Quote
+  </a>
+  {% endif %}
+  {% if 'projects' in allowed_pages %}
+  <a href="{{ url_for('project_new') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-plus-square me-1"></i>New Project
+  </a>
+  {% endif %}
+  {% if 'invoicing' in allowed_pages %}
+  <a href="{{ url_for('invoice_new') }}" class="btn btn-sm btn-teal">
+    <i class="bi bi-receipt me-1"></i>New Invoice
+  </a>
+  {% endif %}
+</div>
+
+<!-- ── Action Queue ──────────────────────────────────────────────────────────── -->
+{% if followup_quotes or approved_quotes %}
+<div class="row g-3 mb-3">
+
+  {% if followup_quotes %}
+  <div class="col-lg-6">
+    <div class="card-panel" style="height:100%;">
+      <div class="panel-header d-flex justify-content-between align-items-center mb-2">
+        <h6 class="panel-title mb-0"><i class="bi bi-alarm text-warning me-1"></i>Follow-up Due</h6>
+        {% if 'quotes' in allowed_pages %}
+        <a href="{{ url_for('quotes') }}" class="text-teal small">All quotes →</a>
+        {% endif %}
+      </div>
+      {% for q in followup_quotes %}
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+        <div>
+          <div class="fw-500 small">{{ q.get('job_number','—') }} — {{ q.get('project_name') or q.get('client_name','—') }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ q.get('client_name','') }}{% if q.get('follow_up_date') %} · Due {{ q.get('follow_up_date') }}{% endif %}</div>
+        </div>
+        <div class="d-flex gap-1">
+          {% if 'quotes' in allowed_pages and q.get('firebase_id') %}
+          <a href="{{ url_for('quote_detail', quote_id=q.firebase_id) }}" class="btn btn-xs btn-outline-secondary">View</a>
+          {% endif %}
+          {% if 'projects' in allowed_pages and q.get('job_number') %}
+          <a href="{{ url_for('project_new') }}?from_quote={{ q.get('job_number','') }}" class="btn btn-xs btn-teal">Convert</a>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if approved_quotes %}
+  <div class="col-lg-6">
+    <div class="card-panel" style="height:100%;">
+      <div class="panel-header d-flex justify-content-between align-items-center mb-2">
+        <h6 class="panel-title mb-0"><i class="bi bi-check2-circle text-success me-1"></i>Approved — Ready to Convert</h6>
+      </div>
+      {% for q in approved_quotes %}
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+        <div>
+          <div class="fw-500 small">{{ q.get('job_number','—') }} — {{ q.get('project_name') or q.get('client_name','—') }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ q.get('client_name','') }}{% if q.get('total') %} · ${{ "{:,.0f}".format(q.get('total',0)|float) }}{% endif %}</div>
+        </div>
+        <div class="d-flex gap-1">
+          {% if 'quotes' in allowed_pages and q.get('firebase_id') %}
+          <a href="{{ url_for('quote_detail', quote_id=q.firebase_id) }}" class="btn btn-xs btn-outline-secondary">View</a>
+          {% endif %}
+          {% if 'projects' in allowed_pages and q.get('job_number') %}
+          <a href="{{ url_for('project_new') }}?from_quote={{ q.get('job_number','') }}" class="btn btn-xs btn-teal">
+            <i class="bi bi-kanban me-1"></i>Start Project
+          </a>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endif %}
+
+<!-- ── Team Status (Employees module) ──────────────────────────────────────── -->
+{% if 'employees' in allowed_pages and (clocked_in_now or pending_time_off) %}
+<div class="row g-3 mb-3">
+
+  {% if clocked_in_now %}
+  <div class="col-lg-6">
+    <div class="card-panel" style="height:100%;">
+      <div class="panel-header d-flex justify-content-between align-items-center mb-2">
+        <h6 class="panel-title mb-0"><i class="bi bi-record-circle-fill text-success me-1"></i>Clocked In Now ({{ clocked_in_now|length }})</h6>
+        <a href="{{ url_for('employees') }}#team" class="text-teal small">Team →</a>
+      </div>
+      {% for e in clocked_in_now %}
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+        <div>
+          <div class="fw-500 small">{{ e.employee_name }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ e.project_name or e.project_number or 'General / Admin' }}</div>
+        </div>
+        <div class="text-muted small">Since {{ e.clock_in[11:16] }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if pending_time_off %}
+  <div class="col-lg-6">
+    <div class="card-panel" style="height:100%;">
+      <div class="panel-header d-flex justify-content-between align-items-center mb-2">
+        <h6 class="panel-title mb-0"><i class="bi bi-calendar-event text-warning me-1"></i>Pending Time Off ({{ pending_time_off|length }})</h6>
+        <a href="{{ url_for('employees') }}#time-off" class="text-teal small">Review →</a>
+      </div>
+      {% for r in pending_time_off[:5] %}
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+        <div>
+          <div class="fw-500 small">{{ r.employee_name }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ r.type }} · {{ r.start_date }} → {{ r.end_date }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endif %}
+
+<!-- ── Project Pipeline ───────────────────────────────────────────────────────── -->
+{% if 'projects' in allowed_pages %}
+{% set ns_pipe = namespace(has_items=false) %}
+{% for st, items in pipeline.items() %}{% if items %}{% set ns_pipe.has_items = true %}{% endif %}{% endfor %}
+{% if ns_pipe.has_items %}
+<div class="card-panel mb-3">
+  <div class="panel-header d-flex justify-content-between align-items-center mb-3">
+    <h6 class="panel-title mb-0"><i class="bi bi-kanban me-1"></i>Project Pipeline</h6>
+    <a href="{{ url_for('projects') }}" class="text-teal small">View all →</a>
+  </div>
+
+  <!-- Status counters row -->
+  <div class="row g-2 mb-3">
+    {% set pipe_colors = {'Not Started': ('#EFF6FF','#3B82F6'), 'In Progress': ('#F0FDFA','#0D9488'), 'On Hold': ('#FFFBEB','#F59E0B')} %}
+    {% for st, items in pipeline.items() %}
+    {% set bg, accent = pipe_colors.get(st, ('#F8FAFC','#64748B')) %}
+    <div class="col-4">
+      <a href="{{ url_for('projects') }}" class="text-decoration-none">
+        <div class="rounded p-3 text-center" style="background:{{ bg }}; border:1px solid {{ accent }}22;">
+          <div style="font-size:1.6rem; font-weight:700; color:{{ accent }};">{{ items|length }}</div>
+          <div class="small fw-500" style="color:{{ accent }};">{{ st }}</div>
+        </div>
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- In Progress projects mini-list -->
+  {% if pipeline.get('In Progress') %}
+  <div class="d-flex flex-wrap gap-2">
+    {% for p in pipeline['In Progress'][:6] %}
+    <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}"
+       class="text-decoration-none d-flex align-items-center gap-2 px-3 py-2 rounded border bg-white"
+       style="font-size:0.82rem; min-width:0; flex:1 1 220px; max-width:340px;">
+      <i class="bi bi-circle-fill text-teal" style="font-size:.45rem; flex-shrink:0;"></i>
+      <div style="min-width:0; overflow:hidden;">
+        <div class="fw-500 text-dark text-truncate">{{ p.get('project_name','—') }}</div>
+        <div class="text-muted text-truncate" style="font-size:0.73rem;">{{ p.get('project_number','') }}{% if p.get('contract_value') %} · ${{ "{:,.0f}".format(p.get('contract_value',0)|float) }}{% endif %}</div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endif %}
+
+<!-- ── KPI Cards ─────────────────────────────────────────────────────────────── -->
+<div class="row g-3 mb-3">
+
+  <div class="col-6 col-xl-3">
+    <div class="kpi-card kpi-teal">
+      <div class="kpi-top">
+        <span class="kpi-label">Total Invoiced</span>
+        <i class="bi bi-receipt-cutoff kpi-icon-sm"></i>
+      </div>
+      <div class="kpi-value">${{ "{:,.0f}".format(total_invoiced) }}</div>
+      <div class="kpi-sub">{{ total_invoices }} invoice{{ 's' if total_invoices != 1 else '' }}</div>
+    </div>
+  </div>
+
+  <div class="col-6 col-xl-3">
+    {% set rate = ((total_paid / total_invoiced * 100) if total_invoiced > 0 else 0)|round|int %}
+    <div class="kpi-card kpi-green">
+      <div class="kpi-top">
+        <span class="kpi-label">Collected</span>
+        <i class="bi bi-check-circle-fill kpi-icon-sm"></i>
+      </div>
+      <div class="kpi-value">${{ "{:,.0f}".format(total_paid) }}</div>
+      <div class="kpi-sub">{{ rate }}% collection rate</div>
+      <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ rate }}%"></div></div>
+    </div>
+  </div>
+
+  <div class="col-6 col-xl-3">
+    <div class="kpi-card kpi-amber">
+      <div class="kpi-top">
+        <span class="kpi-label">Outstanding</span>
+        <i class="bi bi-hourglass-split kpi-icon-sm"></i>
+      </div>
+      <div class="kpi-value">${{ "{:,.0f}".format(total_outstanding) }}</div>
+      <div class="kpi-sub">pending payment</div>
+    </div>
+  </div>
+
+  <div class="col-6 col-xl-3">
+    <div class="kpi-card kpi-blue">
+      <div class="kpi-top">
+        <span class="kpi-label">Active Projects</span>
+        <i class="bi bi-kanban-fill kpi-icon-sm"></i>
+      </div>
+      <div class="kpi-value">{{ active_projects }}</div>
+      <div class="kpi-sub">{{ open_quotes }} open quote{{ 's' if open_quotes != 1 else '' }}</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Status Donut Charts ───────────────────────────────────────────────────── -->
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="card-panel" style="height:100%;">
+      <h6 class="panel-title mb-3">Invoice Status Breakdown</h6>
+      <div style="max-width:280px;margin:0 auto;">
+        <canvas id="invStatusChart"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card-panel" style="height:100%;">
+      <h6 class="panel-title mb-3">Project Status Breakdown</h6>
+      <div style="max-width:280px;margin:0 auto;">
+        <canvas id="projStatusChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Revenue Chart + Recent Invoices ─────────────────────────────────────── -->
+<div class="row g-3 mb-3">
+
+  <div class="col-lg-7">
+    <div class="card-panel" style="height:100%;">
+      <div class="panel-header d-flex justify-content-between align-items-center">
+        <h6 class="panel-title mb-0">Revenue Overview — Last 6 Months</h6>
+        {% if 'invoicing' in allowed_pages %}
+        <a href="{{ url_for('invoicing') }}" class="text-teal small">View invoices →</a>
+        {% endif %}
+      </div>
+      <canvas id="revenueChart" height="140"></canvas>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card-panel" style="height:100%;">
+      <div class="panel-header d-flex justify-content-between align-items-center">
+        <h6 class="panel-title mb-0">Recent Invoices</h6>
+        {% if 'invoicing' in allowed_pages %}
+        <a href="{{ url_for('invoicing') }}" class="text-teal small">View all →</a>
+        {% endif %}
+      </div>
+
+      {% for inv in recent_invoices %}
+      {% set meta = inv.get('meta', {}) %}
+      <a href="{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}"
+         class="list-item text-decoration-none" style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="d-flex align-items-center gap-2">
+          <div class="inv-avatar">{{ meta.get('client_name','?')[0]|upper }}</div>
+          <div>
+            <div class="list-item-title">{{ meta.get('invoice_number','N/A') }}</div>
+            <div class="list-item-sub">{{ meta.get('client_name','—') }}</div>
+          </div>
+        </div>
+        <div class="text-end">
+          <div class="list-item-amount">${{ "{:,.0f}".format(meta.get('total',0)|float) }}</div>
+          {{ status_badge(meta.get('status'), 'Draft') }}
+        </div>
+      </a>
+      {% else %}
+      <div class="empty-state py-4">
+        <i class="bi bi-receipt fs-2 d-block mb-2"></i>No invoices yet.
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+
+<!-- ── AI Project Health ─────────────────────────────────────────────────────── -->
+{% if ai_enabled %}
+<div class="card-panel mb-3">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h6 class="panel-title mb-0"><i class="bi bi-heart-pulse me-1 text-teal"></i>AI Project Health</h6>
+    <button class="btn btn-sm btn-outline-teal" id="healthBtn">
+      <i class="bi bi-magic me-1"></i>Analyse Projects
+    </button>
+  </div>
+  <div id="healthResult" class="text-muted small">
+    Click to get a one-line AI health summary for each project.
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Recent Projects ───────────────────────────────────────────────────────── -->
+<div class="card-panel">
+  <div class="panel-header d-flex justify-content-between align-items-center">
+    <h6 class="panel-title mb-0">Recent Projects</h6>
+    {% if 'projects' in allowed_pages %}
+    <a href="{{ url_for('projects') }}" class="text-teal small">View all →</a>
+    {% endif %}
+  </div>
+
+  {% if recent_projects %}
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>Project #</th>
+          <th>Name</th>
+          <th>Client</th>
+          <th>Status</th>
+          <th class="text-end">Contract Value</th>
+          <th class="text-end">Amount Paid</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in recent_projects %}
+        <tr onclick="location.href='{{ url_for('project_detail', project_id=p.firebase_id) }}'"
+            style="cursor:pointer;">
+          <td><span class="fw-bold text-teal">{{ p.get('project_number','—') }}</span></td>
+          <td class="fw-500">{{ p.get('project_name','—') }}</td>
+          <td class="text-muted">{{ p.get('client_name','—') }}</td>
+          <td>
+            {{ status_badge(p.get('status'), 'Not Started') }}
+          </td>
+          <td class="text-end fw-bold">${{ "{:,.0f}".format(p.get('contract_value',0)|float) }}</td>
+          <td class="text-end text-success fw-bold">${{ "{:,.0f}".format(p.get('amount_paid',0)|float) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state py-4">
+    <i class="bi bi-kanban fs-2 d-block mb-2"></i>No projects yet.
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const labels = {{ chart_labels|safe }};
+const data   = {{ chart_data|safe }};
+
+const ctx = document.getElementById('revenueChart').getContext('2d');
+const grad = ctx.createLinearGradient(0, 0, 0, 300);
+grad.addColorStop(0, 'rgba(15,118,110,0.22)');
+grad.addColorStop(1, 'rgba(15,118,110,0)');
+
+new Chart(ctx, {
+  type: 'bar',
+  data: {
+    labels: labels,
+    datasets: [{
+      label: 'Revenue',
+      data: data,
+      backgroundColor: 'rgba(15,118,110,0.75)',
+      borderColor: '#0F766E',
+      borderWidth: 0,
+      borderRadius: 5,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#0F172A',
+        titleFont: { size: 12 },
+        bodyFont: { size: 13, weight: '700' },
+        callbacks: { label: c => ' $' + c.parsed.y.toLocaleString() }
+      }
+    },
+    scales: {
+      x: {
+        grid: { display: false },
+        ticks: { font: { size: 11 }, color: '#94A3B8' }
+      },
+      y: {
+        beginAtZero: true,
+        grid: { color: 'rgba(0,0,0,.04)' },
+        ticks: {
+          font: { size: 11 }, color: '#94A3B8',
+          maxTicksLimit: 6,
+          callback: v => '$' + (v >= 1000 ? (v/1000).toFixed(0)+'k' : v)
+        }
+      }
+    }
+  }
+});
+
+// ── AI Project Health ────────────────────────────────────────────────────────
+const healthBtn = document.getElementById('healthBtn');
+if (healthBtn) {
+  healthBtn.addEventListener('click', async () => {
+    const el = document.getElementById('healthResult');
+    el.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Analysing projects...';
+    try {
+      const res  = await fetch('/ai/project-health', { method: 'POST' });
+      const data = await res.json();
+      if (data.error) { el.textContent = 'Error: ' + data.error; return; }
+      const summaries = data.summaries || {};
+      if (!Object.keys(summaries).length) { el.textContent = 'No projects found.'; return; }
+      el.innerHTML = Object.entries(summaries).map(([pnum, txt]) =>
+        `<div class="mb-1"><span class="fw-bold text-teal me-2">${pnum}</span>${txt}</div>`
+      ).join('');
+    } catch(e) { el.textContent = 'Request failed: ' + e; }
+  });
+}
+
+// ── Status colour palette ────────────────────────────────────────────────────
+const STATUS_COLORS = {
+  'Draft':       '#64748B',
+  'Sent':        '#2563EB',
+  'Viewed':      '#7C3AED',
+  'Paid':        '#16A34A',
+  'Partial':     '#F59E0B',
+  'Overdue':     '#DC2626',
+  'Cancelled':   '#DB2777',
+  'Not Started': '#94A3B8',
+  'In Progress': '#0EA5E9',
+  'Active':      '#0D9488',
+  'On Hold':     '#D97706',
+  'Completed':   '#15803D',
+  'Invoiced':    '#059669',
+};
+// Fallback vivid palette for statuses not in the map
+const CHART_PALETTE = ['#2563EB','#16A34A','#F59E0B','#DC2626','#7C3AED','#0EA5E9','#DB2777','#0D9488'];
+function statusColors(labels) {
+  return labels.map((l, i) => STATUS_COLORS[l] || CHART_PALETTE[i % CHART_PALETTE.length]);
+}
+const donutOpts = (title) => ({
+  responsive: true,
+  plugins: {
+    legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 12 } },
+    tooltip: {
+      callbacks: { label: c => ` ${c.label}: ${c.parsed}` }
+    }
+  },
+  cutout: '60%',
+});
+
+const invLabels = {{ inv_status_labels|safe }};
+const invData   = {{ inv_status_data|safe }};
+if (invLabels.length) {
+  new Chart(document.getElementById('invStatusChart'), {
+    type: 'doughnut',
+    data: { labels: invLabels, datasets: [{ data: invData, backgroundColor: statusColors(invLabels), borderWidth: 2 }] },
+    options: donutOpts('Invoice Status'),
+  });
+}
+
+const projLabels = {{ proj_status_labels|safe }};
+const projData   = {{ proj_status_data|safe }};
+if (projLabels.length) {
+  new Chart(document.getElementById('projStatusChart'), {
+    type: 'doughnut',
+    data: { labels: projLabels, datasets: [{ data: projData, backgroundColor: statusColors(projLabels), borderWidth: 2 }] },
+    options: donutOpts('Project Status'),
+  });
+}
+</script>
+{% endblock %}

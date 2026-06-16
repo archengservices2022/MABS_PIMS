@@ -1,0 +1,2278 @@
+{% extends "base.html" %}
+{% block title %}Financial{% endblock %}
+{% block page_title %}Financial Overview{% endblock %}
+
+{% set status_icons = {
+  'Draft':       ('bi-pencil',                  'Not sent to client yet'),
+  'Sent':        ('bi-send',                    'Sent — awaiting payment'),
+  'Viewed':      ('bi-eye',                     'Client has opened the invoice'),
+  'Paid':        ('bi-check-circle-fill',       'Payment received in full'),
+  'Partial':     ('bi-circle-half',             'Part payment received'),
+  'Overdue':     ('bi-exclamation-circle-fill', 'Past due date'),
+  'Cancelled':   ('bi-x-circle',               'Cancelled'),
+  'Not Started': ('bi-hourglass-split',         'Not yet started'),
+  'In Progress': ('bi-arrow-repeat',            'Currently in progress'),
+  'Completed':   ('bi-check-circle-fill',       'Completed'),
+} %}
+{% macro status_badge(status, fallback='Draft') %}
+  {% set st = status or fallback %}
+  {% set icon, tip = status_icons.get(st, ('bi-circle', st)) %}
+  <span class="badge status-{{ st|lower|replace(' ','-') }}" title="{{ tip }}">
+    <i class="bi {{ icon }} me-1"></i>{{ st }}
+  </span>
+{% endmacro %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<style>
+/* ── Financial page styles ─────────────────────────────────────── */
+/* Custom dropdown styles */
+.custom-dropdown {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+.custom-dropdown input {
+  width: 100%;
+  padding-right: 35px !important;
+}
+
+.custom-dropdown .dropdown-arrow {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  pointer-events: none;
+  color: #666;
+  font-size: 12px;
+}
+
+.custom-dropdown input:focus + .dropdown-arrow {
+  color: #0d9488;
+}
+
+.dropdown-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #ccc;
+  border-top: none;
+  max-height: 200px;
+  overflow-y: auto;
+  display: none;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.dropdown-list.show {
+  display: block;
+}
+
+.dropdown-list .option {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.dropdown-list .option:hover {
+  background-color: #f0fdf4;
+  color: #0d9488;
+}
+
+.dropdown-list .option.selected {
+  background-color: #d1fae5;
+  color: #0d9488;
+}
+
+/* Clickable expense names in Balance Sheet */
+a[href*="filter_expense"] {
+  border-bottom: 1px solid #0d9488;
+  transition: all 0.2s;
+}
+
+a[href*="filter_expense"]:hover {
+  color: #0d7c59;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+/* Month selection in Annual Summary */
+.month-header {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.month-header:hover {
+  background-color: #e2e8f0 !important;
+}
+
+.month-header.selected {
+  background-color: #1f2937 !important;
+  color: white !important;
+  font-weight: 700 !important;
+}
+.fin-tab-active { border-bottom: 3px solid var(--teal); }
+
+.metric-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.metric-block .metric-val {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.metric-block .metric-lbl {
+  font-size: 11px;
+  color: #64748B;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid #F1F5F9;
+}
+.summary-row:last-child { border-bottom: none; }
+
+.pnl-badge-pos { background:#DCFCE7; color:#15803D; border-radius:6px; padding:2px 8px; font-size:12px; font-weight:700; }
+.pnl-badge-neg { background:#FEE2E2; color:#B91C1C; border-radius:6px; padding:2px 8px; font-size:12px; font-weight:700; }
+
+.progress-thin { height: 6px; border-radius: 99px; background: #E2E8F0; overflow: hidden; }
+.progress-thin .fill { height: 100%; border-radius: 99px; transition: width .5s; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── Tab nav ──────────────────────────────────────────────────────────────── -->
+<ul class="nav nav-tabs mb-4" id="finTabs">
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab in ('overview', '') else '' }}" data-bs-toggle="tab" href="#tab-overview">
+      <i class="bi bi-graph-up me-1"></i>Overview
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'income' else '' }}" data-bs-toggle="tab" href="#tab-income">
+      <i class="bi bi-cash-stack me-1"></i>Income
+      {% if rev_list %}<span class="badge bg-secondary ms-1">{{ rev_list|length }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'expenses' else '' }}" data-bs-toggle="tab" href="#tab-expenses">
+      <i class="bi bi-receipt me-1"></i>Expenses
+      {% if expenses %}<span class="badge bg-secondary ms-1">{{ expenses|length }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'new-expense' else '' }}" data-bs-toggle="tab" href="#tab-new-expense">
+      <i class="bi bi-plus-square me-1"></i>New Expense
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'by-project' else '' }}" data-bs-toggle="tab" href="#tab-by-project">
+      <i class="bi bi-kanban me-1"></i>By Project
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'balance-sheet' else '' }}" data-bs-toggle="tab" href="#tab-balance-sheet">
+      <i class="bi bi-file-earmark-text me-1"></i>Balance Sheet
+    </a>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+<!-- ════════════════════════════════════════════════════════════════
+     OVERVIEW TAB
+═════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade {{ 'show active' if active_tab in ('overview', '') else '' }}" id="tab-overview">
+
+  <!-- Row 1 — 4 KPI cards -->
+  {% set collection_pct = ((total_paid / total_invoiced * 100) if total_invoiced > 0 else 0)|round|int %}
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-teal">
+        <div class="kpi-top"><span class="kpi-label">Total Invoiced</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
+        <div class="kpi-value">${{ "{:,.0f}".format(total_invoiced) }}</div>
+        <div class="kpi-sub">{{ rev_list|length }} paid entries</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-green">
+        <div class="kpi-top"><span class="kpi-label">Collected</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
+        <div class="kpi-value">${{ "{:,.0f}".format(total_paid) }}</div>
+        <div class="kpi-sub">{{ collection_pct }}% collection rate</div>
+        <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ collection_pct }}%"></div></div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-red">
+        <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
+        <div class="kpi-value">${{ "{:,.0f}".format(total_expenses) }}</div>
+        <div class="kpi-sub">{{ expenses|length }} entries</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card {{ 'kpi-green' if net_profit >= 0 else 'kpi-red' }}">
+        <div class="kpi-top"><span class="kpi-label">Net Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
+        <div class="kpi-value {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(net_profit) }}</div>
+        <div class="kpi-sub">revenue minus expenses</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 2 — Chart (left) + Summary panel (right) -->
+  <div class="row g-3 mb-3">
+    <div class="col-lg-8">
+      <div class="card-panel" style="height:100%;">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="panel-title mb-0">Revenue vs Expenses — Last 6 Months</h6>
+          <div class="d-flex gap-2 align-items-center">
+            <span class="d-flex align-items-center gap-1 small text-muted">
+              <span style="width:10px;height:10px;border-radius:2px;background:#0D9488;display:inline-block;"></span>Revenue
+            </span>
+            <span class="d-flex align-items-center gap-1 small text-muted">
+              <span style="width:10px;height:10px;border-radius:2px;background:#F87171;display:inline-block;"></span>Expenses
+            </span>
+          </div>
+        </div>
+        <canvas id="finChart" height="160"></canvas>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card-panel" style="height:100%;">
+        <h6 class="panel-title mb-3">Financial Summary</h6>
+
+        <div class="summary-row">
+          <span class="text-muted small">Total Invoiced</span>
+          <span class="fw-bold">${{ "{:,.0f}".format(total_invoiced) }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="text-muted small">Collected</span>
+          <span class="fw-bold text-success">${{ "{:,.0f}".format(total_paid) }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="text-muted small">Outstanding</span>
+          {% set outstanding = total_invoiced - total_paid %}
+          <span class="fw-bold {{ 'text-danger' if outstanding > 0 else 'text-success' }}">${{ "{:,.0f}".format(outstanding) }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="text-muted small">Expenses</span>
+          <span class="fw-bold text-danger">${{ "{:,.0f}".format(total_expenses) }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="text-muted small">Net Profit</span>
+          <span class="{{ 'pnl-badge-pos' if net_profit >= 0 else 'pnl-badge-neg' }}">${{ "{:,.0f}".format(net_profit) }}</span>
+        </div>
+        {% if total_labor_cost and total_labor_cost > 0 %}
+        <div class="summary-row">
+          <span class="text-muted small">Labor Cost <i class="bi bi-info-circle" title="From Employees time tracking (hours × hourly rate)"></i></span>
+          <span class="fw-bold text-danger">${{ "{:,.0f}".format(total_labor_cost) }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="text-muted small">Net Profit (after Labor)</span>
+          <span class="{{ 'pnl-badge-pos' if net_profit_after_labor >= 0 else 'pnl-badge-neg' }}">${{ "{:,.0f}".format(net_profit_after_labor) }}</span>
+        </div>
+        {% endif %}
+
+        {% if total_invoiced > 0 %}
+        <div class="mt-3">
+          <div class="d-flex justify-content-between small mb-1">
+            <span class="text-muted">Collection Rate</span>
+            <span class="fw-semibold text-teal">{{ collection_pct }}%</span>
+          </div>
+          <div class="progress-thin"><div class="fill bg-teal" style="width:{{ collection_pct }}%;background:#0D9488;"></div></div>
+        </div>
+        {% endif %}
+
+        <!-- AI forecast -->
+        <div class="mt-3 pt-3" style="border-top:1px solid #F1F5F9;">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="small fw-semibold"><i class="bi bi-robot me-1 text-teal"></i>AI Cash Flow</span>
+            <button class="btn btn-xs btn-outline-teal" id="cashFlowBtn">
+              <i class="bi bi-magic me-1"></i>Forecast
+            </button>
+          </div>
+          <div id="cashFlowResult" class="text-muted" style="font-size:12px;line-height:1.5;">
+            Click to forecast next 90 days.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 3 — Two pie charts -->
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="card-panel">
+        <h6 class="panel-title mb-3">Invoice Status Breakdown</h6>
+        <div style="max-height:220px;display:flex;justify-content:center;">
+          <canvas id="invStatusChart"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card-panel">
+        <h6 class="panel-title mb-3">Expense by Category</h6>
+        <div style="max-height:220px;display:flex;justify-content:center;">
+          <canvas id="expCatChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /tab-overview -->
+
+
+<!-- ════════════════════════════════════════════════════════════════
+     INCOME TAB
+═════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade {{ 'show active' if active_tab == 'income' else '' }}" id="tab-income">
+  <div class="card-panel">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="panel-title mb-0">Income — Paid &amp; Partial Invoices</h6>
+      <span class="text-muted small">Auto-populated from invoice payments</span>
+    </div>
+    {% if rev_list %}
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0 align-middle">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Invoice #</th>
+            <th>Client</th>
+            <th>Project</th>
+            <th>Status</th>
+            <th class="text-end">Subtotal</th>
+            <th class="text-end">Tax</th>
+            <th class="text-end">Invoice Total</th>
+            <th class="text-end">Amount Paid</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rev_list|sort(attribute='date', reverse=True) %}
+          <tr>
+            <td class="text-muted small">{{ r.get('date','—') }}</td>
+            <td>
+              {% if r.get('invoice_id') %}
+              <a href="{{ url_for('invoice_detail', invoice_id=r.get('invoice_id','')) }}"
+                 class="fw-bold text-teal text-decoration-none">{{ r.get('invoice_number','—') }}</a>
+              {% else %}
+              <span class="fw-bold text-teal">{{ r.get('invoice_number','—') }}</span>
+              {% endif %}
+            </td>
+            <td>{{ r.get('client_name','—') }}</td>
+            <td class="text-muted small">
+              {% set linked = r.get('linked_projects', [r.get('project_number', '')]) %}
+              {% if linked and linked|length > 0 %}
+                {{ linked|join(', ') }}
+              {% else %}
+                {{ r.get('project_number','—') or '—' }}
+              {% endif %}
+            </td>
+            <td>{{ status_badge(r.get('status'), 'Paid') }}</td>
+            <td class="text-end">${{ "{:,.2f}".format((r.get('total',0)|float) - (r.get('tax_amount',0)|float)) }}</td>
+            <td class="text-end text-muted">${{ "{:,.2f}".format(r.get('tax_amount',0)|float) }}</td>
+            <td class="text-end fw-bold">${{ "{:,.2f}".format(r.get('total',0)|float) }}</td>
+            <td class="text-end fw-bold text-success">${{ "{:,.2f}".format(r.get('total',0)|float) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="table-light fw-bold">
+          <tr>
+            <td colspan="7" class="text-end">Total Collected (including tax)</td>
+            <td class="text-end text-success">${{ "{:,.2f}".format(total_collected) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state py-5">
+      <i class="bi bi-cash-stack fs-1 d-block mb-2 text-muted"></i>
+      <div>No income recorded yet.</div>
+      <div class="text-muted small mt-1">Income entries are created automatically when invoices are marked Paid or Partial.</div>
+    </div>
+    {% endif %}
+  </div>
+</div><!-- /tab-income -->
+
+
+<!-- ════════════════════════════════════════════════════════════════
+     EXPENSES TAB
+═════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane {{ 'active' if active_tab == 'expenses' else '' }}" id="tab-expenses">
+
+  <!-- Stat Cards -->
+  {% set exp_this_month = namespace(total=0) %}
+  {% set today_parts = today_date.split('-') %}
+  {% for exp in expenses %}
+    {% if exp.get('date','').startswith(today_parts[0] + '-' + today_parts[1]) %}
+      {% set exp_this_month.total = exp_this_month.total + exp.get('amount',0)|float %}
+    {% endif %}
+  {% endfor %}
+  {% set largest_exp = expenses|sort(attribute='amount', reverse=True)|first if expenses else none %}
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-red">
+        <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
+        <div class="kpi-value text-danger">${{ "{:,.2f}".format(total_expenses) }}</div>
+        <div class="kpi-sub">all time</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-teal">
+        <div class="kpi-top"><span class="kpi-label">Total Entries</span><i class="bi bi-receipt kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ expenses|length }}</div>
+        <div class="kpi-sub">expense records</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-blue">
+        <div class="kpi-top"><span class="kpi-label">This Month</span><i class="bi bi-calendar-month kpi-icon-sm"></i></div>
+        <div class="kpi-value" style="color:#3b82f6;">${{ "{:,.2f}".format(exp_this_month.total) }}</div>
+        <div class="kpi-sub">{{ today_date[:7] }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card {{ 'kpi-red' if largest_exp else 'kpi-teal' }}">
+        <div class="kpi-top"><span class="kpi-label">Largest Expense</span><i class="bi bi-graph-down kpi-icon-sm"></i></div>
+        <div class="kpi-value text-danger">${{ "{:,.2f}".format(largest_exp.get('amount',0)|float) if largest_exp else '0.00' }}</div>
+        <div class="kpi-sub">{{ (largest_exp.get('expense_name','') or largest_exp.get('description','—'))[:30] if largest_exp else '—' }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters (no background) -->
+  <div style="margin-bottom:24px;">
+    <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+      <input type="text" id="expenseSearch" placeholder="Search expense..." class="form-control form-control-sm" style="width:200px;" oninput="applyExpenseFilters()">
+      <select id="expenseTypeFilter" class="form-select form-select-sm" style="width:200px;" onchange="applyExpenseFilters()">
+        <option value="">All Types</option>
+        {% for type in expense_types %}
+        <option value="{{ type }}">{{ type }}</option>
+        {% endfor %}
+      </select>
+      <select id="expenseCategoryFilter" class="form-select form-select-sm" style="width:200px;" onchange="applyExpenseFilters()">
+        <option value="">All Categories</option>
+        {% for cat in all_categories %}
+        <option value="{{ cat }}">{{ cat }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+      <span class="text-muted small">Date:</span>
+      <input type="date" id="expenseDateFrom" class="form-control form-control-sm" style="width:150px;" onchange="applyExpenseFilters()">
+      <span class="text-muted small">to</span>
+      <input type="date" id="expenseDateTo" class="form-control form-control-sm" style="width:150px;" onchange="applyExpenseFilters()">
+      <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setExpenseDateRange('month')">This Month</button>
+      <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setExpenseDateRange('year')">This Year</button>
+      <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setExpenseDateRange('last30')">Last 30 Days</button>
+      <button type="button" class="btn btn-sm btn-light" onclick="clearExpenseFilters()">Clear</button>
+    </div>
+    <div id="expenseFilterAlert" class="alert alert-info py-2 px-3 mb-0 small" style="display:none;"></div>
+  </div>
+
+  <!-- Expense Log Header -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h6 class="panel-title mb-0"><i class="bi bi-receipt me-2"></i>Expense Log</h6>
+  </div>
+
+  <div class="card-panel" style="display:flex;flex-direction:column;min-height:600px;">
+    {% if expenses %}
+    <div class="table-responsive" style="flex:1;overflow-y:auto;">
+      <table class="table table-hover table-sm mb-0 align-middle" id="expenseTable">
+        <thead style="background:#1e293b;">
+          <tr>
+            <th style="color:#fff;font-weight:700;">Date</th>
+            <th style="color:#fff;font-weight:700;">Expense Type</th>
+            <th style="color:#fff;font-weight:700;">Expense Name</th>
+            <th style="color:#fff;font-weight:700;">Category</th>
+            <th style="color:#fff;font-weight:700;">Vendor</th>
+            <th style="color:#fff;font-weight:700;">Project</th>
+            <th style="color:#fff;font-weight:700;" class="text-end">Amount</th>
+            <th style="color:#fff;font-weight:700;"></th>
+          </tr>
+        </thead>
+        <tbody id="expenseTableBody">
+          {% for exp in expenses|sort(attribute='date', reverse=True) %}
+          <tr class="expense-row"
+            data-search="{{ (exp.get('expense_name','') or exp.get('description',''))|lower }} {{ exp.get('vendor','')|lower }} {{ exp.get('category','')|lower }}"
+            data-type="{{ exp.get('expense_type','') }}"
+            data-category="{{ exp.get('category','') }}"
+            data-date="{{ exp.get('date','') }}">
+            <td class="text-muted small">{{ exp.get('date','—') }}</td>
+            <td class="small text-muted">{{ exp.get('expense_type','—') }}</td>
+            <td class="fw-medium">{{ exp.get('expense_name','—') or exp.get('description','—') }}</td>
+            <td class="small text-muted">{{ exp.get('category','—') }}</td>
+            <td class="text-muted small">{{ exp.get('vendor','—') }}</td>
+            <td class="text-muted small">{{ exp.get('project_number','—') or '—' }}</td>
+            <td class="text-end fw-semibold">${{ "{:,.2f}".format(exp.get('amount',0)|float) }}</td>
+            <td>
+              {% if exp.get('firebase_id') %}
+              <div class="d-flex gap-1">
+                <button type="button" class="btn btn-xs btn-outline-secondary" onclick='editExpenseModal("{{ exp.firebase_id }}", {{ exp|tojson }})' title="Edit">
+                  <i class="bi bi-pencil"></i>
+                </button>
+                {% if exp.get('receipt_filename') %}
+                <button type="button" class="btn btn-xs btn-outline-primary" onclick="viewReceipt('{{ exp.firebase_id }}')" title="View Receipt">
+                  <i class="bi bi-paperclip"></i>
+                </button>
+                {% endif %}
+                <form method="POST" action="{{ url_for('expense_delete', exp_id=exp.firebase_id) }}"
+                      onsubmit="return confirm('Delete this expense?');" style="display:inline;">
+                  <button type="submit" class="btn btn-xs btn-outline-danger">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </div>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-receipt fs-2 d-block mb-2"></i>No expenses recorded yet.
+    </div>
+    {% endif %}
+
+    <!-- Pagination Controls - Bottom -->
+    <div class="d-flex justify-content-between align-items-center mt-auto pt-3 border-top" style="margin-top:auto;padding-top:16px;">
+      <div class="text-muted small" id="expenseCountInfo">0 / 0 expenses</div>
+      <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="expensePrevBtn" onclick="prevExpensePage()" style="width:36px;height:36px;padding:0;display:flex;align-items:center;justify-content:center;">
+          <i class="bi bi-chevron-left"></i>
+        </button>
+        <span class="text-muted small" id="expensePageInfo">Page 1 of 1</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="expenseNextBtn" onclick="nextExpensePage()" style="width:36px;height:36px;padding:0;display:flex;align-items:center;justify-content:center;">
+          <i class="bi bi-chevron-right"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+</div><!-- /tab-expenses -->
+
+
+<!-- NEW EXPENSE TAB ════════════════════════════════════════════════ -->
+<div class="tab-pane {{ 'active' if active_tab == 'new-expense' else '' }}" id="tab-new-expense">
+  <div class="card card-body">
+    <h5 class="card-title mb-4">
+      <i class="bi bi-plus-square me-2"></i>Add New Expense
+    </h5>
+
+    <!-- AI Receipt Extractor -->
+    <div class="mb-4 p-3" style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;">
+      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <span class="small fw-semibold"><i class="bi bi-robot me-1 text-teal"></i>AI Receipt Extractor</span>
+      </div>
+      <div class="d-flex gap-2 flex-wrap align-items-center">
+        <input type="file" id="pdfUploadInput" class="form-control form-control-sm" style="max-width:280px;" accept="image/*,.pdf">
+        <button type="button" class="btn btn-xs btn-outline-teal" id="pdfExtractBtn">
+          <i class="bi bi-magic me-1"></i>Extract with AI
+        </button>
+        <small id="pdfExtractStatus" class="text-muted"></small>
+      </div>
+    </div>
+
+    <form id="expenseForm" onsubmit="addExpense(event)">
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label form-label-sm fw-600">Expense Type *</label>
+          <div class="custom-dropdown">
+            <input type="text" name="expense_type" id="expenseType" class="form-control form-control-sm" placeholder="Select type..." required>
+            <span class="dropdown-arrow">▼</span>
+            <div class="dropdown-list" id="expenseTypeDropdown"></div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label form-label-sm fw-600">Category *</label>
+          <div class="custom-dropdown">
+            <input type="text" name="category" id="expenseCategory" class="form-control form-control-sm" placeholder="Select category..." required>
+            <span class="dropdown-arrow">▼</span>
+            <div class="dropdown-list" id="expenseCategoryDropdown"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label form-label-sm fw-600">Expense Name *</label>
+          <div class="custom-dropdown">
+            <input type="text" name="expense_name" id="expenseName" class="form-control form-control-sm" placeholder="Select or type name..." required>
+            <span class="dropdown-arrow">▼</span>
+            <div class="dropdown-list" id="expenseNameDropdown"></div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label form-label-sm fw-600">Amount ($) *</label>
+          <input type="number" name="amount" id="expenseAmount" class="form-control form-control-sm" step="0.01" min="0" required>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label form-label-sm fw-600">Date</label>
+          <input type="date" name="date" id="expenseDate" class="form-control form-control-sm" value="{{ today_date }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label form-label-sm fw-600">Vendor</label>
+          <input type="text" name="vendor" id="expenseVendor" class="form-control form-control-sm" placeholder="Vendor name">
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label form-label-sm fw-600">Link to Project</label>
+          <select name="project_number" id="expenseProject" class="form-select form-select-sm">
+            <option value="">— Optional —</option>
+            {% for p in projects %}
+            <option value="{{ p.get('project_number','') }}">
+              {{ p.get('project_number','') }} — {{ p.get('project_name','') }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label form-label-sm fw-600">Receipt (Image/PDF)</label>
+          <input type="file" name="receipt" id="expenseReceipt" class="form-control form-control-sm" accept="image/*,.pdf">
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm fw-600">Notes</label>
+        <textarea name="notes" id="expenseNotes" class="form-control form-control-sm" rows="2" placeholder="Optional notes"></textarea>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-sm btn-primary">
+          <i class="bi bi-check-circle me-1"></i>Add Expense
+        </button>
+        <button type="reset" class="btn btn-sm btn-light">
+          <i class="bi bi-arrow-clockwise me-1"></i>Clear
+        </button>
+      </div>
+    </form>
+  </div>
+</div><!-- /tab-new-expense -->
+
+<script>
+const categoriesByType = {{ categories_by_type|safe }};
+const expenseNamesByCategory = {{ expense_names_by_category|safe }};
+const expenseTypesList = {{ expense_types|tojson }};
+const projectsList = {{ projects|tojson|safe }};
+
+function initExpenseFormDropdowns() {
+  const typeInput = document.getElementById('expenseType');
+  const typeDropdown = document.getElementById('expenseTypeDropdown');
+  const typeArrow = typeInput.parentElement.querySelector('.dropdown-arrow');
+
+  typeArrow.addEventListener('click', () => typeDropdown.classList.toggle('show'));
+  typeInput.addEventListener('focus', () => {
+    typeDropdown.classList.add('show');
+    typeDropdown.innerHTML = '';
+    expenseTypesList.forEach(type => {
+      const div = document.createElement('div');
+      div.className = 'option';
+      div.textContent = type;
+      div.onclick = () => {
+        typeInput.value = type;
+        typeDropdown.classList.remove('show');
+        updateCategoryDropdown();
+      };
+      typeDropdown.appendChild(div);
+    });
+  });
+  typeInput.addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    Array.from(typeDropdown.children).forEach(opt => {
+      opt.style.display = opt.textContent.toLowerCase().includes(filter) ? '' : 'none';
+    });
+  });
+
+  const catInput = document.getElementById('expenseCategory');
+  const catDropdown = document.getElementById('expenseCategoryDropdown');
+  const catArrow = catInput.parentElement.querySelector('.dropdown-arrow');
+
+  catArrow.addEventListener('click', () => catDropdown.classList.toggle('show'));
+  catInput.addEventListener('focus', () => updateCategoryDropdown());
+  catInput.addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    Array.from(catDropdown.children).forEach(opt => {
+      opt.style.display = opt.textContent.toLowerCase().includes(filter) ? '' : 'none';
+    });
+  });
+}
+
+function updateCategoryDropdown() {
+  const typeInput = document.getElementById('expenseType');
+  const catInput = document.getElementById('expenseCategory');
+  const catDropdown = document.getElementById('expenseCategoryDropdown');
+  const type = typeInput.value;
+  const cats = categoriesByType[type] || [];
+  catDropdown.classList.add('show');
+  catDropdown.innerHTML = '';
+  cats.forEach(cat => {
+    const div = document.createElement('div');
+    div.className = 'option';
+    div.textContent = cat;
+    div.onclick = () => {
+      catInput.value = cat;
+      catDropdown.classList.remove('show');
+      document.getElementById('expenseName').value = '';
+      updateExpenseNameDropdown(cat);
+    };
+    catDropdown.appendChild(div);
+  });
+}
+
+function updateExpenseNameDropdown(category) {
+  const nameInput = document.getElementById('expenseName');
+  const nameDropdown = document.getElementById('expenseNameDropdown');
+  if (!nameDropdown) return;
+  const fallbackNames = {
+    "Facilities & Utilities": ["Office rent or co-working space fees","Utilities (electricity, water, gas)","Internet service","Trash & cleaning services","Property taxes (for office, if applicable)","Office repairs & maintenance (HVAC, lights, minor repairs)"],
+    "Office & Admin Overhead": ["Office supplies (paper, pens, notebooks, printer ink)","Printer/plotter maintenance & paper","Postage & shipping (documents, contracts, samples)","Bank fees & merchant processing fees","Software: Microsoft 365 / Google Workspace","Software: PDF tools (Bluebeam, Adobe, etc.)","Software: Password manager","Software: Others","Cloud storage (Dropbox, Google Drive, OneDrive)"],
+    "Engineering Software & IT": ["Engineering software: SAP2000 / ETABS / STAAD / RAM / RISA","Engineering software: Others","CAD/BIM tools: AutoCAD, Civil 3D, Revit","License/maintenance fees for all software","IT support services","Computer maintenance & small repairs","Antivirus, backup services, security tools"],
+    "Salaries, Labor & Related Costs": ["Owner draw/salary","Employee salaries & wages","Overtime or temporary staff","Payroll taxes paid by the company","Employee benefits: Health insurance","Employee benefits: Retirement plan contributions","Employee benefits: Paid time off costs","Payments to subcontract engineers, drafters"],
+    "Professional Services": ["Accounting & bookkeeping fees","Tax preparation and consulting","Legal services (contracts, company setup)","Business consulting or coaching services","Registered agent fees (if applicable)"],
+    "Insurance & Compliance": ["Professional liability / Errors & Omissions (E&O) insurance","General liability insurance","Business owner's policy (BOP)","Workers' comp insurance","Commercial auto insurance","License renewals (PE license, SE license)","Business license renewals","Memberships"],
+    "Travel, Site Visits & Vehicles": ["Mileage (personal vehicle for business)","Fuel costs (company vehicles)","Parking fees & tolls","Vehicle maintenance","Airfare, hotels for out-of-town site visits","Rental cars or rideshare for business trips","Meals while traveling for business"],
+    "Marketing & Business Development": ["Website hosting and domain expenses","Website maintenance & updates","Graphic design (logo, templates, brochures)","Online ads (Google, LinkedIn, Facebook)","Printing of business cards, brochures, banners","Sponsorships of events","Client entertainment (dinners, coffee meetings)"],
+    "Training, Licensure & Development": ["Continuing education (PDH hours, webinars)","Training courses (technical or business)","Books, codes, and standards","Exam fees for additional licenses"],
+    "Safety & Field Supplies": ["PPE: hard hats, safety vests, glasses, gloves, boots","Field tools for inspections","Calibration of field instruments","First-aid kits and safety equipment"],
+    "Miscellaneous O & M": ["Subscriptions: LinkedIn Premium","Subscriptions: Industry journals","Project management tools","Document management tools or e-signature services"],
+    "Computer & Office Equipment": ["Laptops","Desktops","Monitors","Printers/Scanners","Servers","Networking Equipment"],
+    "Field & Inspection Equipment": ["Survey Equipment","Testing Equipment","Measurement Tools","Safety Equipment","Inspection Devices"],
+    "Furniture & Fixtures": ["Office Desks","Chairs","Filing Cabinets","Shelving Units","Conference Room Furniture"],
+    "Vehicles": ["Company Cars","Trucks","Vans","Heavy Equipment","Vehicle Accessories"],
+    "Software (Capitalized)": ["Engineering Software License","ERP System","CRM System","Database Software","Custom Software Development"],
+    "Leasehold Improvements": ["Office Renovations","Electrical Work","Plumbing Improvements","HVAC Installation","Security Systems"],
+    "Accumulated Depreciation": ["Depreciation Expense - Computers","Depreciation Expense - Office Equipment","Depreciation Expense - Vehicles","Accumulated Depreciation"],
+    "Salary/Bonuses": ["Employee Salary","Manager Salary","Executive Salary","Performance Bonus","Year-end Bonus","Commission Payments","Incentive Payments"],
+    "Tax Expenses/Tax Deductions": ["Federal Income Tax","Tax Deduction","Payroll Tax","Sales Tax","Property Tax","Business Tax"],
+    "Medical/Benefits": ["Health Insurance Premiums","Dental Insurance","Vision Insurance","Retirement Contributions","Life Insurance","Disability Insurance","Wellness Programs"],
+    "Meals & Entertainment": ["Client Meals","Business Lunches","Team Dinners","Conference Meals","Entertainment Expenses","Team Building Events"],
+    "Donations": ["Charitable Donations","Community Sponsorships","Educational Donations","Non-profit Contributions","Event Sponsorships"],
+    "Bank Charges": ["Monthly Account Fees","Transaction Fees","Wire Transfer Fees","Credit Card Processing Fees","Check Printing Fees","Overdraft Fees"],
+    "Contingency Funds": ["Emergency Funds","Reserve Funds","Project Contingency","Operational Reserve","Risk Management Fund"],
+    "Unexpected Costs": ["Emergency Repairs","Unplanned Maintenance","Price Increases","Regulatory Changes","Market Fluctuations"]
+  };
+  const names = (expenseNamesByCategory[category] && expenseNamesByCategory[category].length)
+    ? expenseNamesByCategory[category]
+    : (fallbackNames[category] || []);
+  nameDropdown.classList.toggle('show', names.length > 0);
+  nameDropdown.innerHTML = '';
+  names.forEach(n => {
+    const div = document.createElement('div');
+    div.className = 'option';
+    div.textContent = n;
+    div.onclick = () => {
+      nameInput.value = n;
+      nameDropdown.classList.remove('show');
+    };
+    nameDropdown.appendChild(div);
+  });
+}
+
+// ── Expense name dropdown in new-expense form ────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  const nameInput = document.getElementById('expenseName');
+  const nameDropdown = document.getElementById('expenseNameDropdown');
+  if (nameInput && nameDropdown) {
+    const arrow = nameInput.parentElement.querySelector('.dropdown-arrow');
+    if (arrow) arrow.addEventListener('click', () => {
+      const cat = document.getElementById('expenseCategory')?.value || '';
+      updateExpenseNameDropdown(cat);
+    });
+    nameInput.addEventListener('focus', () => {
+      const cat = document.getElementById('expenseCategory')?.value || '';
+      if (cat) updateExpenseNameDropdown(cat);
+    });
+    nameInput.addEventListener('input', function() {
+      const filter = this.value.toLowerCase();
+      Array.from(nameDropdown.children).forEach(opt => {
+        opt.style.display = opt.textContent.toLowerCase().includes(filter) ? '' : 'none';
+      });
+    });
+  }
+  document.addEventListener('click', e => {
+    if (e.target && !e.target.closest('#expenseName')?.parentElement) {
+      document.getElementById('expenseNameDropdown')?.classList.remove('show');
+    }
+  });
+});
+
+// ── Expense table client-side filters ────────────────────────────────────────
+// ── Expense table pagination and filters ─────────────────────────────────────
+let expenseCurrentPage = 1;
+let expensePerPage = 15;
+let expenseFilteredRows = [];
+
+function getVisibleExpenseRows() {
+  const search   = (document.getElementById('expenseSearch')?.value || '').toLowerCase();
+  const type     = (document.getElementById('expenseTypeFilter')?.value || '').toLowerCase();
+  const category = (document.getElementById('expenseCategoryFilter')?.value || '').toLowerCase();
+  const dateFrom = document.getElementById('expenseDateFrom')?.value || '';
+  const dateTo   = document.getElementById('expenseDateTo')?.value || '';
+  const rows = Array.from(document.querySelectorAll('#expenseTableBody tr.expense-row'));
+
+  return rows.filter(row => {
+    const rowSearch   = (row.dataset.search || '').toLowerCase();
+    const rowType     = (row.dataset.type || '').toLowerCase();
+    const rowCategory = (row.dataset.category || '').toLowerCase();
+    const rowDate     = row.dataset.date || '';
+    const matchSearch   = !search   || rowSearch.includes(search);
+    const matchType     = !type     || rowType === type;
+    const matchCategory = !category || rowCategory === category;
+    const matchFrom     = !dateFrom || rowDate >= dateFrom;
+    const matchTo       = !dateTo   || rowDate <= dateTo;
+    return matchSearch && matchType && matchCategory && matchFrom && matchTo;
+  });
+}
+
+function applyExpenseFilters() {
+  expenseCurrentPage = 1;
+  renderExpenseTable();
+}
+
+function renderExpenseTable() {
+  expenseFilteredRows = getVisibleExpenseRows();
+  const rows = document.querySelectorAll('#expenseTableBody tr.expense-row');
+  const totalPages = Math.ceil(expenseFilteredRows.length / expensePerPage);
+
+  rows.forEach(row => row.style.display = 'none');
+
+  const start = (expenseCurrentPage - 1) * expensePerPage;
+  const end = start + expensePerPage;
+  let total = 0;
+
+  const currentPageRows = expenseFilteredRows.slice(start, end);
+  currentPageRows.forEach(row => {
+    row.style.display = '';
+    total += parseFloat(row.querySelector('td:nth-child(7)')?.textContent.replace(/[$,]/g,'') || 0);
+  });
+
+  const alert = document.getElementById('expenseFilterAlert');
+  if (alert) {
+    const search = document.getElementById('expenseSearch')?.value || '';
+    const type = document.getElementById('expenseTypeFilter')?.value || '';
+    const category = document.getElementById('expenseCategoryFilter')?.value || '';
+    const dateFrom = document.getElementById('expenseDateFrom')?.value || '';
+    const dateTo = document.getElementById('expenseDateTo')?.value || '';
+    const active = search || type || category || dateFrom || dateTo;
+    alert.style.display = active ? '' : 'none';
+    if (active) {
+      const grandTotal = expenseFilteredRows.reduce((sum, row) => sum + parseFloat(row.querySelector('td:nth-child(7)')?.textContent.replace(/[$,]/g,'') || 0), 0);
+      alert.textContent = `Showing ${expenseFilteredRows.length} of ${rows.length} entries — $${grandTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} total`;
+    }
+  }
+
+  document.getElementById('expensePageInfo').textContent = `Page ${expenseCurrentPage} of ${totalPages || 1}`;
+  document.getElementById('expenseCountInfo').textContent = `${currentPageRows.length} / ${expenseFilteredRows.length} expenses`;
+  document.getElementById('expensePrevBtn').disabled = expenseCurrentPage <= 1;
+  document.getElementById('expenseNextBtn').disabled = expenseCurrentPage >= totalPages;
+}
+
+function changeExpensePerPage() {
+  const select = document.getElementById('expensePerPageSelect');
+  expensePerPage = parseInt(select.value) || 15;
+  expenseCurrentPage = 1;
+  renderExpenseTable();
+}
+
+function prevExpensePage() {
+  if (expenseCurrentPage > 1) {
+    expenseCurrentPage--;
+    renderExpenseTable();
+  }
+}
+
+function nextExpensePage() {
+  const totalPages = Math.ceil(expenseFilteredRows.length / expensePerPage);
+  if (expenseCurrentPage < totalPages) {
+    expenseCurrentPage++;
+    renderExpenseTable();
+  }
+}
+
+function clearExpenseFilters() {
+  ['expenseSearch','expenseTypeFilter','expenseCategoryFilter','expenseDateFrom','expenseDateTo'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  applyExpenseFilters();
+}
+
+function setExpenseDateRange(range) {
+  const now = new Date();
+  let from = '', to = '';
+  const pad = n => String(n).padStart(2,'0');
+  const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  if (range === 'month') {
+    from = `${now.getFullYear()}-${pad(now.getMonth()+1)}-01`;
+    to   = fmt(new Date(now.getFullYear(), now.getMonth()+1, 0));
+  } else if (range === 'year') {
+    from = `${now.getFullYear()}-01-01`;
+    to   = `${now.getFullYear()}-12-31`;
+  } else if (range === 'last30') {
+    const d30 = new Date(now); d30.setDate(now.getDate()-30);
+    from = fmt(d30); to = fmt(now);
+  }
+  const fromEl = document.getElementById('expenseDateFrom');
+  const toEl   = document.getElementById('expenseDateTo');
+  if (fromEl) fromEl.value = from;
+  if (toEl)   toEl.value   = to;
+  applyExpenseFilters();
+}
+
+// Initialize pagination on page load
+document.addEventListener('DOMContentLoaded', function() {
+  if (document.getElementById('expenseTableBody')) {
+    renderExpenseTable();
+  }
+});
+
+function addExpense(event) {
+  event.preventDefault();
+  const expenseType = document.getElementById('expenseType').value;
+  const category    = document.getElementById('expenseCategory').value;
+  const expenseName = document.getElementById('expenseName').value;
+  const amount      = document.getElementById('expenseAmount').value;
+
+  if (!expenseType || !category || !expenseName || !amount) {
+    alert('Please fill in all required fields');
+    return;
+  }
+
+  const data = new FormData();
+  data.append('expense_type', expenseType);
+  data.append('category', category);
+  data.append('expense_name', expenseName);
+  data.append('amount', amount);
+  data.append('date', document.getElementById('expenseDate').value);
+  data.append('vendor', document.getElementById('expenseVendor').value);
+  data.append('project_number', document.getElementById('expenseProject').value);
+  data.append('notes', document.getElementById('expenseNotes').value);
+
+  const receiptFile = document.getElementById('expenseReceipt').files[0];
+  if (receiptFile) data.append('receipt', receiptFile);
+
+  // Determine if this is an add or update operation
+  const isUpdate = !!window.editingExpenseId;
+  const endpoint = isUpdate
+    ? '/financial/expense/' + window.editingExpenseId + '/edit'
+    : '{{ url_for("expense_new") }}';
+
+  fetch(endpoint, { method: 'POST', body: data })
+    .then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+      return r.json();
+    })
+    .then(res => {
+      if (res.success) {
+        document.getElementById('expenseForm').reset();
+        document.getElementById('expenseType').value = '';
+        document.getElementById('expenseCategory').value = '';
+        // Reset edit mode
+        window.editingExpenseId = null;
+        const submitBtn = document.querySelector('#expenseForm button[type="submit"]');
+        submitBtn.textContent = '➕ Add Expense';
+        submitBtn.className = 'btn btn-primary';
+        // Switch to expenses tab
+        const expensesTab = new bootstrap.Tab(document.querySelector('a[data-bs-target="#tab-expenses"]'));
+        expensesTab.show();
+        setTimeout(() => location.reload(), 300);
+      } else {
+        alert('Error: ' + (res.error || 'Unknown error'));
+      }
+    })
+    .catch(err => {
+      console.error('Expense operation error:', err);
+      alert('Failed to ' + (isUpdate ? 'update' : 'add') + ' expense: ' + err.message);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  try {
+    if (document.getElementById('expenseType')) initExpenseFormDropdowns();
+
+    // Clear filter from URL on hard refresh (just update URL without reloading)
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('filter_expense')) {
+      urlParams.delete('filter_expense');
+      window.history.replaceState({}, document.title, window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : ''));
+    }
+  } catch(e) { console.error('Expense form init error:', e); }
+});
+</script>
+
+<!-- Edit Expense Modal -->
+<div class="modal fade" id="expenseModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-receipt me-2"></i>Edit Expense</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="expenseModalForm" method="POST">
+          <input type="hidden" id="expenseId" name="expense_id">
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Expense Type *</label>
+              <div class="custom-dropdown">
+                <input type="text" name="expense_type" id="modalExpenseType" class="form-control form-control-sm" placeholder="Select type..." required>
+                <span class="dropdown-arrow">▼</span>
+                <div class="dropdown-list" id="modalExpenseTypeDropdown"></div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Category *</label>
+              <div class="custom-dropdown">
+                <input type="text" name="category" id="modalCategory" class="form-control form-control-sm" placeholder="Select category..." required>
+                <span class="dropdown-arrow">▼</span>
+                <div class="dropdown-list" id="modalCategoryDropdown"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Expense Name *</label>
+              <input type="text" name="expense_name" id="modalExpenseName" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Amount ($) *</label>
+              <input type="number" name="amount" id="modalAmount" class="form-control form-control-sm" step="0.01" min="0" required>
+            </div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Date</label>
+              <input type="date" name="date" id="modalDate" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Vendor</label>
+              <input type="text" name="vendor" id="modalVendor" class="form-control form-control-sm" placeholder="Vendor name">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label form-label-sm fw-600">Link to Project</label>
+            <select name="project_number" id="modalProject" class="form-select form-select-sm">
+              <option value="">— Optional —</option>
+              {% for p in projects %}
+              <option value="{{ p.get('project_number','') }}">
+                {{ p.get('project_number','') }} — {{ p.get('project_name','') }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label form-label-sm fw-600">Notes</label>
+            <textarea name="notes" id="modalNotes" class="form-control form-control-sm" rows="2" placeholder="Optional notes"></textarea>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label form-label-sm fw-600">Upload Receipt (PDF/Image)</label>
+            <input type="file" id="modalReceipt" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.gif" onchange="previewReceipt()">
+            <small class="text-muted">Receipts are stored as base64 in Firebase. Supports PDF, JPG, PNG, GIF.</small>
+            <div id="receiptPreview" class="mt-2"></div>
+          </div>
+
+          <div class="form-text text-muted small">
+            <i class="bi bi-info-circle"></i> All receipt data is encrypted and stored in Firebase Realtime Database.
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="submitExpenseModal()">
+          <i class="bi bi-check-circle me-1"></i>Save Expense
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Receipt Viewer Modal -->
+<div class="modal fade" id="receiptModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-file-earmark-pdf me-2"></i>Receipt</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="receiptViewer" class="text-center">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let receiptFile = null;
+
+function editExpenseModal(expId, expData) {
+  try {
+    // Store the expense ID for update operation
+    window.editingExpenseId = expId;
+
+    // Switch to the "Add New Expense" tab first
+    const tabBtn = document.querySelector('a[href="#tab-new-expense"]');
+    if (tabBtn) {
+      const addTab = new bootstrap.Tab(tabBtn);
+      addTab.show();
+    }
+
+    // Wait a moment for the tab to switch, then populate the form
+    setTimeout(() => {
+      // Populate the main expense form
+      const typeEl = document.getElementById('expenseType');
+      const catEl = document.getElementById('expenseCategory');
+      const nameEl = document.getElementById('expenseName');
+      const amtEl = document.getElementById('expenseAmount');
+      const dateEl = document.getElementById('expenseDate');
+      const vendorEl = document.getElementById('expenseVendor');
+      const projEl = document.getElementById('expenseProject');
+      const notesEl = document.getElementById('expenseNotes');
+
+      if (typeEl) typeEl.value = expData.expense_type || '';
+      if (catEl) catEl.value = expData.category || '';
+      if (nameEl) nameEl.value = expData.expense_name || '';
+      if (amtEl) amtEl.value = expData.amount || '';
+      if (dateEl) dateEl.value = expData.date || '';
+      if (vendorEl) vendorEl.value = expData.vendor || '';
+      if (projEl) projEl.value = expData.project_number || '';
+      if (notesEl) notesEl.value = expData.notes || '';
+
+      // Change button text from "Add Expense" to "Update Expense"
+      const submitBtn = document.querySelector('#expenseForm button[type="submit"]');
+      if (submitBtn) {
+        submitBtn.textContent = '📝 Update Expense';
+        submitBtn.className = 'btn btn-warning';
+      }
+    }, 100);
+  } catch (err) {
+    console.error('Error in editExpenseModal:', err);
+    alert('Error loading expense for edit');
+  }
+}
+
+function initModalDropdowns() {
+  const typeInput = document.getElementById('modalExpenseType');
+  const typeDropdown = document.getElementById('modalExpenseTypeDropdown');
+  const typeArrow = typeInput.parentElement.querySelector('.dropdown-arrow');
+
+  typeDropdown.innerHTML = '';
+  expenseTypesList.forEach(type => {
+    const div = document.createElement('div');
+    div.className = 'option';
+    div.textContent = type;
+    div.onclick = () => {
+      typeInput.value = type;
+      typeDropdown.classList.remove('show');
+      updateModalCategoryDropdown();
+    };
+    typeDropdown.appendChild(div);
+  });
+
+  typeArrow.addEventListener('click', () => typeDropdown.classList.toggle('show'));
+  typeInput.addEventListener('focus', () => typeDropdown.classList.add('show'));
+  typeInput.addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    Array.from(typeDropdown.children).forEach(option => {
+      option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
+    });
+  });
+
+  const catInput = document.getElementById('modalCategory');
+  const catDropdown = document.getElementById('modalCategoryDropdown');
+  const catArrow = catInput.parentElement.querySelector('.dropdown-arrow');
+
+  catArrow.addEventListener('click', () => catDropdown.classList.toggle('show'));
+  catInput.addEventListener('focus', () => updateModalCategoryDropdown());
+  catInput.addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    Array.from(catDropdown.children).forEach(option => {
+      option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
+    });
+  });
+}
+
+function updateModalCategoryDropdown() {
+  const typeInput = document.getElementById('modalExpenseType');
+  const catInput = document.getElementById('modalCategory');
+  const catDropdown = document.getElementById('modalCategoryDropdown');
+  const type = typeInput.value;
+  const cats = categoriesByType[type] || [];
+
+  catDropdown.classList.add('show');
+  catDropdown.innerHTML = '';
+  cats.forEach(cat => {
+    const div = document.createElement('div');
+    div.className = 'option';
+    div.textContent = cat;
+    div.onclick = () => {
+      catInput.value = cat;
+      catDropdown.classList.remove('show');
+    };
+    catDropdown.appendChild(div);
+  });
+}
+
+function previewReceipt() {
+  const file = document.getElementById('modalReceipt').files[0];
+  if (!file) return;
+
+  receiptFile = file;
+  const preview = document.getElementById('receiptPreview');
+  const reader = new FileReader();
+
+  reader.onload = (e) => {
+    if (file.type.startsWith('image/')) {
+      preview.innerHTML = '<img src="' + e.target.result + '" style="max-width:100%;max-height:200px;" class="mt-2">';
+    } else if (file.type === 'application/pdf') {
+      preview.innerHTML = '<small class="text-success">✓ PDF attached: ' + file.name + '</small>';
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+function submitExpenseModal() {
+  const expenseId = document.getElementById('expenseId').value;
+  const expenseType = document.getElementById('modalExpenseType').value;
+  const category = document.getElementById('modalCategory').value;
+  const expenseName = document.getElementById('modalExpenseName').value;
+  const amount = document.getElementById('modalAmount').value;
+
+  if (!expenseType || !category || !expenseName || !amount) {
+    alert('Please fill in all required fields');
+    return;
+  }
+
+  const data = new FormData();
+  data.append('expense_type', expenseType);
+  data.append('category', category);
+  data.append('expense_name', expenseName);
+  data.append('amount', amount);
+  data.append('date', document.getElementById('modalDate').value);
+  data.append('vendor', document.getElementById('modalVendor').value);
+  data.append('project_number', document.getElementById('modalProject').value);
+  data.append('notes', document.getElementById('modalNotes').value);
+
+  if (receiptFile) {
+    data.append('receipt', receiptFile);
+  }
+
+  fetch(`/financial/expense/${expenseId}/edit`, { method: 'POST', body: data })
+    .then(r => r.json())
+    .then(res => {
+      if (res.success) {
+        bootstrap.Modal.getInstance(document.getElementById('expenseModal')).hide();
+        location.reload();
+      } else {
+        alert('Error: ' + (res.error || 'Unknown error'));
+      }
+    })
+    .catch(err => {
+      console.error('Error:', err);
+      alert('Failed to save expense');
+    });
+}
+
+function viewReceipt(expId) {
+  const viewer = document.getElementById('receiptViewer');
+  viewer.innerHTML = '<div class="spinner-border text-primary" role="status"></div>';
+
+  fetch(`/api/expense/${expId}/receipt`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.success && data.receipt) {
+        const base64 = data.receipt;
+        const fileType = data.fileType || 'image/jpeg';
+
+        if (fileType.startsWith('image/')) {
+          viewer.innerHTML = '<img src="data:' + fileType + ';base64,' + base64 + '" style="max-width:100%;height:auto;" class="img-fluid">';
+        } else if (fileType === 'application/pdf') {
+          viewer.innerHTML = '<iframe src="data:application/pdf;base64,' + base64 + '" style="width:100%;height:600px;border:none;"></iframe>';
+        }
+      } else {
+        viewer.innerHTML = '<div class="alert alert-warning">Receipt not found</div>';
+      }
+    })
+    .catch(err => {
+      console.error('Error:', err);
+      viewer.innerHTML = '<div class="alert alert-danger">Error loading receipt</div>';
+    });
+
+  const modal = new bootstrap.Modal(document.getElementById('receiptModal'));
+  modal.show();
+}
+</script>
+
+<!-- ════════════════════════════════════════════════════════════════
+     BY PROJECT TAB
+═════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade {{ 'show active' if active_tab == 'by-project' else '' }}" id="tab-by-project">
+
+  {% if project_pnl %}
+  <!-- Summary KPI tiles -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-teal">
+        <div class="kpi-top"><span class="kpi-label">Total Invoiced</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
+        <div class="kpi-value">${{ "{:,.0f}".format(project_pnl|sum(attribute='invoiced')) }}</div>
+        <div class="kpi-sub">across all projects</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-green">
+        <div class="kpi-top"><span class="kpi-label">Total Collected</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
+        <div class="kpi-value">${{ "{:,.0f}".format(project_pnl|sum(attribute='paid')) }}</div>
+        <div class="kpi-sub">payments received</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-red">
+        <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
+        <div class="kpi-value text-danger">${{ "{:,.0f}".format(project_pnl|sum(attribute='expenses')) }}</div>
+        <div class="kpi-sub">across all projects</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      {% set total_gp = project_pnl|sum(attribute='gross_profit') %}
+      <div class="kpi-card {{ 'kpi-green' if total_gp >= 0 else 'kpi-red' }}">
+        <div class="kpi-top"><span class="kpi-label">Gross Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
+        <div class="kpi-value {{ 'text-success' if total_gp >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(total_gp) }}</div>
+        <div class="kpi-sub">collected minus expenses</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-panel">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="panel-title mb-0">Profit &amp; Loss by Project</h6>
+      <span class="text-muted small">Click a row to open the project</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0 align-middle">
+        <thead style="background: #1e293b;">
+          <tr>
+            <th style="color: #ffffff; font-weight: 700;">Project #</th>
+            <th style="color: #ffffff; font-weight: 700;">Project Name</th>
+            <th style="color: #ffffff; font-weight: 700;">Client</th>
+            <th style="color: #ffffff; font-weight: 700;">Status</th>
+            <th class="text-end" style="color: #ffffff; font-weight: 700;">Contract</th>
+            <th class="text-end" style="color: #ffffff; font-weight: 700;">Invoiced</th>
+            <th class="text-end" style="color: #ffffff; font-weight: 700;">Collected</th>
+            <th class="text-end" style="color: #ffffff; font-weight: 700;">Expenses</th>
+            <th class="text-end" style="color: #ffffff; font-weight: 700;">Gross Profit</th>
+            {% if total_labor_cost and total_labor_cost > 0 %}
+            <th class="text-end" style="color: #ffffff; font-weight: 700;">Labor Cost</th>
+            <th class="text-end" style="color: #ffffff; font-weight: 700;">Net Profit</th>
+            {% endif %}
+            <th class="text-end" style="color: #ffffff; font-weight: 700;">Margin</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in project_pnl|sort(attribute='project_number') %}
+          {% set margin = (row.gross_profit / row.paid * 100) if row.paid > 0 else 0 %}
+          <tr onclick="location.href='{{ url_for('project_detail', project_id=row.firebase_id) }}'" style="cursor:pointer;">
+            <td><span class="fw-bold text-teal">{{ row.project_number }}</span></td>
+            <td class="fw-medium">{{ row.project_name }}</td>
+            <td class="text-muted small">{{ row.client_name }}</td>
+            <td>{{ status_badge(row.status, 'Not Started') }}</td>
+            <td class="text-end">${{ "{:,.0f}".format(row.contract_value) }}</td>
+            <td class="text-end text-teal fw-semibold">${{ "{:,.0f}".format(row.invoiced) }}</td>
+            <td class="text-end text-success fw-semibold">${{ "{:,.0f}".format(row.paid) }}</td>
+            <td class="text-end text-danger">${{ "{:,.0f}".format(row.expenses) }}</td>
+            <td class="text-end fw-bold {{ 'text-success' if row.gross_profit >= 0 else 'text-danger' }}">
+              ${{ "{:,.0f}".format(row.gross_profit) }}
+            </td>
+            {% if total_labor_cost and total_labor_cost > 0 %}
+            <td class="text-end text-danger">${{ "{:,.0f}".format(row.labor_cost) }}</td>
+            <td class="text-end fw-bold {{ 'text-success' if row.net_profit >= 0 else 'text-danger' }}">
+              ${{ "{:,.0f}".format(row.net_profit) }}
+            </td>
+            {% endif %}
+            <td class="text-end">
+              <span class="badge {{ 'bg-success' if margin >= 20 else ('bg-warning text-dark' if margin >= 0 else 'bg-danger') }}">
+                {{ "%.0f"|format(margin) }}%
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="fw-bold" style="background:#F8FAFC;border-top:2px solid #E2E8F0;">
+          <tr>
+            <td colspan="4" class="text-end text-muted small">Totals</td>
+            <td class="text-end">${{ "{:,.0f}".format(project_pnl|sum(attribute='contract_value')) }}</td>
+            <td class="text-end text-teal">${{ "{:,.0f}".format(project_pnl|sum(attribute='invoiced')) }}</td>
+            <td class="text-end text-success fw-semibold">${{ "{:,.0f}".format(project_pnl|sum(attribute='paid')) }}</td>
+            <td class="text-end text-danger">${{ "{:,.0f}".format(project_pnl|sum(attribute='expenses')) }}</td>
+            <td class="text-end {{ 'text-success' if project_pnl|sum(attribute='gross_profit') >= 0 else 'text-danger' }}">
+              ${{ "{:,.0f}".format(project_pnl|sum(attribute='gross_profit')) }}
+            </td>
+            {% if total_labor_cost and total_labor_cost > 0 %}
+            <td class="text-end text-danger">${{ "{:,.0f}".format(project_pnl|sum(attribute='labor_cost')) }}</td>
+            <td class="text-end {{ 'text-success' if project_pnl|sum(attribute='net_profit') >= 0 else 'text-danger' }}">
+              ${{ "{:,.0f}".format(project_pnl|sum(attribute='net_profit')) }}
+            </td>
+            {% endif %}
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="card-panel">
+    <div class="empty-state py-5">
+      <i class="bi bi-kanban fs-1 d-block mb-2 text-muted"></i>
+      No projects found.
+    </div>
+  </div>
+  {% endif %}
+
+</div><!-- /tab-by-project -->
+
+<!-- ════════════════════════════════════════════════════════════════
+     BALANCE SHEET TAB
+═════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade {{ 'show active' if active_tab == 'balance-sheet' else '' }}" id="tab-balance-sheet">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h4 class="mb-1">Balance Sheet</h4>
+      <p class="text-muted small mb-0">Track revenue, expenses and salaries — all in one place</p>
+    </div>
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#yearCalendarModal" style="background: #f0fdf4; color: #0f766e; border-color: #bbf7d0; font-weight: 900;">
+        📅 {{ selected_year }}
+      </button>
+      <button class="btn btn-sm btn-outline-success" onclick="exportBalanceSheet()">
+        <i class="bi bi-download me-1"></i>Export
+      </button>
+    </div>
+  </div>
+
+  <!-- Year Calendar Modal -->
+  <div class="modal fade" id="yearCalendarModal" tabindex="-1" aria-labelledby="yearCalendarLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="yearCalendarLabel">Select Year</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <!-- Navigation Controls -->
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+            <button type="button" id="yearPrevBtn" class="btn btn-sm btn-outline-secondary" style="width: 36px; height: 36px; padding: 0; display: flex; align-items: center; justify-content: center;">
+              <i class="bi bi-chevron-left"></i>
+            </button>
+            <h6 id="yearRangeDisplay" style="font-weight: 700; color: #334155; margin: 0; min-width: 120px; text-align: center; font-size: 13px;">
+              2016 - 2027
+            </h6>
+            <button type="button" id="yearNextBtn" class="btn btn-sm btn-outline-secondary" style="width: 36px; height: 36px; padding: 0; display: flex; align-items: center; justify-content: center;">
+              <i class="bi bi-chevron-right"></i>
+            </button>
+          </div>
+
+          <!-- Year Grid (3x3) -->
+          <div id="yearGridContainer" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+            <!-- Years will be populated by JavaScript -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Year selector functionality
+    document.addEventListener('DOMContentLoaded', function() {
+      const availableYears = {{ available_years|tojson }}.sort((a, b) => a - b);
+      const selectedYear = {{ selected_year|tojson }};
+      const currentYear = new Date().getFullYear();
+      const yearsPerPage = 9; // 3x3 grid
+
+      // Calculate initial page to show current year
+      let currentPageIndex = 0;
+      const currentYearIndex = availableYears.indexOf(currentYear);
+      if (currentYearIndex >= 0) {
+        currentPageIndex = Math.floor(currentYearIndex / yearsPerPage);
+      }
+
+      function renderYearGrid() {
+        const startIdx = currentPageIndex * yearsPerPage;
+        const endIdx = startIdx + yearsPerPage;
+        const yearsToShow = availableYears.slice(startIdx, endIdx);
+
+        // Update range display
+        if (yearsToShow.length > 0) {
+          document.getElementById('yearRangeDisplay').textContent =
+            yearsToShow[0] + ' - ' + yearsToShow[yearsToShow.length - 1];
+        }
+
+        // Populate grid
+        const container = document.getElementById('yearGridContainer');
+        container.innerHTML = '';
+        yearsToShow.forEach(year => {
+          const link = document.createElement('a');
+          link.href = '?tab=balance-sheet&year=' + year;
+          link.className = 'year-cell ' + (year === selectedYear ? 'active' : '');
+
+          // Different styles for current year vs selected year
+          let bgColor = '#ffffff';
+          let borderColor = '#e2e8f0';
+          let textColor = '#334155';
+
+          if (year === currentYear) {
+            // Current year: light blue background
+            bgColor = '#dbeafe';
+            borderColor = '#3b82f6';
+            textColor = '#1e40af';
+          }
+          if (year === selectedYear) {
+            // Selected year: green background (takes precedence)
+            bgColor = '#f0fdf4';
+            borderColor = '#16a34a';
+            textColor = '#15803d';
+          }
+
+          link.style.cssText = `
+            padding: 20px;
+            background: ${bgColor};
+            border: 2px solid ${borderColor};
+            border-radius: 8px;
+            text-align: center;
+            font-weight: 700;
+            color: ${textColor};
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: block;
+          `;
+          link.textContent = year;
+          link.addEventListener('mouseenter', function() {
+            this.style.background = '#f0fdf4';
+            this.style.borderColor = '#16a34a';
+            this.style.color = '#15803d';
+          });
+          link.addEventListener('mouseleave', function() {
+            if (year === currentYear && year !== selectedYear) {
+              this.style.background = '#dbeafe';
+              this.style.borderColor = '#3b82f6';
+              this.style.color = '#1e40af';
+            } else if (year !== selectedYear) {
+              this.style.background = '#ffffff';
+              this.style.borderColor = '#e2e8f0';
+              this.style.color = '#334155';
+            }
+          });
+          if (year === selectedYear) {
+            link.style.background = '#f0fdf4';
+            link.style.borderColor = '#16a34a';
+            link.style.color = '#15803d';
+          }
+          container.appendChild(link);
+        });
+
+        // Update button states
+        document.getElementById('yearPrevBtn').disabled = currentPageIndex === 0;
+        document.getElementById('yearNextBtn').disabled = endIdx >= availableYears.length;
+
+        // Update button opacity
+        document.getElementById('yearPrevBtn').style.opacity = currentPageIndex === 0 ? '0.5' : '1';
+        document.getElementById('yearNextBtn').style.opacity = endIdx >= availableYears.length ? '0.5' : '1';
+      }
+
+      document.getElementById('yearPrevBtn').addEventListener('click', function() {
+        if (currentPageIndex > 0) {
+          currentPageIndex--;
+          renderYearGrid();
+        }
+      });
+
+      document.getElementById('yearNextBtn').addEventListener('click', function() {
+        if ((currentPageIndex + 1) * yearsPerPage < availableYears.length) {
+          currentPageIndex++;
+          renderYearGrid();
+        }
+      });
+
+      // Initial render
+      renderYearGrid();
+    });
+
+    // Month selection in Annual Financial Summary
+    document.addEventListener('DOMContentLoaded', function() {
+      const monthHeaders = document.querySelectorAll('.month-header');
+      monthHeaders.forEach(header => {
+        header.addEventListener('click', function(e) {
+          e.preventDefault();
+          // Remove selected class from all months
+          monthHeaders.forEach(h => h.classList.remove('selected'));
+          // Add selected class to clicked month
+          this.classList.add('selected');
+        });
+      });
+    });
+  </script>
+
+  <style>
+
+  </style>
+
+  <!-- Stat Cards Row -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-green">
+        <div class="kpi-top"><span class="kpi-label">Total Revenue</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
+        <div class="kpi-value text-success">${{ "{:,.2f}".format(total_revenue | default(0)) }}</div>
+        <div class="kpi-sub">from paid invoices</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-red">
+        <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
+        <div class="kpi-value text-danger">${{ "{:,.2f}".format(total_expenses | default(0)) }}</div>
+        <div class="kpi-sub">{{ expenses | length }} entries</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-blue">
+        <div class="kpi-top"><span class="kpi-label">Total Salaries</span><i class="bi bi-people kpi-icon-sm"></i></div>
+        <div class="kpi-value" style="color: #3b82f6;">${{ "{:,.2f}".format(total_salaries | default(0)) }}</div>
+        <div class="kpi-sub">{{ (salaries_domestic | length) + (salaries_international | length) }} employees</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card {{ 'kpi-green' if (total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0)) >= 0 else 'kpi-red' }}">
+        <div class="kpi-top"><span class="kpi-label">Net Profit/Loss</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
+        <div class="kpi-value {{ 'text-success' if (total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0)) >= 0 else 'text-danger' }}">${{ "{:,.2f}".format((total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0))) }}</div>
+        <div class="kpi-sub">revenue minus expenses & salaries</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Annual Financial Summary Table -->
+  <div class="card mb-4">
+    <div class="card-header bg-light">
+      <h6 class="mb-0">Annual Financial Summary <small class="text-muted fw-normal ms-2" style="font-size:12px;">Click any revenue amount to view payment details</small></h6>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 annual-table">
+          <thead class="table-light">
+            <tr>
+              <th style="width: 100px; text-align: left; font-weight: 800;">Metric</th>
+              <th class="month-header" data-month="1" style="width: 70px;">Jan</th>
+              <th class="month-header" data-month="2" style="width: 70px;">Feb</th>
+              <th class="month-header" data-month="3" style="width: 70px;">Mar</th>
+              <th class="month-header" data-month="4" style="width: 70px;">Apr</th>
+              <th class="month-header" data-month="5" style="width: 70px;">May</th>
+              <th class="month-header" data-month="6" style="width: 70px;">Jun</th>
+              <th class="month-header" data-month="7" style="width: 70px;">Jul</th>
+              <th class="month-header" data-month="8" style="width: 70px;">Aug</th>
+              <th class="month-header" data-month="9" style="width: 70px;">Sep</th>
+              <th class="month-header" data-month="10" style="width: 70px;">Oct</th>
+              <th class="month-header" data-month="11" style="width: 70px;">Nov</th>
+              <th class="month-header" data-month="12" style="width: 70px;">Dec</th>
+              <th style="width: 80px; background: #f0fdf4; color: #0f766e;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th style="text-align: left; background: #f8fafc; color: #27ae60; font-weight: 700; padding: 8px;">↗ REVENUE</th>
+              {% for m in range(1, 13) %}
+              <td class="annual-revenue-cell" data-month="{{ m }}" onclick="showMonthPayments({{ m }})" title="Click to view payment details" style="cursor:pointer;">
+                ${{ (annual_revenue.get(m, 0) | float) | round(2) }}
+              </td>
+              {% endfor %}
+              <td style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ (annual_revenue.values() | sum) | round(2) }}</td>
+            </tr>
+            <tr>
+              <th style="text-align: left; background: #f8fafc; color: #e74c3c; font-weight: 700; padding: 8px;">⊖ EXPENSES</th>
+              {% for m in range(1, 13) %}
+              <td>${{ (annual_expenses.get(m, 0) | float) | round(2) }}</td>
+              {% endfor %}
+              <td style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ (total_expenses | default(0)) | round(2) }}</td>
+            </tr>
+            <tr>
+              <th style="text-align: left; background: #f8fafc; color: #27ae60; font-weight: 700; padding: 8px;">◑ NET P/L</th>
+              {% for m in range(1, 13) %}
+              {% set netval = (annual_netpl.get(m, 0) | float) %}
+              <td style="{{ 'color:#16a34a;' if netval >= 0 else 'color:#dc2626;' }}">${{ netval | round(2) }}</td>
+              {% endfor %}
+              <td style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ ((annual_revenue.values() | sum) - (total_expenses | default(0))) | round(2) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Monthly Payment Drill-Down Panel -->
+  <div id="monthPaymentsPanel" class="card-panel mb-4" style="display:none;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-receipt-cutoff" style="font-size:15px; color:#0D9488;"></i>
+        <h6 class="panel-title mb-0" id="monthPaymentsTitle">Payment History</h6>
+      </div>
+      <button type="button" onclick="document.getElementById('monthPaymentsPanel').style.display='none'; document.querySelectorAll('.annual-revenue-cell').forEach(function(c){c.classList.remove('active-month-cell');})" class="btn btn-sm btn-outline-secondary" style="border-radius:6px;">
+        <i class="bi bi-x-lg"></i> Close
+      </button>
+    </div>
+    <div class="card-body p-0">
+      <div id="monthPaymentsEmpty" class="text-center py-5 text-muted" style="display:none;">
+        <i class="bi bi-inbox" style="font-size:2.5rem;color:#94a3b8;"></i>
+        <div class="mt-2" style="font-size:14px;">No payment records found for this month</div>
+      </div>
+      <div class="table-responsive" id="monthPaymentsTableWrap">
+        <table class="table table-hover mb-0" style="font-size:13px;">
+          <thead style="background: #1e293b; border-bottom: 2px solid #1e293b;">
+            <tr>
+              <th style="padding:10px 14px; color:#ffffff; font-weight:700; white-space:nowrap;">Project No.</th>
+              <th style="padding:10px 14px; color:#ffffff; font-weight:700; white-space:nowrap;">Invoice No.</th>
+              <th style="padding:10px 14px; color:#ffffff; font-weight:700; white-space:nowrap;">Stage</th>
+              <th style="padding:10px 14px; color:#ffffff; font-weight:700; text-align:right; white-space:nowrap;">Total Amount</th>
+              <th style="padding:10px 14px; color:#ffffff; font-weight:700; text-align:right; white-space:nowrap;">Paid Amount</th>
+              <th style="padding:10px 14px; color:#ffffff; font-weight:700; white-space:nowrap;">Paid Date</th>
+            </tr>
+          </thead>
+          <tbody id="monthPaymentsTbody"></tbody>
+          <tfoot id="monthPaymentsTfoot" style="background:#f0fdf4; border-top:2px solid #86efac;"></tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    var monthlyPaymentDetails = {{ monthly_payment_details | safe }};
+    var monthNames = {1:'January',2:'February',3:'March',4:'April',5:'May',6:'June',7:'July',8:'August',9:'September',10:'October',11:'November',12:'December'};
+    var activeMonth = null;
+
+    window.showMonthPayments = function(month) {
+      var panel = document.getElementById('monthPaymentsPanel');
+      var title = document.getElementById('monthPaymentsTitle');
+      var tbody = document.getElementById('monthPaymentsTbody');
+      var tfoot = document.getElementById('monthPaymentsTfoot');
+      var empty = document.getElementById('monthPaymentsEmpty');
+      var tableWrap = document.getElementById('monthPaymentsTableWrap');
+
+      // Toggle off if same month clicked twice
+      if (activeMonth === month && panel.style.display !== 'none') {
+        panel.style.display = 'none';
+        activeMonth = null;
+        document.querySelectorAll('.annual-revenue-cell').forEach(function(c){ c.classList.remove('active-month-cell'); });
+        return;
+      }
+      activeMonth = month;
+
+      // Highlight active cell
+      document.querySelectorAll('.annual-revenue-cell').forEach(function(c){ c.classList.remove('active-month-cell'); });
+      var activeCell = document.querySelector('.annual-revenue-cell[data-month="' + month + '"]');
+      if (activeCell) activeCell.classList.add('active-month-cell');
+
+      title.textContent = monthNames[month] + ' ' + {{ selected_year }} + ' — Payment History';
+
+      var payments = monthlyPaymentDetails[String(month)] || [];
+
+      if (payments.length === 0) {
+        empty.style.display = 'block';
+        tableWrap.style.display = 'none';
+        tfoot.innerHTML = '';
+      } else {
+        empty.style.display = 'none';
+        tableWrap.style.display = 'block';
+
+        var rows = payments.map(function(p, idx) {
+          var projLink;
+          if (p.project_number === 'TAX') {
+            projLink = '<span class="badge" style="background:#fef3c7;color:#92400e;font-weight:700;font-size:11px;border-radius:4px;padding:3px 8px;border:1px solid #fcd34d;">TAX</span>';
+          } else if (p.project_id) {
+            projLink = '<a href="/projects/' + encodeURIComponent(p.project_id) + '" class="fw-bold text-decoration-none" style="color:#1d4ed8;">' + (p.project_number || '—') + '</a>';
+          } else {
+            projLink = '<span class="text-muted">' + (p.project_number || '—') + '</span>';
+          }
+          var invLink = p.invoice_id
+            ? '<a href="/invoicing/' + encodeURIComponent(p.invoice_id) + '" class="fw-bold text-decoration-none" style="color:#0369a1;">' + (p.invoice_number || p.invoice_id) + '</a>'
+            : '<span class="text-muted">—</span>';
+          var stageBadge = p.stage
+            ? '<span class="badge" style="background:#ede9fe;color:#5b21b6;font-weight:600;font-size:11px;border-radius:4px;padding:3px 8px;">' + p.stage + '</span>'
+            : '<span class="text-muted">—</span>';
+          var totalFmt = '$' + parseFloat(p.total_amount || 0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+          var paidFmt  = '$' + parseFloat(p.paid_amount  || 0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+          var rowBg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+          return '<tr style="background:' + rowBg + '; border-bottom:1px solid #e2e8f0;">'
+            + '<td style="padding:10px 14px; vertical-align:middle;">' + projLink + '</td>'
+            + '<td style="padding:10px 14px; vertical-align:middle;">' + invLink + '</td>'
+            + '<td style="padding:10px 14px; vertical-align:middle;">' + stageBadge + '</td>'
+            + '<td style="padding:10px 14px; text-align:right; vertical-align:middle; color:#374151;">' + totalFmt + '</td>'
+            + '<td style="padding:10px 14px; text-align:right; vertical-align:middle; font-weight:700; color:#16a34a;">' + paidFmt + '</td>'
+            + '<td style="padding:10px 14px; vertical-align:middle; color:#374151;">' + (p.paid_date || '—') + '</td>'
+            + '</tr>';
+        });
+        tbody.innerHTML = rows.join('');
+
+        var totalPaid = payments.reduce(function(s, p){ return s + parseFloat(p.paid_amount || 0); }, 0);
+        tfoot.innerHTML = '<tr>'
+          + '<td colspan="4" style="padding:10px 14px; font-weight:700; color:#374151;">Total Paid — ' + payments.length + ' payment(s)</td>'
+          + '<td style="padding:10px 14px; text-align:right; font-weight:800; color:#16a34a; font-size:14px;">$' + totalPaid.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td>'
+          + '<td></td></tr>';
+      }
+
+      panel.style.display = 'block';
+      setTimeout(function(){ panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 80);
+    };
+  })();
+  </script>
+
+  <style>
+    .annual-table thead th {
+      background: #f8fafc;
+      color: #475569;
+      font-weight: 700;
+      font-size: 12px;
+      padding: 8px 4px;
+      border-bottom: 1px solid #e2e8f0;
+      border-right: 1px solid #e2e8f0;
+      text-align: center;
+    }
+    .annual-table thead th:last-child {
+      border-right: none;
+    }
+    .annual-table tbody td {
+      text-align: center;
+      font-size: 12px;
+      padding: 8px 4px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .annual-table tbody tr:nth-child(odd) {
+      background: #f8fafc;
+    }
+    .annual-revenue-cell:hover {
+      background: #dbeafe !important;
+      color: #1d4ed8 !important;
+      font-weight: 700;
+      transition: background 0.15s;
+    }
+    .annual-revenue-cell.active-month-cell {
+      background: #bfdbfe !important;
+      color: #1e40af !important;
+      font-weight: 800;
+      box-shadow: inset 0 0 0 2px #3b82f6;
+    }
+  </style>
+
+  <!-- Divider Section -->
+  <div style="margin: 32px 0; padding: 0;">
+    <div style="height: 1px; background: linear-gradient(90deg, transparent, #e2e8f0 20%, #e2e8f0 80%, transparent); margin: 24px 0;"></div>
+  </div>
+
+  <!-- Salaries & Expenses Layout (2-column) -->
+  <div class="row mb-4 g-3">
+    <!-- LEFT: Salaries Section -->
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h6 class="mb-0">SALARY</h6>
+        </div>
+        <div class="card-body">
+          <!-- Inside America Table -->
+          <div class="mb-3">
+            <div style="border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden;">
+              <div style="font-weight: 700; padding: 8px 12px; border-bottom: 1px solid #cbd5e1;">
+                Inside America
+              </div>
+              <table class="table table-sm mb-0" style="border: none;">
+                <thead>
+                  <tr style="background: #1e293b; border-bottom: 1px solid #334155;">
+                    <th style="padding: 8px 12px; text-align: left; font-weight: 600; color: #ffffff; border-right: 1px solid #334155;">Date</th>
+                    <th style="padding: 8px 12px; text-align: left; font-weight: 600; color: #ffffff; border-right: 1px solid #334155;">Employee Name</th>
+                    <th style="padding: 8px 12px; text-align: right; font-weight: 600; color: #ffffff;">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% if salaries_domestic %}
+                    {% for sal in salaries_domestic %}
+                    <tr style="border-bottom: 1px solid #e2e8f0;">
+                      <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #e2e8f0; color: #64748b; font-size:12px;">{{ sal.get('date', '—') }}</td>
+                      <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #e2e8f0;"><a href="/payroll?employee={{ sal.get('name', '—') }}&year={{ selected_year }}&region=Inside America" style="color: #0d9488; text-decoration: none; cursor: pointer; font-weight: 500;">{{ sal.get('name', '—') }}</a></td>
+                      <td style="padding: 8px 12px; text-align: right;">${{ "{:,.2f}".format(sal.get('amount', 0) | float) }}</td>
+                    </tr>
+                    {% endfor %}
+                  {% else %}
+                    <tr><td colspan="3" class="text-center text-muted py-3" style="font-size:13px;">No salary records for {{ selected_year }}</td></tr>
+                  {% endif %}
+                  <tr style="background: #f0fdf4; border-bottom: none; border-top: 2px solid #cbd5e1; font-weight: 700;">
+                    <td colspan="2" style="padding: 8px 12px; text-align: left; border-right: 1px solid #cbd5e1;">Total</td>
+                    <td style="padding: 8px 12px; text-align: right; color: #15803d;">${{ "{:,.2f}".format(salaries_domestic | sum(attribute='amount') | float) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Outside America Table -->
+          <div>
+            <div style="border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden;">
+              <div style="font-weight: 700; padding: 8px 12px; border-bottom: 1px solid #cbd5e1;">
+                Outside America
+              </div>
+              <table class="table table-sm mb-0" style="border: none;">
+                <thead>
+                  <tr style="background: #1e293b; border-bottom: 1px solid #334155;">
+                    <th style="padding: 8px 12px; text-align: left; font-weight: 600; color: #ffffff; border-right: 1px solid #334155;">Date</th>
+                    <th style="padding: 8px 12px; text-align: left; font-weight: 600; color: #ffffff; border-right: 1px solid #334155;">Employee Name</th>
+                    <th style="padding: 8px 12px; text-align: right; font-weight: 600; color: #ffffff;">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% if salaries_international %}
+                    {% for sal in salaries_international %}
+                    <tr style="border-bottom: 1px solid #e2e8f0;">
+                      <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #e2e8f0; color: #64748b; font-size:12px;">{{ sal.get('date', '—') }}</td>
+                      <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #e2e8f0;"><a href="/payroll?employee={{ sal.get('name', '—') }}&year={{ selected_year }}&region=Outside America" style="color: #0d9488; text-decoration: none; cursor: pointer; font-weight: 500;">{{ sal.get('name', '—') }}</a></td>
+                      <td style="padding: 8px 12px; text-align: right;">${{ "{:,.2f}".format(sal.get('amount', 0) | float) }}</td>
+                    </tr>
+                    {% endfor %}
+                  {% else %}
+                    <tr><td colspan="3" class="text-center text-muted py-3" style="font-size:13px;">No salary records for {{ selected_year }}</td></tr>
+                  {% endif %}
+                  <tr style="background: #f0fdf4; border-bottom: none; border-top: 2px solid #cbd5e1; font-weight: 700;">
+                    <td colspan="2" style="padding: 8px 12px; text-align: left; border-right: 1px solid #cbd5e1;">Total</td>
+                    <td style="padding: 8px 12px; text-align: right; color: #15803d;">${{ "{:,.2f}".format(salaries_international | sum(attribute='amount') | float) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Expense Break-down Section -->
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h6 class="mb-0">EXPENSE BREAK-DOWN</h6>
+        </div>
+        <div class="card-body">
+          <div style="border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden;">
+            <table class="table table-sm mb-0" style="border: none;">
+              <thead>
+                <tr style="background: #1e293b; border-bottom: 1px solid #334155;">
+                  <th style="padding: 8px 12px; text-align: left; font-weight: 600; color: #ffffff; border-right: 1px solid #334155;">Date</th>
+                  <th style="padding: 8px 12px; text-align: left; font-weight: 600; color: #ffffff; border-right: 1px solid #334155;">Expense Item</th>
+                  <th style="padding: 8px 12px; text-align: right; font-weight: 600; color: #ffffff;">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% if expenses_grouped %}
+                  {% for exp in expenses_grouped %}
+                  <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #e2e8f0; color: #64748b; font-size:12px;">{{ exp.get('date', '—') }}</td>
+                    <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #e2e8f0;">
+                      <a href="{{ url_for('financial', tab='expenses', filter_expense=exp.expense_name, year=selected_year) }}" style="color: #0d9488; text-decoration: none; cursor: pointer; font-weight: 500;">
+                        {{ exp.expense_name }}
+                      </a>
+                    </td>
+                    <td style="padding: 8px 12px; text-align: right;">${{ "{:,.2f}".format(exp.amount | float) }}</td>
+                  </tr>
+                  {% endfor %}
+                {% else %}
+                  <tr><td colspan="3" class="text-center text-muted py-3" style="font-size:13px;">No expenses for {{ selected_year }}</td></tr>
+                {% endif %}
+                <tr style="background: #f0fdf4; border-bottom: none; border-top: 2px solid #cbd5e1; font-weight: 700;">
+                  <td></td>
+                  <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #cbd5e1;">Total</td>
+                  <td style="padding: 8px 12px; text-align: right; color: #15803d;">${{ "{:,.2f}".format(total_expenses | default(0)) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Salary Breakdown Modal -->
+  <div id="salaryBreakdownPanel" class="card-panel mb-4" style="display:none; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="panel-title mb-0" id="salaryBreakdownTitle">Salary Breakdown</h6>
+      <button type="button" onclick="document.getElementById('salaryBreakdownPanel').style.display='none';" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-x-lg"></i> Close
+      </button>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm mb-0" style="font-size:13px;">
+        <thead style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
+          <tr>
+            <th style="padding:10px 14px; text-align: left; font-weight:700;">Date</th>
+            <th style="padding:10px 14px; text-align: right; font-weight:700;">Amount</th>
+            <th style="padding:10px 14px; text-align: left; font-weight:700;">Notes</th>
+          </tr>
+        </thead>
+        <tbody id="salaryBreakdownBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Expense Breakdown Modal -->
+  <div id="expenseBreakdownPanel" class="card-panel mb-4" style="display:none; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="panel-title mb-0" id="expenseBreakdownTitle">Expense Breakdown</h6>
+      <button type="button" onclick="document.getElementById('expenseBreakdownPanel').style.display='none';" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-x-lg"></i> Close
+      </button>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm mb-0" style="font-size:13px;">
+        <thead style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
+          <tr>
+            <th style="padding:10px 14px; text-align: left; font-weight:700;">Date</th>
+            <th style="padding:10px 14px; text-align: left; font-weight:700;">Category</th>
+            <th style="padding:10px 14px; text-align: left; font-weight:700;">Vendor</th>
+            <th style="padding:10px 14px; text-align: right; font-weight:700;">Amount</th>
+            <th style="padding:10px 14px; text-align: left; font-weight:700;">Notes</th>
+          </tr>
+        </thead>
+        <tbody id="expenseBreakdownBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    var salaryEntriesDomestic = {{ salary_entries_domestic | safe }};
+    var salaryEntriesInternational = {{ salary_entries_international | safe }};
+    var expenseEntries = {{ expense_entries | safe }};
+
+    window.showSalaryBreakdown = function(employeeName, region) {
+      var panel = document.getElementById('salaryBreakdownPanel');
+      var title = document.getElementById('salaryBreakdownTitle');
+      var tbody = document.getElementById('salaryBreakdownBody');
+
+      title.textContent = employeeName + ' — ' + region;
+
+      var entries = region === 'Inside America' ? salaryEntriesDomestic[employeeName] || [] : salaryEntriesInternational[employeeName] || [];
+
+      var rows = entries.map(function(e, idx) {
+        var rowBg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+        return '<tr style="background:' + rowBg + '; border-bottom:1px solid #e2e8f0;">'
+          + '<td style="padding:10px 14px;">' + (e.date || '—') + '</td>'
+          + '<td style="padding:10px 14px; text-align:right; font-weight:700; color:#16a34a;">$' + parseFloat(e.amount || 0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td>'
+          + '<td style="padding:10px 14px;">' + (e.notes || '—') + '</td>'
+          + '</tr>';
+      });
+      tbody.innerHTML = rows.join('');
+      panel.style.display = 'block';
+      setTimeout(function(){ panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 80);
+    };
+
+    window.showExpenseBreakdown = function(expenseName) {
+      var panel = document.getElementById('expenseBreakdownPanel');
+      var title = document.getElementById('expenseBreakdownTitle');
+      var tbody = document.getElementById('expenseBreakdownBody');
+
+      title.textContent = expenseName + ' — Breakdown';
+
+      var entries = expenseEntries[expenseName] || [];
+
+      var rows = entries.map(function(e, idx) {
+        var rowBg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+        return '<tr style="background:' + rowBg + '; border-bottom:1px solid #e2e8f0;">'
+          + '<td style="padding:10px 14px;">' + (e.date || '—') + '</td>'
+          + '<td style="padding:10px 14px;">' + (e.category || '—') + '</td>'
+          + '<td style="padding:10px 14px;">' + (e.vendor || '—') + '</td>'
+          + '<td style="padding:10px 14px; text-align:right; font-weight:700; color:#dc2626;">$' + parseFloat(e.amount || 0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td>'
+          + '<td style="padding:10px 14px;">' + (e.notes || '—') + '</td>'
+          + '</tr>';
+      });
+      tbody.innerHTML = rows.join('');
+      panel.style.display = 'block';
+      setTimeout(function(){ panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 80);
+    };
+  })();
+  </script>
+
+</div><!-- /tab-balance-sheet -->
+
+</div><!-- /tab-content -->
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Colour palettes ──────────────────────────────────────────────────────────
+const STATUS_COLORS = {
+  'Draft':     '#64748B', 'Sent':    '#2563EB', 'Viewed':   '#7C3AED',
+  'Paid':      '#16A34A', 'Partial': '#F59E0B', 'Overdue':  '#DC2626',
+  'Cancelled': '#DB2777',
+};
+const EXP_PALETTE = ['#2563EB','#16A34A','#F59E0B','#DC2626','#7C3AED','#0EA5E9','#DB2777','#0D9488'];
+function statusColors(labels) {
+  const fb = ['#2563EB','#16A34A','#F59E0B','#DC2626','#7C3AED','#0EA5E9','#DB2777'];
+  return labels.map((l, i) => STATUS_COLORS[l] || fb[i % fb.length]);
+}
+
+// ── Revenue vs Expenses bar chart ────────────────────────────────────────────
+const labels  = {{ chart_labels|safe }};
+const revenue = {{ chart_revenue|safe }};
+const expData = {{ chart_expenses|safe }};
+const chartEl = document.getElementById('finChart');
+if (chartEl) {
+  new Chart(chartEl, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Revenue Collected', data: revenue,  backgroundColor: '#0D9488', borderRadius: 5 },
+        { label: 'Expenses',          data: expData,  backgroundColor: '#F87171', borderRadius: 5 },
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: $${c.parsed.y.toLocaleString()}` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#94A3B8', font: { size: 11 } } },
+        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,.04)' },
+             ticks: { color: '#94A3B8', font: { size: 11 }, callback: v => '$' + (v >= 1000 ? (v/1000).toFixed(0)+'k' : v) } }
+      }
+    }
+  });
+}
+
+// ── Invoice Status donut ─────────────────────────────────────────────────────
+const invSL = {{ inv_status_labels|safe }};
+const invSD = {{ inv_status_data|safe }};
+if (invSL.length) {
+  new Chart(document.getElementById('invStatusChart'), {
+    type: 'doughnut',
+    data: { labels: invSL, datasets: [{ data: invSD, backgroundColor: statusColors(invSL), borderWidth: 2, hoverOffset: 6 }] },
+    options: { responsive: true, cutout: '60%',
+      plugins: { legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 12, padding: 10 } },
+                 tooltip: { callbacks: { label: c => ` ${c.label}: ${c.parsed}` } } } }
+  });
+}
+
+// ── Expense category donut ───────────────────────────────────────────────────
+const expCL = {{ exp_cat_labels|safe }};
+const expCD = {{ exp_cat_data|safe }};
+if (expCL.length) {
+  new Chart(document.getElementById('expCatChart'), {
+    type: 'doughnut',
+    data: { labels: expCL, datasets: [{ data: expCD, backgroundColor: EXP_PALETTE.slice(0, expCL.length), borderWidth: 2, hoverOffset: 6 }] },
+    options: { responsive: true, cutout: '60%',
+      plugins: { legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 12, padding: 10 } },
+                 tooltip: { callbacks: { label: c => ` ${c.label}: $${c.parsed.toLocaleString()}` } } } }
+  });
+}
+
+// ── AI PDF Extractor ─────────────────────────────────────────────────────────
+document.getElementById('pdfExtractBtn')?.addEventListener('click', async () => {
+  const file   = document.getElementById('pdfUploadInput').files[0];
+  const status = document.getElementById('pdfExtractStatus');
+  if (!file) { status.textContent = 'Please select a receipt image or PDF first.'; return; }
+  status.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Extracting...';
+  const fd = new FormData();
+  fd.append('pdf', file);
+  try {
+    const res  = await fetch('/ai/extract-pdf', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.error) { status.innerHTML = '<span class="text-danger">' + data.error + '</span>'; return; }
+    if (data.expense_name) document.getElementById('expenseName').value = data.expense_name;
+    if (data.expense_type) document.getElementById('expenseType').value = data.expense_type;
+    if (data.category)     document.getElementById('expenseCategory').value = data.category;
+    if (data.amount)       document.getElementById('expenseAmount').value = data.amount;
+    if (data.date)         document.getElementById('expenseDate').value = data.date;
+    if (data.vendor)       document.getElementById('expenseVendor').value = data.vendor;
+    status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Fields filled — review and save.</span>';
+  } catch(e) { status.innerHTML = '<span class="text-danger">Request failed.</span>'; }
+});
+
+// ── AI Cash Flow Forecast ────────────────────────────────────────────────────
+document.getElementById('cashFlowBtn').addEventListener('click', async () => {
+  const resultEl = document.getElementById('cashFlowResult');
+  resultEl.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generating...';
+  try {
+    const res  = await fetch('/ai/cash-flow-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ upcoming: [] })
+    });
+    const data = await res.json();
+    if (data.error) { resultEl.innerHTML = '<span class="text-danger">' + data.error + '</span>'; return; }
+    resultEl.innerHTML = data.summary;
+  } catch(e) { resultEl.innerHTML = '<span class="text-danger">Request failed.</span>'; }
+});
+
+// ── Tab persistence ──────────────────────────────────────────────────────────
+(function () {
+  const tabMap = { overview: '#tab-overview', income: '#tab-income', expenses: '#tab-expenses', 'by-project': '#tab-by-project', 'balance-sheet': '#tab-balance-sheet' };
+  const initTab = "{{ active_tab or 'overview' }}";
+  const target  = tabMap[initTab] || '#tab-overview';
+  const el = document.querySelector(`.nav-link[href="${target}"]`);
+  if (el) new bootstrap.Tab(el).show();
+  document.querySelectorAll('#finTabs .nav-link').forEach(link => {
+    link.addEventListener('shown.bs.tab', e => {
+      const key = (e.target.getAttribute('href') || '').replace('#tab-', '');
+      const url = new URL(window.location);
+      url.searchParams.set('tab', key);
+      history.replaceState(null, '', url);
+      if (key === 'overview') {
+        Object.values(Chart.instances).forEach(c => c.resize());
+      }
+    });
+  });
+})();
+
+// Export Balance Sheet to Excel
+function exportBalanceSheet() {
+  // Get year from URL parameter, or from the button text, or default to current year
+  const urlParams = new URLSearchParams(window.location.search);
+  let year = urlParams.get('year');
+
+  if (!year) {
+    // Try to get from the year button
+    const yearBtn = document.querySelector('[data-bs-target="#yearCalendarModal"]');
+    if (yearBtn) {
+      const btnText = yearBtn.textContent.trim();
+      year = btnText.split(' ').pop(); // Get last word from button text
+    }
+  }
+
+  if (!year) {
+    year = new Date().getFullYear(); // Default to current year
+  }
+
+  window.location.href = `/export/balance-sheet?year=${year}`;
+}
+</script>
+{% endblock %}
