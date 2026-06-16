@@ -121,7 +121,7 @@
             <div style="color:rgba(255,255,255,.9); font-weight:700; font-size:1rem;">{{ meta.get('invoice_number','') }}</div>
             <div style="color:rgba(255,255,255,.7); font-size:0.78rem; margin-top:4px;">
               Date: {{ meta.get('invoice_date','—') }}<br>
-              Due: {{ meta.get('due_date','—') }}
+              Due: {{ meta.get('due_date','—') }}{% if meta.get('net_terms') %} <span style="opacity:.7;">(Net {{ meta.get('net_terms') }})</span>{% endif %}
             </div>
           </div>
         </div>
@@ -307,6 +307,10 @@
         </a>
         <span class="text-muted small d-block">{{ linked_project.get('project_name','') }}</span>
       </div>
+      {% endif %}
+      {% if meta.get('net_terms') %}
+      <div class="info-label mt-2">Payment Terms</div>
+      <div class="info-value">Net {{ meta.get('net_terms') }} days</div>
       {% endif %}
       {% if meta.get('payment_method') %}
       <div class="info-label mt-2">Payment Method</div>

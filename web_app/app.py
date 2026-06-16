@@ -5885,6 +5885,7 @@ def _parse_invoice_form(form) -> dict:
             "invoice_number": form.get("invoice_number", ""),
             "invoice_date":   form.get("invoice_date", datetime.now().strftime("%Y-%m-%d")),
             "due_date":       form.get("due_date", ""),
+            "net_terms":      form.get("net_terms", ""),
             "client_name":    form.get("client_name", ""),
             "project_number": main_project,
             "linked_projects": linked_projects,

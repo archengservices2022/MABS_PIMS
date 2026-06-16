@@ -45,14 +45,22 @@
             <input type="text" name="invoice_number" class="form-control"
                    value="{{ meta.get('invoice_number', next_num or '') }}" required>
           </div>
-          <div class="col-md-4">
+          <div class="col-md-3">
             <label class="form-label">Invoice Date</label>
-            <input type="date" name="invoice_date" class="form-control"
-                   value="{{ meta.get('invoice_date') or (now.strftime('%Y-%m-%d') if is_new else '') }}">
+            <input type="date" name="invoice_date" id="invoiceDate" class="form-control"
+                   value="{{ meta.get('invoice_date') or (now.strftime('%Y-%m-%d') if is_new else '') }}"
+                   onchange="applyNetTerms()">
           </div>
-          <div class="col-md-4">
+          <div class="col-md-2">
+            <label class="form-label">Net Terms (days)</label>
+            <input type="number" name="net_terms" id="netTerms" class="form-control"
+                   min="0" placeholder="e.g. 30"
+                   value="{{ meta.get('net_terms', '') }}"
+                   onchange="applyNetTerms()" oninput="applyNetTerms()">
+          </div>
+          <div class="col-md-3">
             <label class="form-label">Due Date</label>
-            <input type="date" name="due_date" class="form-control"
+            <input type="date" name="due_date" id="dueDate" class="form-control"
                    value="{{ meta.get('due_date') or ((now + timedelta(days=30)).strftime('%Y-%m-%d') if is_new else '') }}">
           </div>
           <div class="col-md-6">
@@ -470,5 +478,23 @@ function togglePaymentFields() {
 calcTotals();
 renderClientProjects();
 togglePaymentFields();
+
+function applyNetTerms() {
+  const days = parseInt(document.getElementById('netTerms').value, 10);
+  const invoiceDateVal = document.getElementById('invoiceDate').value;
+  if (!isNaN(days) && days >= 0 && invoiceDateVal) {
+    const base = new Date(invoiceDateVal + 'T00:00:00');
+    base.setDate(base.getDate() + days);
+    const yyyy = base.getFullYear();
+    const mm   = String(base.getMonth() + 1).padStart(2, '0');
+    const dd   = String(base.getDate()).padStart(2, '0');
+    document.getElementById('dueDate').value = `${yyyy}-${mm}-${dd}`;
+  }
+}
+// On load: if net_terms is already set, auto-fill due date for new invoices
+(function() {
+  const nt = document.getElementById('netTerms').value;
+  if (nt && !document.getElementById('dueDate').value) applyNetTerms();
+})();
 </script>
 {% endblock %}
