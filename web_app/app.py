@@ -2348,6 +2348,8 @@ def invoice_status(invoice_id):
         _sync_project_payment(proj_num)
         if new_status == "Paid":
             _auto_complete_project_if_paid(proj_num)
+        elif new_status in ("Sent", "Viewed", "Overdue"):
+            _advance_project_to_in_progress(proj_num)
     if main_proj_num:
         # Roll the linked payment-plan stage's status forward with the invoice
         # (stages live on the invoice's main project only)
@@ -5483,6 +5485,20 @@ def _upsert_revenue_entry(invoice_id: str, inv_meta: dict) -> None:
     else:
         fb_push("/balance_sheet_revenue", entry)
 
+def _advance_project_to_in_progress(project_number: str) -> None:
+    """Promote a project from Not Started to In Progress when an invoice is sent."""
+    if not project_number:
+        return
+    raw_proj = fb_get("/projects") or {}
+    for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
+        if isinstance(pdata, dict) and pdata.get("project_number", "") == project_number:
+            if pdata.get("status", "Not Started") == "Not Started":
+                fb_update(f"/projects/{pid}", {
+                    "status": "In Progress",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
+            break
+
 def _auto_complete_project_if_paid(project_number: str) -> None:
     """Mark project Completed once its amount paid covers the full contract value.
 
@@ -6401,6 +6417,9 @@ def invoice_send(invoice_id):
             "meta/status": "Sent",
             "meta/updated_at": datetime.now(timezone.utc).isoformat(),
         })
+        inv_data = fb_get(f"/invoices/{invoice_id}") or {}
+        for proj_num in _invoice_linked_projects(inv_data):
+            _advance_project_to_in_progress(proj_num)
     flash(msg, "success" if ok else "danger")
     return redirect(url_for("invoice_detail", invoice_id=invoice_id))
 
