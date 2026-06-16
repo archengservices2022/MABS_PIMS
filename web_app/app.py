@@ -3347,6 +3347,50 @@ def financial():
     for _mk in monthly_payment_details:
         monthly_payment_details[_mk].sort(key=lambda x: x.get("paid_date", ""))
 
+    # ── Monthly expense details for drill-down ────────────────────────────────
+    monthly_expense_details = {str(i): [] for i in range(1, 13)}
+    for _exp in exp_list_all:
+        _ds = (_exp.get("date") or "")[:10]
+        try:
+            _d = datetime.fromisoformat(_ds)
+            if _d.year == current_year:
+                monthly_expense_details[str(_d.month)].append({
+                    "name":     _exp.get("expense_name") or _exp.get("description") or "—",
+                    "category": _exp.get("category") or _exp.get("expense_type") or "—",
+                    "amount":   _safe_float(_exp.get("amount", 0)),
+                    "date":     _ds,
+                })
+        except Exception:
+            pass
+
+    # ── Monthly salary details for drill-down ─────────────────────────────────
+    monthly_salary_details = {str(i): [] for i in range(1, 13)}
+    for _sal in salaries_domestic + salaries_international:
+        _ds = (_sal.get("date") or "")[:10]
+        try:
+            _d = datetime.fromisoformat(_ds)
+            if _d.year == current_year:
+                monthly_salary_details[str(_d.month)].append({
+                    "name":   _sal.get("name") or "—",
+                    "region": "Inside America" if _sal in salaries_domestic else "Outside America",
+                    "amount": _safe_float(_sal.get("amount", 0)),
+                    "date":   _ds,
+                })
+        except Exception:
+            pass
+
+    # ── Monthly outstanding (A/R) details for drill-down ─────────────────────
+    monthly_outstanding_details = {str(i): [] for i in range(1, 13)}
+    for _bucket in aging_buckets.values():
+        for _entry in _bucket:
+            _ds = (_entry.get("invoice_date") or "")[:10]
+            try:
+                _d = datetime.fromisoformat(_ds)
+                if _d.year == current_year:
+                    monthly_outstanding_details[str(_d.month)].append(_entry)
+            except Exception:
+                pass
+
     # ── Chart data for overview pie charts ────────────────────────────────────
     inv_status_counts = {}
     for i in inv_list:
@@ -3554,6 +3598,9 @@ def financial():
         exp_cat_data=json.dumps(list(exp_cats.values())),
         ai_enabled=bool(_get_ai_client()),
         monthly_payment_details=json.dumps(monthly_payment_details),
+        monthly_expense_details=json.dumps(monthly_expense_details),
+        monthly_salary_details=json.dumps(monthly_salary_details),
+        monthly_outstanding_details=json.dumps(monthly_outstanding_details),
         aging_buckets=aging_buckets,
         aging_totals=aging_totals,
         aging_total_outstanding=aging_total_outstanding,

@@ -1751,32 +1751,34 @@ function viewReceipt(expId) {
     </div>
   </div>
 
-  <!-- Monthly Payment Drill-Down Panel -->
+  <!-- Monthly Drill-Down Panel -->
   <div id="monthPaymentsPanel" class="card-panel mb-4" style="display:none;">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div class="d-flex align-items-center gap-2">
-        <i class="bi bi-receipt-cutoff" style="font-size:15px; color:#0D9488;"></i>
-        <h6 class="panel-title mb-0" id="monthPaymentsTitle">Payment History</h6>
+        <i class="bi bi-bar-chart-line" style="font-size:15px; color:#0D9488;"></i>
+        <h6 class="panel-title mb-0" id="monthPaymentsTitle">Monthly Breakdown</h6>
       </div>
       <button type="button" onclick="document.getElementById('monthPaymentsPanel').style.display='none'; document.querySelectorAll('.annual-revenue-cell').forEach(function(c){c.classList.remove('active-month-cell');})" class="btn btn-sm btn-outline-secondary" style="border-radius:6px;">
         <i class="bi bi-x-lg"></i> Close
       </button>
     </div>
-    <div class="card-body p-0">
-      <div id="monthPaymentsEmpty" class="text-center py-5 text-muted" style="display:none;">
-        <i class="bi bi-inbox" style="font-size:2.5rem;color:#94a3b8;"></i>
-        <div class="mt-2" style="font-size:14px;">No payment records found for this month</div>
+
+    <!-- Revenue / Payments Section -->
+    <div class="mb-3">
+      <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#059669; padding:6px 0; border-bottom:2px solid #D1FAE5; margin-bottom:8px;">
+        <i class="bi bi-cash-stack me-1"></i>Revenue Collected
       </div>
+      <div id="monthPaymentsEmpty" class="text-center py-3 text-muted" style="display:none; font-size:13px;">No payments this month</div>
       <div class="table-responsive" id="monthPaymentsTableWrap">
-        <table class="table table-hover mb-0" style="font-size:13px;">
-          <thead style="background: #1e293b; border-bottom: 2px solid #1e293b;">
+        <table class="table table-hover mb-0" style="font-size:12px;">
+          <thead style="background:#1e293b;">
             <tr>
-              <th style="padding:10px 14px; color:#ffffff; font-weight:700; white-space:nowrap;">Project No.</th>
-              <th style="padding:10px 14px; color:#ffffff; font-weight:700; white-space:nowrap;">Invoice No.</th>
-              <th style="padding:10px 14px; color:#ffffff; font-weight:700; white-space:nowrap;">Stage</th>
-              <th style="padding:10px 14px; color:#ffffff; font-weight:700; text-align:right; white-space:nowrap;">Total Amount</th>
-              <th style="padding:10px 14px; color:#ffffff; font-weight:700; text-align:right; white-space:nowrap;">Paid Amount</th>
-              <th style="padding:10px 14px; color:#ffffff; font-weight:700; white-space:nowrap;">Paid Date</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700;">Project</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700;">Invoice</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700;">Stage</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Total</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Paid</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700;">Date</th>
             </tr>
           </thead>
           <tbody id="monthPaymentsTbody"></tbody>
@@ -1784,23 +1786,86 @@ function viewReceipt(expId) {
         </table>
       </div>
     </div>
+
+    <!-- Outstanding A/R Section -->
+    <div class="mb-3" id="monthOutstandingSection" style="display:none;">
+      <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#D97706; padding:6px 0; border-bottom:2px solid #FED7AA; margin-bottom:8px;">
+        <i class="bi bi-clock-history me-1"></i>Outstanding (Unpaid Invoices)
+      </div>
+      <div class="table-responsive">
+        <table class="table mb-0" style="font-size:12px;">
+          <thead style="background:#78350F; color:#fff;">
+            <tr>
+              <th style="padding:8px 12px; color:#fff;">Invoice</th>
+              <th style="padding:8px 12px; color:#fff;">Client</th>
+              <th style="padding:8px 12px; color:#fff;">Due Date</th>
+              <th style="padding:8px 12px; color:#fff; text-align:center;">Net Terms</th>
+              <th style="padding:8px 12px; color:#fff; text-align:center;">Days Overdue</th>
+              <th style="padding:8px 12px; color:#fff; text-align:right;">Balance Due</th>
+            </tr>
+          </thead>
+          <tbody id="monthOutstandingTbody"></tbody>
+          <tfoot id="monthOutstandingTfoot" style="background:#FEF3C7; border-top:2px solid #FCD34D;"></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- Expenses Section -->
+    <div class="mb-3" id="monthExpensesSection" style="display:none;">
+      <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#DC2626; padding:6px 0; border-bottom:2px solid #FECACA; margin-bottom:8px;">
+        <i class="bi bi-receipt me-1"></i>Expenses
+      </div>
+      <div class="table-responsive">
+        <table class="table mb-0" style="font-size:12px;">
+          <thead style="background:#7F1D1D; color:#fff;">
+            <tr>
+              <th style="padding:8px 12px; color:#fff;">Date</th>
+              <th style="padding:8px 12px; color:#fff;">Expense Item</th>
+              <th style="padding:8px 12px; color:#fff;">Category</th>
+              <th style="padding:8px 12px; color:#fff; text-align:right;">Amount</th>
+            </tr>
+          </thead>
+          <tbody id="monthExpensesTbody"></tbody>
+          <tfoot id="monthExpensesTfoot" style="background:#FEF2F2; border-top:2px solid #FECACA;"></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- Salaries Section -->
+    <div id="monthSalariesSection" style="display:none;">
+      <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#1D4ED8; padding:6px 0; border-bottom:2px solid #BFDBFE; margin-bottom:8px;">
+        <i class="bi bi-people me-1"></i>Salaries
+      </div>
+      <div class="table-responsive">
+        <table class="table mb-0" style="font-size:12px;">
+          <thead style="background:#1E3A8A; color:#fff;">
+            <tr>
+              <th style="padding:8px 12px; color:#fff;">Date</th>
+              <th style="padding:8px 12px; color:#fff;">Employee</th>
+              <th style="padding:8px 12px; color:#fff;">Region</th>
+              <th style="padding:8px 12px; color:#fff; text-align:right;">Amount</th>
+            </tr>
+          </thead>
+          <tbody id="monthSalariesTbody"></tbody>
+          <tfoot id="monthSalariesTfoot" style="background:#EFF6FF; border-top:2px solid #BFDBFE;"></tfoot>
+        </table>
+      </div>
+    </div>
   </div>
 
   <script>
   (function() {
-    var monthlyPaymentDetails = {{ monthly_payment_details | safe }};
+    var monthlyPaymentDetails    = {{ monthly_payment_details | safe }};
+    var monthlyExpenseDetails    = {{ monthly_expense_details | safe }};
+    var monthlySalaryDetails     = {{ monthly_salary_details | safe }};
+    var monthlyOutstandingDetails= {{ monthly_outstanding_details | safe }};
     var monthNames = {1:'January',2:'February',3:'March',4:'April',5:'May',6:'June',7:'July',8:'August',9:'September',10:'October',11:'November',12:'December'};
     var activeMonth = null;
+    var fmt = function(n){ return '$' + parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); };
 
     window.showMonthPayments = function(month) {
       var panel = document.getElementById('monthPaymentsPanel');
-      var title = document.getElementById('monthPaymentsTitle');
-      var tbody = document.getElementById('monthPaymentsTbody');
-      var tfoot = document.getElementById('monthPaymentsTfoot');
-      var empty = document.getElementById('monthPaymentsEmpty');
-      var tableWrap = document.getElementById('monthPaymentsTableWrap');
 
-      // Toggle off if same month clicked twice
       if (activeMonth === month && panel.style.display !== 'none') {
         panel.style.display = 'none';
         activeMonth = null;
@@ -1808,58 +1873,116 @@ function viewReceipt(expId) {
         return;
       }
       activeMonth = month;
-
-      // Highlight active cell
       document.querySelectorAll('.annual-revenue-cell').forEach(function(c){ c.classList.remove('active-month-cell'); });
       var activeCell = document.querySelector('.annual-revenue-cell[data-month="' + month + '"]');
       if (activeCell) activeCell.classList.add('active-month-cell');
 
-      title.textContent = monthNames[month] + ' ' + {{ selected_year }} + ' — Payment History';
+      var mkey = String(month);
+      var label = monthNames[month] + ' ' + {{ selected_year }};
+      document.getElementById('monthPaymentsTitle').textContent = label + ' — Monthly Breakdown';
 
-      var payments = monthlyPaymentDetails[String(month)] || [];
-
+      /* ── 1. Revenue / Payments ── */
+      var payments = monthlyPaymentDetails[mkey] || [];
+      var empty = document.getElementById('monthPaymentsEmpty');
+      var tableWrap = document.getElementById('monthPaymentsTableWrap');
       if (payments.length === 0) {
-        empty.style.display = 'block';
-        tableWrap.style.display = 'none';
-        tfoot.innerHTML = '';
+        empty.style.display = 'block'; tableWrap.style.display = 'none';
+        document.getElementById('monthPaymentsTfoot').innerHTML = '';
       } else {
-        empty.style.display = 'none';
-        tableWrap.style.display = 'block';
-
+        empty.style.display = 'none'; tableWrap.style.display = 'block';
         var rows = payments.map(function(p, idx) {
-          var projLink;
-          if (p.project_number === 'TAX') {
-            projLink = '<span class="badge" style="background:#fef3c7;color:#92400e;font-weight:700;font-size:11px;border-radius:4px;padding:3px 8px;border:1px solid #fcd34d;">TAX</span>';
-          } else if (p.project_id) {
-            projLink = '<a href="/projects/' + encodeURIComponent(p.project_id) + '" class="fw-bold text-decoration-none" style="color:#1d4ed8;">' + (p.project_number || '—') + '</a>';
-          } else {
-            projLink = '<span class="text-muted">' + (p.project_number || '—') + '</span>';
-          }
+          var projLink = p.project_number === 'TAX'
+            ? '<span class="badge" style="background:#fef3c7;color:#92400e;font-size:11px;padding:3px 8px;">TAX</span>'
+            : (p.project_id ? '<a href="/projects/'+encodeURIComponent(p.project_id)+'" style="color:#1d4ed8;font-weight:700;text-decoration:none;">'+(p.project_number||'—')+'</a>'
+                            : '<span class="text-muted">'+(p.project_number||'—')+'</span>');
           var invLink = p.invoice_id
-            ? '<a href="/invoicing/' + encodeURIComponent(p.invoice_id) + '" class="fw-bold text-decoration-none" style="color:#0369a1;">' + (p.invoice_number || p.invoice_id) + '</a>'
+            ? '<a href="/invoicing/'+encodeURIComponent(p.invoice_id)+'" style="color:#0369a1;font-weight:700;text-decoration:none;">'+(p.invoice_number||p.invoice_id)+'</a>'
             : '<span class="text-muted">—</span>';
-          var stageBadge = p.stage
-            ? '<span class="badge" style="background:#ede9fe;color:#5b21b6;font-weight:600;font-size:11px;border-radius:4px;padding:3px 8px;">' + p.stage + '</span>'
-            : '<span class="text-muted">—</span>';
-          var totalFmt = '$' + parseFloat(p.total_amount || 0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-          var paidFmt  = '$' + parseFloat(p.paid_amount  || 0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-          var rowBg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
-          return '<tr style="background:' + rowBg + '; border-bottom:1px solid #e2e8f0;">'
-            + '<td style="padding:10px 14px; vertical-align:middle;">' + projLink + '</td>'
-            + '<td style="padding:10px 14px; vertical-align:middle;">' + invLink + '</td>'
-            + '<td style="padding:10px 14px; vertical-align:middle;">' + stageBadge + '</td>'
-            + '<td style="padding:10px 14px; text-align:right; vertical-align:middle; color:#374151;">' + totalFmt + '</td>'
-            + '<td style="padding:10px 14px; text-align:right; vertical-align:middle; font-weight:700; color:#16a34a;">' + paidFmt + '</td>'
-            + '<td style="padding:10px 14px; vertical-align:middle; color:#374151;">' + (p.paid_date || '—') + '</td>'
-            + '</tr>';
+          var stageBadge = p.stage ? '<span style="background:#ede9fe;color:#5b21b6;font-size:11px;border-radius:4px;padding:2px 7px;font-weight:600;">'+p.stage+'</span>' : '—';
+          var bg = idx%2===0?'#fff':'#f8fafc';
+          return '<tr style="background:'+bg+';border-bottom:1px solid #e2e8f0;">'
+            +'<td style="padding:8px 12px;">'+projLink+'</td>'
+            +'<td style="padding:8px 12px;">'+invLink+'</td>'
+            +'<td style="padding:8px 12px;">'+stageBadge+'</td>'
+            +'<td style="padding:8px 12px;text-align:right;color:#374151;">'+fmt(p.total_amount)+'</td>'
+            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#16a34a;">'+fmt(p.paid_amount)+'</td>'
+            +'<td style="padding:8px 12px;color:#374151;">'+(p.paid_date||'—')+'</td></tr>';
         });
-        tbody.innerHTML = rows.join('');
+        document.getElementById('monthPaymentsTbody').innerHTML = rows.join('');
+        var totalPaid = payments.reduce(function(s,p){return s+parseFloat(p.paid_amount||0);},0);
+        document.getElementById('monthPaymentsTfoot').innerHTML = '<tr><td colspan="4" style="padding:8px 12px;font-weight:700;">Total Paid — '+payments.length+' payment(s)</td>'
+          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#16a34a;font-size:13px;">'+fmt(totalPaid)+'</td><td></td></tr>';
+      }
 
-        var totalPaid = payments.reduce(function(s, p){ return s + parseFloat(p.paid_amount || 0); }, 0);
-        tfoot.innerHTML = '<tr>'
-          + '<td colspan="4" style="padding:10px 14px; font-weight:700; color:#374151;">Total Paid — ' + payments.length + ' payment(s)</td>'
-          + '<td style="padding:10px 14px; text-align:right; font-weight:800; color:#16a34a; font-size:14px;">$' + totalPaid.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td>'
-          + '<td></td></tr>';
+      /* ── 2. Outstanding A/R ── */
+      var outstanding = monthlyOutstandingDetails[mkey] || [];
+      var outSec = document.getElementById('monthOutstandingSection');
+      if (outstanding.length > 0) {
+        outSec.style.display = '';
+        var oRows = outstanding.map(function(e, idx) {
+          var invLink = e.firebase_id
+            ? '<a href="/invoicing/'+encodeURIComponent(e.firebase_id)+'" style="color:#D97706;font-weight:700;text-decoration:none;">'+(e.invoice_number||'—')+'</a>'
+            : (e.invoice_number||'—');
+          var daysHtml = e.days_overdue > 0
+            ? '<span style="color:#DC2626;font-weight:700;">'+e.days_overdue+' days</span>'
+            : '<span style="color:#059669;">Due in '+Math.abs(e.days_overdue)+' days</span>';
+          var bg = idx%2===0?'#fffbeb':'#fef9ee';
+          return '<tr style="background:'+bg+';border-bottom:1px solid #FED7AA;">'
+            +'<td style="padding:8px 12px;">'+invLink+'</td>'
+            +'<td style="padding:8px 12px;">'+(e.client_name||'—')+'</td>'
+            +'<td style="padding:8px 12px;">'+(e.due_date||'—')+'</td>'
+            +'<td style="padding:8px 12px;text-align:center;">'+(e.net_terms?'Net '+e.net_terms:'—')+'</td>'
+            +'<td style="padding:8px 12px;text-align:center;">'+daysHtml+'</td>'
+            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#DC2626;">'+fmt(e.balance)+'</td></tr>';
+        });
+        document.getElementById('monthOutstandingTbody').innerHTML = oRows.join('');
+        var totalOut = outstanding.reduce(function(s,e){return s+parseFloat(e.balance||0);},0);
+        document.getElementById('monthOutstandingTfoot').innerHTML = '<tr><td colspan="5" style="padding:8px 12px;font-weight:700;">Total Outstanding</td>'
+          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#D97706;font-size:13px;">'+fmt(totalOut)+'</td></tr>';
+      } else {
+        outSec.style.display = 'none';
+      }
+
+      /* ── 3. Expenses ── */
+      var expenses = monthlyExpenseDetails[mkey] || [];
+      var expSec = document.getElementById('monthExpensesSection');
+      if (expenses.length > 0) {
+        expSec.style.display = '';
+        var eRows = expenses.map(function(e, idx) {
+          var bg = idx%2===0?'#fff':'#fef2f2';
+          return '<tr style="background:'+bg+';border-bottom:1px solid #fee2e2;">'
+            +'<td style="padding:8px 12px;color:#6b7280;">'+(e.date||'—')+'</td>'
+            +'<td style="padding:8px 12px;font-weight:500;">'+(e.name||'—')+'</td>'
+            +'<td style="padding:8px 12px;color:#6b7280;">'+(e.category||'—')+'</td>'
+            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#DC2626;">'+fmt(e.amount)+'</td></tr>';
+        });
+        document.getElementById('monthExpensesTbody').innerHTML = eRows.join('');
+        var totalExp = expenses.reduce(function(s,e){return s+parseFloat(e.amount||0);},0);
+        document.getElementById('monthExpensesTfoot').innerHTML = '<tr><td colspan="3" style="padding:8px 12px;font-weight:700;">Total Expenses</td>'
+          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#DC2626;font-size:13px;">'+fmt(totalExp)+'</td></tr>';
+      } else {
+        expSec.style.display = 'none';
+      }
+
+      /* ── 4. Salaries ── */
+      var salaries = monthlySalaryDetails[mkey] || [];
+      var salSec = document.getElementById('monthSalariesSection');
+      if (salaries.length > 0) {
+        salSec.style.display = '';
+        var sRows = salaries.map(function(s, idx) {
+          var bg = idx%2===0?'#fff':'#eff6ff';
+          return '<tr style="background:'+bg+';border-bottom:1px solid #bfdbfe;">'
+            +'<td style="padding:8px 12px;color:#6b7280;">'+(s.date||'—')+'</td>'
+            +'<td style="padding:8px 12px;font-weight:500;">'+(s.name||'—')+'</td>'
+            +'<td style="padding:8px 12px;color:#6b7280;">'+(s.region||'—')+'</td>'
+            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#1D4ED8;">'+fmt(s.amount)+'</td></tr>';
+        });
+        document.getElementById('monthSalariesTbody').innerHTML = sRows.join('');
+        var totalSal = salaries.reduce(function(s,e){return s+parseFloat(e.amount||0);},0);
+        document.getElementById('monthSalariesTfoot').innerHTML = '<tr><td colspan="3" style="padding:8px 12px;font-weight:700;">Total Salaries</td>'
+          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#1D4ED8;font-size:13px;">'+fmt(totalSal)+'</td></tr>';
+      } else {
+        salSec.style.display = 'none';
       }
 
       panel.style.display = 'block';
