@@ -1654,28 +1654,38 @@ function viewReceipt(expId) {
 
   <!-- Stat Cards Row -->
   <div class="row g-3 mb-4">
-    <div class="col-6 col-xl-3">
+    <div class="col-6 col-xl">
       <div class="kpi-card kpi-green">
         <div class="kpi-top"><span class="kpi-label">Total Revenue</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
         <div class="kpi-value text-success">${{ "{:,.2f}".format(total_revenue | default(0)) }}</div>
         <div class="kpi-sub">from paid invoices</div>
       </div>
     </div>
-    <div class="col-6 col-xl-3">
+    <div class="col-6 col-xl">
+      <div class="kpi-card" style="border-left:4px solid #F59E0B; background:#FFFBEB;">
+        <div class="kpi-top"><span class="kpi-label">Accounts Receivable</span><i class="bi bi-clock-history kpi-icon-sm" style="color:#D97706;"></i></div>
+        <div class="kpi-value" style="color:#D97706;">${{ "{:,.2f}".format(aging_total_outstanding) }}</div>
+        <div class="kpi-sub">
+          {% set overdue_amt = aging_totals['1_30'] + aging_totals['31_60'] + aging_totals['61_90'] + aging_totals['90plus'] %}
+          {% if overdue_amt > 0 %}<span style="color:#DC2626;">${{ "{:,.0f}".format(overdue_amt) }} overdue</span>{% else %}all current{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-xl">
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
         <div class="kpi-value text-danger">${{ "{:,.2f}".format(total_expenses | default(0)) }}</div>
         <div class="kpi-sub">{{ expenses | length }} entries</div>
       </div>
     </div>
-    <div class="col-6 col-xl-3">
+    <div class="col-6 col-xl">
       <div class="kpi-card kpi-blue">
         <div class="kpi-top"><span class="kpi-label">Total Salaries</span><i class="bi bi-people kpi-icon-sm"></i></div>
         <div class="kpi-value" style="color: #3b82f6;">${{ "{:,.2f}".format(total_salaries | default(0)) }}</div>
         <div class="kpi-sub">{{ (salaries_domestic | length) + (salaries_international | length) }} employees</div>
       </div>
     </div>
-    <div class="col-6 col-xl-3">
+    <div class="col-6 col-xl">
       <div class="kpi-card {{ 'kpi-green' if (total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0)) >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit/Loss</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
         <div class="kpi-value {{ 'text-success' if (total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0)) >= 0 else 'text-danger' }}">${{ "{:,.2f}".format((total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0))) }}</div>
@@ -1894,6 +1904,55 @@ function viewReceipt(expId) {
       box-shadow: inset 0 0 0 2px #3b82f6;
     }
   </style>
+
+  <!-- Accounts Receivable Aging (Balance Sheet) -->
+  {% if aging_total_outstanding > 0 %}
+  <div class="card mb-4">
+    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+      <h6 class="mb-0"><i class="bi bi-clock-history me-2" style="color:#D97706;"></i>Accounts Receivable — Aging Summary</h6>
+      <a href="?tab=aging" class="btn btn-sm btn-outline-secondary">View Detail</a>
+    </div>
+    <div class="card-body p-0">
+      <table class="table table-sm mb-0" style="font-size:13px;">
+        <thead class="table-light">
+          <tr>
+            <th>Aging Bucket</th>
+            <th class="text-center">Invoices</th>
+            <th class="text-end">Amount Due</th>
+            <th class="text-end">% of Total A/R</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set ar_buckets = [
+            ('current', 'Current (not yet due)',  '#059669'),
+            ('1_30',    '1–30 days overdue',       '#D97706'),
+            ('31_60',   '31–60 days overdue',      '#EA580C'),
+            ('61_90',   '61–90 days overdue',      '#DC2626'),
+            ('90plus',  'Over 90 days overdue',    '#7C3AED'),
+          ] %}
+          {% for key, label, color in ar_buckets %}
+          {% if aging_buckets[key] %}
+          <tr>
+            <td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ color }};margin-right:6px;"></span>{{ label }}</td>
+            <td class="text-center">{{ aging_buckets[key]|length }}</td>
+            <td class="text-end fw-bold" style="color:{{ color }};">${{ "{:,.2f}".format(aging_totals[key]) }}</td>
+            <td class="text-end text-muted">{{ "{:.0f}".format(aging_totals[key] / aging_total_outstanding * 100) }}%</td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+        <tfoot style="background:#FFF7ED; border-top:2px solid #FED7AA;">
+          <tr>
+            <td class="fw-bold">Total Outstanding</td>
+            <td class="text-center fw-bold">{{ (aging_buckets['current']|length) + (aging_buckets['1_30']|length) + (aging_buckets['31_60']|length) + (aging_buckets['61_90']|length) + (aging_buckets['90plus']|length) }}</td>
+            <td class="text-end fw-bold" style="color:#D97706;">${{ "{:,.2f}".format(aging_total_outstanding) }}</td>
+            <td class="text-end fw-bold">100%</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  {% endif %}
 
   <!-- Divider Section -->
   <div style="margin: 32px 0; padding: 0;">
