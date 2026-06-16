@@ -983,6 +983,22 @@ class FirebaseManager:
             if existing_projects:
                 # Update existing project
                 project_id = list(existing_projects.keys())[0]
+                existing_data = list(existing_projects.values())[0] or {}
+
+                # Never let the desktop app downgrade a status set by the web app.
+                # Status ranking: Not Started < In Progress / On Hold < Completed / Cancelled
+                STATUS_RANK = {
+                    'Not Started': 0,
+                    'In Progress': 1,
+                    'On Hold': 1,
+                    'Completed': 2,
+                    'Cancelled': 2,
+                }
+                existing_status = existing_data.get('status', 'Not Started')
+                incoming_status = project_data.get('status', 'Not Started')
+                if STATUS_RANK.get(existing_status, 0) > STATUS_RANK.get(incoming_status, 0):
+                    project_data['status'] = existing_status
+
                 project_data['updated_at'] = datetime.now(timezone.utc).isoformat()
                 ref.child(project_id).update(project_data)
                 log.info("Project updated in Firebase: %s", project_data['project_number'])
