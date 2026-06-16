@@ -5355,42 +5355,78 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
         log.info(f"[SEQ_ALLOC] Updated project {proj_num}: amount_paid={allocated}")
 
 def _sync_project_payment(project_number: str) -> None:
-    """Sum payment_stages[].amount_paid from Payment Plan and set project.amount_paid.
+    """Recalculate project.amount_paid from invoice payment_logs (ground truth)
+    and set project status based on that total.
 
-    Financial Summary displays the total of all stage.amount_paid values.
-    If 3 stages have $10 paid each, amount_paid = $30.
+    Using invoice payment_logs avoids corruption from stage.amount_paid resets
+    that can occur during sequential allocation.
     """
     if not project_number:
         return
 
     raw_proj = fb_get("/projects") or {}
+    pid = None
+    pdata = None
     if isinstance(raw_proj, dict):
-        for pid, pdata in raw_proj.items():
-            if isinstance(pdata, dict) and pdata.get("project_number", "") == project_number:
-                # Sum all amount_paid from payment_stages (the Payment Plan)
-                stages = pdata.get("payment_stages", [])
-                total_paid = 0.0
-                if isinstance(stages, list):
-                    for stage in stages:
-                        if isinstance(stage, dict):
-                            total_paid += _safe_float(stage.get("amount_paid", 0))
-
-                updates = {
-                    "amount_paid": total_paid,
-                    "updated_at": datetime.now(timezone.utc).isoformat()
-                }
-
-                # Auto-advance project status based on payment received
-                contract_val   = _safe_float(pdata.get("contract_value", 0))
-                current_status = pdata.get("status", "Not Started")
-                if current_status not in ("Completed", "Cancelled"):
-                    if contract_val > 0 and total_paid >= contract_val - 0.01:
-                        updates["status"] = "Completed"
-                    elif total_paid > 0 and current_status == "Not Started":
-                        updates["status"] = "In Progress"
-
-                fb_update(f"/projects/{pid}", updates)
+        for k, v in raw_proj.items():
+            if isinstance(v, dict) and v.get("project_number", "") == project_number:
+                pid, pdata = k, v
                 break
+    if not pid:
+        return
+
+    # Ground-truth: sum all invoice payments that belong to this project
+    all_invoices = fb_get("/invoices") or {}
+    total_paid = 0.0
+    if isinstance(all_invoices, dict):
+        for iid, inv in all_invoices.items():
+            if not isinstance(inv, dict):
+                continue
+            meta = inv.get("meta", {}) or {}
+            # Check if this invoice covers this project (single or multi-project)
+            covers = (meta.get("project_number") == project_number)
+            if not covers:
+                linked = meta.get("linked_projects", [])
+                if isinstance(linked, list):
+                    for lp in linked:
+                        if isinstance(lp, dict) and lp.get("project_number") == project_number:
+                            covers = True
+                            break
+                        elif isinstance(lp, str) and lp == project_number:
+                            covers = True
+                            break
+            if not covers:
+                continue
+            # Sum invoice line payments for this project
+            payment_log = inv.get("payment_log", [])
+            if isinstance(payment_log, list):
+                for p in payment_log:
+                    if isinstance(p, dict):
+                        if p.get("project_number", project_number) == project_number:
+                            total_paid += _safe_float(p.get("amount", 0))
+                        elif not p.get("project_number"):
+                            total_paid += _safe_float(p.get("amount", 0))
+
+    updates = {
+        "amount_paid": total_paid,
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+
+    contract_val   = _safe_float(pdata.get("contract_value", 0))
+    current_status = pdata.get("status", "Not Started")
+
+    # Never downgrade a cancelled project; always correct everything else.
+    if current_status != "Cancelled":
+        if contract_val > 0 and total_paid >= contract_val - 0.01:
+            updates["status"] = "Completed"
+        elif total_paid > 0:
+            if current_status not in ("In Progress", "On Hold", "Completed"):
+                updates["status"] = "In Progress"
+        else:
+            if current_status == "Completed":
+                updates["status"] = "In Progress"
+
+    fb_update(f"/projects/{pid}", updates)
 
 def _auto_flag_overdue() -> int:
     """Flip any Sent/Viewed/Partial invoice whose due_date < today to Overdue.
