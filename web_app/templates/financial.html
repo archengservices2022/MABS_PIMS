@@ -189,6 +189,13 @@ a[href*="filter_expense"]:hover {
       <i class="bi bi-file-earmark-text me-1"></i>Balance Sheet
     </a>
   </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'aging' else '' }}" data-bs-toggle="tab" href="#tab-aging">
+      <i class="bi bi-clock-history me-1"></i>A/R Aging
+      {% set aging_count = aging_buckets['1_30']|length + aging_buckets['31_60']|length + aging_buckets['61_90']|length + aging_buckets['90plus']|length %}
+      {% if aging_count %}<span class="badge bg-danger ms-1">{{ aging_count }}</span>{% endif %}
+    </a>
+  </li>
 </ul>
 
 <div class="tab-content">
@@ -2121,6 +2128,105 @@ function viewReceipt(expId) {
   </script>
 
 </div><!-- /tab-balance-sheet -->
+
+<!-- ════════════════════════════════════════════════════════════════
+     A/R AGING TAB
+═════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade {{ 'show active' if active_tab == 'aging' else '' }}" id="tab-aging">
+
+  <h5 class="fw-bold mb-1">Accounts Receivable Aging</h5>
+  <p class="text-muted small mb-4">Outstanding invoices grouped by how overdue they are. Based on each invoice's due date (Invoice Date + Net Terms).</p>
+
+  <!-- Aging summary cards -->
+  <div class="row g-3 mb-4">
+    {% set buckets = [
+      ('current', 'Current',     'bg-success', 'Not yet due'),
+      ('1_30',    '1–30 Days',   'bg-warning text-dark', 'Slightly overdue'),
+      ('31_60',   '31–60 Days',  'bg-orange',  'Overdue'),
+      ('61_90',   '61–90 Days',  'bg-danger',  'Seriously overdue'),
+      ('90plus',  '90+ Days',    'bg-dark',    'Critical'),
+    ] %}
+    {% for key, label, badge_cls, hint in buckets %}
+    <div class="col-6 col-xl">
+      <div class="card-panel text-center py-3">
+        <div class="fw-bold mb-1" style="font-size:1.25rem;">${{ "{:,.0f}".format(aging_totals[key]) }}</div>
+        <span class="badge {{ badge_cls }} mb-1">{{ label }}</span>
+        <div class="text-muted small">{{ aging_buckets[key]|length }} invoice{{ 's' if aging_buckets[key]|length != 1 }}</div>
+      </div>
+    </div>
+    {% endfor %}
+    <div class="col-6 col-xl">
+      <div class="card-panel text-center py-3" style="border:2px solid #0F766E;">
+        <div class="fw-bold mb-1" style="font-size:1.25rem; color:#0F766E;">${{ "{:,.0f}".format(aging_total_outstanding) }}</div>
+        <span class="badge bg-teal mb-1">Total Outstanding</span>
+        <div class="text-muted small">All unpaid</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Aging detail table -->
+  {% for key, label, badge_cls, hint in buckets %}
+  {% if aging_buckets[key] %}
+  <div class="card-panel mb-3">
+    <div class="d-flex align-items-center mb-3 gap-2">
+      <span class="badge {{ badge_cls }}">{{ label }}</span>
+      <span class="fw-bold">{{ hint }}</span>
+      <span class="ms-auto text-muted small">${{ "{:,.2f}".format(aging_totals[key]) }} total</span>
+    </div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+        <thead>
+          <tr style="background:#F8FAFC; border-bottom:2px solid #E2E8F0;">
+            <th style="padding:8px 12px; text-align:left;">Invoice</th>
+            <th style="padding:8px 12px; text-align:left;">Client</th>
+            <th style="padding:8px 12px; text-align:left;">Invoice Date</th>
+            <th style="padding:8px 12px; text-align:left;">Due Date</th>
+            <th style="padding:8px 12px; text-align:center;">Net Terms</th>
+            <th style="padding:8px 12px; text-align:center;">Days Overdue</th>
+            <th style="padding:8px 12px; text-align:right;">Balance Due</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in aging_buckets[key]|sort(attribute='days_overdue', reverse=True) %}
+          <tr style="border-bottom:1px solid #F1F5F9;">
+            <td style="padding:8px 12px;">
+              <a href="{{ url_for('invoice_detail', invoice_id=e.firebase_id) }}" class="text-teal fw-bold text-decoration-none">
+                {{ e.invoice_number }}
+              </a>
+            </td>
+            <td style="padding:8px 12px;">{{ e.client_name or '—' }}</td>
+            <td style="padding:8px 12px;">{{ e.invoice_date or '—' }}</td>
+            <td style="padding:8px 12px;">{{ e.due_date or '—' }}</td>
+            <td style="padding:8px 12px; text-align:center;">
+              {% if e.net_terms %}Net {{ e.net_terms }}{% else %}—{% endif %}
+            </td>
+            <td style="padding:8px 12px; text-align:center;">
+              {% if e.days_overdue > 0 %}
+                <span style="color:#DC2626; font-weight:700;">{{ e.days_overdue }} days</span>
+              {% else %}
+                <span style="color:#059669;">Due in {{ (e.days_overdue * -1) }} days</span>
+              {% endif %}
+            </td>
+            <td style="padding:8px 12px; text-align:right; font-weight:700; color:#DC2626;">
+              ${{ "{:,.2f}".format(e.balance) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+  {% endfor %}
+
+  {% if aging_total_outstanding == 0 %}
+  <div class="text-center py-5 text-muted">
+    <i class="bi bi-check-circle-fill text-success" style="font-size:2rem;"></i>
+    <div class="mt-2 fw-bold">All invoices are paid — no outstanding balance!</div>
+  </div>
+  {% endif %}
+
+</div><!-- /tab-aging -->
 
 </div><!-- /tab-content -->
 {% endblock %}

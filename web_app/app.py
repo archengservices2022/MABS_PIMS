@@ -3465,6 +3465,50 @@ def financial():
 
     available_years = sorted(list(available_years), reverse=True)
 
+    # ── Accounts Receivable Aging ─────────────────────────────────────────────
+    today_d = datetime.now().date()
+    aging_buckets = {"current": [], "1_30": [], "31_60": [], "61_90": [], "90plus": []}
+    for inv in inv_list:
+        m = inv.get("meta", {}) or {}
+        status = m.get("status", "Draft")
+        if status not in ("Sent", "Viewed", "Partial", "Overdue"):
+            continue
+        total   = _safe_float(m.get("total", 0))
+        paid    = _safe_float(m.get("amount_paid", 0))
+        balance = total - paid
+        if balance <= 0.01:
+            continue
+        due_str = m.get("due_date", "")
+        try:
+            due_d = datetime.fromisoformat(due_str[:10]).date()
+            days_overdue = (today_d - due_d).days
+        except Exception:
+            days_overdue = 0
+        entry = {
+            "invoice_number": m.get("invoice_number", ""),
+            "client_name":    m.get("client_name", ""),
+            "invoice_date":   m.get("invoice_date", ""),
+            "due_date":       due_str,
+            "net_terms":      m.get("net_terms", ""),
+            "days_overdue":   days_overdue,
+            "balance":        balance,
+            "status":         status,
+            "firebase_id":    inv.get("firebase_id", ""),
+        }
+        if days_overdue <= 0:
+            aging_buckets["current"].append(entry)
+        elif days_overdue <= 30:
+            aging_buckets["1_30"].append(entry)
+        elif days_overdue <= 60:
+            aging_buckets["31_60"].append(entry)
+        elif days_overdue <= 90:
+            aging_buckets["61_90"].append(entry)
+        else:
+            aging_buckets["90plus"].append(entry)
+
+    aging_totals = {k: sum(e["balance"] for e in v) for k, v in aging_buckets.items()}
+    aging_total_outstanding = sum(aging_totals.values())
+
     today_date = datetime.now().strftime("%Y-%m-%d")
     active_tab = request.args.get("tab", "overview")
     return render_template("financial.html",
@@ -3510,6 +3554,9 @@ def financial():
         exp_cat_data=json.dumps(list(exp_cats.values())),
         ai_enabled=bool(_get_ai_client()),
         monthly_payment_details=json.dumps(monthly_payment_details),
+        aging_buckets=aging_buckets,
+        aging_totals=aging_totals,
+        aging_total_outstanding=aging_total_outstanding,
     )
 
 @app.route("/financial/expense/new", methods=["POST"])
