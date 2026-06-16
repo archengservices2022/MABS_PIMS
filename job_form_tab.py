@@ -603,9 +603,9 @@ class JobFormTab(QtWidgets.QWidget):
                         job_data.setdefault('client', '')
                         job_data.setdefault('job_number', '')
 
-                        # Check if quote number starts with Quote
+                        # Track legacy QuoteXXX numbers for migration
                         job_num = job_data.get('job_number', '').upper()
-                        if not job_num.startswith('QUOTE'):
+                        if job_num.startswith('QUOTE'):
                             non_quote_jobs.append(job_num)
                         
                         self.job_forms.append(job_data)
@@ -617,15 +617,10 @@ class JobFormTab(QtWidgets.QWidget):
                         self.job_forms.append(local_job)
                         known_numbers.add(local_job.get('job_number', '').upper())
 
-                # Warn about non-Quote quote numbers
+                # Auto-migrate legacy QuoteXXX numbers to QT-YYYYMM-XXX format
                 if non_quote_jobs:
-                    _log.warning("⚠️ WARNING: Found %s non-Quote quote numbers:", len(non_quote_jobs))
-                    for job_num in non_quote_jobs[:10]:  # Show first 10
-                        _log.info("   - %s", job_num)
-                    if len(non_quote_jobs) > 10:
-                        _log.info("   ... and %s more", len(non_quote_jobs) - 10)
-                    
-                    _log.info("\n💡 Recommendation: Convert these to Quote format for proper sorting")
+                    _log.info("Found %s legacy quote numbers — migrating to QT- format", len(non_quote_jobs))
+                    QtCore.QTimer.singleShot(500, self._migrate_old_quote_numbers)
                 
                 # Define the sorting key function
                 def job_number_sort_key(job):
@@ -646,9 +641,16 @@ class JobFormTab(QtWidgets.QWidget):
                     Returns tuple for sorting in DESCENDING order (negative values for highest first)
                     """
                     job_num = job.get('job_number', '').strip().upper()
-                    
+
+                    # Handle new QT-YYYYMM-XXX format — sort by (yyyymm desc, seq desc)
+                    qt_match = re.match(r'^QT-(\d{6})-(\d+)$', job_num)
+                    if qt_match:
+                        ym = int(qt_match.group(1))
+                        seq = int(qt_match.group(2))
+                        return (1, -ym, -seq, 0, 0, 0, 0, 0)
+
                     if not job_num or 'QUOTE' not in job_num:
-                        return (0, 0, 0, 0, 0, 0, 0, 0)  # Non-Quote goes to bottom
+                        return (0, 0, 0, 0, 0, 0, 0, 0)  # Unknown format goes to bottom
 
                     # Enhanced pattern to capture all variant types
                     pattern = r'^QUOTE([A-Z]?)(\d+)(?:_?([a-zA-Z]+)?(\d+)?)?(?:_?(\d+)([a-zA-Z]+)?(\d+)?)?$'
@@ -778,6 +780,80 @@ class JobFormTab(QtWidgets.QWidget):
             self.update_job_forms_table()
             self.update_client_filter_menu()
             return self.job_forms
+
+    def _migrate_old_quote_numbers(self):
+        """Rename legacy QuoteA001-style numbers to QT-YYYYMM-XXX in Firebase and in-memory."""
+        try:
+            from main import db
+            from datetime import datetime, timezone
+            import re as _re
+
+            ref = db.reference('/job_forms')
+            raw = ref.get() or {}
+
+            # Build a map of already-used QT- numbers per month so we don't collide
+            month_max = {}  # e.g. {'202606': 3}
+            old_entries = []  # (firebase_id, job_data, yyyymm)
+
+            for fid, jdata in raw.items():
+                if not isinstance(jdata, dict):
+                    continue
+                num = (jdata.get('job_number') or '').strip()
+                num_up = num.upper()
+                if num_up.startswith('QT-'):
+                    # e.g. QT-202606-007
+                    parts = num.split('-')
+                    if len(parts) == 3:
+                        yyyymm = parts[1]
+                        try:
+                            seq = int(parts[2])
+                            if month_max.get(yyyymm, 0) < seq:
+                                month_max[yyyymm] = seq
+                        except ValueError:
+                            pass
+                elif num_up.startswith('QUOTE'):
+                    # Determine month from created_at; fall back to current month
+                    created = jdata.get('created_at', '')
+                    try:
+                        dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
+                        yyyymm = dt.strftime('%Y%m')
+                    except Exception:
+                        yyyymm = datetime.now(timezone.utc).strftime('%Y%m')
+                    old_entries.append((fid, jdata, yyyymm))
+
+            if not old_entries:
+                return
+
+            # Sort old entries by (yyyymm, original sequence) so migration order is predictable
+            def _old_sort_key(item):
+                num = (item[1].get('job_number') or '').strip().upper()
+                m = _re.match(r'^QUOTE([A-Z]?)(\d+)', num)
+                seq = int(m.group(2)) if m else 0
+                cat = m.group(1) if m else ''
+                return (item[2], cat, seq)
+
+            old_entries.sort(key=_old_sort_key)
+
+            # Assign new numbers
+            updates = {}
+            for fid, jdata, yyyymm in old_entries:
+                next_seq = month_max.get(yyyymm, 0) + 1
+                month_max[yyyymm] = next_seq
+                new_num = f"QT-{yyyymm}-{next_seq:03d}"
+                old_num = jdata.get('job_number', '')
+                _log.info("Migrating %s -> %s (firebase_id=%s)", old_num, new_num, fid)
+                updates[f"{fid}/job_number"] = new_num
+                updates[f"{fid}/updated_at"] = datetime.now(timezone.utc).isoformat()
+
+            # Write all at once
+            ref.update(updates)
+            _log.info("Migration complete: %s quote(s) renamed", len(old_entries))
+
+            # Reload the table to reflect new numbers
+            QtCore.QTimer.singleShot(200, self.load_job_forms_from_firebase)
+
+        except Exception as exc:
+            _log.warning("Quote migration failed: %s", exc)
 
     def _on_quotes_updated(self, quotes_data):
         """Called when quotes/job forms are updated in Firebase - updates UI automatically"""
