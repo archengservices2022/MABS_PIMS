@@ -3363,22 +3363,6 @@ def financial():
         except Exception:
             pass
 
-    # ── Monthly salary details for drill-down ─────────────────────────────────
-    monthly_salary_details = {str(i): [] for i in range(1, 13)}
-    for _sal in salaries_domestic + salaries_international:
-        _ds = (_sal.get("date") or "")[:10]
-        try:
-            _d = datetime.fromisoformat(_ds)
-            if _d.year == current_year:
-                monthly_salary_details[str(_d.month)].append({
-                    "name":   _sal.get("name") or "—",
-                    "region": "Inside America" if _sal in salaries_domestic else "Outside America",
-                    "amount": _safe_float(_sal.get("amount", 0)),
-                    "date":   _ds,
-                })
-        except Exception:
-            pass
-
     # ── Monthly outstanding (A/R) details for drill-down ─────────────────────
     monthly_outstanding_details = {str(i): [] for i in range(1, 13)}
     for _bucket in aging_buckets.values():
@@ -3451,6 +3435,22 @@ def financial():
     salary_entries_international = {}
     salaries_domestic, salary_entries_domestic = group_by_name(salaries_domestic_raw, salary_entries_domestic)
     salaries_international, salary_entries_international = group_by_name(salaries_international_raw, salary_entries_international)
+
+    # ── Monthly salary details for drill-down (needs salaries_domestic/international) ──
+    monthly_salary_details = {str(i): [] for i in range(1, 13)}
+    for _sal in list(salaries_domestic) + list(salaries_international):
+        _ds = (_sal.get("date") or "")[:10]
+        try:
+            _d = datetime.fromisoformat(_ds)
+            if _d.year == current_year:
+                monthly_salary_details[str(_d.month)].append({
+                    "name":   _sal.get("name") or "—",
+                    "region": "Inside America" if _sal in salaries_domestic else "Outside America",
+                    "amount": _safe_float(_sal.get("amount", 0)),
+                    "date":   _ds,
+                })
+        except Exception:
+            pass
 
     # Calculate totals for Balance Sheet
     total_revenue = total_paid
