@@ -535,11 +535,12 @@ def sales_dashboard():
     total_value     = sum(_safe_float(q.get("total", 0)) for q in my_quotes)
     win_rate        = round(len(converted) / len(my_quotes) * 100) if my_quotes else 0
 
+    next14_str = (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d")
     followups_due = sorted(
         [q for q in my_quotes
          if q.get("status") not in _TERMINAL
-         and q.get("follow_up_date", "") <= today_str
-         and q.get("follow_up_date", "")],
+         and q.get("follow_up_date", "")
+         and q.get("follow_up_date", "") <= next14_str],
         key=lambda x: x.get("follow_up_date", "")
     )
 
