@@ -65,6 +65,14 @@
             <option value="{{ c }}" {{ 'selected' if client_filter == c }}>{{ c }}</option>
             {% endfor %}
           </select>
+          {% if inv_plants %}
+          <select name="plant" class="form-select form-select-sm" style="width:150px;">
+            <option value="">All States</option>
+            {% for p in inv_plants %}
+            <option value="{{ p }}" {{ 'selected' if plant_filter == p }}>{{ p }}</option>
+            {% endfor %}
+          </select>
+          {% endif %}
         </div>
         <div class="d-flex gap-2 flex-wrap align-items-center">
           <span class="text-muted small" style="min-width:75px;">Invoice date:</span>
@@ -77,13 +85,13 @@
           <button type="submit" class="btn btn-sm btn-outline-secondary">
             <i class="bi bi-search me-1"></i>Apply
           </button>
-          {% if search or status_filter or date_from or date_to or client_filter %}
+          {% if search or status_filter or date_from or date_to or client_filter or plant_filter %}
           <a href="{{ url_for('invoicing') }}" class="btn btn-sm btn-outline-secondary">
             <i class="bi bi-x-lg me-1"></i>Clear
           </a>
           {% endif %}
         </div>
-        {% if search or status_filter or date_from or date_to or client_filter %}
+        {% if search or status_filter or date_from or date_to or client_filter or plant_filter %}
         <div class="alert alert-light py-1 px-3 mt-2 small d-flex align-items-center gap-2"
              style="border-left:3px solid #0D9488;">
           <i class="bi bi-funnel text-teal"></i>
@@ -91,6 +99,7 @@
             {% if date_from and date_to %}{{ date_from }} to {{ date_to }}{% elif date_from %}From {{ date_from }}{% elif date_to %}Up to {{ date_to }}{% endif %}
             {% if status_filter %} · Status: <strong>{{ status_filter }}</strong>{% endif %}
             {% if client_filter %} · Client: <strong>{{ client_filter }}</strong>{% endif %}
+            {% if plant_filter %} · State: <strong>{{ plant_filter }}</strong>{% endif %}
           </span>
         </div>
         {% endif %}
@@ -105,6 +114,7 @@
               <th>Invoice #</th>
               <th>Client</th>
               <th>Project</th>
+              <th>State</th>
               <th>Date</th>
               <th>Due Date</th>
               <th class="text-end">Total</th>
@@ -129,6 +139,13 @@
                   {%- if line_projs %}
                     <span title="{{ line_projs | join(', ') }}">{{ line_projs | join(', ') }}</span>
                   {%- else %}—{%- endif %}
+                {%- endif %}
+              </td>
+              <td>
+                {%- if inv.plant_state %}
+                  <span class="badge" style="background:#0D9488;color:#fff;font-size:11px;font-weight:700;letter-spacing:.04em;">{{ inv.plant_state }}</span>
+                {%- else %}
+                  <span class="text-muted small">—</span>
                 {%- endif %}
               </td>
               <td>{{ meta.get('invoice_date','—') }}</td>

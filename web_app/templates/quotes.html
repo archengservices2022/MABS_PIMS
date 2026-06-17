@@ -418,68 +418,65 @@
 
   <!-- ══ TAB 3 — SALES PEOPLE ════════════════════════════════════════════════ -->
   <div class="tab-pane fade" id="tab-salespeople">
-    <div class="row g-3">
-      <div class="col-lg-4">
-        <div class="card-panel">
-          <h6 class="section-heading">Add Sales Person</h6>
-          <form method="POST" action="{{ url_for('sales_person_new') }}">
-            <div class="mb-2">
-              <label class="form-label">Name <span class="text-danger">*</span></label>
-              <input type="text" name="name" class="form-control form-control-sm" required>
-            </div>
-            <div class="mb-2">
-              <label class="form-label">Phone</label>
-              <input type="text" name="phone" class="form-control form-control-sm">
-            </div>
-            <div class="mb-3">
-              <label class="form-label">Email</label>
-              <input type="email" name="email" class="form-control form-control-sm">
-            </div>
-            <button type="submit" class="btn btn-teal btn-sm w-100">
-              <i class="bi bi-person-plus me-1"></i>Add Sales Person
-            </button>
-          </form>
-        </div>
+    <div class="card-panel">
+      <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <h6 class="panel-title mb-0">
+          <i class="bi bi-people me-1" style="color:#0D9488;"></i>
+          Sales People
+          <span class="badge bg-secondary ms-1">{{ sales_people|length }}</span>
+        </h6>
+        {% if 'settings' in allowed_pages %}
+        <a href="{{ url_for('settings') }}?tab=users" class="btn btn-xs btn-outline-secondary">
+          <i class="bi bi-gear me-1"></i>Manage in Settings
+        </a>
+        {% endif %}
       </div>
 
-      <div class="col-lg-8">
-        <div class="card-panel">
-          <h6 class="section-heading">
-            Sales People <span class="badge bg-secondary ms-1">{{ sales_people|length }}</span>
-          </h6>
-          <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle">
-              <thead>
-                <tr><th>Name</th><th>Phone</th><th>Email</th><th></th></tr>
-              </thead>
-              <tbody>
-                {% for sp in sales_people %}
-                <tr>
-                  <td class="fw-bold">{{ sp.get('name','—') }}</td>
-                  <td>{{ sp.get('phone','—') }}</td>
-                  <td>{{ sp.get('email','—') }}</td>
-                  <td class="text-end">
-                    <form method="POST"
-                          action="{{ url_for('sales_person_delete', person_id=sp.firebase_id) }}"
-                          onsubmit="return confirm('Remove {{ sp.get('name','') }}?');">
-                      <button type="submit" class="btn btn-xs btn-outline-danger">
-                        <i class="bi bi-trash"></i>
-                      </button>
-                    </form>
-                  </td>
-                </tr>
+      <div class="alert py-2 mb-3" style="background:#F0FDF4;border:1px solid #86EFAC;font-size:13px;">
+        <i class="bi bi-info-circle me-1" style="color:#16A34A;"></i>
+        Sales people are pulled from <strong>Settings → Users</strong> (Sales &amp; Admin roles).
+        Add or remove people there to update this list.
+      </div>
+
+      {% if sales_people %}
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Title</th>
+              <th>Email</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for sp in sales_people %}
+            <tr>
+              <td class="fw-semibold">{{ sp.get('name','—') }}</td>
+              <td class="text-muted">{{ sp.get('title','—') }}</td>
+              <td class="text-muted small">{{ sp.get('email','—') }}</td>
+              <td>
+                {% if sp.get('from_users') %}
+                <span class="badge" style="background:#0D9488;color:#fff;font-size:11px;">Settings</span>
                 {% else %}
-                <tr>
-                  <td colspan="4" class="text-center text-muted py-4">
-                    <i class="bi bi-people fs-2 d-block mb-2"></i>No sales people added yet.
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
+                <span class="badge bg-secondary" style="font-size:11px;">Legacy</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-center text-muted py-5">
+        <i class="bi bi-people" style="font-size:40px;opacity:.3;"></i>
+        <div class="mt-2">No sales people found.
+          {% if 'settings' in allowed_pages %}
+          <a href="{{ url_for('settings') }}?tab=users">Add employees in Settings →</a>
+          {% endif %}
         </div>
       </div>
+      {% endif %}
     </div>
   </div><!-- /tab-salespeople -->
 

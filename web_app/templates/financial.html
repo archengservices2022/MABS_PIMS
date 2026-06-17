@@ -231,78 +231,24 @@ a[href*="filter_expense"]:hover {
   padding: 10px 14px; background: #f8fafc; border-radius: 10px;
   border: 1px solid #e2e8f0; margin-bottom: 16px;
 }
+/* KPI amber + purple variants */
+.kpi-amber::before { background: #D97706; }
+.kpi-amber .kpi-icon-sm { color: #D97706; }
+.kpi-purple::before { background: #7C3AED; }
+.kpi-purple .kpi-icon-sm { color: #7C3AED; }
+/* Overview AR aging mini-bars */
+.ar-aging-row { font-size: 12px; margin-bottom: 6px; }
+.ar-aging-bar { height: 4px; border-radius: 4px; background: #F1F5F9; overflow: hidden; margin-top: 2px; }
+.ar-aging-bar-fill { height: 100%; border-radius: 4px; transition: width .5s; }
+/* Overview section divider label */
+.ovw-section-label {
+  font-size: 10px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .06em; color: #94a3b8; margin-bottom: 8px; margin-top: 14px;
+}
 </style>
 {% endblock %}
 
 {% block content %}
-
-<!-- ── Global Finance Filter Bar ─────────────────────────────────────────── -->
-{% set current_year_val = today_date[:4]|int %}
-<div class="fin-filter-bar">
-  <div class="d-flex gap-2 align-items-start flex-wrap">
-
-    <!-- Year pills -->
-    <div>
-      <div class="ffb-label"><i class="bi bi-calendar3 me-1"></i>Year</div>
-      <div class="d-flex gap-1 flex-wrap">
-        {% for yr in available_years|sort(reverse=True) %}
-        <a href="?tab={{ active_tab or 'overview' }}&year={{ yr }}"
-           class="yr-pill {{ 'yr-active' if yr == selected_year }} {{ 'yr-current' if yr == current_year_val and yr != selected_year }}">{{ yr }}</a>
-        {% endfor %}
-      </div>
-    </div>
-
-    <div class="ffb-divider d-none d-md-block"></div>
-
-    <!-- Quick range pills -->
-    <div>
-      <div class="ffb-label"><i class="bi bi-lightning-charge me-1"></i>Quick Filter</div>
-      <div class="d-flex gap-1 flex-wrap" id="rangeGroup">
-        <span class="range-pill" data-range="this-month">This Month</span>
-        <span class="range-pill" data-range="last-month">Last Month</span>
-        <span class="range-pill" data-range="this-quarter">This Quarter</span>
-        <span class="range-pill" data-range="ytd">Year to Date</span>
-        <span class="range-pill rp-active" data-range="all">All</span>
-      </div>
-    </div>
-
-    <div class="ffb-divider d-none d-md-block"></div>
-
-    <!-- Month pills -->
-    <div>
-      <div class="ffb-label"><i class="bi bi-calendar-month me-1"></i>Month</div>
-      <div class="d-flex gap-1 flex-wrap" id="monthGroup">
-        {% for mn in ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
-        <span class="mo-pill" data-month="{{ loop.index }}">{{ mn }}</span>
-        {% endfor %}
-      </div>
-    </div>
-
-    <div class="ffb-divider d-none d-lg-block"></div>
-
-    <!-- Custom date range -->
-    <div>
-      <div class="ffb-label"><i class="bi bi-calendar-range me-1"></i>Custom Range</div>
-      <div class="d-flex gap-2 align-items-center flex-wrap">
-        <input type="date" id="ffbFrom" class="ffb-date">
-        <span style="color:#475569;">→</span>
-        <input type="date" id="ffbTo" class="ffb-date">
-        <button onclick="applyCustomRange()" style="background:#0D9488;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;">Apply</button>
-        <button onclick="clearFinFilter()" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;">Clear</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Active filter chip -->
-  <div id="finActiveChip" class="mt-2" style="display:none;">
-    <span class="fin-active-chip">
-      <i class="bi bi-funnel-fill"></i>
-      <span id="finActiveChipText">Filtered</span>
-      <span onclick="clearFinFilter()" style="cursor:pointer;opacity:.7;margin-left:2px;">✕</span>
-    </span>
-    <span style="font-size:11px;color:#475569;margin-left:6px;">Filtering Income, Expenses &amp; Aging</span>
-  </div>
-</div>
 
 <!-- ── Tab nav ──────────────────────────────────────────────────────────────── -->
 <ul class="nav nav-tabs mb-3" id="finTabs">
@@ -354,17 +300,19 @@ a[href*="filter_expense"]:hover {
 ═════════════════════════════════════════════════════════════════ -->
 <div class="tab-pane fade {{ 'show active' if active_tab in ('overview', '') else '' }}" id="tab-overview">
 
-  <!-- Row 1 — 4 KPI cards -->
   {% set collection_pct = ((total_paid / total_invoiced * 100) if total_invoiced > 0 else 0)|round|int %}
+  {% set open_count = aging_buckets['current']|length + aging_buckets['1_30']|length + aging_buckets['31_60']|length + aging_buckets['61_90']|length + aging_buckets['90plus']|length %}
+
+  <!-- ── Row 1 — 6 KPI cards ─────────────────────────────────────── -->
   <div class="row g-3 mb-4">
-    <div class="col-6 col-xl-3">
+    <div class="col-6 col-xl-2">
       <div class="kpi-card kpi-teal">
         <div class="kpi-top"><span class="kpi-label">Total Invoiced</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
         <div class="kpi-value">${{ "{:,.0f}".format(total_invoiced) }}</div>
-        <div class="kpi-sub">{{ rev_list|length }} paid entries</div>
+        <div class="kpi-sub">{{ rev_list|length }} invoice{{ 's' if rev_list|length != 1 }}</div>
       </div>
     </div>
-    <div class="col-6 col-xl-3">
+    <div class="col-6 col-xl-2">
       <div class="kpi-card kpi-green">
         <div class="kpi-top"><span class="kpi-label">Collected</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
         <div class="kpi-value">${{ "{:,.0f}".format(total_paid) }}</div>
@@ -372,45 +320,68 @@ a[href*="filter_expense"]:hover {
         <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ collection_pct }}%"></div></div>
       </div>
     </div>
-    <div class="col-6 col-xl-3">
+    <div class="col-6 col-xl-2">
+      <div class="kpi-card kpi-amber">
+        <div class="kpi-top"><span class="kpi-label">Outstanding A/R</span><i class="bi bi-clock-history kpi-icon-sm"></i></div>
+        <div class="kpi-value">${{ "{:,.0f}".format(aging_total_outstanding) }}</div>
+        <div class="kpi-sub">{{ open_count }} open invoice{{ 's' if open_count != 1 }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-2">
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
         <div class="kpi-value">${{ "{:,.0f}".format(total_expenses) }}</div>
         <div class="kpi-sub">{{ expenses|length }} entries</div>
       </div>
     </div>
-    <div class="col-6 col-xl-3">
+    <div class="col-6 col-xl-2">
+      <div class="kpi-card kpi-purple">
+        <div class="kpi-top"><span class="kpi-label">Total Salaries</span><i class="bi bi-people-fill kpi-icon-sm"></i></div>
+        <div class="kpi-value">${{ "{:,.0f}".format(total_salaries) }}</div>
+        <div class="kpi-sub">payroll · {{ selected_year }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-2">
       <div class="kpi-card {{ 'kpi-green' if net_profit >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
         <div class="kpi-value {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(net_profit) }}</div>
-        <div class="kpi-sub">revenue minus expenses</div>
+        <div class="kpi-sub">rev − exp − salaries</div>
       </div>
     </div>
   </div>
 
-  <!-- Row 2 — Chart (left) + Summary panel (right) -->
-  <div class="row g-3 mb-3">
+  <!-- ── Row 2 — Chart + Financial Health panel ──────────────────── -->
+  <div class="row g-3 mb-3" style="align-items:stretch;">
     <div class="col-lg-8">
-      <div class="card-panel" style="height:100%;">
+      <div class="card-panel" style="height:100%;min-height:420px;display:flex;flex-direction:column;">
         <div class="d-flex justify-content-between align-items-center mb-3">
-          <h6 class="panel-title mb-0">Revenue vs Expenses — Last 6 Months</h6>
-          <div class="d-flex gap-2 align-items-center">
+          <div>
+            <h6 class="panel-title mb-0">Revenue vs Expenses</h6>
+            <span class="text-muted" style="font-size:11px;">Monthly breakdown · all recorded data</span>
+          </div>
+          <div class="d-flex gap-3 align-items-center">
             <span class="d-flex align-items-center gap-1 small text-muted">
               <span style="width:10px;height:10px;border-radius:2px;background:#0D9488;display:inline-block;"></span>Revenue
             </span>
             <span class="d-flex align-items-center gap-1 small text-muted">
               <span style="width:10px;height:10px;border-radius:2px;background:#F87171;display:inline-block;"></span>Expenses
             </span>
+            <span class="d-flex align-items-center gap-1 small text-muted">
+              <span style="width:14px;height:3px;border-radius:2px;background:#7C3AED;display:inline-block;margin-bottom:1px;"></span>Net P/L
+            </span>
           </div>
         </div>
-        <canvas id="finChart" height="160"></canvas>
+        <div style="flex:1;min-height:340px;position:relative;">
+          <canvas id="finChart" style="width:100%!important;"></canvas>
+        </div>
       </div>
     </div>
 
     <div class="col-lg-4">
       <div class="card-panel" style="height:100%;">
-        <h6 class="panel-title mb-3">Financial Summary</h6>
+        <h6 class="panel-title mb-3">Financial Health</h6>
 
+        <!-- Key metrics -->
         <div class="summary-row">
           <span class="text-muted small">Total Invoiced</span>
           <span class="fw-bold">${{ "{:,.0f}".format(total_invoiced) }}</span>
@@ -420,43 +391,61 @@ a[href*="filter_expense"]:hover {
           <span class="fw-bold text-success">${{ "{:,.0f}".format(total_paid) }}</span>
         </div>
         <div class="summary-row">
-          <span class="text-muted small">Outstanding</span>
-          {% set outstanding = total_invoiced - total_paid %}
-          <span class="fw-bold {{ 'text-danger' if outstanding > 0 else 'text-success' }}">${{ "{:,.0f}".format(outstanding) }}</span>
+          <span class="text-muted small">Outstanding A/R</span>
+          <span class="fw-bold {{ 'text-warning' if aging_total_outstanding > 0 else 'text-success' }}">${{ "{:,.0f}".format(aging_total_outstanding) }}</span>
         </div>
         <div class="summary-row">
-          <span class="text-muted small">Expenses</span>
+          <span class="text-muted small">Total Expenses</span>
           <span class="fw-bold text-danger">${{ "{:,.0f}".format(total_expenses) }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="text-muted small">Total Salaries</span>
+          <span class="fw-bold text-danger">${{ "{:,.0f}".format(total_salaries) }}</span>
         </div>
         <div class="summary-row">
           <span class="text-muted small">Net Profit</span>
           <span class="{{ 'pnl-badge-pos' if net_profit >= 0 else 'pnl-badge-neg' }}">${{ "{:,.0f}".format(net_profit) }}</span>
         </div>
-        {% if total_labor_cost and total_labor_cost > 0 %}
-        <div class="summary-row">
-          <span class="text-muted small">Labor Cost <i class="bi bi-info-circle" title="From Employees time tracking (hours × hourly rate)"></i></span>
-          <span class="fw-bold text-danger">${{ "{:,.0f}".format(total_labor_cost) }}</span>
-        </div>
-        <div class="summary-row">
-          <span class="text-muted small">Net Profit (after Labor)</span>
-          <span class="{{ 'pnl-badge-pos' if net_profit_after_labor >= 0 else 'pnl-badge-neg' }}">${{ "{:,.0f}".format(net_profit_after_labor) }}</span>
+
+        <!-- Collection rate bar -->
+        {% if total_invoiced > 0 %}
+        <div class="mt-3 mb-2">
+          <div class="d-flex justify-content-between small mb-1">
+            <span class="text-muted">Collection Rate</span>
+            <span class="fw-semibold" style="color:#0D9488;">{{ collection_pct }}%</span>
+          </div>
+          <div class="progress-thin"><div class="fill" style="width:{{ collection_pct }}%;background:#0D9488;"></div></div>
         </div>
         {% endif %}
 
-        {% if total_invoiced > 0 %}
-        <div class="mt-3">
-          <div class="d-flex justify-content-between small mb-1">
-            <span class="text-muted">Collection Rate</span>
-            <span class="fw-semibold text-teal">{{ collection_pct }}%</span>
+        <!-- A/R Aging mini breakdown -->
+        {% if aging_total_outstanding > 0 %}
+        <div class="mt-2 pt-2" style="border-top:1px solid #F1F5F9;">
+          <div class="ovw-section-label">A/R Aging Snapshot</div>
+          {% set aging_data = [
+            ('Current',    aging_totals.get('current', 0), '#10B981'),
+            ('1–30 days',  aging_totals.get('1_30', 0),   '#F59E0B'),
+            ('31–60 days', aging_totals.get('31_60', 0),  '#F97316'),
+            ('61–90 days', aging_totals.get('61_90', 0),  '#EF4444'),
+            ('90+ days',   aging_totals.get('90plus', 0), '#7F1D1D'),
+          ] %}
+          {% for label, amt, color in aging_data %}{% if amt > 0 %}
+          {% set pct = ((amt / aging_total_outstanding * 100) if aging_total_outstanding > 0 else 0)|round|int %}
+          <div class="ar-aging-row">
+            <div class="d-flex justify-content-between">
+              <span class="text-muted">{{ label }}</span>
+              <span class="fw-semibold" style="color:{{ color }};">${{ "{:,.0f}".format(amt) }}</span>
+            </div>
+            <div class="ar-aging-bar"><div class="ar-aging-bar-fill" style="width:{{ pct }}%;background:{{ color }};"></div></div>
           </div>
-          <div class="progress-thin"><div class="fill bg-teal" style="width:{{ collection_pct }}%;background:#0D9488;"></div></div>
+          {% endif %}{% endfor %}
         </div>
         {% endif %}
 
         <!-- AI forecast -->
         <div class="mt-3 pt-3" style="border-top:1px solid #F1F5F9;">
           <div class="d-flex justify-content-between align-items-center mb-2">
-            <span class="small fw-semibold"><i class="bi bi-robot me-1 text-teal"></i>AI Cash Flow</span>
+            <span class="small fw-semibold"><i class="bi bi-robot me-1" style="color:#0D9488;"></i>AI Cash Flow</span>
             <button class="btn btn-xs btn-outline-teal" id="cashFlowBtn">
               <i class="bi bi-magic me-1"></i>Forecast
             </button>
@@ -469,20 +458,20 @@ a[href*="filter_expense"]:hover {
     </div>
   </div>
 
-  <!-- Row 3 — Two pie charts -->
+  <!-- ── Row 3 — Invoice status + Expense categories ─────────────── -->
   <div class="row g-3">
     <div class="col-md-6">
       <div class="card-panel">
-        <h6 class="panel-title mb-3">Invoice Status Breakdown</h6>
-        <div style="max-height:220px;display:flex;justify-content:center;">
+        <h6 class="panel-title mb-3"><i class="bi bi-pie-chart me-1" style="color:#0D9488;"></i>Invoice Status Breakdown</h6>
+        <div style="height:320px;position:relative;">
           <canvas id="invStatusChart"></canvas>
         </div>
       </div>
     </div>
     <div class="col-md-6">
       <div class="card-panel">
-        <h6 class="panel-title mb-3">Expense by Category</h6>
-        <div style="max-height:220px;display:flex;justify-content:center;">
+        <h6 class="panel-title mb-3"><i class="bi bi-grid-3x3-gap me-1" style="color:#7C3AED;"></i>Expense by Category</h6>
+        <div style="height:320px;position:relative;">
           <canvas id="expCatChart"></canvas>
         </div>
       </div>
@@ -712,12 +701,14 @@ a[href*="filter_expense"]:hover {
                   <i class="bi bi-paperclip"></i>
                 </button>
                 {% endif %}
+                {% if user_role == 'admin' %}
                 <form method="POST" action="{{ url_for('expense_delete', exp_id=exp.firebase_id) }}"
                       onsubmit="return confirm('Delete this expense?');" style="display:inline;">
-                  <button type="submit" class="btn btn-xs btn-outline-danger">
+                  <button type="submit" class="btn btn-xs btn-outline-danger" title="Delete (Admin only)">
                     <i class="bi bi-trash"></i>
                   </button>
                 </form>
+                {% endif %}
               </div>
               {% endif %}
             </td>
@@ -1656,183 +1647,6 @@ function viewReceipt(expId) {
     </button>
   </div>
 
-  <!-- Balance Sheet Filter Bar -->
-  <div class="fin-filter-bar mb-3">
-    <div class="d-flex gap-2 align-items-start flex-wrap">
-
-      <!-- Year pills -->
-      <div>
-        <div class="ffb-label"><i class="bi bi-calendar3 me-1"></i>Year</div>
-        <div class="d-flex gap-1 flex-wrap">
-          {% set bs_cur_yr = today_date[:4]|int %}
-          {% for yr in available_years|sort(reverse=True) %}
-          <a href="?tab=balance-sheet&year={{ yr }}"
-             class="yr-pill {{ 'yr-active' if yr == selected_year }} {{ 'yr-current' if yr == bs_cur_yr and yr != selected_year }}">{{ yr }}</a>
-          {% endfor %}
-        </div>
-      </div>
-
-      <div class="ffb-divider d-none d-md-block"></div>
-
-      <!-- Quarter pills -->
-      <div>
-        <div class="ffb-label"><i class="bi bi-grid me-1"></i>Quarter</div>
-        <div class="d-flex gap-1 flex-wrap" id="bsQuarterGroup">
-          <span class="bs-q-pill" data-months="1,2,3">Q1 <small style="opacity:.7;">Jan–Mar</small></span>
-          <span class="bs-q-pill" data-months="4,5,6">Q2 <small style="opacity:.7;">Apr–Jun</small></span>
-          <span class="bs-q-pill" data-months="7,8,9">Q3 <small style="opacity:.7;">Jul–Sep</small></span>
-          <span class="bs-q-pill" data-months="10,11,12">Q4 <small style="opacity:.7;">Oct–Dec</small></span>
-        </div>
-      </div>
-
-      <div class="ffb-divider d-none d-md-block"></div>
-
-      <!-- Month pills -->
-      <div>
-        <div class="ffb-label"><i class="bi bi-calendar-month me-1"></i>Month — click to drill down</div>
-        <div class="d-flex gap-1 flex-wrap" id="bsMonthGroup">
-          {% for mn in ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
-          <span class="bs-mo-pill" data-month="{{ loop.index }}">{{ mn }}</span>
-          {% endfor %}
-        </div>
-      </div>
-
-      <div class="ms-auto d-flex align-items-end pb-1">
-        <span onclick="bsClearSelection()" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;">
-          <i class="bi bi-x me-1"></i>Clear
-        </span>
-      </div>
-    </div>
-
-    <!-- Active selection chip -->
-    <div id="bsActiveChip" class="mt-2" style="display:none;">
-      <span class="fin-active-chip">
-        <i class="bi bi-funnel-fill"></i>
-        <span id="bsActiveChipText"></span>
-        <span onclick="bsClearSelection()" style="cursor:pointer;opacity:.7;margin-left:3px;">✕</span>
-      </span>
-      <span style="font-size:11px;color:#475569;margin-left:6px;">Click any revenue cell in the table to view details</span>
-    </div>
-  </div>
-
-  <script>
-  (function() {
-    var BS_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-    // Highlight a set of month columns in the annual table
-    function bsHighlightColumns(months) {
-      document.querySelectorAll('.month-header').forEach(function(h) {
-        var mo = parseInt(h.getAttribute('data-month'));
-        var active = months.indexOf(mo) !== -1;
-        h.style.background   = active ? '#0D9488' : '';
-        h.style.color        = active ? '#fff'    : '';
-        h.style.borderRadius = active ? '4px'     : '';
-      });
-      document.querySelectorAll('.annual-revenue-cell').forEach(function(c) {
-        var mo = parseInt(c.getAttribute('data-month'));
-        c.style.background = (months.indexOf(mo) !== -1) ? '#f0fdf4' : '';
-      });
-    }
-
-    function bsClearHighlights() {
-      document.querySelectorAll('.month-header').forEach(function(h) { h.style.background=''; h.style.color=''; });
-      document.querySelectorAll('.annual-revenue-cell').forEach(function(c) { c.style.background=''; });
-      var panel = document.getElementById('monthPaymentsPanel');
-      if (panel) panel.style.display = 'none';
-      document.querySelectorAll('.annual-revenue-cell').forEach(function(c){ c.classList.remove('active-month-cell'); });
-    }
-
-    function showChip(text) {
-      var chip = document.getElementById('bsActiveChip');
-      var txt  = document.getElementById('bsActiveChipText');
-      if (chip) chip.style.display = '';
-      if (txt)  txt.textContent = text;
-    }
-    function hideChip() {
-      var chip = document.getElementById('bsActiveChip');
-      if (chip) chip.style.display = 'none';
-    }
-
-    window.bsClearSelection = function() {
-      document.querySelectorAll('.bs-q-pill').forEach(function(p){ p.classList.remove('bsq-active'); });
-      document.querySelectorAll('.bs-mo-pill').forEach(function(p){ p.classList.remove('bsm-active'); });
-      bsClearHighlights();
-      hideChip();
-    };
-
-    // Quarter pills
-    document.querySelectorAll('.bs-q-pill').forEach(function(pill) {
-      pill.addEventListener('click', function() {
-        var already = this.classList.contains('bsq-active');
-        document.querySelectorAll('.bs-q-pill').forEach(function(p){ p.classList.remove('bsq-active'); });
-        document.querySelectorAll('.bs-mo-pill').forEach(function(p){ p.classList.remove('bsm-active'); });
-        if (already) { bsClearHighlights(); hideChip(); return; }
-        this.classList.add('bsq-active');
-        var months = this.dataset.months.split(',').map(Number);
-        bsHighlightColumns(months);
-        var qlabel = this.textContent.trim().split(' ')[0]; // "Q1", "Q2" etc
-        showChip(qlabel + ' — ' + {{ selected_year }});
-        var panel = document.getElementById('monthPaymentsPanel');
-        if (panel) panel.style.display = 'none';
-      });
-    });
-
-    // Month pills
-    document.querySelectorAll('.bs-mo-pill').forEach(function(pill) {
-      pill.addEventListener('click', function() {
-        var mo = parseInt(this.dataset.month);
-        var already = this.classList.contains('bsm-active');
-        document.querySelectorAll('.bs-mo-pill').forEach(function(p){ p.classList.remove('bsm-active'); });
-        document.querySelectorAll('.bs-q-pill').forEach(function(p){ p.classList.remove('bsq-active'); });
-        if (already) { bsClearHighlights(); hideChip(); return; }
-        this.classList.add('bsm-active');
-        bsHighlightColumns([mo]);
-        showChip(BS_MONTHS[mo-1] + ' ' + {{ selected_year }});
-        // Open drill-down for this month
-        if (typeof showMonthPayments === 'function') {
-          showMonthPayments(mo);
-        }
-      });
-    });
-
-    // Clicking a month header in the table → sync the BS month pills
-    document.addEventListener('DOMContentLoaded', function() {
-      document.querySelectorAll('.month-header').forEach(function(h) {
-        h.addEventListener('click', function() {
-          var mo = parseInt(this.getAttribute('data-month'));
-          document.querySelectorAll('.bs-mo-pill').forEach(function(p){
-            p.classList.toggle('bsm-active', parseInt(p.dataset.month) === mo);
-          });
-          document.querySelectorAll('.bs-q-pill').forEach(function(p){ p.classList.remove('bsq-active'); });
-          bsHighlightColumns([mo]);
-          showChip(BS_MONTHS[mo-1] + ' ' + {{ selected_year }});
-        });
-      });
-    });
-  })();
-  </script>
-
-  <style>
-  .bs-q-pill {
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 4px 12px; border-radius: 20px;
-    border: 1.5px solid #334155; background: transparent;
-    color: #94a3b8; font-size: 12px; font-weight: 700;
-    cursor: pointer; transition: all .18s; user-select: none;
-  }
-  .bs-q-pill:hover { border-color: #f59e0b; color: #f59e0b; }
-  .bs-q-pill.bsq-active { background: #f59e0b; border-color: #f59e0b; color: #1f2937; }
-  .bs-mo-pill {
-    display: inline-flex; align-items: center;
-    padding: 4px 10px; border-radius: 16px;
-    border: 1.5px solid #334155; background: transparent;
-    color: #94a3b8; font-size: 11px; font-weight: 600;
-    cursor: pointer; transition: all .18s; user-select: none;
-  }
-  .bs-mo-pill:hover { border-color: #0D9488; color: #0D9488; }
-  .bs-mo-pill.bsm-active { background: #0D9488; border-color: #0D9488; color: #fff; box-shadow: 0 0 0 3px rgba(13,148,136,.2); }
-  </style>
-
   <!-- Stat Cards Row -->
   <div class="row g-3 mb-4">
     <div class="col-6 col-xl">
@@ -1877,9 +1691,8 @@ function viewReceipt(expId) {
 
   <!-- Annual Financial Summary Table -->
   <div class="card mb-4">
-    <div class="card-header bg-light d-flex justify-content-between align-items-center">
-      <h6 class="mb-0">Annual Financial Summary — {{ selected_year }} <small class="text-muted fw-normal ms-2" style="font-size:12px;">Click a revenue cell or use Month pills above to drill down</small></h6>
-      <span id="bsMonthLabel" class="badge" style="background:#0D9488;color:#fff;font-size:11px;padding:4px 10px;display:none;"></span>
+    <div class="card-header bg-light">
+      <h6 class="mb-0">Annual Financial Summary — {{ selected_year }} <small class="text-muted fw-normal ms-2" style="font-size:12px;">Click any revenue amount to view monthly details</small></h6>
     </div>
     <div class="card-body p-0">
       <div class="table-responsive">
@@ -1925,7 +1738,7 @@ function viewReceipt(expId) {
               {% set netval = (annual_netpl.get(m, 0) | float) %}
               <td style="{{ 'color:#16a34a;' if netval >= 0 else 'color:#dc2626;' }}">${{ netval | round(2) }}</td>
               {% endfor %}
-              <td style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ ((annual_revenue.values() | sum) - (total_expenses | default(0))) | round(2) }}</td>
+              <td style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ ((annual_revenue.values() | sum) - (total_expenses | default(0)) - (total_salaries | default(0))) | round(2) }}</td>
             </tr>
           </tbody>
         </table>
@@ -2188,7 +2001,7 @@ function viewReceipt(expId) {
         dueSec.style.display = 'none';
       }
 
-      /* ── 5. Expenses ── */
+      /* ── 4. Expenses ── */
       var expenses = monthlyExpenseDetails[mkey] || [];
       var expSec = document.getElementById('monthExpensesSection');
       if (expenses.length > 0) {
@@ -2209,7 +2022,7 @@ function viewReceipt(expId) {
         expSec.style.display = 'none';
       }
 
-      /* ── 6. Salaries ── */
+      /* ── 5. Salaries ── */
       var salaries = monthlySalaryDetails[mkey] || [];
       var salSec = document.getElementById('monthSalariesSection');
       if (salaries.length > 0) {
@@ -2322,237 +2135,6 @@ function viewReceipt(expId) {
   </div>
   {% endif %}
 
-  <!-- Divider Section -->
-  <div style="margin: 32px 0; padding: 0;">
-    <div style="height: 1px; background: linear-gradient(90deg, transparent, #e2e8f0 20%, #e2e8f0 80%, transparent); margin: 24px 0;"></div>
-  </div>
-
-  <!-- Salaries & Expenses Layout (2-column) -->
-  <div class="row mb-4 g-3">
-    <!-- LEFT: Salaries Section -->
-    <div class="col-md-6">
-      <div class="card">
-        <div class="card-header bg-light">
-          <h6 class="mb-0">SALARY</h6>
-        </div>
-        <div class="card-body">
-          <!-- Inside America Table -->
-          <div class="mb-3">
-            <div style="border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden;">
-              <div style="font-weight: 700; padding: 8px 12px; border-bottom: 1px solid #cbd5e1;">
-                Inside America
-              </div>
-              <table class="table table-sm mb-0" style="border: none;">
-                <thead>
-                  <tr style="background: #1e293b; border-bottom: 1px solid #334155;">
-                    <th style="padding: 8px 12px; text-align: left; font-weight: 600; color: #ffffff; border-right: 1px solid #334155;">Date</th>
-                    <th style="padding: 8px 12px; text-align: left; font-weight: 600; color: #ffffff; border-right: 1px solid #334155;">Employee Name</th>
-                    <th style="padding: 8px 12px; text-align: right; font-weight: 600; color: #ffffff;">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% if salaries_domestic %}
-                    {% for sal in salaries_domestic %}
-                    <tr style="border-bottom: 1px solid #e2e8f0;">
-                      <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #e2e8f0; color: #64748b; font-size:12px;">{{ sal.get('date', '—') }}</td>
-                      <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #e2e8f0;"><a href="/payroll?employee={{ sal.get('name', '—') }}&year={{ selected_year }}&region=Inside America" style="color: #0d9488; text-decoration: none; cursor: pointer; font-weight: 500;">{{ sal.get('name', '—') }}</a></td>
-                      <td style="padding: 8px 12px; text-align: right;">${{ "{:,.2f}".format(sal.get('amount', 0) | float) }}</td>
-                    </tr>
-                    {% endfor %}
-                  {% else %}
-                    <tr><td colspan="3" class="text-center text-muted py-3" style="font-size:13px;">No salary records for {{ selected_year }}</td></tr>
-                  {% endif %}
-                  <tr style="background: #f0fdf4; border-bottom: none; border-top: 2px solid #cbd5e1; font-weight: 700;">
-                    <td colspan="2" style="padding: 8px 12px; text-align: left; border-right: 1px solid #cbd5e1;">Total</td>
-                    <td style="padding: 8px 12px; text-align: right; color: #15803d;">${{ "{:,.2f}".format(salaries_domestic | sum(attribute='amount') | float) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Outside America Table -->
-          <div>
-            <div style="border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden;">
-              <div style="font-weight: 700; padding: 8px 12px; border-bottom: 1px solid #cbd5e1;">
-                Outside America
-              </div>
-              <table class="table table-sm mb-0" style="border: none;">
-                <thead>
-                  <tr style="background: #1e293b; border-bottom: 1px solid #334155;">
-                    <th style="padding: 8px 12px; text-align: left; font-weight: 600; color: #ffffff; border-right: 1px solid #334155;">Date</th>
-                    <th style="padding: 8px 12px; text-align: left; font-weight: 600; color: #ffffff; border-right: 1px solid #334155;">Employee Name</th>
-                    <th style="padding: 8px 12px; text-align: right; font-weight: 600; color: #ffffff;">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% if salaries_international %}
-                    {% for sal in salaries_international %}
-                    <tr style="border-bottom: 1px solid #e2e8f0;">
-                      <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #e2e8f0; color: #64748b; font-size:12px;">{{ sal.get('date', '—') }}</td>
-                      <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #e2e8f0;"><a href="/payroll?employee={{ sal.get('name', '—') }}&year={{ selected_year }}&region=Outside America" style="color: #0d9488; text-decoration: none; cursor: pointer; font-weight: 500;">{{ sal.get('name', '—') }}</a></td>
-                      <td style="padding: 8px 12px; text-align: right;">${{ "{:,.2f}".format(sal.get('amount', 0) | float) }}</td>
-                    </tr>
-                    {% endfor %}
-                  {% else %}
-                    <tr><td colspan="3" class="text-center text-muted py-3" style="font-size:13px;">No salary records for {{ selected_year }}</td></tr>
-                  {% endif %}
-                  <tr style="background: #f0fdf4; border-bottom: none; border-top: 2px solid #cbd5e1; font-weight: 700;">
-                    <td colspan="2" style="padding: 8px 12px; text-align: left; border-right: 1px solid #cbd5e1;">Total</td>
-                    <td style="padding: 8px 12px; text-align: right; color: #15803d;">${{ "{:,.2f}".format(salaries_international | sum(attribute='amount') | float) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- RIGHT: Expense Break-down Section -->
-    <div class="col-md-6">
-      <div class="card">
-        <div class="card-header bg-light">
-          <h6 class="mb-0">EXPENSE BREAK-DOWN</h6>
-        </div>
-        <div class="card-body">
-          <div style="border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden;">
-            <table class="table table-sm mb-0" style="border: none;">
-              <thead>
-                <tr style="background: #1e293b; border-bottom: 1px solid #334155;">
-                  <th style="padding: 8px 12px; text-align: left; font-weight: 600; color: #ffffff; border-right: 1px solid #334155;">Date</th>
-                  <th style="padding: 8px 12px; text-align: left; font-weight: 600; color: #ffffff; border-right: 1px solid #334155;">Expense Item</th>
-                  <th style="padding: 8px 12px; text-align: right; font-weight: 600; color: #ffffff;">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% if expenses_grouped %}
-                  {% for exp in expenses_grouped %}
-                  <tr style="border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #e2e8f0; color: #64748b; font-size:12px;">{{ exp.get('date', '—') }}</td>
-                    <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #e2e8f0;">
-                      <a href="{{ url_for('financial', tab='expenses', filter_expense=exp.expense_name, year=selected_year) }}" style="color: #0d9488; text-decoration: none; cursor: pointer; font-weight: 500;">
-                        {{ exp.expense_name }}
-                      </a>
-                    </td>
-                    <td style="padding: 8px 12px; text-align: right;">${{ "{:,.2f}".format(exp.amount | float) }}</td>
-                  </tr>
-                  {% endfor %}
-                {% else %}
-                  <tr><td colspan="3" class="text-center text-muted py-3" style="font-size:13px;">No expenses for {{ selected_year }}</td></tr>
-                {% endif %}
-                <tr style="background: #f0fdf4; border-bottom: none; border-top: 2px solid #cbd5e1; font-weight: 700;">
-                  <td></td>
-                  <td style="padding: 8px 12px; text-align: left; border-right: 1px solid #cbd5e1;">Total</td>
-                  <td style="padding: 8px 12px; text-align: right; color: #15803d;">${{ "{:,.2f}".format(total_expenses | default(0)) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Salary Breakdown Modal -->
-  <div id="salaryBreakdownPanel" class="card-panel mb-4" style="display:none; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h6 class="panel-title mb-0" id="salaryBreakdownTitle">Salary Breakdown</h6>
-      <button type="button" onclick="document.getElementById('salaryBreakdownPanel').style.display='none';" class="btn btn-sm btn-outline-secondary">
-        <i class="bi bi-x-lg"></i> Close
-      </button>
-    </div>
-    <div class="table-responsive">
-      <table class="table table-sm mb-0" style="font-size:13px;">
-        <thead style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
-          <tr>
-            <th style="padding:10px 14px; text-align: left; font-weight:700;">Date</th>
-            <th style="padding:10px 14px; text-align: right; font-weight:700;">Amount</th>
-            <th style="padding:10px 14px; text-align: left; font-weight:700;">Notes</th>
-          </tr>
-        </thead>
-        <tbody id="salaryBreakdownBody"></tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Expense Breakdown Modal -->
-  <div id="expenseBreakdownPanel" class="card-panel mb-4" style="display:none; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h6 class="panel-title mb-0" id="expenseBreakdownTitle">Expense Breakdown</h6>
-      <button type="button" onclick="document.getElementById('expenseBreakdownPanel').style.display='none';" class="btn btn-sm btn-outline-secondary">
-        <i class="bi bi-x-lg"></i> Close
-      </button>
-    </div>
-    <div class="table-responsive">
-      <table class="table table-sm mb-0" style="font-size:13px;">
-        <thead style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
-          <tr>
-            <th style="padding:10px 14px; text-align: left; font-weight:700;">Date</th>
-            <th style="padding:10px 14px; text-align: left; font-weight:700;">Category</th>
-            <th style="padding:10px 14px; text-align: left; font-weight:700;">Vendor</th>
-            <th style="padding:10px 14px; text-align: right; font-weight:700;">Amount</th>
-            <th style="padding:10px 14px; text-align: left; font-weight:700;">Notes</th>
-          </tr>
-        </thead>
-        <tbody id="expenseBreakdownBody"></tbody>
-      </table>
-    </div>
-  </div>
-
-  <script>
-  (function() {
-    var salaryEntriesDomestic = {{ salary_entries_domestic | safe }};
-    var salaryEntriesInternational = {{ salary_entries_international | safe }};
-    var expenseEntries = {{ expense_entries | safe }};
-
-    window.showSalaryBreakdown = function(employeeName, region) {
-      var panel = document.getElementById('salaryBreakdownPanel');
-      var title = document.getElementById('salaryBreakdownTitle');
-      var tbody = document.getElementById('salaryBreakdownBody');
-
-      title.textContent = employeeName + ' — ' + region;
-
-      var entries = region === 'Inside America' ? salaryEntriesDomestic[employeeName] || [] : salaryEntriesInternational[employeeName] || [];
-
-      var rows = entries.map(function(e, idx) {
-        var rowBg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
-        return '<tr style="background:' + rowBg + '; border-bottom:1px solid #e2e8f0;">'
-          + '<td style="padding:10px 14px;">' + (e.date || '—') + '</td>'
-          + '<td style="padding:10px 14px; text-align:right; font-weight:700; color:#16a34a;">$' + parseFloat(e.amount || 0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td>'
-          + '<td style="padding:10px 14px;">' + (e.notes || '—') + '</td>'
-          + '</tr>';
-      });
-      tbody.innerHTML = rows.join('');
-      panel.style.display = 'block';
-      setTimeout(function(){ panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 80);
-    };
-
-    window.showExpenseBreakdown = function(expenseName) {
-      var panel = document.getElementById('expenseBreakdownPanel');
-      var title = document.getElementById('expenseBreakdownTitle');
-      var tbody = document.getElementById('expenseBreakdownBody');
-
-      title.textContent = expenseName + ' — Breakdown';
-
-      var entries = expenseEntries[expenseName] || [];
-
-      var rows = entries.map(function(e, idx) {
-        var rowBg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
-        return '<tr style="background:' + rowBg + '; border-bottom:1px solid #e2e8f0;">'
-          + '<td style="padding:10px 14px;">' + (e.date || '—') + '</td>'
-          + '<td style="padding:10px 14px;">' + (e.category || '—') + '</td>'
-          + '<td style="padding:10px 14px;">' + (e.vendor || '—') + '</td>'
-          + '<td style="padding:10px 14px; text-align:right; font-weight:700; color:#dc2626;">$' + parseFloat(e.amount || 0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td>'
-          + '<td style="padding:10px 14px;">' + (e.notes || '—') + '</td>'
-          + '</tr>';
-      });
-      tbody.innerHTML = rows.join('');
-      panel.style.display = 'block';
-      setTimeout(function(){ panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 80);
-    };
-  })();
-  </script>
 
 </div><!-- /tab-balance-sheet -->
 
@@ -2571,59 +2153,60 @@ function viewReceipt(expId) {
     </span>
   </div>
 
-  <!-- Aging Filter Bar (dark, consistent with global bar) -->
-  <div class="fin-filter-bar mb-3">
-    <div class="d-flex gap-2 align-items-start flex-wrap">
+  <!-- Aging Filter Bar (light) -->
+  <div class="d-flex gap-4 align-items-end flex-wrap mb-3 pb-3" style="border-bottom:1px solid #f1f5f9;">
 
-      <!-- Bucket pills -->
-      <div>
-        <div class="ffb-label"><i class="bi bi-layers me-1"></i>Aging Bucket</div>
-        <div class="d-flex gap-1 flex-wrap" id="agingBucketGroup">
-          <span class="bucket-pill bp-active" data-bucket="all" style="border-color:#334155;background:transparent;color:#94a3b8;">All Buckets</span>
-          <span class="bucket-pill" data-bucket="current" style="border-color:#334155;background:transparent;color:#94a3b8;">Current</span>
-          <span class="bucket-pill" data-bucket="1_30" style="border-color:#334155;background:transparent;color:#94a3b8;">1–30 Days</span>
-          <span class="bucket-pill" data-bucket="31_60" style="border-color:#334155;background:transparent;color:#94a3b8;">31–60 Days</span>
-          <span class="bucket-pill" data-bucket="61_90" style="border-color:#334155;background:transparent;color:#94a3b8;">61–90 Days</span>
-          <span class="bucket-pill" data-bucket="90plus" style="border-color:#334155;background:transparent;color:#94a3b8;">90+ Days</span>
-        </div>
+    <!-- Bucket pills -->
+    <div>
+      <div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">
+        <i class="bi bi-layers me-1"></i>Aging Bucket
       </div>
-
-      <div class="ffb-divider d-none d-md-block"></div>
-
-      <!-- Due date range -->
-      <div>
-        <div class="ffb-label"><i class="bi bi-calendar-range me-1"></i>Due Date Range</div>
-        <div class="d-flex gap-2 align-items-center flex-wrap">
-          <input type="date" id="agingDueFrom" class="ffb-date" placeholder="Due from">
-          <span style="color:#475569;">→</span>
-          <input type="date" id="agingDueTo" class="ffb-date" placeholder="Due to">
-          <button onclick="applyAgingDateRange()" style="background:#DC2626;color:#fff;border:none;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;">Apply</button>
-        </div>
+      <div class="d-flex gap-1 flex-wrap" id="agingBucketGroup">
+        <span class="bucket-pill bp-active" data-bucket="all">All Buckets</span>
+        <span class="bucket-pill" data-bucket="current">Current</span>
+        <span class="bucket-pill" data-bucket="1_30">1–30 Days</span>
+        <span class="bucket-pill" data-bucket="31_60">31–60 Days</span>
+        <span class="bucket-pill" data-bucket="61_90">61–90 Days</span>
+        <span class="bucket-pill" data-bucket="90plus">90+ Days</span>
       </div>
-
-      <div class="ffb-divider d-none d-md-block"></div>
-
-      <!-- Search + clear -->
-      <div>
-        <div class="ffb-label"><i class="bi bi-search me-1"></i>Search</div>
-        <div class="d-flex gap-2 align-items-center">
-          <input type="text" id="agingSearch" placeholder="Client or invoice #..." class="ffb-date" style="width:190px;" oninput="filterAging()">
-          <button onclick="clearAgingFilter()" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;">
-            <i class="bi bi-x me-1"></i>Clear
-          </button>
-        </div>
-      </div>
-
     </div>
 
-    <!-- Active filter chip -->
-    <div id="agingActiveChip" class="mt-2" style="display:none;">
-      <span class="fin-active-chip">
-        <i class="bi bi-funnel-fill"></i>
-        <span id="agingActiveChipText">Filtered</span>
-        <span onclick="clearAgingFilter()" style="cursor:pointer;opacity:.7;margin-left:3px;">✕</span>
-      </span>
+    <!-- Due date range -->
+    <div>
+      <div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">
+        <i class="bi bi-calendar-range me-1"></i>Due Date Range
+      </div>
+      <div class="d-flex gap-2 align-items-center flex-wrap">
+        <input type="date" id="agingDueFrom" class="form-control form-control-sm" style="width:145px;">
+        <span class="text-muted small">→</span>
+        <input type="date" id="agingDueTo" class="form-control form-control-sm" style="width:145px;">
+        <button onclick="applyAgingDateRange()" class="btn btn-sm btn-primary px-3">Apply</button>
+      </div>
     </div>
+
+    <!-- Search + clear -->
+    <div>
+      <div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">
+        <i class="bi bi-search me-1"></i>Search
+      </div>
+      <div class="d-flex gap-2 align-items-center">
+        <input type="text" id="agingSearch" placeholder="Client or invoice #..."
+               class="form-control form-control-sm" style="width:200px;" oninput="filterAging()">
+        <button onclick="clearAgingFilter()" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-x me-1"></i>Clear
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Active filter chip -->
+  <div id="agingActiveChip" class="mb-3" style="display:none;">
+    <span class="badge" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;font-size:11px;padding:5px 10px;border-radius:20px;">
+      <i class="bi bi-funnel-fill me-1"></i>
+      <span id="agingActiveChipText">Filtered</span>
+      <span onclick="clearAgingFilter()" style="cursor:pointer;opacity:.7;margin-left:6px;">✕</span>
+    </span>
   </div>
 
   <!-- Aging summary cards -->
@@ -2742,6 +2325,7 @@ function statusColors(labels) {
 const labels  = {{ chart_labels|safe }};
 const revenue = {{ chart_revenue|safe }};
 const expData = {{ chart_expenses|safe }};
+const netData = revenue.map((r, i) => r - expData[i]);
 const chartEl = document.getElementById('finChart');
 if (chartEl) {
   new Chart(chartEl, {
@@ -2749,15 +2333,25 @@ if (chartEl) {
     data: {
       labels,
       datasets: [
-        { label: 'Revenue Collected', data: revenue,  backgroundColor: '#0D9488', borderRadius: 5 },
-        { label: 'Expenses',          data: expData,  backgroundColor: '#F87171', borderRadius: 5 },
+        { label: 'Revenue',   data: revenue,  backgroundColor: 'rgba(13,148,136,.75)',  borderRadius: 5, order: 2 },
+        { label: 'Expenses',  data: expData,  backgroundColor: 'rgba(248,113,113,.75)', borderRadius: 5, order: 2 },
+        { label: 'Net P/L',   data: netData,  type: 'line', borderColor: '#7C3AED',
+          backgroundColor: 'transparent', borderWidth: 2, pointRadius: 3,
+          pointBackgroundColor: netData.map(v => v >= 0 ? '#10B981' : '#EF4444'),
+          tension: 0.3, order: 1 },
       ]
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: $${c.parsed.y.toLocaleString()}` } }
+        tooltip: {
+          callbacks: {
+            label: c => ` ${c.dataset.label}: $${c.parsed.y.toLocaleString('en-US', {minimumFractionDigits:0})}`
+          }
+        }
       },
       scales: {
         x: { grid: { display: false }, ticks: { color: '#94A3B8', font: { size: 11 } } },
@@ -2774,9 +2368,9 @@ const invSD = {{ inv_status_data|safe }};
 if (invSL.length) {
   new Chart(document.getElementById('invStatusChart'), {
     type: 'doughnut',
-    data: { labels: invSL, datasets: [{ data: invSD, backgroundColor: statusColors(invSL), borderWidth: 2, hoverOffset: 6 }] },
-    options: { responsive: true, cutout: '60%',
-      plugins: { legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 12, padding: 10 } },
+    data: { labels: invSL, datasets: [{ data: invSD, backgroundColor: statusColors(invSL), borderWidth: 2, hoverOffset: 8 }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '58%',
+      plugins: { legend: { position: 'right', labels: { font: { size: 12 }, boxWidth: 14, padding: 14 } },
                  tooltip: { callbacks: { label: c => ` ${c.label}: ${c.parsed}` } } } }
   });
 }
@@ -2787,9 +2381,9 @@ const expCD = {{ exp_cat_data|safe }};
 if (expCL.length) {
   new Chart(document.getElementById('expCatChart'), {
     type: 'doughnut',
-    data: { labels: expCL, datasets: [{ data: expCD, backgroundColor: EXP_PALETTE.slice(0, expCL.length), borderWidth: 2, hoverOffset: 6 }] },
-    options: { responsive: true, cutout: '60%',
-      plugins: { legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 12, padding: 10 } },
+    data: { labels: expCL, datasets: [{ data: expCD, backgroundColor: EXP_PALETTE.slice(0, expCL.length), borderWidth: 2, hoverOffset: 8 }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '58%',
+      plugins: { legend: { position: 'right', labels: { font: { size: 12 }, boxWidth: 14, padding: 14 } },
                  tooltip: { callbacks: { label: c => ` ${c.label}: $${c.parsed.toLocaleString()}` } } } }
   });
 }
@@ -2853,11 +2447,10 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
 })();
 
 // ══════════════════════════════════════════════════════════════════════════════
-// GLOBAL FINANCE FILTER BAR
+// INCOME + AGING FILTERS
 // ══════════════════════════════════════════════════════════════════════════════
 (function () {
-  var gFrom = null, gTo = null;
-
+  // ── Shared helpers ────────────────────────────────────────────────
   function parseDate(s) {
     if (!s) return null;
     var d = new Date(s + 'T00:00:00');
@@ -2868,36 +2461,17 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
   }
   function startOf(d) { var r=new Date(d); r.setHours(0,0,0,0); return r; }
 
-  function getRangeFor(mode) {
-    var now = new Date(), y = now.getFullYear(), m = now.getMonth();
-    if (mode==='this-month')   return { from:new Date(y,m,1),    to:new Date(y,m+1,0)   };
-    if (mode==='last-month')   return { from:new Date(y,m-1,1),  to:new Date(y,m,0)     };
-    if (mode==='this-quarter') { var q=Math.floor(m/3); return { from:new Date(y,q*3,1), to:new Date(y,q*3+3,0) }; }
-    if (mode==='ytd')          return { from:new Date(y,0,1),    to:now                 };
-    return { from:null, to:null };
-  }
-
-  function rowVisible(row, from, to) {
-    var ds = row.getAttribute('data-date') || '';
-    if (!ds) return from===null;
-    var d = parseDate(ds);
-    if (!d) return true;
-    if (from && startOf(d) < startOf(from)) return false;
-    if (to   && startOf(d) > startOf(to))   return false;
-    return true;
-  }
-
-  // ── Income filtering ──────────────────────────────────────────────
-  function doFilterIncome(from, to) {
-    var rows  = document.querySelectorAll('#incomeTableBody tr.inc-row');
-    var q     = ((document.getElementById('incomeSearch') || {}).value || '').toLowerCase();
-    var moVal = ((document.getElementById('incomeMonthFilter') || {}).value || '');
-    var stBtn = document.querySelector('#incomeStatusGroup .status-pill-btn.sp-active');
+  // ── Income tab filtering ──────────────────────────────────────────
+  function doFilterIncome() {
+    var rows    = document.querySelectorAll('#incomeTableBody tr.inc-row');
+    var q       = ((document.getElementById('incomeSearch') || {}).value || '').toLowerCase();
+    var moVal   = ((document.getElementById('incomeMonthFilter') || {}).value || '');
+    var stBtn   = document.querySelector('#incomeStatusGroup .status-pill-btn.sp-active');
     var stFilter = stBtn ? stBtn.dataset.status : 'all';
     var shown = 0;
     rows.forEach(function(r) {
-      var vis = rowVisible(r, from, to);
-      if (vis && q) vis = (r.getAttribute('data-search')||'').includes(q);
+      var vis = true;
+      if (q)     vis = (r.getAttribute('data-search')||'').includes(q);
       if (vis && stFilter !== 'all') vis = (r.getAttribute('data-status')||'') === stFilter;
       if (vis && moVal) {
         var ds = (r.getAttribute('data-date')||'');
@@ -2912,7 +2486,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     if (nr) nr.style.display = (shown===0 && rows.length>0) ? '' : 'none';
   }
 
-  window.reFilterIncome = function() { doFilterIncome(gFrom, gTo); };
+  window.reFilterIncome = function() { doFilterIncome(); };
 
   window.clearIncomeFilter = function() {
     var s = document.getElementById('incomeSearch'); if(s) s.value='';
@@ -2920,68 +2494,46 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     document.querySelectorAll('#incomeStatusGroup .status-pill-btn').forEach(function(b){
       b.classList.toggle('sp-active', b.dataset.status==='all');
     });
-    doFilterIncome(gFrom, gTo);
+    doFilterIncome();
   };
 
-  // Income status pills
   document.querySelectorAll('#incomeStatusGroup .status-pill-btn').forEach(function(pill) {
     pill.addEventListener('click', function() {
       document.querySelectorAll('#incomeStatusGroup .status-pill-btn').forEach(function(b){ b.classList.remove('sp-active'); });
       this.classList.add('sp-active');
-      doFilterIncome(gFrom, gTo);
+      doFilterIncome();
     });
   });
 
-  // ── Expenses re-filter (integrates with existing applyExpenseFilters) ──
-  function doFilterExpenses(from, to) {
-    if (typeof applyExpenseFilters === 'function') {
-      // Temporarily inject date range into expense filter inputs
-      var fi = document.getElementById('expenseDateFrom');
-      var ti = document.getElementById('expenseDateTo');
-      if (from && fi && !fi.value) fi.value = fmtDate(from);
-      if (to   && ti && !ti.value) ti.value = fmtDate(to);
-      applyExpenseFilters();
-    }
-  }
-
-  // ── Aging filtering ──────────────────────────────────────────────
+  // ── A/R Aging tab filtering ───────────────────────────────────────
   var activeBucket = 'all';
   var agingDueFrom = null, agingDueTo = null;
 
-  function doFilterAging(globalFrom, globalTo) {
+  function doFilterAging() {
     var q = ((document.getElementById('agingSearch') || {}).value || '').toLowerCase();
     var sections = document.querySelectorAll('.aging-bucket-section');
     var totalShown = 0;
     sections.forEach(function(sec) {
       var bk = sec.getAttribute('data-bucket');
-      var secVis = (activeBucket === 'all' || activeBucket === bk);
-      if (!secVis) { sec.style.display = 'none'; return; }
+      if (activeBucket !== 'all' && activeBucket !== bk) { sec.style.display = 'none'; return; }
       var rows = sec.querySelectorAll('tr.aging-row');
       var secShown = 0;
       rows.forEach(function(r) {
         var vis = true;
-        // Global invoice date filter
-        if (globalFrom || globalTo) vis = rowVisible(r, globalFrom, globalTo);
-        // Aging-specific due date filter (from agingDueFrom/To)
-        if (vis && (agingDueFrom || agingDueTo)) {
-          var dueDs = r.getAttribute('data-due-date') || '';
-          if (dueDs) {
-            var dueD = parseDate(dueDs);
-            if (dueD) {
-              if (agingDueFrom && startOf(dueD) < startOf(agingDueFrom)) vis = false;
-              if (agingDueTo   && startOf(dueD) > startOf(agingDueTo))   vis = false;
-            }
+        if (agingDueFrom || agingDueTo) {
+          var dueD = parseDate(r.getAttribute('data-due-date') || '');
+          if (dueD) {
+            if (agingDueFrom && startOf(dueD) < startOf(agingDueFrom)) vis = false;
+            if (agingDueTo   && startOf(dueD) > startOf(agingDueTo))   vis = false;
           }
         }
-        // Search
         if (vis && q) vis = (r.getAttribute('data-search')||'').includes(q);
         r.style.display = vis ? '' : 'none';
         if (vis) secShown++;
       });
-      sec.style.display = (secShown > 0) ? '' : 'none';
+      sec.style.display = secShown > 0 ? '' : 'none';
       totalShown += secShown;
     });
-    // Update aging chip
     var chip = document.getElementById('agingActiveChip');
     var chipTxt = document.getElementById('agingActiveChipText');
     var hasFilter = q || agingDueFrom || agingDueTo || activeBucket !== 'all';
@@ -2990,17 +2542,17 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
       var parts = [];
       if (activeBucket !== 'all') parts.push('Bucket: ' + activeBucket);
       if (agingDueFrom || agingDueTo) parts.push('Due: ' + (agingDueFrom ? fmtDate(agingDueFrom) : '…') + ' → ' + (agingDueTo ? fmtDate(agingDueTo) : '…'));
-      if (q) parts.push('Search: "' + q + '"');
+      if (q) parts.push('"' + q + '"');
       chipTxt.textContent = parts.join(' · ') + ' (' + totalShown + ' shown)';
     }
   }
 
-  window.filterAging = function() { doFilterAging(gFrom, gTo); };
+  window.filterAging = function() { doFilterAging(); };
 
   window.applyAgingDateRange = function() {
     agingDueFrom = parseDate((document.getElementById('agingDueFrom')||{}).value||'');
     agingDueTo   = parseDate((document.getElementById('agingDueTo')||{}).value||'');
-    doFilterAging(gFrom, gTo);
+    doFilterAging();
   };
 
   window.clearAgingFilter = function() {
@@ -3011,128 +2563,27 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     activeBucket = 'all';
     document.querySelectorAll('.bucket-pill').forEach(function(p){
       p.classList.toggle('bp-active', p.dataset.bucket==='all');
-      // Reset to dark theme inactive style
       if (p.dataset.bucket !== 'all') { p.style.background='transparent'; p.style.color='#94a3b8'; }
     });
     var chip = document.getElementById('agingActiveChip');
     if (chip) chip.style.display = 'none';
-    doFilterAging(gFrom, gTo);
+    doFilterAging();
   };
 
-  // Bucket pill clicks
   document.querySelectorAll('.bucket-pill').forEach(function(pill) {
     pill.addEventListener('click', function() {
       activeBucket = this.dataset.bucket;
       document.querySelectorAll('.bucket-pill').forEach(function(p){ p.classList.remove('bp-active'); });
       this.classList.add('bp-active');
-      doFilterAging(gFrom, gTo);
+      doFilterAging();
     });
-  });
-
-  // ── Master apply ──────────────────────────────────────────────────
-  function applyAll(from, to, label) {
-    gFrom = from ? startOf(from) : null;
-    gTo   = to   ? startOf(to)   : null;
-    doFilterIncome(gFrom, gTo);
-    doFilterAging(gFrom, gTo);
-    // Active chip
-    var chip = document.getElementById('finActiveChip');
-    var chipTxt = document.getElementById('finActiveChipText');
-    if (chip) { chip.style.display = label ? '' : 'none'; }
-    if (chipTxt && label) chipTxt.textContent = label;
-  }
-
-  window.clearFinFilter = function() {
-    gFrom = null; gTo = null;
-    document.querySelectorAll('.range-pill').forEach(function(p){ p.classList.toggle('rp-active', p.dataset.range==='all'); });
-    document.querySelectorAll('.mo-pill').forEach(function(p){ p.classList.remove('mp-active'); });
-    var fi=document.getElementById('ffbFrom'); if(fi) fi.value='';
-    var ti=document.getElementById('ffbTo');   if(ti) ti.value='';
-    applyAll(null, null, null);
-  };
-
-  window.applyCustomRange = function() {
-    var from = parseDate((document.getElementById('ffbFrom')||{}).value||'');
-    var to   = parseDate((document.getElementById('ffbTo')||{}).value||'');
-    if (!from && !to) { clearFinFilter(); return; }
-    document.querySelectorAll('.range-pill').forEach(function(p){ p.classList.remove('rp-active'); });
-    document.querySelectorAll('.mo-pill').forEach(function(p){ p.classList.remove('mp-active'); });
-    var label = (from ? fmtDate(from) : '…') + ' → ' + (to ? fmtDate(to) : '…');
-    applyAll(from, to, label);
-  };
-
-  // Range pills
-  document.querySelectorAll('.range-pill').forEach(function(pill) {
-    pill.addEventListener('click', function() {
-      document.querySelectorAll('.range-pill').forEach(function(p){ p.classList.remove('rp-active'); });
-      document.querySelectorAll('.mo-pill').forEach(function(p){ p.classList.remove('mp-active'); });
-      this.classList.add('rp-active');
-      var fi=document.getElementById('ffbFrom'); if(fi) fi.value='';
-      var ti=document.getElementById('ffbTo');   if(ti) ti.value='';
-      var mode = this.dataset.range;
-      if (mode==='all') { clearFinFilter(); return; }
-      var range = getRangeFor(mode);
-      var mns = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      var nowMo = mns[new Date().getMonth()], nowQ = 'Q'+(Math.floor(new Date().getMonth()/3)+1);
-      var labels = {'this-month':'This Month ('+nowMo+')','last-month':'Last Month','this-quarter':'This Quarter ('+nowQ+')','ytd':'Year to Date'};
-      applyAll(range.from, range.to, labels[mode]||mode);
-    });
-  });
-
-  // Month pills
-  document.querySelectorAll('.mo-pill').forEach(function(pill) {
-    pill.addEventListener('click', function() {
-      var mo = parseInt(this.dataset.month);
-      var already = this.classList.contains('mp-active');
-      document.querySelectorAll('.mo-pill').forEach(function(p){ p.classList.remove('mp-active'); });
-      document.querySelectorAll('.range-pill').forEach(function(p){ p.classList.remove('rp-active'); });
-      var fi=document.getElementById('ffbFrom'); if(fi) fi.value='';
-      var ti=document.getElementById('ffbTo');   if(ti) ti.value='';
-      if (already) { clearFinFilter(); return; }
-      this.classList.add('mp-active');
-      var yr = {{ selected_year }};
-      var from = new Date(yr, mo-1, 1);
-      var to   = new Date(yr, mo, 0);
-      var mns = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      applyAll(from, to, mns[mo-1]+' '+yr);
-    });
-  });
-
-  // Auto-apply year filter on page load (if year != current full range)
-  document.addEventListener('DOMContentLoaded', function() {
-    var urlYear = parseInt(new URLSearchParams(window.location.search).get('year') || '0');
-    var curYear = new Date().getFullYear();
-    if (urlYear && urlYear !== curYear) {
-      var from = new Date(urlYear, 0, 1);
-      var to   = new Date(urlYear, 11, 31);
-      // Silent filter (no chip – year pills already show selection)
-      gFrom = startOf(from); gTo = startOf(to);
-      doFilterIncome(gFrom, gTo);
-      doFilterAging(gFrom, gTo);
-    }
   });
 
 })();
 
 // Export Balance Sheet to Excel
 function exportBalanceSheet() {
-  // Get year from URL parameter, or from the button text, or default to current year
-  const urlParams = new URLSearchParams(window.location.search);
-  let year = urlParams.get('year');
-
-  if (!year) {
-    // Try to get from the year button
-    const yearBtn = document.querySelector('[data-bs-target="#yearCalendarModal"]');
-    if (yearBtn) {
-      const btnText = yearBtn.textContent.trim();
-      year = btnText.split(' ').pop(); // Get last word from button text
-    }
-  }
-
-  if (!year) {
-    year = new Date().getFullYear(); // Default to current year
-  }
-
+  const year = new URLSearchParams(window.location.search).get('year') || new Date().getFullYear();
   window.location.href = `/export/balance-sheet?year=${year}`;
 }
 </script>

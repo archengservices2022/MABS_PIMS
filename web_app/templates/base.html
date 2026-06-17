@@ -49,6 +49,14 @@
     </a>
     {% endif %}
 
+    {% if 'sales_dashboard' in allowed_pages and user_role == 'sales' %}
+    <a href="{{ url_for('sales_dashboard') }}"
+       class="nav-item accent-teal {% if request.endpoint == 'sales_dashboard' %}active{% endif %}">
+      <span class="nav-icon"><i class="bi bi-speedometer2"></i></span>
+      <span class="nav-label">Dashboard</span>
+    </a>
+    {% endif %}
+
     {% if 'quotes' in allowed_pages %}
     <a href="{{ url_for('quotes') }}"
        class="nav-item accent-blue {% if request.endpoint in ['quotes','quotes_new','quote_detail','quote_edit'] %}active{% endif %}">

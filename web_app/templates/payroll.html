@@ -211,7 +211,18 @@
           <div class="form-grid-3col">
             <div class="form-group" style="grid-column:1/-1;">
               <label for="sal_employee">Employee Name</label>
+              {% if employee_profiles %}
+              <select id="sal_employee" required>
+                <option value="">— Select Employee —</option>
+                {% for p in employee_profiles %}
+                <option value="{{ p.name }}" data-region="{{ p.region }}">{{ p.name }}{% if p.title %} · {{ p.title }}{% endif %}</option>
+                {% endfor %}
+                <option value="__other__">Other (type manually)</option>
+              </select>
+              <input type="text" id="sal_employee_manual" placeholder="Enter employee name..." style="display:none;margin-top:6px;">
+              {% else %}
               <input type="text" id="sal_employee" placeholder="Enter employee name..." required />
+              {% endif %}
             </div>
 
             <div class="form-group">
@@ -368,10 +379,41 @@ function clearFilters() {
   applySalaryFilters();
 }
 
+// Handle employee dropdown → auto-fill region + show manual input
+(function () {
+  const sel = document.getElementById('sal_employee');
+  const manual = document.getElementById('sal_employee_manual');
+  if (!sel || sel.tagName !== 'SELECT') return;
+  sel.addEventListener('change', function () {
+    if (this.value === '__other__') {
+      manual.style.display = '';
+      manual.required = true;
+      sel.required = false;
+    } else {
+      manual.style.display = 'none';
+      manual.required = false;
+      sel.required = true;
+      // Auto-fill region from data-region attribute
+      var opt = this.options[this.selectedIndex];
+      var region = opt.getAttribute('data-region');
+      if (region) document.getElementById('sal_region').value = region;
+    }
+  });
+})();
+
 function addSalary(e) {
   e.preventDefault();
-  const employeeName = document.getElementById('sal_employee').value.trim();
-  if (!employeeName) { alert('Please enter an employee name'); return; }
+  var selEl = document.getElementById('sal_employee');
+  var manualEl = document.getElementById('sal_employee_manual');
+  var employeeName = '';
+  if (selEl && selEl.tagName === 'SELECT') {
+    employeeName = selEl.value === '__other__'
+      ? (manualEl ? manualEl.value.trim() : '')
+      : selEl.value.trim();
+  } else {
+    employeeName = selEl ? selEl.value.trim() : '';
+  }
+  if (!employeeName) { alert('Please select or enter an employee name'); return; }
 
   const data = {
     employee_name: employeeName,

@@ -32,7 +32,7 @@
 {% block content %}
 
 <!-- ── Alert Banners ─────────────────────────────────────────────────────────── -->
-{% if overdue_count > 0 or expiring_count > 0 %}
+{% if overdue_count > 0 or expiring_count > 0 or expiring_soon_quotes %}
 <div class="d-flex flex-column gap-2 mb-3">
   {% if overdue_count > 0 %}
   <div class="alert alert-danger d-flex align-items-center justify-content-between py-2 mb-0">
@@ -54,7 +54,28 @@
     {% endif %}
   </div>
   {% endif %}
-  {% if expiring_count > 0 %}
+
+  {% if expiring_soon_quotes %}
+  <div class="alert mb-0 py-2" style="background:#FEF3C7;border:1px solid #F59E0B;color:#92400E;">
+    <div class="d-flex align-items-start gap-2">
+      <i class="bi bi-alarm-fill mt-1" style="color:#D97706;font-size:16px;flex-shrink:0;"></i>
+      <div>
+        <strong>{{ expiring_soon_quotes|length }} quote{{ 's' if expiring_soon_quotes|length != 1 }} expiring within 3 days — act now!</strong>
+        <div class="mt-1" style="font-size:13px;">
+          {% for q in expiring_soon_quotes %}
+            <span class="badge me-1 mb-1" style="background:#D97706;color:#fff;">
+              {{ q.client_name or q.job_name or 'Quote' }}
+              {% if q.valid_until %} · expires {{ q.valid_until }}{% endif %}
+            </span>
+          {% endfor %}
+        </div>
+        {% if 'quotes' in allowed_pages %}
+        <a href="{{ url_for('quotes') }}" class="fw-semibold" style="color:#92400E;font-size:13px;">View quotes →</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% elif expiring_count > 0 %}
   <div class="alert alert-warning d-flex align-items-center py-2 mb-0">
     <i class="bi bi-clock-fill me-2"></i>
     <strong>{{ expiring_count }} quote{{ 's' if expiring_count != 1 }}</strong>
