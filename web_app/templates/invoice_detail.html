@@ -1,0 +1,1001 @@
+{% extends "base.html" %}
+{% set meta = invoice.get('meta', {}) %}
+{% block title %}Invoice {{ meta.get('invoice_number','') }}{% endblock %}
+{% block page_title %}Invoice Detail{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <a href="{{ url_for('invoicing') }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left"></i>
+    </a>
+    <h5 class="mb-0">{{ meta.get('invoice_number','Invoice') }}</h5>
+    <button class="btn btn-xs btn-outline-secondary" title="Copy invoice number"
+            onclick="copyNumber('{{ meta.get('invoice_number','') }}', this)">
+      <i class="bi bi-copy"></i>
+    </button>
+    <span class="badge status-{{ meta.get('status','Draft')|lower|replace(' ','-') }}">
+      {{ meta.get('status','Draft') }}
+    </span>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="togglePdfView();">
+      <i class="bi bi-printer me-1"></i>Print / PDF
+    </button>
+    <form method="POST" action="{{ url_for('invoice_send', invoice_id=invoice.firebase_id) }}"
+          onsubmit="return confirm('Send this invoice to {{ meta.get("client_name","client") }}?');">
+      <button type="submit" class="btn btn-sm btn-teal">
+        <i class="bi bi-envelope me-1"></i>Send Email
+      </button>
+    </form>
+    <a href="{{ url_for('invoice_edit', invoice_id=invoice.firebase_id) }}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-pencil me-1"></i>Edit
+    </a>
+    <button type="button" class="btn btn-sm btn-outline-danger"
+            onclick="openDeleteModal()">
+      <i class="bi bi-trash me-1"></i>Delete
+    </button>
+    {% if meta.get('status') in ('Overdue', 'Sent', 'Viewed', 'Partial') %}
+    <button type="button" class="btn btn-sm btn-outline-warning" id="reminderBtn"
+            data-invoice-id="{{ invoice.firebase_id }}">
+      <i class="bi bi-robot me-1"></i>Draft Reminder
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+{% set wf_step = 3 %}
+{% set wf_quote = source_quote %}
+{% set wf_quote_id = source_quote.firebase_id if source_quote else '' %}
+{% if linked_projects|length > 1 %}
+  {% set wf_project = {'project_number': 'Multiple Projects', 'status': 'Active', '_is_multiple': true, '_count': linked_projects|length} %}
+  {% set wf_project_id = 'multiple' %}
+{% else %}
+  {% set wf_project = linked_project %}
+  {% set wf_project_id = linked_project.firebase_id if linked_project else '' %}
+{% endif %}
+{% set wf_invoice = invoice %}
+{% set wf_invoice_id = invoice.firebase_id %}
+{% include '_workflow_tracker.html' %}
+
+<!-- AI Reminder Modal -->
+<div class="modal fade" id="reminderModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-envelope-exclamation me-2"></i>AI-Drafted Reminder Email</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2">
+          <label class="form-label small fw-600">Subject</label>
+          <input type="text" id="reminderSubject" class="form-control form-control-sm">
+        </div>
+        <div>
+          <label class="form-label small fw-600">Body</label>
+          <textarea id="reminderBody" class="form-control" rows="10"></textarea>
+        </div>
+        <div id="reminderLoading" class="text-muted small mt-2" style="display:none;">
+          <span class="spinner-border spinner-border-sm me-1"></span>Drafting email...
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-sm btn-outline-secondary" onclick="copyReminder()">
+          <i class="bi bi-clipboard me-1"></i>Copy
+        </button>
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <!-- Invoice preview card -->
+    {% set inv_status = meta.get('status','Draft') %}
+    {% set is_paid_inv = inv_status == 'Paid' %}
+    {% set amt_paid = meta.get('amount_paid',0)|float %}
+    {% set tax_paid = meta.get('tax_paid',0)|float %}
+    {% set balance = meta.get('total',0)|float - amt_paid - tax_paid %}
+    <div class="mb-3" style="background:#fff; border:1px solid #E2E8F0; border-radius:12px; overflow:hidden; position:relative;">
+
+      {% if is_paid_inv %}
+      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);
+                  font-size:5rem;font-weight:900;color:rgba(16,185,129,.08);pointer-events:none;letter-spacing:.1em;z-index:0;">
+        PAID
+      </div>
+      {% endif %}
+
+      <!-- Header bar -->
+      <div style="background:#0D9488; padding:28px 32px; position:relative; z-index:1;">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div style="font-size:1.4rem; font-weight:800; color:#fff; letter-spacing:-.02em;">
+              {{ company.name }}
+            </div>
+            <div style="color:rgba(255,255,255,.75); font-size:0.8rem; margin-top:4px; line-height:1.6; white-space:pre-line;">{{ company.address }}</div>
+            <div style="color:rgba(255,255,255,.75); font-size:0.8rem;">{{ company.phone }} &nbsp;·&nbsp; {{ company.email }}</div>
+          </div>
+          <div class="text-end">
+            <div style="font-size:2rem; font-weight:900; color:#fff; letter-spacing:.08em;">INVOICE</div>
+            <div style="color:rgba(255,255,255,.9); font-weight:700; font-size:1rem;">{{ meta.get('invoice_number','') }}</div>
+            <div style="color:rgba(255,255,255,.7); font-size:0.78rem; margin-top:4px;">
+              Date: {{ meta.get('invoice_date','—') }}<br>
+              Due: {{ meta.get('due_date','—') }}{% if meta.get('net_terms') %} <span style="opacity:.7;">(Net {{ meta.get('net_terms') }})</span>{% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bill To + Status strip -->
+      <div style="padding:20px 32px; background:#F8FAFC; border-bottom:1px solid #E2E8F0; display:flex; justify-content:space-between; align-items:flex-start; position:relative; z-index:1;">
+        <div>
+          <div style="font-size:0.65rem; font-weight:700; color:#94A3B8; letter-spacing:.1em; margin-bottom:4px;">BILL TO</div>
+          <div style="font-weight:700; font-size:1rem; color:#0F172A;">{{ meta.get('client_name','—') }}</div>
+          {% if meta.get('project_number') %}
+          <div style="font-size:0.8rem; color:#64748B;">Project: {{ meta.get('project_number') }}
+            {% if linked_project %} — {{ linked_project.get('project_name','') }}{% endif %}
+          </div>
+          {% endif %}
+          {% if meta.get('payment_stage') %}
+          <div style="font-size:0.78rem; color:#0D9488; margin-top:2px;">
+            <i class="bi bi-layers me-1"></i>{{ meta.get('payment_stage') }}
+          </div>
+          {% endif %}
+        </div>
+        <div class="text-end">
+          <span class="badge status-{{ inv_status|lower|replace(' ','-') }}" style="font-size:0.75rem; padding:5px 12px;">
+            {{ inv_status }}
+          </span>
+          {% if meta.get('payment_method') %}
+          <div style="font-size:0.75rem; color:#64748B; margin-top:4px;">
+            <i class="bi bi-credit-card me-1"></i>{{ meta.get('payment_method') }}
+            {% if meta.get('payment_reference') %} · {{ meta.get('payment_reference') }}{% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Line items -->
+      <div style="padding:0 32px; position:relative; z-index:1;">
+        <table style="width:100%; border-collapse:collapse; margin:0;">
+          <thead>
+            <tr style="background:#0F172A;">
+              <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:left; font-weight:600;">DESCRIPTION</th>
+              <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:center; font-weight:600;">QTY</th>
+              <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:right; font-weight:600;">UNIT PRICE</th>
+              <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:right; font-weight:600;">AMOUNT</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in invoice.get('line_items',[]) %}
+            <tr style="border-bottom:1px solid #F1F5F9;">
+              <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">{{ item.get('description','') }}</td>
+              <td style="padding:14px 16px; color:#64748B; text-align:center;">{{ item.get('quantity','1') }}</td>
+              <td style="padding:14px 16px; color:#64748B; text-align:right;">${{ "{:,.2f}".format(item.get('unit_price',0)|float) }}</td>
+              <td style="padding:14px 16px; color:#1E293B; font-weight:600; text-align:right;">${{ "{:,.2f}".format(item.get('amount',0)|float) }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" style="padding:24px; text-align:center; color:#94A3B8;">No line items.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Totals -->
+      <div style="padding:16px 32px 24px; display:flex; justify-content:flex-end; position:relative; z-index:1;">
+        <div style="min-width:260px;">
+          {% if meta.get('tax_rate',0)|float > 0 %}
+          <div style="display:flex; justify-content:space-between; padding:6px 0; color:#64748B; font-size:0.85rem;">
+            <span>Subtotal</span><span>${{ "{:,.2f}".format(meta.get('subtotal',0)|float) }}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:6px 0; color:#64748B; font-size:0.85rem; border-bottom:1px solid #E2E8F0;">
+            <span>Tax ({{ meta.get('tax_rate','0') }}%)</span><span>${{ "{:,.2f}".format(meta.get('tax_amount',0)|float) }}</span>
+          </div>
+          {% endif %}
+          <div style="display:flex; justify-content:space-between; padding:10px 0; font-weight:700; font-size:1rem; border-bottom:2px solid #0D9488; margin-bottom:4px;">
+            <span>Total</span>
+            <span style="color:#0D9488;">${{ "{:,.2f}".format(meta.get('total',0)|float) }}</span>
+          </div>
+          {% if amt_paid > 0 or tax_paid > 0 %}
+          <div style="display:flex; justify-content:space-between; padding:6px 0; color:#10B981; font-size:0.85rem;">
+            <span>Amount Paid</span><span>${{ "{:,.2f}".format(amt_paid + tax_paid) }}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:8px 12px; border-radius:6px; font-weight:700; font-size:1rem;
+                      background:{{ '#F0FDF4' if balance <= 0 else '#FEF2F2' }}; margin-top:4px;">
+            <span style="color:{{ '#16A34A' if balance <= 0 else '#DC2626' }};">Balance Due</span>
+            <span style="color:{{ '#16A34A' if balance <= 0 else '#DC2626' }};">${{ "{:,.2f}".format(balance) }}</span>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if meta.get('notes') or meta.get('terms') %}
+      <div style="padding:16px 32px 24px; border-top:1px solid #E2E8F0; position:relative; z-index:1;">
+        {% if meta.get('notes') %}
+        <div style="font-size:0.8rem; color:#64748B;"><strong style="color:#475569;">Notes:</strong> {{ meta.get('notes') }}</div>
+        {% endif %}
+        {% if meta.get('terms') %}
+        <div style="font-size:0.8rem; color:#64748B; margin-top:6px;"><strong style="color:#475569;">Terms:</strong> {{ meta.get('terms') }}</div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <!-- Footer -->
+      <div style="background:#F8FAFC; border-top:1px solid #E2E8F0; padding:14px 32px; text-align:center; position:relative; z-index:1;">
+        <div style="font-size:0.75rem; color:#94A3B8;">
+          Thank you for your business · {{ company.email }} · {{ company.phone }}
+        </div>
+      </div>
+
+
+    </div>
+  </div>
+
+  <div class="col-lg-4" id="updateStatusSection">
+    <div class="card-panel mb-3">
+      <h6 class="section-heading">Update Status</h6>
+      <form method="POST" action="{{ url_for('invoice_status', invoice_id=invoice.firebase_id) }}" id="statusForm">
+        {% set is_fully_paid = balance <= 0 %}
+        {% if is_fully_paid %}
+        <div style="padding:8px 12px; background:#D1FAE5; border:1px solid #6EE7B7; border-radius:6px; font-weight:700; color:#047857; margin-bottom:8px;">
+          <i class="bi bi-lock-fill"></i> Paid
+        </div>
+        {% else %}
+        <select name="status" id="detailStatusSelect" class="form-select form-select-sm mb-2" onchange="toggleDetailAmtPaid()">
+          {% for s in ['Draft','Sent','Viewed','Paid','Partial','Overdue','Cancelled'] %}
+          <option value="{{ s }}" {{ 'selected' if meta.get('status','Draft') == s }}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        {% endif %}
+
+        <!-- PAYMENT FORM - SIMPLIFIED SEQUENTIAL DISTRIBUTION V3 -->
+        <div id="paymentDetailsForm" style="display:{% if balance > 0 %}block{% elif meta.get('amount_paid',0)|float > 0 or meta.get('tax_paid',0)|float > 0 %}none{% else %}block{% endif %}; background:#F0FDF4; border:1px solid #86EFAC; border-radius:8px; padding:16px; margin-top:12px; margin-bottom:12px;"
+             data-total-invoice="{{ meta.get('total', 0) }}"
+             data-amount-paid="{{ meta.get('amount_paid', 0) }}"
+             data-tax-paid="{{ meta.get('tax_paid', 0) }}"
+             data-tax-amount="{{ meta.get('tax_amount', 0) }}">
+
+          {% set total_remaining = meta.get('total',0)|float - meta.get('amount_paid',0)|float - meta.get('tax_paid',0)|float %}
+          <div class="mb-3">
+            <label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Amount ($) <span class="text-danger">*</span></label>
+            <input type="number" name="amount" class="form-control form-control-sm" value="" min="0" step="0.01" id="invoiceAmountInput" data-max="{{ total_remaining }}" oninput="handlePaymentAmountChange()" onchange="handlePaymentAmountChange()" onblur="validatePaymentAmount()" {% if meta.get('status','Draft') == 'Paid' %}readonly{% endif %}>
+            <div id="amountError" style="color:#DC2626; font-size:0.85rem; margin-top:4px; display:none;"></div>
+            <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:0.8rem; color:#00695C;">
+              <span>Max: <strong>$<span id="displayMaxAmount">{{ "{:.2f}".format(total_remaining) }}</span></strong></span>
+              <span>Rem: <strong>$<span id="paymentRemaining">{{ "{:.2f}".format(total_remaining) }}</span></strong></span>
+            </div>
+          </div>
+
+          {% if meta.get('tax_amount',0)|float > 0 %}
+          {% set tax_remaining = meta.get('tax_amount',0)|float - (meta.get('tax_paid',0)|float) %}
+          {% if tax_remaining > 0 %}
+          <div style="border-top:2px solid #86EFAC; margin-top:12px; padding-top:12px;"><div id="taxPaymentFields" style="display:none;"><div class="mb-3" style="background:#FEF3C7; border:1px solid #FCD34D; border-radius:6px; padding:10px;"><div style="font-size:0.75rem; color:#92400E;">Tax Remaining</div><div style="font-size:1.1rem; font-weight:700; color:#B45309;">$<span id="taxRemaining">{{ "{:.2f}".format(tax_remaining) }}</span></div></div><div class="mb-3"><label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Tax Amount ($) <span class="text-danger">*</span></label><input type="number" name="tax_amount" class="form-control form-control-sm" id="taxAmountInput" value="" min="0" step="0.01" data-max="{{ tax_remaining }}" oninput="validateTaxAmountInput()" onchange="validateTaxAmountInput()"><div id="taxAmountError" style="color:#DC2626; font-size:0.85rem; margin-top:4px; display:none;"></div></div></div></div>
+          {% endif %}
+          {% endif %}
+
+          <div class="mb-3"><label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Payment Method</label><select name="method" class="form-select form-select-sm"><option value="">— Select Method —</option>{% for m in ['Check','Wire Transfer','ACH','Cash','Credit Card','Other'] %}<option value="{{ m }}">{{ m }}</option>{% endfor %}</select></div>
+          <div class="mb-3"><label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Payment Date</label><input type="date" name="date" class="form-control form-control-sm" value="{{ today_date }}"></div>
+          <div class="mb-0"><label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Reference #</label><input type="text" name="reference" class="form-control form-control-sm" placeholder="Check #, Wire ref, etc."></div>
+        </div>
+
+        <button type="button" class="btn btn-sm btn-teal w-100 mt-2" onclick="handleStatusUpdate()">Update</button>
+      </form>
+    </div>
+    <div class="card-panel">
+      <h6 class="section-heading">Details</h6>
+      {% if linked_projects|length > 1 %}
+      <div class="info-label">Projects <span class="badge bg-secondary ms-1">Shared across {{ linked_projects|length }}</span></div>
+      <div class="info-value">
+        {% for lp in linked_projects %}
+        <div class="d-flex justify-content-between align-items-center {{ 'mt-2' if not loop.first }}">
+          <div>
+            <a href="{{ url_for('project_detail', project_id=lp.firebase_id) }}" class="text-teal fw-bold text-decoration-none">
+              {{ lp.get('project_number','') }}
+            </a>
+            <span class="text-muted small d-block">{{ lp.get('project_name','') }}</span>
+          </div>
+          <span class="badge bg-light text-dark border">{{ "%.0f"|format(lp.get('_share',0) * 100) }}%</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% elif linked_project %}
+      <div class="info-label">Project</div>
+      <div class="info-value">
+        <a href="{{ url_for('project_detail', project_id=linked_project.firebase_id) }}" class="text-teal fw-bold text-decoration-none">
+          {{ linked_project.get('project_number','') }}
+        </a>
+        <span class="text-muted small d-block">{{ linked_project.get('project_name','') }}</span>
+      </div>
+      {% endif %}
+      {% if meta.get('net_terms') %}
+      <div class="info-label mt-2">Payment Terms</div>
+      <div class="info-value">Net {{ meta.get('net_terms') }} days</div>
+      {% endif %}
+      {% if meta.get('payment_method') %}
+      <div class="info-label mt-2">Payment Method</div>
+      <div class="info-value">{{ meta.get('payment_method') }}</div>
+      {% endif %}
+      {% if meta.get('payment_reference') %}
+      <div class="info-label mt-2">Reference #</div>
+      <div class="info-value">{{ meta.get('payment_reference') }}</div>
+      {% endif %}
+      <div class="info-label mt-2">Created</div>
+      <div class="info-value small">
+        {%- set created = meta.get('created_at') or meta.get('updated_at') or meta.get('invoice_date') %}
+        {{ created[:19]|replace('T',' ') if created else '—' }}
+      </div>
+      <div class="info-label mt-2">Updated</div>
+      <div class="info-value small">{{ meta.get('updated_at','—')[:19]|replace('T',' ') }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Payment History Table - Below Invoice -->
+<div class="row mt-4">
+  <div class="col-12">
+    {% set payment_log = invoice.get('payment_log', []) %}
+    {% if payment_log or enriched_tax_payments %}
+    <div class="card-panel">
+      <h6 class="section-heading">Payment History</h6>
+      <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:0.85rem; border:1px solid #E2E8F0; border-radius:6px; background:white;">
+          <thead>
+            <tr style="background:#F8FAFC; border-bottom:2px solid #E2E8F0;">
+              <th style="padding:10px 12px; text-align:left; font-weight:700; color:#374151; border:none;">Project</th>
+              <th style="padding:10px 12px; text-align:left; font-weight:700; color:#374151; border:none;">Date</th>
+              <th style="padding:10px 12px; text-align:right; font-weight:700; color:#374151; border:none;">Amount</th>
+              <th style="padding:10px 12px; text-align:left; font-weight:700; color:#374151; border:none;">Stage</th>
+              <th style="padding:10px 12px; text-align:left; font-weight:700; color:#374151; border:none;">Method</th>
+              <th style="padding:10px 12px; text-align:center; font-weight:700; color:#374151; border:none;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for payment in enriched_payment_log %}
+            <tr style="border-bottom:1px solid #F1F5F9; background:white;">
+              <td style="padding:10px 12px; color:#1E293B; font-weight:500;">
+                {% if payment.get('project_firebase_id') %}
+                <a href="{{ url_for('project_detail', project_id=payment.get('project_firebase_id')) }}" class="text-decoration-none text-teal fw-bold" title="View project details">
+                  {{ payment.get('project_number','—') }}
+                </a>
+                {% else %}
+                <div>{{ payment.get('project_number','—') }}</div>
+                {% endif %}
+                {% if payment.get('project_name') %}
+                <div style="font-size:0.8rem; color:#6B7280;">{{ payment.get('project_name') }}</div>
+                {% endif %}
+              </td>
+              <td style="padding:10px 12px; color:#475569;">{{ payment.get('date','—') }}</td>
+              <td style="padding:10px 12px; text-align:right; font-weight:600; color:#15803D;">${{ "{:,.2f}".format(payment.get('amount',0)|float) }}</td>
+              <td style="padding:10px 12px; color:#475569;">{{ payment.get('stage_name', 'Invoice Payment') }}</td>
+              <td style="padding:10px 12px; color:#475569;">{{ payment.get('method','—') }}</td>
+              <td style="padding:10px 12px; text-align:center;">
+                <button type="button" class="btn btn-xs btn-outline-primary" title="Edit"
+                  data-payment-type="invoice"
+                  data-payment-index="{{ loop.index0 }}"
+                  data-payment-amount="{{ payment.get('amount', 0) }}"
+                  data-payment-date="{{ payment.get('date', '') }}"
+                  data-payment-method="{{ payment.get('method', '') }}"
+                  data-payment-reference="{{ payment.get('reference', '') }}"
+                  data-payment-notes="{{ payment.get('notes', '') }}"
+                  onclick="scrollToEditPaymentForm(this)"><i class="bi bi-pencil"></i></button>
+                <button type="button" class="btn btn-xs btn-outline-danger" title="Delete" onclick="deletePayment('invoice', {{ loop.index0 }})"><i class="bi bi-trash"></i></button>
+              </td>
+            </tr>
+            {% endfor %}
+
+            {% if enriched_tax_payments %}
+            {% for payment in enriched_tax_payments %}
+            <tr style="border-bottom:1px solid #F1F5F9; background:#F0FFFE;">
+              <td style="padding:10px 12px; color:#0D7C7C; font-weight:600;">Tax</td>
+              <td style="padding:10px 12px; color:#475569;">{{ payment.get('date','—') }}</td>
+              <td style="padding:10px 12px; text-align:right; font-weight:600; color:#0D7C7C;">${{ "{:,.2f}".format(payment.get('amount',0)|float) }}</td>
+              <td style="padding:10px 12px; color:#0D7C7C; font-weight:500;">Tax Payment</td>
+              <td style="padding:10px 12px; color:#475569;">{{ payment.get('method','—') }}</td>
+              <td style="padding:10px 12px; text-align:center;">
+                <button type="button" class="btn btn-xs btn-outline-primary" title="Edit"
+                  data-payment-type="tax"
+                  data-payment-index="{{ loop.index0 }}"
+                  data-payment-amount="{{ payment.get('amount', 0) }}"
+                  data-payment-date="{{ payment.get('date', '') }}"
+                  data-payment-method="{{ payment.get('method', '') }}"
+                  data-payment-reference="{{ payment.get('reference', '') }}"
+                  data-payment-notes="{{ payment.get('notes', '') }}"
+                  onclick="scrollToEditPaymentForm(this)"><i class="bi bi-pencil"></i></button>
+                <button type="button" class="btn btn-xs btn-outline-danger" title="Delete" onclick="deletePayment('tax', {{ loop.index0 }})"><i class="bi bi-trash"></i></button>
+              </td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+
+            <tr style="background:#DBEAFE; border-top:2px solid #E2E8F0; font-weight:700;">
+              <td colspan="6" style="padding:10px 12px;">
+                <div style="display:flex; justify-content:space-between; gap:20px; color:#1E40AF;">
+                  <div>
+                    <div style="font-size:0.75rem; color:#0D7C7C;">Total Due</div>
+                    <div style="font-size:1rem;">${{ "{:,.2f}".format(meta.get('total',0)|float) }}</div>
+                  </div>
+                  <div>
+                    <div style="font-size:0.75rem; color:#10B981;">Paid Amount</div>
+                    <div style="font-size:1rem;">${{ "{:,.2f}".format(meta.get('amount_paid',0)|float + meta.get('tax_paid',0)|float) }}</div>
+                  </div>
+                  <div>
+                    <div style="font-size:0.75rem; color:#DC2626;">Remaining</div>
+                    <div style="font-size:1rem;">${{ "{:,.2f}".format([0, meta.get('total',0)|float - meta.get('amount_paid',0)|float - meta.get('tax_paid',0)|float]|max) }}</div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Delete Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-danger">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill me-2"></i>Delete Invoice</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="fw-bold mb-1">You are about to permanently delete:</p>
+        <div class="p-3 bg-light rounded mb-3">
+          <div class="fw-bold text-teal">{{ meta.get('invoice_number','') }}</div>
+          <div class="text-muted small">Client: {{ meta.get('client_name','—') }}</div>
+          <div class="text-muted small">Total: ${{ "{:,.2f}".format(meta.get('total',0)|float) }}</div>
+          <div class="text-muted small">Status: {{ meta.get('status','—') }}</div>
+        </div>
+        <p class="text-muted small mb-2">Type the invoice number to confirm:</p>
+        <input type="text" id="deleteConfirmInput" class="form-control mb-1"
+               placeholder="{{ meta.get('invoice_number','') }}"
+               oninput="checkDeleteInput(this)">
+        <div class="text-muted small">Type: <strong>{{ meta.get('invoice_number','') }}</strong></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+          <i class="bi bi-x-lg me-1"></i>Cancel — Keep Invoice
+        </button>
+        <form method="POST" action="{{ url_for('invoice_delete', invoice_id=invoice.firebase_id) }}">
+          <button type="submit" id="deleteConfirmBtn" class="btn btn-danger" disabled>
+            <i class="bi bi-trash me-1"></i>Yes, Delete Permanently
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleDetailAmtPaid() {
+  const s = document.getElementById('detailStatusSelect').value;
+  const paymentForm = document.getElementById('paymentDetailsForm');
+  const amountInput = document.getElementById('invoiceAmountInput');
+
+  // Calculate current balance
+  const totalAmount = parseFloat(paymentForm.dataset.totalInvoice || '0');
+  const amountPaid = parseFloat(paymentForm.dataset.amountPaid || '0');
+  const taxPaid = parseFloat(paymentForm.dataset.taxPaid || '0');
+  const balance = totalAmount - amountPaid - taxPaid;
+
+  // Show form only if there's still balance due
+  paymentForm.style.display = (balance > 0.01) ? 'block' : 'none';
+
+  if (s === 'Paid' && amountInput && balance > 0.01) {
+    // Auto-fill remaining amount for Paid status
+    const remaining = balance;
+    amountInput.value = remaining.toFixed(2);
+    amountInput.readOnly = true;
+    document.getElementById('displayMaxAmount').textContent = remaining.toFixed(2);
+    document.getElementById('paymentRemaining').textContent = remaining.toFixed(2);
+  } else if (amountInput && balance > 0.01) {
+    // For Partial, allow user input
+    amountInput.readOnly = false;
+    amountInput.value = '';
+    handlePaymentAmountChange();
+  }
+}
+
+// Handle payment amount change
+function handlePaymentAmountChange() {
+  const amountInput = document.getElementById('invoiceAmountInput');
+  const paymentForm = document.getElementById('paymentDetailsForm');
+
+  if (!amountInput || !paymentForm) return;
+
+  const totalAmount = parseFloat(paymentForm.dataset.totalInvoice || '0');
+  let amountPaid = parseFloat(paymentForm.dataset.amountPaid || '0');
+  const taxPaid = parseFloat(paymentForm.dataset.taxPaid || '0');
+
+  // If editing an existing payment, subtract the old amount first
+  if (window.isEditingPayment && window.editPaymentContext) {
+    const oldPaymentAmount = parseFloat(window.editPaymentContext.oldAmount || '0');
+    amountPaid = amountPaid - oldPaymentAmount;
+  }
+
+  const remaining = totalAmount - amountPaid - taxPaid;
+  const amount = parseFloat(amountInput.value || '0');
+  const newRemaining = Math.max(0, remaining - amount);
+  const maxAmount = amount + newRemaining; // Max = edited amount + remaining after edit
+
+  document.getElementById('displayMaxAmount').textContent = maxAmount.toFixed(2);
+  document.getElementById('paymentRemaining').textContent = newRemaining.toFixed(2);
+
+  validatePaymentAmount();
+}
+
+// Validate payment amount
+function validatePaymentAmount() {
+  const amountInput = document.getElementById('invoiceAmountInput');
+  const paymentForm = document.getElementById('paymentDetailsForm');
+  const errorDiv = document.getElementById('amountError');
+
+  if (!amountInput || !paymentForm) return true;
+
+  const totalAmount = parseFloat(paymentForm.dataset.totalInvoice || '0');
+  let amountPaid = parseFloat(paymentForm.dataset.amountPaid || '0');
+  const taxPaid = parseFloat(paymentForm.dataset.taxPaid || '0');
+  const amount = parseFloat(amountInput.value || '0');
+
+  // If editing an existing payment, subtract the old amount first
+  if (window.isEditingPayment && window.editPaymentContext) {
+    const oldPaymentAmount = parseFloat(window.editPaymentContext.oldAmount || '0');
+    amountPaid = amountPaid - oldPaymentAmount;
+  }
+
+  const maxAmount = totalAmount - amountPaid - taxPaid;
+
+  if (amount > maxAmount && maxAmount > 0) {
+    errorDiv.style.display = 'block';
+    errorDiv.textContent = `Amount cannot exceed maximum of $${maxAmount.toFixed(2)}`;
+    amountInput.value = maxAmount.toFixed(2);
+    return false;
+  } else {
+    errorDiv.style.display = 'none';
+  }
+  return true;
+}
+
+// Handle payment type selection (project or tax)
+function updatePaymentTypeProject() {
+  const select = document.getElementById('paymentTypeSelect');
+  if (!select) return;
+
+  const selectedOption = select.options[select.selectedIndex];
+  const paymentType = selectedOption.dataset.type;
+  const remaining = parseFloat(selectedOption.dataset.remaining || '0');
+  const projectNumber = selectedOption.dataset.projectNumber || '';
+  const projectName = selectedOption.dataset.projectName || '';
+
+  const infoDiv = document.getElementById('selectedPaymentInfo');
+  const invoiceFields = document.getElementById('invoicePaymentFields');
+  const taxCheckbox = document.getElementById('addTaxPayment');
+  const taxFields = document.getElementById('taxPaymentFields');
+  const invoiceAmountInput = document.getElementById('invoiceAmountInput');
+  const taxAmountInput = document.getElementById('taxAmountInput');
+
+  if (paymentType === 'project') {
+    // Show project payment fields
+    document.getElementById('paymentRemaining').textContent = remaining.toFixed(2);
+    document.getElementById('displayMaxAmount').textContent = remaining.toFixed(2);
+    document.getElementById('selectedPaymentName').textContent = `${projectNumber} - ${projectName}`;
+    infoDiv.style.display = 'block';
+    invoiceFields.style.display = 'block';
+    invoiceAmountInput.dataset.max = remaining;
+    invoiceAmountInput.max = remaining;
+    invoiceAmountInput.placeholder = `Max: $${remaining.toFixed(2)}`;
+    invoiceAmountInput.value = '';
+    invoiceAmountInput.dataset.projectNumber = projectNumber;
+    validateAmountInput();
+
+    // Hide tax fields
+    if (taxCheckbox) taxCheckbox.checked = false;
+    if (taxFields) taxFields.style.display = 'none';
+    if (taxAmountInput) taxAmountInput.value = '';
+  } else if (paymentType === 'tax') {
+    // Show tax payment fields
+    document.getElementById('paymentRemaining').textContent = remaining.toFixed(2);
+    document.getElementById('displayMaxAmount').textContent = remaining.toFixed(2);
+    document.getElementById('selectedPaymentName').textContent = 'Tax Payment';
+    infoDiv.style.display = 'block';
+    invoiceFields.style.display = 'none';
+    if (invoiceAmountInput) {
+      invoiceAmountInput.value = '';
+      invoiceAmountInput.dataset.max = remaining;
+      invoiceAmountInput.max = remaining;
+      invoiceAmountInput.focus();
+    }
+
+    // Show tax fields
+    if (taxCheckbox) taxCheckbox.checked = true;
+    if (taxFields) taxFields.style.display = 'block';
+    if (taxAmountInput) {
+      taxAmountInput.dataset.max = remaining;
+      taxAmountInput.placeholder = `Max: $${remaining.toFixed(2)}`;
+      taxAmountInput.value = '';
+    }
+  } else {
+    infoDiv.style.display = 'none';
+    invoiceFields.style.display = 'block';
+  }
+}
+
+function validateTaxAmountInput() {
+  const taxInput = document.getElementById('taxAmountInput');
+  const errorDiv = document.getElementById('taxAmountError');
+  const amount = parseFloat(taxInput.value) || 0;
+  const maxAmount = parseFloat(taxInput.dataset.max || 0);
+
+  if (amount > maxAmount) {
+    taxInput.value = maxAmount.toFixed(2);
+    errorDiv.textContent = `Cannot add more than $${maxAmount.toFixed(2)}`;
+    errorDiv.style.display = 'block';
+    taxInput.style.borderColor = '#DC2626';
+    return false;
+  } else {
+    errorDiv.style.display = 'none';
+    taxInput.style.borderColor = '';
+    return true;
+  }
+}
+
+function checkIfFullyPaid() {
+  const total = {{ meta.get('total', 0)|float }};
+  const amountPaid = {{ meta.get('amount_paid', 0)|float }};
+  const taxAmount = {{ meta.get('tax_amount', 0)|float }};
+  const taxPaid = {{ meta.get('tax_paid', 0)|float }};
+
+  const isFullyPaid = (amountPaid >= total) && (taxPaid >= taxAmount);
+  const statusSelect = document.getElementById('detailStatusSelect');
+
+  if (isFullyPaid && statusSelect.value === 'Paid') {
+    statusSelect.disabled = true;
+    statusSelect.style.opacity = '0.6';
+    statusSelect.title = 'Invoice is fully paid - status cannot be changed';
+    // Show locked message if needed
+    const lockedMsg = document.getElementById('fullyPaidMessage');
+    if (lockedMsg) lockedMsg.style.display = 'block';
+  } else {
+    statusSelect.disabled = false;
+    statusSelect.style.opacity = '1';
+    statusSelect.title = '';
+  }
+}
+
+function deletePayment(type, index) {
+  if (!confirm('Delete this payment?')) return;
+
+  const endpoint = type === 'tax'
+    ? '/invoicing/{{ invoice.firebase_id }}/tax/payment/delete/' + index
+    : '/invoicing/{{ invoice.firebase_id }}/payment/delete/' + index;
+
+  fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include'
+  })
+  .then(res => {
+    if (res.ok) {
+      // Reload invoice detail page to show updated payment history
+      setTimeout(() => {
+        window.location.reload();
+      }, 100);
+    } else {
+      return res.json().then(data => {
+        throw new Error(data.error || 'Failed to delete payment');
+      });
+    }
+  })
+  .catch(err => alert('❌ Error: ' + err.message));
+}
+
+function scrollToEditPaymentForm(button) {
+  try {
+    const type = button.dataset.paymentType;
+    const index = parseInt(button.dataset.paymentIndex);
+    const amount = button.dataset.paymentAmount;
+    const date = button.dataset.paymentDate;
+    const method = button.dataset.paymentMethod;
+    const reference = button.dataset.paymentReference;
+    const notes = button.dataset.paymentNotes;
+
+    // Store edit context globally (including old amount for recalculation)
+    window.editPaymentContext = { type, index, oldAmount: amount };
+    window.isEditingPayment = true;
+
+    // STEP 1: Select the correct payment type from dropdown FIRST
+    const paymentTypeSelect = document.getElementById('paymentTypeSelect');
+    if (paymentTypeSelect) {
+      if (type === 'tax') {
+        paymentTypeSelect.value = 'tax';
+      } else {
+        // For project payments, find and select the first project option
+        const options = paymentTypeSelect.querySelectorAll('option');
+        for (let opt of options) {
+          if (opt.dataset.type === 'project') {
+            paymentTypeSelect.value = opt.value;
+            break;
+          }
+        }
+      }
+
+      // Trigger the change event to update the form and set max limits
+      const event = new Event('change', { bubbles: true });
+      paymentTypeSelect.dispatchEvent(event);
+
+      // Call update function to set Max and Rem values
+      if (typeof updatePaymentTypeProject === 'function') {
+        updatePaymentTypeProject();
+      }
+    }
+
+    // STEP 2: Fill the amount (after max limits are set)
+    const amountInput = document.getElementById('invoiceAmountInput');
+    if (amountInput) {
+      amountInput.value = amount || '';
+      // Recalculate max and remaining based on the edited amount
+      setTimeout(() => {
+        handlePaymentAmountChange();
+      }, 50);
+    }
+
+    // STEP 3: Fill common fields
+    const paymentForm = document.getElementById('paymentDetailsForm');
+    if (paymentForm) {
+      const methodSelect = paymentForm.querySelector('select[name="method"]');
+      const dateInput = paymentForm.querySelector('input[name="date"]');
+      const referenceInput = paymentForm.querySelector('input[name="reference"]');
+      const notesInput = paymentForm.querySelector('textarea[name="notes"]');
+
+      if (methodSelect) methodSelect.value = method || '';
+      if (dateInput) dateInput.value = date || '';
+      if (referenceInput) referenceInput.value = reference || '';
+      if (notesInput) notesInput.value = notes || '';
+    }
+
+    // STEP 4: Show and scroll to the payment form
+    const paymentDetailsForm = document.getElementById('paymentDetailsForm');
+    if (paymentDetailsForm) {
+      // Make sure form is visible (in case it was hidden by paid status)
+      paymentDetailsForm.style.display = 'block';
+      setTimeout(() => {
+        paymentDetailsForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+  } catch (e) {
+    console.error('Edit error:', e);
+  }
+}
+
+function validateAmountInput() {
+  const amountInput = document.getElementById('invoiceAmountInput');
+  const errorDiv = document.getElementById('amountError');
+  const amount = parseFloat(amountInput.value) || 0;
+
+  // Get max from max attribute first, then data attribute
+  let maxAmount = parseFloat(amountInput.max) || parseFloat(amountInput.dataset.max);
+
+  // Validate
+  if (maxAmount && amount > maxAmount) {
+    amountInput.value = maxAmount.toFixed(2);
+    errorDiv.textContent = `Cannot add more than $${maxAmount.toFixed(2)}`;
+    errorDiv.style.display = 'block';
+    amountInput.style.borderColor = '#DC2626';
+    return false;
+  } else {
+    errorDiv.style.display = 'none';
+    amountInput.style.borderColor = '';
+    return true;
+  }
+}
+
+function handleStatusUpdate() {
+  const paymentForm = document.getElementById('paymentDetailsForm');
+  const statusForm = document.getElementById('statusForm');
+  const statusSelect = document.getElementById('detailStatusSelect');
+  const amountInput = document.getElementById('invoiceAmountInput');
+
+  // Check if we're editing an existing payment
+  const isEditing = window.isEditingPayment && window.editPaymentContext;
+
+  // Check if user entered a payment amount
+  const amount = (amountInput && amountInput.value) ? parseFloat(amountInput.value) : 0;
+  const isPaymentSubmission = amount > 0;
+
+  console.log('handleStatusUpdate:', { amount, isPaymentSubmission, isEditing });
+
+  if (isPaymentSubmission || isEditing) {
+    if (amount <= 0 && !isEditing) {
+      alert('Please enter payment amount');
+      return;
+    }
+
+    // Get form fields
+    const formData = new FormData(statusForm);
+    formData.append('amount', amount);
+
+    // When editing on locked invoice, use 'Paid' status since locked status doesn't have dropdown
+    const status = statusSelect ? statusSelect.value : 'Paid';
+    formData.append('status', status);
+
+    const method_el = paymentForm.querySelector('select[name="method"]');
+    const date_el = paymentForm.querySelector('input[name="date"]');
+    const reference_el = paymentForm.querySelector('input[name="reference"]');
+    const notes_el = paymentForm.querySelector('textarea[name="notes"]');
+
+    if (method_el && method_el.value) formData.append('method', method_el.value);
+    if (date_el && date_el.value) formData.append('date', date_el.value);
+    if (reference_el && reference_el.value) formData.append('reference', reference_el.value);
+    if (notes_el && notes_el.value) formData.append('notes', notes_el.value);
+
+    // Check if we're editing an existing payment
+    if (isEditing) {
+      const ctx = window.editPaymentContext;
+      const editUrl = ctx.type === 'tax'
+        ? `/invoicing/{{ invoice.firebase_id }}/tax/payment/edit/${ctx.index}`
+        : `/invoicing/{{ invoice.firebase_id }}/payment/${ctx.index}/edit`;
+
+      // Submit to edit endpoint
+      fetch(editUrl, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+      }).then(res => {
+        if (res.ok) {
+          window.isEditingPayment = false;
+          window.editPaymentContext = null;
+          // Stay on invoice details page - just reload to show updated amounts
+          setTimeout(() => {
+            window.location.reload();
+          }, 500);
+        } else {
+          res.json().then(data => alert('Payment update failed: ' + (data.error || 'Unknown error')));
+        }
+      }).catch(err => alert('Error: ' + err));
+    } else if (isPaymentSubmission) {
+      // Submit to sequential distribution endpoint for new payments
+      console.log('Submitting payment:', { amount, status });
+      const paymentUrl = '/invoicing/{{ invoice.firebase_id }}/payment/sequential';
+      console.log('Payment URL:', paymentUrl);
+
+      fetch(paymentUrl, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+      })
+      .then(async res => {
+        console.log('Payment response:', res.status, res.ok);
+        if (res.ok) {
+          console.log('Payment recorded successfully, reloading...');
+          window.isEditingPayment = false;
+          // Get project ID from the page context if available
+          const projectLink = document.querySelector('a[href*="/projects/"]');
+          const projectId = projectLink ? projectLink.href.split('/projects/')[1] : null;
+          // Reload immediately to show updated payment in both invoice and project details
+          setTimeout(() => {
+            console.log('Reloading page...');
+            window.location.reload();
+          }, 200);
+        } else {
+          const data = await res.json();
+          console.error('Payment failed:', data);
+          alert('❌ Payment recording failed: ' + (data.error || 'Unknown error'));
+        }
+      })
+      .catch(err => {
+        console.error('Payment submission error:', err);
+        alert('❌ Error: ' + err.message);
+      });
+    }
+    return;
+  }
+
+  // Submit status form normally if no payment
+  statusForm.submit();
+}
+
+// Check on page load
+document.addEventListener('DOMContentLoaded', function() {
+  checkIfFullyPaid();
+
+  // Auto-select first available payment type
+  const paymentTypeSelect = document.getElementById('paymentTypeSelect');
+  if (paymentTypeSelect) {
+    for (let i = 1; i < paymentTypeSelect.options.length; i++) {
+      if (paymentTypeSelect.options[i].value) {
+        paymentTypeSelect.selectedIndex = i;
+        // Trigger change event to update form
+        paymentTypeSelect.dispatchEvent(new Event('change'));
+        break;
+      }
+    }
+  }
+});
+</script>
+<script>
+function togglePdfView() {
+  // Create hidden iframe to load PDF
+  let iframe = document.getElementById('hiddenPdfFrame');
+  if (!iframe) {
+    iframe = document.createElement('iframe');
+    iframe.id = 'hiddenPdfFrame';
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+  }
+
+  // Load PDF and trigger print when ready
+  iframe.src = '{{ url_for('invoice_pdf', invoice_id=invoice.firebase_id) }}';
+  iframe.onload = function() {
+    setTimeout(function() {
+      iframe.contentWindow.print();
+    }, 500);
+  };
+}
+
+function openDeleteModal() {
+  document.getElementById('deleteConfirmInput').value = '';
+  document.getElementById('deleteConfirmBtn').disabled = true;
+  new bootstrap.Modal(document.getElementById('deleteModal')).show();
+}
+function checkDeleteInput(input) {
+  const expected = '{{ meta.get("invoice_number","") }}';
+  document.getElementById('deleteConfirmBtn').disabled = input.value.trim() !== expected;
+}
+function copyNumber(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    const icon = btn.querySelector('i');
+    icon.className = 'bi bi-check2';
+    setTimeout(() => icon.className = 'bi bi-copy', 1500);
+  });
+}
+
+// AI Reminder
+const reminderBtn = document.getElementById('reminderBtn');
+if (reminderBtn) {
+  reminderBtn.addEventListener('click', async () => {
+    const modal = new bootstrap.Modal(document.getElementById('reminderModal'));
+    document.getElementById('reminderLoading').style.display = 'block';
+    document.getElementById('reminderSubject').value = '';
+    document.getElementById('reminderBody').value = '';
+    modal.show();
+    try {
+      const res = await fetch(`/ai/draft-reminder/${reminderBtn.dataset.invoiceId}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.error) {
+        document.getElementById('reminderBody').value = 'Error: ' + data.error;
+      } else {
+        document.getElementById('reminderSubject').value = data.subject || '';
+        document.getElementById('reminderBody').value = data.body || '';
+      }
+    } catch(e) {
+      document.getElementById('reminderBody').value = 'Request failed: ' + e;
+    } finally {
+      document.getElementById('reminderLoading').style.display = 'none';
+    }
+  });
+}
+function copyReminder() {
+  const subj = document.getElementById('reminderSubject').value;
+  const body = document.getElementById('reminderBody').value;
+  navigator.clipboard.writeText('Subject: ' + subj + '\n\n' + body);
+}
+
+function showPaidPaymentForm() {
+  const paymentForm = document.getElementById('paymentDetailsForm');
+  if (paymentForm) {
+    paymentForm.style.display = 'block';
+    setTimeout(() => {
+      paymentForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  }
+}
+</script>
+{% endblock %}
+

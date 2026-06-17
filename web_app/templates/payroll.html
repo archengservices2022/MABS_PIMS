@@ -1,0 +1,548 @@
+{% extends "base.html" %}
+{% block title %}Payroll{% endblock %}
+{% block page_title %}Payroll Management{% endblock %}
+
+{% block head %}
+<style>
+.payroll-tabs-container {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid #e2e8f0;
+  margin-bottom: 30px;
+}
+
+.payroll-tab-button {
+  padding: 14px 24px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
+  border-bottom: 3px solid transparent;
+  transition: all 0.2s;
+  position: relative;
+  margin-right: 5px;
+}
+
+.payroll-tab-button:hover { color: #0f172a; }
+.payroll-tab-button.active { color: #0d9488; border-bottom-color: #0d9488; }
+
+.payroll-tab-content { display: none; }
+.payroll-tab-content.active { display: block; }
+
+.salaries-section { animation: fadeIn 0.2s ease-in; }
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Salaries Filters */
+.salaries-filters {
+  background: #f8fafc;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 25px;
+  border: 1px solid #e2e8f0;
+}
+
+.filter-group { display: flex; flex-direction: column; }
+.filter-group label {
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 6px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.filter-group input,
+.filter-group select {
+  padding: 9px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  background: white;
+}
+.filter-group input:focus,
+.filter-group select:focus {
+  outline: none;
+  border-color: #0d9488;
+  box-shadow: 0 0 0 2px rgba(13,148,136,.1);
+}
+
+/* Form */
+.form-grid-3col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 15px;
+  margin-bottom: 15px;
+}
+.form-group { display: flex; flex-direction: column; }
+.form-group label { font-weight: 600; color: #0f172a; margin-bottom: 6px; font-size: 13px; }
+.form-group input,
+.form-group select,
+.form-group textarea {
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.form-group input:focus,
+.form-group select:focus { outline: none; border-color: #0d9488; box-shadow: 0 0 0 2px rgba(13,148,136,.1); }
+
+.btn-primary { background: #0d9488; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; transition: background .2s; }
+.btn-primary:hover { background: #0a7860; }
+.btn-secondary { background: #e2e8f0; color: #0f172a; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; transition: background .2s; }
+.btn-secondary:hover { background: #cbd5e1; }
+
+/* Dropdown Autocomplete */
+.dropdown-list {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  max-height: 200px;
+  overflow-y: auto;
+}
+.dropdown-list.show { display: block !important; }
+.dropdown-list .option {
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #0f172a;
+  transition: background 0.1s;
+}
+.dropdown-list .option:hover {
+  background: #f1f5f9;
+}
+.dropdown-list .option:nth-child(even) {
+  background: #fafbfc;
+}
+
+/* Table */
+.table-wrapper { background: white; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden; }
+.payroll-table { width: 100%; border-collapse: collapse; }
+.payroll-table thead { background: #f8fafc; border-bottom: 2px solid #e2e8f0; }
+.payroll-table th { padding: 14px; text-align: left; font-weight: 700; color: #0f172a; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+.payroll-table td { padding: 14px; border-bottom: 1px solid #e2e8f0; }
+.payroll-table tbody tr:hover { background: #f8fafc; }
+.payroll-table tbody tr:last-child td { border-bottom: none; }
+
+.region-badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.region-usa   { background: #dbeafe; color: #1e40af; }
+.region-intl  { background: #fed7aa; color: #92400e; }
+
+.action-buttons { display: flex; gap: 6px; }
+.btn-sm { padding: 6px 10px; font-size: 12px; border: none; border-radius: 4px; cursor: pointer; transition: all .2s; display: flex; align-items: center; gap: 4px; }
+.btn-delete { background: #fee2e2; color: #991b1b; }
+.btn-delete:hover { background: #fecaca; }
+
+.empty-state { text-align: center; padding: 60px 20px; color: #64748b; }
+.empty-state-icon { font-size: 56px; margin-bottom: 15px; }
+.empty-state-title { font-size: 18px; font-weight: 600; color: #0f172a; margin-bottom: 8px; }
+
+.summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 25px; }
+.summary-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; text-align: center; }
+.summary-card-label { font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 700; margin-bottom: 8px; letter-spacing: .5px; }
+.summary-card-value { font-size: 26px; font-weight: 800; color: #0f172a; }
+.summary-card.usa  { border-left: 4px solid #3b82f6; }
+.summary-card.intl { border-left: 4px solid #f59e0b; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <!-- Tab Navigation -->
+  <div class="payroll-tabs-container">
+    <button class="payroll-tab-button active" onclick="switchTab('salaries', event)">
+      <i class="bi bi-receipt me-2" style="font-size:16px;"></i>Salaries
+    </button>
+    <button class="payroll-tab-button" onclick="switchTab('add-salary', event)">
+      <i class="bi bi-plus-circle me-2" style="font-size:16px;"></i>Add Salary
+    </button>
+  </div>
+
+  <!-- ── Salaries Tab ────────────────────────────────────────── -->
+  <div id="salaries" class="payroll-tab-content active">
+    <div class="salaries-section">
+      <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Salary Records</h5>
+
+      <!-- Summary Cards -->
+      <div class="summary-cards" id="salaryCards"></div>
+
+      <!-- Filters -->
+      <div style="margin-bottom:20px;">
+        <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
+          <div class="d-flex gap-2 align-items-center flex-wrap">
+            <input type="text" id="searchEmployee" placeholder="Search employee..." class="form-control form-control-sm" style="width:200px;">
+            <select id="filterRegion" class="form-select form-select-sm" style="width:180px;">
+              <option value="">All Regions</option>
+              <option value="Inside America">Inside America</option>
+              <option value="Outside America">Outside America</option>
+            </select>
+          </div>
+        </div>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <span class="text-muted small" style="min-width:75px;">Start date:</span>
+          <input type="date" id="dateFrom" class="form-control form-control-sm" style="width:160px;">
+          <span class="text-muted small">to</span>
+          <input type="date" id="dateTo" class="form-control form-control-sm" style="width:160px;">
+          <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setDateRange('month')">This Month</button>
+          <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setDateRange('year')">This Year</button>
+          <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setDateRange('last30')">Last 30 Days</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="applySalaryFilters()">Apply</button>
+          <button type="button" class="btn btn-sm btn-light" onclick="clearFilters()">Clear</button>
+        </div>
+      </div>
+
+      <!-- Salaries Table -->
+      <div class="table-wrapper">
+        <table class="payroll-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Date</th>
+              <th>Amount</th>
+              <th>Region</th>
+              <th>Notes</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="salaryTableBody">
+            <tr>
+              <td colspan="6" class="empty-state">
+                <div class="empty-state-icon">💰</div>
+                <div class="empty-state-title">No Salary Entries</div>
+                <p style="margin:0;">Click "Add Salary" tab to create entries.</p>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Add Salary Tab ──────────────────────────────────────── -->
+  <div id="add-salary" class="payroll-tab-content">
+    <div>
+      <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Add Salary Entry</h5>
+
+      <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:25px;">
+        <form id="salaryForm" onsubmit="addSalary(event)">
+          <input type="hidden" id="salary_id" value="" />
+          <div class="form-grid-3col">
+            <div class="form-group" style="grid-column:1/-1;">
+              <label for="sal_employee">Employee Name</label>
+              <div style="position:relative;">
+                <input type="text" id="sal_employee" class="form-control form-control-sm" placeholder="Type or select employee..." required />
+                <div class="dropdown-list" id="sal_employee_dropdown" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #e2e8f0;border-top:none;max-height:200px;overflow-y:auto;display:none;z-index:1000;"></div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="sal_date">Date</label>
+              <input type="date" id="sal_date" required />
+            </div>
+
+            <div class="form-group">
+              <label for="sal_amount">Amount</label>
+              <input type="number" id="sal_amount" step="0.01" required />
+            </div>
+
+            <div class="form-group">
+              <label for="sal_region">Region</label>
+              <select id="sal_region" required>
+                <option value="">Select Region</option>
+                <option value="Inside America">Inside America</option>
+                <option value="Outside America">Outside America</option>
+              </select>
+            </div>
+
+            <div class="form-group" style="grid-column:1/-1;">
+              <label for="sal_notes">Notes</label>
+              <input type="text" id="sal_notes" placeholder="e.g., Monthly salary, Bonus, etc." />
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px;">
+            <button type="submit" class="btn-primary" id="submitBtn">
+              <i class="bi bi-check-circle me-1"></i><span id="submitBtnText">Add Salary Entry</span>
+            </button>
+            <button type="reset" class="btn-secondary">Clear</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Initialize filters from URL parameters
+  const params = new URLSearchParams(window.location.search);
+  const employeeFilter = params.get('employee');
+  const regionFilter = params.get('region');
+  const yearFilter = params.get('year');
+
+  if (employeeFilter) {
+    document.getElementById('searchEmployee').value = employeeFilter;
+  }
+  if (regionFilter) {
+    document.getElementById('filterRegion').value = regionFilter;
+  }
+  if (yearFilter) {
+    // Set date range for the year
+    document.getElementById('dateFrom').value = yearFilter + '-01-01';
+    document.getElementById('dateTo').value = yearFilter + '-12-31';
+  }
+
+  // Apply filters if any were provided
+  if (employeeFilter || regionFilter || yearFilter) {
+    applySalaryFilters();
+  } else {
+    loadSalaryData();
+  }
+});
+
+function switchTab(tabName, event) {
+  if (event) event.preventDefault();
+  document.querySelectorAll('.payroll-tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.payroll-tab-button').forEach(b => b.classList.remove('active'));
+  document.getElementById(tabName).classList.add('active');
+  event.target.closest('.payroll-tab-button').classList.add('active');
+  if (tabName === 'salaries') loadSalaryData();
+}
+
+function loadSalaryData() { applySalaryFilters(); }
+
+function applySalaryFilters() {
+  const search  = document.getElementById('searchEmployee').value.toLowerCase();
+  const region  = document.getElementById('filterRegion').value;
+  const dateFrom = document.getElementById('dateFrom').value;
+  const dateTo   = document.getElementById('dateTo').value;
+
+  const params = new URLSearchParams();
+  if (search)   params.append('search', search);
+  if (region)   params.append('region', region);
+  if (dateFrom) params.append('date_from', dateFrom);
+  if (dateTo)   params.append('date_to', dateTo);
+
+  fetch(`/api/payroll/salaries?${params.toString()}`)
+    .then(r => r.json())
+    .then(data => {
+      const cards = document.getElementById('salaryCards');
+      const salaries = data.salaries || [];
+      const usaTotal  = salaries.filter(s => s.region === 'Inside America').reduce((sum, s) => sum + parseFloat(s.amount || 0), 0);
+      const intlTotal = salaries.filter(s => s.region === 'Outside America').reduce((sum, s) => sum + parseFloat(s.amount || 0), 0);
+
+      cards.innerHTML = `
+        <div class="summary-card usa">
+          <div class="summary-card-label">Inside America</div>
+          <div class="summary-card-value">$${usaTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+        </div>
+        <div class="summary-card intl">
+          <div class="summary-card-label">Outside America</div>
+          <div class="summary-card-value">$${intlTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-card-label">Total</div>
+          <div class="summary-card-value">$${(usaTotal+intlTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+        </div>
+      `;
+
+      const tbody = document.getElementById('salaryTableBody');
+      if (!salaries.length) {
+        tbody.innerHTML = `<tr><td colspan="6" class="empty-state"><div class="empty-state-icon">💰</div><div class="empty-state-title">No Results</div></td></tr>`;
+        return;
+      }
+      tbody.innerHTML = salaries.map(sal => `
+        <tr>
+          <td><strong>${sal.employee_name}</strong></td>
+          <td>${sal.date}</td>
+          <td>$${parseFloat(sal.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+          <td><span class="region-badge ${sal.region === 'Inside America' ? 'region-usa' : 'region-intl'}">${sal.region}</span></td>
+          <td>${sal.notes || '—'}</td>
+          <td>
+            <div class="action-buttons">
+              <button onclick="editSalary('${sal.firebase_id}', '${sal.employee_name}', '${sal.date}', '${sal.amount}', '${sal.region}', '${sal.notes || ''}')" class="btn-sm btn-edit" title="Edit" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <button onclick="deleteSalary('${sal.firebase_id}')" class="btn-sm btn-delete" title="Delete">
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+    });
+}
+
+function setDateRange(range) {
+  const today = new Date();
+  let from, to = today.toISOString().split('T')[0];
+  if (range === 'month')  from = new Date(today.getFullYear(), today.getMonth(), 1);
+  else if (range === 'year')   from = new Date(today.getFullYear(), 0, 1);
+  else if (range === 'last30') from = new Date(today.getTime() - 30*24*60*60*1000);
+  document.getElementById('dateFrom').value = from.toISOString().split('T')[0];
+  document.getElementById('dateTo').value   = to;
+  applySalaryFilters();
+}
+
+function clearFilters() {
+  document.getElementById('searchEmployee').value = '';
+  document.getElementById('filterRegion').value   = '';
+  document.getElementById('dateFrom').value        = '';
+  document.getElementById('dateTo').value          = '';
+  applySalaryFilters();
+}
+
+// Employee autocomplete dropdown
+const employeesList = {{ employee_profiles|tojson|safe }};
+
+function initEmployeeAutocomplete() {
+  const input = document.getElementById('sal_employee');
+  const dropdown = document.getElementById('sal_employee_dropdown');
+  if (!input) return;
+
+  input.addEventListener('focus', function() {
+    dropdown.classList.add('show');
+    renderEmployeeOptions('');
+  });
+
+  input.addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    renderEmployeeOptions(filter);
+    dropdown.classList.add('show');
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('#sal_employee') && !e.target.closest('#sal_employee_dropdown')) {
+      dropdown.classList.remove('show');
+    }
+  });
+}
+
+function renderEmployeeOptions(filter) {
+  const dropdown = document.getElementById('sal_employee_dropdown');
+  const input = document.getElementById('sal_employee');
+
+  dropdown.innerHTML = '';
+  const filtered = employeesList.filter(emp =>
+    emp.name.toLowerCase().includes(filter)
+  );
+
+  if (filtered.length === 0) {
+    const div = document.createElement('div');
+    div.className = 'option';
+    div.textContent = 'No employees found';
+    div.style.color = '#94a3b8';
+    div.style.pointerEvents = 'none';
+    dropdown.appendChild(div);
+    return;
+  }
+
+  filtered.forEach(emp => {
+    const div = document.createElement('div');
+    div.className = 'option';
+    div.textContent = emp.name;
+    div.onclick = () => {
+      input.value = emp.name;
+      dropdown.classList.remove('show');
+      // Auto-fill region if available
+      if (emp.region) {
+        document.getElementById('sal_region').value = emp.region;
+      }
+    };
+    dropdown.appendChild(div);
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  initEmployeeAutocomplete();
+});
+
+function editSalary(id, employee, date, amount, region, notes) {
+  // Populate form fields
+  document.getElementById('salary_id').value = id;
+  document.getElementById('sal_employee').value = employee;
+  document.getElementById('sal_date').value = date;
+  document.getElementById('sal_amount').value = amount;
+  document.getElementById('sal_region').value = region;
+  document.getElementById('sal_notes').value = notes || '';
+
+  // Update button text
+  document.getElementById('submitBtnText').textContent = 'Update Salary Entry';
+
+  // Switch to add-salary tab
+  document.querySelectorAll('.payroll-tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.payroll-tab-button').forEach(b => b.classList.remove('active'));
+  document.getElementById('add-salary').classList.add('active');
+  document.querySelector('button[onclick="switchTab(\'add-salary\', event)"]').classList.add('active');
+
+  // Scroll to form
+  document.querySelector('form').scrollIntoView({behavior: 'smooth'});
+}
+
+function addSalary(e) {
+  e.preventDefault();
+  const employeeName = document.getElementById('sal_employee').value.trim();
+  if (!employeeName) { alert('Please select or enter an employee name'); return; }
+
+  const salaryId = document.getElementById('salary_id').value;
+  const data = {
+    employee_name: employeeName,
+    date:          document.getElementById('sal_date').value,
+    amount:        document.getElementById('sal_amount').value,
+    region:        document.getElementById('sal_region').value,
+    notes:         document.getElementById('sal_notes').value,
+  };
+
+  const method = salaryId ? 'PUT' : 'POST';
+  const url = salaryId ? `/api/payroll/salaries/${salaryId}` : '/api/payroll/salaries';
+
+  fetch(url, {
+    method: method,
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  })
+  .then(r => r.json())
+  .then(res => {
+    if (res.success || res.salary_id || res.firebase_id) {
+      document.getElementById('salaryForm').reset();
+      document.getElementById('salary_id').value = '';
+      document.getElementById('submitBtnText').textContent = 'Add Salary Entry';
+      // Switch to salaries tab
+      document.querySelectorAll('.payroll-tab-content').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.payroll-tab-button').forEach(b => b.classList.remove('active'));
+      document.getElementById('salaries').classList.add('active');
+      document.querySelector('button[onclick="switchTab(\'salaries\', event)"]').classList.add('active');
+      loadSalaryData();
+    } else {
+      alert('Error: ' + (res.error || 'Failed to save salary'));
+    }
+  })
+  .catch(err => {
+    console.error('Error:', err);
+    setTimeout(() => loadSalaryData(), 500);
+  });
+}
+
+function deleteSalary(id) {
+  if (!confirm('Delete this salary entry?')) return;
+  fetch(`/api/payroll/salaries/${id}`, {method: 'DELETE'})
+    .then(r => r.json())
+    .then(res => { if (res.success) loadSalaryData(); });
+}
+
+// Real-time filter listeners
+document.addEventListener('DOMContentLoaded', () => {
+  loadSalaryData();
+  document.getElementById('searchEmployee').addEventListener('input', applySalaryFilters);
+  document.getElementById('filterRegion').addEventListener('change', applySalaryFilters);
+  document.getElementById('dateFrom').addEventListener('change', applySalaryFilters);
+  document.getElementById('dateTo').addEventListener('change', applySalaryFilters);
+});
+</script>
+{% endblock %}

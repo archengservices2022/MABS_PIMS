@@ -1,0 +1,627 @@
+{% extends "base.html" %}
+{% block title %}Projects{% endblock %}
+{% block page_title %}Projects{% endblock %}
+
+{% block content %}
+<style>
+  #tab-export #projectsTable { display: none !important; }
+  #tab-export .card-panel:has(#projectsTable) { display: none !important; }
+</style>
+<!-- Tab nav -->
+<ul class="nav nav-tabs mb-4" id="projectTabs">
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-all-projects">
+      <i class="bi bi-kanban me-1"></i>All Projects
+      <span class="badge bg-secondary ms-1">{{ projects|length }}</span>
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('project_new') }}">
+      <i class="bi bi-plus-square me-1"></i>New Project
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-export">
+      <i class="bi bi-download me-1"></i>Export
+    </a>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- ── Tab 1: All Projects ─────────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-all-projects">
+    {% set status_styles = {
+      'Not Started': ('bi-hourglass-split',  'bg-slate'),
+      'Active':      ('bi-lightning-charge', 'bg-blue'),
+      'In Progress': ('bi-arrow-repeat',     'bg-blue'),
+      'On Hold':     ('bi-pause-circle',     'bg-amber'),
+      'Completed':   ('bi-check-circle-fill','bg-green'),
+      'Cancelled':   ('bi-x-circle',         'bg-red'),
+    } %}
+    {% if status_counts %}
+    <div class="row g-2 mb-3">
+      {% for st, count in status_counts.items() %}
+      {% set icon, color = status_styles.get(st, ('bi-kanban', 'bg-slate')) %}
+      <div class="col-6 col-md-3 col-lg-2">
+        <a href="{{ url_for('projects', status=st, tab='all-projects') }}" class="text-decoration-none">
+          <div class="stat-card py-2 px-3" style="gap:10px;{{ 'border-color:var(--slate-400);box-shadow:0 0 0 1px var(--slate-300);' if status_filter == st }}">
+            <div class="stat-icon {{ color }}" style="width:36px;height:36px;font-size:16px;border-radius:8px;">
+              <i class="bi {{ icon }}"></i>
+            </div>
+            <div>
+              <div class="stat-value" style="font-size:18px;">{{ count }}</div>
+              <div class="stat-label">{{ st }}</div>
+            </div>
+          </div>
+        </a>
+      </div>
+      {% endfor %}
+      {% if overdue_count %}
+      <div class="col-6 col-md-3 col-lg-2">
+        <a href="{{ url_for('projects', overdue=1, tab='all-projects') }}" class="text-decoration-none">
+          <div class="stat-card py-2 px-3" style="gap:10px;{{ 'border-color:var(--slate-400);box-shadow:0 0 0 1px var(--slate-300);' if overdue_filter }}">
+            <div class="stat-icon bg-red" style="width:36px;height:36px;font-size:16px;border-radius:8px;">
+              <i class="bi bi-exclamation-triangle-fill"></i>
+            </div>
+            <div>
+              <div class="stat-value" style="font-size:18px;">{{ overdue_count }}</div>
+              <div class="stat-label">Overdue Payment{{ 's' if overdue_count != 1 }}</div>
+            </div>
+          </div>
+        </a>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+    <form method="GET" id="projFilterForm">
+      <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <input type="text" name="q" value="{{ search }}" class="form-control form-control-sm"
+                 placeholder="Search projects…" style="width:200px;">
+          <select name="status" class="form-select form-select-sm" style="width:150px;">
+            <option value="">All Statuses</option>
+            {% for s in statuses %}
+            <option value="{{ s }}" {{ 'selected' if status_filter == s }}>{{ s }}</option>
+            {% endfor %}
+          </select>
+          <select name="client" class="form-select form-select-sm" style="width:190px;">
+            <option value="">All Clients</option>
+            {% for c in clients %}
+            <option value="{{ c }}" {{ 'selected' if client_filter == c }}>{{ c }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="button" class="btn btn-sm btn-primary" id="loadBtn" style="display:none;white-space:nowrap;padding:0.5rem 1rem;" onclick="openLoadModal()"></button>
+      </div>
+      <div class="d-flex gap-2 align-items-center flex-wrap">
+        <span class="text-muted small" style="min-width:75px;">Start date:</span>
+        <input type="date" name="from" value="{{ date_from }}" class="form-control form-control-sm" style="width:160px;">
+        <span class="text-muted small">to</span>
+        <input type="date" name="to" value="{{ date_to }}" class="form-control form-control-sm" style="width:160px;">
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setProjRange('month')">This Month</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setProjRange('year')">This Year</button>
+        <button type="submit" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-search me-1"></i>Apply
+        </button>
+        {% if search or status_filter or overdue_filter or date_from or date_to or client_filter %}
+        <a href="{{ url_for('projects') }}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-x-lg me-1"></i>Clear
+        </a>
+        {% endif %}
+      </div>
+    </form>
+    {% if search or status_filter or overdue_filter or date_from or date_to or client_filter %}
+    <div class="alert alert-light py-1 px-3 mt-2 small d-flex align-items-center gap-2"
+         style="border-left:3px solid #0D9488;">
+      <i class="bi bi-funnel text-teal"></i>
+      <span>
+        {% if date_from and date_to %}{{ date_from }} to {{ date_to }}{% elif date_from %}From {{ date_from }}{% elif date_to %}Up to {{ date_to }}{% endif %}
+        {% if status_filter %} · Status: <strong>{{ status_filter }}</strong>{% endif %}
+        {% if overdue_filter %} · <strong class="text-danger">Overdue payments only</strong>{% endif %}
+        {% if client_filter %} · Client: <strong>{{ client_filter }}</strong>{% endif %}
+        &nbsp;·&nbsp; {{ projects|length }} result{{ 's' if projects|length != 1 else '' }}
+      </span>
+    </div>
+    {% endif %}
+
+    <div class="card-panel">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle" id="projectsTable">
+          <thead>
+            <tr>
+              <th>Project #</th>
+              <th>Name</th>
+              <th>Client</th>
+              <th>Start Date</th>
+              <th class="text-end">Contract Value</th>
+              <th class="text-end">Paid</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in projects %}
+            <tr class="project-row" data-project-id="{{ p.firebase_id }}" data-project="{{ p | tojson }}"
+                onmousedown="startDragSelect(event, '{{ p.firebase_id }}')"
+                onmouseup="endDragSelect(event)"
+                onmouseover="continueDragSelect(event, '{{ p.firebase_id }}')"
+                onclick="selectProject(event, '{{ p.firebase_id }}')"
+                style="cursor:pointer;user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;">
+              <td><a href="{{ url_for('project_detail', project_id=p.firebase_id) }}" onclick="event.stopPropagation();" class="text-teal fw-bold" style="text-decoration:none;">{{ p.get('project_number','—') }}</a></td>
+              <td class="fw-500">{{ p.get('project_name','—') }}</td>
+              <td class="text-muted">{{ p.get('client_name','—') }}</td>
+              <td>{{ p.get('start_date','—') }}</td>
+              <td class="text-end fw-bold">${{ "{:,.0f}".format(p.get('contract_value',0)|float) }}</td>
+              <td class="text-end text-success">${{ "{:,.0f}".format(p.get('amount_paid',0)|float) }}</td>
+              <td>
+                <span class="badge status-{{ p.get('status','Not Started')|lower|replace(' ','-') }}">
+                  {{ p.get('status','Not Started') }}
+                </span>
+                {% if p.get('_has_overdue') %}
+                <span class="badge status-overdue" title="A payment stage is past its invoice due date">
+                  <i class="bi bi-exclamation-triangle-fill"></i> Overdue
+                </span>
+                {% endif %}
+              </td>
+              <td onclick="event.stopPropagation(); location.href='{{ url_for('project_detail', project_id=p.firebase_id) }}'">
+                <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}"
+                   class="btn btn-xs btn-outline-secondary" onclick="event.stopPropagation()">
+                  <i class="bi bi-eye"></i>
+                </a>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="8" class="text-center text-muted py-5">
+                <i class="bi bi-kanban fs-2 d-block mb-2"></i>
+                No projects found.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tab 2: New Project ──────────────────────────────────────────────── -->
+  <!-- ── Tab 3: Export ───────────────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-export">
+    <div class="card-panel mb-4">
+      <h6 class="section-heading mb-3">Filter Export</h6>
+      <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
+        <select id="exportStatus" class="form-select form-select-sm" style="width:170px;"
+                onchange="buildExportLinks()">
+          <option value="">All Statuses</option>
+          {% for s in statuses %}
+          <option value="{{ s }}">{{ s }}</option>
+          {% endfor %}
+        </select>
+        <select id="exportClient" class="form-select form-select-sm" style="width:200px;"
+                onchange="buildExportLinks()">
+          <option value="">All Clients</option>
+          {% for c in clients %}
+          <option value="{{ c }}">{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="d-flex gap-2 flex-wrap align-items-center">
+        <span class="text-muted small" style="min-width:75px;">Start date:</span>
+        <input type="date" id="exportFrom" class="form-control form-control-sm" style="width:160px;" oninput="buildExportLinks()">
+        <span class="text-muted small">to</span>
+        <input type="date" id="exportTo" class="form-control form-control-sm" style="width:160px;" oninput="buildExportLinks()">
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setExportRange('month')">This Month</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setExportRange('year')">This Year</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setExportRange('last30')">Last 30 Days</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="clearExportFilters()">Clear</button>
+      </div>
+    </div>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="export-card">
+          <div style="font-size:2.5rem;color:#DC2626;margin-bottom:12px;">
+            <i class="bi bi-file-earmark-pdf-fill"></i>
+          </div>
+          <h6 class="fw-bold mb-1">PDF Report</h6>
+          <p class="text-muted small mb-3">Professional PDF with all project data</p>
+          <a id="exportPdfLink" href="{{ url_for('projects_export_pdf') }}"
+             class="btn btn-sm btn-danger w-100">
+            <i class="bi bi-download me-1"></i>Download PDF
+          </a>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="export-card">
+          <div style="font-size:2.5rem;color:#16A34A;margin-bottom:12px;">
+            <i class="bi bi-file-earmark-spreadsheet-fill"></i>
+          </div>
+          <h6 class="fw-bold mb-1">Excel Spreadsheet</h6>
+          <p class="text-muted small mb-3">Styled .xlsx with all project details</p>
+          <a id="exportExcelLink" href="{{ url_for('projects_export_excel') }}"
+             class="btn btn-sm btn-success w-100">
+            <i class="bi bi-download me-1"></i>Download Excel
+          </a>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="export-card">
+          <div style="font-size:2.5rem;color:#2563EB;margin-bottom:12px;">
+            <i class="bi bi-file-earmark-text-fill"></i>
+          </div>
+          <h6 class="fw-bold mb-1">CSV Export</h6>
+          <p class="text-muted small mb-3">Comma-separated values file</p>
+          <a id="exportCsvLink" href="{{ url_for('projects_export_csv') }}"
+             class="btn btn-sm btn-primary w-100">
+            <i class="bi bi-download me-1"></i>Download CSV
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Hide table when export tab is active
+document.addEventListener('DOMContentLoaded', function() {
+  const exportTab = document.getElementById('tab-export');
+  const projectsTable = document.getElementById('projectsTable');
+
+  if (projectsTable && projectsTable.closest('#tab-export')) {
+    projectsTable.closest('.card-panel').remove();
+  }
+
+  // Also prevent table from showing on tab switch
+  document.querySelectorAll('[href="#tab-export"]').forEach(link => {
+    link.addEventListener('shown.bs.tab', function() {
+      if (projectsTable) projectsTable.parentElement.parentElement.style.display = 'none';
+    });
+  });
+
+  document.querySelectorAll('[href="#tab-all-projects"]').forEach(link => {
+    link.addEventListener('shown.bs.tab', function() {
+      if (projectsTable) projectsTable.parentElement.parentElement.style.display = 'block';
+    });
+  });
+
+  // Initialize export links with current filter values
+  buildExportLinks();
+});
+
+// ── Project filter quick-range ───────────────────────────────────────────────
+function localDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function setProjRange(type) {
+  const form = document.getElementById('projFilterForm');
+  const fromEl = form.querySelector('[name="from"]');
+  const toEl   = form.querySelector('[name="to"]');
+  const now = new Date();
+  if (type === 'month') {
+    fromEl.value = localDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    toEl.value   = localDate(new Date(now.getFullYear(), now.getMonth()+1, 0));
+  } else if (type === 'year') {
+    fromEl.value = `${now.getFullYear()}-01-01`;
+    toEl.value   = `${now.getFullYear()}-12-31`;
+  } else if (type === 'last30') {
+    const f = new Date(now); f.setDate(f.getDate()-30);
+    fromEl.value = localDate(f);
+    toEl.value   = localDate(now);
+  }
+  form.submit();
+}
+
+const PDF_BASE   = "{{ url_for('projects_export_pdf') }}";
+const EXCEL_BASE = "{{ url_for('projects_export_excel') }}";
+const CSV_BASE   = "{{ url_for('projects_export_csv') }}";
+
+function buildExportLinks() {
+  const params = new URLSearchParams();
+  const s  = document.getElementById('exportStatus').value;
+  const c  = document.getElementById('exportClient').value;
+  const f  = document.getElementById('exportFrom').value;
+  const t  = document.getElementById('exportTo').value;
+  if (s) params.set('status', s);
+  if (c) params.set('client', c);
+  if (f) params.set('from', f);
+  if (t) params.set('to', t);
+  const q = params.toString() ? '?' + params.toString() : '';
+  document.getElementById('exportPdfLink').href   = PDF_BASE   + q;
+  document.getElementById('exportExcelLink').href = EXCEL_BASE + q;
+  document.getElementById('exportCsvLink').href   = CSV_BASE   + q;
+}
+function setExportRange(type) {
+  const now = new Date();
+  if (type === 'month') {
+    document.getElementById('exportFrom').value = localDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    document.getElementById('exportTo').value   = localDate(new Date(now.getFullYear(), now.getMonth()+1, 0));
+  } else if (type === 'year') {
+    document.getElementById('exportFrom').value = `${now.getFullYear()}-01-01`;
+    document.getElementById('exportTo').value   = `${now.getFullYear()}-12-31`;
+  } else if (type === 'last30') {
+    const f = new Date(now); f.setDate(f.getDate()-30);
+    document.getElementById('exportFrom').value = localDate(f);
+    document.getElementById('exportTo').value   = localDate(now);
+  }
+  buildExportLinks();
+}
+function clearExportFilters() {
+  document.getElementById('exportStatus').value = '';
+  document.getElementById('exportClient').value = '';
+  document.getElementById('exportFrom').value = '';
+  document.getElementById('exportTo').value = '';
+  buildExportLinks();
+}
+
+// Shift+Click and Shift+Drag multi-select
+let lastSelectedRow = null;
+window.selectedProjects = [];
+let dragStartRow = null;
+let isDragging = false;
+
+function startDragSelect(event, projectId) {
+  if (event.buttons === 1) {  // Left mouse button
+    isDragging = true;
+    dragStartRow = event.currentTarget;
+  }
+}
+
+function updateRangeSelection(event) {
+  if (!isDragging || !dragStartRow) return;
+
+  const table = document.getElementById('projectsTable');
+  const rows = Array.from(table.querySelectorAll('tbody .project-row'));
+  const startIdx = rows.indexOf(dragStartRow);
+
+  if (startIdx === -1) return;
+
+  // Find which row is currently under cursor
+  const hoveredRow = document.elementFromPoint(event.clientX, event.clientY)?.closest('.project-row');
+  if (!hoveredRow || !rows.includes(hoveredRow)) return;
+
+  const currentIdx = rows.indexOf(hoveredRow);
+  const start = Math.min(startIdx, currentIdx);
+  const end = Math.max(startIdx, currentIdx);
+
+  // Clear and select range
+  rows.forEach(r => r.classList.remove('table-active'));
+  window.selectedProjects = [];
+
+  rows.slice(start, end + 1).forEach(r => {
+    r.classList.add('table-active');
+    const id = r.dataset.projectId;
+    if (!window.selectedProjects.includes(id)) {
+      window.selectedProjects.push(id);
+    }
+  });
+
+  updateLoadButton();
+}
+
+// Global mousemove listener for drag selection
+document.addEventListener('mousemove', (event) => {
+  if (isDragging) {
+    updateRangeSelection(event);
+  }
+});
+
+function endDragSelect(event) {
+  isDragging = false;
+}
+
+function selectProject(event, projectId) {
+  const row = event.currentTarget;
+
+  if (event.shiftKey && lastSelectedRow) {
+    // Shift+Click: select range
+    const table = document.getElementById('projectsTable');
+    const rows = Array.from(table.querySelectorAll('tbody .project-row'));
+    const lastIdx = rows.indexOf(lastSelectedRow);
+    const currentIdx = rows.indexOf(row);
+    const start = Math.min(lastIdx, currentIdx);
+    const end = Math.max(lastIdx, currentIdx);
+
+    rows.slice(start, end + 1).forEach(r => {
+      r.classList.add('table-active');
+      const id = r.dataset.projectId;
+      if (!window.selectedProjects.includes(id)) {
+        window.selectedProjects.push(id);
+      }
+    });
+  } else if (event.ctrlKey || event.metaKey) {
+    // Ctrl/Cmd+Click: toggle individual
+    if (row.classList.contains('table-active')) {
+      row.classList.remove('table-active');
+      window.selectedProjects = window.selectedProjects.filter(id => id !== projectId);
+    } else {
+      row.classList.add('table-active');
+      if (!window.selectedProjects.includes(projectId)) {
+        window.selectedProjects.push(projectId);
+      }
+    }
+  } else {
+    // Single click: select only this
+    document.querySelectorAll('.project-row.table-active').forEach(r => r.classList.remove('table-active'));
+    row.classList.add('table-active');
+    window.selectedProjects = [projectId];
+  }
+
+  lastSelectedRow = row;
+  updateLoadButton();
+}
+
+function updateLoadButton() {
+  const btn = document.getElementById('loadBtn');
+  if (window.selectedProjects.length > 0) {
+    btn.style.display = 'block';
+    btn.innerHTML = `<i class="bi bi-upload me-1"></i>Load ${window.selectedProjects.length} Project(s) to Invoice`;
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+function openLoadModal() {
+  try {
+    if (window.selectedProjects.length === 0) {
+      alert('Please select at least one project');
+      return;
+    }
+
+    // Fetch project data from server
+    const projectIds = window.selectedProjects.join(',');
+    fetch(`{{ url_for('api_get_projects', project_ids='') }}${projectIds}`)
+      .then(response => {
+        if (!response.ok) throw new Error('Failed to fetch projects');
+        return response.json();
+      })
+      .then(selectedProjects => {
+        if (!selectedProjects || selectedProjects.length === 0) {
+          alert('Could not load project data. Please try again.');
+          return;
+        }
+
+        window.selectedProjectsForInvoice = selectedProjects;
+
+        // Build modal content - show only NEXT stage to invoice
+        const modalBody = document.getElementById('loadModalBody');
+
+        // Title
+        let html = `<div style="margin-bottom:20px;">
+          <h6 style="font-size:16px;font-weight:700;color:#0f172a;margin:0 0 8px 0;">Auto-Detected Payment Stages</h6>
+          <p style="font-size:12px;color:#64748b;margin:0;">System auto-detected the next invoice stage for each project. Review then confirm.</p>
+        </div>`;
+
+        // Table
+        html += `<div style="border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin-bottom:16px;">
+          <table style="width:100%;border-collapse:collapse;font-size:12px;background:white;">
+            <tr style="background:#f1f5f9;border-bottom:1px solid #e2e8f0;">
+              <th style="padding:12px;text-align:left;font-weight:600;color:#334155;">Project #</th>
+              <th style="padding:12px;text-align:left;font-weight:600;color:#334155;">Name</th>
+              <th style="padding:12px;text-align:left;font-weight:600;color:#334155;">Next Stage</th>
+              <th style="padding:12px;text-align:right;font-weight:600;color:#334155;width:110px;">Amount</th>
+              <th style="padding:12px;text-align:left;font-weight:600;color:#334155;">Status</th>
+            </tr>`;
+
+        let blockedCount = 0;
+        selectedProjects.forEach((proj) => {
+          const nextStage = proj.next_stage || 'Fully Invoiced';
+          const isBlocked = proj.stage_blocked || false;
+          const amount = parseFloat(proj.next_stage_amount || 0);
+          const reason = proj.stage_reason || '';
+
+          if (isBlocked) blockedCount++;
+
+          const stageColor = isBlocked ? '#dc2626' : '#16a34a';
+          const reasonColor = isBlocked ? '#b45309' : '#0f766e';
+
+          html += `<tr style="border-bottom:1px solid #f1f5f9;background:${proj.firebase_id % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+            <td style="padding:12px;color:#1e293b;"><strong>${proj.project_number || '—'}</strong></td>
+            <td style="padding:12px;color:#1e293b;">${proj.project_name || '—'}</td>
+            <td style="padding:12px;color:${stageColor};font-weight:600;">${nextStage}</td>
+            <td style="padding:12px;text-align:right;color:#1e293b;"><strong>$${amount.toFixed(2)}</strong></td>
+            <td style="padding:12px;color:${reasonColor};font-size:11px;">${reason}</td>
+          </tr>`;
+        });
+
+        html += `</table></div>`;
+
+        // Warning if blocked
+        if (blockedCount > 0) {
+          html += `<div style="background:#fef3c7;border-radius:6px;padding:12px;margin-bottom:16px;border-left:4px solid #f59e0b;">
+            <div style="color:#92400e;font-size:12px;font-weight:500;">
+              ⚠ ${blockedCount} project(s) have a prior stage not yet paid. They will still be loaded — confirm with client before sending.
+            </div>
+          </div>`;
+        }
+
+        html += '</div>';
+        modalBody.innerHTML = html;
+
+        // Check if all projects are fully invoiced
+        const allFullyInvoiced = selectedProjects.every(proj => proj.next_stage === 'Fully Invoiced');
+        const loadBtn = document.getElementById('loadToInvoiceBtn');
+
+        if (allFullyInvoiced) {
+          loadBtn.disabled = true;
+          loadBtn.setAttribute('title', 'All selected projects are fully invoiced');
+          loadBtn.style.opacity = '0.5';
+          loadBtn.style.cursor = 'not-allowed';
+        } else {
+          loadBtn.disabled = false;
+          loadBtn.removeAttribute('title');
+          loadBtn.style.opacity = '1';
+          loadBtn.style.cursor = 'pointer';
+        }
+
+        const modal = new bootstrap.Modal(document.getElementById('loadModal'));
+        modal.show();
+      })
+      .catch(error => {
+        console.error('Error fetching projects:', error);
+        alert('Error loading project data. Please try again.');
+      });
+  } catch(error) {
+    console.error('Error opening modal:', error);
+    alert('Error opening modal. Check console for details.');
+  }
+}
+
+function loadToInvoice() {
+  const projects = window.selectedProjectsForInvoice || [];
+  if (projects.length === 0) return;
+
+  // Filter out fully invoiced projects
+  const readyProjects = projects.filter(p => p.next_stage !== 'Fully Invoiced');
+
+  if (readyProjects.length === 0) {
+    alert('All selected projects are fully invoiced. No projects to load.');
+    return;
+  }
+
+  const projectIds = readyProjects.map(p => p.firebase_id).join(',');
+  window.location.href = `{{ url_for('invoice_new') }}?projects=${projectIds}`;
+}
+
+// Activate tab from URL param or server active_tab
+const tabParam = "{{ active_tab }}";
+const allTabs  = ["all-projects", "export"];
+const target   = allTabs.includes(tabParam) ? tabParam : "all-projects";
+const el = document.querySelector('[href="#tab-' + target + '"]');
+if (el) new bootstrap.Tab(el).show();
+
+// Sync URL when tab changes
+document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
+  el.addEventListener('shown.bs.tab', e => {
+    const id = e.target.getAttribute('href').replace('#tab-', '');
+    const url = new URL(window.location);
+    url.searchParams.set('tab', id);
+    window.history.replaceState({}, '', url);
+  });
+});
+</script>
+
+<!-- Load to Invoice Modal -->
+<div class="modal fade" id="loadModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Load Projects to Invoice</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="loadModalBody">
+        <p class="text-muted">Loading...</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="loadToInvoiceBtn" onclick="loadToInvoice()"
+                data-bs-toggle="tooltip" data-bs-placement="top" title="">
+          <i class="bi bi-upload me-1"></i>Load to Invoice
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

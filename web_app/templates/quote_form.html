@@ -1,0 +1,408 @@
+{% extends "base.html" %}
+{% block title %}{{ 'New Quote' if is_new else 'Edit Quote' }}{% endblock %}
+{% block page_title %}{{ 'New Quote' if is_new else 'Edit Quote' }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+  <a href="{{ url_for('quotes') }}" class="btn btn-sm btn-outline-secondary me-2">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h5 class="mb-0">{{ 'Create New Quote' if is_new else 'Edit Quote' }}</h5>
+</div>
+
+  {% if from_project %}
+  <div class="alert alert-info py-2 mb-3">
+    <i class="bi bi-kanban me-1"></i>
+    Creating quote from project <strong>{{ from_project.get('project_number','') }}</strong> — {{ from_project.get('project_name','') }}
+  </div>
+  {% endif %}
+
+<form method="POST">
+  <div class="row g-3">
+    <!-- Left column -->
+    <div class="col-lg-8">
+
+      <!-- Quote Details -->
+      <div class="card-panel mb-3">
+        <h6 class="section-heading">Quote Details</h6>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Quote Number</label>
+            <input type="text" name="job_number" class="form-control"
+                   value="{{ quote.get('job_number','') if quote else (next_num or '') }}"
+                   required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Date</label>
+            <input type="date" name="date" class="form-control"
+                   value="{{ quote.get('date','') if quote else '' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Valid Until</label>
+            <input type="date" name="valid_until" class="form-control"
+                   value="{{ quote.get('valid_until','') if quote else '' }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Client</label>
+            <select name="client_name" class="form-select">
+              <option value="">-- Select Client --</option>
+              {% for c in clients %}
+              <option value="{{ c }}"
+                {{ 'selected' if quote and quote.get('client_name') == c }}>{{ c }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Salesperson</label>
+            <select name="salesperson" class="form-select">
+              <option value="">-- Select Salesperson --</option>
+              {% for sp in sales_people %}
+              <option value="{{ sp.get('name','') }}"
+                {{ 'selected' if quote and quote.get('salesperson') == sp.get('name','') }}>
+                {{ sp.get('name','') }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Project / Scope</label>
+            <input type="text" name="project_name" class="form-control"
+                   value="{{ quote.get('project_name','') if quote else '' }}"
+                   placeholder="Project name or scope description">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Description</label>
+            <textarea name="description" class="form-control" rows="2"
+                      placeholder="Brief project description">{{ quote.get('description','') if quote else '' }}</textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Service Details -->
+      <div class="card-panel mb-3">
+        <h6 class="section-heading">Service Details</h6>
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label">Service Types <span class="text-muted small fw-normal">— select all that apply; each adds a line item</span></label>
+            {% set all_services = ['Mechanical','Electrical','Civil','Structural','Plumbing','HVAC','Fire Protection','Geotechnical','Environmental','Other'] %}
+            {% set selected_svcs = ((quote.get('service_types') or ([quote.get('service_type')] if quote.get('service_type') else [])) if quote else []) %}
+            {# Extract existing "Other: XYZ" specify text #}
+            {% set ns = namespace(other_val='', other_checked=false) %}
+            {% for svc in selected_svcs %}
+              {% if svc == 'Other' %}{% set ns.other_checked = true %}
+              {% elif svc.startswith('Other:') %}{% set ns.other_checked = true %}{% set ns.other_val = svc[6:]|trim %}
+              {% endif %}
+            {% endfor %}
+            <div class="row g-2">
+              {% for st in all_services %}
+              {% set is_other = (st == 'Other') %}
+              {% set is_checked = (ns.other_checked if is_other else st in selected_svcs) %}
+              <div class="col-6 col-md-4 col-lg-3">
+                <div class="form-check border rounded px-3 py-2 h-100 {{ 'svc-selected' if is_checked else 'border-light' }}" id="svcBox_{{ loop.index }}">
+                  <input class="form-check-input" type="checkbox"
+                         name="service_types[]" value="{{ st }}"
+                         id="svc_{{ loop.index }}"
+                         {{ 'checked' if is_checked }}
+                         {% if is_other %}data-other="true"{% endif %}
+                         onchange="toggleServiceType(this, '{{ st }}', 'svcBox_{{ loop.index }}')">
+                  <label class="form-check-label small fw-semibold" for="svc_{{ loop.index }}">{{ st }}</label>
+                </div>
+              </div>
+              {% endfor %}
+              <!-- Other specify — shown when Other is ticked -->
+              <div class="col-12" id="otherSpecifyRow"
+                   style="{{ '' if ns.other_checked else 'display:none;' }}">
+                <div class="d-flex align-items-center gap-2 p-2 rounded border border-warning bg-warning bg-opacity-10">
+                  <i class="bi bi-pencil-square text-warning"></i>
+                  <label class="form-label mb-0 small fw-semibold text-nowrap">Please specify:</label>
+                  <input type="text" name="other_specify" id="otherSpecifyInput"
+                         class="form-control form-control-sm"
+                         placeholder="e.g. Surveying, Site Inspection, Consulting…"
+                         maxlength="80" value="{{ ns.other_val }}">
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Priority</label>
+            <select name="priority" class="form-select">
+              {% for pv in ['Low','Normal','High','Urgent'] %}
+              <option value="{{ pv }}"
+                {{ 'selected' if quote and quote.get('priority','Normal') == pv else ('selected' if not quote and pv == 'Normal' else '') }}>
+                {{ pv }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Expected Completion</label>
+            <input type="date" name="expected_completion" class="form-control"
+                   value="{{ quote.get('expected_completion','') if quote else '' }}">
+          </div>
+
+          <!-- Expedited / Rush -->
+          <div class="col-12">
+            <div class="p-3 rounded border {{ 'border-warning bg-warning bg-opacity-10' if quote and quote.get('is_expedited') else 'border-light bg-light' }}"
+                 id="expeditedBox">
+              <div class="d-flex align-items-center gap-3 flex-wrap">
+                <div class="form-check mb-0">
+                  <input class="form-check-input" type="checkbox" name="is_expedited" id="expeditedCheck"
+                         {{ 'checked' if quote and quote.get('is_expedited') }}
+                         onchange="toggleExpedited(this)">
+                  <label class="form-check-label fw-bold" for="expeditedCheck">
+                    <i class="bi bi-lightning-charge-fill text-warning me-1"></i>Expedited / Rush Order
+                  </label>
+                </div>
+                <div class="d-flex align-items-center gap-2" id="rushRateField"
+                     style="{{ '' if quote and quote.get('is_expedited') else 'display:none!important;' }}">
+                  <label class="form-label mb-0 small">Rush Surcharge (%)</label>
+                  <input type="number" name="rush_rate" id="rushRate" class="form-control form-control-sm text-end"
+                         style="width:90px;" min="0" max="100" step="0.5"
+                         value="{{ quote.get('rush_rate','50') if quote else '50' }}"
+                         oninput="calcTotals()">
+                  <input type="hidden" name="rush_fee" id="rushFeeInput">
+                  <span class="text-warning small fw-bold" id="rushFeeDisplay">$0.00</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Line items -->
+      <div class="card-panel mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="section-heading mb-0">Line Items</h6>
+          <button type="button" class="btn btn-sm btn-outline-teal" onclick="addLineItem()">
+            <i class="bi bi-plus-lg"></i> Add Item
+          </button>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm" id="lineItemsTable">
+            <thead>
+              <tr>
+                <th style="width:50%">Description</th>
+                <th style="width:12%">Qty</th>
+                <th style="width:18%">Unit Price</th>
+                <th style="width:15%">Total</th>
+                <th style="width:5%"></th>
+              </tr>
+            </thead>
+            <tbody id="lineItemsBody">
+              {% set items = quote.get('line_items', []) if quote else [] %}
+              {% if items %}
+                {% for item in items %}
+                <tr class="line-item-row">
+                  <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="{{ item.get('description','') }}" placeholder="Description" required></td>
+                  <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="{{ item.get('quantity','1') }}" min="0" step="any" oninput="calcRow(this)"></td>
+                  <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="{{ item.get('unit_price','0') }}" min="0" step="0.01" oninput="calcRow(this)"></td>
+                  <td><input type="text" class="form-control form-control-sm item-total bg-light" value="{{ item.get('total','0') }}" readonly></td>
+                  <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>
+                </tr>
+                {% endfor %}
+              {% else %}
+              <tr class="line-item-row">
+                <td><input type="text" name="item_description[]" class="form-control form-control-sm" placeholder="Description" required></td>
+                <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
+                <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="0" min="0" step="0.01" oninput="calcRow(this)"></td>
+                <td><input type="text" class="form-control form-control-sm item-total bg-light" value="0.00" readonly></td>
+                <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right column -->
+    <div class="col-lg-4">
+      <div class="card-panel mb-3">
+        <h6 class="section-heading">Status &amp; Terms</h6>
+        <div class="mb-3">
+          <label class="form-label">Status</label>
+          <select name="status" class="form-select">
+            {% for s in ['Not Started','Draft','Sent','In Review','Approved','On Hold','In Progress','Completed','Converted','Invoiced','Rejected','Expired','Cancelled'] %}
+            <option value="{{ s }}"
+              {{ 'selected' if quote and quote.get('status') == s }}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-control" rows="3">{{ quote.get('notes','') if quote else '' }}</textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Terms &amp; Conditions</label>
+          <textarea name="terms" class="form-control" rows="3">{{ quote.get('terms','') if quote else 'Thank you for your business!' }}</textarea>
+        </div>
+        <div class="mb-0">
+          <label class="form-label">
+            <i class="bi bi-bell me-1 text-teal"></i>Follow-up Date
+            <span class="text-muted small fw-normal">— remind to follow up with client</span>
+          </label>
+          <input type="date" name="follow_up_date" class="form-control"
+                 value="{{ quote.get('follow_up_date','') if quote else '' }}">
+        </div>
+      </div>
+
+      <div class="card-panel mb-3">
+        <h6 class="section-heading">Totals</h6>
+        <div class="d-flex justify-content-between mb-2">
+          <span>Subtotal</span>
+          <strong id="subtotalDisplay">$0.00</strong>
+          <input type="hidden" name="subtotal" id="subtotalInput" value="{{ quote.get('subtotal','0') if quote else '0' }}">
+        </div>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span>Tax Rate (%)</span>
+          <input type="number" name="tax_rate" id="taxRate" class="form-control form-control-sm text-end"
+                 style="width:80px;" value="{{ quote.get('tax_rate','0') if quote else '0' }}"
+                 min="0" max="100" step="0.01" oninput="calcTotals()">
+        </div>
+        <div class="d-flex justify-content-between mb-2">
+          <span>Tax Amount</span>
+          <strong id="taxDisplay">$0.00</strong>
+          <input type="hidden" name="tax_amount" id="taxInput">
+        </div>
+        <div class="d-flex justify-content-between mb-2 text-warning" id="rushFeeRow"
+             style="{{ '' if quote and quote.get('is_expedited') else 'display:none;' }}">
+          <span><i class="bi bi-lightning-charge-fill me-1"></i>Rush Fee</span>
+          <strong id="rushFeeRowAmt">$0.00</strong>
+        </div>
+        <hr>
+        <div class="d-flex justify-content-between">
+          <strong>Total</strong>
+          <strong id="totalDisplay" class="text-teal fs-5">$0.00</strong>
+          <input type="hidden" name="total" id="totalInput">
+        </div>
+      </div>
+
+      <div class="d-grid gap-2">
+        <button type="submit" class="btn btn-teal">
+          <i class="bi bi-check-lg me-1"></i>
+          {{ 'Create Quote' if is_new else 'Save Changes' }}
+        </button>
+        <a href="{{ url_for('quotes') }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function fmt(n) { return '$' + parseFloat(n || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+
+function calcRow(input) {
+  const row   = input.closest('tr');
+  const qty   = parseFloat(row.querySelector('.item-qty').value   || 0);
+  const price = parseFloat(row.querySelector('.item-price').value || 0);
+  row.querySelector('.item-total').value = (qty * price).toFixed(2);
+  calcTotals();
+}
+
+function calcTotals() {
+  let sub = 0;
+  document.querySelectorAll('.item-total').forEach(el => sub += parseFloat(el.value || 0));
+  const taxRate = parseFloat(document.getElementById('taxRate').value || 0);
+  const tax     = sub * (taxRate / 100);
+
+  const expedited = document.getElementById('expeditedCheck').checked;
+  const rushRate  = expedited ? parseFloat(document.getElementById('rushRate').value || 0) : 0;
+  const rushFee   = sub * (rushRate / 100);
+
+  const total = sub + tax + rushFee;
+
+  document.getElementById('subtotalDisplay').textContent = fmt(sub);
+  document.getElementById('taxDisplay').textContent = fmt(tax);
+  document.getElementById('subtotalInput').value = sub.toFixed(2);
+  document.getElementById('taxInput').value = tax.toFixed(2);
+  document.getElementById('rushFeeInput').value = rushFee.toFixed(2);
+  document.getElementById('totalDisplay').textContent = fmt(total);
+  document.getElementById('totalInput').value = total.toFixed(2);
+
+  // Rush fee row in totals panel
+  const rushFeeDisplay = document.getElementById('rushFeeDisplay');
+  const rushFeeRow     = document.getElementById('rushFeeRow');
+  const rushFeeRowAmt  = document.getElementById('rushFeeRowAmt');
+  if (rushFeeDisplay) rushFeeDisplay.textContent = fmt(rushFee);
+  if (rushFeeRow)     rushFeeRow.style.display = expedited ? '' : 'none';
+  if (rushFeeRowAmt)  rushFeeRowAmt.textContent = fmt(rushFee);
+}
+
+function toggleExpedited(chk) {
+  const rateField    = document.getElementById('rushRateField');
+  const box          = document.getElementById('expeditedBox');
+  const prioritySel  = document.querySelector('[name="priority"]');
+  if (chk.checked) {
+    rateField.style.removeProperty('display');
+    box.classList.replace('border-light', 'border-warning');
+    box.classList.add('bg-warning', 'bg-opacity-10');
+    if (prioritySel) prioritySel.value = 'Urgent';
+  } else {
+    rateField.style.display = 'none';
+    box.classList.replace('border-warning', 'border-light');
+    box.classList.remove('bg-warning', 'bg-opacity-10');
+  }
+  calcTotals();
+}
+
+function addLineItem(description) {
+  const tbody = document.getElementById('lineItemsBody');
+  const row = document.createElement('tr');
+  row.className = 'line-item-row';
+  if (description) row.dataset.service = description;
+  row.innerHTML = `
+    <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="${description || ''}" placeholder="Description" required></td>
+    <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
+    <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="0" min="0" step="0.01" oninput="calcRow(this)"></td>
+    <td><input type="text" class="form-control form-control-sm item-total bg-light" value="0.00" readonly></td>
+    <td><button type="button" class="btn btn-xs btn-outline-danger" onclick="removeRow(this)"><i class="bi bi-trash"></i></button></td>`;
+  tbody.appendChild(row);
+  calcTotals();
+}
+
+function removeRow(btn) {
+  const rows = document.querySelectorAll('.line-item-row');
+  if (rows.length > 1) { btn.closest('tr').remove(); calcTotals(); }
+}
+
+function toggleServiceType(cb, serviceName, boxId) {
+  const box = document.getElementById(boxId);
+
+  // Show/hide "Other — please specify" row
+  if (cb.dataset.other) {
+    const specRow = document.getElementById('otherSpecifyRow');
+    const specInp = document.getElementById('otherSpecifyInput');
+    specRow.style.display = cb.checked ? '' : 'none';
+    if (!cb.checked) specInp.value = '';
+  }
+
+  if (cb.checked) {
+    box.classList.add('svc-selected');
+    box.classList.remove('border-light');
+    const rows = document.querySelectorAll('.line-item-row');
+    if (rows.length === 1) {
+      const desc = rows[0].querySelector('input[name="item_description[]"]');
+      if (desc && desc.value.trim() === '') rows[0].remove();
+    }
+    addLineItem(serviceName);
+  } else {
+    box.classList.remove('svc-selected');
+    box.classList.add('border-light');
+    const rows = document.querySelectorAll('.line-item-row');
+    for (const row of rows) {
+      if (row.dataset.service === serviceName) {
+        row.remove(); break;
+      }
+    }
+    if (document.querySelectorAll('.line-item-row').length === 0) {
+      addLineItem();
+    }
+    calcTotals();
+  }
+}
+
+calcTotals();
+</script>
+{% endblock %}

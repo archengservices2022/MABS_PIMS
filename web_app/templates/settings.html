@@ -1,0 +1,544 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block page_title %}Settings{% endblock %}
+
+{% block content %}
+{% set co    = settings.get('company', company) %}
+{% set em    = settings.get('email', {}) %}
+{% set ap    = settings.get('app', {}) %}
+
+<!-- Tab nav -->
+<ul class="nav nav-tabs mb-4" id="settingsTabs">
+  <li class="nav-item">
+    <a class="nav-link active" data-bs-toggle="tab" href="#tab-company">
+      <i class="bi bi-building me-1"></i>Company
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-logo">
+      <i class="bi bi-image me-1"></i>Logo
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-email">
+      <i class="bi bi-envelope me-1"></i>Email / SMTP
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-app">
+      <i class="bi bi-sliders me-1"></i>App Preferences
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-users">
+      <i class="bi bi-people me-1"></i>Users
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if request.args.get('tab')=='ai' %}active{% endif %}" data-bs-toggle="tab" href="#tab-ai">
+      <i class="bi bi-robot me-1"></i>AI
+    </a>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- ── COMPANY ──────────────────────────────────────────────────────────── -->
+  <div class="tab-pane fade show active" id="tab-company">
+    <div class="row">
+      <div class="col-lg-6">
+        <div class="card-panel">
+          <h6 class="section-heading">Company Information</h6>
+          <form method="POST" action="{{ url_for('settings_company') }}">
+            <div class="mb-3">
+              <label class="form-label">Company Name</label>
+              <input type="text" name="name" class="form-control"
+                     value="{{ co.get('name', '') }}" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Address</label>
+              <textarea name="address" class="form-control" rows="3">{{ co.get('address', '') }}</textarea>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <label class="form-label">Email</label>
+                <input type="email" name="email" class="form-control"
+                       value="{{ co.get('email', '') }}">
+              </div>
+              <div class="col-6">
+                <label class="form-label">Phone</label>
+                <input type="text" name="phone" class="form-control"
+                       value="{{ co.get('phone', '') }}">
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Website</label>
+              <input type="text" name="website" class="form-control"
+                     value="{{ co.get('website', '') }}">
+            </div>
+
+            <h6 class="section-heading mt-4">Invoice Defaults</h6>
+            <div class="mb-3">
+              <label class="form-label">Default Tax Rate (%)</label>
+              <input type="number" name="default_tax_rate" class="form-control"
+                     value="{{ co.get('default_tax_rate', 0) }}"
+                     min="0" max="100" step="0.01" style="max-width:150px;">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Default Terms &amp; Conditions</label>
+              <textarea name="default_terms" class="form-control" rows="3"
+                        placeholder="Thank you for your business!">{{ co.get('default_terms', '') }}</textarea>
+            </div>
+
+            <button type="submit" class="btn btn-teal btn-sm">
+              <i class="bi bi-save me-1"></i>Save Company Info
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── LOGO ─────────────────────────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-logo">
+    <div class="row">
+      <div class="col-lg-5">
+        <div class="card-panel">
+          <h6 class="section-heading">Company Logo</h6>
+
+          <!-- Current logo preview -->
+          <div class="mb-3 text-center">
+            <img src="{{ url_for('company_logo') }}"
+                 onerror="this.style.display='none';document.getElementById('noLogo').style.display='block';"
+                 style="max-height:120px;max-width:240px;border:1px solid #e5e7eb;border-radius:8px;padding:8px;"
+                 alt="Company logo">
+            <div id="noLogo" style="display:none;color:#9ca3af;padding:24px;border:2px dashed #e5e7eb;border-radius:8px;">
+              <i class="bi bi-image fs-2"></i><br>No logo set
+            </div>
+            {% if co.get('logo_path') %}
+            <div class="text-muted small mt-2">{{ co.get('logo_path') }}</div>
+            {% endif %}
+          </div>
+
+          <form method="POST" action="{{ url_for('settings_logo') }}"
+                enctype="multipart/form-data">
+            <div class="mb-3">
+              <label class="form-label">Upload New Logo</label>
+              <input type="file" name="logo" class="form-control"
+                     accept=".png,.jpg,.jpeg,.bmp">
+              <div class="form-text">PNG or JPG, recommended 300×100 px or similar.</div>
+            </div>
+            <button type="submit" class="btn btn-teal btn-sm">
+              <i class="bi bi-upload me-1"></i>Upload Logo
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── EMAIL / SMTP ──────────────────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-email">
+    <div class="row">
+      <div class="col-lg-6">
+        <div class="card-panel">
+          <h6 class="section-heading">Email / SMTP Settings</h6>
+          <p class="text-muted small mb-3">
+            Used for sending invoices, welcome emails, and payment reminders.
+            For Gmail, use an <strong>App Password</strong> (not your regular password).
+          </p>
+          <form method="POST" action="{{ url_for('settings_email') }}">
+            <div class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox" name="enabled"
+                     id="emailEnabled" {{ 'checked' if em.get('enabled') }}>
+              <label class="form-check-label fw-bold" for="emailEnabled">
+                Enable Email Sending
+              </label>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-8">
+                <label class="form-label">SMTP Host</label>
+                <input type="text" name="smtp_host" class="form-control"
+                       value="{{ em.get('smtp_host', 'smtp.gmail.com') }}"
+                       placeholder="smtp.gmail.com">
+              </div>
+              <div class="col-4">
+                <label class="form-label">Port</label>
+                <input type="number" name="smtp_port" class="form-control"
+                       value="{{ em.get('smtp_port', 587) }}"
+                       placeholder="587">
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">SMTP Username / Email</label>
+              <input type="email" name="smtp_user" class="form-control"
+                     value="{{ em.get('smtp_user', '') }}"
+                     placeholder="your@gmail.com">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">SMTP Password / App Password</label>
+              <input type="password" name="smtp_password" class="form-control"
+                     value="{{ em.get('smtp_password', '') }}"
+                     placeholder="••••••••••••">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">From Name</label>
+              <input type="text" name="from_name" class="form-control"
+                     value="{{ em.get('from_name', company.name) }}"
+                     placeholder="{{ company.name }}">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Reminder Days Before Due</label>
+              <input type="number" name="reminder_days_before" class="form-control"
+                     value="{{ em.get('reminder_days_before', 3) }}"
+                     min="1" max="30" style="max-width:150px;">
+            </div>
+            <button type="submit" class="btn btn-teal btn-sm">
+              <i class="bi bi-save me-1"></i>Save Email Settings
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── APP PREFERENCES ──────────────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-app">
+    <div class="row">
+      <div class="col-lg-5">
+        <div class="card-panel">
+          <h6 class="section-heading">App Preferences</h6>
+          <form method="POST" action="{{ url_for('settings_app') }}">
+            <div class="mb-3">
+              <label class="form-label">Theme</label>
+              <select name="theme" class="form-select">
+                <option value="light" {{ 'selected' if ap.get('theme','light') == 'light' }}>
+                  Light
+                </option>
+                <option value="dark"  {{ 'selected' if ap.get('theme','light') == 'dark' }}>
+                  Dark
+                </option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Log Level</label>
+              <select name="log_level" class="form-select">
+                {% for lvl in ['DEBUG','INFO','WARNING','ERROR'] %}
+                <option value="{{ lvl }}" {{ 'selected' if ap.get('log_level','INFO') == lvl }}>
+                  {{ lvl }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox"
+                     name="auto_check_updates" id="autoUpdate"
+                     {{ 'checked' if ap.get('auto_check_updates', True) }}>
+              <label class="form-check-label" for="autoUpdate">
+                Auto-check for updates
+              </label>
+            </div>
+            <button type="submit" class="btn btn-teal btn-sm">
+              <i class="bi bi-save me-1"></i>Save Preferences
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── USERS ─────────────────────────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-users">
+    <div class="row g-3">
+      <!-- Add user form -->
+      <div class="col-lg-4">
+        <div class="card-panel mb-3">
+          <h6 class="section-heading">Create New User</h6>
+          <form method="POST" action="{{ url_for('user_new') }}">
+            <div class="mb-2">
+              <label class="form-label">Username</label>
+              <input type="text" name="username" class="form-control form-control-sm" required>
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Email Address</label>
+              <input type="email" name="email" class="form-control form-control-sm" required>
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Password</label>
+              <input type="password" name="password" class="form-control form-control-sm"
+                     minlength="6" required>
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Role</label>
+              <select name="role" class="form-select form-select-sm">
+                <option value="sales">Sales — Quotes only</option>
+                <option value="projects">Projects — Projects &amp; Invoicing</option>
+                <option value="finance">Finance — Financial overview</option>
+                <option value="engineer">Engineer — Employee tab only</option>
+                <option value="admin">Admin — Full access</option>
+              </select>
+            </div>
+            <hr class="my-2">
+            <p class="text-muted mb-2" style="font-size:11px;"><i class="bi bi-person-badge me-1"></i>Employee details (optional)</p>
+            <div class="mb-2">
+              <label class="form-label">Job Title</label>
+              <input type="text" name="title" class="form-control form-control-sm" placeholder="e.g. Senior Engineer">
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Region</label>
+              <select name="region" class="form-select form-select-sm">
+                <option value="">— Select —</option>
+                <option value="Inside America">Inside America</option>
+                <option value="Outside America">Outside America</option>
+              </select>
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Hourly Rate ($)</label>
+              <input type="number" name="hourly_rate" class="form-control form-control-sm" placeholder="0.00" min="0" step="0.01">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Monthly Salary ($)
+                <span class="text-muted" style="font-size:10px;">— auto-posts to Payroll</span>
+              </label>
+              <input type="number" name="monthly_salary" class="form-control form-control-sm" placeholder="0.00 (blank if hourly)" min="0" step="0.01">
+            </div>
+            <button type="submit" class="btn btn-teal btn-sm w-100">
+              <i class="bi bi-person-plus me-1"></i>Create User
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Users table -->
+      <div class="col-lg-8">
+        <div class="card-panel">
+          <h6 class="section-heading">User Management</h6>
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Title / Region</th>
+                  <th>Role</th>
+                  <th class="text-end">Rate / Salary</th>
+                  <th>Status</th>
+                  <th>Change Role</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for u in users %}
+                <tr>
+                  <td>
+                    <strong>{{ u.get('username','—') }}</strong>
+                    {% if u.get('firebase_uid') == session.get('user_uid') %}
+                    <span class="badge bg-secondary ms-1">You</span>
+                    {% endif %}
+                    <div class="text-muted" style="font-size:11px;">{{ u.get('email','—') }}</div>
+                  </td>
+                  <td>
+                    <div style="font-size:13px;">{{ u.get('title') or '—' }}</div>
+                    {% if u.get('region') %}
+                    <span class="badge" style="font-size:10px;background:{{ '#0D9488' if u.get('region')=='Inside America' else '#7C3AED' }};color:#fff;">{{ u.get('region') }}</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <span class="badge badge-role-{{ u.get('role','sales') }}">
+                      {{ u.get('role','sales')|capitalize }}
+                    </span>
+                  </td>
+                  <td class="text-end" style="font-size:12px;">
+                    {% if u.get('hourly_rate') %}<div>${{ '%.2f'|format(u.get('hourly_rate',0)|float) }}/hr</div>{% endif %}
+                    {% if u.get('monthly_salary') %}<div class="text-success fw-semibold">${{ '%.0f'|format(u.get('monthly_salary',0)|float) }}/mo</div>{% endif %}
+                    {% if not u.get('hourly_rate') and not u.get('monthly_salary') %}<span class="text-muted">—</span>{% endif %}
+                  </td>
+                  <td>
+                    {% if u.get('active', True) %}
+                    <span class="badge bg-success">Active</span>
+                    {% else %}
+                    <span class="badge bg-secondary">Inactive</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <form method="POST"
+                          action="{{ url_for('user_role_update', uid=u.firebase_uid) }}"
+                          class="d-flex gap-1">
+                      <select name="role" class="form-select form-select-sm" style="width:120px;">
+                        {% for r in ['sales','projects','finance','engineer','admin'] %}
+                        <option value="{{ r }}" {{ 'selected' if u.get('role') == r }}>
+                          {{ r|capitalize }}
+                        </option>
+                        {% endfor %}
+                      </select>
+                      <button type="submit" class="btn btn-xs btn-outline-primary">Save</button>
+                    </form>
+                  </td>
+                  <td>
+                    <div class="d-flex gap-1 flex-wrap">
+                      <button class="btn btn-xs btn-outline-primary"
+                              onclick="openEditUserModal(this)"
+                              data-uid="{{ u.firebase_uid }}"
+                              data-title="{{ u.get('title','') }}"
+                              data-region="{{ u.get('region','') }}"
+                              data-rate="{{ u.get('hourly_rate',0) }}"
+                              data-salary="{{ u.get('monthly_salary',0) }}"
+                              title="Edit Details"><i class="bi bi-pencil"></i></button>
+                      <form method="POST" action="{{ url_for('user_toggle', uid=u.firebase_uid) }}">
+                        <button type="submit" class="btn btn-xs btn-outline-secondary"
+                                title="{{ 'Deactivate' if u.get('active', True) else 'Activate' }}">
+                          <i class="bi bi-{{ 'toggle-on' if u.get('active', True) else 'toggle-off' }}"></i>
+                        </button>
+                      </form>
+                      {% if u.get('firebase_uid') != session.get('user_uid') %}
+                      <form method="POST"
+                            action="{{ url_for('user_delete', uid=u.firebase_uid) }}"
+                            onsubmit="return confirm('Delete user {{ u.get('username','') }}?');">
+                        <button type="submit" class="btn btn-xs btn-outline-danger">
+                          <i class="bi bi-trash"></i>
+                        </button>
+                      </form>
+                      {% endif %}
+                    </div>
+                  </td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="6" class="text-center text-muted py-3">No users found.</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── AI ──────────────────────────────────────────────────────────────────── -->
+  <div class="tab-pane fade {% if request.args.get('tab')=='ai' %}show active{% endif %}" id="tab-ai">
+    <div class="row">
+      <div class="col-lg-6">
+        <div class="card-panel">
+          <h6 class="section-heading">AI Configuration</h6>
+          <p class="text-muted small mb-3">
+            Enables PDF expense extraction, cash flow forecasting, overdue reminders, and project health summaries.
+            Get your free API key at <strong>console.anthropic.com</strong>.
+          </p>
+          <form method="POST" action="{{ url_for('settings_ai') }}">
+            <div class="mb-3">
+              <label class="form-label">Anthropic API Key</label>
+              <input type="password" name="anthropic_key" class="form-control font-monospace"
+                     placeholder="sk-ant-..."
+                     value="{{ settings.get('ai', {}).get('anthropic_key', '') }}">
+              <div class="form-text">Stored securely in your Firebase settings. Never shared.</div>
+            </div>
+            <button type="submit" class="btn btn-sm btn-teal">
+              <i class="bi bi-floppy me-1"></i>Save API Key
+            </button>
+          </form>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="card-panel">
+          <h6 class="section-heading">What AI can do</h6>
+          <ul class="list-unstyled small text-muted mb-0">
+            <li class="mb-2"><i class="bi bi-filetype-pdf text-danger me-2"></i><strong>PDF Extraction</strong> — upload a vendor bill, AI fills the expense form automatically</li>
+            <li class="mb-2"><i class="bi bi-graph-up text-teal me-2"></i><strong>Cash Flow Forecast</strong> — predicts next 90 days of incoming payments</li>
+            <li class="mb-2"><i class="bi bi-envelope-exclamation text-warning me-2"></i><strong>Overdue Reminders</strong> — drafts a professional follow-up email per invoice</li>
+            <li class="mb-2"><i class="bi bi-heart-pulse text-blue me-2"></i><strong>Project Health</strong> — one-line status summary for each active project</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- tab-content -->
+{% endblock %}
+
+<!-- ── Edit Employee Details Modal ──────────────────────────────────────────── -->
+<div class="modal fade" id="editUserModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title"><i class="bi bi-person-gear me-1"></i>Edit Employee Details</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pb-2">
+        <input type="hidden" id="editUid">
+        <div class="mb-2">
+          <label class="form-label fw-semibold" style="font-size:12px;">Job Title</label>
+          <input type="text" id="editTitle" class="form-control form-control-sm" placeholder="e.g. Senior Engineer">
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold" style="font-size:12px;">Region</label>
+          <select id="editRegion" class="form-select form-select-sm">
+            <option value="">— None —</option>
+            <option value="Inside America">Inside America</option>
+            <option value="Outside America">Outside America</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold" style="font-size:12px;">Hourly Rate ($)</label>
+          <input type="number" id="editHourlyRate" class="form-control form-control-sm" placeholder="0.00" min="0" step="0.01">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold" style="font-size:12px;">Monthly Salary ($)</label>
+          <input type="number" id="editMonthlySalary" class="form-control form-control-sm" placeholder="0.00 (blank if hourly)" min="0" step="0.01">
+        </div>
+        <div id="editUserMsg" style="font-size:12px;"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-teal" onclick="saveUserDetails()"><i class="bi bi-check-circle me-1"></i>Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% block scripts %}
+<script>
+function openEditUserModal(btn) {
+  const uid = btn.getAttribute('data-uid');
+  const title = btn.getAttribute('data-title');
+  const region = btn.getAttribute('data-region');
+  const rate = btn.getAttribute('data-rate');
+  const salary = btn.getAttribute('data-salary');
+
+  // Populate form fields
+  document.getElementById('editUid').value          = uid || '';
+  document.getElementById('editTitle').value        = title || '';
+  document.getElementById('editRegion').value       = region || '';
+  document.getElementById('editHourlyRate').value   = rate ? parseFloat(rate) : '';
+  document.getElementById('editMonthlySalary').value = salary ? parseFloat(salary) : '';
+  document.getElementById('editUserMsg').innerHTML  = '';
+
+  // Show modal
+  const modal = new bootstrap.Modal(document.getElementById('editUserModal'));
+  modal.show();
+}
+
+async function saveUserDetails() {
+  var uid    = document.getElementById('editUid').value;
+  var msg    = document.getElementById('editUserMsg');
+  var body   = {
+    title:          document.getElementById('editTitle').value.trim(),
+    region:         document.getElementById('editRegion').value,
+    hourly_rate:    parseFloat(document.getElementById('editHourlyRate').value)    || 0,
+    monthly_salary: parseFloat(document.getElementById('editMonthlySalary').value) || 0,
+  };
+  msg.innerHTML = '<span class="text-muted">Saving…</span>';
+  try {
+    var res  = await fetch('/api/users/' + uid + '/details', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    var data = await res.json();
+    if (!res.ok || data.error) { msg.innerHTML = '<span class="text-danger">' + (data.error || 'Error') + '</span>'; return; }
+    msg.innerHTML = '<span class="text-success">Saved!</span>';
+    setTimeout(function(){ location.reload(); }, 600);
+  } catch(e) { msg.innerHTML = '<span class="text-danger">Request failed.</span>'; }
+}
+</script>
+{% endblock %}
+

@@ -1,0 +1,1203 @@
+{% extends "base.html" %}
+{% block title %}Employees{% endblock %}
+{% block page_title %}Employees{% endblock %}
+
+{% block head %}
+<style>
+/* ── Employees page ─────────────────────────────────────────────────────── */
+
+/* ── Clock panel ── */
+.clock-circle {
+  width: 88px; height: 88px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 12px;
+  transition: all .3s;
+}
+.clock-circle.out {
+  background: #F8FAFC;
+  border: 3px solid #E2E8F0;
+}
+.clock-circle.in {
+  background: #FFF1F2;
+  border: 3px solid #FCA5A5;
+  animation: clock-pulse 2.2s ease-in-out infinite;
+}
+@keyframes clock-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,.35); }
+  55%       { box-shadow: 0 0 0 10px rgba(239,68,68,0); }
+}
+
+.clock-timer {
+  font-size: 44px; font-weight: 800; color: #0f172a;
+  letter-spacing: .04em; font-family: 'Inter', monospace; line-height: 1;
+}
+.clock-timer-idle {
+  font-size: 44px; font-weight: 800; color: #CBD5E1;
+  letter-spacing: .04em; font-family: 'Inter', monospace; line-height: 1;
+}
+
+.current-project-tag {
+  display: inline-block;
+  background: #ECFDF5; color: #065F46;
+  border: 1px solid #A7F3D0; border-radius: 8px;
+  padding: 5px 14px; font-size: 13px; font-weight: 600;
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.clock-btn-in {
+  background: linear-gradient(135deg,#16a34a,#15803d);
+  color: #fff; border: none; border-radius: 10px;
+  width: 100%; padding: 11px; font-size: 15px; font-weight: 700;
+  letter-spacing: .01em; transition: all .2s; cursor: pointer;
+  box-shadow: 0 2px 8px rgba(22,163,74,.3);
+}
+.clock-btn-in:hover { opacity:.9; box-shadow: 0 4px 14px rgba(22,163,74,.4); transform: translateY(-1px); }
+
+.clock-btn-out {
+  background: linear-gradient(135deg,#dc2626,#b91c1c);
+  color: #fff; border: none; border-radius: 10px;
+  width: 100%; padding: 11px; font-size: 15px; font-weight: 700;
+  letter-spacing: .01em; transition: all .2s; cursor: pointer;
+  box-shadow: 0 2px 8px rgba(220,38,38,.3);
+}
+.clock-btn-out:hover { opacity:.9; box-shadow: 0 4px 14px rgba(220,38,38,.4); transform: translateY(-1px); }
+
+.hours-bar {
+  height: 5px; border-radius: 99px;
+  background: #E2E8F0; overflow: hidden; margin-top: 4px;
+}
+.hours-bar-fill {
+  height: 100%; border-radius: 99px;
+  background: linear-gradient(90deg,#0D9488,#14B8A6);
+  transition: width .5s ease;
+}
+
+/* ── Profile/Directory avatar ── */
+.emp-avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: #CCFBF1; color: #0F766E;
+  font-size: 14px; font-weight: 700; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.emp-avatar-xl {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: #CCFBF1; color: #0F766E;
+  font-size: 28px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ── Profile rows ── */
+.profile-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px;
+}
+.profile-row:last-child { border-bottom: none; }
+.profile-row-label {
+  min-width: 140px; color: #64748b; font-size: 11px;
+  font-weight: 600; text-transform: uppercase; letter-spacing: .05em; padding-top: 1px;
+}
+.profile-row-value { color: #0f172a; font-weight: 500; }
+
+/* ── Currently working badge ── */
+.badge-working {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #FEF3C7; color: #92400E;
+  border: 1px solid #FCD34D; border-radius: 6px;
+  font-size: 11px; font-weight: 600; padding: 2px 8px;
+}
+
+/* ── Compensation cards ── */
+.comp-card { padding: 14px 16px; border-radius: 10px; }
+.comp-card.amber { background: #FFFBEB; border: 1px solid #FDE68A; }
+.comp-card.green  { background: #F0FDF4; border: 1px solid #BBF7D0; }
+
+/* ── Stat chip (compact KPI) ── */
+.stat-chip {
+  display: flex; flex-direction: column; gap: 2px;
+  background: #fff; border: 1px solid #F1F5F9; border-radius: 12px;
+  padding: 14px 16px; transition: box-shadow .2s;
+}
+.stat-chip:hover { box-shadow: 0 2px 12px rgba(0,0,0,.07); }
+.stat-chip-value { font-size: 1.6rem; font-weight: 800; line-height: 1; color: #0f172a; }
+.stat-chip-label { font-size: 10px; font-weight: 700; text-transform: uppercase;
+                   letter-spacing: .06em; color: #94a3b8; }
+.stat-chip-accent { height: 3px; border-radius: 99px; margin-top: 8px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── Tab bar ─────────────────────────────────────────────────────────────── -->
+<ul class="nav nav-tabs mb-4" id="empTabs">
+  <li class="nav-item">
+    <a class="nav-link active" data-bs-toggle="tab" href="#tab-clock">
+      <i class="bi bi-clock-history me-1"></i>My Time Clock
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-time-off">
+      <i class="bi bi-calendar-event me-1"></i>Time Off
+      {% if user_role == 'admin' and pending_time_off %}
+      <span class="badge bg-danger ms-1">{{ pending_time_off|length }}</span>
+      {% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-profile">
+      <i class="bi bi-person-circle me-1"></i>My Profile
+    </a>
+  </li>
+  {% if user_role == 'admin' %}
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-team">
+      <i class="bi bi-people me-1"></i>Team
+      {% if stale_open_entries %}
+      <span class="badge bg-warning text-dark ms-1">{{ stale_open_entries|length }}</span>
+      {% endif %}
+    </a>
+  </li>
+  {% endif %}
+  {% if user_role in ('admin', 'finance') %}
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-directory">
+      <i class="bi bi-person-vcard me-1"></i>Directory
+    </a>
+  </li>
+  {% endif %}
+</ul>
+
+<div class="tab-content">
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     MY TIME CLOCK
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade show active" id="tab-clock">
+
+  <!-- Compact stat chips -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-xl-3">
+      <div class="stat-chip">
+        <div class="stat-chip-label">Today</div>
+        <div class="stat-chip-value">{{ "%.1f"|format(my_today_minutes/60) }}<span style="font-size:16px;font-weight:500;color:#94a3b8;"> h</span></div>
+        <div class="stat-chip-accent" style="background:#0D9488;width:{{ [((my_today_minutes/60/8)*100)|int, 100]|min }}%;"></div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="stat-chip">
+        <div class="stat-chip-label">This Week</div>
+        <div class="stat-chip-value">{{ "%.1f"|format(my_week_minutes/60) }}<span style="font-size:16px;font-weight:500;color:#94a3b8;"> h</span></div>
+        <div class="stat-chip-accent" style="background:#16A34A;width:{{ [((my_week_minutes/60/40)*100)|int, 100]|min }}%;"></div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="stat-chip">
+        <div class="stat-chip-label">This Month</div>
+        <div class="stat-chip-value">{{ "%.1f"|format(my_month_minutes/60) }}<span style="font-size:16px;font-weight:500;color:#94a3b8;"> h</span></div>
+        <div class="stat-chip-accent" style="background:#D97706;width:{{ [((my_month_minutes/60/176)*100)|int, 100]|min }}%;"></div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="stat-chip">
+        <div class="stat-chip-label">This Year</div>
+        <div class="stat-chip-value">{{ "%.1f"|format(my_year_minutes/60) }}<span style="font-size:16px;font-weight:500;color:#94a3b8;"> h</span></div>
+        <div class="stat-chip-accent" style="background:#3B82F6;width:{{ [((my_year_minutes/60/2000)*100)|int, 100]|min }}%;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+
+    <!-- ── Clock panel ── -->
+    <div class="col-lg-4">
+      <div class="card-panel h-100 d-flex flex-column">
+
+        {% if my_open_entry and my_open_entry.date < today_str %}
+        <div class="alert alert-warning py-2 mb-3 text-start" style="font-size:13px;">
+          <i class="bi bi-exclamation-triangle-fill me-1"></i>
+          Still clocked in from <strong>{{ my_open_entry.date }}</strong> —
+          {{ my_open_entry.project_name or my_open_entry.project_number or 'General / Admin' }}.
+          <form method="post" action="{{ url_for('employee_close_entry', entry_id=my_open_entry.firebase_id) }}" class="d-flex gap-2 mt-2">
+            <input type="datetime-local" name="clock_out" value="{{ my_open_entry.date }}T17:00"
+                   class="form-control form-control-sm" style="width:auto;">
+            <button type="submit" class="btn btn-sm btn-outline-warning">Close</button>
+          </form>
+        </div>
+        {% endif %}
+
+        <!-- Status area -->
+        <div class="flex-grow-1 d-flex flex-column align-items-center justify-content-center text-center py-3">
+
+          {% if my_open_entry %}
+
+          <!-- Clocked IN state -->
+          <div class="clock-circle in">
+            <i class="bi bi-record-circle-fill" style="font-size:34px;color:#DC2626;"></i>
+          </div>
+
+          <div class="mb-1" style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;">
+            Currently tracking
+          </div>
+          <div class="current-project-tag mb-3">
+            {{ my_open_entry.project_name or my_open_entry.project_number or 'General / Admin' }}
+          </div>
+
+          <div id="elapsedTimer" class="clock-timer mb-4" data-clock-in="{{ my_open_entry.clock_in }}">
+            00:00:00
+          </div>
+
+          <form method="post" action="{{ url_for('employee_clock_out') }}" class="w-100">
+            <textarea name="notes" class="form-control form-control-sm mb-3" rows="2"
+                      placeholder="What did you work on? (optional)"
+                      style="resize:none;border-radius:8px;"></textarea>
+            <button type="submit" class="clock-btn-out">
+              <i class="bi bi-stop-circle-fill me-2"></i>Clock Out
+            </button>
+          </form>
+
+          {% if active_projects %}
+          <form method="post" action="{{ url_for('employee_switch_project') }}" class="d-flex gap-2 mt-3 w-100">
+            <select name="project_number" class="form-select form-select-sm">
+              {% if my_open_entry.project_number %}<option value="">General / Admin</option>{% endif %}
+              {% for p in active_projects %}
+              {% if p.project_number != my_open_entry.project_number %}
+              <option value="{{ p.project_number }}">{{ p.project_number }} — {{ p.project_name }}</option>
+              {% endif %}
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-outline-secondary btn-sm flex-shrink-0" title="Switch project">
+              <i class="bi bi-arrow-repeat"></i>
+            </button>
+          </form>
+          {% endif %}
+
+          {% else %}
+
+          <!-- Clocked OUT state -->
+          <div class="clock-circle out">
+            <i class="bi bi-play-circle" style="font-size:34px;color:#94A3B8;"></i>
+          </div>
+
+          <div class="mb-1" style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;">
+            Not tracking
+          </div>
+          <div class="text-muted small mb-4">Select a project and clock in</div>
+
+          <div class="clock-timer-idle mb-4">--:--:--</div>
+
+          <form method="post" action="{{ url_for('employee_clock_in') }}" class="w-100">
+            <select name="project_number" class="form-select mb-3" style="border-radius:8px;">
+              <option value="" {% if not last_project_number %}selected{% endif %}>General / Admin</option>
+              {% for p in active_projects %}
+              <option value="{{ p.project_number }}" {% if p.project_number == last_project_number %}selected{% endif %}>
+                {{ p.project_number }} — {{ p.project_name }}
+              </option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="clock-btn-in">
+              <i class="bi bi-play-circle-fill me-2"></i>Clock In
+            </button>
+          </form>
+
+          {% endif %}
+        </div>
+
+        <!-- Manual log -->
+        <div class="mt-3 pt-3" style="border-top:1px solid #f1f5f9;">
+          <button type="button" class="btn btn-link btn-sm text-decoration-none p-0 w-100 text-center"
+                  data-bs-toggle="collapse" data-bs-target="#logTimeForm" style="color:#0D9488;font-size:12px;">
+            <i class="bi bi-pencil-square me-1"></i>Log time manually
+          </button>
+          <div class="collapse mt-2" id="logTimeForm">
+            <form method="post" action="{{ url_for('employee_log_time') }}" class="text-start">
+              <div class="row g-2 mb-2">
+                <div class="col-6">
+                  <label class="form-label" style="font-size:11px;font-weight:600;color:#64748b;">Date</label>
+                  <input type="date" name="date" class="form-control form-control-sm"
+                         value="{{ today_str }}" max="{{ today_str }}" required>
+                </div>
+                <div class="col-6">
+                  <label class="form-label" style="font-size:11px;font-weight:600;color:#64748b;">Hours</label>
+                  <input type="number" name="hours" step="0.25" min="0.25" max="24"
+                         class="form-control form-control-sm" placeholder="e.g. 2.5" required>
+                </div>
+              </div>
+              <div class="mb-2">
+                <label class="form-label" style="font-size:11px;font-weight:600;color:#64748b;">Project</label>
+                <select name="project_number" class="form-select form-select-sm">
+                  <option value="">General / Admin</option>
+                  {% for p in active_projects %}
+                  <option value="{{ p.project_number }}">{{ p.project_number }} — {{ p.project_name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="mb-2">
+                <label class="form-label" style="font-size:11px;font-weight:600;color:#64748b;">Notes</label>
+                <textarea name="notes" class="form-control form-control-sm" rows="2" style="resize:none;"></textarea>
+              </div>
+              <button type="submit" class="btn btn-sm w-100"
+                      style="background:#0D9488;color:#fff;border-radius:8px;font-weight:600;">
+                <i class="bi bi-plus-circle me-1"></i>Log Time
+              </button>
+            </form>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Hours by project ── -->
+    <div class="col-lg-8">
+      <div class="card-panel h-100">
+        <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+          <div>
+            <h6 class="panel-title mb-0">Hours by Project</h6>
+            <div class="text-muted small">{{ my_period_label }}</div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <select id="myPeriodSelect" class="form-select form-select-sm" style="width:auto;">
+              <option value="week"   {% if my_period == 'week'   %}selected{% endif %}>This Week</option>
+              <option value="month"  {% if my_period == 'month'  %}selected{% endif %}>This Month</option>
+              <option value="year"   {% if my_period == 'year'   %}selected{% endif %}>This Year</option>
+              <option value="custom" {% if my_period == 'custom' %}selected{% endif %}>Custom Range</option>
+            </select>
+            <input type="date" id="myPeriodCustomStart" class="form-control form-control-sm"
+                   style="width:auto;{% if my_period != 'custom' %}display:none;{% endif %}"
+                   value="{{ my_period_start if my_period == 'custom' else '' }}">
+            <input type="date" id="myPeriodCustomEnd" class="form-control form-control-sm"
+                   style="width:auto;{% if my_period != 'custom' %}display:none;{% endif %}"
+                   value="{{ my_period_end if my_period == 'custom' else '' }}">
+            <button type="button" id="myPeriodCustomApply" class="btn btn-sm btn-outline-secondary"
+                    style="{% if my_period != 'custom' %}display:none;{% endif %}">Apply</button>
+          </div>
+        </div>
+
+        {% if my_period_by_project %}
+        {% set ns = namespace(max_min=1) %}
+        {% for proj, minutes in my_period_by_project.items() %}
+          {% if minutes > ns.max_min %}{% set ns.max_min = minutes %}{% endif %}
+        {% endfor %}
+
+        <div class="d-flex flex-column gap-3">
+          {% for proj, minutes in my_period_by_project.items() %}
+          <div>
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="fw-500" style="font-size:13px;">{{ proj }}</span>
+              <span class="fw-700" style="font-size:14px;color:#0D9488;">{{ "%.1f"|format(minutes/60) }} h</span>
+            </div>
+            <div class="hours-bar">
+              <div class="hours-bar-fill" style="width:{{ ((minutes / ns.max_min) * 100)|int }}%;"></div>
+            </div>
+          </div>
+          {% endfor %}
+          <div class="d-flex justify-content-between align-items-center pt-3" style="border-top:2px solid #f1f5f9;">
+            <span class="fw-700" style="font-size:13px;">Total</span>
+            <span class="fw-800" style="font-size:16px;color:#0f172a;">{{ "%.1f"|format(my_period_minutes/60) }} h</span>
+          </div>
+        </div>
+
+        {% else %}
+        <div class="text-center text-muted" style="padding:60px 0;">
+          <div style="width:64px;height:64px;border-radius:50%;background:#F8FAFC;border:2px solid #E2E8F0;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+            <i class="bi bi-bar-chart" style="font-size:26px;color:#CBD5E1;"></i>
+          </div>
+          <div class="fw-600" style="font-size:14px;">No entries this period</div>
+          <div class="small mt-1">Clock in to start tracking time against projects.</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Today's entries -->
+  <div class="card-panel">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <h6 class="panel-title mb-0">
+        <i class="bi bi-list-check me-1" style="color:#0D9488;"></i>Today's Entries
+      </h6>
+      {% if my_today_entries %}
+      <span class="badge" style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0;font-size:11px;">
+        {{ "%.1f"|format(my_today_minutes/60) }} h logged today
+      </span>
+      {% endif %}
+    </div>
+
+    {% if my_today_entries %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle" style="font-size:13px;">
+        <thead style="background:#f8fafc;">
+          <tr>
+            <th>Project</th>
+            <th>Clock In</th>
+            <th>Clock Out</th>
+            <th class="text-end">Duration</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for e in my_today_entries|sort(attribute='clock_in') %}
+        <tr>
+          <td class="fw-500">{{ e.project_name or e.project_number or 'General / Admin' }}</td>
+          {% if e.get('source') == 'manual' %}
+          <td colspan="2" class="text-muted small">
+            <i class="bi bi-pencil-square me-1"></i>Manually logged
+          </td>
+          {% else %}
+          <td class="text-muted">{{ e.clock_in[11:16] }}</td>
+          <td class="text-muted">{{ e.clock_out[11:16] if e.clock_out else '—' }}</td>
+          {% endif %}
+          <td class="text-end fw-700" style="color:#0D9488;">
+            {{ "%.1f"|format(e.duration_minutes/60) }} h
+          </td>
+          <td class="text-muted small">{{ e.notes or '—' }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr style="background:#f8fafc;">
+            <td colspan="3" class="text-end fw-semibold text-muted small">Total today</td>
+            <td class="text-end fw-800" style="color:#0D9488;">{{ "%.1f"|format(my_today_minutes/60) }} h</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-4">
+      <div style="width:48px;height:48px;border-radius:50%;background:#F8FAFC;border:2px solid #E2E8F0;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">
+        <i class="bi bi-clock" style="font-size:20px;color:#CBD5E1;"></i>
+      </div>
+      <div class="small">No completed entries for today yet.</div>
+    </div>
+    {% endif %}
+  </div>
+
+</div><!-- /tab-clock -->
+
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     TIME OFF
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade" id="tab-time-off">
+
+  <div class="row g-3">
+    <div class="col-lg-5">
+      <div class="card-panel">
+        <h6 class="panel-title mb-3">
+          <i class="bi bi-calendar-plus me-1" style="color:#0D9488;"></i>Request Time Off
+        </h6>
+        <form method="post" action="{{ url_for('employee_time_off_new') }}">
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Type</label>
+            <select name="type" class="form-select form-select-sm">
+              <option>Vacation</option><option>Sick</option>
+              <option>Personal</option><option>Unpaid</option>
+            </select>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Start Date</label>
+              <input type="date" name="start_date" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">End Date</label>
+              <input type="date" name="end_date" class="form-control form-control-sm" required>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Reason <span class="text-muted fw-normal">(optional)</span></label>
+            <textarea name="reason" class="form-control form-control-sm" rows="2"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm w-100">
+            <i class="bi bi-send me-1"></i>Submit Request
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="col-lg-7">
+      <div class="card-panel">
+        <h6 class="panel-title mb-3">
+          <i class="bi bi-calendar-check me-1" style="color:#0D9488;"></i>My Requests
+        </h6>
+        {% if my_time_off %}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0 align-middle">
+            <thead><tr><th>Type</th><th>Dates</th><th>Reason</th><th>Status</th></tr></thead>
+            <tbody>
+            {% for r in my_time_off %}
+            <tr>
+              <td class="fw-500">{{ r.type }}</td>
+              <td class="text-muted small">{{ r.start_date }} → {{ r.end_date }}</td>
+              <td class="text-muted small">{{ r.reason or '—' }}</td>
+              <td><span class="badge status-{{ r.status|lower }}">{{ r.status }}</span></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-4">
+          <i class="bi bi-calendar-x" style="font-size:32px;opacity:.3;"></i>
+          <div class="mt-2 small">No time off requests yet.</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if user_role == 'admin' %}
+  <div class="card-panel mt-3">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <h6 class="panel-title mb-0">
+        <i class="bi bi-person-check me-1" style="color:#D97706;"></i>Pending Approvals
+      </h6>
+      {% if pending_time_off %}
+      <span class="badge bg-danger">{{ pending_time_off|length }} pending</span>
+      {% endif %}
+    </div>
+    {% if pending_time_off %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead>
+          <tr><th>Employee</th><th>Type</th><th>Dates</th><th>Reason</th><th>Requested</th><th class="text-end">Action</th></tr>
+        </thead>
+        <tbody>
+        {% for r in pending_time_off %}
+        <tr>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <span class="emp-avatar" style="width:28px;height:28px;font-size:11px;">{{ (r.employee_name or 'U')[0]|upper }}</span>
+              <span class="fw-500">{{ r.employee_name }}</span>
+            </div>
+          </td>
+          <td>{{ r.type }}</td>
+          <td class="text-muted small">{{ r.start_date }} → {{ r.end_date }}</td>
+          <td class="text-muted small">{{ r.reason or '—' }}</td>
+          <td class="text-muted small">{{ r.requested_at[:10] }}</td>
+          <td class="text-end">
+            <form method="post" action="{{ url_for('employee_time_off_action', request_id=r.firebase_id, action='approve') }}" class="d-inline">
+              <button type="submit" class="btn btn-xs btn-outline-success"><i class="bi bi-check-lg"></i> Approve</button>
+            </form>
+            <form method="post" action="{{ url_for('employee_time_off_action', request_id=r.firebase_id, action='reject') }}" class="d-inline">
+              <button type="submit" class="btn btn-xs btn-outline-danger"><i class="bi bi-x-lg"></i> Reject</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-3">
+      <i class="bi bi-check-circle" style="font-size:28px;opacity:.3;"></i>
+      <div class="mt-2 small">No pending requests — all caught up.</div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div><!-- /tab-time-off -->
+
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     MY PROFILE
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade" id="tab-profile">
+  <div class="row g-3">
+    <div class="col-lg-4">
+      <div class="card-panel text-center">
+        <div class="emp-avatar-xl mx-auto mb-3">{{ (user_name or 'U')[0]|upper }}</div>
+        <h5 class="fw-700 mb-1">{{ user_name }}</h5>
+        <div class="text-muted small mb-3">{{ user_email }}</div>
+        <div class="d-flex flex-wrap justify-content-center gap-2 mb-3">
+          <span class="badge badge-role-{{ user_role }}">{{ user_role|capitalize }}</span>
+          {% if profile_user.get('title') %}
+          <span class="badge" style="background:#F1F5F9;color:#475569;font-size:11px;">{{ profile_user.title }}</span>
+          {% endif %}
+        </div>
+        {% if profile_user.get('region') %}
+        <div>
+          <span class="badge" style="background:{{ '#0D9488' if profile_user.region == 'Inside America' else '#7C3AED' }};color:#fff;font-size:11px;">
+            <i class="bi bi-geo-alt-fill me-1"></i>{{ profile_user.region }}
+          </span>
+        </div>
+        {% endif %}
+        <div class="mt-3 pt-3 border-top">
+          <span class="badge status-{{ (profile_user.get('employee_status','Active'))|lower }}">
+            {{ profile_user.get('employee_status','Active') }}
+          </span>
+        </div>
+      </div>
+
+      {% if profile_user.get('hourly_rate') or profile_user.get('monthly_salary') %}
+      <div class="card-panel mt-3">
+        <h6 class="panel-title mb-3"><i class="bi bi-cash-coin me-1" style="color:#D97706;"></i>Compensation</h6>
+        <div class="d-flex flex-column gap-2">
+          {% if profile_user.get('hourly_rate') %}
+          <div class="comp-card amber">
+            <div class="text-muted small fw-semibold mb-1">Hourly Rate</div>
+            <div class="fw-800" style="font-size:22px;color:#92400E;">
+              ${{ "%.2f"|format(profile_user.hourly_rate|float) }}<span class="text-muted fw-normal" style="font-size:13px;">/hr</span>
+            </div>
+          </div>
+          {% endif %}
+          {% if profile_user.get('monthly_salary') %}
+          <div class="comp-card green">
+            <div class="text-muted small fw-semibold mb-1">Monthly Salary</div>
+            <div class="fw-800" style="font-size:22px;color:#15803D;">
+              ${{ "{:,.0f}".format(profile_user.monthly_salary|float) }}<span class="text-muted fw-normal" style="font-size:13px;">/mo</span>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="col-lg-8">
+      <div class="card-panel">
+        <h6 class="panel-title mb-3">
+          <i class="bi bi-person-lines-fill me-1" style="color:#0D9488;"></i>Employee Details
+        </h6>
+        <div class="profile-row">
+          <div class="profile-row-label"><i class="bi bi-briefcase me-1"></i>Job Title</div>
+          <div class="profile-row-value">{{ profile_user.get('title') or '—' }}</div>
+        </div>
+        <div class="profile-row">
+          <div class="profile-row-label"><i class="bi bi-building me-1"></i>Department</div>
+          <div class="profile-row-value">{{ profile_user.get('department') or '—' }}</div>
+        </div>
+        <div class="profile-row">
+          <div class="profile-row-label"><i class="bi bi-geo-alt me-1"></i>Region</div>
+          <div class="profile-row-value">{{ profile_user.get('region') or '—' }}</div>
+        </div>
+        <div class="profile-row">
+          <div class="profile-row-label"><i class="bi bi-calendar3 me-1"></i>Hire Date</div>
+          <div class="profile-row-value">{{ profile_user.get('hire_date') or '—' }}</div>
+        </div>
+        <div class="profile-row">
+          <div class="profile-row-label"><i class="bi bi-person-badge me-1"></i>Role</div>
+          <div class="profile-row-value">
+            <span class="badge badge-role-{{ user_role }}">{{ user_role|capitalize }}</span>
+          </div>
+        </div>
+        <div class="profile-row">
+          <div class="profile-row-label"><i class="bi bi-shield-check me-1"></i>Status</div>
+          <div class="profile-row-value">
+            <span class="badge status-{{ (profile_user.get('employee_status','Active'))|lower }}">
+              {{ profile_user.get('employee_status','Active') }}
+            </span>
+          </div>
+        </div>
+        <p class="text-muted small mt-3 mb-0">
+          <i class="bi bi-info-circle me-1"></i>Contact an admin to update your details.
+        </p>
+      </div>
+    </div>
+  </div>
+</div><!-- /tab-profile -->
+
+
+{% if user_role == 'admin' %}
+<!-- ══════════════════════════════════════════════════════════════════════════
+     TEAM  (admin only)
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade" id="tab-team">
+
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-teal">
+        <div class="kpi-top"><span class="kpi-label">Total Employees</span><i class="bi bi-people-fill kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ all_users|length }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-green">
+        <div class="kpi-top"><span class="kpi-label">Clocked In Now</span><i class="bi bi-record-circle-fill kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ open_entries_by_uid|length }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-amber">
+        <div class="kpi-top"><span class="kpi-label">Pending Time Off</span><i class="bi bi-calendar-event kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ pending_time_off|length }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card {% if stale_open_entries %}kpi-red{% else %}kpi-blue{% endif %}">
+        <div class="kpi-top"><span class="kpi-label">Needs Attention</span><i class="bi bi-exclamation-triangle-fill kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ stale_open_entries|length }}</div>
+      </div>
+    </div>
+  </div>
+
+  {% if stale_open_entries %}
+  <div class="card-panel mb-3" style="border-left:3px solid #DC2626;">
+    <h6 class="panel-title mb-2 text-danger">
+      <i class="bi bi-exclamation-triangle-fill me-1"></i>Open Entries Needing Attention
+    </h6>
+    <p class="text-muted small mb-3">These clock-ins were never closed. Set a clock-out time to fix hours totals.</p>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead><tr><th>Employee</th><th>Project</th><th>Clocked In</th><th>Set Clock-Out</th><th></th></tr></thead>
+        <tbody>
+        {% for e in stale_open_entries %}
+        <tr>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <span class="emp-avatar" style="width:28px;height:28px;font-size:11px;">{{ (e.employee_name or 'U')[0]|upper }}</span>
+              <span class="fw-semibold">{{ e.employee_name }}</span>
+            </div>
+          </td>
+          <td class="text-muted small">{{ e.project_name or e.project_number or 'General / Admin' }}</td>
+          <td class="text-muted small">{{ e.date }} {{ e.clock_in[11:16] }}</td>
+          <td>
+            <form id="close-entry-{{ e.firebase_id }}" method="post"
+                  action="{{ url_for('employee_close_entry', entry_id=e.firebase_id) }}" class="d-flex gap-2">
+              <input type="datetime-local" name="clock_out" value="{{ e._suggested_close }}"
+                     class="form-control form-control-sm" style="width:auto;">
+            </form>
+          </td>
+          <td class="text-end">
+            <button type="submit" form="close-entry-{{ e.firebase_id }}" class="btn btn-xs btn-outline-danger">
+              <i class="bi bi-stop-circle"></i> Close
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card-panel mb-3">
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+      <h6 class="panel-title mb-0">
+        <i class="bi bi-people me-1" style="color:#0D9488;"></i>All Employees
+        <span class="text-muted fw-normal small ms-1">({{ all_users|length }})</span>
+      </h6>
+      <a href="{{ url_for('settings') }}?tab=users" class="btn btn-xs btn-outline-secondary">
+        <i class="bi bi-person-plus me-1"></i>Add Employee
+      </a>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
+        <thead style="background:#f8fafc;">
+          <tr>
+            <th>Employee</th><th>Role</th><th>Status</th>
+            <th>Department</th><th>Hire Date</th><th>Currently On</th>
+            <th class="text-end">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for u in all_users %}
+        {% set open_entry = open_entries_by_uid.get(u.firebase_uid) %}
+        <tr>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <span class="emp-avatar">{{ (u.username or 'U')[0]|upper }}</span>
+              <div>
+                <div class="fw-semibold">{{ u.username or '—' }}</div>
+                <div class="text-muted" style="font-size:11px;">{{ u.email or '' }}</div>
+              </div>
+            </div>
+          </td>
+          <td><span class="badge badge-role-{{ u.role or 'admin' }}">{{ (u.role or 'admin')|capitalize }}</span></td>
+          <td>
+            <span class="badge status-{{ (u.get('employee_status','Active'))|lower }}">
+              {{ u.get('employee_status','Active') }}
+            </span>
+          </td>
+          <td class="text-muted">{{ u.get('department') or '—' }}</td>
+          <td class="text-muted">{{ u.get('hire_date') or '—' }}</td>
+          <td>
+            {% if open_entry %}
+            <span class="badge-working">
+              <i class="bi bi-record-circle-fill" style="color:#D97706;"></i>
+              {{ (open_entry.project_name or open_entry.project_number or 'General / Admin')[:22] }}
+            </span>
+            {% else %}<span class="text-muted small">—</span>{% endif %}
+          </td>
+          <td class="text-end">
+            <button class="btn btn-xs btn-outline-secondary"
+                    data-emp-uid="{{ u.firebase_uid }}"
+                    data-emp-name="{{ u.username or '' }}"
+                    data-emp-status="{{ u.get('employee_status','Active') }}"
+                    data-emp-dept="{{ u.get('department','') or '' }}"
+                    data-emp-hire="{{ u.get('hire_date','') or '' }}"
+                    data-emp-rate="{{ u.get('hourly_rate',0) or 0 }}"
+                    onclick="openEmpEdit(this)">
+              <i class="bi bi-pencil me-1"></i>Edit
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card-panel">
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+      <h6 class="panel-title mb-0">
+        <i class="bi bi-bar-chart me-1" style="color:#0D9488;"></i>
+        Team Hours by Project <span class="text-muted fw-normal">— {{ period_label }}</span>
+      </h6>
+      <div class="d-flex align-items-center gap-2">
+        <select id="periodSelect" class="form-select form-select-sm" style="width:auto;">
+          <option value="week"   {% if period == 'week'   %}selected{% endif %}>This Week</option>
+          <option value="month"  {% if period == 'month'  %}selected{% endif %}>This Month</option>
+          <option value="year"   {% if period == 'year'   %}selected{% endif %}>This Year</option>
+          <option value="custom" {% if period == 'custom' %}selected{% endif %}>Custom Range</option>
+        </select>
+        <input type="date" id="periodCustomStart" class="form-control form-control-sm"
+               style="width:auto;{% if period != 'custom' %}display:none;{% endif %}"
+               value="{{ period_start if period == 'custom' else '' }}">
+        <input type="date" id="periodCustomEnd" class="form-control form-control-sm"
+               style="width:auto;{% if period != 'custom' %}display:none;{% endif %}"
+               value="{{ period_end if period == 'custom' else '' }}">
+        <button type="button" id="periodCustomApply" class="btn btn-sm btn-outline-secondary"
+                style="{% if period != 'custom' %}display:none;{% endif %}">Apply</button>
+        <a href="{{ url_for('employee_export_hours', period=period, start=period_start, end=period_end) }}"
+           class="btn btn-sm btn-outline-teal">
+          <i class="bi bi-download me-1"></i>Export CSV
+        </a>
+      </div>
+    </div>
+    {% if hours_by_project %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead>
+          <tr><th>Project</th><th>By Employee</th><th class="text-end">Total Hours</th></tr>
+        </thead>
+        <tbody>
+        {% for proj, data in hours_by_project.items() %}
+        <tr>
+          <td class="fw-500">{{ proj }}</td>
+          <td class="text-muted small">
+            {% for emp, minutes in data.items() if emp != '_total' %}
+            {{ emp }}: {{ "%.1f"|format(minutes/60) }}h{% if not loop.last %}, {% endif %}
+            {% endfor %}
+          </td>
+          <td class="text-end fw-bold">{{ "%.1f"|format(data['_total']/60) }} h</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-4">
+      <i class="bi bi-bar-chart" style="font-size:32px;opacity:.3;"></i>
+      <div class="mt-2 small">No completed time entries for this period.</div>
+    </div>
+    {% endif %}
+  </div>
+
+</div><!-- /tab-team -->
+
+<!-- Employee edit modal -->
+<div class="modal fade" id="empEditModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="empEditForm" method="post" action="">
+        <div class="modal-header">
+          <div class="d-flex align-items-center gap-3">
+            <span id="empEditAvatar" class="emp-avatar" style="width:44px;height:44px;font-size:18px;"></span>
+            <div>
+              <h6 class="modal-title mb-0" id="empEditName">Edit Employee</h6>
+              <div class="text-muted small">Employment Details</div>
+            </div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-sm-6">
+              <label class="form-label small fw-semibold">Employment Status</label>
+              <select name="employee_status" id="empEditStatus" class="form-select form-select-sm">
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small fw-semibold">Department</label>
+              <input type="text" name="department" id="empEditDept" class="form-control form-control-sm" placeholder="e.g. Engineering">
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small fw-semibold">Hire Date</label>
+              <input type="date" name="hire_date" id="empEditHireDate" class="form-control form-control-sm">
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label small fw-semibold">Hourly Rate ($)</label>
+              <input type="number" step="0.01" min="0" name="hourly_rate" id="empEditRate" class="form-control form-control-sm" placeholder="0.00">
+            </div>
+          </div>
+          <p class="text-muted small mt-3 mb-0">
+            <i class="bi bi-info-circle me-1"></i>
+            Name, email, role, title, or region → <a href="{{ url_for('settings') }}?tab=users" target="_blank">Settings → Users</a>.
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-teal btn-sm">
+            <i class="bi bi-check-circle me-1"></i>Save Changes
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}{# /admin #}
+
+
+{% if user_role in ('admin', 'finance') %}
+<!-- ══════════════════════════════════════════════════════════════════════════
+     DIRECTORY  (admin + finance)
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade" id="tab-directory">
+  <div class="card-panel">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <h6 class="panel-title mb-0">
+        <i class="bi bi-person-vcard me-1" style="color:#0D9488;"></i>
+        Employee Directory
+        <span class="text-muted fw-normal small ms-2">{{ (all_users or [])|length }} employee{{ 's' if (all_users or [])|length != 1 }}</span>
+      </h6>
+      {% if user_role == 'admin' %}
+      <a href="{{ url_for('settings') }}?tab=users" class="btn btn-xs btn-outline-secondary">
+        <i class="bi bi-gear me-1"></i>Manage in Settings
+      </a>
+      {% else %}
+      <span class="text-muted small"><i class="bi bi-lock me-1"></i>Read-only</span>
+      {% endif %}
+    </div>
+    {% if all_users %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
+        <thead style="background:#f8fafc;">
+          <tr>
+            <th>Name</th><th>Title</th><th>Region</th><th>Role</th>
+            <th class="text-end">Hourly Rate</th><th class="text-end">Monthly Salary</th>
+            <th>Email</th>{% if user_role == 'admin' %}<th></th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+        {% for u in all_users %}
+        <tr>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <span class="emp-avatar">{{ (u.username or 'U')[0]|upper }}</span>
+              <span class="fw-semibold">{{ u.username or '—' }}</span>
+            </div>
+          </td>
+          <td class="text-muted">{{ u.title or '—' }}</td>
+          <td>
+            {% if u.region %}
+            <span class="badge" style="background:{{ '#0D9488' if u.region == 'Inside America' else '#7C3AED' }};color:#fff;font-size:11px;">{{ u.region }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td><span class="badge badge-role-{{ u.role or 'admin' }}">{{ (u.role or 'admin')|capitalize }}</span></td>
+          <td class="text-end fw-500">{{ ('$%.2f/hr' % u.hourly_rate) if u.hourly_rate else '—' }}</td>
+          <td class="text-end">
+            {% if u.monthly_salary %}
+            <span class="badge" style="background:#ECFDF5;color:#065F46;border:1px solid #A7F3D0;font-size:11px;">
+              ${{ '{:,.0f}'.format(u.monthly_salary|float) }}/mo
+            </span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-muted small">{{ u.email or '—' }}</td>
+          {% if user_role == 'admin' %}
+          <td class="text-end">
+            <button class="btn btn-xs btn-outline-secondary"
+                    onclick="openDirEdit('{{ u.firebase_uid }}','{{ u.title or '' }}','{{ u.region or '' }}','{{ u.hourly_rate or 0 }}','{{ u.monthly_salary or 0 }}')"
+                    title="Edit"><i class="bi bi-pencil"></i></button>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-person-plus" style="font-size:40px;opacity:.3;"></i>
+      <div class="mt-2">No employees yet.
+        {% if user_role == 'admin' %}<a href="{{ url_for('settings') }}?tab=users">Add in Settings →</a>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if user_role == 'admin' %}
+  <div class="modal fade" id="dirEditModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content">
+        <div class="modal-header py-2">
+          <h6 class="modal-title"><i class="bi bi-person-gear me-1"></i>Edit Employee Details</h6>
+          <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body pb-2">
+          <input type="hidden" id="dirEditUid">
+          <div class="mb-2">
+            <label class="form-label fw-semibold" style="font-size:12px;">Job Title</label>
+            <input type="text" id="dirEditTitle" class="form-control form-control-sm">
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold" style="font-size:12px;">Region</label>
+            <select id="dirEditRegion" class="form-select form-select-sm">
+              <option value="">— None —</option>
+              <option value="Inside America">Inside America</option>
+              <option value="Outside America">Outside America</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold" style="font-size:12px;">Hourly Rate ($)</label>
+            <input type="number" id="dirEditRate" class="form-control form-control-sm" min="0" step="0.01">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold" style="font-size:12px;">Monthly Salary ($)</label>
+            <input type="number" id="dirEditSalary" class="form-control form-control-sm" min="0" step="0.01">
+          </div>
+          <div id="dirEditMsg" style="font-size:12px;"></div>
+        </div>
+        <div class="modal-footer py-2">
+          <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-sm btn-teal" onclick="saveDirEdit()"><i class="bi bi-check-circle me-1"></i>Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div><!-- /tab-directory -->
+{% endif %}
+
+</div><!-- /tab-content -->
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+// Live elapsed timer
+(function () {
+  const el = document.getElementById('elapsedTimer');
+  if (!el || !el.dataset.clockIn) return;
+  const start = new Date(el.dataset.clockIn);
+  function tick() {
+    const diff = Math.max(0, Date.now() - start.getTime());
+    const s = Math.floor(diff / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    el.textContent = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0');
+  }
+  tick(); setInterval(tick, 1000);
+})();
+
+// Tab persistence via URL hash
+(function () {
+  const map = { clock:'#tab-clock', 'time-off':'#tab-time-off', profile:'#tab-profile', team:'#tab-team', directory:'#tab-directory' };
+  const hash = (window.location.hash || '').replace('#','');
+  const target = map[hash];
+  if (target) {
+    const el = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
+    if (el) new bootstrap.Tab(el).show();
+  }
+  document.querySelectorAll('#empTabs .nav-link').forEach(link => {
+    link.addEventListener('shown.bs.tab', e => {
+      history.replaceState(null, '', '#' + (e.target.getAttribute('href') || '').replace('#tab-',''));
+    });
+  });
+})();
+
+// Team hours period selector
+(function () {
+  const sel = document.getElementById('periodSelect');
+  if (!sel) return;
+  const s1 = document.getElementById('periodCustomStart');
+  const s2 = document.getElementById('periodCustomEnd');
+  const btn = document.getElementById('periodCustomApply');
+  function go(period, start, end) {
+    const p = new URLSearchParams(window.location.search);
+    p.set('period', period);
+    if (period === 'custom') { p.set('start', start||''); p.set('end', end||''); }
+    else { p.delete('start'); p.delete('end'); }
+    window.location.href = '{{ url_for("employees") }}?' + p.toString() + '#team';
+  }
+  sel.addEventListener('change', function() {
+    if (this.value === 'custom') { s1.style.display=''; s2.style.display=''; btn.style.display=''; }
+    else go(this.value);
+  });
+  if (btn) btn.addEventListener('click', function() {
+    if (s1.value && s2.value) go('custom', s1.value, s2.value);
+  });
+})();
+
+// My clock period selector
+(function () {
+  const sel = document.getElementById('myPeriodSelect');
+  if (!sel) return;
+  const s1 = document.getElementById('myPeriodCustomStart');
+  const s2 = document.getElementById('myPeriodCustomEnd');
+  const btn = document.getElementById('myPeriodCustomApply');
+  function go(period, start, end) {
+    const p = new URLSearchParams(window.location.search);
+    p.set('myperiod', period);
+    if (period === 'custom') { p.set('mystart', start||''); p.set('myend', end||''); }
+    else { p.delete('mystart'); p.delete('myend'); }
+    window.location.href = '{{ url_for("employees") }}?' + p.toString() + '#clock';
+  }
+  sel.addEventListener('change', function() {
+    if (this.value === 'custom') { s1.style.display=''; s2.style.display=''; btn.style.display=''; }
+    else go(this.value);
+  });
+  if (btn) btn.addEventListener('click', function() {
+    if (s1.value && s2.value) go('custom', s1.value, s2.value);
+  });
+})();
+
+// Team tab: employee edit modal
+window.openEmpEdit = function(btn) {
+  const uid    = btn.dataset.empUid;
+  const name   = btn.dataset.empName;
+  document.getElementById('empEditForm').action = '/employees/' + uid + '/update';
+  document.getElementById('empEditAvatar').textContent = (name || 'U')[0].toUpperCase();
+  document.getElementById('empEditName').textContent   = name || 'Employee';
+  document.getElementById('empEditStatus').value   = btn.dataset.empStatus   || 'Active';
+  document.getElementById('empEditDept').value     = btn.dataset.empDept     || '';
+  document.getElementById('empEditHireDate').value = btn.dataset.empHire     || '';
+  document.getElementById('empEditRate').value     = parseFloat(btn.dataset.empRate) || '';
+  new bootstrap.Modal(document.getElementById('empEditModal')).show();
+};
+
+// Directory tab: edit modal (PATCH API)
+window.openDirEdit = function(uid, title, region, rate, salary) {
+  document.getElementById('dirEditUid').value    = uid;
+  document.getElementById('dirEditTitle').value  = title  || '';
+  document.getElementById('dirEditRegion').value = region || '';
+  document.getElementById('dirEditRate').value   = parseFloat(rate)   || '';
+  document.getElementById('dirEditSalary').value = parseFloat(salary) || '';
+  document.getElementById('dirEditMsg').innerHTML = '';
+  new bootstrap.Modal(document.getElementById('dirEditModal')).show();
+};
+
+window.saveDirEdit = async function() {
+  const uid  = document.getElementById('dirEditUid').value;
+  const msg  = document.getElementById('dirEditMsg');
+  const body = {
+    title:          document.getElementById('dirEditTitle').value.trim(),
+    region:         document.getElementById('dirEditRegion').value,
+    hourly_rate:    parseFloat(document.getElementById('dirEditRate').value)   || 0,
+    monthly_salary: parseFloat(document.getElementById('dirEditSalary').value) || 0,
+  };
+  msg.innerHTML = '<span class="text-muted">Saving…</span>';
+  try {
+    const res  = await fetch('/api/users/' + uid + '/details', {
+      method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) { msg.innerHTML = '<span class="text-danger">' + (data.error||'Error') + '</span>'; return; }
+    msg.innerHTML = '<span class="text-success">Saved!</span>';
+    setTimeout(() => location.reload(), 500);
+  } catch(e) { msg.innerHTML = '<span class="text-danger">Request failed.</span>'; }
+};
+</script>
+{% endblock %}
