@@ -52,22 +52,33 @@ try:
     from firebase_admin import credentials, db as firebase_db
     from firebase_admin.exceptions import FirebaseError
 
-    _service_key_candidates = [
-        Path.home() / ".mabs" / "servicekey.json",
-        DATA_DIR / "servicekey.json",
-        BASE_DIR / "servicekey.json",
-    ]
-    _key_path = next((p for p in _service_key_candidates if p.exists()), None)
-
-    if _key_path:
+    # Cloud deployment: FIREBASE_SERVICE_ACCOUNT_JSON env var (full JSON string)
+    _sa_json_str = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
+    if _sa_json_str:
         if not firebase_admin._apps:
-            cred = credentials.Certificate(str(_key_path))
+            _sa_dict = json.loads(_sa_json_str)
+            cred = credentials.Certificate(_sa_dict)
             firebase_admin.initialize_app(cred, {"databaseURL": FIREBASE_DB_URL})
         db = firebase_db
         FIREBASE_AVAILABLE = True
-        log.info("Firebase initialised from %s", _key_path)
+        log.info("Firebase initialised from environment variable")
     else:
-        log.warning("No Firebase service key found — Firebase disabled")
+        _service_key_candidates = [
+            Path.home() / ".mabs" / "servicekey.json",
+            DATA_DIR / "servicekey.json",
+            BASE_DIR / "servicekey.json",
+        ]
+        _key_path = next((p for p in _service_key_candidates if p.exists()), None)
+
+        if _key_path:
+            if not firebase_admin._apps:
+                cred = credentials.Certificate(str(_key_path))
+                firebase_admin.initialize_app(cred, {"databaseURL": FIREBASE_DB_URL})
+            db = firebase_db
+            FIREBASE_AVAILABLE = True
+            log.info("Firebase initialised from %s", _key_path)
+        else:
+            log.warning("No Firebase service key found — Firebase disabled")
 except ImportError:
     log.warning("firebase-admin not installed — Firebase disabled")
 except Exception as exc:
@@ -326,6 +337,18 @@ def logout():
 @login_required
 def index():
     return redirect(url_for(first_page(session.get("user_role", "sales"))))
+
+@app.route("/portfolio")
+def portfolio():
+    github_username = "archengservices2022"
+    featured_repo = "MABS_PIMS"
+    return render_template(
+        "portfolio.html",
+        github_username=github_username,
+        github_profile_url=f"https://github.com/{github_username}",
+        github_repo_url=f"https://github.com/{github_username}/{featured_repo}",
+        featured_repo=featured_repo,
+    )
 
 @app.route("/dashboard")
 @role_required("dashboard")
@@ -7819,4 +7842,8 @@ def quick_invoice_stage(project_id, stage_idx):
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    app.run(debug=os.environ.get("FLASK_DEBUG", "0") == "1", host="0.0.0.0", port=5000)
+    app.run(
+        debug=os.environ.get("FLASK_DEBUG", "0") == "1",
+        host=os.environ.get("FLASK_HOST", "0.0.0.0"),
+        port=int(os.environ.get("PORT", "5000")),
+    )
