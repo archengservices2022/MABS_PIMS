@@ -1583,6 +1583,8 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
     iid = fb_push("/invoices", invoice_data)
     stage_status = "Paid" if mark_paid else "Invoiced"
     _mark_project_stage(proj_num, stage_idx, stage_status, invoice_id=iid, amount=_safe_float(amount))
+    if project.get("status", "Not Started") == "Not Started":
+        fb_update(f"/projects/{project_id}", {"status": "In Progress"})
     if mark_paid:
         _sync_project_payment(proj_num)
         _auto_complete_project_if_paid(proj_num)
@@ -2228,6 +2230,23 @@ def invoice_new():
             if linked_projects:
                 linked_projects.sort(key=lambda x: int(x.get("project_number", "")[-3:]) if x.get("project_number", "")[-3:].isdigit() else x.get("project_number", ""))
                 fb_update(f"/invoices/{inv_id}", {"meta/linked_projects": linked_projects})
+
+        # Auto-advance project status: Not Started → In Progress when first invoice created
+        proj_nums_to_update = set()
+        if stage_idx_raw != "":
+            pn = data["meta"].get("project_number", "")
+            if pn:
+                proj_nums_to_update.add(pn)
+        else:
+            for pn in request.form.getlist("item_project[]"):
+                if pn:
+                    proj_nums_to_update.add(pn)
+        if proj_nums_to_update:
+            all_proj = fb_get("/projects") or {}
+            for pid, pdata in (all_proj.items() if isinstance(all_proj, dict) else []):
+                if isinstance(pdata, dict) and pdata.get("project_number", "") in proj_nums_to_update:
+                    if pdata.get("status", "Not Started") == "Not Started":
+                        fb_update(f"/projects/{pid}", {"status": "In Progress"})
 
         flash("Invoice created successfully.", "success")
         return redirect(url_for("invoicing", tab="all-invoices"))
