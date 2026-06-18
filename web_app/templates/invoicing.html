@@ -24,7 +24,48 @@
 {% endmacro %}
 
 {% block content %}
-<!-- Tab nav -->
+
+<!-- ── Invoices Overview ────────────────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-xl">
+    <div class="kpi-card" style="border-left:4px solid #7C3AED;">
+      <div class="kpi-top"><span class="kpi-label">Total Invoices</span><i class="bi bi-receipt kpi-icon-sm" style="color:#7C3AED;"></i></div>
+      <div class="kpi-value" style="color:#7C3AED;">{{ i_total }}</div>
+      <div class="kpi-sub">{{ i_draft_count }} draft · {{ i_sent_count }} sent</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl">
+    <div class="kpi-card kpi-blue">
+      <div class="kpi-top"><span class="kpi-label">Total Billed</span><i class="bi bi-currency-dollar kpi-icon-sm"></i></div>
+      <div class="kpi-value">${{ "{:,.0f}".format(i_total_val) }}</div>
+      <div class="kpi-sub">across all invoices</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl">
+    <div class="kpi-card kpi-green">
+      <div class="kpi-top"><span class="kpi-label">Collected</span><i class="bi bi-check-circle-fill kpi-icon-sm"></i></div>
+      <div class="kpi-value">${{ "{:,.0f}".format(i_total_paid) }}</div>
+      <div class="kpi-sub">{{ i_coll_rate }}% collection rate</div>
+      <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ i_coll_rate }}%"></div></div>
+    </div>
+  </div>
+  <div class="col-6 col-xl">
+    <div class="kpi-card kpi-amber">
+      <div class="kpi-top"><span class="kpi-label">Outstanding</span><i class="bi bi-hourglass-split kpi-icon-sm"></i></div>
+      <div class="kpi-value">${{ "{:,.0f}".format(i_outstanding) }}</div>
+      <div class="kpi-sub">{{ i_paid_count }} paid · {{ i_sent_count }} pending</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl">
+    <div class="kpi-card kpi-red">
+      <div class="kpi-top"><span class="kpi-label">Overdue</span><i class="bi bi-exclamation-triangle-fill kpi-icon-sm"></i></div>
+      <div class="kpi-value">${{ "{:,.0f}".format(i_overdue_amt) }}</div>
+      <div class="kpi-sub">{{ i_over_count }} overdue invoice{{ 's' if i_over_count != 1 }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Tab nav -->
 <ul class="nav nav-tabs mb-4" id="invoiceTabs">
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-all-invoices">

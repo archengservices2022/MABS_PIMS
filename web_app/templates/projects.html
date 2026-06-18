@@ -3,7 +3,47 @@
 {% block page_title %}Projects{% endblock %}
 
 {% block content %}
-<!-- Tab nav -->
+
+<!-- ── Projects Overview ────────────────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-xl">
+    <div class="kpi-card" style="border-left:4px solid #7C3AED;">
+      <div class="kpi-top"><span class="kpi-label">Total Projects</span><i class="bi bi-kanban kpi-icon-sm" style="color:#7C3AED;"></i></div>
+      <div class="kpi-value" style="color:#7C3AED;">{{ p_total_count }}</div>
+      <div class="kpi-sub">all time</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl">
+    <div class="kpi-card kpi-blue">
+      <div class="kpi-top"><span class="kpi-label">Portfolio Value</span><i class="bi bi-briefcase-fill kpi-icon-sm"></i></div>
+      <div class="kpi-value">${{ "{:,.0f}".format(p_total_cv) }}</div>
+      <div class="kpi-sub">total contract value</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl">
+    <div class="kpi-card kpi-teal">
+      <div class="kpi-top"><span class="kpi-label">Active Pipeline</span><i class="bi bi-arrow-repeat kpi-icon-sm"></i></div>
+      <div class="kpi-value">${{ "{:,.0f}".format(p_active_cv) }}</div>
+      <div class="kpi-sub">in-progress contracts</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl">
+    <div class="kpi-card kpi-green">
+      <div class="kpi-top"><span class="kpi-label">Total Paid</span><i class="bi bi-check-circle-fill kpi-icon-sm"></i></div>
+      <div class="kpi-value">${{ "{:,.0f}".format(p_total_paid) }}</div>
+      <div class="kpi-sub">received so far</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl">
+    <div class="kpi-card kpi-red">
+      <div class="kpi-top"><span class="kpi-label">Outstanding</span><i class="bi bi-hourglass-split kpi-icon-sm"></i></div>
+      <div class="kpi-value">${{ "{:,.0f}".format(p_outstanding) }}</div>
+      <div class="kpi-sub">remaining to collect</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Tab nav -->
 <ul class="nav nav-tabs mb-4" id="projectTabs">
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-all-projects">

@@ -4,6 +4,53 @@
 
 {% block content %}
 
+<!-- ── Quotes Overview ────────────────────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-xl">
+    <div class="kpi-card" style="border-left:4px solid #7C3AED;">
+      <div class="kpi-top"><span class="kpi-label">Total Quotes</span><i class="bi bi-file-earmark-text kpi-icon-sm" style="color:#7C3AED;"></i></div>
+      <div class="kpi-value" style="color:#7C3AED;">{{ q_total }}</div>
+      <div class="kpi-sub">all time</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl">
+    <div class="kpi-card kpi-blue">
+      <div class="kpi-top"><span class="kpi-label">Open</span><i class="bi bi-hourglass-split kpi-icon-sm"></i></div>
+      <div class="kpi-value">{{ q_open }}</div>
+      <div class="kpi-sub">awaiting response</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl">
+    <div class="kpi-card kpi-green">
+      <div class="kpi-top"><span class="kpi-label">Approved</span><i class="bi bi-check-circle-fill kpi-icon-sm"></i></div>
+      <div class="kpi-value">{{ q_approved }}</div>
+      <div class="kpi-sub">ready to convert</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl">
+    <div class="kpi-card kpi-teal">
+      <div class="kpi-top"><span class="kpi-label">Converted</span><i class="bi bi-arrow-right-circle-fill kpi-icon-sm"></i></div>
+      <div class="kpi-value">{{ q_converted }}</div>
+      <div class="kpi-sub">{{ q_conv_rate }}% win rate</div>
+      <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ q_conv_rate }}%"></div></div>
+    </div>
+  </div>
+  <div class="col-6 col-xl">
+    <div class="kpi-card kpi-amber">
+      <div class="kpi-top"><span class="kpi-label">Pipeline Value</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
+      <div class="kpi-value">${{ "{:,.0f}".format(q_pipeline) }}</div>
+      <div class="kpi-sub">open + approved</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl">
+    <div class="kpi-card kpi-purple">
+      <div class="kpi-top"><span class="kpi-label">Won Value</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
+      <div class="kpi-value">${{ "{:,.0f}".format(q_won_val) }}</div>
+      <div class="kpi-sub">converted quotes</div>
+    </div>
+  </div>
+</div>
+
 <!-- ── Tab Navigation ────────────────────────────────────────────────────────── -->
 <ul class="nav nav-tabs mb-4" id="quoteTabs">
   <li class="nav-item">
