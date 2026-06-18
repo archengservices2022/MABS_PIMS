@@ -265,7 +265,7 @@
     </div>
     {% endfor %}
 
-    {# ── 4. Projects due this week ───────────────────────────────────── #}
+    {# ── 4. Projects with deadline within 7 days ────────────────────── #}
     {% for p in reminder_proj_due %}
     <div class="focus-item" style="border-left:3px solid #2563EB;">
       <div class="focus-badge" style="background:#EFF6FF;color:#2563EB;">
@@ -274,7 +274,7 @@
       <div class="focus-body">
         <div class="focus-title">
           <strong>{{ p.get('project_number','—') }}</strong> · {{ p.get('project_name','—') }}
-          <span class="badge ms-1" style="background:#DBEAFE;color:#1D4ED8;font-size:0.68rem;">DUE THIS WEEK</span>
+          <span class="badge ms-1" style="background:#DBEAFE;color:#1D4ED8;font-size:0.68rem;">DUE IN 7 DAYS</span>
         </div>
         <div class="focus-sub">{{ p.get('client_name','—') }} · deadline {{ p.get('end_date','—') }}</div>
       </div>
