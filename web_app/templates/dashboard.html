@@ -172,21 +172,20 @@
 </div>
 {% endif %}
 
-<!-- ── Today's Focus ─────────────────────────────────────────────────────────── -->
-{% set focus_total = reminder_overdue_invoices|length + projects_ready_to_invoice|length + reminder_due_soon|length + reminder_proj_due|length + reminder_stalled|length %}
-{% if focus_total > 0 %}
-<div class="card-panel mb-3" id="todaysFocusPanel">
-  <div class="d-flex justify-content-between align-items-center mb-3">
+<!-- ── Urgent Alerts (overdue + due in 3 days — silent when all clear) ───────── -->
+{% if reminder_overdue_invoices or reminder_due_soon %}
+<div class="card-panel mb-3" style="border-left:4px solid #DC2626;">
+  <div class="d-flex justify-content-between align-items-center mb-2">
     <h6 class="panel-title mb-0">
-      <i class="bi bi-crosshair2 me-2" style="color:#0D9488;"></i>Today's Focus
-      <span class="badge ms-1" style="background:#0D9488;color:#fff;">{{ focus_total }}</span>
+      <i class="bi bi-exclamation-triangle-fill me-2" style="color:#DC2626;"></i>Needs Attention
+      <span class="badge ms-1" style="background:#DC2626;color:#fff;">{{ reminder_overdue_invoices|length + reminder_due_soon|length }}</span>
     </h6>
-    <span class="text-muted small">Sorted by urgency</span>
+    {% if 'invoicing' in allowed_pages %}
+    <a href="{{ url_for('invoicing') }}" class="text-muted small">All invoices →</a>
+    {% endif %}
   </div>
 
   <div class="focus-list">
-
-    {# ── 1. Overdue invoices — highest urgency ──────────────────────── #}
     {% for inv in reminder_overdue_invoices %}
     {% set meta = inv.get('meta', {}) or {} %}
     <div class="focus-item" style="border-left:3px solid #DC2626;">
@@ -198,49 +197,18 @@
           <strong>{{ meta.get('invoice_number','—') }}</strong> · {{ meta.get('client_name','—') }}
           <span class="badge ms-1" style="background:#FEE2E2;color:#991B1B;font-size:0.68rem;">OVERDUE</span>
         </div>
-        <div class="focus-sub">Due {{ meta.get('due_date','—') }} · ${{ "{:,.0f}".format(meta.get('total',0)|float) }} outstanding</div>
+        <div class="focus-sub">Due {{ meta.get('due_date','—') }} · ${{ "{:,.0f}".format(meta.get('total',0)|float) }}</div>
       </div>
       <div class="focus-actions">
         {% if 'invoicing' in allowed_pages and inv.get('firebase_id') %}
-        <form method="POST" action="{{ url_for('send_overdue_reminders') }}" style="display:inline;">
-          <button type="submit" class="btn btn-xs btn-danger"
-                  onclick="return confirm('Send reminder email for this invoice?');">
-            <i class="bi bi-envelope-exclamation me-1"></i>Send Reminder
-          </button>
-        </form>
-        <a href="{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}" class="btn btn-xs btn-outline-secondary">View</a>
-        {% endif %}
-      </div>
-    </div>
-    {% endfor %}
-
-    {# ── 2. Projects with uninvoiced stages — create revenue ────────── #}
-    {% for p in projects_ready_to_invoice %}
-    <div class="focus-item" style="border-left:3px solid #0D9488;">
-      <div class="focus-badge" style="background:#F0FDFA;color:#0D9488;">
-        <i class="bi bi-receipt"></i>
-      </div>
-      <div class="focus-body">
-        <div class="focus-title">
-          <strong>{{ p.project_number }}</strong> · {{ p.project_name or p.client_name or '—' }}
-          <span class="badge ms-1" style="background:#CCFBF1;color:#0F766E;font-size:0.68rem;">{{ p.pending_stages }} stage{{ 's' if p.pending_stages != 1 }} ready</span>
-        </div>
-        <div class="focus-sub">{{ p.client_name }} · ${{ "{:,.0f}".format(p.pending_amount) }} uninvoiced</div>
-      </div>
-      <div class="focus-actions">
-        {% if 'invoicing' in allowed_pages %}
-        <a href="{{ url_for('invoice_new') }}?project={{ p.project_number }}" class="btn btn-xs btn-teal">
-          <i class="bi bi-plus-circle me-1"></i>Create Invoice
+        <a href="{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}" class="btn btn-xs btn-danger">
+          <i class="bi bi-envelope me-1"></i>View &amp; Remind
         </a>
         {% endif %}
-        {% if 'projects' in allowed_pages and p.firebase_id %}
-        <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}" class="btn btn-xs btn-outline-secondary">View</a>
-        {% endif %}
       </div>
     </div>
     {% endfor %}
 
-    {# ── 3. Due within 7 days — collect before overdue ──────────────── #}
     {% for inv in reminder_due_soon %}
     {% set meta = inv.get('meta', {}) or {} %}
     <div class="focus-item" style="border-left:3px solid #F97316;">
@@ -250,67 +218,19 @@
       <div class="focus-body">
         <div class="focus-title">
           <strong>{{ meta.get('invoice_number','—') }}</strong> · {{ meta.get('client_name','—') }}
-          <span class="badge ms-1" style="background:#FFEDD5;color:#C2410C;font-size:0.68rem;">DUE SOON</span>
+          <span class="badge ms-1" style="background:#FFEDD5;color:#C2410C;font-size:0.68rem;">DUE IN 3 DAYS</span>
         </div>
         <div class="focus-sub">Due {{ meta.get('due_date','—') }} · ${{ "{:,.0f}".format(meta.get('total',0)|float) }}</div>
       </div>
       <div class="focus-actions">
         {% if 'invoicing' in allowed_pages and inv.get('firebase_id') %}
-        <a href="{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}#pay" class="btn btn-xs btn-outline-success">
+        <a href="{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}#pay" class="btn btn-xs btn-outline-warning">
           <i class="bi bi-cash-coin me-1"></i>Record Payment
         </a>
-        <a href="{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}" class="btn btn-xs btn-outline-secondary">View</a>
         {% endif %}
       </div>
     </div>
     {% endfor %}
-
-    {# ── 4. Projects with deadline within 7 days ────────────────────── #}
-    {% for p in reminder_proj_due %}
-    <div class="focus-item" style="border-left:3px solid #2563EB;">
-      <div class="focus-badge" style="background:#EFF6FF;color:#2563EB;">
-        <i class="bi bi-calendar-event-fill"></i>
-      </div>
-      <div class="focus-body">
-        <div class="focus-title">
-          <strong>{{ p.get('project_number','—') }}</strong> · {{ p.get('project_name','—') }}
-          <span class="badge ms-1" style="background:#DBEAFE;color:#1D4ED8;font-size:0.68rem;">DUE IN 7 DAYS</span>
-        </div>
-        <div class="focus-sub">{{ p.get('client_name','—') }} · deadline {{ p.get('end_date','—') }}</div>
-      </div>
-      <div class="focus-actions">
-        {% if 'projects' in allowed_pages and p.get('firebase_id') %}
-        <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}" class="btn btn-xs btn-outline-primary">
-          <i class="bi bi-pencil me-1"></i>Update Status
-        </a>
-        {% endif %}
-      </div>
-    </div>
-    {% endfor %}
-
-    {# ── 5. Stalled projects — lowest urgency ───────────────────────── #}
-    {% for p in reminder_stalled %}
-    <div class="focus-item" style="border-left:3px solid #7C3AED;">
-      <div class="focus-badge" style="background:#F5F3FF;color:#7C3AED;">
-        <i class="bi bi-pause-circle-fill"></i>
-      </div>
-      <div class="focus-body">
-        <div class="focus-title">
-          <strong>{{ p.get('project_number','—') }}</strong> · {{ p.get('project_name','—') }}
-          <span class="badge ms-1" style="background:#EDE9FE;color:#6D28D9;font-size:0.68rem;">STALLED</span>
-        </div>
-        <div class="focus-sub">{{ p.get('client_name','—') }} · last update {{ (p.get('updated_at') or p.get('created_at',''))[:10] }}</div>
-      </div>
-      <div class="focus-actions">
-        {% if 'projects' in allowed_pages and p.get('firebase_id') %}
-        <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}" class="btn btn-xs btn-outline-secondary">
-          <i class="bi bi-arrow-clockwise me-1"></i>Check In
-        </a>
-        {% endif %}
-      </div>
-    </div>
-    {% endfor %}
-
   </div>
 </div>
 {% endif %}
