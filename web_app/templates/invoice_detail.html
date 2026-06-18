@@ -20,8 +20,11 @@
   </div>
   <div class="d-flex gap-2 flex-wrap">
     <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-printer me-1"></i>Print / PDF
+      <i class="bi bi-printer me-1"></i>Print
     </button>
+    <a href="{{ url_for('invoice_pdf', invoice_id=invoice.firebase_id) }}" target="_blank" class="btn btn-sm btn-outline-danger">
+      <i class="bi bi-file-earmark-pdf me-1"></i>Download PDF
+    </a>
     <form method="POST" action="{{ url_for('invoice_send', invoice_id=invoice.firebase_id) }}"
           onsubmit="return confirm('Send this invoice to {{ meta.get("client_name","client") }}?');">
       <button type="submit" class="btn btn-sm btn-teal">

@@ -107,6 +107,13 @@
                      class="btn btn-xs btn-outline-secondary" title="Edit">
                     <i class="bi bi-pencil"></i>
                   </a>
+                  <form method="POST" action="{{ url_for('delete_client', client_name=c.client_name) }}"
+                        onsubmit="return confirm('Delete client {{ c.client_name }}? This cannot be undone.');"
+                        style="display:inline;">
+                    <button type="submit" class="btn btn-xs btn-outline-danger" title="Delete Client">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </form>
                 </div>
               </td>
             </tr>
