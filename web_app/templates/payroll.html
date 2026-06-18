@@ -98,6 +98,13 @@
 .btn-secondary { background: #e2e8f0; color: #0f172a; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; transition: background .2s; }
 .btn-secondary:hover { background: #cbd5e1; }
 
+/* Autocomplete Dropdown */
+.dropdown-list { border:1px solid #cbd5e1; border-radius:6px; box-shadow:0 2px 8px rgba(0,0,0,.1); max-height:200px; overflow-y:auto; }
+.dropdown-list.show { display:block !important; }
+.dropdown-list .option { padding:10px 12px; cursor:pointer; font-size:13px; color:#0f172a; transition:background .1s; }
+.dropdown-list .option:hover { background:#f1f5f9; }
+.dropdown-list .option:nth-child(even) { background:#fafbfc; }
+
 /* Table */
 .table-wrapper { background: white; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden; }
 .payroll-table { width: 100%; border-collapse: collapse; }
@@ -208,21 +215,14 @@
 
       <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:25px;">
         <form id="salaryForm" onsubmit="addSalary(event)">
+          <input type="hidden" id="salary_id" value="">
           <div class="form-grid-3col">
             <div class="form-group" style="grid-column:1/-1;">
               <label for="sal_employee">Employee Name</label>
-              {% if employee_profiles %}
-              <select id="sal_employee" required>
-                <option value="">— Select Employee —</option>
-                {% for p in employee_profiles %}
-                <option value="{{ p.name }}" data-region="{{ p.region }}">{{ p.name }}{% if p.title %} · {{ p.title }}{% endif %}</option>
-                {% endfor %}
-                <option value="__other__">Other (type manually)</option>
-              </select>
-              <input type="text" id="sal_employee_manual" placeholder="Enter employee name..." style="display:none;margin-top:6px;">
-              {% else %}
-              <input type="text" id="sal_employee" placeholder="Enter employee name..." required />
-              {% endif %}
+              <div style="position:relative;">
+                <input type="text" id="sal_employee" class="form-control form-control-sm" placeholder="Type or select employee..." required />
+                <div class="dropdown-list" id="sal_employee_dropdown" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #e2e8f0;border-top:none;max-height:200px;overflow-y:auto;display:none;z-index:1000;"></div>
+              </div>
             </div>
 
             <div class="form-group">
@@ -251,10 +251,10 @@
           </div>
 
           <div style="display:flex;gap:10px;">
-            <button type="submit" class="btn-primary">
-              <i class="bi bi-check-circle me-1"></i>Add Salary Entry
+            <button type="submit" class="btn-primary" id="submitBtn">
+              <i class="bi bi-check-circle me-1"></i><span id="submitBtnText">Add Salary Entry</span>
             </button>
-            <button type="reset" class="btn-secondary">Clear</button>
+            <button type="reset" class="btn-secondary" onclick="resetSalaryForm()">Clear</button>
           </div>
         </form>
       </div>
@@ -350,6 +350,9 @@ function applySalaryFilters() {
           <td>${sal.notes || '—'}</td>
           <td>
             <div class="action-buttons">
+              <button onclick="editSalary('${sal.firebase_id}','${sal.employee_name}','${sal.date}','${sal.amount}','${sal.region}','${(sal.notes||'').replace(/'/g,\"&#39;\")}')" class="btn-sm" title="Edit" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
+                <i class="bi bi-pencil"></i>
+              </button>
               <button onclick="deleteSalary('${sal.firebase_id}')" class="btn-sm btn-delete" title="Delete">
                 <i class="bi bi-trash"></i>
               </button>
@@ -379,42 +382,72 @@ function clearFilters() {
   applySalaryFilters();
 }
 
-// Handle employee dropdown → auto-fill region + show manual input
-(function () {
-  const sel = document.getElementById('sal_employee');
-  const manual = document.getElementById('sal_employee_manual');
-  if (!sel || sel.tagName !== 'SELECT') return;
-  sel.addEventListener('change', function () {
-    if (this.value === '__other__') {
-      manual.style.display = '';
-      manual.required = true;
-      sel.required = false;
-    } else {
-      manual.style.display = 'none';
-      manual.required = false;
-      sel.required = true;
-      // Auto-fill region from data-region attribute
-      var opt = this.options[this.selectedIndex];
-      var region = opt.getAttribute('data-region');
-      if (region) document.getElementById('sal_region').value = region;
-    }
+// Employee autocomplete
+const employeesList = {{ employee_profiles | tojson | safe }};
+
+function initEmployeeAutocomplete() {
+  const input = document.getElementById('sal_employee');
+  const dropdown = document.getElementById('sal_employee_dropdown');
+  if (!input || !dropdown) return;
+  input.addEventListener('focus', function() { renderEmployeeOptions(''); dropdown.style.display = ''; });
+  input.addEventListener('input', function() { renderEmployeeOptions(this.value.toLowerCase()); dropdown.style.display = ''; });
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('#sal_employee') && !e.target.closest('#sal_employee_dropdown'))
+      dropdown.style.display = 'none';
   });
-})();
+}
+
+function renderEmployeeOptions(filter) {
+  const dropdown = document.getElementById('sal_employee_dropdown');
+  const input = document.getElementById('sal_employee');
+  dropdown.innerHTML = '';
+  const filtered = employeesList.filter(emp => emp.name.toLowerCase().includes(filter));
+  if (filtered.length === 0) {
+    const d = document.createElement('div');
+    d.className = 'option'; d.textContent = 'No employees found';
+    d.style.cssText = 'color:#94a3b8;pointer-events:none;';
+    dropdown.appendChild(d); return;
+  }
+  filtered.forEach(emp => {
+    const d = document.createElement('div');
+    d.className = 'option';
+    d.textContent = emp.name + (emp.title ? ' · ' + emp.title : '');
+    d.onclick = () => {
+      input.value = emp.name;
+      dropdown.style.display = 'none';
+      if (emp.region) document.getElementById('sal_region').value = emp.region;
+    };
+    dropdown.appendChild(d);
+  });
+}
+
+function editSalary(id, employee, date, amount, region, notes) {
+  document.getElementById('salary_id').value = id;
+  document.getElementById('sal_employee').value = employee;
+  document.getElementById('sal_date').value = date;
+  document.getElementById('sal_amount').value = amount;
+  document.getElementById('sal_region').value = region;
+  document.getElementById('sal_notes').value = notes || '';
+  document.getElementById('submitBtnText').textContent = 'Update Salary Entry';
+  // Switch to add-salary tab
+  document.querySelectorAll('.payroll-tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.payroll-tab-button').forEach(b => b.classList.remove('active'));
+  document.getElementById('add-salary').classList.add('active');
+  document.querySelector('button[onclick="switchTab(\'add-salary\', event)"]').classList.add('active');
+  document.querySelector('form').scrollIntoView({behavior:'smooth'});
+}
+
+function resetSalaryForm() {
+  document.getElementById('salary_id').value = '';
+  document.getElementById('submitBtnText').textContent = 'Add Salary Entry';
+}
 
 function addSalary(e) {
   e.preventDefault();
-  var selEl = document.getElementById('sal_employee');
-  var manualEl = document.getElementById('sal_employee_manual');
-  var employeeName = '';
-  if (selEl && selEl.tagName === 'SELECT') {
-    employeeName = selEl.value === '__other__'
-      ? (manualEl ? manualEl.value.trim() : '')
-      : selEl.value.trim();
-  } else {
-    employeeName = selEl ? selEl.value.trim() : '';
-  }
-  if (!employeeName) { alert('Please select or enter an employee name'); return; }
+  const employeeName = (document.getElementById('sal_employee').value || '').trim();
+  if (!employeeName) { alert('Please enter an employee name'); return; }
 
+  const salaryId = document.getElementById('salary_id').value;
   const data = {
     employee_name: employeeName,
     date:          document.getElementById('sal_date').value,
@@ -423,23 +456,23 @@ function addSalary(e) {
     notes:         document.getElementById('sal_notes').value,
   };
 
-  fetch('/api/payroll/salaries', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(data)
-  })
+  const method = salaryId ? 'PUT' : 'POST';
+  const url = salaryId ? '/api/payroll/salaries/' + salaryId : '/api/payroll/salaries';
+
+  fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) })
   .then(r => r.json())
   .then(res => {
     if (res.success || res.salary_id || res.firebase_id) {
       document.getElementById('salaryForm').reset();
-      // Switch to salaries tab
+      document.getElementById('salary_id').value = '';
+      document.getElementById('submitBtnText').textContent = 'Add Salary Entry';
       document.querySelectorAll('.payroll-tab-content').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.payroll-tab-button').forEach(b => b.classList.remove('active'));
       document.getElementById('salaries').classList.add('active');
       document.querySelector('button[onclick="switchTab(\'salaries\', event)"]').classList.add('active');
       loadSalaryData();
     } else {
-      alert('Error: ' + (res.error || 'Failed to add salary'));
+      alert('Error: ' + (res.error || 'Failed to save salary'));
     }
   })
   .catch(err => {
@@ -457,6 +490,7 @@ function deleteSalary(id) {
 
 // Real-time filter listeners
 document.addEventListener('DOMContentLoaded', () => {
+  initEmployeeAutocomplete();
   loadSalaryData();
   document.getElementById('searchEmployee').addEventListener('input', applySalaryFilters);
   document.getElementById('filterRegion').addEventListener('change', applySalaryFilters);
