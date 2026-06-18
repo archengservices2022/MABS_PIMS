@@ -542,6 +542,34 @@ def dashboard():
             elif ds[:7] == last_month_str:
                 last_month_collected += _safe_float(tp.get("amount", 0))
 
+    # ── Module overview stats ─────────────────────────────────────────────────
+    _QTERMINAL_ALL = {"Approved", "Converted", "Invoiced", "Rejected", "Cancelled", "Expired"}
+    quot_status_counts: Dict[str, int] = {}
+    quotes_pipeline_value = 0.0
+    quotes_converted = 0
+    for _q in quot_list:
+        if not isinstance(_q, dict): continue
+        _st = _q.get("status", "Not Started")
+        quot_status_counts[_st] = quot_status_counts.get(_st, 0) + 1
+        if _st not in {"Rejected", "Cancelled", "Expired"}:
+            quotes_pipeline_value += _safe_float(_q.get("total", 0))
+        if _st in {"Converted", "Invoiced"}:
+            quotes_converted += 1
+    _total_quotes = len(quot_list)
+    quotes_conversion_rate = int(quotes_converted / _total_quotes * 100) if _total_quotes > 0 else 0
+
+    proj_contract_total  = sum(_safe_float(p.get("contract_value", 0)) for p in proj_list if isinstance(p, dict))
+    proj_contract_active = sum(
+        _safe_float(p.get("contract_value", 0)) for p in proj_list
+        if isinstance(p, dict) and p.get("status", "") not in ("Completed", "Cancelled")
+    )
+    proj_completed_count = sum(1 for p in proj_list if isinstance(p, dict) and p.get("status", "") == "Completed")
+
+    inv_overdue_amt = sum(
+        _safe_float(i.get("meta", {}).get("total", 0)) - _safe_float(i.get("meta", {}).get("amount_paid", 0))
+        for i in inv_list if isinstance(i, dict) and i.get("meta", {}).get("status", "") == "Overdue"
+    )
+
     # ── Team status (Employees module) ─────────────────────────────────────
     all_time_entries = _load_time_entries()
     all_time_off     = _load_time_off_requests()
@@ -580,6 +608,14 @@ def dashboard():
         projects_ready_to_invoice=projects_ready_to_invoice,
         this_month_collected=this_month_collected,
         last_month_collected=last_month_collected,
+        inv_status_counts=inv_status_counts,
+        quot_status_counts=quot_status_counts,
+        quotes_pipeline_value=quotes_pipeline_value,
+        quotes_conversion_rate=quotes_conversion_rate,
+        proj_contract_total=proj_contract_total,
+        proj_contract_active=proj_contract_active,
+        proj_completed_count=proj_completed_count,
+        inv_overdue_amt=inv_overdue_amt,
     )
 
 # ── Routes: Sales Dashboard ───────────────────────────────────────────────────
