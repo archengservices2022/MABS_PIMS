@@ -1798,37 +1798,14 @@ function viewReceipt(expId) {
       </div>
     </div>
 
-    <!-- Outstanding A/R Section -->
-    <div class="mb-3" id="monthOutstandingSection" style="display:none;">
+    <!-- Unpaid — Due This Month Section -->
+    <div class="mb-3" id="monthDueSection" style="display:none;">
       <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#D97706; padding:6px 0; border-bottom:2px solid #FED7AA; margin-bottom:8px;">
-        <i class="bi bi-clock-history me-1"></i>Outstanding (Unpaid Invoices)
+        <i class="bi bi-clock-history me-1"></i>Unpaid — Due This Month
       </div>
       <div class="table-responsive">
         <table class="table mb-0" style="font-size:12px;">
           <thead style="background:#78350F; color:#fff;">
-            <tr>
-              <th style="padding:8px 12px; color:#fff;">Invoice</th>
-              <th style="padding:8px 12px; color:#fff;">Client</th>
-              <th style="padding:8px 12px; color:#fff;">Due Date</th>
-              <th style="padding:8px 12px; color:#fff; text-align:center;">Net Terms</th>
-              <th style="padding:8px 12px; color:#fff; text-align:center;">Days Overdue</th>
-              <th style="padding:8px 12px; color:#fff; text-align:right;">Balance Due</th>
-            </tr>
-          </thead>
-          <tbody id="monthOutstandingTbody"></tbody>
-          <tfoot id="monthOutstandingTfoot" style="background:#FEF3C7; border-top:2px solid #FCD34D;"></tfoot>
-        </table>
-      </div>
-    </div>
-
-    <!-- Due This Month Section -->
-    <div class="mb-3" id="monthDueSection" style="display:none;">
-      <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#7C3AED; padding:6px 0; border-bottom:2px solid #DDD6FE; margin-bottom:8px;">
-        <i class="bi bi-calendar-event me-1"></i>Due This Month (Payment Deadlines)
-      </div>
-      <div class="table-responsive">
-        <table class="table mb-0" style="font-size:12px;">
-          <thead style="background:#4C1D95; color:#fff;">
             <tr>
               <th style="padding:8px 12px; color:#fff;">Invoice</th>
               <th style="padding:8px 12px; color:#fff;">Client</th>
@@ -1840,7 +1817,7 @@ function viewReceipt(expId) {
             </tr>
           </thead>
           <tbody id="monthDueTbody"></tbody>
-          <tfoot id="monthDueTfoot" style="background:#F5F3FF; border-top:2px solid #DDD6FE;"></tfoot>
+          <tfoot id="monthDueTfoot" style="background:#FEF3C7; border-top:2px solid #FCD34D;"></tfoot>
         </table>
       </div>
     </div>
@@ -1950,36 +1927,7 @@ function viewReceipt(expId) {
           +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#16a34a;font-size:13px;">'+fmt(totalPaid)+'</td><td></td></tr>';
       }
 
-      /* ── 2. Outstanding A/R ── */
-      var outstanding = monthlyOutstandingDetails[mkey] || [];
-      var outSec = document.getElementById('monthOutstandingSection');
-      if (outstanding.length > 0) {
-        outSec.style.display = '';
-        var oRows = outstanding.map(function(e, idx) {
-          var invLink = e.firebase_id
-            ? '<a href="/invoicing/'+encodeURIComponent(e.firebase_id)+'" style="color:#D97706;font-weight:700;text-decoration:none;">'+(e.invoice_number||'—')+'</a>'
-            : (e.invoice_number||'—');
-          var daysHtml = e.days_overdue > 0
-            ? '<span style="color:#DC2626;font-weight:700;">'+e.days_overdue+' days</span>'
-            : '<span style="color:#059669;">Due in '+Math.abs(e.days_overdue)+' days</span>';
-          var bg = idx%2===0?'#fffbeb':'#fef9ee';
-          return '<tr style="background:'+bg+';border-bottom:1px solid #FED7AA;">'
-            +'<td style="padding:8px 12px;">'+invLink+'</td>'
-            +'<td style="padding:8px 12px;">'+(e.client_name||'—')+'</td>'
-            +'<td style="padding:8px 12px;">'+(e.due_date||'—')+'</td>'
-            +'<td style="padding:8px 12px;text-align:center;">'+(e.net_terms?'Net '+e.net_terms:'—')+'</td>'
-            +'<td style="padding:8px 12px;text-align:center;">'+daysHtml+'</td>'
-            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#DC2626;">'+fmt(e.balance)+'</td></tr>';
-        });
-        document.getElementById('monthOutstandingTbody').innerHTML = oRows.join('');
-        var totalOut = outstanding.reduce(function(s,e){return s+parseFloat(e.balance||0);},0);
-        document.getElementById('monthOutstandingTfoot').innerHTML = '<tr><td colspan="5" style="padding:8px 12px;font-weight:700;">Total Outstanding</td>'
-          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#D97706;font-size:13px;">'+fmt(totalOut)+'</td></tr>';
-      } else {
-        outSec.style.display = 'none';
-      }
-
-      /* ── 3. Due This Month ── */
+      /* ── 2. Unpaid — Due This Month ── */
       var due = monthlyDueDetails[mkey] || [];
       var dueSec = document.getElementById('monthDueSection');
       if (due.length > 0) {
@@ -1987,7 +1935,7 @@ function viewReceipt(expId) {
         var today = new Date(); today.setHours(0,0,0,0);
         var dRows = due.map(function(e, idx) {
           var invLink = e.firebase_id
-            ? '<a href="/invoicing/'+encodeURIComponent(e.firebase_id)+'" style="color:#7C3AED;font-weight:700;text-decoration:none;">'+(e.invoice_number||'—')+'</a>'
+            ? '<a href="/invoicing/'+encodeURIComponent(e.firebase_id)+'" style="color:#D97706;font-weight:700;text-decoration:none;">'+(e.invoice_number||'—')+'</a>'
             : (e.invoice_number||'—');
           var dueDt = e.due_date ? new Date(e.due_date) : null;
           var daysText = '—';
@@ -1998,21 +1946,21 @@ function viewReceipt(expId) {
             else if (diff === 0) daysText = '<span style="color:#D97706;font-weight:700;">Due today</span>';
             else daysText = '<span style="color:#059669;">Due in '+diff+' day'+(diff===1?'':'s')+'</span>';
           }
-          var statusColor = {'Sent':'#0369a1','Viewed':'#7C3AED','Partial':'#D97706','Overdue':'#DC2626'}[e.status] || '#6b7280';
-          var bg = idx%2===0?'#faf5ff':'#f5f0ff';
-          return '<tr style="background:'+bg+';border-bottom:1px solid #DDD6FE;">'
+          var statusColor = {'Sent':'#0369a1','Viewed':'#D97706','Partial':'#D97706','Overdue':'#DC2626'}[e.status] || '#6b7280';
+          var bg = idx%2===0?'#fffbeb':'#fef9ee';
+          return '<tr style="background:'+bg+';border-bottom:1px solid #FED7AA;">'
             +'<td style="padding:8px 12px;">'+invLink+'</td>'
             +'<td style="padding:8px 12px;">'+(e.client_name||'—')+'</td>'
             +'<td style="padding:8px 12px;color:#6b7280;">'+(e.invoice_date||'—')+'</td>'
             +'<td style="padding:8px 12px;text-align:center;">'+(e.net_terms?'Net '+e.net_terms:'—')+'</td>'
             +'<td style="padding:8px 12px;text-align:center;color:#374151;">'+(e.due_date||'—')+'</td>'
             +'<td style="padding:8px 12px;text-align:center;"><span style="color:'+statusColor+';font-weight:600;">'+(e.status||'—')+'</span></td>'
-            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#7C3AED;">'+fmt(e.balance)+'</td></tr>';
+            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#DC2626;">'+fmt(e.balance)+'</td></tr>';
         });
         document.getElementById('monthDueTbody').innerHTML = dRows.join('');
         var totalDue = due.reduce(function(s,e){return s+parseFloat(e.balance||0);},0);
-        document.getElementById('monthDueTfoot').innerHTML = '<tr><td colspan="6" style="padding:8px 12px;font-weight:700;">Total Due This Month — '+due.length+' invoice(s)</td>'
-          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#7C3AED;font-size:13px;">'+fmt(totalDue)+'</td></tr>';
+        document.getElementById('monthDueTfoot').innerHTML = '<tr><td colspan="6" style="padding:8px 12px;font-weight:700;">Total Unpaid — '+due.length+' invoice(s)</td>'
+          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#D97706;font-size:13px;">'+fmt(totalDue)+'</td></tr>';
       } else {
         dueSec.style.display = 'none';
       }
