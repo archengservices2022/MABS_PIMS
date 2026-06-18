@@ -4186,9 +4186,10 @@ def financial():
                 else:
                     salaries_domestic_raw.append(sdata)
 
-    # Filter salaries by selected year
+    # Filter salaries by selected year (must recompute total_salaries AFTER filtering)
     salaries_domestic_raw = filter_by_year(salaries_domestic_raw, selected_year)
     salaries_international_raw = filter_by_year(salaries_international_raw, selected_year)
+    total_salaries = sum(_safe_float(s.get("amount", 0)) for s in salaries_domestic_raw + salaries_international_raw)
 
     # Group salaries by name, sum amounts, track latest date; sort by date desc
     def group_by_name(items, entries_tracking=None):

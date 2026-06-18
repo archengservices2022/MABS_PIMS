@@ -1680,6 +1680,7 @@ function viewReceipt(expId) {
         <div class="kpi-sub">
           {% set overdue_amt = aging_totals['1_30'] + aging_totals['31_60'] + aging_totals['61_90'] + aging_totals['90plus'] %}
           {% if overdue_amt > 0 %}<span style="color:#DC2626;">${{ "{:,.0f}".format(overdue_amt) }} overdue</span>{% else %}all current{% endif %}
+          <span class="text-muted" style="font-size:10px;display:block;">current snapshot</span>
         </div>
       </div>
     </div>
@@ -1687,7 +1688,7 @@ function viewReceipt(expId) {
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
         <div class="kpi-value text-danger">${{ "{:,.2f}".format(total_expenses | default(0)) }}</div>
-        <div class="kpi-sub">{{ expenses | length }} entries</div>
+        <div class="kpi-sub">{{ expenses_filtered | length }} entries</div>
       </div>
     </div>
     <div class="col-6 col-xl">
