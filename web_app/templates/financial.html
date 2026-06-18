@@ -1648,19 +1648,45 @@ function viewReceipt(expId) {
   <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <div>
       <h4 class="mb-1">Balance Sheet</h4>
-      <p class="text-muted small mb-0">Revenue, expenses &amp; salaries for <strong>{{ selected_year }}</strong></p>
+      <p class="text-muted small mb-0">Revenue, expenses &amp; salaries for <strong>{{ selected_year }}</strong> &nbsp;·&nbsp; <span id="bsPeriodLabel" style="color:#0D9488;font-weight:600;">Full Year</span></p>
     </div>
-    <div class="d-flex align-items-center gap-2 flex-wrap">
-      <!-- Year select -->
-      <select class="form-select form-select-sm" style="width:auto;"
+    <button class="btn btn-sm btn-outline-success" onclick="exportBalanceSheet()">
+      <i class="bi bi-download me-1"></i>Export
+    </button>
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="d-flex align-items-center gap-3 flex-wrap mb-4 px-3 py-2" style="background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0;">
+    <!-- Year -->
+    <div class="d-flex align-items-center gap-2">
+      <span class="small text-muted fw-semibold" style="white-space:nowrap;"><i class="bi bi-calendar3 me-1"></i>Year</span>
+      <select class="form-select form-select-sm" style="width:92px;"
               onchange="window.location='{{ url_for('financial') }}?tab=balance-sheet&year='+this.value">
-        {% for y in range(selected_year - 5, selected_year + 3) %}
+        {% for y in available_years[:12] %}
         <option value="{{ y }}" {{ 'selected' if y == selected_year }}>{{ y }}</option>
         {% endfor %}
       </select>
-      <button class="btn btn-sm btn-outline-success" onclick="exportBalanceSheet()">
-        <i class="bi bi-download me-1"></i>Export
-      </button>
+    </div>
+    <div class="vr" style="height:28px;"></div>
+    <!-- Quarter quick-select -->
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <span class="small text-muted fw-semibold" style="white-space:nowrap;">Quarter</span>
+      <div class="d-flex gap-1">
+        <button class="bs-filter-btn active" onclick="setBSPeriod([1,2,3,4,5,6,7,8,9,10,11,12],'Full Year',this)">Full Year</button>
+        <button class="bs-filter-btn" onclick="setBSPeriod([1,2,3],'Q1 (Jan–Mar)',this)">Q1</button>
+        <button class="bs-filter-btn" onclick="setBSPeriod([4,5,6],'Q2 (Apr–Jun)',this)">Q2</button>
+        <button class="bs-filter-btn" onclick="setBSPeriod([7,8,9],'Q3 (Jul–Sep)',this)">Q3</button>
+        <button class="bs-filter-btn" onclick="setBSPeriod([10,11,12],'Q4 (Oct–Dec)',this)">Q4</button>
+      </div>
+    </div>
+    <div class="vr" style="height:28px;"></div>
+    <!-- Individual month pills -->
+    <div class="d-flex align-items-center gap-1 flex-wrap">
+      <span class="small text-muted fw-semibold me-1" style="white-space:nowrap;">Month</span>
+      {% set month_abbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
+      {% for mn in month_abbr %}
+      <button class="bs-month-pill active" data-month="{{ loop.index }}" onclick="toggleBSMonth({{ loop.index }},this)">{{ mn }}</button>
+      {% endfor %}
     </div>
   </div>
 
@@ -1669,7 +1695,7 @@ function viewReceipt(expId) {
     <div class="col-6 col-xl">
       <div class="kpi-card kpi-green">
         <div class="kpi-top"><span class="kpi-label">Total Revenue</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
-        <div class="kpi-value text-success">${{ "{:,.2f}".format(total_revenue | default(0)) }}</div>
+        <div class="kpi-value text-success" id="bsKpiRevenue">${{ "{:,.2f}".format(total_revenue | default(0)) }}</div>
         <div class="kpi-sub">from paid invoices</div>
       </div>
     </div>
@@ -1687,21 +1713,21 @@ function viewReceipt(expId) {
     <div class="col-6 col-xl">
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
-        <div class="kpi-value text-danger">${{ "{:,.2f}".format(total_expenses | default(0)) }}</div>
+        <div class="kpi-value text-danger" id="bsKpiExpenses">${{ "{:,.2f}".format(total_expenses | default(0)) }}</div>
         <div class="kpi-sub">{{ expenses_filtered | length }} entries</div>
       </div>
     </div>
     <div class="col-6 col-xl">
       <div class="kpi-card kpi-blue">
         <div class="kpi-top"><span class="kpi-label">Total Salaries</span><i class="bi bi-people kpi-icon-sm"></i></div>
-        <div class="kpi-value" style="color: #3b82f6;">${{ "{:,.2f}".format(total_salaries | default(0)) }}</div>
+        <div class="kpi-value" id="bsKpiSalaries" style="color:#3b82f6;">${{ "{:,.2f}".format(total_salaries | default(0)) }}</div>
         <div class="kpi-sub">{{ (salaries_domestic | length) + (salaries_international | length) }} employees</div>
       </div>
     </div>
     <div class="col-6 col-xl">
       <div class="kpi-card {{ 'kpi-green' if (total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0)) >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit/Loss</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
-        <div class="kpi-value {{ 'text-success' if (total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0)) >= 0 else 'text-danger' }}">${{ "{:,.2f}".format((total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0))) }}</div>
+        <div id="bsKpiNet" class="kpi-value {{ 'text-success' if (total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0)) >= 0 else 'text-danger' }}">${{ "{:,.2f}".format((total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0))) }}</div>
         <div class="kpi-sub">revenue minus expenses & salaries</div>
       </div>
     </div>
@@ -1741,14 +1767,14 @@ function viewReceipt(expId) {
                 ${{ (annual_revenue.get(m, 0) | float) | round(2) }}
               </td>
               {% endfor %}
-              <td style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ (annual_revenue.values() | sum) | round(2) }}</td>
+              <td id="bsRevTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ (annual_revenue.values() | sum) | round(2) }}</td>
             </tr>
             <tr>
               <th style="text-align: left; background: #f8fafc; color: #e74c3c; font-weight: 700; padding: 8px;">⊖ EXPENSES</th>
               {% for m in range(1, 13) %}
               <td>${{ (annual_expenses.get(m, 0) | float) | round(2) }}</td>
               {% endfor %}
-              <td style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ (total_expenses | default(0)) | round(2) }}</td>
+              <td id="bsExpTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ (total_expenses | default(0)) | round(2) }}</td>
             </tr>
             <tr>
               <th style="text-align: left; background: #f8fafc; color: #27ae60; font-weight: 700; padding: 8px;">◑ NET P/L</th>
@@ -1756,7 +1782,7 @@ function viewReceipt(expId) {
               {% set netval = (annual_netpl.get(m, 0) | float) %}
               <td style="{{ 'color:#16a34a;' if netval >= 0 else 'color:#dc2626;' }}">${{ netval | round(2) }}</td>
               {% endfor %}
-              <td style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ ((annual_revenue.values() | sum) - (total_expenses | default(0)) - (total_salaries | default(0))) | round(2) }}</td>
+              <td id="bsNetTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ ((annual_revenue.values() | sum) - (total_expenses | default(0)) - (total_salaries | default(0))) | round(2) }}</td>
             </tr>
           </tbody>
         </table>
@@ -2013,6 +2039,87 @@ function viewReceipt(expId) {
       setTimeout(function(){ panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 80);
     };
   })();
+
+  // ── Balance Sheet period filter ────────────────────────────────────
+  var bsActiveMonths = [1,2,3,4,5,6,7,8,9,10,11,12];
+  var bsRevData   = {{ annual_revenue | tojson }};
+  var bsExpData   = {{ annual_expenses | tojson }};
+  var bsSalData   = {{ monthly_salary_details | safe }};
+  var bsFmt = function(n){ return '$' + parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  var bsMonthNames = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function setBSPeriod(months, label, btn) {
+    bsActiveMonths = months;
+    document.querySelectorAll('.bs-filter-btn').forEach(function(b){ b.classList.remove('active'); });
+    btn.classList.add('active');
+    document.querySelectorAll('.bs-month-pill').forEach(function(p){
+      var m = parseInt(p.getAttribute('data-month'));
+      p.classList.toggle('active', months.includes(m));
+      p.classList.toggle('inactive', !months.includes(m));
+    });
+    document.getElementById('bsPeriodLabel').textContent = label;
+    _updateBSFilter();
+  }
+
+  function toggleBSMonth(month, btn) {
+    var idx = bsActiveMonths.indexOf(month);
+    if (idx >= 0) {
+      if (bsActiveMonths.length === 1) return; // keep at least one month
+      bsActiveMonths.splice(idx, 1);
+      btn.classList.remove('active');
+      btn.classList.add('inactive');
+    } else {
+      bsActiveMonths.push(month);
+      btn.classList.add('active');
+      btn.classList.remove('inactive');
+    }
+    document.querySelectorAll('.bs-filter-btn').forEach(function(b){ b.classList.remove('active'); });
+    var sorted = bsActiveMonths.slice().sort(function(a,b){return a-b;});
+    var label = sorted.length === 12 ? 'Full Year' : sorted.map(function(m){return bsMonthNames[m];}).join(', ');
+    document.getElementById('bsPeriodLabel').textContent = label;
+    _updateBSFilter();
+  }
+
+  function _updateBSFilter() {
+    // Dim non-selected month columns
+    var table = document.querySelector('.annual-table');
+    if (table) {
+      table.querySelectorAll('tr').forEach(function(row) {
+        var cells = row.querySelectorAll('th, td');
+        for (var i = 1; i <= 12; i++) {
+          if (cells[i]) {
+            cells[i].style.opacity = bsActiveMonths.includes(i) ? '1' : '0.18';
+            cells[i].style.transition = 'opacity 0.2s';
+          }
+        }
+      });
+    }
+    // Recompute totals
+    var rev = 0, exp = 0, sal = 0;
+    bsActiveMonths.forEach(function(m) {
+      rev += parseFloat(bsRevData[m] || bsRevData[String(m)] || 0);
+      exp += parseFloat(bsExpData[m] || bsExpData[String(m)] || 0);
+      var salArr = bsSalData[String(m)] || [];
+      sal += salArr.reduce(function(s,e){ return s + parseFloat(e.amount||0); }, 0);
+    });
+    var net = rev - exp - sal;
+    // Update KPI cards
+    var el;
+    if ((el = document.getElementById('bsKpiRevenue')))  el.textContent = bsFmt(rev);
+    if ((el = document.getElementById('bsKpiExpenses'))) el.textContent = bsFmt(exp);
+    if ((el = document.getElementById('bsKpiSalaries'))) el.textContent = bsFmt(sal);
+    if ((el = document.getElementById('bsKpiNet'))) {
+      el.textContent = bsFmt(net);
+      el.style.color = net >= 0 ? '#16a34a' : '#dc2626';
+    }
+    // Update table total column
+    if ((el = document.getElementById('bsRevTotal'))) el.textContent = bsFmt(rev);
+    if ((el = document.getElementById('bsExpTotal'))) el.textContent = bsFmt(exp);
+    if ((el = document.getElementById('bsNetTotal'))) {
+      el.textContent = bsFmt(net);
+      el.style.color = net >= 0 ? '#16a34a' : '#dc2626';
+    }
+  }
   </script>
 
   <style>
@@ -2050,6 +2157,24 @@ function viewReceipt(expId) {
       font-weight: 800;
       box-shadow: inset 0 0 0 2px #3b82f6;
     }
+    /* Balance sheet filter bar */
+    .bs-filter-btn {
+      padding: 5px 14px; border-radius: 6px;
+      border: 1px solid #e2e8f0; background: white;
+      color: #64748b; font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .bs-filter-btn:hover { background: #f1f5f9; color: #0f172a; }
+    .bs-filter-btn.active { background: #0D9488; color: white; border-color: #0D9488; }
+    .bs-month-pill {
+      padding: 3px 9px; border-radius: 20px;
+      border: 1px solid #e2e8f0; background: white;
+      color: #64748b; font-size: 11px; font-weight: 600;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .bs-month-pill:hover { background: #f1f5f9; color: #0f172a; }
+    .bs-month-pill.active { background: #0D9488; color: white; border-color: #0D9488; }
+    .bs-month-pill.inactive { background: #f8fafc; color: #cbd5e1; border-color: #f1f5f9; }
   </style>
 
   <!-- Accounts Receivable Aging (Balance Sheet) -->
