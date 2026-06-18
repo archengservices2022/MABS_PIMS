@@ -375,8 +375,12 @@
                   </td>
                   <td>
                     <div class="d-flex gap-1 flex-wrap">
-                      <button class="btn btn-xs btn-outline-primary"
-                              onclick="openEditUser('{{ u.firebase_uid }}','{{ u.get('title','') }}','{{ u.get('region','') }}','{{ u.get('hourly_rate',0) }}','{{ u.get('monthly_salary',0) }}')"
+                      <button class="btn btn-xs btn-outline-primary edit-user-btn"
+                              data-uid="{{ u.firebase_uid }}"
+                              data-title="{{ u.get('title','') | e }}"
+                              data-region="{{ u.get('region','') | e }}"
+                              data-rate="{{ u.get('hourly_rate', 0) }}"
+                              data-salary="{{ u.get('monthly_salary', 0) }}"
                               title="Edit Details"><i class="bi bi-pencil"></i></button>
                       <form method="POST" action="{{ url_for('user_toggle', uid=u.firebase_uid) }}">
                         <button type="submit" class="btn btn-xs btn-outline-secondary"
@@ -492,15 +496,20 @@
 
 {% block scripts %}
 <script>
-function openEditUser(uid, title, region, rate, salary) {
-  document.getElementById('editUid').value          = uid;
-  document.getElementById('editTitle').value         = title || '';
-  document.getElementById('editRegion').value        = region || '';
-  document.getElementById('editHourlyRate').value    = parseFloat(rate) || '';
-  document.getElementById('editMonthlySalary').value = parseFloat(salary) || '';
-  document.getElementById('editUserMsg').innerHTML   = '';
-  new bootstrap.Modal(document.getElementById('editUserModal')).show();
-}
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.edit-user-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var d = btn.dataset;
+      document.getElementById('editUid').value          = d.uid || '';
+      document.getElementById('editTitle').value        = d.title || '';
+      document.getElementById('editRegion').value       = d.region || '';
+      document.getElementById('editHourlyRate').value   = parseFloat(d.rate) > 0 ? parseFloat(d.rate) : '';
+      document.getElementById('editMonthlySalary').value= parseFloat(d.salary) > 0 ? parseFloat(d.salary) : '';
+      document.getElementById('editUserMsg').innerHTML  = '';
+      new bootstrap.Modal(document.getElementById('editUserModal')).show();
+    });
+  });
+});
 
 async function saveUserDetails() {
   var uid    = document.getElementById('editUid').value;
