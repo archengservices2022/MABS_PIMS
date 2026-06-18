@@ -526,6 +526,7 @@ a[href*="filter_expense"]:hover {
           <tr class="inc-row"
               data-date="{{ r.get('date','') }}"
               data-status="{{ r.get('status','') }}"
+              data-amount="{{ r.get('amount_paid',0)|float }}"
               data-search="{{ r.get('client_name','')|lower }} {{ r.get('invoice_number','')|lower }}">
             <td class="text-muted small">{{ r.get('date','—') }}</td>
             <td>
@@ -556,7 +557,7 @@ a[href*="filter_expense"]:hover {
         <tfoot class="table-light fw-bold">
           <tr>
             <td colspan="8" class="text-end">Total Collected (including tax)</td>
-            <td class="text-end text-success">${{ "{:,.2f}".format(total_collected) }}</td>
+            <td class="text-end text-success" id="incomeTotalCell">${{ "{:,.2f}".format(total_collected) }}</td>
           </tr>
         </tfoot>
       </table>
@@ -2439,7 +2440,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     var moVal   = ((document.getElementById('incomeMonthFilter') || {}).value || '');
     var stBtn   = document.querySelector('#incomeStatusGroup .status-pill-btn.sp-active');
     var stFilter = stBtn ? stBtn.dataset.status : 'all';
-    var shown = 0;
+    var shown = 0, filteredTotal = 0;
     rows.forEach(function(r) {
       var vis = true;
       if (q)     vis = (r.getAttribute('data-search')||'').includes(q);
@@ -2449,12 +2450,17 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
         vis = ds.length >= 7 && ds.substring(5,7) === moVal;
       }
       r.style.display = vis ? '' : 'none';
-      if (vis) shown++;
+      if (vis) {
+        shown++;
+        filteredTotal += parseFloat(r.getAttribute('data-amount') || '0');
+      }
     });
     var ci = document.getElementById('incomeCountInfo');
     if (ci) ci.textContent = shown + ' / ' + rows.length + ' entries';
     var nr = document.getElementById('incomeNoResults');
     if (nr) nr.style.display = (shown===0 && rows.length>0) ? '' : 'none';
+    var tc = document.getElementById('incomeTotalCell');
+    if (tc) tc.textContent = '$' + filteredTotal.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
   }
 
   window.reFilterIncome = function() { doFilterIncome(); };
