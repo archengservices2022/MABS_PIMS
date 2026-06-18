@@ -6167,7 +6167,7 @@ def _load_sales_people() -> List[dict]:
 
     # Primary source: Settings users with sales or admin role
     for u in _load_all_users():
-        role = normalize_role(u.get("role", "sales"))
+        role = normalize_role(u.get("role", ""))
         if role not in ("sales", "admin"):
             continue
         name = (u.get("username") or "").strip()
