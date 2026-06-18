@@ -515,6 +515,48 @@ def dashboard():
 
     reminder_total = len(reminder_overdue_invoices) + len(reminder_due_soon) + len(reminder_proj_due) + len(reminder_stalled)
 
+    # ── Projects ready to invoice (have Pending Invoice stages) ──────────────
+    projects_ready_to_invoice = []
+    for p in proj_list:
+        if not isinstance(p, dict):
+            continue
+        if p.get("status", "") in ("Completed", "Cancelled"):
+            continue
+        stages = p.get("payment_stages", []) or []
+        pending_stages = [s for s in stages if isinstance(s, dict) and s.get("status", "") == "Pending Invoice"]
+        if pending_stages:
+            pending_amt = sum(_safe_float(s.get("amount", 0)) for s in pending_stages)
+            projects_ready_to_invoice.append({
+                "firebase_id":    p.get("firebase_id", ""),
+                "project_number": p.get("project_number", ""),
+                "project_name":   p.get("project_name", ""),
+                "client_name":    p.get("client_name", ""),
+                "pending_stages": len(pending_stages),
+                "pending_amount": pending_amt,
+            })
+    projects_ready_to_invoice = sorted(projects_ready_to_invoice, key=lambda x: x["project_number"], reverse=True)[:8]
+
+    # ── This month vs last month collected ────────────────────────────────────
+    this_month_str = datetime.now().strftime("%Y-%m")
+    last_month_str = (datetime.now() - timedelta(days=30)).strftime("%Y-%m")
+    this_month_collected = 0.0
+    last_month_collected = 0.0
+    for inv in inv_list:
+        if not isinstance(inv, dict):
+            continue
+        for pay in (inv.get("payment_log", []) or []):
+            ds = pay.get("date", "") or ""
+            if ds[:7] == this_month_str:
+                this_month_collected += _safe_float(pay.get("amount", 0))
+            elif ds[:7] == last_month_str:
+                last_month_collected += _safe_float(pay.get("amount", 0))
+        for tp in (inv.get("tax_payments", []) or []):
+            ds = tp.get("date", "") or ""
+            if ds[:7] == this_month_str:
+                this_month_collected += _safe_float(tp.get("amount", 0))
+            elif ds[:7] == last_month_str:
+                last_month_collected += _safe_float(tp.get("amount", 0))
+
     # ── Team status (Employees module) ─────────────────────────────────────
     all_time_entries = _load_time_entries()
     all_time_off     = _load_time_off_requests()
@@ -550,6 +592,9 @@ def dashboard():
         reminder_proj_due=reminder_proj_due,
         reminder_stalled=reminder_stalled,
         reminder_total=reminder_total,
+        projects_ready_to_invoice=projects_ready_to_invoice,
+        this_month_collected=this_month_collected,
+        last_month_collected=last_month_collected,
     )
 
 # ── Routes: Sales Dashboard ───────────────────────────────────────────────────
@@ -4051,6 +4096,22 @@ def financial():
                                         _stage = f"Stage {_stage_idx + 1}"
                                     except (ValueError, TypeError):
                                         pass
+
+                    # Final fallback: extract stage from invoice line items description
+                    if not _stage:
+                        for _li in (_inv.get("line_items", []) or []):
+                            if not isinstance(_li, dict):
+                                continue
+                            _li_proj = _li.get("project_number", "")
+                            if _li_proj and _li_proj != _proj_num:
+                                continue
+                            _li_desc = _li.get("description", "") or ""
+                            if " — " in _li_desc:
+                                _stage = _li_desc.split(" — ", 1)[1].strip()
+                            elif _li_desc:
+                                _stage = _li_desc
+                            if _stage:
+                                break
 
                     monthly_payment_details[_mkey].append({
                         "project_number": _proj_num,

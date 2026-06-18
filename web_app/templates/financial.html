@@ -1643,14 +1643,23 @@ function viewReceipt(expId) {
 <div class="tab-pane fade {{ 'show active' if active_tab == 'balance-sheet' else '' }}" id="tab-balance-sheet">
 
   <!-- Header -->
-  <div class="d-flex justify-content-between align-items-center mb-3">
+  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <div>
       <h4 class="mb-1">Balance Sheet</h4>
       <p class="text-muted small mb-0">Revenue, expenses &amp; salaries for <strong>{{ selected_year }}</strong></p>
     </div>
-    <button class="btn btn-sm btn-outline-success" onclick="exportBalanceSheet()">
-      <i class="bi bi-download me-1"></i>Export
-    </button>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <!-- Year filter buttons — 3 back, current, 1 ahead -->
+      <div class="btn-group btn-group-sm" role="group" aria-label="Year filter">
+        {% for y in range(selected_year - 3, selected_year + 2) %}
+        <a href="{{ url_for('financial') }}?tab=balance-sheet&year={{ y }}"
+           class="btn {{ 'btn-teal' if y == selected_year else 'btn-outline-secondary' }}">{{ y }}</a>
+        {% endfor %}
+      </div>
+      <button class="btn btn-sm btn-outline-success" onclick="exportBalanceSheet()">
+        <i class="bi bi-download me-1"></i>Export
+      </button>
+    </div>
   </div>
 
   <!-- Stat Cards Row -->
