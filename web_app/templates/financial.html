@@ -270,11 +270,6 @@ a[href*="filter_expense"]:hover {
     </a>
   </li>
   <li class="nav-item">
-    <a class="nav-link {{ 'active' if active_tab == 'new-expense' else '' }}" data-bs-toggle="tab" href="#tab-new-expense">
-      <i class="bi bi-plus-square me-1"></i>New Expense
-    </a>
-  </li>
-  <li class="nav-item">
     <a class="nav-link {{ 'active' if active_tab == 'by-project' else '' }}" data-bs-toggle="tab" href="#tab-by-project">
       <i class="bi bi-kanban me-1"></i>By Project
     </a>
@@ -658,6 +653,9 @@ a[href*="filter_expense"]:hover {
   <!-- Expense Log Header -->
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h6 class="panel-title mb-0"><i class="bi bi-receipt me-2"></i>Expense Log</h6>
+    <button type="button" class="btn btn-sm btn-teal" onclick="openAddExpenseModal()">
+      <i class="bi bi-plus-lg me-1"></i>Add Expense
+    </button>
   </div>
 
   <div class="card-panel" style="display:flex;flex-direction:column;min-height:600px;">
@@ -1193,12 +1191,12 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-<!-- Edit Expense Modal -->
+<!-- Add / Edit Expense Modal -->
 <div class="modal fade" id="expenseModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-receipt me-2"></i>Edit Expense</h5>
+        <h5 class="modal-title" id="expenseModalTitle"><i class="bi bi-receipt me-2"></i>Add Expense</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -1277,8 +1275,8 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" onclick="submitExpenseModal()">
-          <i class="bi bi-check-circle me-1"></i>Save Expense
+        <button type="button" id="expenseModalSaveBtn" class="btn btn-teal" onclick="submitExpenseModal()">
+          <i class="bi bi-check-circle me-1"></i>Add Expense
         </button>
       </div>
     </div>
@@ -1307,46 +1305,43 @@ document.addEventListener('DOMContentLoaded', function() {
 <script>
 let receiptFile = null;
 
+function openAddExpenseModal() {
+  window.editingExpenseId = null;
+  document.getElementById('expenseId').value = '';
+  document.getElementById('expenseModalTitle').innerHTML = '<i class="bi bi-plus-square me-2"></i>Add Expense';
+  document.getElementById('expenseModalSaveBtn').textContent = 'Add Expense';
+  document.getElementById('expenseModalSaveBtn').className = 'btn btn-teal';
+  document.getElementById('modalExpenseType').value = '';
+  document.getElementById('modalCategory').value = '';
+  document.getElementById('modalExpenseName').value = '';
+  document.getElementById('modalAmount').value = '';
+  document.getElementById('modalDate').value = '{{ today_date }}';
+  document.getElementById('modalVendor').value = '';
+  document.getElementById('modalProject').value = '';
+  document.getElementById('modalNotes').value = '';
+  document.getElementById('receiptPreview').innerHTML = '';
+  receiptFile = null;
+  new bootstrap.Modal(document.getElementById('expenseModal')).show();
+}
+
 function editExpenseModal(expId, expData) {
   try {
-    // Store the expense ID for update operation
     window.editingExpenseId = expId;
-
-    // Switch to the "Add New Expense" tab first
-    const tabBtn = document.querySelector('a[href="#tab-new-expense"]');
-    if (tabBtn) {
-      const addTab = new bootstrap.Tab(tabBtn);
-      addTab.show();
-    }
-
-    // Wait a moment for the tab to switch, then populate the form
-    setTimeout(() => {
-      // Populate the main expense form
-      const typeEl = document.getElementById('expenseType');
-      const catEl = document.getElementById('expenseCategory');
-      const nameEl = document.getElementById('expenseName');
-      const amtEl = document.getElementById('expenseAmount');
-      const dateEl = document.getElementById('expenseDate');
-      const vendorEl = document.getElementById('expenseVendor');
-      const projEl = document.getElementById('expenseProject');
-      const notesEl = document.getElementById('expenseNotes');
-
-      if (typeEl) typeEl.value = expData.expense_type || '';
-      if (catEl) catEl.value = expData.category || '';
-      if (nameEl) nameEl.value = expData.expense_name || '';
-      if (amtEl) amtEl.value = expData.amount || '';
-      if (dateEl) dateEl.value = expData.date || '';
-      if (vendorEl) vendorEl.value = expData.vendor || '';
-      if (projEl) projEl.value = expData.project_number || '';
-      if (notesEl) notesEl.value = expData.notes || '';
-
-      // Change button text from "Add Expense" to "Update Expense"
-      const submitBtn = document.querySelector('#expenseForm button[type="submit"]');
-      if (submitBtn) {
-        submitBtn.textContent = '📝 Update Expense';
-        submitBtn.className = 'btn btn-warning';
-      }
-    }, 100);
+    document.getElementById('expenseId').value = expId;
+    document.getElementById('expenseModalTitle').innerHTML = '<i class="bi bi-pencil me-2"></i>Edit Expense';
+    document.getElementById('expenseModalSaveBtn').textContent = 'Update Expense';
+    document.getElementById('expenseModalSaveBtn').className = 'btn btn-warning';
+    document.getElementById('modalExpenseType').value = expData.expense_type || '';
+    document.getElementById('modalCategory').value = expData.category || '';
+    document.getElementById('modalExpenseName').value = expData.expense_name || expData.description || '';
+    document.getElementById('modalAmount').value = expData.amount || '';
+    document.getElementById('modalDate').value = expData.date || '';
+    document.getElementById('modalVendor').value = expData.vendor || '';
+    document.getElementById('modalProject').value = expData.project_number || '';
+    document.getElementById('modalNotes').value = expData.notes || '';
+    document.getElementById('receiptPreview').innerHTML = '';
+    receiptFile = null;
+    new bootstrap.Modal(document.getElementById('expenseModal')).show();
   } catch (err) {
     console.error('Error in editExpenseModal:', err);
     alert('Error loading expense for edit');
@@ -1434,7 +1429,7 @@ function previewReceipt() {
 }
 
 function submitExpenseModal() {
-  const expenseId = document.getElementById('expenseId').value;
+  const expenseId = window.editingExpenseId;
   const expenseType = document.getElementById('modalExpenseType').value;
   const category = document.getElementById('modalCategory').value;
   const expenseName = document.getElementById('modalExpenseName').value;
@@ -1449,29 +1444,40 @@ function submitExpenseModal() {
   data.append('expense_type', expenseType);
   data.append('category', category);
   data.append('expense_name', expenseName);
+  data.append('description', expenseName);
   data.append('amount', amount);
-  data.append('date', document.getElementById('modalDate').value);
+  data.append('date', document.getElementById('modalDate').value || '{{ today_date }}');
   data.append('vendor', document.getElementById('modalVendor').value);
   data.append('project_number', document.getElementById('modalProject').value);
   data.append('notes', document.getElementById('modalNotes').value);
+  if (receiptFile) data.append('receipt', receiptFile);
 
-  if (receiptFile) {
-    data.append('receipt', receiptFile);
-  }
+  const endpoint = expenseId
+    ? `/financial/expense/${expenseId}/edit`
+    : '{{ url_for("expense_new") }}';
 
-  fetch(`/financial/expense/${expenseId}/edit`, { method: 'POST', body: data })
+  const btn = document.getElementById('expenseModalSaveBtn');
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  fetch(endpoint, { method: 'POST', body: data })
     .then(r => r.json())
     .then(res => {
-      if (res.success) {
+      if (res && res.success) {
         bootstrap.Modal.getInstance(document.getElementById('expenseModal')).hide();
         location.reload();
       } else {
-        alert('Error: ' + (res.error || 'Unknown error'));
+        alert('Error: ' + (res?.error || 'Unknown error'));
+        btn.disabled = false;
+        btn.textContent = origText;
       }
     })
     .catch(err => {
       console.error('Error:', err);
-      alert('Failed to save expense');
+      alert('Failed to save expense: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = origText;
     });
 }
 
@@ -2256,6 +2262,7 @@ function viewReceipt(expId) {
             <th style="padding:8px 12px; text-align:center;">Net Terms</th>
             <th style="padding:8px 12px; text-align:center;">Days Overdue</th>
             <th style="padding:8px 12px; text-align:right;">Balance Due</th>
+            <th style="padding:8px 12px;"></th>
           </tr>
         </thead>
         <tbody>
@@ -2285,6 +2292,12 @@ function viewReceipt(expId) {
             </td>
             <td style="padding:8px 12px; text-align:right; font-weight:700; color:#DC2626;">
               ${{ "{:,.2f}".format(e.balance) }}
+            </td>
+            <td style="padding:8px 12px; white-space:nowrap;">
+              <a href="{{ url_for('invoice_detail', invoice_id=e.firebase_id) }}#pay"
+                 class="btn btn-xs btn-outline-success me-1" title="Record Payment">
+                <i class="bi bi-cash-coin me-1"></i>Pay
+              </a>
             </td>
           </tr>
           {% endfor %}
