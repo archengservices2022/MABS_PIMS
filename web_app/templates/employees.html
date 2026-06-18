@@ -479,20 +479,62 @@
 ══════════════════════════════════════════════════════════════════════════ -->
 <div class="tab-pane fade" id="tab-time-off">
 
+  {% set bal = my_time_off_balance %}
+  {% set pct_used = ((bal.used / bal.allotment) * 100) | int if bal.allotment > 0 else 0 %}
+
+  <!-- Balance Banner -->
+  <div class="card-panel mb-3" style="border-left:4px solid {% if bal.remaining == 0 %}#DC2626{% elif bal.remaining <= 3 %}#F59E0B{% else %}#0D9488{% endif %};">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h6 class="panel-title mb-0">
+        <i class="bi bi-umbrella me-2" style="color:#0D9488;"></i>{{ current_year }} Time Off Balance
+      </h6>
+      <span class="text-muted small">{{ bal.allotment }} days allotted per year</span>
+    </div>
+    <div class="row g-3 mb-2">
+      <div class="col-4 text-center">
+        <div style="font-size:1.6rem; font-weight:800; color:#0D9488;">{{ bal.allotment }}</div>
+        <div class="text-muted small">Total Days</div>
+      </div>
+      <div class="col-4 text-center">
+        <div style="font-size:1.6rem; font-weight:800; color:#D97706;">{{ bal.used }}</div>
+        <div class="text-muted small">Used</div>
+      </div>
+      <div class="col-4 text-center">
+        <div style="font-size:1.6rem; font-weight:800; color:{% if bal.remaining == 0 %}#DC2626{% elif bal.remaining <= 3 %}#F59E0B{% else %}#16A34A{% endif %};">{{ bal.remaining }}</div>
+        <div class="text-muted small">Remaining</div>
+      </div>
+    </div>
+    <div class="progress" style="height:10px; border-radius:6px;">
+      <div class="progress-bar {% if bal.remaining == 0 %}bg-danger{% elif bal.remaining <= 3 %}bg-warning{% else %}bg-success{% endif %}"
+           style="width:{{ pct_used }}%; border-radius:6px;"></div>
+    </div>
+    {% if bal.remaining == 0 %}
+    <div class="mt-2 d-flex align-items-center gap-2" style="background:#FEF2F2; border:1px solid #FECACA; border-radius:6px; padding:8px 12px;">
+      <i class="bi bi-x-circle-fill" style="color:#DC2626;"></i>
+      <span style="color:#DC2626; font-weight:600; font-size:13px;">No more vacation days available for {{ current_year }}.</span>
+    </div>
+    {% elif bal.remaining <= 3 %}
+    <div class="mt-2 d-flex align-items-center gap-2" style="background:#FFFBEB; border:1px solid #FCD34D; border-radius:6px; padding:8px 12px;">
+      <i class="bi bi-exclamation-triangle-fill" style="color:#F59E0B;"></i>
+      <span style="color:#92400E; font-weight:600; font-size:13px;">Only {{ bal.remaining }} day{{ 's' if bal.remaining != 1 }} remaining for {{ current_year }}.</span>
+    </div>
+    {% endif %}
+  </div>
+
   <div class="row g-3">
     <div class="col-lg-5">
       <div class="card-panel">
         <h6 class="panel-title mb-3">
           <i class="bi bi-calendar-plus me-1" style="color:#0D9488;"></i>Request Time Off
         </h6>
-        <form method="post" action="{{ url_for('employee_time_off_new') }}">
-          <div class="mb-2">
-            <label class="form-label small fw-semibold">Type</label>
-            <select name="type" class="form-select form-select-sm">
-              <option>Vacation</option><option>Sick</option>
-              <option>Personal</option><option>Unpaid</option>
-            </select>
-          </div>
+        {% if bal.remaining == 0 %}
+        <div class="text-center py-3" style="background:#FEF2F2; border-radius:8px;">
+          <i class="bi bi-x-circle-fill" style="font-size:28px; color:#DC2626;"></i>
+          <div class="mt-2 fw-600" style="color:#DC2626;">No vacation days remaining</div>
+          <div class="text-muted small mt-1">You have used all {{ bal.allotment }} days for {{ current_year }}.<br>You may still request <strong>Unpaid</strong> leave.</div>
+        </div>
+        <form method="post" action="{{ url_for('employee_time_off_new') }}" class="mt-3">
+          <input type="hidden" name="type" value="Unpaid">
           <div class="row g-2 mb-2">
             <div class="col-6">
               <label class="form-label small fw-semibold">Start Date</label>
@@ -507,10 +549,41 @@
             <label class="form-label small fw-semibold">Reason <span class="text-muted fw-normal">(optional)</span></label>
             <textarea name="reason" class="form-control form-control-sm" rows="2"></textarea>
           </div>
-          <button type="submit" class="btn btn-primary btn-sm w-100">
+          <button type="submit" class="btn btn-outline-secondary btn-sm w-100">
+            <i class="bi bi-send me-1"></i>Submit Unpaid Leave Request
+          </button>
+        </form>
+        {% else %}
+        <form method="post" action="{{ url_for('employee_time_off_new') }}" id="timeOffForm">
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Type</label>
+            <select name="type" class="form-select form-select-sm" id="timeOffType">
+              <option>Vacation</option><option>Sick</option>
+              <option>Personal</option><option>Unpaid</option>
+            </select>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Start Date</label>
+              <input type="date" name="start_date" id="toStartDate" class="form-control form-control-sm" required oninput="calcRequestedDays()">
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">End Date</label>
+              <input type="date" name="end_date" id="toEndDate" class="form-control form-control-sm" required oninput="calcRequestedDays()">
+            </div>
+          </div>
+          <div id="requestedDaysInfo" style="display:none;" class="mb-2 p-2 rounded" style="background:#F0FDF4;">
+            <span class="small" id="requestedDaysText"></span>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Reason <span class="text-muted fw-normal">(optional)</span></label>
+            <textarea name="reason" class="form-control form-control-sm" rows="2"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm w-100" id="timeOffSubmitBtn">
             <i class="bi bi-send me-1"></i>Submit Request
           </button>
         </form>
+        {% endif %}
       </div>
     </div>
 
@@ -522,12 +595,19 @@
         {% if my_time_off %}
         <div class="table-responsive">
           <table class="table table-sm table-hover mb-0 align-middle">
-            <thead><tr><th>Type</th><th>Dates</th><th>Reason</th><th>Status</th></tr></thead>
+            <thead><tr><th>Type</th><th>Dates</th><th>Days</th><th>Reason</th><th>Status</th></tr></thead>
             <tbody>
             {% for r in my_time_off %}
             <tr>
               <td class="fw-500">{{ r.type }}</td>
               <td class="text-muted small">{{ r.start_date }} → {{ r.end_date }}</td>
+              <td class="text-muted small">
+                {% if r.type != 'Unpaid' %}
+                  {{ r.get('working_days', '—') }}
+                {% else %}
+                  <span class="text-muted">unpaid</span>
+                {% endif %}
+              </td>
               <td class="text-muted small">{{ r.reason or '—' }}</td>
               <td><span class="badge status-{{ r.status|lower }}">{{ r.status }}</span></td>
             </tr>
@@ -546,6 +626,53 @@
   </div>
 
   {% if user_role == 'admin' %}
+  <!-- Admin: All Employees Balance -->
+  <div class="card-panel mt-3">
+    <h6 class="panel-title mb-3">
+      <i class="bi bi-people me-1" style="color:#0D9488;"></i>All Employees — {{ current_year }} Time Off Balance
+    </h6>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead>
+          <tr>
+            <th>Employee</th>
+            <th class="text-center">Allotted</th>
+            <th class="text-center">Used</th>
+            <th class="text-center">Remaining</th>
+            <th style="width:180px;">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for u in all_users %}
+          {% set ub = all_time_off_balances.get(u.firebase_uid, {'allotment':15,'used':0,'remaining':15}) %}
+          {% set upct = ((ub.used / ub.allotment) * 100) | int if ub.allotment > 0 else 0 %}
+          <tr>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <span class="emp-avatar" style="width:28px;height:28px;font-size:11px;">{{ (u.username or 'U')[0]|upper }}</span>
+                <span class="fw-500">{{ u.username }}</span>
+              </div>
+            </td>
+            <td class="text-center text-muted">{{ ub.allotment }}</td>
+            <td class="text-center" style="color:#D97706; font-weight:600;">{{ ub.used }}</td>
+            <td class="text-center fw-bold" style="color:{% if ub.remaining == 0 %}#DC2626{% elif ub.remaining <= 3 %}#F59E0B{% else %}#16A34A{% endif %};">
+              {{ ub.remaining }}
+              {% if ub.remaining == 0 %}<i class="bi bi-x-circle-fill ms-1" style="color:#DC2626;"></i>{% endif %}
+            </td>
+            <td>
+              <div class="progress" style="height:8px; border-radius:4px;">
+                <div class="progress-bar {% if ub.remaining == 0 %}bg-danger{% elif ub.remaining <= 3 %}bg-warning{% else %}bg-success{% endif %}"
+                     style="width:{{ upct }}%; border-radius:4px;"></div>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Admin: Pending Approvals -->
   <div class="card-panel mt-3">
     <div class="d-flex align-items-center justify-content-between mb-3">
       <h6 class="panel-title mb-0">
@@ -559,19 +686,24 @@
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0 align-middle">
         <thead>
-          <tr><th>Employee</th><th>Type</th><th>Dates</th><th>Reason</th><th>Requested</th><th class="text-end">Action</th></tr>
+          <tr><th>Employee</th><th>Type</th><th>Dates</th><th class="text-center">Days</th><th>Reason</th><th>Requested</th><th class="text-end">Action</th></tr>
         </thead>
         <tbody>
         {% for r in pending_time_off %}
+        {% set emp_bal = all_time_off_balances.get(r.employee_uid, {'remaining':15}) %}
         <tr>
           <td>
             <div class="d-flex align-items-center gap-2">
               <span class="emp-avatar" style="width:28px;height:28px;font-size:11px;">{{ (r.employee_name or 'U')[0]|upper }}</span>
-              <span class="fw-500">{{ r.employee_name }}</span>
+              <div>
+                <div class="fw-500">{{ r.employee_name }}</div>
+                <div class="text-muted" style="font-size:11px;">{{ emp_bal.remaining }} days left</div>
+              </div>
             </div>
           </td>
           <td>{{ r.type }}</td>
           <td class="text-muted small">{{ r.start_date }} → {{ r.end_date }}</td>
+          <td class="text-center small fw-600">{{ r.get('working_days', '—') }}</td>
           <td class="text-muted small">{{ r.reason or '—' }}</td>
           <td class="text-muted small">{{ r.requested_at[:10] }}</td>
           <td class="text-end">
@@ -1199,5 +1331,55 @@ window.saveDirEdit = async function() {
     setTimeout(() => location.reload(), 500);
   } catch(e) { msg.innerHTML = '<span class="text-danger">Request failed.</span>'; }
 };
+</script>
+<script>
+// Time Off — working days preview
+function countWorkingDays(startStr, endStr) {
+  if (!startStr || !endStr) return 0;
+  var s = new Date(startStr + 'T00:00:00');
+  var e = new Date(endStr   + 'T00:00:00');
+  if (e < s) return 0;
+  var count = 0, cur = new Date(s);
+  while (cur <= e) {
+    if (cur.getDay() !== 0 && cur.getDay() !== 6) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
+
+window.calcRequestedDays = function() {
+  var s = (document.getElementById('toStartDate') || {}).value;
+  var e = (document.getElementById('toEndDate')   || {}).value;
+  var type = (document.getElementById('timeOffType') || {}).value || '';
+  var infoDiv  = document.getElementById('requestedDaysInfo');
+  var infoText = document.getElementById('requestedDaysText');
+  var submitBtn = document.getElementById('timeOffSubmitBtn');
+  if (!s || !e || !infoDiv) return;
+  var days = countWorkingDays(s, e);
+  var remaining = {{ my_time_off_balance.remaining }};
+  var isUnpaid = type === 'Unpaid';
+  infoDiv.style.display = 'block';
+  if (days <= 0) {
+    infoDiv.style.background = '#FEF2F2';
+    infoText.innerHTML = '<i class="bi bi-x-circle me-1" style="color:#DC2626;"></i><span style="color:#DC2626;">End date must be after start date.</span>';
+    if (submitBtn) submitBtn.disabled = true;
+    return;
+  }
+  if (!isUnpaid && days > remaining) {
+    infoDiv.style.background = '#FEF2F2';
+    infoText.innerHTML = '<i class="bi bi-x-circle me-1" style="color:#DC2626;"></i><span style="color:#DC2626;"><strong>' + days + ' working day' + (days!==1?'s':'') + '</strong> requested — exceeds your <strong>' + remaining + '</strong> remaining day' + (remaining!==1?'s':'') + '. Consider Unpaid leave for extra days.</span>';
+    if (submitBtn) submitBtn.disabled = true;
+  } else {
+    infoDiv.style.background = '#F0FDF4';
+    infoText.innerHTML = '<i class="bi bi-calendar-check me-1" style="color:#16A34A;"></i><span style="color:#16A34A;"><strong>' + days + ' working day' + (days!==1?'s':'') + '</strong> requested.' + (!isUnpaid ? ' You will have <strong>' + (remaining - days) + '</strong> day' + ((remaining-days)!==1?'s':'') + ' left.' : '') + '</span>';
+    if (submitBtn) submitBtn.disabled = false;
+  }
+};
+
+// Recalculate if type changes
+document.addEventListener('DOMContentLoaded', function() {
+  var typeEl = document.getElementById('timeOffType');
+  if (typeEl) typeEl.addEventListener('change', calcRequestedDays);
+});
 </script>
 {% endblock %}

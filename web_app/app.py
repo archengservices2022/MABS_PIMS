@@ -4993,6 +4993,7 @@ def employees():
     my_month_minutes = _sum_minutes(my_month_entries)
     my_year_minutes = _sum_minutes(my_year_entries)
     my_time_off = [r for r in all_time_off if r.get("employee_uid") == uid]
+    my_time_off_balance = _time_off_balance(all_time_off, uid, now.year)
 
     # "Hours by Project" breakdown for My Time Clock tab, with its own period selector
     my_period = request.args.get("myperiod", "week")
@@ -5020,7 +5021,9 @@ def employees():
         "my_period_label":      my_period_label,
         "my_period_by_project": my_period_by_project,
         "my_period_minutes":    my_period_minutes,
-        "my_time_off":      my_time_off,
+        "my_time_off":         my_time_off,
+        "my_time_off_balance": my_time_off_balance,
+        "current_year":        now.year,
     }
 
     if is_admin:
@@ -5039,6 +5042,10 @@ def employees():
             "all_users":           _load_all_users(),
             "open_entries_by_uid": {e["employee_uid"]: e for e in all_entries if e.get("status") == "open"},
             "pending_time_off":    [r for r in all_time_off if r.get("status") == "Pending"],
+            "all_time_off_balances": {
+                u["firebase_uid"]: _time_off_balance(all_time_off, u["firebase_uid"], now.year)
+                for u in _load_all_users() if u.get("firebase_uid")
+            },
             "hours_by_project":    _aggregate_hours_by_project(period_entries),
             "stale_open_entries":  stale_open_entries,
             "period":              period,
@@ -5201,12 +5208,15 @@ def employee_time_off_new():
         flash("Start and end dates are required.", "danger")
         return redirect(url_for("employees"))
 
+    req_type = request.form.get("type", "Vacation")
+    working_days = _count_working_days(start_date, end_date) if req_type != "Unpaid" else 0
     fb_push("/time_off_requests", {
         "employee_uid":  session.get("user_uid", ""),
         "employee_name": session.get("user_name", ""),
-        "type":          request.form.get("type", "Vacation"),
+        "type":          req_type,
         "start_date":    start_date,
         "end_date":      end_date,
+        "working_days":  working_days,
         "reason":        request.form.get("reason", "").strip(),
         "status":        "Pending",
         "requested_at":  datetime.now(timezone.utc).isoformat(),
@@ -6656,6 +6666,44 @@ def _load_time_off_requests() -> List[dict]:
                 items.append(rdata)
         return sorted(items, key=lambda x: x.get("requested_at", ""), reverse=True)
     return []
+
+DEFAULT_TIME_OFF_DAYS = 15
+
+def _count_working_days(start_str: str, end_str: str) -> int:
+    """Count Mon–Fri working days between start and end dates (inclusive)."""
+    from datetime import date as _date
+    try:
+        s = _date.fromisoformat(start_str[:10])
+        e = _date.fromisoformat(end_str[:10])
+        if e < s:
+            return 0
+        count = 0
+        cur = s
+        while cur <= e:
+            if cur.weekday() < 5:
+                count += 1
+            cur += timedelta(days=1)
+        return count
+    except Exception:
+        return 0
+
+def _time_off_balance(all_requests: list, uid: str, year: int) -> dict:
+    """Return {allotment, used, remaining} working days for a user in a given year."""
+    year_str = str(year)
+    used = 0
+    for r in all_requests:
+        if r.get("employee_uid") != uid:
+            continue
+        if r.get("status") != "Approved":
+            continue
+        if r.get("type") == "Unpaid":
+            continue
+        start = r.get("start_date", "")
+        if not start or not start.startswith(year_str):
+            continue
+        used += _count_working_days(start, r.get("end_date", start))
+    remaining = max(0, DEFAULT_TIME_OFF_DAYS - used)
+    return {"allotment": DEFAULT_TIME_OFF_DAYS, "used": used, "remaining": remaining}
 
 def _sum_minutes_by_project(entries: List[dict]) -> dict:
     """Sum closed time-entry minutes grouped by project label."""
