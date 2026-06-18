@@ -3481,6 +3481,29 @@ def financial():
     # This matches the Invoicing tab display
     rev_list = [r for r in rev_list if r.get("status") in ["Paid", "Partial"]]
 
+    # Enrich rev_list with current amount_paid from invoice meta (fixes stale revenue entries)
+    updated_rev_list = []
+    for r in rev_list:
+        inv_id = r.get("invoice_id")
+        if not inv_id or inv_id not in invoices:
+            continue
+        inv_data = invoices[inv_id]
+        if not isinstance(inv_data, dict):
+            continue
+        inv_meta = inv_data.get("meta", {}) or {}
+        inv_total = _safe_float(inv_meta.get("total", 0))
+        amount_paid = _safe_float(inv_meta.get("amount_paid", 0))
+        tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in (inv_data.get("tax_payments", []) or []))
+        total_paid_for_inv = amount_paid + tax_paid
+        if total_paid_for_inv <= 0:
+            continue
+        r["amount_paid"] = amount_paid
+        r["total"] = inv_total
+        r["tax_amount"] = _safe_float(inv_meta.get("tax_amount", 0))
+        r["status"] = "Paid" if total_paid_for_inv >= inv_total else "Partial"
+        updated_rev_list.append(r)
+    rev_list = updated_rev_list
+
     # Helper to extract year from date string
     def _extract_year_from_date(date_str):
         """Extract year from date string"""
@@ -3496,9 +3519,19 @@ def financial():
     except (ValueError, TypeError):
         stat_card_year = datetime.now().year
 
-    # Total collected = sum of invoice totals (with tax) for paid invoices in selected year
-    total_collected = sum(_safe_float(r.get("total", 0)) for r in rev_list
-                         if _extract_year_from_date(r.get("date", "")) == stat_card_year)
+    # Total collected = amount_paid + tax_paid (matches Invoicing tab display)
+    total_collected = 0.0
+    for r in rev_list:
+        if _extract_year_from_date(r.get("date", "")) == stat_card_year and r.get("invoice_id") in invoices:
+            total_collected += _safe_float(r.get("amount_paid", 0))
+            inv_id = r.get("invoice_id")
+            if inv_id and inv_id in invoices:
+                inv_data_r = invoices[inv_id]
+                if isinstance(inv_data_r, dict):
+                    tax_collected = sum(_safe_float(tp.get("amount", 0))
+                                       for tp in (inv_data_r.get("tax_payments", []) or [])
+                                       if _extract_year_from_date(tp.get("date", "")) == stat_card_year)
+                    total_collected += tax_collected
 
     # Recalculate statuses based on actual payments
     for inv in inv_list:
@@ -3514,7 +3547,8 @@ def financial():
     total_tax_paid    = sum(_safe_float(p.get("amount", 0)) for inv in inv_list_filtered for p in inv.get("tax_payments", []))
     total_paid        += total_tax_paid
     total_outstanding = total_invoiced - total_paid
-    total_expenses    = sum(_safe_float(e.get("amount", 0)) for e in exp_list)
+    exp_list_year_filtered = [e for e in exp_list if _extract_year_from_date(e.get("date", "")) == stat_card_year]
+    total_expenses    = sum(_safe_float(e.get("amount", 0)) for e in exp_list_year_filtered)
     net_profit        = total_paid - total_expenses
 
     # Monthly breakdown for chart (last 6 months)
@@ -3557,16 +3591,22 @@ def financial():
     annual_expenses = {i: 0.0 for i in range(1, 13)}
 
     for inv in inv_list:
-        ds = inv.get("meta", {}).get("invoice_date", "") or ""
-        try:
-            inv_date = datetime.fromisoformat(ds[:10])
-            if inv_date.year == current_year:
-                month = inv_date.month
-                line_paid = _safe_float(inv.get("meta", {}).get("amount_paid", 0))
-                tax_paid = sum(_safe_float(p.get("amount", 0)) for p in inv.get("tax_payments", []))
-                annual_revenue[month] += line_paid + tax_paid
-        except Exception:
-            pass
+        for pay in (inv.get("payment_log", []) or []):
+            pay_ds = pay.get("date", "") or ""
+            try:
+                pay_date = datetime.fromisoformat(pay_ds[:10])
+                if pay_date.year == current_year:
+                    annual_revenue[pay_date.month] += _safe_float(pay.get("amount", 0))
+            except Exception:
+                pass
+        for tax_pay in (inv.get("tax_payments", []) or []):
+            tax_ds = tax_pay.get("date", "") or ""
+            try:
+                tax_date = datetime.fromisoformat(tax_ds[:10])
+                if tax_date.year == current_year:
+                    annual_revenue[tax_date.month] += _safe_float(tax_pay.get("amount", 0))
+            except Exception:
+                pass
 
     for exp in exp_list:
         ds = exp.get("date", "") or ""
@@ -3613,48 +3653,27 @@ def financial():
     for p in projects_list:
         pnum = p.get("project_number", "")
 
-        # Calculate INVOICED and COLLECTED from invoices (including tax)
+        # Calculate INVOICED and COLLECTED using _invoice_linked_projects (matches Project P&L)
         p_invoiced = 0
         p_collected = 0
 
-        invoices_dict = fb_get("/invoices") or {}
-        if isinstance(invoices_dict, dict):
-            for inv_id, inv_data in invoices_dict.items():
+        raw_inv = fb_get("/invoices") or {}
+        if isinstance(raw_inv, dict):
+            for inv_id, inv_data in raw_inv.items():
                 if not isinstance(inv_data, dict):
                     continue
-                inv_meta = inv_data.get("meta", {}) or {}
-                inv_status = inv_meta.get("status", "Draft")
-
-                # Skip Draft invoices
-                if inv_status == "Draft":
+                if pnum not in _invoice_linked_projects(inv_data):
                     continue
-
+                inv_meta = inv_data.get("meta", {}) or {}
                 inv_total = _safe_float(inv_meta.get("total", 0))
                 inv_tax = _safe_float(inv_meta.get("tax_amount", 0))
-                payment_log = inv_data.get("payment_log", []) or []
-                tax_log = inv_data.get("tax_payments", []) or []
-
-                # Check if this invoice is for this project (in payment_log)
-                project_paid = 0
-                project_tax_paid = 0
-                if isinstance(payment_log, list):
-                    for payment in payment_log:
-                        if isinstance(payment, dict) and payment.get("project_number") == pnum:
-                            project_paid += _safe_float(payment.get("amount", 0))
-
-                # Check tax payments for this project (if project is in invoice, include proportional tax)
-                if project_paid > 0 and isinstance(tax_log, list) and inv_tax > 0:
-                    # Project has payments, so include proportional tax
-                    # Calculate project's share of invoice
-                    total_paid_all = sum(_safe_float(p.get("amount", 0)) for p in payment_log if isinstance(p, dict))
-                    if total_paid_all > 0:
-                        project_share = project_paid / total_paid_all
-                        project_tax_paid = project_share * inv_tax
-
-                # If this project has payments in this invoice, add to invoiced and collected (with tax)
-                if project_paid > 0:
-                    p_invoiced += project_paid + project_tax_paid
-                    p_collected += project_paid + project_tax_paid
+                amount_paid_inv = _safe_float(inv_meta.get("amount_paid", 0))
+                tax_paid_inv = sum(_safe_float(tp.get("amount", 0)) for tp in (inv_data.get("tax_payments", []) or []))
+                linked = _invoice_linked_projects(inv_data)
+                if len(linked) > 0:
+                    share = 1.0 / len(linked)
+                    p_invoiced += inv_total * share
+                    p_collected += (amount_paid_inv + tax_paid_inv) * share
 
         p_contract = _safe_float(p.get("contract_value",0))
         p_not_invoiced = p_contract - p_invoiced
@@ -4063,31 +4082,34 @@ def expense_delete(exp_id):
 @app.route("/financial/expense/<exp_id>/edit", methods=["POST"])
 @role_required("financial")
 def expense_edit(exp_id):
-    data = {
-        "expense_type":   request.form.get("expense_type", ""),
-        "expense_name":   request.form.get("expense_name", ""),
-        "description":    request.form.get("expense_name", ""),
-        "amount":         request.form.get("amount", "0"),
-        "category":       request.form.get("category", ""),
-        "date":           request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
-        "vendor":         request.form.get("vendor", ""),
-        "project_number": request.form.get("project_number", ""),
-        "notes":          request.form.get("notes", ""),
-        "updated_at":     datetime.now(timezone.utc).isoformat(),
-    }
-    # Handle receipt upload (base64 encoding) - only overwrite if a new file is provided
-    if 'receipt' in request.files:
-        file = request.files['receipt']
-        if file and file.filename:
-            try:
-                file_content = file.read()
-                data['receipt_base64'] = base64.b64encode(file_content).decode('utf-8')
-                data['receipt_filename'] = file.filename
-                data['receipt_type'] = file.content_type
-            except Exception as e:
-                app.logger.error(f"Receipt upload error: {e}")
-    fb_update(f"/balance_sheet_expenses/{exp_id}", data)
-    return jsonify({"success": True, "expense_id": exp_id})
+    try:
+        data = {
+            "expense_type":   request.form.get("expense_type", ""),
+            "expense_name":   request.form.get("expense_name", ""),
+            "description":    request.form.get("description", "") or request.form.get("expense_name", ""),
+            "amount":         request.form.get("amount", "0"),
+            "category":       request.form.get("category", ""),
+            "date":           request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+            "vendor":         request.form.get("vendor", ""),
+            "project_number": request.form.get("project_number", ""),
+            "notes":          request.form.get("notes", ""),
+            "updated_at":     datetime.now(timezone.utc).isoformat(),
+        }
+        if 'receipt' in request.files:
+            file = request.files['receipt']
+            if file and file.filename:
+                try:
+                    file_content = file.read()
+                    data['receipt_base64'] = base64.b64encode(file_content).decode('utf-8')
+                    data['receipt_filename'] = file.filename
+                    data['receipt_type'] = file.content_type
+                except Exception as e:
+                    app.logger.error(f"Receipt upload error: {e}")
+        fb_update(f"/balance_sheet_expenses/{exp_id}", data)
+        return jsonify({"success": True, "expense_id": exp_id})
+    except Exception as e:
+        app.logger.error(f"Expense edit error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route("/api/expense/<exp_id>/receipt", methods=["GET"])
 @role_required("financial")
@@ -4124,7 +4146,7 @@ def export_balance_sheet():
         # Get financial data
         invoices_data = fb_get("/invoices") or {}
         expenses_data = fb_get("/balance_sheet_expenses") or {}
-        salaries_data = fb_get("/balance_sheet_salaries") or {}
+        salaries_data = fb_get("/balance_sheet_salary") or {}
 
         # Calculate monthly data
         monthly_revenue = [0] * 12
@@ -4133,22 +4155,26 @@ def export_balance_sheet():
         salary_outside = {}
         expense_breakdown = {}
 
-        # Build revenue data from invoices - same calculation as Annual Financial Summary table
-        # Uses amount_paid + tax_paid (not invoice total)
+        # Build revenue data from invoices based on PAYMENT DATES (not invoice dates)
         if isinstance(invoices_data, dict):
             for iid, inv_data in invoices_data.items():
                 if isinstance(inv_data, dict):
-                    date_str = inv_data.get("meta", {}).get("invoice_date", "") or ""
-                    try:
-                        inv_date = datetime.fromisoformat(date_str[:10])
-                        if inv_date.year == year:
-                            month = inv_date.month
-                            # Calculate same way as Annual Financial Summary: amount_paid + tax_paid
-                            line_paid = _safe_float(inv_data.get("meta", {}).get("amount_paid", 0))
-                            tax_paid = sum(_safe_float(p.get("amount", 0)) for p in inv_data.get("tax_payments", []) if isinstance(p, dict))
-                            monthly_revenue[month-1] += line_paid + tax_paid
-                    except Exception:
-                        pass
+                    for pay in (inv_data.get("payment_log", []) or []):
+                        pay_ds = pay.get("date", "") or ""
+                        try:
+                            pay_date = datetime.fromisoformat(pay_ds[:10])
+                            if pay_date.year == year:
+                                monthly_revenue[pay_date.month - 1] += _safe_float(pay.get("amount", 0))
+                        except Exception:
+                            pass
+                    for tax_pay in (inv_data.get("tax_payments", []) or []):
+                        tax_ds = tax_pay.get("date", "") or ""
+                        try:
+                            tax_date = datetime.fromisoformat(tax_ds[:10])
+                            if tax_date.year == year:
+                                monthly_revenue[tax_date.month - 1] += _safe_float(tax_pay.get("amount", 0))
+                        except Exception:
+                            pass
 
         # Build expense data
         if isinstance(expenses_data, dict):
@@ -4184,7 +4210,8 @@ def export_balance_sheet():
 
         total_revenue = sum(monthly_revenue)
         total_expenses = sum(monthly_expenses)
-        net_profit = total_revenue - total_expenses
+        total_salaries = sum(salary_inside.values()) + sum(salary_outside.values())
+        net_profit = total_revenue - total_expenses - total_salaries
 
         # Create workbook
         wb = Workbook()

@@ -554,13 +554,13 @@ a[href*="filter_expense"]:hover {
             <td class="text-end">${{ "{:,.2f}".format((r.get('total',0)|float) - (r.get('tax_amount',0)|float)) }}</td>
             <td class="text-end text-muted">${{ "{:,.2f}".format(r.get('tax_amount',0)|float) }}</td>
             <td class="text-end fw-bold">${{ "{:,.2f}".format(r.get('total',0)|float) }}</td>
-            <td class="text-end fw-bold text-success">${{ "{:,.2f}".format(r.get('total',0)|float) }}</td>
+            <td class="text-end fw-bold text-success">${{ "{:,.2f}".format(r.get('amount_paid',0)|float) }}</td>
           </tr>
           {% endfor %}
         </tbody>
         <tfoot class="table-light fw-bold">
           <tr>
-            <td colspan="7" class="text-end">Total Collected (including tax)</td>
+            <td colspan="8" class="text-end">Total Collected (including tax)</td>
             <td class="text-end text-success">${{ "{:,.2f}".format(total_collected) }}</td>
           </tr>
         </tfoot>
