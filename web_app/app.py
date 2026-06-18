@@ -4336,6 +4336,46 @@ def financial():
     aging_totals = {k: sum(e["balance"] for e in v) for k, v in aging_buckets.items()}
     aging_total_outstanding = sum(aging_totals.values())
 
+    # ── Year-filtered A/R for Balance Sheet (only invoices from selected_year) ──
+    bs_aging_buckets = {"current": [], "1_30": [], "31_60": [], "61_90": [], "90plus": []}
+    for _inv in inv_list:
+        _m = _inv.get("meta", {}) or {}
+        _inv_date = _m.get("invoice_date", "") or ""
+        try:
+            if int(_inv_date[:4]) != current_year:
+                continue
+        except (ValueError, TypeError):
+            continue
+        _status = _m.get("status", "Draft")
+        if _status not in ("Sent", "Viewed", "Partial", "Overdue"):
+            continue
+        _balance = _safe_float(_m.get("total", 0)) - _safe_float(_m.get("amount_paid", 0))
+        if _balance <= 0.01:
+            continue
+        _due_str = _m.get("due_date", "")
+        try:
+            _days_ov = (today_d - datetime.fromisoformat(_due_str[:10]).date()).days
+        except Exception:
+            _days_ov = 0
+        _entry = {
+            "invoice_number": _m.get("invoice_number", ""),
+            "client_name":    _m.get("client_name", ""),
+            "invoice_date":   _inv_date,
+            "due_date":       _due_str,
+            "net_terms":      _m.get("net_terms", ""),
+            "days_overdue":   _days_ov,
+            "balance":        _balance,
+            "status":         _status,
+            "firebase_id":    _inv.get("firebase_id", ""),
+        }
+        if _days_ov <= 0:       bs_aging_buckets["current"].append(_entry)
+        elif _days_ov <= 30:    bs_aging_buckets["1_30"].append(_entry)
+        elif _days_ov <= 60:    bs_aging_buckets["31_60"].append(_entry)
+        elif _days_ov <= 90:    bs_aging_buckets["61_90"].append(_entry)
+        else:                   bs_aging_buckets["90plus"].append(_entry)
+    bs_aging_totals = {k: sum(e["balance"] for e in v) for k, v in bs_aging_buckets.items()}
+    bs_aging_total_outstanding = sum(bs_aging_totals.values())
+
     # ── Monthly drill-down detail blocks (needs aging_buckets + salaries_domestic) ──
     monthly_expense_details = {str(i): [] for i in range(1, 13)}
     for _exp in exp_list_all:
@@ -4427,6 +4467,9 @@ def financial():
         aging_buckets=aging_buckets,
         aging_totals=aging_totals,
         aging_total_outstanding=aging_total_outstanding,
+        bs_aging_buckets=bs_aging_buckets,
+        bs_aging_totals=bs_aging_totals,
+        bs_aging_total_outstanding=bs_aging_total_outstanding,
     )
 
 @app.route("/financial/expense/new", methods=["POST"])

@@ -1702,11 +1702,10 @@ function viewReceipt(expId) {
     <div class="col-6 col-xl">
       <div class="kpi-card" style="border-left:4px solid #F59E0B; background:#FFFBEB;">
         <div class="kpi-top"><span class="kpi-label">Accounts Receivable</span><i class="bi bi-clock-history kpi-icon-sm" style="color:#D97706;"></i></div>
-        <div class="kpi-value" style="color:#D97706;">${{ "{:,.2f}".format(aging_total_outstanding) }}</div>
+        <div class="kpi-value" style="color:#D97706;">${{ "{:,.2f}".format(bs_aging_total_outstanding) }}</div>
         <div class="kpi-sub">
-          {% set overdue_amt = aging_totals['1_30'] + aging_totals['31_60'] + aging_totals['61_90'] + aging_totals['90plus'] %}
-          {% if overdue_amt > 0 %}<span style="color:#DC2626;">${{ "{:,.0f}".format(overdue_amt) }} overdue</span>{% else %}all current{% endif %}
-          <span class="text-muted" style="font-size:10px;display:block;">current snapshot</span>
+          {% set bs_overdue_amt = bs_aging_totals['1_30'] + bs_aging_totals['31_60'] + bs_aging_totals['61_90'] + bs_aging_totals['90plus'] %}
+          {% if bs_overdue_amt > 0 %}<span style="color:#DC2626;">${{ "{:,.0f}".format(bs_overdue_amt) }} overdue</span>{% elif bs_aging_total_outstanding > 0 %}all current{% else %}none for {{ selected_year }}{% endif %}
         </div>
       </div>
     </div>
@@ -2177,12 +2176,12 @@ function viewReceipt(expId) {
     .bs-month-pill.inactive { background: #f8fafc; color: #cbd5e1; border-color: #f1f5f9; }
   </style>
 
-  <!-- Accounts Receivable Aging (Balance Sheet) -->
-  {% if aging_total_outstanding > 0 %}
+  <!-- Accounts Receivable Aging (Balance Sheet — year-filtered) -->
+  {% if bs_aging_total_outstanding > 0 %}
   <div class="card mb-4">
     <div class="card-header bg-light d-flex justify-content-between align-items-center">
-      <h6 class="mb-0"><i class="bi bi-clock-history me-2" style="color:#D97706;"></i>Accounts Receivable — Aging Summary</h6>
-      <a href="?tab=aging" class="btn btn-sm btn-outline-secondary">View Detail</a>
+      <h6 class="mb-0"><i class="bi bi-clock-history me-2" style="color:#D97706;"></i>Accounts Receivable — Aging Summary <span class="text-muted fw-normal" style="font-size:12px;">· {{ selected_year }} invoices only</span></h6>
+      <a href="?tab=aging" class="btn btn-sm btn-outline-secondary">View All A/R</a>
     </div>
     <div class="card-body p-0">
       <table class="table table-sm mb-0" style="font-size:13px;">
@@ -2203,12 +2202,12 @@ function viewReceipt(expId) {
             ('90plus',  'Over 90 days overdue',    '#7C3AED'),
           ] %}
           {% for key, label, color in ar_buckets %}
-          {% if aging_buckets[key] %}
+          {% if bs_aging_buckets[key] %}
           <tr>
             <td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ color }};margin-right:6px;"></span>{{ label }}</td>
-            <td class="text-center">{{ aging_buckets[key]|length }}</td>
-            <td class="text-end fw-bold" style="color:{{ color }};">${{ "{:,.2f}".format(aging_totals[key]) }}</td>
-            <td class="text-end text-muted">{{ "{:.0f}".format(aging_totals[key] / aging_total_outstanding * 100) }}%</td>
+            <td class="text-center">{{ bs_aging_buckets[key]|length }}</td>
+            <td class="text-end fw-bold" style="color:{{ color }};">${{ "{:,.2f}".format(bs_aging_totals[key]) }}</td>
+            <td class="text-end text-muted">{{ "{:.0f}".format(bs_aging_totals[key] / bs_aging_total_outstanding * 100) }}%</td>
           </tr>
           {% endif %}
           {% endfor %}
@@ -2216,13 +2215,17 @@ function viewReceipt(expId) {
         <tfoot style="background:#FFF7ED; border-top:2px solid #FED7AA;">
           <tr>
             <td class="fw-bold">Total Outstanding</td>
-            <td class="text-center fw-bold">{{ (aging_buckets['current']|length) + (aging_buckets['1_30']|length) + (aging_buckets['31_60']|length) + (aging_buckets['61_90']|length) + (aging_buckets['90plus']|length) }}</td>
-            <td class="text-end fw-bold" style="color:#D97706;">${{ "{:,.2f}".format(aging_total_outstanding) }}</td>
+            <td class="text-center fw-bold">{{ (bs_aging_buckets['current']|length) + (bs_aging_buckets['1_30']|length) + (bs_aging_buckets['31_60']|length) + (bs_aging_buckets['61_90']|length) + (bs_aging_buckets['90plus']|length) }}</td>
+            <td class="text-end fw-bold" style="color:#D97706;">${{ "{:,.2f}".format(bs_aging_total_outstanding) }}</td>
             <td class="text-end fw-bold">100%</td>
           </tr>
         </tfoot>
       </table>
     </div>
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-3" style="font-size:13px;">
+    <i class="bi bi-check-circle me-1 text-success"></i>No outstanding A/R for {{ selected_year }} invoices.
   </div>
   {% endif %}
 
