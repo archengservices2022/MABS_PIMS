@@ -69,6 +69,19 @@
     </a>
   </li>
   <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-change-orders">
+      <i class="bi bi-arrow-repeat me-1"></i>Change Orders
+      {% if change_orders %}
+      {% set pending_cos = change_orders | selectattr('status', 'in', ['Draft','Submitted']) | list %}
+      {% if pending_cos %}
+      <span class="badge bg-warning text-dark ms-1">{{ pending_cos|length }}</span>
+      {% else %}
+      <span class="badge bg-secondary ms-1">{{ change_orders|length }}</span>
+      {% endif %}
+      {% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-notes" id="notesTabLink">
       <i class="bi bi-journal-text me-1"></i>Notes
       {% set _log = project.get('activity_log') or [] %}
@@ -146,6 +159,16 @@
 
         <div class="card-panel">
           <h6 class="section-heading">Financial Summary</h6>
+          {% if change_orders and co_approved_total > 0 %}
+          <div class="d-flex align-items-center gap-2 mb-3 p-2 rounded" style="background:#F0FDF4;border:1px solid #BBF7D0;">
+            <i class="bi bi-arrow-repeat text-success"></i>
+            <span class="small text-muted">Base <strong>${{ "{:,.0f}".format(base_contract) }}</strong></span>
+            <span class="small text-muted">+</span>
+            <span class="small text-success fw-600">COs ${{ "{:,.0f}".format(co_approved_total) }}</span>
+            <span class="small text-muted">=</span>
+            <span class="small fw-bold text-teal">${{ "{:,.0f}".format(project.get('contract_value',0)|float) }}</span>
+          </div>
+          {% endif %}
           <div class="row g-3">
             <div class="col-4 text-center">
               <div class="fs-4 fw-bold text-teal">${{ "{:,.0f}".format(project.get('contract_value',0)|float) }}</div>
@@ -530,6 +553,148 @@
     </div>
   </div>
 
+  <!-- ── Change Orders Tab ────────────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="tab-change-orders">
+    <div class="row g-3">
+      <div class="col-lg-8">
+
+        <!-- Summary bar -->
+        {% if change_orders %}
+        <div class="row g-2 mb-3">
+          {% set co_draft = change_orders | selectattr('status','equalto','Draft') | list | length %}
+          {% set co_submitted = change_orders | selectattr('status','equalto','Submitted') | list | length %}
+          {% set co_approved = change_orders | selectattr('status','equalto','Approved') | list | length %}
+          {% set co_rejected = change_orders | selectattr('status','equalto','Rejected') | list | length %}
+          <div class="col-3"><div class="card-panel text-center py-2">
+            <div class="fw-bold fs-5">{{ change_orders|length }}</div><div class="text-muted small">Total</div>
+          </div></div>
+          <div class="col-3"><div class="card-panel text-center py-2">
+            <div class="fw-bold fs-5 text-success">{{ co_approved }}</div><div class="text-muted small">Approved</div>
+          </div></div>
+          <div class="col-3"><div class="card-panel text-center py-2">
+            <div class="fw-bold fs-5 text-warning">{{ co_submitted }}</div><div class="text-muted small">Pending</div>
+          </div></div>
+          <div class="col-3"><div class="card-panel text-center py-2">
+            <div class="fw-bold fs-5 text-teal">${{ "{:,.0f}".format(co_approved_total) }}</div><div class="text-muted small">Approved $</div>
+          </div></div>
+        </div>
+        {% endif %}
+
+        <!-- CO list -->
+        <div class="card-panel">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="section-heading mb-0">Change Orders</h6>
+            {% if user_role in ('admin','projects') %}
+            <button class="btn btn-sm btn-teal" data-bs-toggle="modal" data-bs-target="#newCOModal">
+              <i class="bi bi-plus-lg me-1"></i>New Change Order
+            </button>
+            {% endif %}
+          </div>
+
+          {% if change_orders %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>CO #</th>
+                  <th>Title</th>
+                  <th class="text-end">Amount</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                  {% if user_role in ('admin','projects') %}<th></th>{% endif %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for co in change_orders %}
+                {% set co_idx = loop.index0 %}
+                <tr>
+                  <td class="fw-600 text-teal">{{ co.get('co_number','—') }}</td>
+                  <td>
+                    <div class="fw-500">{{ co.get('title','—') }}</div>
+                    {% if co.get('description') %}
+                    <div class="text-muted small">{{ co.get('description') }}</div>
+                    {% endif %}
+                  </td>
+                  <td class="text-end fw-600">${{ "{:,.0f}".format(co.get('amount',0)|float) }}</td>
+                  <td>
+                    {% if co.get('status') == 'Approved' %}
+                    <span class="badge" style="background:#DCFCE7;color:#166534;">Approved</span>
+                    {% elif co.get('status') == 'Submitted' %}
+                    <span class="badge" style="background:#FEF9C3;color:#854D0E;">Submitted</span>
+                    {% elif co.get('status') == 'Rejected' %}
+                    <span class="badge" style="background:#FEE2E2;color:#991B1B;">Rejected</span>
+                    {% else %}
+                    <span class="badge bg-secondary">Draft</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-muted small">{{ co.get('created_at','')[:10] }}</td>
+                  {% if user_role in ('admin','projects') %}
+                  <td>
+                    {% if co.get('status') == 'Draft' %}
+                    <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}" class="d-inline">
+                      <input type="hidden" name="status" value="Submitted">
+                      <button class="btn btn-xs btn-outline-warning" title="Submit to client">Submit</button>
+                    </form>
+                    {% elif co.get('status') == 'Submitted' %}
+                    <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}" class="d-inline">
+                      <input type="hidden" name="status" value="Approved">
+                      <button class="btn btn-xs btn-success" title="Approve — adds to contract value">Approve</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}" class="d-inline ms-1">
+                      <input type="hidden" name="status" value="Rejected">
+                      <button class="btn btn-xs btn-outline-danger">Reject</button>
+                    </form>
+                    {% endif %}
+                  </td>
+                  {% endif %}
+                </tr>
+                {% endfor %}
+              </tbody>
+              {% if co_approved_total > 0 %}
+              <tfoot>
+                <tr class="table-light fw-bold">
+                  <td colspan="2">Approved Total</td>
+                  <td class="text-end text-success">${{ "{:,.0f}".format(co_approved_total) }}</td>
+                  <td colspan="{{ 3 if user_role in ('admin','projects') else 2 }}"></td>
+                </tr>
+              </tfoot>
+              {% endif %}
+            </table>
+          </div>
+          {% else %}
+          <div class="empty-state py-4">
+            <i class="bi bi-arrow-repeat fs-2 d-block mb-2 text-muted"></i>
+            <div class="text-muted">No change orders yet.</div>
+            {% if user_role in ('admin','projects') %}
+            <div class="text-muted small mt-1">Click "New Change Order" to add one.</div>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+
+      </div>
+      <div class="col-lg-4">
+        <div class="card-panel">
+          <h6 class="section-heading">How It Works</h6>
+          <div class="d-flex flex-column gap-2">
+            <div class="d-flex gap-2 align-items-start">
+              <span class="badge bg-secondary mt-1">1</span>
+              <span class="small text-muted">Create a Draft CO with title, description, and amount.</span>
+            </div>
+            <div class="d-flex gap-2 align-items-start">
+              <span class="badge" style="background:#FEF9C3;color:#854D0E;margin-top:2px;">2</span>
+              <span class="small text-muted">Submit to client for approval.</span>
+            </div>
+            <div class="d-flex gap-2 align-items-start">
+              <span class="badge" style="background:#DCFCE7;color:#166534;margin-top:2px;">3</span>
+              <span class="small text-muted">Approve — contract value updates automatically and a new payment stage is added for invoicing.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Notes / Activity Log Tab ─────────────────────────────────────────── -->
   <div class="tab-pane fade" id="tab-notes">
     <div class="row g-3">
@@ -594,6 +759,47 @@
     </div>
   </div>
 
+</div>
+
+<!-- ── New Change Order Modal ────────────────────────────────────────────── -->
+<div class="modal fade" id="newCOModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2 text-teal"></i>New Change Order</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('co_new', project_id=project.firebase_id) }}">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-600">Title <span class="text-danger">*</span></label>
+            <input type="text" name="title" class="form-control" placeholder="e.g. Additional MEP Calculations" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-600">Amount ($) <span class="text-danger">*</span></label>
+            <input type="number" name="amount" class="form-control" step="0.01" min="0" placeholder="0.00" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-600">Description</label>
+            <textarea name="description" class="form-control" rows="3"
+                      placeholder="Describe the additional scope of work…"></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-600">Notes</label>
+            <input type="text" name="notes" class="form-control" placeholder="Internal notes…">
+          </div>
+          <div class="alert alert-info py-2 small mb-0">
+            <i class="bi bi-info-circle me-1"></i>
+            CO will be created as <strong>Draft</strong>. Submit it to the client, then Approve to update the contract value.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-teal"><i class="bi bi-plus-lg me-1"></i>Create Change Order</button>
+        </div>
+      </form>
+    </div>
+  </div>
 </div>
 
 <!-- ── Delete Confirmation Modal ─────────────────────────────────────────── -->

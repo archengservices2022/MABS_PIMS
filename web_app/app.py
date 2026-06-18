@@ -1380,6 +1380,13 @@ def project_detail(project_id):
     next_stage_name = detection.get("stage_name", "")
     next_stage_amount = detection.get("amount", 0)
 
+    # Change orders
+    change_orders = data.get("change_orders") or []
+    if not isinstance(change_orders, list):
+        change_orders = list(change_orders.values()) if isinstance(change_orders, dict) else []
+    co_approved_total = sum(_safe_float(co.get("amount", 0)) for co in change_orders if co.get("status") == "Approved")
+    base_contract = _safe_float(data.get("base_contract_value") or data.get("contract_value", 0))
+
     return render_template("project_detail.html", project=data,
                            project_invoices=project_invoices,
                            project_expenses=project_expenses,
@@ -1393,7 +1400,88 @@ def project_detail(project_id):
                            has_pending_stage=has_pending_stage,
                            next_stage_idx=next_stage_idx,
                            next_stage_name=next_stage_name,
-                           next_stage_amount=next_stage_amount)
+                           next_stage_amount=next_stage_amount,
+                           change_orders=change_orders,
+                           co_approved_total=co_approved_total,
+                           base_contract=base_contract)
+
+# ── Change Order Routes ───────────────────────────────────────────────────────
+
+@app.route("/projects/<project_id>/change-orders/new", methods=["POST"])
+@role_required("projects")
+def co_new(project_id):
+    project = fb_get(f"/projects/{project_id}") or {}
+    if not project:
+        abort(404)
+    cos = project.get("change_orders") or []
+    if not isinstance(cos, list):
+        cos = list(cos.values()) if isinstance(cos, dict) else []
+    co_num = f"CO-{len(cos)+1:03d}"
+    now_str = datetime.now(timezone.utc).isoformat()
+    new_co = {
+        "co_number":    co_num,
+        "title":        request.form.get("title", "").strip(),
+        "description":  request.form.get("description", "").strip(),
+        "amount":       _safe_float(request.form.get("amount", 0)),
+        "status":       "Draft",
+        "created_at":   now_str,
+        "created_by":   session.get("user_email", ""),
+        "submitted_at": "",
+        "approved_at":  "",
+        "notes":        request.form.get("notes", "").strip(),
+    }
+    cos.append(new_co)
+    # Save base contract value on first CO creation
+    if not project.get("base_contract_value"):
+        fb_update(f"/projects/{project_id}", {"base_contract_value": project.get("contract_value", 0)})
+    fb_update(f"/projects/{project_id}", {"change_orders": cos})
+    flash(f"Change Order {co_num} created.", "success")
+    return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+
+@app.route("/projects/<project_id>/change-orders/<int:co_idx>/status", methods=["POST"])
+@role_required("projects")
+def co_status(project_id, co_idx):
+    project = fb_get(f"/projects/{project_id}") or {}
+    if not project:
+        abort(404)
+    cos = project.get("change_orders") or []
+    if not isinstance(cos, list):
+        cos = list(cos.values()) if isinstance(cos, dict) else []
+    if co_idx >= len(cos):
+        abort(404)
+    new_status = request.form.get("status", "")
+    valid = {"Draft", "Submitted", "Approved", "Rejected"}
+    if new_status not in valid:
+        abort(400)
+    now_str = datetime.now(timezone.utc).isoformat()
+    cos[co_idx]["status"] = new_status
+    if new_status == "Submitted":
+        cos[co_idx]["submitted_at"] = now_str
+    if new_status == "Approved":
+        cos[co_idx]["approved_at"] = now_str
+        # Increase contract value and add payment stage
+        co_amount = _safe_float(cos[co_idx].get("amount", 0))
+        co_title  = cos[co_idx].get("title", cos[co_idx].get("co_number", ""))
+        old_value = _safe_float(project.get("contract_value", 0))
+        new_value = old_value + co_amount
+        stages = project.get("payment_stages") or []
+        if not isinstance(stages, list):
+            stages = []
+        stages.append({
+            "name":   f"{cos[co_idx]['co_number']} – {co_title}",
+            "amount": co_amount,
+            "status": "Pending Invoice",
+        })
+        fb_update(f"/projects/{project_id}", {
+            "change_orders":  cos,
+            "contract_value": new_value,
+            "payment_stages": stages,
+        })
+        flash(f"{cos[co_idx]['co_number']} approved — contract updated to ${new_value:,.0f} and new payment stage added.", "success")
+        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+    fb_update(f"/projects/{project_id}", {"change_orders": cos})
+    flash(f"{cos[co_idx]['co_number']} status updated to {new_status}.", "success")
+    return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
 
 @app.route("/projects/<project_id>/edit", methods=["GET", "POST"])
 @role_required("projects")
