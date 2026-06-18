@@ -5669,11 +5669,11 @@ def user_new():
 
     if not all([username, email, password]):
         flash("All fields are required.", "danger")
-        return redirect(url_for("settings"))
+        return redirect(url_for("settings") + "?tab=users")
 
     if not FIREBASE_AVAILABLE:
         flash("Firebase not available.", "danger")
-        return redirect(url_for("settings"))
+        return redirect(url_for("settings") + "?tab=users")
 
     try:
         from firebase_admin import auth as fb_auth
@@ -5697,7 +5697,7 @@ def user_new():
     except Exception as exc:
         flash(f"Error creating user: {exc}", "danger")
 
-    return redirect(url_for("settings"))
+    return redirect(url_for("settings") + "?tab=users")
 
 @app.route("/settings/user/<uid>/toggle", methods=["POST"])
 @role_required("settings")
@@ -5707,7 +5707,7 @@ def user_toggle(uid):
     fb_update(f"/users/{uid}", {"active": not current,
                                 "updated_at": datetime.now(timezone.utc).isoformat()})
     flash("User status updated.", "success")
-    return redirect(url_for("settings"))
+    return redirect(url_for("settings") + "?tab=users")
 
 @app.route("/settings/user/<uid>/role", methods=["POST"])
 @role_required("settings")
@@ -5716,14 +5716,14 @@ def user_role_update(uid):
     fb_update(f"/users/{uid}", {"role": new_role,
                                 "updated_at": datetime.now(timezone.utc).isoformat()})
     flash("User role updated.", "success")
-    return redirect(url_for("settings"))
+    return redirect(url_for("settings") + "?tab=users")
 
 @app.route("/settings/user/<uid>/delete", methods=["POST"])
 @role_required("settings")
 def user_delete(uid):
     if uid == session.get("user_uid"):
         flash("You cannot delete your own account.", "danger")
-        return redirect(url_for("settings"))
+        return redirect(url_for("settings") + "?tab=users")
     try:
         if FIREBASE_AVAILABLE:
             from firebase_admin import auth as fb_auth
@@ -5735,7 +5735,7 @@ def user_delete(uid):
         flash("User deleted.", "success")
     except Exception as exc:
         flash(f"Error: {exc}", "danger")
-    return redirect(url_for("settings"))
+    return redirect(url_for("settings") + "?tab=users")
 
 # ── Route: serve company logo ─────────────────────────────────────────────────
 @app.route("/logo")
@@ -6575,17 +6575,17 @@ def _load_clients() -> List[str]:
     return []
 
 def _load_sales_people() -> List[dict]:
-    """Return salesperson list sourced primarily from Settings /users (sales + admin roles).
+    """Return salesperson list sourced primarily from Settings /users (sales role only).
     Legacy /sales_persons entries are merged in as fallback so existing quote data
     that references old names is not orphaned.
     """
     seen_names: set = set()
     people: List[dict] = []
 
-    # Primary source: Settings users with sales or admin role
+    # Primary source: Settings users with sales role only
     for u in _load_all_users():
         role = normalize_role(u.get("role", ""))
-        if role not in ("sales", "admin"):
+        if role != "sales":
             continue
         name = (u.get("username") or "").strip()
         if not name:

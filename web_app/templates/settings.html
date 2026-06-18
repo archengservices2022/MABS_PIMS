@@ -7,35 +7,36 @@
 {% set em    = settings.get('email', {}) %}
 {% set ap    = settings.get('app', {}) %}
 
+{% set active_tab = request.args.get('tab', 'company') %}
 <!-- Tab nav -->
 <ul class="nav nav-tabs mb-4" id="settingsTabs">
   <li class="nav-item">
-    <a class="nav-link active" data-bs-toggle="tab" href="#tab-company">
+    <a class="nav-link {{ 'active' if active_tab == 'company' }}" data-bs-toggle="tab" href="#tab-company">
       <i class="bi bi-building me-1"></i>Company
     </a>
   </li>
   <li class="nav-item">
-    <a class="nav-link" data-bs-toggle="tab" href="#tab-logo">
+    <a class="nav-link {{ 'active' if active_tab == 'logo' }}" data-bs-toggle="tab" href="#tab-logo">
       <i class="bi bi-image me-1"></i>Logo
     </a>
   </li>
   <li class="nav-item">
-    <a class="nav-link" data-bs-toggle="tab" href="#tab-email">
+    <a class="nav-link {{ 'active' if active_tab == 'email' }}" data-bs-toggle="tab" href="#tab-email">
       <i class="bi bi-envelope me-1"></i>Email / SMTP
     </a>
   </li>
   <li class="nav-item">
-    <a class="nav-link" data-bs-toggle="tab" href="#tab-app">
+    <a class="nav-link {{ 'active' if active_tab == 'app' }}" data-bs-toggle="tab" href="#tab-app">
       <i class="bi bi-sliders me-1"></i>App Preferences
     </a>
   </li>
   <li class="nav-item">
-    <a class="nav-link" data-bs-toggle="tab" href="#tab-users">
+    <a class="nav-link {{ 'active' if active_tab == 'users' }}" data-bs-toggle="tab" href="#tab-users">
       <i class="bi bi-people me-1"></i>Users
     </a>
   </li>
   <li class="nav-item">
-    <a class="nav-link {% if request.args.get('tab')=='ai' %}active{% endif %}" data-bs-toggle="tab" href="#tab-ai">
+    <a class="nav-link {{ 'active' if active_tab == 'ai' }}" data-bs-toggle="tab" href="#tab-ai">
       <i class="bi bi-robot me-1"></i>AI
     </a>
   </li>
@@ -44,7 +45,7 @@
 <div class="tab-content">
 
   <!-- ── COMPANY ──────────────────────────────────────────────────────────── -->
-  <div class="tab-pane fade show active" id="tab-company">
+  <div class="tab-pane fade {{ 'show active' if active_tab == 'company' }}" id="tab-company">
     <div class="row">
       <div class="col-lg-6">
         <div class="card-panel">
@@ -100,7 +101,7 @@
   </div>
 
   <!-- ── LOGO ─────────────────────────────────────────────────────────────── -->
-  <div class="tab-pane fade" id="tab-logo">
+  <div class="tab-pane fade {{ 'show active' if active_tab == 'logo' }}" id="tab-logo">
     <div class="row">
       <div class="col-lg-5">
         <div class="card-panel">
@@ -138,7 +139,7 @@
   </div>
 
   <!-- ── EMAIL / SMTP ──────────────────────────────────────────────────────── -->
-  <div class="tab-pane fade" id="tab-email">
+  <div class="tab-pane fade {{ 'show active' if active_tab == 'email' }}" id="tab-email">
     <div class="row">
       <div class="col-lg-6">
         <div class="card-panel">
@@ -203,7 +204,7 @@
   </div>
 
   <!-- ── APP PREFERENCES ──────────────────────────────────────────────────── -->
-  <div class="tab-pane fade" id="tab-app">
+  <div class="tab-pane fade {{ 'show active' if active_tab == 'app' }}" id="tab-app">
     <div class="row">
       <div class="col-lg-5">
         <div class="card-panel">
@@ -248,7 +249,7 @@
   </div>
 
   <!-- ── USERS ─────────────────────────────────────────────────────────────── -->
-  <div class="tab-pane fade" id="tab-users">
+  <div class="tab-pane fade {{ 'show active' if active_tab == 'users' }}" id="tab-users">
     <div class="row g-3">
       <!-- Add user form -->
       <div class="col-lg-4">
@@ -414,7 +415,7 @@
   </div>
 
   <!-- ── AI ──────────────────────────────────────────────────────────────────── -->
-  <div class="tab-pane fade {% if request.args.get('tab')=='ai' %}show active{% endif %}" id="tab-ai">
+  <div class="tab-pane fade {{ 'show active' if active_tab == 'ai' }}" id="tab-ai">
     <div class="row">
       <div class="col-lg-6">
         <div class="card-panel">

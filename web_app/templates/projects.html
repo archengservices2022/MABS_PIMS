@@ -215,6 +215,7 @@
         <button type="button" class="btn btn-xs btn-outline-secondary" onclick="clearExportFilters()">Clear</button>
       </div>
     </div>
+    <div id="exportCardsWrap" style="display:none;">
     <div class="row g-3">
       <div class="col-md-4">
         <div class="export-card">
@@ -255,6 +256,11 @@
           </a>
         </div>
       </div>
+    </div>
+    </div>
+    <div id="exportCardsPlaceholder" class="text-center text-muted py-4" style="border:2px dashed #E2E8F0;border-radius:8px;">
+      <i class="bi bi-funnel fs-4 d-block mb-2"></i>
+      Apply a filter above to enable export
     </div>
   </div>
 
@@ -304,6 +310,16 @@ function buildExportLinks() {
   document.getElementById('exportPdfLink').href   = PDF_BASE   + q;
   document.getElementById('exportExcelLink').href = EXCEL_BASE + q;
   document.getElementById('exportCsvLink').href   = CSV_BASE   + q;
+  const hasFilter = s || c || f || t;
+  document.getElementById('exportCardsWrap').style.display       = hasFilter ? '' : 'none';
+  document.getElementById('exportCardsPlaceholder').style.display = hasFilter ? 'none' : '';
+}
+function clearExportFilters() {
+  document.getElementById('exportStatus').value = '';
+  document.getElementById('exportClient').value = '';
+  document.getElementById('exportFrom').value   = '';
+  document.getElementById('exportTo').value     = '';
+  buildExportLinks();
 }
 function setExportRange(type) {
   const now = new Date();
