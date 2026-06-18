@@ -4285,8 +4285,8 @@ def financial():
             pass
 
     # Add a broader range of years (past 15 years + future 10 years)
-    current_year = _now.year
-    for year in range(current_year - 15, current_year + 11):
+    _real_now_year = _now.year
+    for year in range(_real_now_year - 15, _real_now_year + 11):
         available_years.add(year)
 
     available_years = sorted(list(available_years), reverse=True)
