@@ -2788,6 +2788,290 @@ def invoice_delete(invoice_id):
     flash("Invoice deleted. Payment stages and revenue reverted to Not Invoiced.", "success")
     return redirect(url_for("invoicing"))
 
+@app.route("/invoicing/<invoice_id>/pdf")
+@role_required("invoicing")
+def invoice_pdf(invoice_id):
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import mm, inch
+    except ImportError:
+        flash("reportlab not installed.", "danger")
+        return redirect(url_for("invoice_detail", invoice_id=invoice_id))
+
+    import io as _io
+    from pathlib import Path
+    invoice = fb_get(f"/invoices/{invoice_id}")
+    if not invoice:
+        abort(404)
+
+    meta = invoice.get("meta", {})
+    co = company_info()
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=10*mm, rightMargin=10*mm,
+                            topMargin=5*mm, bottomMargin=5*mm)
+    styles = getSampleStyleSheet()
+    story = []
+
+    styles.add(ParagraphStyle(name='CenteredBold20', alignment=1, fontName='Helvetica-Bold', fontSize=20, leading=24))
+    styles.add(ParagraphStyle(name='Centered10', alignment=1, fontName='Helvetica', fontSize=10, leading=12))
+    styles.add(ParagraphStyle(name='LeftBold16', alignment=0, fontName='Helvetica-Bold', fontSize=16, leading=18))
+    styles.add(ParagraphStyle(name='LeftBold12', alignment=0, fontName='Helvetica-Bold', fontSize=12, leading=14))
+    styles.add(ParagraphStyle(name='Left10', alignment=0, fontName='Helvetica', fontSize=10, leading=12))
+    styles.add(ParagraphStyle(name='LeftBold10', alignment=0, fontName='Helvetica-Bold', fontSize=10, leading=12))
+    styles.add(ParagraphStyle(name='Right10', alignment=2, fontName='Helvetica', fontSize=10, leading=12))
+    styles.add(ParagraphStyle(name='RightBold10', alignment=2, fontName='Helvetica-Bold', fontSize=10, leading=12))
+    styles.add(ParagraphStyle(name='Left9', alignment=0, fontName='Helvetica', fontSize=9, leading=11))
+
+    logo_path = Path(__file__).parent / "static" / "logo.png"
+    logo_img = None
+    if logo_path.exists():
+        try:
+            logo_img = Image(str(logo_path), width=0.95*inch, height=0.95*inch)
+        except (IOError, OSError):
+            pass
+
+    company_name = co.get('name', 'MABS Engineering LLC')
+    address_text = ""
+    for line in co.get('address', '').split('\n'):
+        if line.strip():
+            address_text += f"{line.strip()}<br/>"
+    contact_text = f"Phone: {co.get('phone','')} • Email: {co.get('email','')} • {co.get('website','')}"
+    header_html = f"<b><font size=16>{company_name}</font></b><br/><font size=9>{address_text}{contact_text}</font>"
+
+    if logo_img:
+        hdr_table_data = [[logo_img, Paragraph(header_html, ParagraphStyle("cn", parent=styles["Normal"], fontName="Helvetica", textColor=colors.black, alignment=1))]]
+        hdr_table = Table(hdr_table_data, colWidths=[0.95*inch, doc.width - 0.95*inch])
+        hdr_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (1,0), (1,0), 5), ("BOTTOMPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 0), ("LINEBELOW", (0,0), (-1,-1), 1, colors.black)]))
+        story.append(hdr_table)
+    else:
+        story.append(Paragraph(header_html, ParagraphStyle("cn", parent=styles["Normal"], fontName="Helvetica", textColor=colors.black, alignment=1)))
+        story.append(Table([['']], colWidths=[doc.width], style=[('LINEBELOW', (0,0), (-1,-1), 1, colors.black)]))
+
+    story.append(Spacer(1, 2*mm))
+
+    client_name = meta.get('client_name', '')
+    client_email = ""
+    client_address = ""
+    if client_name:
+        try:
+            client_data = fb_get(f"/clients/{client_name}") or {}
+            client_email = client_data.get("email", "")
+            client_address = client_data.get("address", "")
+        except Exception:
+            pass
+
+    bill_to_lines = []
+    if client_name:
+        bill_to_lines.append(client_name)
+    if client_email:
+        bill_to_lines.append(client_email)
+    if client_address:
+        for line in client_address.split('\n'):
+            if line.strip():
+                bill_to_lines.append(line.strip())
+    bill_to_text = "<br/>".join(bill_to_lines) if bill_to_lines else ""
+
+    invoice_info = f"Invoice Number: {meta.get('invoice_number','')}<br/>Date: {meta.get('invoice_date','')}<br/>Due Date: {meta.get('due_date','')}"
+    header_data = [
+        [Paragraph("<b>Invoice:</b>", styles['Left10']), Paragraph("<b>Bill To:</b>", styles['Left10'])],
+        [Paragraph(invoice_info, styles['Left9']), Paragraph(bill_to_text, styles['Left9']) if bill_to_text else Paragraph("", styles['Left9'])],
+    ]
+    header_table = Table(header_data, colWidths=[doc.width * 0.5, doc.width * 0.5])
+    header_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 2), ('BOTTOMPADDING', (0,0), (-1,-1), 2)]))
+    story.append(header_table)
+    story.append(Spacer(1, 8*mm))
+
+    story.append(Paragraph("ITEMS", ParagraphStyle("items_title", parent=styles["Normal"], fontSize=12, fontName="Helvetica-Bold", textColor=colors.black, alignment=0)))
+    story.append(Spacer(1, 3*mm))
+
+    center_bold_style = ParagraphStyle("center_bold10", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.black, alignment=1)
+    center_style = ParagraphStyle("center10", parent=styles["Normal"], fontSize=10, fontName="Helvetica", textColor=colors.black, alignment=1)
+    item_data = [[Paragraph(h, center_bold_style) for h in ["Project", "Project Name", "Plant", "Qty", "Unit Price", "Payment Stage", "Payment Due"]]]
+
+    linked_projects = meta.get("linked_projects", [])
+    if isinstance(linked_projects, str):
+        linked_projects = [{"project_number": linked_projects}]
+    elif not isinstance(linked_projects, list):
+        linked_projects = []
+
+    for idx, item in enumerate(invoice.get("line_items", [])):
+        qty_val = _safe_float(item.get("quantity", 1))
+        qty = str(int(qty_val)) if qty_val == int(qty_val) else str(qty_val)
+        unit_price_val = _safe_float(item.get('unit_price', 0))
+        unit_price = f"${unit_price_val:,.2f}"
+        project_number = ""
+        project_name = ""
+        plant = ""
+        if idx < len(linked_projects) and isinstance(linked_projects[idx], dict):
+            project_number = linked_projects[idx].get("project_number", "")
+            project_name = linked_projects[idx].get("project_name", "")
+        if not project_number:
+            project_number = meta.get("project_number", "")
+        if not project_name and project_number:
+            try:
+                raw_proj = fb_get("/projects") or {}
+                for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
+                    if isinstance(pdata, dict) and pdata.get("project_number") == project_number:
+                        project_name = pdata.get("project_name", "")
+                        plant = pdata.get("plant", "")
+                        break
+            except Exception:
+                pass
+        if not plant:
+            plant = meta.get("plant", "")
+        if not project_name:
+            description = item.get("description", "")
+            project_name = description.split("—")[0].strip() if "—" in description else description
+
+        payment_stage = ""
+        if idx < len(linked_projects) and isinstance(linked_projects[idx], dict):
+            payment_stage_index = linked_projects[idx].get("payment_stage_index")
+            if payment_stage_index is not None and project_number:
+                try:
+                    raw_proj = fb_get("/projects") or {}
+                    for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
+                        if isinstance(pdata, dict) and pdata.get("project_number") == project_number:
+                            payment_stages = pdata.get("payment_stages", [])
+                            if isinstance(payment_stages, list) and int(payment_stage_index) < len(payment_stages):
+                                stage_data = payment_stages[int(payment_stage_index)]
+                                if isinstance(stage_data, dict):
+                                    payment_stage = stage_data.get("name", "")
+                            break
+                except Exception:
+                    pass
+        if not payment_stage:
+            payment_stage = meta.get("payment_stage", "")
+        if payment_stage and " of " in payment_stage:
+            payment_stage = payment_stage.split(" of ")[0].strip()
+        if not payment_stage:
+            payment_stage = "Final Payment"
+
+        payment_due_val = qty_val * unit_price_val
+        payment_due = f"${payment_due_val:,.2f}"
+        item_data.append([
+            Paragraph(project_number, center_style),
+            Paragraph(project_name, center_style),
+            Paragraph(plant or "", center_style),
+            Paragraph(qty, center_style),
+            Paragraph(unit_price, center_style),
+            Paragraph(payment_stage, center_style),
+            Paragraph(payment_due, center_style)
+        ])
+
+    if len(item_data) == 1:
+        item_data.append([Paragraph("", center_style) for _ in range(7)])
+
+    item_table = Table(item_data, colWidths=[doc.width * 0.18, doc.width * 0.21, doc.width * 0.11, doc.width * 0.08, doc.width * 0.12, doc.width * 0.15, doc.width * 0.15])
+    item_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+        ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#CCCCCC")),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('LEFTPADDING', (0,0), (-1,-1), 3),
+        ('RIGHTPADDING', (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+    ]))
+    story.append(item_table)
+    story.append(Spacer(1, 5*mm))
+
+    subtotal = _safe_float(meta.get('subtotal', 0))
+    tax_amount = _safe_float(meta.get('tax_amount', 0))
+    tax_rate = _safe_float(meta.get('tax_rate', 0))
+    total_amount = _safe_float(meta.get('total', 0))
+    totals_data = [
+        [Paragraph("Total", styles['Right10']), Paragraph(f"${subtotal:,.2f}", styles['Right10'])],
+        [Paragraph(f"Tax ({tax_rate}%)", styles['Right10']), Paragraph(f"${tax_amount:,.2f}", styles['Right10'])],
+        [Paragraph("TOTAL AMOUNT DUE:", styles['RightBold10']), Paragraph(f"${total_amount:,.2f}", styles['RightBold10'])],
+    ]
+    totals_table = Table(totals_data, colWidths=[doc.width * 0.5, doc.width * 0.5])
+    totals_table.setStyle(TableStyle([
+        ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#CCCCCC")),
+        ('LEFTPADDING', (0,0), (-1,-1), 3),
+        ('RIGHTPADDING', (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+        ('BACKGROUND', (0, len(totals_data)-1), (-1, len(totals_data)-1), colors.lightgrey),
+        ('FONTNAME', (0, len(totals_data)-1), (-1, len(totals_data)-1), 'Helvetica-Bold'),
+    ]))
+    story.append(totals_table)
+    story.append(Spacer(1, 5*mm))
+
+    story.append(Paragraph("PAYMENT OPTIONS", styles['LeftBold12']))
+    story.append(Spacer(1, 3*mm))
+
+    InvLabel = ParagraphStyle("InvLabel", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.black, leading=12)
+    InvValue = ParagraphStyle("InvValue", parent=styles["Normal"], fontSize=9, fontName="Helvetica", textColor=colors.black, leading=11, leftIndent=3, spaceAfter=3)
+    TableCenter = ParagraphStyle("TableCenter", parent=styles["Normal"], fontSize=8, fontName="Helvetica", textColor=colors.black, alignment=1)
+
+    qr_path = Path(__file__).parent / "static" / "venmo.png"
+    qr_img = None
+    if qr_path.exists():
+        try:
+            qr_img = Image(str(qr_path), width=1.0*inch, height=1.0*inch)
+        except (IOError, OSError):
+            qr_img = None
+
+    right_section = [
+        Table([[Paragraph("<b>Option 2: Zelle QR code</b>", InvLabel)]], colWidths=[doc.width * 0.40], rowHeights=[8*mm],
+              style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#B6D7A8")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
+        Spacer(1, 1*mm),
+    ]
+    if qr_img:
+        right_section.append(Table([[qr_img]], colWidths=[doc.width * 0.40],
+                                   style=TableStyle([("ALIGN", (0,0), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 1*mm), ("BOTTOMPADDING", (0,0), (-1,-1), 1*mm)])))
+    right_section.append(Paragraph("Scan to pay with Zelle", TableCenter))
+
+    left_section = [
+        Table([[Paragraph("<b>Option 1: Check</b>", InvLabel)]], colWidths=[doc.width * 0.55], rowHeights=[7*mm],
+              style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#B6DDE8")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
+        Spacer(1, 1*mm),
+        Paragraph("<b>Payable to:</b> MABS Engineering LLC<br/><b>Mailing Address:</b> 15455 Manchester Rd, PO Box 1144 Manchester, MO 63011", InvValue),
+        Spacer(1, 4*mm),
+        Table([[Paragraph("<b>Option 3: Bank ACH Transfer</b>", InvLabel)]], colWidths=[doc.width * 0.55], rowHeights=[7*mm],
+              style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EA9999")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
+        Spacer(1, 1*mm),
+        Paragraph("Please contact MABS Admin to get our bank information for ACH transfers", InvValue),
+    ]
+
+    payment_table = Table([[left_section, right_section]], colWidths=[doc.width * 0.55, doc.width * 0.40])
+    payment_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('BOX', (0,0), (-1,-1), 1, colors.black), ('INNERGRID', (0,0), (-1,-1), 0.5, colors.black)]))
+    story.append(payment_table)
+
+    story.append(Spacer(1, 3*mm))
+    default_terms = co.get('default_terms', 'Thank you for your business! Best regards, MABS Engineering LLC')
+    notes_text = default_terms if default_terms else meta.get('notes', 'Thank you for your business!')
+    story.append(Paragraph(f"<b>Note:</b> {notes_text}", styles['Left9']))
+
+    calculated_status = _calculate_invoice_status(invoice)
+    if (calculated_status or "").lower() == 'paid':
+        def add_paid_watermark(canvas_obj, doc_obj):
+            canvas_obj.saveState()
+            center_x = A4[0] / 2
+            center_y = A4[1] / 2
+            canvas_obj.setFont("Helvetica-Bold", 130)
+            canvas_obj.setFillColor(colors.HexColor("#00B050"))
+            canvas_obj.setFillAlpha(0.25)
+            canvas_obj.translate(center_x, center_y)
+            canvas_obj.rotate(45)
+            canvas_obj.drawCentredString(0, 0, "PAID")
+            canvas_obj.restoreState()
+        doc.build(story, onFirstPage=add_paid_watermark, onLaterPages=add_paid_watermark)
+    else:
+        doc.build(story)
+
+    buf.seek(0)
+    from flask import Response
+    fname = f"Invoice_{meta.get('invoice_number','')}.pdf"
+    return Response(buf.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": f"inline;filename={fname}"})
+
 # ── Routes: Invoicing Export ──────────────────────────────────────────────────
 def _filter_invoices_export(items):
     if request.args.get("status"):
@@ -3035,6 +3319,13 @@ def client_edit(client_name):
         flash("Client updated.", "success")
         return redirect(url_for("clients"))
     return render_template("client_form.html", client=data, is_new=False)
+
+@app.route("/clients/<client_name>/delete", methods=["POST"])
+@role_required("invoicing")
+def delete_client(client_name):
+    fb_delete(f"/clients/{client_name}")
+    flash(f"Client '{client_name}' deleted.", "success")
+    return redirect(url_for("clients"))
 
 # ── Client Statement PDF ──────────────────────────────────────────────────────
 @app.route("/clients/<client_name>/statement")
@@ -3356,6 +3647,32 @@ def create_salary():
         "created_at":    datetime.now(timezone.utc).isoformat(),
     }
     fb_push("/balance_sheet_salary", sal_data)
+    return jsonify({"success": True})
+
+@app.route("/api/payroll/salaries/<sal_id>", methods=["PUT"])
+@login_required
+def update_salary(sal_id):
+    data = request.json
+    date_str = data.get("date", "")
+    try:
+        year = int(date_str[:4]) if date_str else datetime.now().year
+    except (ValueError, IndexError):
+        year = datetime.now().year
+    region = data.get("region", "Inside America")
+    if region == "USA":
+        region = "Inside America"
+    elif region == "International":
+        region = "Outside America"
+    sal_data = {
+        "employee_name": data.get("employee_name"),
+        "date":          date_str,
+        "amount":        float(data.get("amount", 0)),
+        "notes":         data.get("notes", ""),
+        "region":        region,
+        "year":          year,
+        "updated_at":    datetime.now(timezone.utc).isoformat(),
+    }
+    fb_update(f"/balance_sheet_salary/{sal_id}", sal_data)
     return jsonify({"success": True})
 
 @app.route("/api/payroll/salaries/<sal_id>", methods=["DELETE"])
