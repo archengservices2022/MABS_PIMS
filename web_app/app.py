@@ -476,6 +476,45 @@ def dashboard():
     pipeline = {st: [p for p in proj_list if isinstance(p, dict) and p.get("status", "Not Started") == st]
                 for st in pipeline_statuses}
 
+    # ── Reminders Panel ───────────────────────────────────────────────────────
+    seven_day_str  = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+    thirty_ago_str = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+
+    # 1. Overdue invoices (list, not just count)
+    reminder_overdue_invoices = sorted(
+        [i for i in inv_list if isinstance(i, dict)
+         and i.get("meta", {}).get("status", "") == "Overdue"],
+        key=lambda x: x.get("meta", {}).get("due_date", "")
+    )[:8]
+
+    # 2. Invoices due within 7 days (not yet overdue)
+    reminder_due_soon = sorted(
+        [i for i in inv_list if isinstance(i, dict)
+         and i.get("meta", {}).get("status", "") not in ("Paid", "Overdue", "Cancelled")
+         and i.get("meta", {}).get("due_date", "")
+         and today_str <= i.get("meta", {}).get("due_date", "") <= seven_day_str],
+        key=lambda x: x.get("meta", {}).get("due_date", "")
+    )[:8]
+
+    # 3. Projects with end date within 7 days
+    reminder_proj_due = sorted(
+        [p for p in proj_list if isinstance(p, dict)
+         and p.get("status", "") not in ("Completed", "Cancelled")
+         and p.get("end_date", "")
+         and today_str <= p.get("end_date", "") <= seven_day_str],
+        key=lambda x: x.get("end_date", "")
+    )[:8]
+
+    # 4. Stalled projects: In Progress but updated_at older than 30 days
+    reminder_stalled = sorted(
+        [p for p in proj_list if isinstance(p, dict)
+         and p.get("status", "") == "In Progress"
+         and (p.get("updated_at", "") or p.get("created_at", ""))[:10] <= thirty_ago_str],
+        key=lambda x: (x.get("updated_at", "") or x.get("created_at", ""))
+    )[:8]
+
+    reminder_total = len(reminder_overdue_invoices) + len(reminder_due_soon) + len(reminder_proj_due) + len(reminder_stalled)
+
     # ── Team status (Employees module) ─────────────────────────────────────
     all_time_entries = _load_time_entries()
     all_time_off     = _load_time_off_requests()
@@ -506,6 +545,11 @@ def dashboard():
         proj_status_labels=json.dumps(list(proj_status_counts.keys())),
         proj_status_data=json.dumps(list(proj_status_counts.values())),
         ai_enabled=bool(_get_ai_client()),
+        reminder_overdue_invoices=reminder_overdue_invoices,
+        reminder_due_soon=reminder_due_soon,
+        reminder_proj_due=reminder_proj_due,
+        reminder_stalled=reminder_stalled,
+        reminder_total=reminder_total,
     )
 
 # ── Routes: Sales Dashboard ───────────────────────────────────────────────────
