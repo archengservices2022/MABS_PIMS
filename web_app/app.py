@@ -1,5 +1,6 @@
 """MABS PIMS - Flask Web Application"""
 import os
+import re
 import json
 import base64
 import tempfile
@@ -4113,12 +4114,28 @@ def financial():
                             if _stage:
                                 break
 
+                    # If stage is generic "Stage N", upgrade to "Installment N of Total"
+                    _stage_label = _stage or "—"
+                    if _stage_label and re.match(r'^Stage\s+\d+$', _stage_label, re.IGNORECASE):
+                        _proj_data_s = _proj_num_to_data.get(_proj_num, {})
+                        _all_stages  = _proj_data_s.get("payment_stages", [])
+                        if isinstance(_all_stages, list) and len(_all_stages) > 0:
+                            try:
+                                _snum = int(_stage_label.split()[-1])
+                                if 1 <= _snum <= len(_all_stages):
+                                    _sname = (_all_stages[_snum - 1].get("name", "") or "").strip()
+                                    _stage_label = _sname if _sname else f"Installment {_snum} of {len(_all_stages)}"
+                                else:
+                                    _stage_label = f"Installment {_snum} of {len(_all_stages)}"
+                            except (ValueError, TypeError):
+                                pass
+
                     monthly_payment_details[_mkey].append({
                         "project_number": _proj_num,
                         "project_id":     _proj_num_to_id.get(_proj_num, ""),
                         "invoice_id":     _inv_id,
                         "invoice_number": _inv_num,
-                        "stage":          _stage or "—",
+                        "stage":          _stage_label,
                         "total_amount":   _inv_total,
                         "paid_amount":    _safe_float(_pay.get("amount", 0)),
                         "paid_date":      _pay_ds,
@@ -4142,8 +4159,19 @@ def financial():
                     })
             except Exception:
                 pass
+    # Merge multiple partial payments for the same invoice+project into one row
     for _mk in monthly_payment_details:
-        monthly_payment_details[_mk].sort(key=lambda x: x.get("paid_date", ""))
+        _merged: dict = {}
+        for _row in monthly_payment_details[_mk]:
+            _key = (_row["invoice_id"], _row["project_number"])
+            if _key in _merged:
+                _merged[_key]["paid_amount"] += _row["paid_amount"]
+                # keep latest payment date
+                if _row["paid_date"] > _merged[_key]["paid_date"]:
+                    _merged[_key]["paid_date"] = _row["paid_date"]
+            else:
+                _merged[_key] = dict(_row)
+        monthly_payment_details[_mk] = sorted(_merged.values(), key=lambda x: x.get("paid_date", ""))
 
     # ── Chart data for overview pie charts ────────────────────────────────────
     inv_status_counts = {}
