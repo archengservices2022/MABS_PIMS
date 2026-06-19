@@ -3900,7 +3900,7 @@ def financial():
         return list(grouped.values())
 
     # Keep BOTH versions: raw for expense tab (all individual entries), grouped for balance sheet
-    exp_list_all = sorted(exp_list_raw, key=lambda x: x.get("date", ""), reverse=False)  # Sort by expense date (oldest first)
+    exp_list_all = sorted(exp_list_raw, key=lambda x: x.get("created_at", "") or x.get("date", ""), reverse=True)  # Sort by creation date (newest first)
     exp_list_grouped_all = group_expenses_by_name(exp_list_raw)  # Consolidated for reference
 
     # Filter expenses by selected year for balance sheet
