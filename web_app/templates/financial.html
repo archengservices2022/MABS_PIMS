@@ -549,7 +549,7 @@ a[href*="filter_expense"]:hover {
             <td class="text-end">${{ "{:,.2f}".format((r.get('total',0)|float) - (r.get('tax_amount',0)|float)) }}</td>
             <td class="text-end text-muted">${{ "{:,.2f}".format(r.get('tax_amount',0)|float) }}</td>
             <td class="text-end fw-bold">${{ "{:,.2f}".format(r.get('total',0)|float) }}</td>
-            <td class="text-end fw-bold text-success">${{ "{:,.2f}".format(r.get('amount_paid',0)|float) }}</td>
+            <td class="text-end fw-bold text-success">${{ "{:,.2f}".format((r.get('amount_paid',0)|float) + (r.get('tax_amount',0)|float)) }}</td>
           </tr>
           {% endfor %}
         </tbody>
