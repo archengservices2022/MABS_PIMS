@@ -220,7 +220,7 @@
                 <td>{{ sal.notes or '—' }}</td>
                 <td>
                   <div class="action-buttons">
-                    <button onclick="editSalary('{{ sal.firebase_id }}','{{ sal.employee_name or sal.get('employee','') }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace(\"'\",\"&#39;\") }}')" class="btn-sm" title="Edit" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
+                    <button onclick="editSalary('{{ sal.firebase_id }}','{{ (sal.employee_name or '') | replace("'","&#39;") }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace("'","&#39;") }}')" class="btn-sm" title="Edit" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
                       <i class="bi bi-pencil"></i>
                     </button>
                     <button onclick="deleteSalary('{{ sal.firebase_id }}')" class="btn-sm" title="Delete" style="background:#DC2626;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
