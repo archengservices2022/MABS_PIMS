@@ -51,6 +51,7 @@
 .my-ts-table tbody tr:hover { background:#fafafa; }
 
 .empty-state { text-align:center; padding:48px 16px; color:#94a3b8; }
+.ot-val { color:#b91c1c; font-weight:600; }
 .empty-state-icon { font-size:2.5rem; margin-bottom:10px; }
 .empty-state-title { font-size:1rem; font-weight:600; color:#64748b; margin-bottom:6px; }
 </style>
@@ -62,11 +63,8 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
     <h4 class="fw-bold mb-0" style="color:#0f172a;">
-      {% if view == 'admin' %}Weekly Schedule{% else %}My Timesheets{% endif %}
+      {% if view == 'admin' %}Team Weekly Schedule{% else %}My Timesheets{% endif %}
     </h4>
-    {% if view == 'my' and not is_admin %}
-    <div class="text-muted" style="font-size:.8rem;">Week of {{ week_label }}</div>
-    {% endif %}
   </div>
   <div class="d-flex gap-2 align-items-center">
     <a href="{{ url_for('timesheets_submit') }}" class="btn btn-sm"
@@ -221,15 +219,142 @@
 </div>
 
 {% else %}
-<!-- ── My Timesheets View ─────────────────────────────────────── -->
-{% if not has_current %}
-<div class="alert" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:10px;font-size:.85rem;padding:12px 16px;" role="alert">
-  <i class="bi bi-info-circle-fill me-2"></i>
-  You haven't submitted a timesheet for the current week yet.
-  <a href="{{ url_for('timesheets_submit') }}" class="fw-600" style="color:#1d4ed8;">Submit now →</a>
-</div>
-{% endif %}
+<!-- ── Employee: My Timesheets ────────────────────────────────── -->
 
+<!-- Monthly Quick Stats -->
+<div class="ts-kpi-row">
+  <div class="ts-kpi">
+    <div class="ts-kpi-label">This Month</div>
+    <div class="ts-kpi-value">{{ "%.1f"|format(stat_month_hours) }}</div>
+    <div class="ts-kpi-sub">total hours</div>
+  </div>
+  <div class="ts-kpi">
+    <div class="ts-kpi-label">Overtime (Month)</div>
+    <div class="ts-kpi-value" style="color:{% if stat_month_ot > 0 %}#b91c1c{% else %}#0f172a{% endif %};">
+      {{ "%.1f"|format(stat_month_ot) }}
+    </div>
+    <div class="ts-kpi-sub">OT hours</div>
+  </div>
+  <div class="ts-kpi">
+    <div class="ts-kpi-label">Approved</div>
+    <div class="ts-kpi-value" style="color:#15803d;">{{ stat_approved }}</div>
+    <div class="ts-kpi-sub">weeks approved</div>
+  </div>
+  <div class="ts-kpi">
+    <div class="ts-kpi-label">Pending Review</div>
+    <div class="ts-kpi-value" style="color:#1d4ed8;">{{ stat_pending }}</div>
+    <div class="ts-kpi-sub">awaiting approval</div>
+  </div>
+  <div class="ts-kpi">
+    <div class="ts-kpi-label">This Week</div>
+    <div class="ts-kpi-value">{{ "%.1f"|format(week_total) }}</div>
+    <div class="ts-kpi-sub">hours logged</div>
+  </div>
+</div>
+
+<!-- Week Navigation -->
+<div class="week-nav">
+  <a href="{{ url_for('timesheets', week=prev_week) }}" class="week-nav-btn"><i class="bi bi-chevron-left"></i></a>
+  <div class="week-nav-label">Week of {{ week_label }}</div>
+  <a href="{{ url_for('timesheets', week=next_week) }}" class="week-nav-btn"><i class="bi bi-chevron-right"></i></a>
+  <a href="{{ url_for('timesheets') }}" class="btn btn-sm btn-outline-secondary ms-1" style="font-size:.75rem;padding:4px 10px;">
+    Current Week
+  </a>
+</div>
+
+<!-- Personal Weekly Grid -->
+<div class="ts-detail-card mb-4" style="background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.08);overflow:hidden;">
+  <div style="padding:14px 20px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+    <div class="d-flex align-items-center gap-3">
+      <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#0D9488,#0891B2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1rem;font-weight:800;">
+        {{ user_name[0].upper() if user_name else '?' }}
+      </div>
+      <div>
+        <div style="font-weight:700;color:#0f172a;font-size:.95rem;">{{ user_name }}</div>
+        <div style="font-size:.72rem;color:#94a3b8;">My weekly hours</div>
+      </div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      {% if week_sheet %}
+        <span class="sbadge sb-{{ week_sheet.status | lower }}">{{ week_sheet.status }}</span>
+        {% if week_sheet.status in ('Draft', 'Rejected') %}
+        <a href="{{ url_for('timesheets_submit', week=week_of) }}"
+           class="btn btn-sm" style="background:#f59e0b;color:#fff;font-size:.72rem;padding:4px 12px;border:none;border-radius:7px;font-weight:600;">
+          <i class="bi bi-pencil me-1"></i>Edit & Resubmit
+        </a>
+        {% elif week_sheet.status == 'Submitted' %}
+        <a href="{{ url_for('timesheet_detail', sheet_id=week_sheet.firebase_id) }}"
+           class="btn btn-sm btn-outline-secondary" style="font-size:.72rem;padding:4px 12px;">
+          View Details
+        </a>
+        {% elif week_sheet.status == 'Approved' %}
+        <a href="{{ url_for('timesheet_detail', sheet_id=week_sheet.firebase_id) }}"
+           class="btn btn-sm" style="background:#15803d;color:#fff;font-size:.72rem;padding:4px 12px;border:none;border-radius:7px;">
+          <i class="bi bi-check2-circle me-1"></i>Approved
+        </a>
+        {% endif %}
+      {% else %}
+        <span style="font-size:.75rem;color:#94a3b8;">No entry for this week</span>
+        <a href="{{ url_for('timesheets_submit', week=week_of) }}"
+           class="btn btn-sm" style="background:#0D9488;color:#fff;font-size:.75rem;padding:5px 14px;border:none;border-radius:7px;font-weight:600;">
+          <i class="bi bi-plus-lg me-1"></i>Submit Timesheet
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- 7-day personal grid -->
+  <div class="table-responsive">
+    <table class="ts-table" style="border-radius:0;">
+      <thead>
+        <tr>
+          {% for dl in day_labels %}
+          <th>
+            {{ dl.abbr }}<br>
+            <span style="font-weight:500;font-size:.62rem;color:#94a3b8;">{{ dl.display }}</span>
+          </th>
+          {% endfor %}
+          <th style="min-width:70px;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          {% for dl in day_labels %}
+            {% set cell = emp_cells.get(dl.date) %}
+            <td>
+              {% if cell %}
+                <div class="ts-cell ts-{{ cell.status | lower }}"
+                     title="{{ cell.projects | join(', ') or 'General' }} | {{ cell.time_range }} | {{ '%.1f'|format(cell.hours) }}h"
+                     {% if cell.sheet_id %}onclick="window.location='{{ url_for('timesheet_detail', sheet_id=cell.sheet_id) }}'"{% endif %}>
+                  {% if cell.time_range %}<div class="c-time">{{ cell.time_range }}</div>{% endif %}
+                  {% if cell.projects %}<div class="c-proj">{{ cell.projects[0] }}{% if cell.projects|length > 1 %} +{{ cell.projects|length - 1 }}{% endif %}</div>{% endif %}
+                  <div class="c-hrs">{{ "%.1f"|format(cell.hours) }}h</div>
+                </div>
+              {% else %}
+                <div class="ts-empty">—</div>
+              {% endif %}
+            </td>
+          {% endfor %}
+          <td class="total-col">
+            {% if week_total > 0 %}{{ "%.1f"|format(week_total) }}h{% else %}—{% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% if week_sheet and week_sheet.status == 'Rejected' and week_sheet.rejection_notes %}
+  <div style="background:#fff1f2;border-top:1px solid #fecdd3;padding:10px 20px;font-size:.8rem;color:#b91c1c;">
+    <i class="bi bi-exclamation-circle-fill me-1"></i>
+    Rejected: {{ week_sheet.rejection_notes }}
+  </div>
+  {% endif %}
+</div>
+
+<!-- History Table -->
+<div style="font-weight:700;color:#475569;font-size:.8rem;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">
+  Submission History
+</div>
 <table class="my-ts-table">
   <thead>
     <tr>
@@ -246,10 +371,15 @@
     {% if my_sheets %}
       {% for sheet in my_sheets %}
       <tr>
-        <td><strong>{{ sheet.week_of }}</strong></td>
-        <td>{{ "%.1f"|format(sheet.total_hours | float) }}h</td>
+        <td>
+          <strong>{{ sheet.week_of }}</strong>
+          {% if sheet.week_of == current_week %}
+          <span style="background:#fef3c7;color:#b45309;font-size:.6rem;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:4px;">CURRENT</span>
+          {% endif %}
+        </td>
+        <td><strong>{{ "%.1f"|format(sheet.total_hours | float) }}h</strong></td>
         <td style="color:#64748b;">{{ "%.1f"|format(sheet.total_regular_hours | float) }}h</td>
-        <td style="color:{% if sheet.total_overtime_hours | float > 0 %}#b91c1c{% else %}#94a3b8{% endif %};">
+        <td class="{% if sheet.total_overtime_hours | float > 0 %}ot-val{% else %}text-muted{% endif %}">
           {{ "%.1f"|format(sheet.total_overtime_hours | float) }}h
         </td>
         <td><span class="sbadge sb-{{ sheet.status | lower }}">{{ sheet.status }}</span></td>
@@ -264,7 +394,7 @@
             </a>
             {% if sheet.status in ('Draft', 'Rejected') %}
             <a href="{{ url_for('timesheets_submit', week=sheet.week_of) }}"
-               class="btn btn-sm" style="background:#0D9488;color:#fff;font-size:.72rem;padding:3px 10px;">
+               class="btn btn-sm" style="background:#0D9488;color:#fff;font-size:.72rem;padding:3px 10px;border:none;border-radius:6px;">
               Edit
             </a>
             {% endif %}
@@ -278,7 +408,9 @@
         <div class="empty-state-icon">📋</div>
         <div class="empty-state-title">No Timesheets Yet</div>
         <p style="margin:0;font-size:.8rem;">
-          <a href="{{ url_for('timesheets_submit') }}" style="color:#0D9488;font-weight:600;">Submit your first timesheet →</a>
+          <a href="{{ url_for('timesheets_submit') }}" style="color:#0D9488;font-weight:600;">
+            Submit your first timesheet →
+          </a>
         </p>
       </td>
     </tr>

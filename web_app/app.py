@@ -8721,15 +8721,54 @@ def timesheets():
             kpi_employees=len(employees), kpi_submitted=kpi_submitted,
             kpi_pending=kpi_pending, kpi_approved=kpi_approved, kpi_hours=kpi_hours)
     else:
-        my_sheets    = _load_timesheets(employee_uid=uid)
+        # Load ALL sheets for this employee (history + current week)
+        my_sheets = _load_timesheets(employee_uid=uid)
         my_sheets.sort(key=lambda x: x.get("week_of", ""), reverse=True)
+
+        # Build personal grid cells for the selected week
+        week_sheet = next((s for s in my_sheets if s.get("week_of") == week_of), None)
+        emp_cells  = {}
+        week_total = 0.0
+        if week_sheet:
+            for entry in (week_sheet.get("entries") or []):
+                d   = entry.get("date", "")
+                hrs = _safe_float(entry.get("total_hours", 0))
+                if d in week_dates:
+                    week_total += hrs
+                    if d in emp_cells:
+                        emp_cells[d]["hours"] += hrs
+                        pn = entry.get("project_name", "")
+                        if pn:
+                            emp_cells[d]["projects"].append(pn)
+                    else:
+                        st = entry.get("start_time", "")
+                        et = entry.get("end_time", "")
+                        emp_cells[d] = {
+                            "time_range": f"{_fmt_time_12(st)} – {_fmt_time_12(et)}" if st and et else "",
+                            "hours":      hrs,
+                            "projects":   [entry.get("project_name", "")] if entry.get("project_name") else [],
+                            "status":     week_sheet.get("status", "Draft"),
+                            "sheet_id":   week_sheet.get("firebase_id", ""),
+                        }
+
+        # Monthly stats (current calendar month)
+        current_month = datetime.now().strftime("%Y-%m")
+        month_sheets  = [s for s in my_sheets if s.get("week_of", "")[:7] == current_month]
+        stat_month_hours   = sum(_safe_float(s.get("total_hours", 0)) for s in month_sheets)
+        stat_month_ot      = sum(_safe_float(s.get("total_overtime_hours", 0)) for s in month_sheets)
+        stat_approved      = sum(1 for s in my_sheets if s.get("status") == "Approved")
+        stat_pending       = sum(1 for s in my_sheets if s.get("status") == "Submitted")
+
         current_week = _week_monday()
-        has_current  = any(s.get("week_of") == current_week for s in my_sheets)
         return render_template("timesheets.html",
             view="my", my_sheets=my_sheets,
-            current_week=current_week, has_current=has_current,
             week_of=week_of, week_label=week_label,
-            prev_week=prev_week, next_week=next_week)
+            week_dates=week_dates, day_labels=day_labels,
+            prev_week=prev_week, next_week=next_week,
+            week_sheet=week_sheet, emp_cells=emp_cells, week_total=week_total,
+            current_week=current_week,
+            stat_month_hours=stat_month_hours, stat_month_ot=stat_month_ot,
+            stat_approved=stat_approved, stat_pending=stat_pending)
 
 
 @app.route("/timesheets/submit")
