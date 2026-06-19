@@ -1052,26 +1052,53 @@ function updateExpenseSummaryCards() {
   // Calculate totals from filtered rows
   let filteredTotal = 0;
   let filteredCount = 0;
+  let thisMonthTotal = 0;
+  let largestExpense = null;
+  let largestExpenseName = '';
+
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
   expenseFilteredRows.forEach(row => {
     const amount = parseFloat(row.querySelector('td:nth-child(7)')?.textContent.replace(/[$,]/g,'') || 0);
+    const dateCell = row.querySelector('td:first-child')?.textContent?.trim() || '';
+    const expenseName = row.querySelector('td:nth-child(3)')?.textContent?.trim() || '';
+
     filteredTotal += amount;
     filteredCount++;
+
+    // Check if expense is in current month
+    if (dateCell.startsWith(currentMonth)) {
+      thisMonthTotal += amount;
+    }
+
+    // Track largest expense
+    if (!largestExpense || amount > largestExpense) {
+      largestExpense = amount;
+      largestExpenseName = expenseName;
+    }
   });
 
-  // Find and update "Total Expenses" card by looking for the card with that label
+  // Find and update all summary cards
   const allCards = document.querySelectorAll('#tab-expenses .kpi-card');
   allCards.forEach(card => {
     const label = card.querySelector('.kpi-label')?.textContent?.trim();
+    const valueEl = card.querySelector('.kpi-value');
+
+    if (!valueEl) return;
+
     if (label === 'Total Expenses') {
-      const valueEl = card.querySelector('.kpi-value');
-      if (valueEl) {
-        valueEl.textContent = '$' + filteredTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-      }
+      valueEl.textContent = '$' + filteredTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
     } else if (label === 'Total Entries') {
-      const valueEl = card.querySelector('.kpi-value');
-      if (valueEl) {
-        valueEl.textContent = filteredCount.toString();
+      valueEl.textContent = filteredCount.toString();
+    } else if (label === 'This Month') {
+      valueEl.textContent = '$' + thisMonthTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    } else if (label === 'Largest Expense') {
+      valueEl.textContent = '$' + (largestExpense || 0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+      // Also update the description below the card
+      const subEl = card.querySelector('.kpi-sub');
+      if (subEl) {
+        subEl.textContent = largestExpenseName ? largestExpenseName.substring(0, 30) : '—';
       }
     }
   });
@@ -1155,26 +1182,53 @@ function resetExpenseSummaryCards() {
   const allRows = document.querySelectorAll('#expenseTableBody tr.expense-row');
   let allTotal = 0;
   let allCount = 0;
+  let thisMonthTotal = 0;
+  let largestExpense = null;
+  let largestExpenseName = '';
+
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
   allRows.forEach(row => {
     const amount = parseFloat(row.querySelector('td:nth-child(7)')?.textContent.replace(/[$,]/g,'') || 0);
+    const dateCell = row.querySelector('td:first-child')?.textContent?.trim() || '';
+    const expenseName = row.querySelector('td:nth-child(3)')?.textContent?.trim() || '';
+
     allTotal += amount;
     allCount++;
+
+    // Check if expense is in current month
+    if (dateCell.startsWith(currentMonth)) {
+      thisMonthTotal += amount;
+    }
+
+    // Track largest expense
+    if (!largestExpense || amount > largestExpense) {
+      largestExpense = amount;
+      largestExpenseName = expenseName;
+    }
   });
 
   // Update cards with all-time totals using specific label matching
   const allCards = document.querySelectorAll('#tab-expenses .kpi-card');
   allCards.forEach(card => {
     const label = card.querySelector('.kpi-label')?.textContent?.trim();
+    const valueEl = card.querySelector('.kpi-value');
+
+    if (!valueEl) return;
+
     if (label === 'Total Expenses') {
-      const valueEl = card.querySelector('.kpi-value');
-      if (valueEl) {
-        valueEl.textContent = '$' + allTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-      }
+      valueEl.textContent = '$' + allTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
     } else if (label === 'Total Entries') {
-      const valueEl = card.querySelector('.kpi-value');
-      if (valueEl) {
-        valueEl.textContent = allCount.toString();
+      valueEl.textContent = allCount.toString();
+    } else if (label === 'This Month') {
+      valueEl.textContent = '$' + thisMonthTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    } else if (label === 'Largest Expense') {
+      valueEl.textContent = '$' + (largestExpense || 0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+      // Also update the description below the card
+      const subEl = card.querySelector('.kpi-sub');
+      if (subEl) {
+        subEl.textContent = largestExpenseName ? largestExpenseName.substring(0, 30) : '—';
       }
     }
   });
