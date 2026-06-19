@@ -595,14 +595,14 @@ a[href*="filter_expense"]:hover {
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
         <div class="kpi-value text-danger">${{ "{:,.2f}".format(total_expenses) }}</div>
-        <div class="kpi-sub">all time</div>
+        <div class="kpi-sub">{{ selected_year }} expenses{{ " (filtered)" if filter_expense else "" }}</div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-teal">
         <div class="kpi-top"><span class="kpi-label">Total Entries</span><i class="bi bi-receipt kpi-icon-sm"></i></div>
-        <div class="kpi-value">{{ expenses|length }}</div>
-        <div class="kpi-sub">expense records</div>
+        <div class="kpi-value">{{ exp_list_year_filtered_count }}</div>
+        <div class="kpi-sub">{{ selected_year }} records{{ " (filtered)" if filter_expense else "" }}</div>
       </div>
     </div>
     <div class="col-6 col-xl-3">

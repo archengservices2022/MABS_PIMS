@@ -4041,6 +4041,7 @@ def financial():
     total_outstanding = total_invoiced - total_paid
     exp_list_year_filtered = [e for e in exp_list if _extract_year_from_date(e.get("date", "")) == stat_card_year]
     total_expenses    = sum(_safe_float(e.get("amount", 0)) for e in exp_list_year_filtered)
+    exp_list_year_filtered_count = len(exp_list_year_filtered)
     net_profit        = total_paid - total_expenses
 
     # Monthly breakdown for chart (last 6 months)
@@ -4567,6 +4568,7 @@ def financial():
         total_paid=total_paid,
         total_outstanding=total_outstanding,
         total_expenses=total_expenses,
+        exp_list_year_filtered_count=exp_list_year_filtered_count,
         total_revenue=total_revenue,
         total_salaries=total_salaries,
         net_profit=net_profit,
