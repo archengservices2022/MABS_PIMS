@@ -1039,6 +1039,44 @@ function applyExpenseFilters() {
   renderExpenseTable();
 }
 
+function updateExpenseSummaryCards() {
+  const search = document.getElementById('expenseSearch')?.value || '';
+  const type = document.getElementById('expenseTypeFilter')?.value || '';
+  const category = document.getElementById('expenseCategoryFilter')?.value || '';
+  const dateFrom = document.getElementById('expenseDateFrom')?.value || '';
+  const dateTo = document.getElementById('expenseDateTo')?.value || '';
+  const active = search || type || category || dateFrom || dateTo;
+
+  if (!active) return; // Only update if filters are active
+
+  // Calculate totals from filtered rows
+  let filteredTotal = 0;
+  let filteredCount = 0;
+
+  expenseFilteredRows.forEach(row => {
+    const amount = parseFloat(row.querySelector('td:nth-child(7)')?.textContent.replace(/[$,]/g,'') || 0);
+    filteredTotal += amount;
+    filteredCount++;
+  });
+
+  // Find and update "Total Expenses" card by looking for the card with that label
+  const allCards = document.querySelectorAll('#tab-expenses .kpi-card');
+  allCards.forEach(card => {
+    const label = card.querySelector('.kpi-label')?.textContent?.trim();
+    if (label === 'Total Expenses') {
+      const valueEl = card.querySelector('.kpi-value');
+      if (valueEl) {
+        valueEl.textContent = '$' + filteredTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+      }
+    } else if (label === 'Total Entries') {
+      const valueEl = card.querySelector('.kpi-value');
+      if (valueEl) {
+        valueEl.textContent = filteredCount.toString();
+      }
+    }
+  });
+}
+
 function renderExpenseTable() {
   expenseFilteredRows = getVisibleExpenseRows();
   const rows = document.querySelectorAll('#expenseTableBody tr.expense-row');
@@ -1075,6 +1113,9 @@ function renderExpenseTable() {
   document.getElementById('expenseCountInfo').textContent = `${currentPageRows.length} / ${expenseFilteredRows.length} expenses`;
   document.getElementById('expensePrevBtn').disabled = expenseCurrentPage <= 1;
   document.getElementById('expenseNextBtn').disabled = expenseCurrentPage >= totalPages;
+
+  // Update summary cards when filters are applied
+  updateExpenseSummaryCards();
 }
 
 function changeExpensePerPage() {
@@ -1105,6 +1146,38 @@ function clearExpenseFilters() {
     if (el) el.value = '';
   });
   applyExpenseFilters();
+  // Reset cards to show all-time totals
+  resetExpenseSummaryCards();
+}
+
+function resetExpenseSummaryCards() {
+  // Calculate all-time totals for reset
+  const allRows = document.querySelectorAll('#expenseTableBody tr.expense-row');
+  let allTotal = 0;
+  let allCount = 0;
+
+  allRows.forEach(row => {
+    const amount = parseFloat(row.querySelector('td:nth-child(7)')?.textContent.replace(/[$,]/g,'') || 0);
+    allTotal += amount;
+    allCount++;
+  });
+
+  // Update cards with all-time totals using specific label matching
+  const allCards = document.querySelectorAll('#tab-expenses .kpi-card');
+  allCards.forEach(card => {
+    const label = card.querySelector('.kpi-label')?.textContent?.trim();
+    if (label === 'Total Expenses') {
+      const valueEl = card.querySelector('.kpi-value');
+      if (valueEl) {
+        valueEl.textContent = '$' + allTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+      }
+    } else if (label === 'Total Entries') {
+      const valueEl = card.querySelector('.kpi-value');
+      if (valueEl) {
+        valueEl.textContent = allCount.toString();
+      }
+    }
+  });
 }
 
 function setExpenseDateRange(range) {
@@ -1174,6 +1247,18 @@ function addExpense(event) {
     })
     .then(res => {
       if (res.success) {
+        // Add vendor to datalist if it's not empty and not already in the list
+        const vendorInput = document.getElementById('expenseVendor').value.trim();
+        if (vendorInput) {
+          const vendorList = document.getElementById('vendorList');
+          const existingOptions = Array.from(vendorList.querySelectorAll('option')).map(opt => opt.value);
+          if (!existingOptions.includes(vendorInput)) {
+            const newOption = document.createElement('option');
+            newOption.value = vendorInput;
+            newOption.textContent = vendorInput;
+            vendorList.appendChild(newOption);
+          }
+        }
         document.getElementById('expenseForm').reset();
         document.getElementById('expenseType').value = '';
         document.getElementById('expenseCategory').value = '';
@@ -1559,6 +1644,18 @@ function submitExpenseModal() {
     .then(r => r.json())
     .then(res => {
       if (res && res.success) {
+        // Add vendor to datalist if it's not empty and not already in the list
+        const vendorInput = document.getElementById('modalVendor').value.trim();
+        if (vendorInput) {
+          const vendorList = document.getElementById('vendorList');
+          const existingOptions = Array.from(vendorList.querySelectorAll('option')).map(opt => opt.value);
+          if (!existingOptions.includes(vendorInput)) {
+            const newOption = document.createElement('option');
+            newOption.value = vendorInput;
+            newOption.textContent = vendorInput;
+            vendorList.appendChild(newOption);
+          }
+        }
         bootstrap.Modal.getInstance(document.getElementById('expenseModal')).hide();
         location.reload();
       } else {
