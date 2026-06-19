@@ -1855,7 +1855,7 @@ function viewReceipt(expId) {
               {% set netval = (annual_netpl.get(m, 0) | float) %}
               <td style="{{ 'color:#16a34a;' if netval >= 0 else 'color:#dc2626;' }}">${{ netval | round(2) }}</td>
               {% endfor %}
-              <td id="bsNetTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ ((annual_revenue.values() | sum) - (total_expenses | default(0)) - (total_salaries | default(0))) | round(2) }}</td>
+              <td id="bsNetTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ ((annual_revenue.values() | sum) - (total_expenses | default(0))) | round(2) }}</td>
             </tr>
           </tbody>
         </table>
