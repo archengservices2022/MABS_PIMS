@@ -774,6 +774,19 @@ def quotes():
     statuses   = ["Not Started", "In Progress", "Completed", "Invoiced", "Cancelled", "Expired"]
     active_tab = request.args.get("tab", "all")
     today_date = datetime.now().strftime("%Y-%m-%d")
+
+    # KPI stats computed from all quotes (unfiltered)
+    _OPEN_STATUSES      = {"Not Started", "In Progress"}
+    _APPROVED_STATUSES  = {"Approved", "Completed"}
+    _CONVERTED_STATUSES = {"Converted", "Invoiced"}
+    q_total     = len(all_items_raw)
+    q_open      = sum(1 for q in all_items_raw if q.get("status", "Not Started") in _OPEN_STATUSES)
+    q_approved  = sum(1 for q in all_items_raw if q.get("status", "") in _APPROVED_STATUSES)
+    q_converted = sum(1 for q in all_items_raw if q.get("status", "") in _CONVERTED_STATUSES)
+    q_conv_rate = round(q_converted / q_total * 100) if q_total else 0
+    q_pipeline  = sum(_safe_float(q.get("total", 0)) for q in all_items_raw if q.get("status", "Not Started") in _OPEN_STATUSES | _APPROVED_STATUSES)
+    q_won_val   = sum(_safe_float(q.get("total", 0)) for q in all_items_raw if q.get("status", "") in _CONVERTED_STATUSES)
+
     return render_template("quotes.html", quotes=items, statuses=statuses,
                            search=search, status_filter=status_filter,
                            year_filter=year_filter, month_filter=month_filter,
@@ -783,7 +796,10 @@ def quotes():
                            upcoming_followups=upcoming_followups,
                            clients=_load_clients(), sales_people=_load_sales_people(),
                            active_tab=active_tab, today_date=today_date,
-                           next_num=_next_quote_number())
+                           next_num=_next_quote_number(),
+                           q_total=q_total, q_open=q_open, q_approved=q_approved,
+                           q_converted=q_converted, q_conv_rate=q_conv_rate,
+                           q_pipeline=q_pipeline, q_won_val=q_won_val)
 
 @app.route("/quotes/export")
 @role_required("quotes")
