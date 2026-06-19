@@ -340,7 +340,7 @@ a[href*="filter_expense"]:hover {
       <div class="kpi-card {{ 'kpi-green' if net_profit >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
         <div class="kpi-value {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(net_profit) }}</div>
-        <div class="kpi-sub">rev − exp − salaries</div>
+        <div class="kpi-sub">revenue minus expenses</div>
       </div>
     </div>
   </div>
@@ -1227,7 +1227,11 @@ document.addEventListener('DOMContentLoaded', function() {
           <div class="row g-3 mb-3">
             <div class="col-md-6">
               <label class="form-label form-label-sm fw-600">Expense Name *</label>
-              <input type="text" name="expense_name" id="modalExpenseName" class="form-control form-control-sm" required>
+              <div class="custom-dropdown">
+                <input type="text" name="expense_name" id="modalExpenseName" class="form-control form-control-sm" placeholder="Select or type name..." required>
+                <span class="dropdown-arrow">▼</span>
+                <div class="dropdown-list" id="modalExpenseNameDropdown"></div>
+              </div>
             </div>
             <div class="col-md-6">
               <label class="form-label form-label-sm fw-600">Amount ($) *</label>
@@ -1242,7 +1246,12 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
             <div class="col-md-6">
               <label class="form-label form-label-sm fw-600">Vendor</label>
-              <input type="text" name="vendor" id="modalVendor" class="form-control form-control-sm" placeholder="Vendor name">
+              <input type="text" name="vendor" id="modalVendor" class="form-control form-control-sm" placeholder="Vendor name" list="vendorList">
+              <datalist id="vendorList">
+                {% for vendor in all_vendors %}
+                <option value="{{ vendor }}">{{ vendor }}</option>
+                {% endfor %}
+              </datalist>
             </div>
           </div>
 
@@ -1341,13 +1350,42 @@ function editExpenseModal(expId, expData) {
     document.getElementById('modalVendor').value = expData.vendor || '';
     document.getElementById('modalProject').value = expData.project_number || '';
     document.getElementById('modalNotes').value = expData.notes || '';
-    document.getElementById('receiptPreview').innerHTML = '';
     receiptFile = null;
+
+    // Display existing receipt if it exists
+    const receiptPreviewDiv = document.getElementById('receiptPreview');
+    if (expData.receipt_filename) {
+      receiptPreviewDiv.innerHTML = `
+        <div class="alert alert-info py-2 px-3 small">
+          <i class="bi bi-file-earmark me-1"></i><strong>Current Receipt:</strong> ${expData.receipt_filename}
+          <button type="button" class="btn btn-xs btn-outline-danger ms-2" onclick="removeExistingReceipt('${expId}')">Remove</button>
+          <button type="button" class="btn btn-xs btn-outline-primary ms-1" onclick="viewReceipt('${expId}')">View</button>
+        </div>
+      `;
+    } else {
+      receiptPreviewDiv.innerHTML = '';
+    }
+
     new bootstrap.Modal(document.getElementById('expenseModal')).show();
   } catch (err) {
     console.error('Error in editExpenseModal:', err);
     alert('Error loading expense for edit');
   }
+}
+
+function removeExistingReceipt(expId) {
+  if (!confirm('Are you sure you want to remove this receipt?')) return;
+  fetch(`/financial/expense/${expId}/remove-receipt`, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        document.getElementById('receiptPreview').innerHTML = '';
+        alert('Receipt removed');
+      } else {
+        alert('Error removing receipt');
+      }
+    })
+    .catch(e => alert('Error: ' + e));
 }
 
 function initModalDropdowns() {
@@ -1383,9 +1421,27 @@ function initModalDropdowns() {
 
   catArrow.addEventListener('click', () => catDropdown.classList.toggle('show'));
   catInput.addEventListener('focus', () => updateModalCategoryDropdown());
+  catInput.addEventListener('change', () => updateModalExpenseNameDropdown());
   catInput.addEventListener('input', function() {
     const filter = this.value.toLowerCase();
     Array.from(catDropdown.children).forEach(option => {
+      option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
+    });
+    setTimeout(() => updateModalExpenseNameDropdown(), 50);
+  });
+
+  const nameInput = document.getElementById('modalExpenseName');
+  const nameDropdown = document.getElementById('modalExpenseNameDropdown');
+  const nameArrow = nameInput.parentElement.querySelector('.dropdown-arrow');
+
+  nameArrow.addEventListener('click', () => nameDropdown.classList.toggle('show'));
+  nameInput.addEventListener('focus', () => {
+    updateModalExpenseNameDropdown();
+    nameDropdown.classList.add('show');
+  });
+  nameInput.addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    Array.from(nameDropdown.children).forEach(option => {
       option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
     });
   });
@@ -1407,8 +1463,29 @@ function updateModalCategoryDropdown() {
     div.onclick = () => {
       catInput.value = cat;
       catDropdown.classList.remove('show');
+      updateModalExpenseNameDropdown();
     };
     catDropdown.appendChild(div);
+  });
+}
+
+function updateModalExpenseNameDropdown() {
+  const catInput = document.getElementById('modalCategory');
+  const nameInput = document.getElementById('modalExpenseName');
+  const nameDropdown = document.getElementById('modalExpenseNameDropdown');
+  const category = catInput.value;
+  const names = expenseNamesByCategory[category] || [];
+
+  nameDropdown.innerHTML = '';
+  names.forEach(name => {
+    const div = document.createElement('div');
+    div.className = 'option';
+    div.textContent = name;
+    div.onclick = () => {
+      nameInput.value = name;
+      nameDropdown.classList.remove('show');
+    };
+    nameDropdown.appendChild(div);
   });
 }
 
@@ -1724,10 +1801,10 @@ function viewReceipt(expId) {
       </div>
     </div>
     <div class="col-6 col-xl">
-      <div class="kpi-card {{ 'kpi-green' if (total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0)) >= 0 else 'kpi-red' }}">
+      <div class="kpi-card {{ 'kpi-green' if (total_revenue | default(0)) - (total_expenses | default(0)) >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit/Loss</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
-        <div id="bsKpiNet" class="kpi-value {{ 'text-success' if (total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0)) >= 0 else 'text-danger' }}">${{ "{:,.2f}".format((total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0))) }}</div>
-        <div class="kpi-sub">revenue minus expenses & salaries</div>
+        <div id="bsKpiNet" class="kpi-value {{ 'text-success' if (total_revenue | default(0)) - (total_expenses | default(0)) >= 0 else 'text-danger' }}">${{ "{:,.2f}".format((total_revenue | default(0)) - (total_expenses | default(0))) }}</div>
+        <div class="kpi-sub">revenue minus expenses</div>
       </div>
     </div>
   </div>

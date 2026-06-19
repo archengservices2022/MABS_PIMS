@@ -1233,12 +1233,6 @@ def projects():
             items.append(pdata)
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
 
-    status_counts = {}
-    for i in items:
-        st = i.get("status") or "Not Started"
-        status_counts[st] = status_counts.get(st, 0) + 1
-    overdue_count = sum(1 for i in items if i.get("_has_overdue"))
-
     search        = request.args.get("q", "").strip().lower()
     status_filter = request.args.get("status", "")
     overdue_filter = request.args.get("overdue", "")
@@ -1258,17 +1252,37 @@ def projects():
     if date_to:
         items = [i for i in items if (i.get("start_date") or i.get("created_at","")[:10]) <= date_to]
 
+    status_counts = {}
+    for i in items:
+        st = i.get("status") or "Not Started"
+        status_counts[st] = status_counts.get(st, 0) + 1
+    overdue_count = sum(1 for i in items if i.get("_has_overdue"))
+
     statuses = ["Not Started", "Active", "In Progress", "On Hold", "Completed", "Cancelled"]
     clients = _load_clients()
     next_project_num = _next_project_number()
     active_tab = request.args.get("tab", "all-projects")
 
-    # KPI stats from all projects (unfiltered)
+    # KPI stats from filtered projects
     _ACTIVE_STATUSES = {"Active", "In Progress"}
     p_total_count = len(items)
     p_total_cv    = sum(_safe_float(p.get("contract_value", 0)) for p in items)
     p_active_cv   = sum(_safe_float(p.get("contract_value", 0)) for p in items if p.get("status", "") in _ACTIVE_STATUSES)
-    p_total_paid  = sum(_safe_float(p.get("amount_paid", 0)) for p in items)
+
+    # Calculate collected amount from filtered projects' invoices
+    p_total_paid = 0.0
+    for p in items:
+        proj_num = p.get("project_number", "")
+        if proj_num:
+            for iid, idata in (raw_inv.items() if isinstance(raw_inv, dict) else []):
+                if isinstance(idata, dict) and proj_num in _invoice_linked_projects(idata):
+                    inv_meta = idata.get("meta", {}) or {}
+                    p_total_paid += _safe_float(inv_meta.get("amount_paid", 0))
+                    # Also include tax payments
+                    tax_payments = idata.get("tax_payments", [])
+                    if isinstance(tax_payments, list):
+                        p_total_paid += sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+
     p_outstanding = p_total_cv - p_total_paid
 
     return render_template("projects.html", projects=items, statuses=statuses,
@@ -2155,10 +2169,11 @@ def invoicing():
     if date_to:
         items = [i for i in items if (i.get("meta", {}).get("invoice_date") or "") <= date_to]
 
-    # Build filter dropdown lists
-    inv_clients = sorted({i.get("meta", {}).get("client_name", "") for i in items if i.get("meta", {}).get("client_name", "")})
-    # Build plant list from ALL invoices (before filtering) so dropdown always shows all options
-    all_plants = sorted({i.get("plant_state", "") for i in items if i.get("plant_state", "")})
+    # Build filter dropdown lists - show all options (like projects tab) so you can always filter by any value
+    # All clients from database
+    inv_clients = _load_clients()
+    # All plants from all invoices (before filtering)
+    all_plants = sorted({i.get("plant_state", "") for i in all_invoices_raw if i.get("plant_state", "")})
 
     # Calculate current status based on payments and auto-mark overdue
     today_str = datetime.now().strftime("%Y-%m-%d")
@@ -2173,15 +2188,20 @@ def invoicing():
     statuses = ["Draft", "Sent", "Viewed", "Paid", "Partial", "Overdue", "Cancelled"]
     active_tab = request.args.get("tab", "all-invoices")
 
-    # KPI stats from all invoices (unfiltered)
+    # KPI stats from filtered invoices (matching projects tab behavior)
     _kpi_rows = []
-    for inv in all_invoices_raw:
+    for inv in items:
         m  = inv.get("meta", {}) or {}
         st = _calculate_invoice_status(inv)
         due = m.get("due_date", "") or ""
         if st in ("Sent", "Viewed", "Partial") and due and due < today_str:
             st = "Overdue"
-        _kpi_rows.append((st, _safe_float(m.get("total", 0)), _safe_float(m.get("amount_paid", 0))))
+        total_val = _safe_float(m.get("total", 0))
+        amount_paid = _safe_float(m.get("amount_paid", 0))
+        # Include tax payments in total paid (same as projects tab)
+        tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in inv.get("tax_payments", []))
+        total_paid = amount_paid + tax_paid
+        _kpi_rows.append((st, total_val, total_paid))
 
     i_total       = len(_kpi_rows)
     i_draft_count = sum(1 for st, _, __ in _kpi_rows if st == "Draft")
@@ -3524,28 +3544,42 @@ def client_statement(client_name):
         elems.append(Paragraph(client_data["phone"], sm))
     elems.append(Spacer(1, 12))
 
-    # Invoice table
+    # Invoice table - one row per invoice with all projects listed vertically
     elems.append(Paragraph("INVOICE HISTORY", h2))
     elems.append(HRFlowable(width="100%", thickness=0.5, color=border, spaceAfter=6))
     tbl_data = [["Invoice #", "Project", "Date", "Due Date", "Status", "Total", "Paid", "Balance"]]
+
     for inv in inv_list:
         m = inv.get("meta", {})
         total = _safe_float(m.get("total", 0))
         paid  = _safe_float(m.get("amount_paid", 0))
+        tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in inv.get("tax_payments", []))
+        total_paid_with_tax = paid + tax_paid
+        balance = total - total_paid_with_tax
+
+        # Get all linked projects
+        linked_projects = _invoice_linked_projects(inv)
+        projects_list = sorted(list(linked_projects)) if linked_projects else ["—"]
+
+        # Create project column with all projects listed vertically (separated by newlines)
+        projects_text = "\n".join(projects_list)
+
+        # Add single row with invoice info and all projects stacked in one cell
         tbl_data.append([
             m.get("invoice_number", "—"),
-            m.get("project_number", "—") or "—",
+            projects_text,
             m.get("invoice_date", "—") or "—",
             m.get("due_date", "—") or "—",
             m.get("status", "—"),
             f"${total:,.2f}",
-            f"${paid:,.2f}",
-            f"${total-paid:,.2f}",
+            f"${total_paid_with_tax:,.2f}",
+            f"${balance:,.2f}",
         ])
+
     if not inv_list:
         tbl_data.append(["No invoices found.", "", "", "", "", "", "", ""])
 
-    cw = [1.0*inch, 1.0*inch, 0.85*inch, 0.85*inch, 0.8*inch, 0.8*inch, 0.8*inch, 0.8*inch]
+    cw = [1.0*inch, 1.2*inch, 0.85*inch, 0.85*inch, 0.8*inch, 0.8*inch, 0.8*inch, 0.8*inch]
     tbl = Table(tbl_data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), dark),
@@ -3553,12 +3587,13 @@ def client_statement(client_name):
         ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
         ("FONTSIZE",      (0,0), (-1,0), 8),
         ("ALIGN",         (0,0), (-1,0), "CENTER"),
-        ("TOPPADDING",    (0,0), (-1,0), 6), ("BOTTOMPADDING",(0,0),(-1,0),6),
+        ("TOPPADDING",    (0,0), (-1,0), 3), ("BOTTOMPADDING",(0,0),(-1,0),3),
         ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
         ("FONTSIZE",      (0,1), (-1,-1), 8),
         ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, light]),
         ("GRID",          (0,0), (-1,-1), 0.4, border),
-        ("TOPPADDING",    (0,1), (-1,-1), 5), ("BOTTOMPADDING",(0,1),(-1,-1),5),
+        ("TOPPADDING",    (0,1), (-1,-1), 4), ("BOTTOMPADDING",(0,1),(-1,-1),4),
+        ("VALIGN",        (0,0), (-1,-1), "TOP"),
         ("ALIGN",         (-3,1),(-1,-1), "RIGHT"),
     ]))
     elems.append(tbl)
@@ -3590,10 +3625,11 @@ def client_statement(client_name):
     doc.build(elems)
     buf.seek(0)
     from flask import Response
-    safe_name = client_name.replace(" ", "_")
+    import re
+    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '', client_name.replace(" ", "_"))
     fname = f"statement_{safe_name}_{datetime.now().strftime('%Y%m%d')}.pdf"
     return Response(buf.getvalue(), mimetype="application/pdf",
-                    headers={"Content-Disposition": f"attachment;filename={fname}"})
+                    headers={"Content-Disposition": f'attachment;filename="{fname}"'})
 
 # ── Routes: Payroll ───────────────────────────────────────────────────────────
 def _load_employee_profiles() -> list:
@@ -3864,7 +3900,7 @@ def financial():
         return list(grouped.values())
 
     # Keep BOTH versions: raw for expense tab (all individual entries), grouped for balance sheet
-    exp_list_all = sorted(exp_list_raw, key=lambda x: x.get("date", ""), reverse=True)  # Full list for expense tab (all individual entries, NOT consolidated, sorted newest first)
+    exp_list_all = sorted(exp_list_raw, key=lambda x: x.get("date", ""), reverse=False)  # Sort by expense date (oldest first)
     exp_list_grouped_all = group_expenses_by_name(exp_list_raw)  # Consolidated for reference
 
     # Filter expenses by selected year for balance sheet
@@ -3886,12 +3922,17 @@ def financial():
     exp_list_raw_filtered = filter_by_year(exp_list_raw, selected_year)
     exp_list_filtered = group_expenses_by_name(exp_list_raw_filtered)
 
-    # Filter expenses if filter_expense parameter provided (apply to all for expense tab)
+    # Filter expenses if filter_expense parameter provided (apply to both raw and grouped lists)
     if filter_expense:
         exp_list_all = [e for e in exp_list_all if (e.get("expense_name", "") or e.get("description", "—")).lower() == filter_expense.lower()]
+        # Also filter the grouped list for summary cards
+        exp_list_filtered = [e for e in exp_list_filtered if (e.get("expense_name", "") or e.get("description", "—")).lower() == filter_expense.lower()]
 
     # For balance sheet, use filtered list
     exp_list = exp_list_filtered
+
+    # Collect all unique vendors for dropdown
+    all_vendors = sorted(set(e.get("vendor", "") for e in exp_list_all if e.get("vendor", "").strip()))
 
     rev_list = []
     if isinstance(revenue, dict):
@@ -4556,6 +4597,7 @@ def financial():
         expense_entries=json.dumps(expense_entries_by_name),
         categories_by_type=json.dumps(categories_by_type),
         expense_names_by_category=json.dumps(expense_names_by_category),
+        all_vendors=all_vendors,
         today_date=today_date,
         active_tab=active_tab,
         inv_status_labels=json.dumps(list(inv_status_counts.keys())),
@@ -4616,6 +4658,25 @@ def expense_delete(exp_id):
     fb_delete(f"/balance_sheet_expenses/{exp_id}")
     flash("Expense deleted.", "success")
     return redirect(url_for("financial", tab="expenses"))
+
+@app.route("/financial/expense/<exp_id>/remove-receipt", methods=["POST"])
+@role_required("financial")
+def remove_expense_receipt(exp_id):
+    try:
+        exp_data = fb_get(f"/balance_sheet_expenses/{exp_id}") or {}
+        if isinstance(exp_data, dict):
+            exp_data.pop("receipt_base64", None)
+            exp_data.pop("receipt_filename", None)
+            exp_data.pop("receipt_type", None)
+            fb_update(f"/balance_sheet_expenses/{exp_id}", {
+                "receipt_base64": "",
+                "receipt_filename": "",
+                "receipt_type": ""
+            })
+            return jsonify({"success": True})
+        return jsonify({"success": False}), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route("/financial/expense/<exp_id>/edit", methods=["POST"])
 @role_required("financial")
@@ -4749,7 +4810,7 @@ def export_balance_sheet():
         total_revenue = sum(monthly_revenue)
         total_expenses = sum(monthly_expenses)
         total_salaries = sum(salary_inside.values()) + sum(salary_outside.values())
-        net_profit = total_revenue - total_expenses - total_salaries
+        net_profit = total_revenue - total_expenses
 
         # Create workbook
         wb = Workbook()
@@ -7261,11 +7322,12 @@ def quote_to_invoice(quote_id):
 @role_required("quotes")
 def quote_pdf(quote_id):
     try:
-        from reportlab.lib.pagesizes import A4
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
+        from reportlab.lib.pagesizes import letter
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib import colors
         from reportlab.lib.units import inch, mm
+        from pathlib import Path
     except ImportError:
         flash("reportlab not installed.", "danger")
         return redirect(url_for("quote_detail", quote_id=quote_id))
@@ -7277,129 +7339,412 @@ def quote_pdf(quote_id):
 
     co = company_info()
     buf = _io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4,
-                            leftMargin=0.75*inch, rightMargin=0.75*inch,
-                            topMargin=0.75*inch, bottomMargin=0.75*inch)
+    doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=0.35*inch, rightMargin=0.35*inch,
+                            topMargin=0.08*inch, bottomMargin=0.5*inch)
     styles = getSampleStyleSheet()
     elems = []
 
-    teal   = colors.HexColor("#0F766E")
-    dark   = colors.HexColor("#0F172A")
-    muted  = colors.HexColor("#64748B")
-    light  = colors.HexColor("#F8FAFC")
-    border = colors.HexColor("#E2E8F0")
+    dark_gray = colors.HexColor("#333333")
+    light_blue = colors.HexColor("#B6DDE8")
+    light_green = colors.HexColor("#B6D7A8")
+    light_red = colors.HexColor("#EA9999")
+    border_col = colors.HexColor("#000000")
+    teal_line = colors.HexColor("#0D9488")
 
-    h1  = ParagraphStyle("h1",  parent=styles["Normal"], fontSize=20, fontName="Helvetica-Bold", textColor=teal)
-    h2  = ParagraphStyle("h2",  parent=styles["Normal"], fontSize=11, fontName="Helvetica-Bold", textColor=dark, spaceBefore=10, spaceAfter=4)
-    lbl = ParagraphStyle("lbl", parent=styles["Normal"], fontSize=8,  fontName="Helvetica-Bold", textColor=muted, spaceAfter=1)
-    val = ParagraphStyle("val", parent=styles["Normal"], fontSize=10, fontName="Helvetica",       textColor=dark, spaceAfter=6)
-    sm  = ParagraphStyle("sm",  parent=styles["Normal"], fontSize=9,  fontName="Helvetica",       textColor=muted)
+    form_label = ParagraphStyle("fl", parent=styles["Normal"], fontSize=9, fontName="Helvetica-Bold", textColor=dark_gray)
+    form_value = ParagraphStyle("fv", parent=styles["Normal"], fontSize=9, fontName="Helvetica", textColor=dark_gray)
+    section_title = ParagraphStyle("st", parent=styles["Normal"], fontSize=11, fontName="Helvetica-Bold", textColor=dark_gray)
+    checkbox_style = ParagraphStyle("cs", parent=styles["Normal"], fontSize=8, fontName="Helvetica", textColor=dark_gray)
 
-    # ── Header ──
-    addr = (co.get("address","") or "").replace("\n", " | ")
-    hdr_data = [[
-        Paragraph(f"<b>{co.get('name','')}</b>", ParagraphStyle("cn", parent=styles["Normal"], fontSize=14, fontName="Helvetica-Bold", textColor=dark)),
-        Paragraph("QUOTE", ParagraphStyle("qt", parent=styles["Normal"], fontSize=24, fontName="Helvetica-Bold", textColor=teal, alignment=2)),
-    ],[
-        Paragraph(f"{addr}<br/>{co.get('phone','')}  |  {co.get('email','')}", sm),
-        Paragraph(f"<b>#{quote.get('job_number','')}</b>", ParagraphStyle("qn", parent=styles["Normal"], fontSize=12, fontName="Helvetica-Bold", textColor=dark, alignment=2)),
-    ]]
-    hdr = Table(hdr_data, colWidths=[3.5*inch, 3.5*inch])
-    hdr.setStyle(TableStyle([
-        ("VALIGN", (0,0), (-1,-1), "TOP"),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
-    ]))
-    elems.append(hdr)
-    elems.append(HRFlowable(width="100%", thickness=2, color=teal, spaceAfter=12))
+    # Logo + Header
+    logo_path = Path(__file__).parent / "static" / "logo.png"
+    if logo_path.exists():
+        try:
+            logo = Image(str(logo_path), width=1.0*inch, height=0.85*inch)
+            hdr_data = [[logo, Paragraph(f"<b>{co.get('name','MABS Engineering LLC')}</b>", ParagraphStyle("cn", parent=styles["Normal"], fontSize=22, fontName="Helvetica-Bold", textColor=dark_gray, alignment=1))]]
+            hdr = Table(hdr_data, colWidths=[1.0*inch, doc.width - 1.0*inch])
+            hdr.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (1,0), (1,0), "CENTER"), ("LINEBELOW", (0,0), (-1,-1), 2, teal_line), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (1,0), (1,0), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0)]))
+            elems.append(hdr)
+        except (IOError, OSError):
+            elems.append(Paragraph(co.get('name','MABS Engineering LLC'), ParagraphStyle("cn", parent=styles["Normal"], fontSize=16, fontName="Helvetica-Bold", textColor=dark_gray)))
 
-    # ── Meta row ──
-    meta_data = [[
-        Paragraph("PREPARED FOR", lbl),
-        Paragraph("DATE", lbl),
-        Paragraph("VALID UNTIL", lbl),
-        Paragraph("STATUS", lbl),
-    ],[
-        Paragraph(quote.get("client_name","—"), val),
-        Paragraph(quote.get("date","—"), val),
-        Paragraph(quote.get("valid_until","—"), val),
-        Paragraph(quote.get("status","—"), val),
-    ]]
-    mt = Table(meta_data, colWidths=[2*inch, 1.5*inch, 1.5*inch, 1.5*inch])
-    mt.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"TOP"), ("LEFTPADDING",(0,0),(-1,-1),0)]))
-    elems.append(mt)
+    elems.append(Spacer(1, 0.08*inch))
 
-    # ── Scope ──
-    if quote.get("project_name"):
-        elems.append(Spacer(1, 8))
-        elems.append(Paragraph("PROJECT / SCOPE", lbl))
-        elems.append(Paragraph(quote.get("project_name",""), val))
-    if quote.get("description"):
-        elems.append(Paragraph("DESCRIPTION", lbl))
-        elems.append(Paragraph(quote.get("description",""), sm))
+    # Title with optional sales person
+    sales_person = quote.get('salesperson', '')
+    fixed_sales_width = 2.0*inch
+    center_width = (doc.width - fixed_sales_width) / 2
+    right_width = (doc.width - fixed_sales_width) / 2
 
-    # ── Line items ──
-    elems.append(Spacer(1, 10))
-    elems.append(Paragraph("LINE ITEMS", h2))
-    li_hdr = [["Description", "Qty", "Unit Price", "Amount"]]
-    li_rows = []
-    for item in quote.get("line_items", []):
-        li_rows.append([
-            item.get("description",""),
-            str(item.get("quantity","")),
-            f"${_safe_float(item.get('unit_price',0)):,.2f}",
-            f"${_safe_float(item.get('total',item.get('amount',0))):,.2f}",
-        ])
-    if not li_rows:
-        li_rows = [["No line items", "", "", ""]]
-    li_data = li_hdr + li_rows
-    li_cw = [3.4*inch, 0.7*inch, 1.2*inch, 1.2*inch]
-    li_tbl = Table(li_data, colWidths=li_cw, repeatRows=1)
-    li_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), dark),
-        ("TEXTCOLOR",  (0,0), (-1,0), colors.white),
-        ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
-        ("FONTSIZE",   (0,0), (-1,0), 9),
-        ("ALIGN",      (1,0), (-1,-1), "RIGHT"),
-        ("FONTNAME",   (0,1), (-1,-1), "Helvetica"),
-        ("FONTSIZE",   (0,1), (-1,-1), 9),
-        ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white, light]),
-        ("GRID",       (0,0), (-1,-1), 0.4, border),
-        ("TOPPADDING", (0,0), (-1,-1), 6),
-        ("BOTTOMPADDING",(0,0),(-1,-1),6),
-    ]))
-    elems.append(li_tbl)
-
-    # ── Totals ──
-    tax_rate = _safe_float(quote.get("tax_rate", 0))
-    totals = [
-        ["Subtotal", f"${_safe_float(quote.get('subtotal',0)):,.2f}"],
-        [f"Tax ({tax_rate:.2g}%)", f"${_safe_float(quote.get('tax_amount',0)):,.2f}"],
-        ["TOTAL DUE", f"${_safe_float(quote.get('total',0)):,.2f}"],
+    title_data = [
+        [
+            Paragraph(f"<b>Sales: {sales_person}</b>" if sales_person else "", ParagraphStyle("sp", parent=styles["Normal"], fontSize=9, fontName="Helvetica-Bold", textColor=dark_gray, alignment=1)),
+            Paragraph("<u>New Job Request Form</u>", ParagraphStyle("title", parent=styles["Normal"], fontSize=12, fontName="Helvetica-Bold", textColor=dark_gray, alignment=1)),
+            Paragraph("", ParagraphStyle("title", parent=styles["Normal"]))
+        ]
     ]
-    tot_tbl = Table(totals, colWidths=[5.9*inch, 0.6*inch])
-    tot_tbl.setStyle(TableStyle([
-        ("ALIGN",      (0,0), (-1,-1), "RIGHT"),
-        ("FONTNAME",   (0,0), (-1,-1), "Helvetica"),
-        ("FONTSIZE",   (0,0), (-1,-1), 9),
-        ("FONTNAME",   (0,2), (-1,2),  "Helvetica-Bold"),
-        ("FONTSIZE",   (0,2), (-1,2),  11),
-        ("TEXTCOLOR",  (0,2), (-1,2),  teal),
-        ("LINEABOVE",  (0,2), (-1,2),  1, teal),
-        ("TOPPADDING", (0,0), (-1,-1), 4),
+
+    title_table = Table(title_data, colWidths=[fixed_sales_width, center_width, right_width])
+
+    table_style = [
+        ('ALIGN', (1,0), (1,0), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]
+
+    if sales_person:
+        table_style.extend([
+            ('BACKGROUND', (0,0), (0,0), colors.HexColor("#D9EEF7")),
+            ('BORDER', (0,0), (0,0), 1, colors.HexColor("#5B9DBE")),
+            ('ALIGN', (0,0), (0,0), 'CENTER'),
+            ('LEFTPADDING', (0,0), (0,0), 3),
+            ('RIGHTPADDING', (0,0), (0,0), 3),
+            ('TOPPADDING', (0,0), (0,0), 2),
+            ('BOTTOMPADDING', (0,0), (0,0), 2),
+        ])
+
+    title_table.setStyle(TableStyle(table_style))
+    elems.append(title_table)
+    elems.append(Spacer(1, 0.05*inch))
+
+    elems.append(Spacer(1, 0.15*inch))
+
+    def add_form_field(label, value):
+        field_table = Table(
+            [[Paragraph(f"<b>{label}</b>", form_label), Paragraph(":", form_label), Paragraph(value, form_value)]],
+            colWidths=[55*mm, 5*mm, doc.width - 60*mm]
+        )
+        field_table.setStyle(TableStyle([
+            ("FONTSIZE", (0,0), (-1,-1), 9),
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+            ("TOPPADDING", (0,0), (-1,-1), 2),
+        ]))
+        elems.append(field_table)
+
+    add_form_field("Quote Number", quote.get('job_number',''))
+    add_form_field("Client / Company Name", quote.get('client_name',''))
+    add_form_field("Project Name", quote.get('project_name',''))
+    add_form_field("Scope of Work", quote.get('description',''))
+
+    elems.append(Spacer(1, 1*mm))
+
+    eng_rows = [
+        [Paragraph("<b>Engineering Costs:</b>", section_title)]
+    ]
+    eng_cost_style = ParagraphStyle("ec", parent=styles["Normal"], fontSize=9, fontName="Helvetica", textColor=dark_gray, leftIndent=8*mm)
+
+    agreed_cost = quote.get('subtotal', '')
+    expedite = quote.get('is_expedited', False)
+    expedite_amount = quote.get('rush_fee', '') or quote.get('rushFee', '')
+    total_amount = quote.get('total', '')
+
+    if agreed_cost:
+        agreed_cost_val = str(agreed_cost).replace('$', '').strip()
+        expedite_checkbox = "[✓]" if expedite else "[ ]"
+        if expedite and expedite_amount and str(expedite_amount).strip():
+            expedite_val = str(expedite_amount).replace('$', '').strip()
+        else:
+            expedite_val = "________"
+        cost_line = f"Agreed Cost: {agreed_cost_val}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Expedite? {expedite_checkbox} Yes, 50% Extra ( ) No:</b> {expedite_val}"
+    else:
+        cost_line = "Agreed Cost: ________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Expedite? ( ) Yes, 50% Extra ( ) No:</b> ________"
+
+    eng_rows.append([Paragraph(cost_line, eng_cost_style)])
+
+    if total_amount:
+        try:
+            total_val = float(str(total_amount).replace('$', '').strip())
+            total_line = f"<b>TOTAL: ${total_val:,.2f}</b>"
+        except (ValueError, TypeError):
+            total_line = "TOTAL: ________"
+    else:
+        total_line = "TOTAL: ________"
+
+    eng_rows.append([Paragraph(total_line, eng_cost_style)])
+
+    eng_table = Table(eng_rows, colWidths=[doc.width])
+    eng_table.setStyle(TableStyle([
+        ("ALIGN", (0,0), (-1,-1), "LEFT"),
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("TOPPADDING", (0,0), (-1,-1), 1.5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 3),
     ]))
-    elems.append(tot_tbl)
+    elems.append(eng_table)
+    elems.append(Spacer(1, 1.5*mm))
 
-    # ── Notes / Terms ──
-    if quote.get("notes"):
-        elems.append(Spacer(1, 10))
-        elems.append(Paragraph("NOTES", lbl))
-        elems.append(Paragraph(quote.get("notes",""), sm))
-    if quote.get("terms"):
-        elems.append(Spacer(1, 6))
-        elems.append(Paragraph("TERMS & CONDITIONS", lbl))
-        elems.append(Paragraph(quote.get("terms",""), sm))
+    elems.append(Paragraph("<b>In the case of Court Appearance or Disposition:</b> N/A", form_value))
+    elems.append(Paragraph("Rate: $250/hour (portal-to-portal)", form_value))
+    elems.append(Spacer(1, 0.12*inch))
 
-    doc.build(elems)
+    def add_section_title(label):
+        title_para = Paragraph(f"<b>{label}</b>", section_title)
+        title_table = Table([[title_para]], colWidths=[doc.width])
+        title_table.setStyle(TableStyle([
+            ("TEXTCOLOR", (0,0), (-1,-1), dark_gray),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+            ("TOPPADDING", (0,0), (-1,-1), 1),
+            ("ALIGN", (0,0), (-1,-1), "LEFT"),
+        ]))
+        elems.append(title_table)
+        elems.append(Spacer(1, 0.5*mm))
+
+    add_section_title("Services Required :")
+
+    all_services = ["Mechanical", "Electrical", "Civil", "Structural", "Plumbing", "HVAC", "Fire Protection", "Geotechnical", "Environmental", "Other"]
+
+    selected_services = quote.get('service_types', [])
+
+    custom_services = [svc for svc in selected_services if svc not in all_services]
+
+    svc_items = []
+    for svc in all_services:
+        if svc == "Other" and custom_services:
+            continue
+
+        if svc in selected_services:
+            svc_items.append(f"[✓] {svc}")
+        else:
+            svc_items.append(f"[ ] {svc}")
+
+    for svc in custom_services:
+        svc_items.append(f"[✓] {svc}")
+
+    svc_grid = []
+    for i in range(0, len(svc_items), 3):
+        row = []
+        for j in range(3):
+            if i+j < len(svc_items):
+                row.append(Paragraph(svc_items[i+j], checkbox_style))
+            else:
+                row.append(Paragraph("", checkbox_style))
+        svc_grid.append(row)
+
+    if not svc_grid:
+        svc_grid = [[Paragraph("[ ] Mechanical", checkbox_style), Paragraph("[ ] Electrical", checkbox_style), Paragraph("[ ] Civil", checkbox_style)],
+                    [Paragraph("[ ] Structural", checkbox_style), Paragraph("[ ] Plumbing", checkbox_style), Paragraph("[ ] HVAC", checkbox_style)],
+                    [Paragraph("[ ] Fire Protection", checkbox_style), Paragraph("[ ] Geotechnical", checkbox_style), Paragraph("[ ] Environmental", checkbox_style)],
+                    [Paragraph("[ ] Other", checkbox_style), Paragraph("", checkbox_style), Paragraph("", checkbox_style)]]
+
+    svc_table = Table(svc_grid, colWidths=[doc.width/3, doc.width/3, doc.width/3])
+    svc_table.setStyle(TableStyle([
+        ("ALIGN", (0,0), (-1,-1), "LEFT"),
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("FONTSIZE", (0,0), (-1,-1), 9),
+        ("LEFTPADDING", (0,0), (-1,-1), 6),
+        ("RIGHTPADDING", (0,0), (-1,-1), 2),
+        ("TOPPADDING", (0,0), (-1,-1), 1),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+    ]))
+    elems.append(svc_table)
+    elems.append(Spacer(1, 1.5*mm))
+
+    elems.append(Spacer(1, 1.5*mm))
+    add_section_title("Payment Information")
+
+    pay_warning_table = Table([
+        [Paragraph("<b>A 50% DOWN PAYMENT IS REQUIRED TO INITIATE</b>", ParagraphStyle("warning", parent=styles["Normal"], fontSize=9, fontName="Helvetica-Bold", textColor=colors.red, alignment=1))]
+    ], colWidths=[doc.width])
+    pay_warning_table.setStyle(TableStyle([
+        ("BOX", (0,0), (-1,-1), 1, border_col),
+        ("BACKGROUND", (0,0), (-1,-1), colors.white),
+        ("ALIGN", (0,0), (-1,-1), "CENTER"),
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("TOPPADDING", (0,0), (-1,-1), 1*mm),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 1*mm),
+    ]))
+    elems.append(pay_warning_table)
+
+    qr_path = Path(__file__).parent / "static" / "venmo.png"
+    qr_image = None
+    if qr_path.exists():
+        try:
+            qr_image = Image(str(qr_path), width=35*mm, height=35*mm)
+        except:
+            pass
+
+    available_width = doc.width
+
+    left_section = [
+        Table(
+            [[Paragraph("<b>Option 1: Check</b>", form_label)]],
+            colWidths=[available_width * 0.60],
+            rowHeights=[7*mm],
+            style=TableStyle([
+                ("BACKGROUND", (0,0), (-1,-1), light_blue),
+                ("BOX", (0,0), (-1,-1), 0.7, colors.black),
+                ("ALIGN", (0,0), (-1,-1), "LEFT"),
+                ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ])
+        ),
+        Table(
+            [[Paragraph(f"<b>Payable to:</b> {co.get('name','MABS Engineering LLC')}<br/><b>Mailing Address:</b> 15455 Manchester Rd, PO Box 1144 Manchester, MO 63011", form_value)]],
+            colWidths=[available_width * 0.60],
+            style=TableStyle([
+                ("ALIGN", (0,0), (-1,-1), "LEFT"),
+                ("VALIGN", (0,0), (-1,-1), "TOP"),
+                ("TOPPADDING", (0,0), (-1,-1), 2*mm),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 2*mm),
+                ("LEFTPADDING", (0,0), (-1,-1), 4*mm),
+            ])
+        ),
+        Table(
+            [[Paragraph("<b>Option 3: Bank ACH Transfer</b>", form_label)]],
+            colWidths=[available_width * 0.60],
+            rowHeights=[7*mm],
+            style=TableStyle([
+                ("BACKGROUND", (0,0), (-1,-1), light_red),
+                ("BOX", (0,0), (-1,-1), 0.7, colors.black),
+                ("ALIGN", (0,0), (-1,-1), "LEFT"),
+                ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ])
+        ),
+        Table(
+            [[Paragraph("<b>Account Type:</b> Checking<br/><b>Bank Name:</b> BMO Harris Bank<br/><b>Routing Number:</b> 071025661<br/><b>Acct. Number:</b> 4834994317", form_value)]],
+            colWidths=[available_width * 0.60],
+            style=TableStyle([
+                ("ALIGN", (0,0), (-1,-1), "LEFT"),
+                ("VALIGN", (0,0), (-1,-1), "TOP"),
+                ("TOPPADDING", (0,0), (-1,-1), 2*mm),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 2*mm),
+                ("LEFTPADDING", (0,0), (-1,-1), 4*mm),
+            ])
+        ),
+    ]
+
+    right_section = [
+        Table(
+            [[Paragraph("<b>Option 2: Zelle QR code</b>", form_label)]],
+            colWidths=[available_width * 0.40],
+            rowHeights=[7*mm],
+            style=TableStyle([
+                ("BACKGROUND", (0,0), (-1,-1), light_green),
+                ("BOX", (0,0), (-1,-1), 0.8, colors.black),
+                ("ALIGN", (0,0), (-1,-1), "LEFT"),
+                ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ])
+        ),
+        Spacer(1, 1*mm),
+    ]
+
+    if qr_image:
+        right_section.append(
+            Table(
+                [[qr_image]],
+                style=TableStyle([
+                    ("ALIGN", (0,0), (-1,-1), "CENTER"),
+                    ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+                    ("TOPPADDING", (0,0), (-1,-1), 1*mm),
+                    ("BOTTOMPADDING", (0,0), (-1,-1), 1*mm),
+                ])
+            )
+        )
+
+    right_section.append(
+        Paragraph(
+            "Scan to pay with Zelle",
+            ParagraphStyle("qr_text", parent=styles["Normal"], fontSize=8, alignment=1)
+        )
+    )
+
+    payment_data = [[left_section, right_section]]
+    pay_table = Table(
+        payment_data,
+        colWidths=[available_width * 0.60, available_width * 0.40]
+    )
+
+    pay_table.setStyle(TableStyle([
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("ALIGN", (0,0), (-1,-1), "CENTER"),
+        ("BOX", (0,0), (-1,-1), 1, colors.black),
+        ("INNERGRID", (0,0), (-1,-1), 0.5, colors.black),
+        ("LEFTPADDING", (0,0), (-1,-1), 0),
+        ("RIGHTPADDING", (0,0), (-1,-1), 0),
+        ("TOPPADDING", (0,0), (-1,-1), 0),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 0),
+    ]))
+
+    elems.append(pay_table)
+    elems.append(Spacer(1, 1*mm))
+
+    elems.append(Spacer(1, 1.5*mm))
+
+    agreement_title = Paragraph("<b>Client Agreement :</b>", section_title)
+    agreement_title_table = Table([[agreement_title]], colWidths=[doc.width])
+    agreement_title_table.setStyle(TableStyle([
+        ("TEXTCOLOR", (0,0), (-1,-1), dark_gray),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 1),
+        ("TOPPADDING", (0,0), (-1,-1), 1),
+        ("ALIGN", (0,0), (-1,-1), "LEFT"),
+    ]))
+    elems.append(agreement_title_table)
+    elems.append(Spacer(1, 0.6*mm))
+
+    agreement_style = ParagraphStyle(
+        "agreement",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8,
+        leading=10,
+        textColor=dark_gray,
+        leftIndent=20,
+    )
+
+    elems.append(Spacer(1, 0.5*mm))
+    elems.append(Paragraph(
+        "By signing below, the client agrees to provide necessary documents, respond to RFIs within 3 business days, "
+        "and acknowledges that deliverables will be considered final if no response is received within 10 business days.",
+        agreement_style
+    ))
+
+    elems.append(Spacer(1, 1.5*mm))
+
+    sig_table = Table([
+        [Paragraph("Client Signature :", form_value), Paragraph("Date :", form_value)]
+    ], colWidths=[doc.width * 0.75, doc.width * 0.25])
+    sig_table.setStyle(TableStyle([
+        ("FONTSIZE", (0,0), (-1,-1), 9),
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("LEFTPADDING", (0,0), (-1,-1), 0),
+    ]))
+    elems.append(sig_table)
+    elems.append(Spacer(1, -2*mm))
+
+    def quote_footer(canvas, doc_obj):
+        canvas.saveState()
+
+        footer_blue = colors.HexColor("#003D82")
+
+        canvas.setLineWidth(0.5)
+        canvas.setStrokeColor(footer_blue)
+        canvas.line(doc_obj.leftMargin, 0.72*inch, doc_obj.width + doc_obj.leftMargin, 0.72*inch)
+
+        footer_style = ParagraphStyle(
+            name="FooterStyle",
+            alignment=1,
+            fontName="Helvetica",
+            fontSize=7,
+            textColor=footer_blue,
+            leading=9
+        )
+
+        footer_lines = [
+            "Note: As the CEO of MABS Engineering LLC, Dr. Ashiq reserves the right to change or cancel this policy at any time, at his discretion.",
+            f"Address: {co.get('address','15455 Manchester Rd, PO Box 1144, Ballwin, MO 63011')}",
+            f"Telephone: {co.get('phone','(314) 585-2003')} • {co.get('email','info@mabs-engineering.com')}",
+            co.get('website','www.mabs-engineering.com')
+        ]
+
+        y_position = 0.55*inch
+
+        for line in footer_lines:
+            p = Paragraph(line, footer_style)
+            w, h = p.wrap(doc_obj.width - 1*inch, 12*mm)
+            p.drawOn(canvas, doc_obj.leftMargin + 0.5*inch, y_position)
+            y_position -= 3*mm
+
+        canvas.restoreState()
+
+    doc.build(elems, onFirstPage=quote_footer, onLaterPages=quote_footer)
     buf.seek(0)
     from flask import Response
     fname = f"Quote_{quote.get('job_number','')}.pdf"
