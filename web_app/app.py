@@ -1262,13 +1262,25 @@ def projects():
     clients = _load_clients()
     next_project_num = _next_project_number()
     active_tab = request.args.get("tab", "all-projects")
+
+    # KPI stats from all projects (unfiltered)
+    _ACTIVE_STATUSES = {"Active", "In Progress"}
+    p_total_count = len(items)
+    p_total_cv    = sum(_safe_float(p.get("contract_value", 0)) for p in items)
+    p_active_cv   = sum(_safe_float(p.get("contract_value", 0)) for p in items if p.get("status", "") in _ACTIVE_STATUSES)
+    p_total_paid  = sum(_safe_float(p.get("amount_paid", 0)) for p in items)
+    p_outstanding = p_total_cv - p_total_paid
+
     return render_template("projects.html", projects=items, statuses=statuses,
                            search=search, status_filter=status_filter,
                            overdue_filter=overdue_filter, overdue_count=overdue_count,
                            date_from=date_from, date_to=date_to,
                            client_filter=client_filter,
                            clients=clients, next_project_num=next_project_num,
-                           active_tab=active_tab, status_counts=status_counts)
+                           active_tab=active_tab, status_counts=status_counts,
+                           p_total_count=p_total_count, p_total_cv=p_total_cv,
+                           p_active_cv=p_active_cv, p_total_paid=p_total_paid,
+                           p_outstanding=p_outstanding)
 
 @app.route("/projects/new", methods=["GET", "POST"])
 @role_required("projects")
@@ -2121,6 +2133,7 @@ def invoicing():
             idata["plant_state"] = proj_plant_map.get(proj_num, "")
             items.append(idata)
     items.sort(key=lambda x: x.get("meta", {}).get("created_at", ""), reverse=True)
+    all_invoices_raw = list(items)
 
     search        = request.args.get("q", "").strip().lower()
     status_filter = request.args.get("status", "")
@@ -2159,12 +2172,39 @@ def invoicing():
 
     statuses = ["Draft", "Sent", "Viewed", "Paid", "Partial", "Overdue", "Cancelled"]
     active_tab = request.args.get("tab", "all-invoices")
+
+    # KPI stats from all invoices (unfiltered)
+    _kpi_rows = []
+    for inv in all_invoices_raw:
+        m  = inv.get("meta", {}) or {}
+        st = _calculate_invoice_status(inv)
+        due = m.get("due_date", "") or ""
+        if st in ("Sent", "Viewed", "Partial") and due and due < today_str:
+            st = "Overdue"
+        _kpi_rows.append((st, _safe_float(m.get("total", 0)), _safe_float(m.get("amount_paid", 0))))
+
+    i_total       = len(_kpi_rows)
+    i_draft_count = sum(1 for st, _, __ in _kpi_rows if st == "Draft")
+    i_sent_count  = sum(1 for st, _, __ in _kpi_rows if st in ("Sent", "Viewed"))
+    i_paid_count  = sum(1 for st, _, __ in _kpi_rows if st == "Paid")
+    i_over_count  = sum(1 for st, _, __ in _kpi_rows if st == "Overdue")
+    i_total_val   = sum(total for _, total, __ in _kpi_rows)
+    i_total_paid  = sum(paid for _, __, paid in _kpi_rows)
+    i_outstanding = i_total_val - i_total_paid
+    i_coll_rate   = round(i_total_paid / i_total_val * 100) if i_total_val else 0
+    i_overdue_amt = sum(total for st, total, __ in _kpi_rows if st == "Overdue")
+
     return render_template("invoicing.html", invoices=items, statuses=statuses,
                            search=search, status_filter=status_filter,
                            date_from=date_from, date_to=date_to,
                            client_filter=client_filter, inv_clients=inv_clients,
                            plant_filter=plant_filter, inv_plants=all_plants,
-                           active_tab=active_tab)
+                           active_tab=active_tab,
+                           i_total=i_total, i_draft_count=i_draft_count,
+                           i_sent_count=i_sent_count, i_paid_count=i_paid_count,
+                           i_over_count=i_over_count, i_total_val=i_total_val,
+                           i_total_paid=i_total_paid, i_outstanding=i_outstanding,
+                           i_coll_rate=i_coll_rate, i_overdue_amt=i_overdue_amt)
 
 @app.route("/api/projects/<project_ids>", methods=["GET"])
 @role_required("projects")
