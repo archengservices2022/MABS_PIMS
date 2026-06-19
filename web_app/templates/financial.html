@@ -820,7 +820,11 @@ a[href*="filter_expense"]:hover {
         </div>
         <div class="col-md-6">
           <label class="form-label form-label-sm fw-600">Vendor</label>
-          <input type="text" name="vendor" id="expenseVendor" class="form-control form-control-sm" placeholder="Vendor name">
+          <div class="custom-dropdown">
+            <input type="text" name="vendor" id="expenseVendor" class="form-control form-control-sm" placeholder="Vendor name or select...">
+            <span class="dropdown-arrow">▼</span>
+            <div class="dropdown-list" id="expenseVendorDropdown"></div>
+          </div>
         </div>
       </div>
 
@@ -864,6 +868,7 @@ const categoriesByType = {{ categories_by_type|safe }};
 const expenseNamesByCategory = {{ expense_names_by_category|safe }};
 const expenseTypesList = {{ expense_types|tojson }};
 const projectsList = {{ projects|tojson|safe }};
+let vendorList = {{ all_vendors|tojson }};
 
 function initExpenseFormDropdowns() {
   const typeInput = document.getElementById('expenseType');
@@ -903,6 +908,41 @@ function initExpenseFormDropdowns() {
     const filter = this.value.toLowerCase();
     Array.from(catDropdown.children).forEach(opt => {
       opt.style.display = opt.textContent.toLowerCase().includes(filter) ? '' : 'none';
+    });
+  });
+
+  // Initialize vendor dropdown for New Expense form
+  const vendorInput = document.getElementById('expenseVendor');
+  const vendorDropdown = document.getElementById('expenseVendorDropdown');
+  const vendorArrow = vendorInput.parentElement.querySelector('.dropdown-arrow');
+
+  function populateVendorDropdown() {
+    vendorDropdown.innerHTML = '';
+    vendorList.forEach(vendor => {
+      const div = document.createElement('div');
+      div.className = 'option';
+      div.textContent = vendor;
+      div.onclick = () => {
+        vendorInput.value = vendor;
+        vendorDropdown.classList.remove('show');
+      };
+      vendorDropdown.appendChild(div);
+    });
+  }
+
+  vendorArrow.addEventListener('click', () => {
+    vendorDropdown.classList.toggle('show');
+  });
+
+  vendorInput.addEventListener('focus', () => {
+    populateVendorDropdown();
+    vendorDropdown.classList.add('show');
+  });
+
+  vendorInput.addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    Array.from(vendorDropdown.children).forEach(option => {
+      option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
     });
   });
 }
@@ -1301,17 +1341,11 @@ function addExpense(event) {
     })
     .then(res => {
       if (res.success) {
-        // Add vendor to datalist if it's not empty and not already in the list
+        // Add vendor to vendor list if it's not empty and not already in the list
         const vendorInput = document.getElementById('expenseVendor').value.trim();
-        if (vendorInput) {
-          const vendorList = document.getElementById('vendorList');
-          const existingOptions = Array.from(vendorList.querySelectorAll('option')).map(opt => opt.value);
-          if (!existingOptions.includes(vendorInput)) {
-            const newOption = document.createElement('option');
-            newOption.value = vendorInput;
-            newOption.textContent = vendorInput;
-            vendorList.appendChild(newOption);
-          }
+        if (vendorInput && !vendorList.includes(vendorInput)) {
+          vendorList.push(vendorInput);
+          vendorList.sort();
         }
         document.getElementById('expenseForm').reset();
         document.getElementById('expenseType').value = '';
@@ -1403,12 +1437,11 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
             <div class="col-md-6">
               <label class="form-label form-label-sm fw-600">Vendor</label>
-              <input type="text" name="vendor" id="modalVendor" class="form-control form-control-sm" placeholder="Vendor name" list="vendorList">
-              <datalist id="vendorList">
-                {% for vendor in all_vendors %}
-                <option value="{{ vendor }}">{{ vendor }}</option>
-                {% endfor %}
-              </datalist>
+              <div class="custom-dropdown">
+                <input type="text" name="vendor" id="modalVendor" class="form-control form-control-sm" placeholder="Vendor name or select...">
+                <span class="dropdown-arrow">▼</span>
+                <div class="dropdown-list" id="modalVendorDropdown"></div>
+              </div>
             </div>
           </div>
 
@@ -1599,6 +1632,48 @@ function initModalDropdowns() {
       option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
     });
   });
+
+  // Initialize vendor dropdown
+  const vendorInput = document.getElementById('modalVendor');
+  const vendorDropdown = document.getElementById('modalVendorDropdown');
+  const vendorArrow = vendorInput.parentElement.querySelector('.dropdown-arrow');
+
+  function populateVendorDropdown() {
+    vendorDropdown.innerHTML = '';
+    vendorList.forEach(vendor => {
+      const div = document.createElement('div');
+      div.className = 'option';
+      div.textContent = vendor;
+      div.onclick = () => {
+        vendorInput.value = vendor;
+        vendorDropdown.classList.remove('show');
+      };
+      vendorDropdown.appendChild(div);
+    });
+  }
+
+  vendorArrow.addEventListener('click', () => {
+    vendorDropdown.classList.toggle('show');
+  });
+
+  vendorInput.addEventListener('focus', () => {
+    populateVendorDropdown();
+    vendorDropdown.classList.add('show');
+  });
+
+  vendorInput.addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    Array.from(vendorDropdown.children).forEach(option => {
+      option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
+    });
+  });
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', function(event) {
+    if (!vendorInput.parentElement.contains(event.target)) {
+      vendorDropdown.classList.remove('show');
+    }
+  });
 }
 
 function updateModalCategoryDropdown() {
@@ -1698,17 +1773,11 @@ function submitExpenseModal() {
     .then(r => r.json())
     .then(res => {
       if (res && res.success) {
-        // Add vendor to datalist if it's not empty and not already in the list
+        // Add vendor to vendor list if it's not empty and not already in the list
         const vendorInput = document.getElementById('modalVendor').value.trim();
-        if (vendorInput) {
-          const vendorList = document.getElementById('vendorList');
-          const existingOptions = Array.from(vendorList.querySelectorAll('option')).map(opt => opt.value);
-          if (!existingOptions.includes(vendorInput)) {
-            const newOption = document.createElement('option');
-            newOption.value = vendorInput;
-            newOption.textContent = vendorInput;
-            vendorList.appendChild(newOption);
-          }
+        if (vendorInput && !vendorList.includes(vendorInput)) {
+          vendorList.push(vendorInput);
+          vendorList.sort();
         }
         bootstrap.Modal.getInstance(document.getElementById('expenseModal')).hide();
         location.reload();
