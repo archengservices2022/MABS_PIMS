@@ -153,8 +153,23 @@
     <div class="salaries-section">
       <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Salary Records</h5>
 
-      <!-- Summary Cards -->
-      <div class="summary-cards" id="salaryCards"></div>
+      <!-- Summary Cards (server-rendered) -->
+      {% set usa_total  = salaries | selectattr('region','equalto','Inside America')  | sum(attribute='amount') %}
+      {% set intl_total = salaries | selectattr('region','equalto','Outside America') | sum(attribute='amount') %}
+      <div class="summary-cards" id="salaryCards">
+        <div class="summary-card usa">
+          <div class="summary-card-label">Inside America</div>
+          <div class="summary-card-value">${{ "{:,.2f}".format(usa_total | float) }}</div>
+        </div>
+        <div class="summary-card intl">
+          <div class="summary-card-label">Outside America</div>
+          <div class="summary-card-value">${{ "{:,.2f}".format(intl_total | float) }}</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-card-label">Total</div>
+          <div class="summary-card-value">${{ "{:,.2f}".format((usa_total + intl_total) | float) }}</div>
+        </div>
+      </div>
 
       <!-- Filters -->
       <div style="margin-bottom:20px;">
@@ -195,6 +210,27 @@
             </tr>
           </thead>
           <tbody id="salaryTableBody">
+            {% if salaries %}
+              {% for sal in salaries %}
+              <tr data-salary="1" data-employee="{{ (sal.employee_name or sal.get('employee','')) | lower }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}">
+                <td><strong>{{ sal.employee_name or sal.get('employee','—') }}</strong></td>
+                <td>{{ sal.date or '—' }}</td>
+                <td>${{ "{:,.2f}".format(sal.amount | float) }}</td>
+                <td><span class="region-badge {{ 'region-usa' if sal.region == 'Inside America' else 'region-intl' }}">{{ sal.region or '—' }}</span></td>
+                <td>{{ sal.notes or '—' }}</td>
+                <td>
+                  <div class="action-buttons">
+                    <button onclick="editSalary('{{ sal.firebase_id }}','{{ sal.employee_name or sal.get('employee','') }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace(\"'\",\"&#39;\") }}')" class="btn-sm" title="Edit" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    <button onclick="deleteSalary('{{ sal.firebase_id }}')" class="btn-sm" title="Delete" style="background:#DC2626;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
             <tr>
               <td colspan="6" class="empty-state">
                 <div class="empty-state-icon">💰</div>
@@ -202,6 +238,7 @@
                 <p style="margin:0;">Click "Add Salary" tab to create entries.</p>
               </td>
             </tr>
+            {% endif %}
           </tbody>
         </table>
       </div>
@@ -296,71 +333,24 @@ function switchTab(tabName, event) {
   document.querySelectorAll('.payroll-tab-button').forEach(b => b.classList.remove('active'));
   document.getElementById(tabName).classList.add('active');
   event.target.closest('.payroll-tab-button').classList.add('active');
-  if (tabName === 'salaries') loadSalaryData();
 }
 
-function loadSalaryData() { applySalaryFilters(); }
-
 function applySalaryFilters() {
-  const search  = document.getElementById('searchEmployee').value.toLowerCase();
-  const region  = document.getElementById('filterRegion').value;
+  const search   = document.getElementById('searchEmployee').value.toLowerCase();
+  const region   = document.getElementById('filterRegion').value;
   const dateFrom = document.getElementById('dateFrom').value;
   const dateTo   = document.getElementById('dateTo').value;
-
-  const params = new URLSearchParams();
-  if (search)   params.append('search', search);
-  if (region)   params.append('region', region);
-  if (dateFrom) params.append('date_from', dateFrom);
-  if (dateTo)   params.append('date_to', dateTo);
-
-  fetch(`/api/payroll/salaries?${params.toString()}`)
-    .then(r => r.json())
-    .then(data => {
-      const cards = document.getElementById('salaryCards');
-      const salaries = data.salaries || [];
-      const usaTotal  = salaries.filter(s => s.region === 'Inside America').reduce((sum, s) => sum + parseFloat(s.amount || 0), 0);
-      const intlTotal = salaries.filter(s => s.region === 'Outside America').reduce((sum, s) => sum + parseFloat(s.amount || 0), 0);
-
-      cards.innerHTML = `
-        <div class="summary-card usa">
-          <div class="summary-card-label">Inside America</div>
-          <div class="summary-card-value">$${usaTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-        </div>
-        <div class="summary-card intl">
-          <div class="summary-card-label">Outside America</div>
-          <div class="summary-card-value">$${intlTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-        </div>
-        <div class="summary-card">
-          <div class="summary-card-label">Total</div>
-          <div class="summary-card-value">$${(usaTotal+intlTotal).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-        </div>
-      `;
-
-      const tbody = document.getElementById('salaryTableBody');
-      if (!salaries.length) {
-        tbody.innerHTML = `<tr><td colspan="6" class="empty-state"><div class="empty-state-icon">💰</div><div class="empty-state-title">No Results</div></td></tr>`;
-        return;
-      }
-      tbody.innerHTML = salaries.map(sal => `
-        <tr>
-          <td><strong>${sal.employee_name}</strong></td>
-          <td>${sal.date}</td>
-          <td>$${parseFloat(sal.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-          <td><span class="region-badge ${sal.region === 'Inside America' ? 'region-usa' : 'region-intl'}">${sal.region}</span></td>
-          <td>${sal.notes || '—'}</td>
-          <td>
-            <div class="action-buttons">
-              <button onclick="editSalary('${sal.firebase_id}','${sal.employee_name}','${sal.date}','${sal.amount}','${sal.region}','${(sal.notes||'').replace(/'/g,\"&#39;\")}')" class="btn-sm" title="Edit" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
-                <i class="bi bi-pencil"></i>
-              </button>
-              <button onclick="deleteSalary('${sal.firebase_id}')" class="btn-sm btn-delete" title="Delete">
-                <i class="bi bi-trash"></i>
-              </button>
-            </div>
-          </td>
-        </tr>
-      `).join('');
-    });
+  const rows = document.querySelectorAll('#salaryTableBody tr[data-salary]');
+  rows.forEach(row => {
+    const emp  = (row.dataset.employee || '').toLowerCase();
+    const reg  = row.dataset.region || '';
+    const date = row.dataset.date || '';
+    const show = (!search || emp.includes(search))
+              && (!region || reg === region)
+              && (!dateFrom || date >= dateFrom)
+              && (!dateTo   || date <= dateTo);
+    row.style.display = show ? '' : 'none';
+  });
 }
 
 function setDateRange(range) {
@@ -470,14 +460,14 @@ function addSalary(e) {
       document.querySelectorAll('.payroll-tab-button').forEach(b => b.classList.remove('active'));
       document.getElementById('salaries').classList.add('active');
       document.querySelector('button[onclick="switchTab(\'salaries\', event)"]').classList.add('active');
-      loadSalaryData();
+      location.reload();
     } else {
       alert('Error: ' + (res.error || 'Failed to save salary'));
     }
   })
   .catch(err => {
     console.error('Error:', err);
-    setTimeout(() => loadSalaryData(), 500);
+    alert('Failed to save. Please try again.');
   });
 }
 
@@ -485,13 +475,13 @@ function deleteSalary(id) {
   if (!confirm('Delete this salary entry?')) return;
   fetch(`/api/payroll/salaries/${id}`, {method: 'DELETE'})
     .then(r => r.json())
-    .then(res => { if (res.success) loadSalaryData(); });
+    .then(res => { if (res.success) location.reload(); })
+    .catch(() => location.reload());
 }
 
-// Real-time filter listeners
+// Real-time filter listeners (client-side filtering of server-rendered rows)
 document.addEventListener('DOMContentLoaded', () => {
   initEmployeeAutocomplete();
-  loadSalaryData();
   document.getElementById('searchEmployee').addEventListener('input', applySalaryFilters);
   document.getElementById('filterRegion').addEventListener('change', applySalaryFilters);
   document.getElementById('dateFrom').addEventListener('change', applySalaryFilters);

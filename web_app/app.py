@@ -3657,6 +3657,17 @@ def payroll():
     employee_filter = request.args.get("employee", "")
     year_filter     = request.args.get("year", "")
     region_filter   = request.args.get("region", "")
+
+    # Load salary records server-side so the table renders without relying on JS fetch
+    raw_sal = fb_get("/balance_sheet_salary") or {}
+    salaries = []
+    if isinstance(raw_sal, dict):
+        for sid, sdata in raw_sal.items():
+            if isinstance(sdata, dict):
+                sdata["firebase_id"] = sid
+                salaries.append(sdata)
+    salaries.sort(key=lambda s: s.get("date", ""), reverse=True)
+
     # Build employee list from /users (Settings) — normalize 'username' → 'name' for template compatibility
     raw_users = _load_all_users()
     employee_profiles = [
@@ -3668,7 +3679,8 @@ def payroll():
         employee_filter=employee_filter,
         year_filter=year_filter,
         region_filter=region_filter,
-        employee_profiles=employee_profiles)
+        employee_profiles=employee_profiles,
+        salaries=salaries)
 
 # ── Employee Profile API ──────────────────────────────────────────────────────
 @app.route("/api/employee-profiles", methods=["GET"])
