@@ -4423,7 +4423,6 @@ def financial():
                 "Accumulated Depreciation"
             ],
             "Other Expenses": [
-                "Other",
                 "Salary/Bonuses",
                 "Tax Expenses/Tax Deductions",
                 "Medical/Benefits",
@@ -4437,7 +4436,6 @@ def financial():
 
     if not expense_names_by_category:
         expense_names_by_category = {
-            "Other": [],
             "Facilities & Utilities": ["Office rent or co-working space fees","Utilities (electricity, water, gas)","Internet service","Trash & cleaning services","Property taxes (for office, if applicable)","Office repairs & maintenance (HVAC, lights, minor repairs)"],
             "Office & Admin Overhead": ["Office supplies (paper, pens, notebooks, printer ink)","Printer/plotter maintenance & paper","Postage & shipping (documents, contracts, samples)","Bank fees & merchant processing fees","Software: Microsoft 365 / Google Workspace","Software: PDF tools (Bluebeam, Adobe, etc.)","Software: Password manager","Software: Others","Cloud storage (Dropbox, Google Drive, OneDrive)"],
             "Engineering Software & IT": ["Engineering software: SAP2000 / ETABS / STAAD / RAM / RISA","Engineering software: Others","CAD/BIM tools: AutoCAD, Civil 3D, Revit","License/maintenance fees for all software","IT support services","Computer maintenance & small repairs","Antivirus, backup services, security tools"],
@@ -5791,7 +5789,6 @@ def ai_extract_pdf():
                 "Accumulated Depreciation"
             ],
             "Other Expenses": [
-                "Other",
                 "Salary/Bonuses",
                 "Tax Expenses/Tax Deductions",
                 "Medical/Benefits",
