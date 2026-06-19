@@ -1080,16 +1080,7 @@ function applyExpenseFilters() {
 }
 
 function updateExpenseSummaryCards() {
-  const search = document.getElementById('expenseSearch')?.value || '';
-  const type = document.getElementById('expenseTypeFilter')?.value || '';
-  const category = document.getElementById('expenseCategoryFilter')?.value || '';
-  const dateFrom = document.getElementById('expenseDateFrom')?.value || '';
-  const dateTo = document.getElementById('expenseDateTo')?.value || '';
-  const active = search || type || category || dateFrom || dateTo;
-
-  if (!active) return; // Only update if filters are active
-
-  // Calculate totals from filtered rows
+  // Calculate totals from filtered rows (or all rows if no filters)
   let filteredTotal = 0;
   let filteredCount = 0;
   let thisMonthTotal = 0;
