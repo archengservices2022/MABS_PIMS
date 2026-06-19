@@ -594,14 +594,32 @@ a[href*="filter_expense"]:hover {
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
-        <div class="kpi-value text-danger">${{ "{:,.2f}".format(expenses|selectattr('amount')|map(attribute='amount')|sum) }}</div>
+        <div class="kpi-value text-danger">
+          {%- set filtered_expenses = expenses if not filter_expense else expenses|selectattr('expense_name')|list + (expenses|selectattr('description')|list if filter_expense else []) -%}
+          {%- set total_all = expenses|map(attribute='amount')|map('float')|sum -%}
+          {%- set filtered_total = 0 -%}
+          {%- for exp in expenses -%}
+            {%- if not filter_expense or (exp.get('expense_name', '') or exp.get('description', '')).lower() == filter_expense.lower() -%}
+              {%- set filtered_total = filtered_total + (exp.get('amount', 0)|float) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          ${{ "{:,.2f}".format(filtered_total) }}
+        </div>
         <div class="kpi-sub">all time{{ " (filtered)" if filter_expense else "" }}</div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-teal">
         <div class="kpi-top"><span class="kpi-label">Total Entries</span><i class="bi bi-receipt kpi-icon-sm"></i></div>
-        <div class="kpi-value">{{ expenses|length }}</div>
+        <div class="kpi-value">
+          {%- set filtered_count = 0 -%}
+          {%- for exp in expenses -%}
+            {%- if not filter_expense or (exp.get('expense_name', '') or exp.get('description', '')).lower() == filter_expense.lower() -%}
+              {%- set filtered_count = filtered_count + 1 -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ filtered_count }}
+        </div>
         <div class="kpi-sub">all time{{ " (filtered)" if filter_expense else "" }}</div>
       </div>
     </div>
