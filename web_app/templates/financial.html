@@ -1380,12 +1380,9 @@ function removeExistingReceipt(expId) {
     .then(d => {
       if (d.success) {
         document.getElementById('receiptPreview').innerHTML = '';
-        alert('Receipt removed');
-      } else {
-        alert('Error removing receipt');
       }
     })
-    .catch(e => alert('Error: ' + e));
+    .catch(e => console.error('Error: ' + e));
 }
 
 function initModalDropdowns() {
