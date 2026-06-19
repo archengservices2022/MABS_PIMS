@@ -9,43 +9,43 @@
   <div class="col-6 col-xl">
     <div class="kpi-card" style="border-left:4px solid #7C3AED;">
       <div class="kpi-top"><span class="kpi-label">Total Quotes</span><i class="bi bi-file-earmark-text kpi-icon-sm" style="color:#7C3AED;"></i></div>
-      <div class="kpi-value" style="color:#7C3AED;">{{ q_total }}</div>
-      <div class="kpi-sub">all time</div>
+      <div class="kpi-value" style="color:#7C3AED;" id="card-total-quotes">{{ q_total }}</div>
+      <div class="kpi-sub">{{ 'all time' if not (search or status_filter or date_from or date_to) else 'filtered' }}</div>
     </div>
   </div>
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-blue">
       <div class="kpi-top"><span class="kpi-label">Open</span><i class="bi bi-hourglass-split kpi-icon-sm"></i></div>
-      <div class="kpi-value">{{ q_open }}</div>
+      <div class="kpi-value" id="card-open">{{ q_open }}</div>
       <div class="kpi-sub">awaiting response</div>
     </div>
   </div>
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-green">
       <div class="kpi-top"><span class="kpi-label">Approved</span><i class="bi bi-check-circle-fill kpi-icon-sm"></i></div>
-      <div class="kpi-value">{{ q_approved }}</div>
+      <div class="kpi-value" id="card-approved">{{ q_approved }}</div>
       <div class="kpi-sub">ready to convert</div>
     </div>
   </div>
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-teal">
       <div class="kpi-top"><span class="kpi-label">Converted</span><i class="bi bi-arrow-right-circle-fill kpi-icon-sm"></i></div>
-      <div class="kpi-value">{{ q_converted }}</div>
-      <div class="kpi-sub">{{ q_conv_rate }}% win rate</div>
-      <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ q_conv_rate }}%"></div></div>
+      <div class="kpi-value" id="card-converted">{{ q_converted }}</div>
+      <div class="kpi-sub"><span id="card-conv-rate">{{ q_conv_rate }}</span>% win rate</div>
+      <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ q_conv_rate }}%" id="card-conv-bar"></div></div>
     </div>
   </div>
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-amber">
       <div class="kpi-top"><span class="kpi-label">Pipeline Value</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
-      <div class="kpi-value">${{ "{:,.0f}".format(q_pipeline) }}</div>
+      <div class="kpi-value" id="card-pipeline">${{ "{:,.0f}".format(q_pipeline) }}</div>
       <div class="kpi-sub">open + approved</div>
     </div>
   </div>
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-purple">
       <div class="kpi-top"><span class="kpi-label">Won Value</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
-      <div class="kpi-value">${{ "{:,.0f}".format(q_won_val) }}</div>
+      <div class="kpi-value" id="card-won-value">${{ "{:,.0f}".format(q_won_val) }}</div>
       <div class="kpi-sub">converted quotes</div>
     </div>
   </div>
@@ -189,7 +189,12 @@
           </thead>
           <tbody>
             {% for q in quotes %}
-            <tr onclick="location.href='{{ url_for('quote_detail', quote_id=q.firebase_id) }}'"
+            <tr class="quote-row"
+                data-date="{{ q.get('date','') }}"
+                data-status="{{ q.get('status','Not Started') }}"
+                data-total="{{ q.get('total',0)|float }}"
+                data-search="{{ q.get('client_name','')|lower }} {{ q.get('job_number','')|lower }} {{ q.get('project_name','')|lower }}"
+                onclick="location.href='{{ url_for('quote_detail', quote_id=q.firebase_id) }}'"
                 style="cursor:pointer;">
               <td><span class="fw-bold text-teal">{{ q.get('job_number','—') }}</span></td>
               <td>{{ q.get('client_name','—') }}</td>
@@ -1005,6 +1010,78 @@ document.getElementById('nav-new').addEventListener('shown.bs.tab', calcTotals);
 // Re-init on bfcache page restore (browser back/forward)
 window.addEventListener('pageshow', function(e) {
   if (e.persisted) calcTotals();
+});
+
+// ── Update summary cards when filters change ────────────────────────────────
+function updateQuoteSummaryCards() {
+  const searchInput = document.querySelector('input[name="q"]');
+  const statusSelect = document.querySelector('select[name="status"]');
+  const dateFromInput = document.querySelector('input[name="from"]');
+  const dateToInput = document.querySelector('input[name="to"]');
+
+  const search = searchInput?.value?.toLowerCase() || '';
+  const status = statusSelect?.value || '';
+  const dateFrom = dateFromInput?.value || '';
+  const dateTo = dateToInput?.value || '';
+
+  const rows = document.querySelectorAll('.quote-row');
+  let totalCount = 0;
+  let openCount = 0;
+  let approvedCount = 0;
+  let convertedCount = 0;
+  let pipelineValue = 0;
+  let wonValue = 0;
+
+  rows.forEach(row => {
+    const rowDate = row.dataset.date || '';
+    const rowStatus = row.dataset.status || '';
+    const rowTotal = parseFloat(row.dataset.total) || 0;
+    const rowSearch = row.dataset.search || '';
+
+    const matchSearch = !search || rowSearch.includes(search);
+    const matchStatus = !status || rowStatus === status;
+    const matchDateFrom = !dateFrom || rowDate >= dateFrom;
+    const matchDateTo = !dateTo || rowDate <= dateTo;
+
+    if (matchSearch && matchStatus && matchDateFrom && matchDateTo) {
+      totalCount++;
+
+      if (rowStatus === 'Open') {
+        openCount++;
+        pipelineValue += rowTotal;
+      } else if (rowStatus === 'Approved') {
+        approvedCount++;
+        pipelineValue += rowTotal;
+      } else if (rowStatus === 'Converted') {
+        convertedCount++;
+        wonValue += rowTotal;
+      }
+    }
+  });
+
+  const convRate = totalCount > 0 ? Math.round((convertedCount / totalCount) * 100) : 0;
+
+  document.getElementById('card-total-quotes').textContent = totalCount;
+  document.getElementById('card-open').textContent = openCount;
+  document.getElementById('card-approved').textContent = approvedCount;
+  document.getElementById('card-converted').textContent = convertedCount;
+  document.getElementById('card-conv-rate').textContent = convRate;
+  document.getElementById('card-conv-bar').style.width = convRate + '%';
+  document.getElementById('card-pipeline').textContent = '$' + pipelineValue.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+  document.getElementById('card-won-value').textContent = '$' + wonValue.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+}
+
+// Attach listeners to filter inputs
+document.addEventListener('DOMContentLoaded', function() {
+  const searchInput = document.querySelector('input[name="q"]');
+  const statusSelect = document.querySelector('select[name="status"]');
+  const dateFromInput = document.querySelector('input[name="from"]');
+  const dateToInput = document.querySelector('input[name="to"]');
+
+  if (searchInput) searchInput.addEventListener('input', updateQuoteSummaryCards);
+  if (statusSelect) statusSelect.addEventListener('change', updateQuoteSummaryCards);
+  if (dateFromInput) dateFromInput.addEventListener('change', updateQuoteSummaryCards);
+  if (dateToInput) dateToInput.addEventListener('change', updateQuoteSummaryCards);
 });
 </script>
 {% endblock %}
