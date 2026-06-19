@@ -87,11 +87,11 @@ except Exception as exc:
 
 # ── Role helpers ──────────────────────────────────────────────────────────────
 ROLE_PAGES = {
-    "admin":    ["dashboard", "quotes", "projects", "invoicing", "payroll", "financial", "settings", "employees", "sales_dashboard"],
-    "sales":    ["sales_dashboard", "quotes", "employees"],
-    "projects": ["projects", "invoicing", "employees"],
-    "finance":  ["financial", "payroll", "employees"],
-    "engineer": ["employees"],
+    "admin":    ["dashboard", "quotes", "projects", "invoicing", "payroll", "financial", "settings", "employees", "sales_dashboard", "timesheets"],
+    "sales":    ["sales_dashboard", "quotes", "employees", "timesheets"],
+    "projects": ["projects", "invoicing", "employees", "timesheets"],
+    "finance":  ["financial", "payroll", "employees", "timesheets"],
+    "engineer": ["employees", "timesheets"],
 }
 
 def normalize_role(role: str) -> str:
@@ -8604,6 +8604,291 @@ def quick_invoice_stage(project_id, stage_idx):
         import traceback
         log.error(f"Quick invoice error: {str(e)}\n{traceback.format_exc()}")
         return {"success": False, "error": str(e)}, 500
+
+# ── Timesheet helpers ─────────────────────────────────────────────────────────
+def _fmt_time_12(t: str) -> str:
+    """Convert HH:MM to '9:00 AM' format (cross-platform)."""
+    if not t:
+        return ""
+    try:
+        h, m = t.split(":")
+        h = int(h)
+        ampm = "AM" if h < 12 else "PM"
+        h12 = h % 12 or 12
+        return f"{h12}:{m} {ampm}"
+    except Exception:
+        return t
+
+def _week_monday(date_str: str = "") -> str:
+    """Return Monday ISO date for given week (or current week if blank)."""
+    try:
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        d = datetime.now().date()
+    return (d - timedelta(days=d.weekday())).isoformat()
+
+def _load_timesheets(week_of: str = "", employee_uid: str = "") -> list:
+    raw = fb_get("/timesheets") or {}
+    sheets = []
+    if not isinstance(raw, dict):
+        return sheets
+    for tsid, tsdata in raw.items():
+        if not isinstance(tsdata, dict):
+            continue
+        if week_of and tsdata.get("week_of") != week_of:
+            continue
+        if employee_uid and tsdata.get("employee_uid") != employee_uid:
+            continue
+        tsdata = dict(tsdata)
+        tsdata["firebase_id"] = tsid
+        entries = tsdata.get("entries")
+        if isinstance(entries, dict):
+            tsdata["entries"] = list(entries.values())
+        elif not isinstance(entries, list):
+            tsdata["entries"] = []
+        sheets.append(tsdata)
+    return sheets
+
+# ── Routes: Timesheets ────────────────────────────────────────────────────────
+@app.route("/timesheets")
+@role_required("timesheets")
+def timesheets():
+    is_admin = normalize_role(session.get("user_role", "")) in ("admin", "finance")
+    uid = session.get("user_uid", "")
+
+    week_of    = _week_monday(request.args.get("week", ""))
+    week_start = datetime.strptime(week_of, "%Y-%m-%d").date()
+    week_end   = week_start + timedelta(days=6)
+    week_label = f"{week_start.strftime('%b %d')} — {week_end.strftime('%b %d, %Y')}"
+    week_dates = [(week_start + timedelta(days=i)).isoformat() for i in range(7)]
+    DAY_ABBRS  = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    day_labels = [
+        {"abbr": DAY_ABBRS[i],
+         "date": week_dates[i],
+         "display": (week_start + timedelta(days=i)).strftime("%m/%d")}
+        for i in range(7)
+    ]
+    prev_week = (week_start - timedelta(days=7)).isoformat()
+    next_week = (week_start + timedelta(days=7)).isoformat()
+
+    if is_admin:
+        week_sheets    = _load_timesheets(week_of=week_of)
+        all_users      = _load_all_users()
+        employees      = [u for u in all_users if u.get("active", True)]
+        sheets_by_uid  = {s["employee_uid"]: s for s in week_sheets if s.get("employee_uid")}
+
+        grid_rows = []
+        for emp in employees:
+            emp_uid  = emp.get("firebase_uid", "")
+            emp_name = emp.get("username") or emp.get("email", "Unknown")
+            sheet    = sheets_by_uid.get(emp_uid)
+            cells       = {}
+            total_hours = 0.0
+            if sheet:
+                for entry in (sheet.get("entries") or []):
+                    d   = entry.get("date", "")
+                    hrs = _safe_float(entry.get("total_hours", 0))
+                    if d in week_dates:
+                        total_hours += hrs
+                        if d in cells:
+                            cells[d]["hours"]    += hrs
+                            pn = entry.get("project_name", "")
+                            if pn:
+                                cells[d]["projects"].append(pn)
+                        else:
+                            st = entry.get("start_time", "")
+                            et = entry.get("end_time", "")
+                            cells[d] = {
+                                "time_range": f"{_fmt_time_12(st)} – {_fmt_time_12(et)}" if st and et else "",
+                                "hours":      hrs,
+                                "projects":   [entry.get("project_name", "")] if entry.get("project_name") else [],
+                                "status":     sheet.get("status", "Draft"),
+                                "sheet_id":   sheet.get("firebase_id", ""),
+                            }
+            grid_rows.append({"uid": emp_uid, "name": emp_name,
+                               "cells": cells, "total_hours": total_hours, "sheet": sheet})
+
+        kpi_submitted = sum(1 for s in week_sheets if s.get("status") in ("Submitted", "Approved", "Rejected"))
+        kpi_pending   = sum(1 for s in week_sheets if s.get("status") == "Submitted")
+        kpi_approved  = sum(1 for s in week_sheets if s.get("status") == "Approved")
+        kpi_hours     = sum(_safe_float(s.get("total_hours", 0)) for s in week_sheets)
+
+        return render_template("timesheets.html",
+            view="admin", week_of=week_of, week_label=week_label,
+            week_dates=week_dates, day_labels=day_labels,
+            prev_week=prev_week, next_week=next_week,
+            grid_rows=grid_rows,
+            kpi_employees=len(employees), kpi_submitted=kpi_submitted,
+            kpi_pending=kpi_pending, kpi_approved=kpi_approved, kpi_hours=kpi_hours)
+    else:
+        my_sheets    = _load_timesheets(employee_uid=uid)
+        my_sheets.sort(key=lambda x: x.get("week_of", ""), reverse=True)
+        current_week = _week_monday()
+        has_current  = any(s.get("week_of") == current_week for s in my_sheets)
+        return render_template("timesheets.html",
+            view="my", my_sheets=my_sheets,
+            current_week=current_week, has_current=has_current,
+            week_of=week_of, week_label=week_label,
+            prev_week=prev_week, next_week=next_week)
+
+
+@app.route("/timesheets/submit")
+@login_required
+def timesheets_submit():
+    week_of    = _week_monday(request.args.get("week", ""))
+    uid        = session.get("user_uid", "")
+    all_projs  = _load_projects_list()
+    active_projects = [p for p in all_projs
+                       if p.get("status", "") not in ("Completed", "Cancelled")]
+    existing   = _load_timesheets(week_of=week_of, employee_uid=uid)
+    existing_sheet = existing[0] if existing else None
+
+    week_start = datetime.strptime(week_of, "%Y-%m-%d").date()
+    week_end   = week_start + timedelta(days=6)
+    week_label = f"{week_start.strftime('%b %d')} — {week_end.strftime('%b %d, %Y')}"
+    DAY_NAMES  = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    week_days  = [
+        {"name": DAY_NAMES[i],
+         "abbr": DAY_NAMES[i][:3],
+         "date": (week_start + timedelta(days=i)).isoformat()}
+        for i in range(7)
+    ]
+    return render_template("timesheet_submit.html",
+        week_of=week_of, week_label=week_label,
+        week_days=week_days, active_projects=active_projects,
+        existing_sheet=existing_sheet)
+
+
+@app.route("/timesheets/<sheet_id>")
+@login_required
+def timesheet_detail(sheet_id):
+    sheet = fb_get(f"/timesheets/{sheet_id}")
+    if not sheet or not isinstance(sheet, dict):
+        abort(404)
+    sheet = dict(sheet)
+    sheet["firebase_id"] = sheet_id
+    entries = sheet.get("entries")
+    if isinstance(entries, dict):
+        entries = list(entries.values())
+    elif not isinstance(entries, list):
+        entries = []
+    sheet["entries"] = sorted(entries, key=lambda e: (e.get("date", ""), e.get("start_time", "")))
+
+    uid      = session.get("user_uid", "")
+    is_admin = normalize_role(session.get("user_role", "")) in ("admin", "finance")
+    if not is_admin and sheet.get("employee_uid") != uid:
+        flash("You don't have permission to view this timesheet.", "danger")
+        return redirect(url_for("timesheets"))
+
+    by_date = {}
+    for entry in sheet["entries"]:
+        d = entry.get("date", "")
+        if d not in by_date:
+            by_date[d] = []
+        by_date[d].append(entry)
+
+    return render_template("timesheet_detail.html",
+        sheet=sheet, by_date=by_date, is_admin=is_admin)
+
+
+@app.route("/api/timesheets", methods=["POST"])
+@login_required
+def api_timesheets_save():
+    data    = request.get_json(force=True) or {}
+    uid     = session.get("user_uid", "")
+    name    = session.get("user_name", "")
+    week_of = (data.get("week_of") or "").strip()
+    action  = data.get("action", "draft")
+    entries = data.get("entries") or []
+
+    if not week_of:
+        return jsonify({"error": "week_of is required"}), 400
+
+    total_reg = sum(_safe_float(e.get("regular_hours", 0)) for e in entries)
+    total_ot  = sum(_safe_float(e.get("overtime_hours", 0)) for e in entries)
+    now_iso   = datetime.now(timezone.utc).isoformat()
+
+    sheet_data = {
+        "employee_uid":         uid,
+        "employee_name":        name,
+        "week_of":              week_of,
+        "status":               "Submitted" if action == "submit" else "Draft",
+        "entries":              entries,
+        "total_regular_hours":  total_reg,
+        "total_overtime_hours": total_ot,
+        "total_hours":          total_reg + total_ot,
+        "updated_at":           now_iso,
+    }
+    if action == "submit":
+        sheet_data["submitted_at"] = now_iso
+
+    existing = _load_timesheets(week_of=week_of, employee_uid=uid)
+    if existing:
+        sheet_id = existing[0]["firebase_id"]
+        fb_update(f"/timesheets/{sheet_id}", sheet_data)
+    else:
+        sheet_data["created_at"] = now_iso
+        sheet_id = fb_push("/timesheets", sheet_data)
+
+    return jsonify({"success": True, "sheet_id": sheet_id, "status": sheet_data["status"]})
+
+
+@app.route("/api/timesheets/<sheet_id>/approve", methods=["POST"])
+@role_required("timesheets")
+def api_timesheets_approve(sheet_id):
+    if normalize_role(session.get("user_role", "")) not in ("admin", "finance"):
+        return jsonify({"error": "Admin access required"}), 403
+    data   = request.get_json(force=True) or {}
+    action = data.get("action", "approve")
+    notes  = (data.get("notes") or "").strip()
+    status = "Approved" if action == "approve" else "Rejected"
+    fb_update(f"/timesheets/{sheet_id}", {
+        "status":          status,
+        "approved_by":     session.get("user_name", ""),
+        "approved_at":     datetime.now(timezone.utc).isoformat(),
+        "rejection_notes": notes,
+    })
+    return jsonify({"success": True, "status": status})
+
+
+@app.route("/api/timesheets/export")
+@role_required("timesheets")
+def api_timesheets_export():
+    import csv
+    import io as _io
+    if normalize_role(session.get("user_role", "")) not in ("admin", "finance"):
+        flash("Admin access required.", "danger")
+        return redirect(url_for("timesheets"))
+    week_of = request.args.get("week", _week_monday())
+    sheets  = _load_timesheets(week_of=week_of)
+    output  = _io.StringIO()
+    writer  = csv.writer(output)
+    writer.writerow(["Week Of", "Employee", "Status", "Date", "Day", "Project",
+                     "Project #", "Start", "Lunch Mins", "End",
+                     "Regular Hrs", "OT Hrs", "Total Hrs", "Notes"])
+    for sheet in sheets:
+        for entry in (sheet.get("entries") or []):
+            dt = entry.get("date", "")
+            try:
+                day_name = datetime.strptime(dt, "%Y-%m-%d").strftime("%A")
+            except Exception:
+                day_name = ""
+            writer.writerow([
+                sheet.get("week_of", ""), sheet.get("employee_name", ""),
+                sheet.get("status", ""), dt, day_name,
+                entry.get("project_name", ""), entry.get("project_number", ""),
+                entry.get("start_time", ""), entry.get("lunch_break_mins", ""),
+                entry.get("end_time", ""),
+                entry.get("regular_hours", 0), entry.get("overtime_hours", 0),
+                entry.get("total_hours", 0), entry.get("notes", ""),
+            ])
+    csv_bytes = output.getvalue().encode("utf-8-sig")
+    return send_file(
+        _io.BytesIO(csv_bytes),
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name=f"timesheets_{week_of}.csv",
+    )
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":

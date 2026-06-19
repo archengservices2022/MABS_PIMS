@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+{% block title %}Timesheets{% endblock %}
+{% block page_title %}Timesheets{% endblock %}
+
+{% block head %}
+<style>
+.ts-kpi-row { display:flex; gap:14px; margin-bottom:22px; flex-wrap:wrap; }
+.ts-kpi { flex:1; min-width:130px; background:#fff; border-radius:12px; padding:16px 20px; box-shadow:0 1px 4px rgba(0,0,0,.07); }
+.ts-kpi-label { font-size:.68rem; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:#64748b; margin-bottom:4px; }
+.ts-kpi-value { font-size:1.6rem; font-weight:800; color:#0f172a; line-height:1.1; }
+.ts-kpi-sub { font-size:.72rem; color:#94a3b8; margin-top:3px; }
+
+.week-nav { display:flex; align-items:center; gap:10px; margin-bottom:18px; }
+.week-nav-label { font-size:.95rem; font-weight:700; color:#0f172a; min-width:260px; text-align:center; }
+.week-nav-btn { background:#fff; border:1px solid #e2e8f0; color:#475569; width:34px; height:34px; display:flex; align-items:center; justify-content:center; border-radius:8px; text-decoration:none; font-size:.9rem; transition:all .15s; }
+.week-nav-btn:hover { background:#f1f5f9; color:#0f172a; }
+
+.ts-table { width:100%; border-collapse:separate; border-spacing:0; background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 1px 6px rgba(0,0,0,.08); }
+.ts-table th { background:#f8fafc; color:#64748b; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:11px 10px; border-bottom:2px solid #e2e8f0; white-space:nowrap; text-align:center; }
+.ts-table th.emp-th { text-align:left; padding-left:16px; min-width:150px; }
+.ts-table td { padding:8px 6px; border-bottom:1px solid #f1f5f9; vertical-align:middle; text-align:center; }
+.ts-table tbody tr:last-child td { border-bottom:none; }
+.ts-table td.emp-td { text-align:left; padding:10px 10px 10px 16px; font-weight:600; color:#1e293b; font-size:.85rem; white-space:nowrap; }
+
+.ts-cell { display:inline-flex; flex-direction:column; align-items:center; justify-content:center; padding:5px 8px; border-radius:8px; font-size:.65rem; cursor:pointer; transition:opacity .15s; min-width:88px; min-height:48px; gap:1px; }
+.ts-cell:hover { opacity:.85; }
+.ts-cell .c-time { font-weight:500; font-size:.62rem; color:inherit; }
+.ts-cell .c-proj { font-size:.6rem; opacity:.75; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:86px; }
+.ts-cell .c-hrs  { font-weight:800; font-size:.72rem; }
+.ts-approved { background:#dcfce7; color:#15803d; }
+.ts-submitted { background:#dbeafe; color:#1d4ed8; }
+.ts-draft     { background:#ede9fe; color:#7c3aed; }
+.ts-rejected  { background:#fee2e2; color:#b91c1c; }
+.ts-empty     { background:#f8fafc; border:1.5px dashed #e2e8f0; color:#cbd5e1; font-size:.65rem; min-width:88px; min-height:48px; display:flex; align-items:center; justify-content:center; border-radius:8px; }
+
+.total-col { font-weight:700; color:#0f172a; font-size:.875rem; }
+.status-col { white-space:nowrap; }
+.action-col { white-space:nowrap; }
+
+.sbadge { display:inline-block; padding:2px 9px; border-radius:20px; font-size:.64rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; }
+.sb-approved { background:#dcfce7; color:#15803d; }
+.sb-submitted { background:#dbeafe; color:#1d4ed8; }
+.sb-draft     { background:#ede9fe; color:#7c3aed; }
+.sb-rejected  { background:#fee2e2; color:#b91c1c; }
+
+/* My Timesheets list */
+.my-ts-table { width:100%; border-collapse:separate; border-spacing:0; background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 1px 6px rgba(0,0,0,.08); }
+.my-ts-table th { background:#f8fafc; color:#64748b; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:11px 16px; border-bottom:2px solid #e2e8f0; }
+.my-ts-table td { padding:13px 16px; border-bottom:1px solid #f1f5f9; }
+.my-ts-table tbody tr:last-child td { border-bottom:none; }
+.my-ts-table tbody tr:hover { background:#fafafa; }
+
+.empty-state { text-align:center; padding:48px 16px; color:#94a3b8; }
+.empty-state-icon { font-size:2.5rem; margin-bottom:10px; }
+.empty-state-title { font-size:1rem; font-weight:600; color:#64748b; margin-bottom:6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set is_admin = user_role in ('admin', 'finance') %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0" style="color:#0f172a;">
+      {% if view == 'admin' %}Weekly Schedule{% else %}My Timesheets{% endif %}
+    </h4>
+    {% if view == 'my' and not is_admin %}
+    <div class="text-muted" style="font-size:.8rem;">Week of {{ week_label }}</div>
+    {% endif %}
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <a href="{{ url_for('timesheets_submit') }}" class="btn btn-sm"
+       style="background:#0D9488;color:#fff;border:none;padding:6px 14px;border-radius:8px;font-weight:600;">
+      <i class="bi bi-plus-lg me-1"></i>Submit Timesheet
+    </a>
+    {% if view == 'admin' and is_admin %}
+    <a href="{{ url_for('timesheets_submit') }}" class="btn btn-sm btn-outline-secondary" style="font-size:.8rem;">
+      My Own
+    </a>
+    <a href="{{ url_for('api_timesheets_export', week=week_of) }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
+    {% endif %}
+    {% if not is_admin %}
+    <a href="{{ url_for('timesheets', week=week_of) }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-grid-3x2 me-1"></i>Team View
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+{% if view == 'admin' %}
+<!-- ── KPI Cards ───────────────────────────────────────────────── -->
+<div class="ts-kpi-row">
+  <div class="ts-kpi">
+    <div class="ts-kpi-label">Team Size</div>
+    <div class="ts-kpi-value">{{ kpi_employees }}</div>
+    <div class="ts-kpi-sub">employees</div>
+  </div>
+  <div class="ts-kpi">
+    <div class="ts-kpi-label">Submitted</div>
+    <div class="ts-kpi-value">{{ kpi_submitted }}</div>
+    <div class="ts-kpi-sub">this week</div>
+  </div>
+  <div class="ts-kpi">
+    <div class="ts-kpi-label">Pending</div>
+    <div class="ts-kpi-value" style="color:#1d4ed8;">{{ kpi_pending }}</div>
+    <div class="ts-kpi-sub">awaiting review</div>
+  </div>
+  <div class="ts-kpi">
+    <div class="ts-kpi-label">Approved</div>
+    <div class="ts-kpi-value" style="color:#15803d;">{{ kpi_approved }}</div>
+    <div class="ts-kpi-sub">this week</div>
+  </div>
+  <div class="ts-kpi">
+    <div class="ts-kpi-label">Total Hours</div>
+    <div class="ts-kpi-value">{{ "%.1f"|format(kpi_hours) }}</div>
+    <div class="ts-kpi-sub">all employees</div>
+  </div>
+</div>
+
+<!-- ── Week Navigation ────────────────────────────────────────── -->
+<div class="week-nav">
+  <a href="{{ url_for('timesheets', week=prev_week) }}" class="week-nav-btn"><i class="bi bi-chevron-left"></i></a>
+  <div class="week-nav-label">Week of {{ week_label }}</div>
+  <a href="{{ url_for('timesheets', week=next_week) }}" class="week-nav-btn"><i class="bi bi-chevron-right"></i></a>
+  <a href="{{ url_for('timesheets') }}" class="btn btn-sm btn-outline-secondary ms-1" style="font-size:.75rem;padding:4px 10px;">
+    Current Week
+  </a>
+</div>
+
+<!-- ── Grid Table ─────────────────────────────────────────────── -->
+<div class="table-responsive">
+  <table class="ts-table">
+    <thead>
+      <tr>
+        <th class="emp-th">Employee</th>
+        {% for dl in day_labels %}
+        <th>
+          {{ dl.abbr }}<br>
+          <span style="font-weight:500;font-size:.62rem;color:#94a3b8;">{{ dl.display }}</span>
+        </th>
+        {% endfor %}
+        <th>Total Hrs</th>
+        <th>Status</th>
+        {% if is_admin %}<th>Action</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% if grid_rows %}
+        {% for row in grid_rows %}
+        <tr>
+          <td class="emp-td">
+            <div class="d-flex align-items-center gap-2">
+              <div style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#0D9488,#0891B2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0;">
+                {{ row.name[0].upper() if row.name else '?' }}
+              </div>
+              {{ row.name }}
+            </div>
+          </td>
+          {% for dl in day_labels %}
+            {% set cell = row.cells.get(dl.date) %}
+            <td>
+              {% if cell %}
+                <div class="ts-cell ts-{{ cell.status | lower }}"
+                     title="{{ cell.projects | join(', ') or 'No project' }} | {{ cell.time_range }} | {{ '%.1f'|format(cell.hours) }}h"
+                     {% if cell.sheet_id %}onclick="window.location='{{ url_for('timesheet_detail', sheet_id=cell.sheet_id) }}'"{% endif %}>
+                  {% if cell.time_range %}<div class="c-time">{{ cell.time_range }}</div>{% endif %}
+                  {% if cell.projects %}<div class="c-proj">{{ cell.projects[0] }}{% if cell.projects|length > 1 %} +{{ cell.projects|length - 1 }}{% endif %}</div>{% endif %}
+                  <div class="c-hrs">{{ "%.1f"|format(cell.hours) }}h</div>
+                </div>
+              {% else %}
+                <div class="ts-empty">—</div>
+              {% endif %}
+            </td>
+          {% endfor %}
+          <td class="total-col">
+            {% if row.total_hours > 0 %}{{ "%.1f"|format(row.total_hours) }}{% else %}—{% endif %}
+          </td>
+          <td class="status-col">
+            {% if row.sheet %}
+              <span class="sbadge sb-{{ row.sheet.status | lower }}">{{ row.sheet.status }}</span>
+            {% else %}
+              <span style="color:#cbd5e1;font-size:.72rem;">No Entry</span>
+            {% endif %}
+          </td>
+          {% if is_admin %}
+          <td class="action-col">
+            {% if row.sheet and row.sheet.status == 'Submitted' %}
+              <div class="d-flex gap-1 justify-content-center">
+                <button onclick="approveSheet('{{ row.sheet.firebase_id }}','approve')"
+                        class="btn btn-sm" style="background:#15803d;color:#fff;font-size:.65rem;padding:3px 8px;border-radius:6px;border:none;">
+                  <i class="bi bi-check2"></i> OK
+                </button>
+                <button onclick="approveSheet('{{ row.sheet.firebase_id }}','reject')"
+                        class="btn btn-sm btn-outline-danger" style="font-size:.65rem;padding:3px 8px;border-radius:6px;">
+                  <i class="bi bi-x"></i>
+                </button>
+              </div>
+            {% elif row.sheet %}
+              <a href="{{ url_for('timesheet_detail', sheet_id=row.sheet.firebase_id) }}"
+                 class="btn btn-sm btn-outline-secondary" style="font-size:.65rem;padding:3px 8px;border-radius:6px;">
+                View
+              </a>
+            {% endif %}
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      {% else %}
+      <tr>
+        <td colspan="{{ 7 + (3 if is_admin else 2) + 1 }}" class="empty-state">
+          <div class="empty-state-icon">📅</div>
+          <div class="empty-state-title">No Employees Found</div>
+          <p style="margin:0;font-size:.8rem;">Add employees in the Settings → Users tab.</p>
+        </td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{% else %}
+<!-- ── My Timesheets View ─────────────────────────────────────── -->
+{% if not has_current %}
+<div class="alert" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:10px;font-size:.85rem;padding:12px 16px;" role="alert">
+  <i class="bi bi-info-circle-fill me-2"></i>
+  You haven't submitted a timesheet for the current week yet.
+  <a href="{{ url_for('timesheets_submit') }}" class="fw-600" style="color:#1d4ed8;">Submit now →</a>
+</div>
+{% endif %}
+
+<table class="my-ts-table">
+  <thead>
+    <tr>
+      <th>Week Of</th>
+      <th>Total Hrs</th>
+      <th>Regular</th>
+      <th>Overtime</th>
+      <th>Status</th>
+      <th>Submitted</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% if my_sheets %}
+      {% for sheet in my_sheets %}
+      <tr>
+        <td><strong>{{ sheet.week_of }}</strong></td>
+        <td>{{ "%.1f"|format(sheet.total_hours | float) }}h</td>
+        <td style="color:#64748b;">{{ "%.1f"|format(sheet.total_regular_hours | float) }}h</td>
+        <td style="color:{% if sheet.total_overtime_hours | float > 0 %}#b91c1c{% else %}#94a3b8{% endif %};">
+          {{ "%.1f"|format(sheet.total_overtime_hours | float) }}h
+        </td>
+        <td><span class="sbadge sb-{{ sheet.status | lower }}">{{ sheet.status }}</span></td>
+        <td style="color:#94a3b8;font-size:.78rem;">
+          {{ sheet.submitted_at[:10] if sheet.submitted_at else '—' }}
+        </td>
+        <td>
+          <div class="d-flex gap-2">
+            <a href="{{ url_for('timesheet_detail', sheet_id=sheet.firebase_id) }}"
+               class="btn btn-sm btn-outline-secondary" style="font-size:.72rem;padding:3px 10px;">
+              View
+            </a>
+            {% if sheet.status in ('Draft', 'Rejected') %}
+            <a href="{{ url_for('timesheets_submit', week=sheet.week_of) }}"
+               class="btn btn-sm" style="background:#0D9488;color:#fff;font-size:.72rem;padding:3px 10px;">
+              Edit
+            </a>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    {% else %}
+    <tr>
+      <td colspan="7" class="empty-state">
+        <div class="empty-state-icon">📋</div>
+        <div class="empty-state-title">No Timesheets Yet</div>
+        <p style="margin:0;font-size:.8rem;">
+          <a href="{{ url_for('timesheets_submit') }}" style="color:#0D9488;font-weight:600;">Submit your first timesheet →</a>
+        </p>
+      </td>
+    </tr>
+    {% endif %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function approveSheet(sheetId, action) {
+  let notes = '';
+  if (action === 'reject') {
+    notes = prompt('Rejection reason (optional):') ?? '';
+    if (notes === null) return;
+  }
+  fetch(`/api/timesheets/${sheetId}/approve`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action, notes})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) location.reload();
+    else alert('Error: ' + (d.error || 'Unknown'));
+  })
+  .catch(() => alert('Network error. Please try again.'));
+}
+</script>
+{% endblock %}

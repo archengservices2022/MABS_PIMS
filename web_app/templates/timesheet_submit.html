@@ -1,0 +1,354 @@
+{% extends "base.html" %}
+{% block title %}Submit Timesheet{% endblock %}
+{% block page_title %}Submit Timesheet{% endblock %}
+
+{% block head %}
+<style>
+.ts-form-card { background:#fff; border-radius:14px; box-shadow:0 1px 6px rgba(0,0,0,.08); overflow:hidden; }
+.ts-form-header { background:linear-gradient(135deg,#0D9488,#0891B2); color:#fff; padding:20px 24px; }
+.ts-form-header h5 { margin:0; font-weight:700; font-size:1rem; }
+.ts-form-header .sub { font-size:.8rem; opacity:.85; margin-top:3px; }
+
+.ts-entry-table { width:100%; border-collapse:collapse; }
+.ts-entry-table th { background:#f8fafc; color:#64748b; font-size:.67rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; padding:9px 10px; border-bottom:2px solid #e2e8f0; white-space:nowrap; text-align:center; }
+.ts-entry-table th.left { text-align:left; }
+.ts-entry-table td { padding:7px 6px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
+.ts-entry-table td input, .ts-entry-table td select { border:1px solid #e2e8f0; border-radius:6px; padding:5px 8px; font-size:.78rem; width:100%; background:#fff; }
+.ts-entry-table td input:focus, .ts-entry-table td select:focus { border-color:#0D9488; outline:none; box-shadow:0 0 0 2px rgba(13,148,136,.12); }
+.ts-entry-table td .hrs-display { font-size:.8rem; font-weight:700; color:#0f172a; text-align:center; min-width:44px; }
+.ts-entry-table td .ot-display { color:#b91c1c; }
+
+.day-badge { display:inline-block; font-size:.65rem; font-weight:700; padding:2px 8px; border-radius:20px; background:#f1f5f9; color:#475569; }
+.add-row-btn { background:none; border:1.5px dashed #cbd5e1; color:#94a3b8; font-size:.75rem; padding:6px 16px; border-radius:8px; cursor:pointer; transition:all .15s; width:100%; }
+.add-row-btn:hover { border-color:#0D9488; color:#0D9488; background:#f0fdfa; }
+.del-row-btn { background:none; border:none; color:#cbd5e1; cursor:pointer; padding:4px 6px; border-radius:4px; font-size:.9rem; }
+.del-row-btn:hover { color:#dc2626; background:#fee2e2; }
+
+.totals-row { background:#f8fafc; }
+.totals-row td { padding:10px; font-weight:700; font-size:.82rem; border-top:2px solid #e2e8f0; }
+.total-label { color:#475569; text-align:right; }
+.total-val { color:#0f172a; text-align:center; }
+.total-ot { color:#b91c1c; text-align:center; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <a href="{{ url_for('timesheets') }}" class="text-decoration-none text-muted" style="font-size:.8rem;">
+      <i class="bi bi-arrow-left me-1"></i>Back to Timesheets
+    </a>
+  </div>
+</div>
+
+<div class="ts-form-card">
+  <div class="ts-form-header">
+    <h5><i class="bi bi-calendar-week me-2"></i>
+      {% if existing_sheet %}Edit{% else %}New{% endif %} Timesheet
+    </h5>
+    <div class="sub">Week of {{ week_label }}</div>
+  </div>
+
+  <div class="p-4">
+    {% if existing_sheet and existing_sheet.status == 'Submitted' %}
+    <div class="alert alert-info mb-4" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:10px;font-size:.85rem;">
+      <i class="bi bi-info-circle-fill me-2"></i>
+      This timesheet was already submitted. You can re-submit to overwrite it.
+    </div>
+    {% elif existing_sheet and existing_sheet.status == 'Approved' %}
+    <div class="alert alert-success mb-4" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;border-radius:10px;font-size:.85rem;">
+      <i class="bi bi-check-circle-fill me-2"></i>
+      This timesheet was approved. Contact your manager to make changes.
+    </div>
+    {% elif existing_sheet and existing_sheet.status == 'Rejected' %}
+    <div class="alert mb-4" style="background:#fff1f2;border:1px solid #fecdd3;color:#b91c1c;border-radius:10px;font-size:.85rem;">
+      <i class="bi bi-exclamation-circle-fill me-2"></i>
+      Rejected. Please update and resubmit.
+    </div>
+    {% endif %}
+
+    <!-- Week Picker -->
+    <div class="mb-4 d-flex align-items-center gap-3">
+      <label style="font-size:.8rem;font-weight:600;color:#475569;white-space:nowrap;">Select Week:</label>
+      <input type="week" id="weekPicker" class="form-control form-control-sm" style="max-width:200px;"
+             onchange="changeWeek(this.value)">
+      <span class="text-muted" style="font-size:.78rem;">{{ week_label }}</span>
+    </div>
+
+    <!-- Entry Table -->
+    <div class="table-responsive mb-3">
+      <table class="ts-entry-table" id="entryTable">
+        <thead>
+          <tr>
+            <th class="left" style="min-width:100px;">Day</th>
+            <th style="min-width:180px;">Project</th>
+            <th style="min-width:80px;">Start</th>
+            <th style="min-width:70px;">Lunch (min)</th>
+            <th style="min-width:80px;">End</th>
+            <th style="min-width:60px;">Reg Hrs</th>
+            <th style="min-width:55px;">OT Hrs</th>
+            <th style="min-width:60px;">Total</th>
+            <th style="min-width:120px;">Notes</th>
+            <th style="width:36px;"></th>
+          </tr>
+        </thead>
+        <tbody id="entryBody">
+          <!-- JS populates rows -->
+        </tbody>
+        <tfoot>
+          <tr class="totals-row">
+            <td colspan="5" class="total-label">Totals</td>
+            <td class="total-val" id="footReg">0.00</td>
+            <td class="total-ot"  id="footOT">0.00</td>
+            <td class="total-val" id="footTotal">0.00</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <button type="button" class="add-row-btn mb-4" onclick="addRow()">
+      <i class="bi bi-plus-circle me-1"></i> Add Entry Row
+    </button>
+
+    <!-- Action Buttons -->
+    <div class="d-flex gap-3 justify-content-end">
+      <a href="{{ url_for('timesheets') }}" class="btn btn-outline-secondary">Cancel</a>
+      <button type="button" onclick="saveSheet('draft')" class="btn btn-outline-secondary">
+        <i class="bi bi-floppy me-1"></i>Save Draft
+      </button>
+      <button type="button" onclick="saveSheet('submit')" class="btn"
+              style="background:#0D9488;color:#fff;border:none;font-weight:600;padding:8px 20px;border-radius:8px;">
+        <i class="bi bi-send me-1"></i>Submit Timesheet
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const WEEK_OF  = {{ week_of | tojson }};
+const WEEK_DAYS = {{ week_days | tojson }};
+const PROJECTS  = {{ active_projects | tojson }};
+const EXISTING  = {{ (existing_sheet.entries if existing_sheet else []) | tojson }};
+
+// Build project options HTML
+const projOptions = PROJECTS.map(p => {
+  const label = p.project_number ? `${p.project_number} — ${p.project_name || ''}` : (p.project_name || 'Unnamed');
+  return `<option value="${escHtml(p.project_number||'')}|${escHtml(p.project_name||'')}|${escHtml(p.firebase_id||'')}">${escHtml(label)}</option>`;
+}).join('');
+
+// Day options
+const dayOptions = WEEK_DAYS.map(d =>
+  `<option value="${d.date}">${d.name} (${d.date.slice(5).replace('-','/')})</option>`
+).join('');
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+let rowId = 0;
+
+function addRow(entry) {
+  entry = entry || {};
+  const id = ++rowId;
+  const tr = document.createElement('tr');
+  tr.id = `row-${id}`;
+  tr.dataset.rowId = id;
+
+  // Pre-select project
+  let projVal = '';
+  if (entry.project_id || entry.project_name) {
+    projVal = `${entry.project_number||''}|${entry.project_name||''}|${entry.project_id||''}`;
+  }
+
+  tr.innerHTML = `
+    <td>
+      <select class="entry-day" onchange="calcRow(${id})">
+        <option value="">Select day</option>
+        ${WEEK_DAYS.map(d =>
+          `<option value="${d.date}" ${entry.date === d.date ? 'selected':''}>
+            ${d.abbr} ${d.date.slice(5).replace('-','/')}
+          </option>`
+        ).join('')}
+      </select>
+    </td>
+    <td>
+      <select class="entry-proj" onchange="calcRow(${id})">
+        <option value="">— No Project / General —</option>
+        ${PROJECTS.map(p => {
+          const val = `${p.project_number||''}|${p.project_name||''}|${p.firebase_id||''}`;
+          const lbl = p.project_number ? `${p.project_number} — ${p.project_name||''}` : (p.project_name||'Unnamed');
+          const sel = (entry.project_id && entry.project_id === p.firebase_id) ||
+                      (entry.project_number && entry.project_number === p.project_number) ? 'selected' : '';
+          return `<option value="${escHtml(val)}" ${sel}>${escHtml(lbl)}</option>`;
+        }).join('')}
+      </select>
+    </td>
+    <td><input type="time" class="entry-start" value="${entry.start_time||'09:00'}" oninput="calcRow(${id})"></td>
+    <td><input type="number" class="entry-lunch" value="${entry.lunch_break_mins ?? 60}" min="0" max="120" step="15" oninput="calcRow(${id})" style="text-align:center;"></td>
+    <td><input type="time" class="entry-end"   value="${entry.end_time||'17:00'}"   oninput="calcRow(${id})"></td>
+    <td><div class="hrs-display" id="reg-${id}">—</div></td>
+    <td><div class="hrs-display ot-display" id="ot-${id}">—</div></td>
+    <td><div class="hrs-display" id="tot-${id}">—</div></td>
+    <td><input type="text" class="entry-notes" value="${escHtml(entry.notes||'')}" placeholder="Optional notes"></td>
+    <td><button type="button" class="del-row-btn" onclick="delRow(${id})" title="Remove"><i class="bi bi-trash3"></i></button></td>
+  `;
+  document.getElementById('entryBody').appendChild(tr);
+  calcRow(id);
+  return id;
+}
+
+function delRow(id) {
+  const tr = document.getElementById(`row-${id}`);
+  if (tr) { tr.remove(); updateFooter(); }
+}
+
+function calcRow(id) {
+  const tr = document.getElementById(`row-${id}`);
+  if (!tr) return;
+  const start = tr.querySelector('.entry-start').value;
+  const end   = tr.querySelector('.entry-end').value;
+  const lunch = parseInt(tr.querySelector('.entry-lunch').value || '0', 10) || 0;
+
+  if (!start || !end) {
+    ['reg','ot','tot'].forEach(k => document.getElementById(`${k}-${id}`).textContent = '—');
+    updateFooter();
+    return;
+  }
+
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  let workedMins = (eh * 60 + em) - (sh * 60 + sm) - lunch;
+  if (workedMins < 0) workedMins = 0;
+
+  const worked = workedMins / 60;
+  const reg    = Math.min(8, worked);
+  const ot     = Math.max(0, worked - 8);
+
+  document.getElementById(`reg-${id}`).textContent = reg.toFixed(2);
+  document.getElementById(`ot-${id}`).textContent  = ot > 0 ? ot.toFixed(2) : '—';
+  document.getElementById(`tot-${id}`).textContent = worked.toFixed(2);
+  updateFooter();
+}
+
+function updateFooter() {
+  let totalReg = 0, totalOT = 0, totalAll = 0;
+  document.querySelectorAll('#entryBody tr').forEach(tr => {
+    const id = tr.dataset.rowId;
+    const regEl = document.getElementById(`reg-${id}`);
+    const otEl  = document.getElementById(`ot-${id}`);
+    if (regEl && regEl.textContent !== '—') totalReg += parseFloat(regEl.textContent) || 0;
+    if (otEl  && otEl.textContent  !== '—') totalOT  += parseFloat(otEl.textContent)  || 0;
+  });
+  totalAll = totalReg + totalOT;
+  document.getElementById('footReg').textContent   = totalReg.toFixed(2);
+  document.getElementById('footOT').textContent    = totalOT.toFixed(2);
+  document.getElementById('footTotal').textContent = totalAll.toFixed(2);
+}
+
+function collectEntries() {
+  const entries = [];
+  document.querySelectorAll('#entryBody tr').forEach(tr => {
+    const id    = tr.dataset.rowId;
+    const date  = tr.querySelector('.entry-day').value;
+    const proj  = tr.querySelector('.entry-proj').value || '';
+    const start = tr.querySelector('.entry-start').value;
+    const lunch = parseInt(tr.querySelector('.entry-lunch').value || '0', 10) || 0;
+    const end   = tr.querySelector('.entry-end').value;
+    const notes = tr.querySelector('.entry-notes').value.trim();
+
+    const regEl = document.getElementById(`reg-${id}`);
+    const otEl  = document.getElementById(`ot-${id}`);
+    const totEl = document.getElementById(`tot-${id}`);
+    const reg = parseFloat(regEl?.textContent) || 0;
+    const ot  = parseFloat(otEl?.textContent)  || 0;
+    const tot = parseFloat(totEl?.textContent) || 0;
+
+    const [projNum, projName, projId] = proj.split('|');
+
+    entries.push({
+      date, project_number: projNum, project_name: projName, project_id: projId,
+      start_time: start, lunch_break_mins: lunch, end_time: end,
+      regular_hours: reg, overtime_hours: ot, total_hours: tot,
+      notes,
+    });
+  });
+  return entries;
+}
+
+function saveSheet(action) {
+  const entries = collectEntries();
+  if (action === 'submit' && entries.length === 0) {
+    alert('Please add at least one entry before submitting.');
+    return;
+  }
+  if (action === 'submit') {
+    const hasDate = entries.some(e => e.date);
+    if (!hasDate) { alert('Please select a day for at least one entry.'); return; }
+  }
+
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = action === 'submit' ? 'Submitting…' : 'Saving…';
+
+  fetch('/api/timesheets', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({week_of: WEEK_OF, action, entries})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      if (action === 'submit') {
+        window.location = '/timesheets';
+      } else {
+        window.location = `/timesheets/${d.sheet_id}`;
+      }
+    } else {
+      alert('Error: ' + (d.error || 'Unknown error'));
+      btn.disabled = false;
+      btn.textContent = action === 'submit' ? 'Submit Timesheet' : 'Save Draft';
+    }
+  })
+  .catch(err => {
+    alert('Network error. Please try again.');
+    btn.disabled = false;
+    btn.textContent = action === 'submit' ? 'Submit Timesheet' : 'Save Draft';
+  });
+}
+
+function changeWeek(val) {
+  if (!val) return;
+  const [yr, wk] = val.split('-W').map(Number);
+  // Jan 4 is always in week 1
+  const jan4 = new Date(yr, 0, 4);
+  const week1Mon = new Date(jan4);
+  week1Mon.setDate(jan4.getDate() - ((jan4.getDay() || 7) - 1));
+  const mon = new Date(week1Mon.getTime() + (wk - 1) * 7 * 86400000);
+  const iso = mon.toISOString().slice(0, 10);
+  window.location = `/timesheets/submit?week=${iso}`;
+}
+
+// Initialise week picker
+(function setWeekPicker() {
+  const d = new Date(WEEK_OF);
+  const jan4 = new Date(d.getFullYear(), 0, 4);
+  const startOfWeek1 = new Date(jan4.getTime() - ((jan4.getDay() || 7) - 1) * 86400000);
+  const wkNum = Math.round((d - startOfWeek1) / (7 * 86400000)) + 1;
+  document.getElementById('weekPicker').value =
+    `${d.getFullYear()}-W${String(wkNum).padStart(2, '0')}`;
+})();
+
+// Populate existing entries or add default 5 work-day rows
+document.addEventListener('DOMContentLoaded', function() {
+  if (EXISTING && EXISTING.length > 0) {
+    EXISTING.forEach(e => addRow(e));
+  } else {
+    // Default Mon–Fri rows
+    WEEK_DAYS.slice(0, 5).forEach(d => addRow({ date: d.date }));
+  }
+});
+</script>
+{% endblock %}

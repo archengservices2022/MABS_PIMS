@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}Timesheet — {{ sheet.employee_name }}{% endblock %}
+{% block page_title %}Timesheet Detail{% endblock %}
+
+{% block head %}
+<style>
+.ts-detail-card { background:#fff; border-radius:14px; box-shadow:0 1px 6px rgba(0,0,0,.08); overflow:hidden; margin-bottom:20px; }
+.ts-detail-header { padding:20px 24px; border-bottom:1px solid #f1f5f9; display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+.ts-avatar { width:48px; height:48px; border-radius:50%; background:linear-gradient(135deg,#0D9488,#0891B2); color:#fff; display:flex; align-items:center; justify-content:center; font-size:1.2rem; font-weight:800; flex-shrink:0; }
+.ts-emp-name { font-size:1.1rem; font-weight:700; color:#0f172a; margin:0; }
+.ts-emp-week { font-size:.8rem; color:#64748b; margin-top:2px; }
+
+.sbadge { display:inline-block; padding:3px 12px; border-radius:20px; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; }
+.sb-approved  { background:#dcfce7; color:#15803d; }
+.sb-submitted { background:#dbeafe; color:#1d4ed8; }
+.sb-draft     { background:#ede9fe; color:#7c3aed; }
+.sb-rejected  { background:#fee2e2; color:#b91c1c; }
+
+.stat-boxes { display:flex; gap:12px; flex-wrap:wrap; padding:16px 24px; background:#f8fafc; border-bottom:1px solid #f1f5f9; }
+.stat-box { text-align:center; min-width:90px; }
+.stat-val { font-size:1.4rem; font-weight:800; color:#0f172a; }
+.stat-lbl { font-size:.65rem; text-transform:uppercase; letter-spacing:.4px; color:#94a3b8; font-weight:600; margin-top:2px; }
+
+.entries-table { width:100%; border-collapse:collapse; }
+.entries-table th { background:#f8fafc; color:#64748b; font-size:.67rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; padding:10px 14px; border-bottom:2px solid #e2e8f0; }
+.entries-table td { padding:11px 14px; border-bottom:1px solid #f1f5f9; font-size:.85rem; }
+.entries-table tbody tr:last-child td { border-bottom:none; }
+.entries-table tbody tr:hover { background:#fafafa; }
+
+.day-group-header td { background:#f1f5f9; font-weight:700; font-size:.8rem; color:#475569; padding:7px 14px; border-top:1px solid #e2e8f0; }
+
+.ot-val { color:#b91c1c; font-weight:600; }
+.approved-banner { background:#f0fdf4; border-top:1px solid #bbf7d0; padding:12px 24px; font-size:.82rem; color:#15803d; }
+.rejected-banner { background:#fff1f2; border-top:1px solid #fecdd3; padding:12px 24px; font-size:.82rem; color:#b91c1c; }
+
+.approve-bar { padding:16px 24px; border-top:1px solid #f1f5f9; display:flex; gap:10px; justify-content:flex-end; align-items:center; flex-wrap:wrap; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+  <a href="{{ url_for('timesheets') }}" class="text-decoration-none text-muted" style="font-size:.8rem;">
+    <i class="bi bi-arrow-left me-1"></i>Back to Timesheets
+  </a>
+</div>
+
+<div class="ts-detail-card">
+  <!-- Header -->
+  <div class="ts-detail-header">
+    <div class="d-flex align-items-center gap-3">
+      <div class="ts-avatar">{{ sheet.employee_name[0].upper() if sheet.employee_name else '?' }}</div>
+      <div>
+        <p class="ts-emp-name">{{ sheet.employee_name or 'Unknown Employee' }}</p>
+        <p class="ts-emp-week">Week of {{ sheet.week_of }}</p>
+      </div>
+    </div>
+    <div class="d-flex align-items-center gap-3">
+      <span class="sbadge sb-{{ sheet.status | lower }}">{{ sheet.status }}</span>
+      {% if sheet.status in ('Draft', 'Rejected') and (sheet.employee_uid == user_uid or user_role in ('admin','finance')) %}
+      <a href="{{ url_for('timesheets_submit', week=sheet.week_of) }}"
+         class="btn btn-sm" style="background:#0D9488;color:#fff;font-size:.78rem;padding:5px 14px;">
+        <i class="bi bi-pencil me-1"></i>Edit
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stat-boxes">
+    <div class="stat-box">
+      <div class="stat-val">{{ "%.1f"|format(sheet.total_hours | float) }}</div>
+      <div class="stat-lbl">Total Hrs</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val">{{ "%.1f"|format(sheet.total_regular_hours | float) }}</div>
+      <div class="stat-lbl">Regular</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" style="color:{% if sheet.total_overtime_hours | float > 0 %}#b91c1c{% else %}#94a3b8{% endif %};">
+        {{ "%.1f"|format(sheet.total_overtime_hours | float) }}
+      </div>
+      <div class="stat-lbl">Overtime</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val">{{ by_date | length }}</div>
+      <div class="stat-lbl">Days Worked</div>
+    </div>
+    {% if sheet.submitted_at %}
+    <div class="stat-box">
+      <div class="stat-val" style="font-size:.85rem;padding-top:4px;">{{ sheet.submitted_at[:10] }}</div>
+      <div class="stat-lbl">Submitted</div>
+    </div>
+    {% endif %}
+    {% if sheet.approved_at %}
+    <div class="stat-box">
+      <div class="stat-val" style="font-size:.85rem;padding-top:4px;">{{ sheet.approved_at[:10] }}</div>
+      <div class="stat-lbl">Reviewed</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Entries Table -->
+  <div class="table-responsive">
+    <table class="entries-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Project</th>
+          <th>Start</th>
+          <th>Lunch (min)</th>
+          <th>End</th>
+          <th>Reg Hrs</th>
+          <th>OT Hrs</th>
+          <th>Total</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if sheet.entries %}
+          {% set ns = namespace(prev_date='') %}
+          {% for entry in sheet.entries %}
+          {% if entry.date != ns.prev_date %}
+          <tr class="day-group-header">
+            <td colspan="9">
+              <i class="bi bi-calendar3 me-2"></i>{{ entry.date or 'No date' }}
+            </td>
+          </tr>
+          {% set ns.prev_date = entry.date %}
+          {% endif %}
+          <tr>
+            <td style="color:#94a3b8;font-size:.78rem;">{{ entry.date or '—' }}</td>
+            <td>
+              {% if entry.project_name %}
+              <strong>{{ entry.project_name }}</strong>
+              {% if entry.project_number %}
+              <span style="color:#94a3b8;font-size:.75rem;"> · {{ entry.project_number }}</span>
+              {% endif %}
+              {% else %}
+              <span style="color:#94a3b8;">General / Admin</span>
+              {% endif %}
+            </td>
+            <td>{{ entry.start_time or '—' }}</td>
+            <td style="text-align:center;color:#64748b;">{{ entry.lunch_break_mins or 0 }}</td>
+            <td>{{ entry.end_time or '—' }}</td>
+            <td>{{ "%.2f"|format(entry.regular_hours | float) }}</td>
+            <td class="{% if entry.overtime_hours | float > 0 %}ot-val{% endif %}">
+              {{ "%.2f"|format(entry.overtime_hours | float) }}
+            </td>
+            <td><strong>{{ "%.2f"|format(entry.total_hours | float) }}</strong></td>
+            <td style="color:#64748b;font-size:.8rem;">{{ entry.notes or '—' }}</td>
+          </tr>
+          {% endfor %}
+          <tr style="background:#f8fafc;border-top:2px solid #e2e8f0;">
+            <td colspan="5" style="text-align:right;font-weight:700;color:#475569;padding:10px 14px;">Totals</td>
+            <td style="font-weight:700;">{{ "%.2f"|format(sheet.total_regular_hours | float) }}</td>
+            <td class="ot-val" style="font-weight:700;">{{ "%.2f"|format(sheet.total_overtime_hours | float) }}</td>
+            <td style="font-weight:800;">{{ "%.2f"|format(sheet.total_hours | float) }}</td>
+            <td></td>
+          </tr>
+        {% else %}
+        <tr>
+          <td colspan="9" style="text-align:center;padding:40px;color:#94a3b8;">
+            No entries recorded.
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Approval Banner / Notes -->
+  {% if sheet.status == 'Approved' %}
+  <div class="approved-banner">
+    <i class="bi bi-check-circle-fill me-2"></i>
+    Approved by <strong>{{ sheet.approved_by or 'manager' }}</strong>
+    {% if sheet.approved_at %}on {{ sheet.approved_at[:10] }}{% endif %}
+  </div>
+  {% elif sheet.status == 'Rejected' %}
+  <div class="rejected-banner">
+    <i class="bi bi-x-circle-fill me-2"></i>
+    Rejected by <strong>{{ sheet.approved_by or 'manager' }}</strong>
+    {% if sheet.approved_at %}on {{ sheet.approved_at[:10] }}{% endif %}
+    {% if sheet.rejection_notes %} — {{ sheet.rejection_notes }}{% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Admin Approve/Reject Bar -->
+  {% if is_admin and sheet.status == 'Submitted' %}
+  <div class="approve-bar">
+    <span style="color:#64748b;font-size:.82rem;">Awaiting your review:</span>
+    <button onclick="approveSheet('{{ sheet.firebase_id }}','approve')"
+            class="btn" style="background:#15803d;color:#fff;font-weight:600;padding:6px 18px;border:none;border-radius:8px;">
+      <i class="bi bi-check2-circle me-1"></i>Approve
+    </button>
+    <button onclick="approveSheet('{{ sheet.firebase_id }}','reject')"
+            class="btn btn-outline-danger" style="font-weight:600;padding:6px 18px;border-radius:8px;">
+      <i class="bi bi-x-circle me-1"></i>Reject
+    </button>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function approveSheet(sheetId, action) {
+  let notes = '';
+  if (action === 'reject') {
+    notes = prompt('Rejection reason (optional):') ?? '';
+    if (notes === null) return;
+  }
+  fetch(`/api/timesheets/${sheetId}/approve`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action, notes})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) location.reload();
+    else alert('Error: ' + (d.error || 'Unknown'));
+  })
+  .catch(() => alert('Network error. Please try again.'));
+}
+</script>
+{% endblock %}
