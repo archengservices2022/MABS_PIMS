@@ -203,9 +203,13 @@
       <button type="submit" class="btn-signin">Sign In</button>
     </form>
 
-    <div class="secured">
+    <div id="securedMessage" class="secured">
       <i class="bi bi-shield-lock-fill me-1"></i>
       Secured connection &nbsp;·&nbsp; Firebase sync enabled
+    </div>
+    <div id="resetSuccessMessage" style="display:none;text-align:center;color:#00756f;font-size:12px;margin-top:16px;font-weight:600;">
+      <i class="bi bi-check-circle-fill me-1"></i>
+      <span id="resetMessageText"></span>
     </div>
   </div>
 </div>
@@ -230,9 +234,14 @@ function handleDirectForgotPassword() {
   const email = document.getElementById('signInEmail').value.trim();
   const messageDiv = document.getElementById('resetPasswordMessage');
   const errorDiv = document.getElementById('resetPasswordError');
+  const securedMsg = document.getElementById('securedMessage');
+  const successMsg = document.getElementById('resetSuccessMessage');
+  const successText = document.getElementById('resetMessageText');
 
   messageDiv.style.display = 'none';
   errorDiv.style.display = 'none';
+  securedMsg.style.display = 'block';
+  successMsg.style.display = 'none';
 
   if (!email) {
     errorDiv.innerHTML = '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;color:#b91c1c;font-size:13px;font-weight:600;display:flex;align-items:flex-start;gap:8px;"><i class="bi bi-exclamation-circle-fill" style="flex-shrink:0;margin-top:2px;"></i><span>Please enter your email address.</span></div>';
@@ -250,8 +259,9 @@ function handleDirectForgotPassword() {
   .then(response => response.json())
   .then(data => {
     if (data.success) {
-      messageDiv.innerHTML = '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 14px;color:#166534;font-size:13px;font-weight:600;display:flex;align-items:flex-start;gap:8px;"><i class="bi bi-check-circle-fill" style="flex-shrink:0;margin-top:2px;"></i><span>' + data.message + '</span></div>';
-      messageDiv.style.display = 'block';
+      securedMsg.style.display = 'none';
+      successText.innerHTML = data.message;
+      successMsg.style.display = 'block';
     } else {
       errorDiv.innerHTML = '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;color:#b91c1c;font-size:13px;font-weight:600;display:flex;align-items:flex-start;gap:8px;"><i class="bi bi-exclamation-circle-fill" style="flex-shrink:0;margin-top:2px;"></i><span>' + data.error + '</span></div>';
       errorDiv.style.display = 'block';
