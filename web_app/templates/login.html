@@ -154,8 +154,6 @@
       {% endif %}
     {% endwith %}
 
-    <div id="resetPasswordMessage" style="display:none;margin-bottom:14px;"></div>
-    <div id="resetPasswordError" style="display:none;margin-bottom:14px;"></div>
 
     {% if error %}
     <div class="error-box">
@@ -203,9 +201,9 @@
       <button type="submit" class="btn-signin">Sign In</button>
     </form>
 
-    <div id="resetSuccessMessage" style="display:none;text-align:center;color:#00756f;font-size:12px;margin-top:16px;font-weight:600;">
-      <i class="bi bi-check-circle-fill me-1"></i>
-      <span id="resetMessageText"></span>
+    <div id="bottomMessage" style="display:none;text-align:center;font-size:12px;margin-top:16px;font-weight:600;">
+      <i id="bottomMessageIcon" class="bi me-1"></i>
+      <span id="bottomMessageText"></span>
     </div>
   </div>
 </div>
@@ -228,18 +226,17 @@ function togglePw() {
 
 function handleDirectForgotPassword() {
   const email = document.getElementById('signInEmail').value.trim();
-  const messageDiv = document.getElementById('resetPasswordMessage');
-  const errorDiv = document.getElementById('resetPasswordError');
-  const successMsg = document.getElementById('resetSuccessMessage');
-  const successText = document.getElementById('resetMessageText');
+  const bottomMsg = document.getElementById('bottomMessage');
+  const bottomIcon = document.getElementById('bottomMessageIcon');
+  const bottomText = document.getElementById('bottomMessageText');
 
-  messageDiv.style.display = 'none';
-  errorDiv.style.display = 'none';
-  successMsg.style.display = 'none';
+  bottomMsg.style.display = 'none';
 
   if (!email) {
-    errorDiv.innerHTML = '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;color:#b91c1c;font-size:13px;font-weight:600;display:flex;align-items:flex-start;gap:8px;"><i class="bi bi-exclamation-circle-fill" style="flex-shrink:0;margin-top:2px;"></i><span>Please enter your email address.</span></div>';
-    errorDiv.style.display = 'block';
+    bottomIcon.className = 'bi bi-exclamation-circle-fill me-1';
+    bottomMsg.style.color = '#b91c1c';
+    bottomText.innerHTML = 'Please enter your email address.';
+    bottomMsg.style.display = 'block';
     return;
   }
 
@@ -253,16 +250,22 @@ function handleDirectForgotPassword() {
   .then(response => response.json())
   .then(data => {
     if (data.success) {
-      successText.innerHTML = data.message;
-      successMsg.style.display = 'block';
+      bottomIcon.className = 'bi bi-check-circle-fill me-1';
+      bottomMsg.style.color = '#00756f';
+      bottomText.innerHTML = data.message;
+      bottomMsg.style.display = 'block';
     } else {
-      errorDiv.innerHTML = '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;color:#b91c1c;font-size:13px;font-weight:600;display:flex;align-items:flex-start;gap:8px;"><i class="bi bi-exclamation-circle-fill" style="flex-shrink:0;margin-top:2px;"></i><span>' + data.error + '</span></div>';
-      errorDiv.style.display = 'block';
+      bottomIcon.className = 'bi bi-exclamation-circle-fill me-1';
+      bottomMsg.style.color = '#b91c1c';
+      bottomText.innerHTML = data.error;
+      bottomMsg.style.display = 'block';
     }
   })
   .catch(err => {
-    errorDiv.innerHTML = '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;color:#b91c1c;font-size:13px;font-weight:600;display:flex;align-items:flex-start;gap:8px;"><i class="bi bi-exclamation-circle-fill" style="flex-shrink:0;margin-top:2px;"></i><span>An error occurred. Please try again later.</span></div>';
-    errorDiv.style.display = 'block';
+    bottomIcon.className = 'bi bi-exclamation-circle-fill me-1';
+    bottomMsg.style.color = '#b91c1c';
+    bottomText.innerHTML = 'An error occurred. Please try again later.';
+    bottomMsg.style.display = 'block';
   });
 }
 </script>
