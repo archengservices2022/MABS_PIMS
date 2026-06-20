@@ -384,8 +384,9 @@ def forgot_password():
                         ok, err_msg = firebase_send_password_reset(email)
 
                         if ok:
-                            message = f"Reset link sent to {email}. Please check your email to continue."
+                            flash(f"Reset link sent to {email}. Please check your email to continue.", "success")
                             log.info("Password reset email sent via Firebase for %s", email)
+                            return redirect(url_for("login"))
                         else:
                             error = "Failed to send reset email. Please try again later."
                             log.error("Firebase password reset failed for %s: %s", email, err_msg)
