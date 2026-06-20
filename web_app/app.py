@@ -372,10 +372,16 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
+def _sanitize_email_key(email: str) -> str:
+    """Convert email to Firebase-safe key"""
+    return re.sub(r'[./\[\]#$]', '_', email)
+
 @app.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
     error = None
     message = None
+    reset_link = None
+    smtp_configured = bool(os.getenv("SMTP_EMAIL") and os.getenv("SMTP_PASSWORD"))
 
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
@@ -404,8 +410,10 @@ def forgot_password():
                     else:
                         token = secrets.token_urlsafe(32)
                         token_hash = hashlib.sha256(token.encode()).hexdigest()
+                        email_key = _sanitize_email_key(email)
 
-                        fb_update(f"/password_reset_tokens/{email}", {
+                        fb_update(f"/password_reset_tokens/{email_key}", {
+                            "email": email,
                             "token_hash": token_hash,
                             "created_at": datetime.now(timezone.utc).isoformat(),
                             "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
@@ -416,7 +424,11 @@ def forgot_password():
 
                         if email_sent:
                             message = f"Reset link sent to {email}. Please check your email to continue."
+                            reset_link = None
                             log.info("Password reset requested for %s", email)
+                        elif not smtp_configured:
+                            message = "Reset link generated. Click the link below to reset your password."
+                            log.info("Password reset link generated for %s (SMTP not configured): %s", email, reset_link)
                         else:
                             error = "Email service is not configured. Please contact your administrator."
                             log.error("Password reset email failed for %s", email)
@@ -424,7 +436,7 @@ def forgot_password():
                     error = "An error occurred. Please try again later."
                     log.error("Forgot password error: %s", str(e))
 
-    return render_template("forgot_password.html", error=error, message=message)
+    return render_template("forgot_password.html", error=error, message=message, reset_link=reset_link)
 
 @app.route("/reset-password", methods=["GET", "POST"])
 def reset_password():
@@ -442,7 +454,8 @@ def reset_password():
         else:
             try:
                 token_hash = hashlib.sha256(token.encode()).hexdigest()
-                token_data = fb_get(f"/password_reset_tokens/{email}") or {}
+                email_key = _sanitize_email_key(email)
+                token_data = fb_get(f"/password_reset_tokens/{email_key}") or {}
 
                 if not token_data:
                     error = "Invalid or expired reset link. Please request a new one."
@@ -474,7 +487,7 @@ def reset_password():
                                         error = "Failed to reset password. Please try again."
                                         log.error("Password reset failed for %s: %s", email, err_msg)
                                     else:
-                                        fb_delete(f"/password_reset_tokens/{email}")
+                                        fb_delete(f"/password_reset_tokens/{email_key}")
 
                                         ok, uid, err_msg = firebase_sign_in(email, password)
                                         if ok:
