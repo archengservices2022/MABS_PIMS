@@ -5,6 +5,8 @@ import json
 import base64
 import tempfile
 import logging
+import secrets
+import hashlib
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from functools import wraps
@@ -250,6 +252,21 @@ def firebase_sign_in(email: str, password: str):
     except Exception as exc:
         return False, "", str(exc)
 
+def firebase_reset_password(email: str, password: str):
+    """Reset password using Firebase. Returns (ok, error_msg)"""
+    url = f"https://identitytoolkit.googleapis.com/v1/accounts:update?key={FIREBASE_API_KEY}"
+    try:
+        resp = requests.post(url, json={"email": email, "password": password,
+                                        "returnSecureToken": True}, timeout=10)
+        if resp.status_code == 200:
+            return True, ""
+        err = resp.json().get("error", {}).get("message", "Failed to reset password")
+        return False, err
+    except requests.exceptions.Timeout:
+        return False, "Connection timed out. Please try again."
+    except Exception as exc:
+        return False, str(exc)
+
 def load_user_profile(uid: str) -> Optional[dict]:
     if not FIREBASE_AVAILABLE:
         return None
@@ -332,6 +349,178 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    error = None
+    message = None
+
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+
+        if not email:
+            error = "Please enter your email address."
+        else:
+            if not FIREBASE_AVAILABLE:
+                error = "Password reset service unavailable. Please contact your administrator."
+            else:
+                try:
+                    users_ref = db.collection("users")
+                    user_doc = users_ref.document(email).get()
+
+                    if not user_doc.exists:
+                        error = "Account does not exist. Please contact your administrator."
+                    else:
+                        user_data = user_doc.to_dict() or {}
+                        if not user_data.get("active", True):
+                            error = "Account does not exist. Please contact your administrator."
+                        else:
+                            token = secrets.token_urlsafe(32)
+                            token_hash = hashlib.sha256(token.encode()).hexdigest()
+
+                            fb_update(f"/password_reset_tokens/{email}", {
+                                "token_hash": token_hash,
+                                "created_at": datetime.now(timezone.utc).isoformat(),
+                                "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+                            })
+
+                            reset_link = url_for("reset_password", email=email, token=token, _external=True)
+                            send_password_reset_email(email, user_data.get("username", email.split("@")[0]), reset_link)
+
+                            message = f"Reset link sent to {email}. Please check your email to continue."
+                            log.info("Password reset requested for %s", email)
+                except Exception as e:
+                    error = "An error occurred. Please try again later."
+                    log.error("Forgot password error: %s", str(e))
+
+    return render_template("forgot_password.html", error=error, message=message)
+
+@app.route("/reset-password", methods=["GET", "POST"])
+def reset_password():
+    email = request.args.get("email", "").strip().lower()
+    token = request.args.get("token", "")
+    error = None
+    message = None
+    valid_token = False
+
+    if not email or not token:
+        error = "Invalid reset link. Please request a new one."
+    else:
+        if not FIREBASE_AVAILABLE:
+            error = "Password reset service unavailable. Please contact your administrator."
+        else:
+            try:
+                token_hash = hashlib.sha256(token.encode()).hexdigest()
+                token_data = fb_get(f"/password_reset_tokens/{email}") or {}
+
+                if not token_data:
+                    error = "Invalid or expired reset link. Please request a new one."
+                else:
+                    stored_hash = token_data.get("token_hash", "")
+                    expires_at = token_data.get("expires_at", "")
+
+                    if stored_hash != token_hash:
+                        error = "Invalid reset link. Please request a new one."
+                    elif expires_at and datetime.fromisoformat(expires_at) < datetime.now(timezone.utc):
+                        error = "Reset link has expired. Please request a new one."
+                    else:
+                        valid_token = True
+
+                        if request.method == "POST":
+                            password = request.form.get("password", "")
+                            confirm = request.form.get("confirm_password", "")
+
+                            if not password or not confirm:
+                                error = "Please enter both password fields."
+                            elif len(password) < 8:
+                                error = "Password must be at least 8 characters long."
+                            elif password != confirm:
+                                error = "Passwords do not match."
+                            else:
+                                try:
+                                    ok, err_msg = firebase_reset_password(email, password)
+                                    if not ok:
+                                        error = "Failed to reset password. Please try again."
+                                        log.error("Password reset failed for %s: %s", email, err_msg)
+                                    else:
+                                        fb_delete(f"/password_reset_tokens/{email}")
+                                        message = "Password reset successfully. You can now sign in with your new password."
+                                        valid_token = False
+                                        log.info("Password reset successful for %s", email)
+                                except Exception as e:
+                                    error = "An error occurred. Please try again later."
+                                    log.error("Password reset error: %s", str(e))
+            except Exception as e:
+                error = "An error occurred. Please try again later."
+                log.error("Reset password validation error: %s", str(e))
+
+    return render_template("reset_password.html", email=email, token=token, error=error, message=message, valid_token=valid_token)
+
+def send_password_reset_email(email: str, username: str, reset_link: str) -> bool:
+    try:
+        sender_email = os.getenv("SMTP_EMAIL", "noreply@mabseng.com")
+        sender_password = os.getenv("SMTP_PASSWORD", "")
+        smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+
+        if not sender_password:
+            log.warning("SMTP password not configured. Email not sent.")
+            return False
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "Reset Your PIMS Password"
+        msg["From"] = sender_email
+        msg["To"] = email
+
+        html = f"""
+        <html>
+          <body style="font-family: 'Segoe UI', Arial, sans-serif; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #0d1b2a; margin: 0;">MABS PIMS</h1>
+                <p style="color: #6b7280; margin: 5px 0 0 0;">Project &amp; Invoice Management System</p>
+              </div>
+
+              <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 24px;">
+                <h2 style="color: #111827; margin-top: 0;">Reset Your Password</h2>
+                <p style="color: #6b7280; line-height: 1.5;">Hi {username},</p>
+                <p style="color: #6b7280; line-height: 1.5;">We received a request to reset your password. Click the button below to create a new password:</p>
+
+                <div style="text-align: center; margin: 28px 0;">
+                  <a href="{reset_link}" style="background: #00756f; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">
+                    Reset Password
+                  </a>
+                </div>
+
+                <p style="color: #6b7280; font-size: 12px; line-height: 1.5;">Or copy and paste this link in your browser:</p>
+                <p style="background: #ffffff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; color: #00756f; font-size: 12px; word-break: break-all; margin: 12px 0;">{reset_link}</p>
+
+                <div style="border-top: 1px solid #e5e7eb; margin-top: 24px; padding-top: 16px;">
+                  <p style="color: #9ca3af; font-size: 12px; margin: 0;">This link will expire in 1 hour.</p>
+                  <p style="color: #9ca3af; font-size: 12px; margin: 8px 0 0 0;">If you didn't request this reset, please ignore this email.</p>
+                </div>
+              </div>
+
+              <div style="text-align: center; margin-top: 20px;">
+                <p style="color: #9ca3af; font-size: 11px;">© 2026 MABS Engineering LLC. All rights reserved.</p>
+              </div>
+            </div>
+          </body>
+        </html>
+        """
+
+        msg.attach(MIMEText(html, "html"))
+
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+
+        log.info("Password reset email sent to %s", email)
+        return True
+    except Exception as e:
+        log.error("Failed to send password reset email to %s: %s", email, str(e))
+        return False
 
 # ── Routes: Dashboard ─────────────────────────────────────────────────────────
 @app.route("/")
