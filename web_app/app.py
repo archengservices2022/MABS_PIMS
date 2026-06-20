@@ -252,43 +252,6 @@ def firebase_sign_in(email: str, password: str):
     except Exception as exc:
         return False, "", str(exc)
 
-def firebase_reset_password(email: str, password: str):
-    """Reset password using Firebase custom signup endpoint. Returns (ok, error_msg)"""
-    try:
-        signup_url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={FIREBASE_API_KEY}"
-        resp = requests.post(signup_url, json={
-            "email": email,
-            "password": password,
-            "returnSecureToken": True
-        }, timeout=10)
-
-        if resp.status_code == 200:
-            new_uid = resp.json().get("localId", "")
-            users = fb_get("/users") or {}
-            old_uid = None
-            old_user_data = None
-
-            for uid, u_data in users.items():
-                if isinstance(u_data, dict) and u_data.get("email", "").lower() == email:
-                    old_uid = uid
-                    old_user_data = dict(u_data)
-                    break
-
-            if old_uid and old_user_data:
-                old_user_data["firebase_uid"] = new_uid
-                fb_update(f"/users/{new_uid}", old_user_data)
-                if old_uid != new_uid:
-                    fb_delete(f"/users/{old_uid}")
-
-            return True, ""
-
-        err = resp.json().get("error", {}).get("message", "Failed to reset password")
-        return False, err
-    except requests.exceptions.Timeout:
-        return False, "Connection timed out. Please try again."
-    except Exception as exc:
-        return False, str(exc)
-
 def load_user_profile(uid: str) -> Optional[dict]:
     if not FIREBASE_AVAILABLE:
         return None
@@ -372,9 +335,21 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
-def _sanitize_email_key(email: str) -> str:
-    """Convert email to Firebase-safe key"""
-    return re.sub(r'[./\[\]#$]', '_', email)
+def firebase_send_password_reset(email: str):
+    """Send password reset email using Firebase. Returns (success, error_msg)"""
+    try:
+        url = f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={FIREBASE_API_KEY}"
+        resp = requests.post(url, json={"email": email, "requestType": "PASSWORD_RESET"}, timeout=10)
+
+        if resp.status_code == 200:
+            return True, ""
+
+        err = resp.json().get("error", {}).get("message", "Failed to send reset email")
+        return False, err
+    except requests.exceptions.Timeout:
+        return False, "Connection timed out"
+    except Exception as exc:
+        return False, str(exc)
 
 @app.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
@@ -406,184 +381,97 @@ def forgot_password():
                     elif not user_data.get("active", True):
                         error = "Account does not exist. Please contact your administrator."
                     else:
-                        token = secrets.token_urlsafe(32)
-                        token_hash = hashlib.sha256(token.encode()).hexdigest()
-                        email_key = _sanitize_email_key(email)
+                        ok, err_msg = firebase_send_password_reset(email)
 
-                        fb_update(f"/password_reset_tokens/{email_key}", {
-                            "email": email,
-                            "token_hash": token_hash,
-                            "created_at": datetime.now(timezone.utc).isoformat(),
-                            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
-                        })
-
-                        reset_link = url_for("reset_password", email=email, token=token, _external=True)
-                        email_sent = send_password_reset_email(email, user_data.get("username", email.split("@")[0]), reset_link)
-
-                        if email_sent:
+                        if ok:
                             message = f"Reset link sent to {email}. Please check your email to continue."
-                            log.info("Password reset requested for %s", email)
+                            log.info("Password reset email sent via Firebase for %s", email)
                         else:
-                            error = "Failed to send reset email. Please contact your administrator."
-                            log.error("Password reset email failed for %s", email)
+                            error = "Failed to send reset email. Please try again later."
+                            log.error("Firebase password reset failed for %s: %s", email, err_msg)
                 except Exception as e:
                     error = "An error occurred. Please try again later."
                     log.error("Forgot password error: %s", str(e))
 
     return render_template("forgot_password.html", error=error, message=message)
 
+def firebase_reset_password_with_code(email: str, password: str, oob_code: str):
+    """Reset password using Firebase OOB code. Returns (ok, error_msg)"""
+    try:
+        url = f"https://identitytoolkit.googleapis.com/v1/accounts:resetPassword?key={FIREBASE_API_KEY}"
+        resp = requests.post(url, json={
+            "oobCode": oob_code,
+            "newPassword": password
+        }, timeout=10)
+
+        if resp.status_code == 200:
+            return True, ""
+
+        err = resp.json().get("error", {}).get("message", "Failed to reset password")
+        return False, err
+    except requests.exceptions.Timeout:
+        return False, "Connection timed out"
+    except Exception as exc:
+        return False, str(exc)
+
 @app.route("/reset-password", methods=["GET", "POST"])
 def reset_password():
     email = request.args.get("email", "").strip().lower()
-    token = request.args.get("token", "")
+    oob_code = request.args.get("oobCode", "").strip()
     error = None
     message = None
     valid_token = False
 
-    if not email or not token:
+    if not email or not oob_code:
         error = "Invalid reset link. Please request a new one."
     else:
         if not FIREBASE_AVAILABLE:
             error = "Password reset service unavailable. Please contact your administrator."
         else:
             try:
-                token_hash = hashlib.sha256(token.encode()).hexdigest()
-                email_key = _sanitize_email_key(email)
-                token_data = fb_get(f"/password_reset_tokens/{email_key}") or {}
+                valid_token = True
 
-                if not token_data:
-                    error = "Invalid or expired reset link. Please request a new one."
-                else:
-                    stored_hash = token_data.get("token_hash", "")
-                    expires_at = token_data.get("expires_at", "")
+                if request.method == "POST":
+                    password = request.form.get("password", "")
+                    confirm = request.form.get("confirm_password", "")
 
-                    if stored_hash != token_hash:
-                        error = "Invalid reset link. Please request a new one."
-                    elif expires_at and datetime.fromisoformat(expires_at) < datetime.now(timezone.utc):
-                        error = "Reset link has expired. Please request a new one."
+                    if not password or not confirm:
+                        error = "Please enter both password fields."
+                    elif len(password) < 8:
+                        error = "Password must be at least 8 characters long."
+                    elif password != confirm:
+                        error = "Passwords do not match."
                     else:
-                        valid_token = True
-
-                        if request.method == "POST":
-                            password = request.form.get("password", "")
-                            confirm = request.form.get("confirm_password", "")
-
-                            if not password or not confirm:
-                                error = "Please enter both password fields."
-                            elif len(password) < 8:
-                                error = "Password must be at least 8 characters long."
-                            elif password != confirm:
-                                error = "Passwords do not match."
+                        try:
+                            ok, err_msg = firebase_reset_password_with_code(email, password, oob_code)
+                            if not ok:
+                                error = "Failed to reset password. " + err_msg
+                                log.error("Password reset failed for %s: %s", email, err_msg)
                             else:
-                                try:
-                                    ok, err_msg = firebase_reset_password(email, password)
-                                    if not ok:
-                                        error = "Failed to reset password. Please try again."
-                                        log.error("Password reset failed for %s: %s", email, err_msg)
-                                    else:
-                                        fb_delete(f"/password_reset_tokens/{email_key}")
+                                ok, uid, err_msg = firebase_sign_in(email, password)
+                                if ok:
+                                    profile = load_user_profile(uid)
+                                    if profile and profile.get("active", True):
+                                        role = normalize_role(profile.get("role", "sales"))
+                                        session.permanent = True
+                                        session["user_email"] = email
+                                        session["user_uid"] = uid
+                                        session["user_name"] = profile.get("username", email.split("@")[0])
+                                        session["user_role"] = role
+                                        log.info("Password reset and auto-login for %s", email)
+                                        return redirect(url_for(first_page(role)))
 
-                                        ok, uid, err_msg = firebase_sign_in(email, password)
-                                        if ok:
-                                            profile = load_user_profile(uid)
-                                            if profile and profile.get("active", True):
-                                                role = normalize_role(profile.get("role", "sales"))
-                                                session.permanent = True
-                                                session["user_email"] = email
-                                                session["user_uid"] = uid
-                                                session["user_name"] = profile.get("username", email.split("@")[0])
-                                                session["user_role"] = role
-                                                log.info("Password reset and auto-login for %s", email)
-                                                return redirect(url_for(first_page(role)))
-
-                                        message = "Password reset successfully. You can now sign in with your new password."
-                                        valid_token = False
-                                        log.info("Password reset successful for %s", email)
-                                except Exception as e:
-                                    error = "An error occurred. Please try again later."
-                                    log.error("Password reset error: %s", str(e))
+                                message = "Password reset successfully. You can now sign in with your new password."
+                                valid_token = False
+                                log.info("Password reset successful for %s", email)
+                        except Exception as e:
+                            error = "An error occurred. Please try again later."
+                            log.error("Password reset error: %s", str(e))
             except Exception as e:
                 error = "An error occurred. Please try again later."
-                log.error("Reset password validation error: %s", str(e))
+                log.error("Reset password error: %s", str(e))
 
-    return render_template("reset_password.html", email=email, token=token, error=error, message=message, valid_token=valid_token)
-
-def send_password_reset_email(email: str, username: str, reset_link: str) -> bool:
-    """Send password reset email. Returns True if sent successfully."""
-    try:
-        sender_email = os.getenv("SMTP_EMAIL", "").strip()
-        sender_password = os.getenv("SMTP_PASSWORD", "").strip()
-        smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com").strip()
-        smtp_port = int(os.getenv("SMTP_PORT", "587"))
-
-        if not sender_email:
-            log.error("SMTP_EMAIL not configured. Set in environment variables.")
-            return False
-        if not sender_password:
-            log.error("SMTP_PASSWORD not configured. Set in environment variables.")
-            return False
-
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = "Reset Your PIMS Password"
-        msg["From"] = sender_email
-        msg["To"] = email
-
-        html = f"""
-        <html>
-          <body style="font-family: 'Segoe UI', Arial, sans-serif; color: #333; margin: 0; padding: 0;">
-            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-              <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="color: #0d1b2a; margin: 0; font-size: 28px;">MABS PIMS</h1>
-                <p style="color: #6b7280; margin: 5px 0 0 0; font-size: 14px;">Project &amp; Invoice Management System</p>
-              </div>
-
-              <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 32px; margin: 20px 0;">
-                <h2 style="color: #111827; margin-top: 0; font-size: 20px;">Password Reset Request</h2>
-                <p style="color: #374151; line-height: 1.6; font-size: 14px;">Hi {username},</p>
-                <p style="color: #374151; line-height: 1.6; font-size: 14px;">We received a request to reset your password. To proceed with the password reset, click the button below:</p>
-
-                <div style="text-align: center; margin: 32px 0;">
-                  <a href="{reset_link}" style="background: #00756f; color: white; padding: 14px 36px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block; font-size: 15px;">
-                    Reset Password
-                  </a>
-                </div>
-
-                <p style="color: #6b7280; font-size: 12px; line-height: 1.5; margin: 24px 0;">If the button doesn't work, copy and paste this link in your browser:</p>
-                <p style="background: #ffffff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; color: #00756f; font-size: 12px; word-break: break-all; margin: 12px 0; font-family: monospace;">{reset_link}</p>
-
-                <div style="border-top: 1px solid #e5e7eb; margin-top: 32px; padding-top: 16px;">
-                  <p style="color: #9ca3af; font-size: 12px; margin: 0;">This password reset link expires in <strong>1 hour</strong>.</p>
-                  <p style="color: #9ca3af; font-size: 12px; margin: 8px 0 0 0;">If you didn't request this password reset, you can safely ignore this email. Your account remains secure.</p>
-                </div>
-              </div>
-
-              <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-                <p style="color: #9ca3af; font-size: 11px; margin: 0;">MABS PIMS &nbsp;|&nbsp; Secure Password Reset</p>
-                <p style="color: #9ca3af; font-size: 11px; margin: 5px 0 0 0;">© 2026 MABS Engineering LLC. All rights reserved.</p>
-              </div>
-            </div>
-          </body>
-        </html>
-        """
-
-        msg.attach(MIMEText(html, "html"))
-
-        with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as server:
-            server.starttls()
-            server.login(sender_email, sender_password)
-            server.send_message(msg)
-
-        log.info("Password reset email sent successfully to %s", email)
-        return True
-    except smtplib.SMTPAuthenticationError:
-        log.error("SMTP authentication failed. Check SMTP_EMAIL and SMTP_PASSWORD.")
-        return False
-    except smtplib.SMTPException as e:
-        log.error("SMTP error sending password reset email to %s: %s", email, str(e))
-        return False
-    except Exception as e:
-        log.error("Unexpected error sending password reset email to %s: %s", email, str(e))
-        return False
+    return render_template("reset_password.html", email=email, error=error, message=message, valid_token=valid_token)
 
 # ── Routes: Dashboard ─────────────────────────────────────────────────────────
 @app.route("/")
