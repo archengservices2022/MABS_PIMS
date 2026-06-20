@@ -353,7 +353,7 @@ def firebase_send_password_reset(email: str):
 
 @app.route("/api/forgot-password", methods=["POST"])
 def api_forgot_password():
-    """AJAX endpoint for forgot password modal"""
+    """AJAX endpoint for forgot password"""
     try:
         data = request.get_json() or {}
         email = data.get("email", "").strip().lower()
