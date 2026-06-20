@@ -185,24 +185,23 @@
         </div>
       </div>
 
-      <div class="form-check mb-3">
-        <input class="form-check-input" type="checkbox" id="showPw"
-               onchange="togglePw()">
-        <label class="form-check-label" for="showPw"
-               style="font-weight:400;color:#6b7280;font-size:13px;">
-          Show password
-        </label>
+      <div class="form-check mb-3" style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <input class="form-check-input" type="checkbox" id="showPw"
+                 onchange="togglePw()">
+          <label class="form-check-label" for="showPw"
+                 style="font-weight:400;color:#6b7280;font-size:13px;margin:0;">
+            Show password
+          </label>
+        </div>
+        <a href="javascript:void(0)" onclick="handleDirectForgotPassword()"
+           style="font-size:13px;color:#00756f;text-decoration:none;font-weight:600;cursor:pointer;">
+          Forgot password?
+        </a>
       </div>
 
       <button type="submit" class="btn-signin">Sign In</button>
     </form>
-
-    <div style="text-align: center; margin-top: 16px;">
-      <a href="javascript:void(0)" onclick="handleDirectForgotPassword()"
-         style="font-size:13px;color:#00756f;text-decoration:none;font-weight:600;cursor:pointer;">
-        Forgot password?
-      </a>
-    </div>
 
     <div class="secured">
       <i class="bi bi-shield-lock-fill me-1"></i>
