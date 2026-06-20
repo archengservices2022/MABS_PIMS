@@ -610,7 +610,7 @@ def dashboard():
         last_month_collected=last_month_collected,
         inv_status_counts=inv_status_counts,
         quot_status_counts=quot_status_counts,
-        quotes_approved_count=quot_status_counts.get('Approved', 0) + quot_status_counts.get('Completed', 0),
+        quotes_approved_count=sum(quot_status_counts.get(s, 0) for s in ('Approved', 'Converted', 'Invoiced', 'Completed')),
         quotes_pipeline_value=quotes_pipeline_value,
         quotes_conversion_rate=quotes_conversion_rate,
         proj_contract_total=proj_contract_total,
