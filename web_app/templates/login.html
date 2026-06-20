@@ -182,26 +182,60 @@
         </div>
       </div>
 
-      <div class="form-check mb-3" style="display:flex;justify-content:space-between;align-items:center;">
-        <div>
-          <input class="form-check-input" type="checkbox" id="showPw"
-                 onchange="togglePw()">
-          <label class="form-check-label" for="showPw"
-                 style="font-weight:400;color:#6b7280;font-size:13px;margin:0;">
-            Show password
-          </label>
-        </div>
-        <a href="{{ url_for('forgot_password') }}" style="font-size:13px;color:#00756f;text-decoration:none;font-weight:600;">
-          Forgot password?
-        </a>
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="showPw"
+               onchange="togglePw()">
+        <label class="form-check-label" for="showPw"
+               style="font-weight:400;color:#6b7280;font-size:13px;">
+          Show password
+        </label>
       </div>
 
       <button type="submit" class="btn-signin">Sign In</button>
     </form>
 
+    <div style="text-align: center; margin-top: 16px;">
+      <a href="javascript:void(0)" onclick="openForgotPasswordModal()"
+         style="font-size:13px;color:#00756f;text-decoration:none;font-weight:600;cursor:pointer;">
+        Forgot password?
+      </a>
+    </div>
+
     <div class="secured">
       <i class="bi bi-shield-lock-fill me-1"></i>
       Secured connection &nbsp;·&nbsp; Firebase sync enabled
+    </div>
+  </div>
+</div>
+
+<div id="forgotPasswordModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:14px;border:1px solid #dde3ec;padding:40px;width:100%;max-width:400px;box-shadow:0 4px 24px rgba(0,0,0,0.07);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div class="card-title" style="margin:0;">Reset Password</div>
+      <button type="button" onclick="closeForgotPasswordModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;">
+        ×
+      </button>
+    </div>
+    <div class="card-sub" style="margin-bottom:24px;">Enter your email to receive a reset link</div>
+
+    <div id="forgotPasswordMessage" style="display:none;margin-bottom:14px;"></div>
+    <div id="forgotPasswordError" style="display:none;margin-bottom:14px;"></div>
+
+    <form id="forgotPasswordForm" onsubmit="handleForgotPasswordSubmit(event)">
+      <div class="mb-3">
+        <label>Email Address</label>
+        <input type="email" id="forgotPasswordEmail" name="email" class="form-control"
+               placeholder="your@email.com" required>
+      </div>
+
+      <button type="submit" class="btn-signin" style="background:#00756f;">Send Reset Link</button>
+    </form>
+
+    <div style="text-align:center;margin-top:16px;">
+      <a href="javascript:void(0)" onclick="closeForgotPasswordModal()"
+         style="font-size:13px;color:#00756f;text-decoration:none;font-weight:600;cursor:pointer;">
+        Back to Sign In
+      </a>
     </div>
   </div>
 </div>
@@ -221,6 +255,72 @@ function togglePw() {
     chk.checked = false;
   }
 }
+
+function openForgotPasswordModal() {
+  document.getElementById('forgotPasswordModal').style.display = 'flex';
+  document.getElementById('forgotPasswordEmail').focus();
+}
+
+function closeForgotPasswordModal() {
+  document.getElementById('forgotPasswordModal').style.display = 'none';
+  document.getElementById('forgotPasswordForm').reset();
+  document.getElementById('forgotPasswordMessage').style.display = 'none';
+  document.getElementById('forgotPasswordError').style.display = 'none';
+}
+
+function handleForgotPasswordSubmit(event) {
+  event.preventDefault();
+
+  const email = document.getElementById('forgotPasswordEmail').value.trim();
+  const messageDiv = document.getElementById('forgotPasswordMessage');
+  const errorDiv = document.getElementById('forgotPasswordError');
+
+  messageDiv.style.display = 'none';
+  errorDiv.style.display = 'none';
+
+  if (!email) {
+    errorDiv.innerHTML = '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;color:#b91c1c;font-size:13px;font-weight:600;display:flex;align-items:flex-start;gap:8px;"><i class="bi bi-exclamation-circle-fill" style="flex-shrink:0;margin-top:2px;"></i><span>Please enter your email address.</span></div>';
+    errorDiv.style.display = 'block';
+    return;
+  }
+
+  const btn = event.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  btn.innerHTML = 'Sending...';
+
+  fetch('{{ url_for("api_forgot_password") }}', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email: email })
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      messageDiv.innerHTML = '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 14px;color:#166534;font-size:13px;font-weight:600;display:flex;align-items:flex-start;gap:8px;"><i class="bi bi-check-circle-fill" style="flex-shrink:0;margin-top:2px;"></i><span>' + data.message + '</span></div>';
+      messageDiv.style.display = 'block';
+      document.getElementById('forgotPasswordForm').style.display = 'none';
+    } else {
+      errorDiv.innerHTML = '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;color:#b91c1c;font-size:13px;font-weight:600;display:flex;align-items:flex-start;gap:8px;"><i class="bi bi-exclamation-circle-fill" style="flex-shrink:0;margin-top:2px;"></i><span>' + data.error + '</span></div>';
+      errorDiv.style.display = 'block';
+    }
+  })
+  .catch(err => {
+    errorDiv.innerHTML = '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;color:#b91c1c;font-size:13px;font-weight:600;display:flex;align-items:flex-start;gap:8px;"><i class="bi bi-exclamation-circle-fill" style="flex-shrink:0;margin-top:2px;"></i><span>An error occurred. Please try again later.</span></div>';
+    errorDiv.style.display = 'block';
+  })
+  .finally(() => {
+    btn.disabled = false;
+    btn.innerHTML = 'Send Reset Link';
+  });
+}
+
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape') {
+    closeForgotPasswordModal();
+  }
+});
 </script>
 </body>
 </html>

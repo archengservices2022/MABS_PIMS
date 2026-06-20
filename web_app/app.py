@@ -351,50 +351,47 @@ def firebase_send_password_reset(email: str):
     except Exception as exc:
         return False, str(exc)
 
-@app.route("/forgot-password", methods=["GET", "POST"])
-def forgot_password():
-    error = None
-    message = None
-
-    if request.method == "POST":
-        email = request.form.get("email", "").strip().lower()
+@app.route("/api/forgot-password", methods=["POST"])
+def api_forgot_password():
+    """AJAX endpoint for forgot password modal"""
+    try:
+        data = request.get_json() or {}
+        email = data.get("email", "").strip().lower()
 
         if not email:
-            error = "Please enter your email address."
+            return jsonify({"success": False, "error": "Please enter your email address."})
+
+        if not FIREBASE_AVAILABLE:
+            return jsonify({"success": False, "error": "Service unavailable. Please contact your administrator."})
+
+        user_found = False
+        user_data = None
+        users = fb_get("/users") or {}
+
+        for uid, u_data in users.items():
+            if isinstance(u_data, dict) and u_data.get("email", "").lower() == email:
+                user_found = True
+                user_data = u_data
+                break
+
+        if not user_found:
+            return jsonify({"success": False, "error": "Account does not exist. Please contact your administrator."})
+
+        if not user_data.get("active", True):
+            return jsonify({"success": False, "error": "Account does not exist. Please contact your administrator."})
+
+        ok, err_msg = firebase_send_password_reset(email)
+
+        if ok:
+            log.info("Password reset email sent via Firebase for %s", email)
+            return jsonify({"success": True, "message": f"Reset link sent to {email}. Please check your email to continue."})
         else:
-            if not FIREBASE_AVAILABLE:
-                error = "Password reset service unavailable. Please contact your administrator."
-            else:
-                try:
-                    user_found = False
-                    user_data = None
-                    users = fb_get("/users") or {}
+            log.error("Firebase password reset failed for %s: %s", email, err_msg)
+            return jsonify({"success": False, "error": "Failed to send reset email. Please try again later."})
 
-                    for uid, u_data in users.items():
-                        if isinstance(u_data, dict) and u_data.get("email", "").lower() == email:
-                            user_found = True
-                            user_data = u_data
-                            break
-
-                    if not user_found:
-                        error = "Account does not exist. Please contact your administrator."
-                    elif not user_data.get("active", True):
-                        error = "Account does not exist. Please contact your administrator."
-                    else:
-                        ok, err_msg = firebase_send_password_reset(email)
-
-                        if ok:
-                            flash(f"Reset link sent to {email}. Please check your email to continue.", "success")
-                            log.info("Password reset email sent via Firebase for %s", email)
-                            return redirect(url_for("login"))
-                        else:
-                            error = "Failed to send reset email. Please try again later."
-                            log.error("Firebase password reset failed for %s: %s", email, err_msg)
-                except Exception as e:
-                    error = "An error occurred. Please try again later."
-                    log.error("Forgot password error: %s", str(e))
-
-    return render_template("forgot_password.html", error=error, message=message)
+    except Exception as e:
+        log.error("API forgot password error: %s", str(e))
+        return jsonify({"success": False, "error": "An error occurred. Please try again later."})
 
 def firebase_reset_password_with_code(email: str, password: str, oob_code: str):
     """Reset password using Firebase OOB code. Returns (ok, error_msg)"""
