@@ -55,12 +55,13 @@
       </button>
     </form>
 
-    <!-- AI Draft Email -->
-    {% if ai_enabled %}
-    <button type="button" class="btn btn-sm btn-outline-teal" onclick="openEmailModal()">
-      <i class="bi bi-envelope-at me-1"></i>Draft Email
-    </button>
-    {% endif %}
+    <!-- Draft Email - Professional Email with PDF -->
+    <form method="POST" action="{{ url_for('quote_send', quote_id=quote.firebase_id) }}"
+          onsubmit="return confirm('Send this quote to {{ quote.get('client_name','client') }}?');">
+      <button type="submit" class="btn btn-sm btn-outline-teal">
+        <i class="bi bi-envelope me-1"></i>Draft Email
+      </button>
+    </form>
 
     <a href="{{ url_for('quote_edit', quote_id=quote.firebase_id) }}" class="btn btn-sm btn-outline-primary">
       <i class="bi bi-pencil me-1"></i>Edit
