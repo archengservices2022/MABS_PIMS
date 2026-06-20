@@ -340,7 +340,7 @@ a[href*="filter_expense"]:hover {
       <div class="kpi-card {{ 'kpi-green' if net_profit >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
         <div class="kpi-value {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(net_profit) }}</div>
-        <div class="kpi-sub">rev − exp − salaries</div>
+        <div class="kpi-sub">revenue minus expenses</div>
       </div>
     </div>
   </div>
@@ -526,7 +526,6 @@ a[href*="filter_expense"]:hover {
           <tr class="inc-row"
               data-date="{{ r.get('date','') }}"
               data-status="{{ r.get('status','') }}"
-              data-amount="{{ r.get('amount_paid',0)|float }}"
               data-search="{{ r.get('client_name','')|lower }} {{ r.get('invoice_number','')|lower }}">
             <td class="text-muted small">{{ r.get('date','—') }}</td>
             <td>
@@ -550,14 +549,14 @@ a[href*="filter_expense"]:hover {
             <td class="text-end">${{ "{:,.2f}".format((r.get('total',0)|float) - (r.get('tax_amount',0)|float)) }}</td>
             <td class="text-end text-muted">${{ "{:,.2f}".format(r.get('tax_amount',0)|float) }}</td>
             <td class="text-end fw-bold">${{ "{:,.2f}".format(r.get('total',0)|float) }}</td>
-            <td class="text-end fw-bold text-success">${{ "{:,.2f}".format(r.get('amount_paid',0)|float) }}</td>
+            <td class="text-end fw-bold text-success">${{ "{:,.2f}".format((r.get('amount_paid',0)|float) + (r.get('tax_amount',0)|float)) }}</td>
           </tr>
           {% endfor %}
         </tbody>
         <tfoot class="table-light fw-bold">
           <tr>
             <td colspan="8" class="text-end">Total Collected (including tax)</td>
-            <td class="text-end text-success" id="incomeTotalCell">${{ "{:,.2f}".format(total_collected) }}</td>
+            <td class="text-end text-success">${{ "{:,.2f}".format(total_collected) }}</td>
           </tr>
         </tfoot>
       </table>
@@ -594,15 +593,33 @@ a[href*="filter_expense"]:hover {
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
-        <div class="kpi-value text-danger">${{ "{:,.2f}".format(total_expenses) }}</div>
-        <div class="kpi-sub">all time</div>
+        <div class="kpi-value text-danger">
+          {%- set filtered_expenses = expenses if not filter_expense else expenses|selectattr('expense_name')|list + (expenses|selectattr('description')|list if filter_expense else []) -%}
+          {%- set total_all = expenses|map(attribute='amount')|map('float')|sum -%}
+          {%- set filtered_total = 0 -%}
+          {%- for exp in expenses -%}
+            {%- if not filter_expense or (exp.get('expense_name', '') or exp.get('description', '')).lower() == filter_expense.lower() -%}
+              {%- set filtered_total = filtered_total + (exp.get('amount', 0)|float) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          ${{ "{:,.2f}".format(filtered_total) }}
+        </div>
+        <div class="kpi-sub">all time{{ " (filtered)" if filter_expense else "" }}</div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-teal">
         <div class="kpi-top"><span class="kpi-label">Total Entries</span><i class="bi bi-receipt kpi-icon-sm"></i></div>
-        <div class="kpi-value">{{ expenses|length }}</div>
-        <div class="kpi-sub">expense records</div>
+        <div class="kpi-value">
+          {%- set filtered_count = 0 -%}
+          {%- for exp in expenses -%}
+            {%- if not filter_expense or (exp.get('expense_name', '') or exp.get('description', '')).lower() == filter_expense.lower() -%}
+              {%- set filtered_count = filtered_count + 1 -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ filtered_count }}
+        </div>
+        <div class="kpi-sub">all time{{ " (filtered)" if filter_expense else "" }}</div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
@@ -676,7 +693,7 @@ a[href*="filter_expense"]:hover {
           </tr>
         </thead>
         <tbody id="expenseTableBody">
-          {% for exp in expenses|sort(attribute='date', reverse=True) %}
+          {% for exp in expenses|sort(attribute='created_at', reverse=True) %}
           <tr class="expense-row"
             data-search="{{ (exp.get('expense_name','') or exp.get('description',''))|lower }} {{ exp.get('vendor','')|lower }} {{ exp.get('category','')|lower }}"
             data-type="{{ exp.get('expense_type','') }}"
@@ -802,7 +819,11 @@ a[href*="filter_expense"]:hover {
         </div>
         <div class="col-md-6">
           <label class="form-label form-label-sm fw-600">Vendor</label>
-          <input type="text" name="vendor" id="expenseVendor" class="form-control form-control-sm" placeholder="Vendor name">
+          <div class="custom-dropdown">
+            <input type="text" name="vendor" id="expenseVendor" class="form-control form-control-sm" placeholder="Vendor name or select...">
+            <span class="dropdown-arrow">▼</span>
+            <div class="dropdown-list" id="expenseVendorDropdown"></div>
+          </div>
         </div>
       </div>
 
@@ -846,6 +867,7 @@ const categoriesByType = {{ categories_by_type|safe }};
 const expenseNamesByCategory = {{ expense_names_by_category|safe }};
 const expenseTypesList = {{ expense_types|tojson }};
 const projectsList = {{ projects|tojson|safe }};
+let vendorList = {{ all_vendors|tojson }};
 
 function initExpenseFormDropdowns() {
   const typeInput = document.getElementById('expenseType');
@@ -885,6 +907,41 @@ function initExpenseFormDropdowns() {
     const filter = this.value.toLowerCase();
     Array.from(catDropdown.children).forEach(opt => {
       opt.style.display = opt.textContent.toLowerCase().includes(filter) ? '' : 'none';
+    });
+  });
+
+  // Initialize vendor dropdown for New Expense form
+  const vendorInput = document.getElementById('expenseVendor');
+  const vendorDropdown = document.getElementById('expenseVendorDropdown');
+  const vendorArrow = vendorInput.parentElement.querySelector('.dropdown-arrow');
+
+  function populateVendorDropdown() {
+    vendorDropdown.innerHTML = '';
+    vendorList.forEach(vendor => {
+      const div = document.createElement('div');
+      div.className = 'option';
+      div.textContent = vendor;
+      div.onclick = () => {
+        vendorInput.value = vendor;
+        vendorDropdown.classList.remove('show');
+      };
+      vendorDropdown.appendChild(div);
+    });
+  }
+
+  vendorArrow.addEventListener('click', () => {
+    vendorDropdown.classList.toggle('show');
+  });
+
+  vendorInput.addEventListener('focus', () => {
+    populateVendorDropdown();
+    vendorDropdown.classList.add('show');
+  });
+
+  vendorInput.addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    Array.from(vendorDropdown.children).forEach(option => {
+      option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
     });
   });
 }
@@ -1021,6 +1078,62 @@ function applyExpenseFilters() {
   renderExpenseTable();
 }
 
+function updateExpenseSummaryCards() {
+  // Calculate totals from filtered rows (or all rows if no filters)
+  let filteredTotal = 0;
+  let filteredCount = 0;
+  let thisMonthTotal = 0;
+  let largestExpense = null;
+  let largestExpenseName = '';
+
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  expenseFilteredRows.forEach(row => {
+    const amount = parseFloat(row.querySelector('td:nth-child(7)')?.textContent.replace(/[$,]/g,'') || 0);
+    const dateCell = row.querySelector('td:first-child')?.textContent?.trim() || '';
+    const expenseName = row.querySelector('td:nth-child(3)')?.textContent?.trim() || '';
+
+    filteredTotal += amount;
+    filteredCount++;
+
+    // Check if expense is in current month
+    if (dateCell.startsWith(currentMonth)) {
+      thisMonthTotal += amount;
+    }
+
+    // Track largest expense
+    if (!largestExpense || amount > largestExpense) {
+      largestExpense = amount;
+      largestExpenseName = expenseName;
+    }
+  });
+
+  // Find and update all summary cards
+  const allCards = document.querySelectorAll('#tab-expenses .kpi-card');
+  allCards.forEach(card => {
+    const label = card.querySelector('.kpi-label')?.textContent?.trim();
+    const valueEl = card.querySelector('.kpi-value');
+
+    if (!valueEl) return;
+
+    if (label === 'Total Expenses') {
+      valueEl.textContent = '$' + filteredTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    } else if (label === 'Total Entries') {
+      valueEl.textContent = filteredCount.toString();
+    } else if (label === 'This Month') {
+      valueEl.textContent = '$' + thisMonthTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    } else if (label === 'Largest Expense') {
+      valueEl.textContent = '$' + (largestExpense || 0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+      // Also update the description below the card
+      const subEl = card.querySelector('.kpi-sub');
+      if (subEl) {
+        subEl.textContent = largestExpenseName ? largestExpenseName.substring(0, 30) : '—';
+      }
+    }
+  });
+}
+
 function renderExpenseTable() {
   expenseFilteredRows = getVisibleExpenseRows();
   const rows = document.querySelectorAll('#expenseTableBody tr.expense-row');
@@ -1057,6 +1170,9 @@ function renderExpenseTable() {
   document.getElementById('expenseCountInfo').textContent = `${currentPageRows.length} / ${expenseFilteredRows.length} expenses`;
   document.getElementById('expensePrevBtn').disabled = expenseCurrentPage <= 1;
   document.getElementById('expenseNextBtn').disabled = expenseCurrentPage >= totalPages;
+
+  // Update summary cards when filters are applied
+  updateExpenseSummaryCards();
 }
 
 function changeExpensePerPage() {
@@ -1087,6 +1203,65 @@ function clearExpenseFilters() {
     if (el) el.value = '';
   });
   applyExpenseFilters();
+  // Reset cards to show all-time totals
+  resetExpenseSummaryCards();
+}
+
+function resetExpenseSummaryCards() {
+  // Calculate all-time totals for reset
+  const allRows = document.querySelectorAll('#expenseTableBody tr.expense-row');
+  let allTotal = 0;
+  let allCount = 0;
+  let thisMonthTotal = 0;
+  let largestExpense = null;
+  let largestExpenseName = '';
+
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  allRows.forEach(row => {
+    const amount = parseFloat(row.querySelector('td:nth-child(7)')?.textContent.replace(/[$,]/g,'') || 0);
+    const dateCell = row.querySelector('td:first-child')?.textContent?.trim() || '';
+    const expenseName = row.querySelector('td:nth-child(3)')?.textContent?.trim() || '';
+
+    allTotal += amount;
+    allCount++;
+
+    // Check if expense is in current month
+    if (dateCell.startsWith(currentMonth)) {
+      thisMonthTotal += amount;
+    }
+
+    // Track largest expense
+    if (!largestExpense || amount > largestExpense) {
+      largestExpense = amount;
+      largestExpenseName = expenseName;
+    }
+  });
+
+  // Update cards with all-time totals using specific label matching
+  const allCards = document.querySelectorAll('#tab-expenses .kpi-card');
+  allCards.forEach(card => {
+    const label = card.querySelector('.kpi-label')?.textContent?.trim();
+    const valueEl = card.querySelector('.kpi-value');
+
+    if (!valueEl) return;
+
+    if (label === 'Total Expenses') {
+      valueEl.textContent = '$' + allTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    } else if (label === 'Total Entries') {
+      valueEl.textContent = allCount.toString();
+    } else if (label === 'This Month') {
+      valueEl.textContent = '$' + thisMonthTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    } else if (label === 'Largest Expense') {
+      valueEl.textContent = '$' + (largestExpense || 0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+      // Also update the description below the card
+      const subEl = card.querySelector('.kpi-sub');
+      if (subEl) {
+        subEl.textContent = largestExpenseName ? largestExpenseName.substring(0, 30) : '—';
+      }
+    }
+  });
 }
 
 function setExpenseDateRange(range) {
@@ -1156,6 +1331,12 @@ function addExpense(event) {
     })
     .then(res => {
       if (res.success) {
+        // Add vendor to vendor list if it's not empty and not already in the list
+        const vendorInput = document.getElementById('expenseVendor').value.trim();
+        if (vendorInput && !vendorList.includes(vendorInput)) {
+          vendorList.push(vendorInput);
+          vendorList.sort();
+        }
         document.getElementById('expenseForm').reset();
         document.getElementById('expenseType').value = '';
         document.getElementById('expenseCategory').value = '';
@@ -1227,7 +1408,11 @@ document.addEventListener('DOMContentLoaded', function() {
           <div class="row g-3 mb-3">
             <div class="col-md-6">
               <label class="form-label form-label-sm fw-600">Expense Name *</label>
-              <input type="text" name="expense_name" id="modalExpenseName" class="form-control form-control-sm" required>
+              <div class="custom-dropdown">
+                <input type="text" name="expense_name" id="modalExpenseName" class="form-control form-control-sm" placeholder="Select or type name..." required>
+                <span class="dropdown-arrow">▼</span>
+                <div class="dropdown-list" id="modalExpenseNameDropdown"></div>
+              </div>
             </div>
             <div class="col-md-6">
               <label class="form-label form-label-sm fw-600">Amount ($) *</label>
@@ -1242,7 +1427,11 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
             <div class="col-md-6">
               <label class="form-label form-label-sm fw-600">Vendor</label>
-              <input type="text" name="vendor" id="modalVendor" class="form-control form-control-sm" placeholder="Vendor name">
+              <div class="custom-dropdown">
+                <input type="text" name="vendor" id="modalVendor" class="form-control form-control-sm" placeholder="Vendor name or select...">
+                <span class="dropdown-arrow">▼</span>
+                <div class="dropdown-list" id="modalVendorDropdown"></div>
+              </div>
             </div>
           </div>
 
@@ -1341,13 +1530,39 @@ function editExpenseModal(expId, expData) {
     document.getElementById('modalVendor').value = expData.vendor || '';
     document.getElementById('modalProject').value = expData.project_number || '';
     document.getElementById('modalNotes').value = expData.notes || '';
-    document.getElementById('receiptPreview').innerHTML = '';
     receiptFile = null;
+
+    // Display existing receipt if it exists
+    const receiptPreviewDiv = document.getElementById('receiptPreview');
+    if (expData.receipt_filename) {
+      receiptPreviewDiv.innerHTML = `
+        <div class="alert alert-info py-2 px-3 small">
+          <i class="bi bi-file-earmark me-1"></i><strong>Current Receipt:</strong> ${expData.receipt_filename}
+          <button type="button" class="btn btn-xs btn-outline-danger ms-2" onclick="removeExistingReceipt('${expId}')">Remove</button>
+          <button type="button" class="btn btn-xs btn-outline-primary ms-1" onclick="viewReceipt('${expId}')">View</button>
+        </div>
+      `;
+    } else {
+      receiptPreviewDiv.innerHTML = '';
+    }
+
     new bootstrap.Modal(document.getElementById('expenseModal')).show();
   } catch (err) {
     console.error('Error in editExpenseModal:', err);
     alert('Error loading expense for edit');
   }
+}
+
+function removeExistingReceipt(expId) {
+  if (!confirm('Are you sure you want to remove this receipt?')) return;
+  fetch(`/financial/expense/${expId}/remove-receipt`, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        document.getElementById('receiptPreview').innerHTML = '';
+      }
+    })
+    .catch(e => console.error('Error: ' + e));
 }
 
 function initModalDropdowns() {
@@ -1383,11 +1598,71 @@ function initModalDropdowns() {
 
   catArrow.addEventListener('click', () => catDropdown.classList.toggle('show'));
   catInput.addEventListener('focus', () => updateModalCategoryDropdown());
+  catInput.addEventListener('change', () => updateModalExpenseNameDropdown());
   catInput.addEventListener('input', function() {
     const filter = this.value.toLowerCase();
     Array.from(catDropdown.children).forEach(option => {
       option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
     });
+    setTimeout(() => updateModalExpenseNameDropdown(), 50);
+  });
+
+  const nameInput = document.getElementById('modalExpenseName');
+  const nameDropdown = document.getElementById('modalExpenseNameDropdown');
+  const nameArrow = nameInput.parentElement.querySelector('.dropdown-arrow');
+
+  nameArrow.addEventListener('click', () => nameDropdown.classList.toggle('show'));
+  nameInput.addEventListener('focus', () => {
+    updateModalExpenseNameDropdown();
+    nameDropdown.classList.add('show');
+  });
+  nameInput.addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    Array.from(nameDropdown.children).forEach(option => {
+      option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
+    });
+  });
+
+  // Initialize vendor dropdown
+  const vendorInput = document.getElementById('modalVendor');
+  const vendorDropdown = document.getElementById('modalVendorDropdown');
+  const vendorArrow = vendorInput.parentElement.querySelector('.dropdown-arrow');
+
+  function populateVendorDropdown() {
+    vendorDropdown.innerHTML = '';
+    vendorList.forEach(vendor => {
+      const div = document.createElement('div');
+      div.className = 'option';
+      div.textContent = vendor;
+      div.onclick = () => {
+        vendorInput.value = vendor;
+        vendorDropdown.classList.remove('show');
+      };
+      vendorDropdown.appendChild(div);
+    });
+  }
+
+  vendorArrow.addEventListener('click', () => {
+    vendorDropdown.classList.toggle('show');
+  });
+
+  vendorInput.addEventListener('focus', () => {
+    populateVendorDropdown();
+    vendorDropdown.classList.add('show');
+  });
+
+  vendorInput.addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    Array.from(vendorDropdown.children).forEach(option => {
+      option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
+    });
+  });
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', function(event) {
+    if (!vendorInput.parentElement.contains(event.target)) {
+      vendorDropdown.classList.remove('show');
+    }
   });
 }
 
@@ -1407,8 +1682,61 @@ function updateModalCategoryDropdown() {
     div.onclick = () => {
       catInput.value = cat;
       catDropdown.classList.remove('show');
+      updateModalExpenseNameDropdown();
     };
     catDropdown.appendChild(div);
+  });
+}
+
+function updateModalExpenseNameDropdown() {
+  const catInput = document.getElementById('modalCategory');
+  const nameInput = document.getElementById('modalExpenseName');
+  const nameDropdown = document.getElementById('modalExpenseNameDropdown');
+  const category = catInput.value;
+
+  const fallbackNames = {
+    "Facilities & Utilities": ["Office rent or co-working space fees","Utilities (electricity, water, gas)","Internet service","Trash & cleaning services","Property taxes (for office, if applicable)","Office repairs & maintenance (HVAC, lights, minor repairs)"],
+    "Office & Admin Overhead": ["Office supplies (paper, pens, notebooks, printer ink)","Printer/plotter maintenance & paper","Postage & shipping (documents, contracts, samples)","Bank fees & merchant processing fees","Software: Microsoft 365 / Google Workspace","Software: PDF tools (Bluebeam, Adobe, etc.)","Software: Password manager","Software: Others","Cloud storage (Dropbox, Google Drive, OneDrive)"],
+    "Engineering Software & IT": ["Engineering software: SAP2000 / ETABS / STAAD / RAM / RISA","Engineering software: Others","CAD/BIM tools: AutoCAD, Civil 3D, Revit","License/maintenance fees for all software","IT support services","Computer maintenance & small repairs","Antivirus, backup services, security tools"],
+    "Salaries, Labor & Related Costs": ["Owner draw/salary","Employee salaries & wages","Overtime or temporary staff","Payroll taxes paid by the company","Employee benefits: Health insurance","Employee benefits: Retirement plan contributions","Employee benefits: Paid time off costs","Payments to subcontract engineers, drafters"],
+    "Professional Services": ["Accounting & bookkeeping fees","Tax preparation and consulting","Legal services (contracts, company setup)","Business consulting or coaching services","Registered agent fees (if applicable)"],
+    "Insurance & Compliance": ["Professional liability / Errors & Omissions (E&O) insurance","General liability insurance","Business owner's policy (BOP)","Workers' comp insurance","Commercial auto insurance","License renewals (PE license, SE license)","Business license renewals","Memberships"],
+    "Travel, Site Visits & Vehicles": ["Mileage (personal vehicle for business)","Fuel costs (company vehicles)","Parking fees & tolls","Vehicle maintenance","Airfare, hotels for out-of-town site visits","Rental cars or rideshare for business trips","Meals while traveling for business"],
+    "Marketing & Business Development": ["Website hosting and domain expenses","Website maintenance & updates","Graphic design (logo, templates, brochures)","Online ads (Google, LinkedIn, Facebook)","Printing of business cards, brochures, banners","Sponsorships of events","Client entertainment (dinners, coffee meetings)"],
+    "Training, Licensure & Development": ["Continuing education (PDH hours, webinars)","Training courses (technical or business)","Books, codes, and standards","Exam fees for additional licenses"],
+    "Safety & Field Supplies": ["PPE: hard hats, safety vests, glasses, gloves, boots","Field tools for inspections","Calibration of field instruments","First-aid kits and safety equipment"],
+    "Miscellaneous O & M": ["Subscriptions: LinkedIn Premium","Subscriptions: Industry journals","Project management tools","Document management tools or e-signature services"],
+    "Computer & Office Equipment": ["Laptops","Desktops","Monitors","Printers/Scanners","Servers","Networking Equipment"],
+    "Field & Inspection Equipment": ["Survey Equipment","Testing Equipment","Measurement Tools","Safety Equipment","Inspection Devices"],
+    "Furniture & Fixtures": ["Office Desks","Chairs","Filing Cabinets","Shelving Units","Conference Room Furniture"],
+    "Vehicles": ["Company Cars","Trucks","Vans","Heavy Equipment","Vehicle Accessories"],
+    "Software (Capitalized)": ["Engineering Software License","ERP System","CRM System","Database Software","Custom Software Development"],
+    "Leasehold Improvements": ["Office Renovations","Electrical Work","Plumbing Improvements","HVAC Installation","Security Systems"],
+    "Accumulated Depreciation": ["Depreciation Expense - Computers","Depreciation Expense - Office Equipment","Depreciation Expense - Vehicles","Accumulated Depreciation"],
+    "Salary/Bonuses": ["Employee Salary","Manager Salary","Executive Salary","Performance Bonus","Year-end Bonus","Commission Payments","Incentive Payments"],
+    "Tax Expenses/Tax Deductions": ["Federal Income Tax","Tax Deduction","Payroll Tax","Sales Tax","Property Tax","Business Tax"],
+    "Medical/Benefits": ["Health Insurance Premiums","Dental Insurance","Vision Insurance","Retirement Contributions","Life Insurance","Disability Insurance","Wellness Programs"],
+    "Meals & Entertainment": ["Client Meals","Business Lunches","Team Dinners","Conference Meals","Entertainment Expenses","Team Building Events"],
+    "Donations": ["Charitable Donations","Community Sponsorships","Educational Donations","Non-profit Contributions","Event Sponsorships"],
+    "Bank Charges": ["Monthly Account Fees","Transaction Fees","Wire Transfer Fees","Credit Card Processing Fees","Check Printing Fees","Overdraft Fees"],
+    "Contingency Funds": ["Emergency Funds","Reserve Funds","Project Contingency","Operational Reserve","Risk Management Fund"],
+    "Unexpected Costs": ["Emergency Repairs","Unplanned Maintenance","Price Increases","Regulatory Changes","Market Fluctuations"]
+  };
+
+  const names = (expenseNamesByCategory[category] && expenseNamesByCategory[category].length)
+    ? expenseNamesByCategory[category]
+    : (fallbackNames[category] || []);
+
+  nameDropdown.innerHTML = '';
+  names.forEach(name => {
+    const div = document.createElement('div');
+    div.className = 'option';
+    div.textContent = name;
+    div.onclick = () => {
+      nameInput.value = name;
+      nameDropdown.classList.remove('show');
+    };
+    nameDropdown.appendChild(div);
   });
 }
 
@@ -1467,6 +1795,12 @@ function submitExpenseModal() {
     .then(r => r.json())
     .then(res => {
       if (res && res.success) {
+        // Add vendor to vendor list if it's not empty and not already in the list
+        const vendorInput = document.getElementById('modalVendor').value.trim();
+        if (vendorInput && !vendorList.includes(vendorInput)) {
+          vendorList.push(vendorInput);
+          vendorList.sort();
+        }
         bootstrap.Modal.getInstance(document.getElementById('expenseModal')).hide();
         location.reload();
       } else {
@@ -1724,10 +2058,10 @@ function viewReceipt(expId) {
       </div>
     </div>
     <div class="col-6 col-xl">
-      <div class="kpi-card {{ 'kpi-green' if (total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0)) >= 0 else 'kpi-red' }}">
+      <div class="kpi-card {{ 'kpi-green' if (total_revenue | default(0)) - (total_expenses | default(0)) >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit/Loss</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
-        <div id="bsKpiNet" class="kpi-value {{ 'text-success' if (total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0)) >= 0 else 'text-danger' }}">${{ "{:,.2f}".format((total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0))) }}</div>
-        <div class="kpi-sub">revenue minus expenses & salaries</div>
+        <div id="bsKpiNet" class="kpi-value {{ 'text-success' if (total_revenue | default(0)) - (total_expenses | default(0)) >= 0 else 'text-danger' }}">${{ "{:,.2f}".format((total_revenue | default(0)) - (total_expenses | default(0))) }}</div>
+        <div class="kpi-sub">revenue minus expenses</div>
       </div>
     </div>
   </div>
@@ -1781,7 +2115,7 @@ function viewReceipt(expId) {
               {% set netval = (annual_netpl.get(m, 0) | float) %}
               <td style="{{ 'color:#16a34a;' if netval >= 0 else 'color:#dc2626;' }}">${{ netval | round(2) }}</td>
               {% endfor %}
-              <td id="bsNetTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ ((annual_revenue.values() | sum) - (total_expenses | default(0)) - (total_salaries | default(0))) | round(2) }}</td>
+              <td id="bsNetTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ ((annual_revenue.values() | sum) - (total_expenses | default(0))) | round(2) }}</td>
             </tr>
           </tbody>
         </table>

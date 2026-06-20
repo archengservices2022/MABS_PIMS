@@ -3,6 +3,10 @@
 {% block page_title %}Projects{% endblock %}
 
 {% block content %}
+<style>
+  #tab-export #projectsTable { display: none !important; }
+  #tab-export .card-panel:has(#projectsTable) { display: none !important; }
+</style>
 
 <!-- ── Projects Overview ────────────────────────────────────────────────────── -->
 <div class="row g-3 mb-4">
@@ -223,7 +227,6 @@
     </div>
   </div>
 
-  <!-- ── Tab 2: New Project ──────────────────────────────────────────────── -->
   <!-- ── Tab 3: Export ───────────────────────────────────────────────────── -->
   <div class="tab-pane fade" id="tab-export">
     <div class="card-panel mb-4">
@@ -255,7 +258,6 @@
         <button type="button" class="btn btn-xs btn-outline-secondary" onclick="clearExportFilters()">Clear</button>
       </div>
     </div>
-    <div id="exportCardsWrap" style="display:none;">
     <div class="row g-3">
       <div class="col-md-4">
         <div class="export-card">
@@ -296,11 +298,6 @@
           </a>
         </div>
       </div>
-    </div>
-    </div>
-    <div id="exportCardsPlaceholder" class="text-center text-muted py-4" style="border:2px dashed #E2E8F0;border-radius:8px;">
-      <i class="bi bi-funnel fs-4 d-block mb-2"></i>
-      Apply a filter above to enable export
     </div>
   </div>
 
@@ -350,9 +347,6 @@ function buildExportLinks() {
   document.getElementById('exportPdfLink').href   = PDF_BASE   + q;
   document.getElementById('exportExcelLink').href = EXCEL_BASE + q;
   document.getElementById('exportCsvLink').href   = CSV_BASE   + q;
-  const hasFilter = s || c || f || t;
-  document.getElementById('exportCardsWrap').style.display       = hasFilter ? '' : 'none';
-  document.getElementById('exportCardsPlaceholder').style.display = hasFilter ? 'none' : '';
 }
 function clearExportFilters() {
   document.getElementById('exportStatus').value = '';
@@ -376,13 +370,32 @@ function setExportRange(type) {
   }
   buildExportLinks();
 }
-function clearExportFilters() {
-  document.getElementById('exportStatus').value = '';
-  document.getElementById('exportClient').value = '';
-  document.getElementById('exportFrom').value = '';
-  document.getElementById('exportTo').value = '';
+
+// Hide table when export tab is active
+document.addEventListener('DOMContentLoaded', function() {
+  const exportTab = document.getElementById('tab-export');
+  const projectsTable = document.getElementById('projectsTable');
+
+  if (projectsTable && projectsTable.closest('#tab-export')) {
+    projectsTable.closest('.card-panel').remove();
+  }
+
+  // Also prevent table from showing on tab switch
+  document.querySelectorAll('[href="#tab-export"]').forEach(link => {
+    link.addEventListener('shown.bs.tab', function() {
+      if (projectsTable) projectsTable.parentElement.parentElement.style.display = 'none';
+    });
+  });
+
+  document.querySelectorAll('[href="#tab-all-projects"]').forEach(link => {
+    link.addEventListener('shown.bs.tab', function() {
+      if (projectsTable) projectsTable.parentElement.parentElement.style.display = 'block';
+    });
+  });
+
+  // Initialize export links with current filter values
   buildExportLinks();
-}
+});
 
 // Shift+Click and Shift+Drag multi-select
 let lastSelectedRow = null;

@@ -1015,6 +1015,13 @@ document.addEventListener('DOMContentLoaded', function () {
       f.querySelector('[name=start_date]').value    = q.start_date;
     if (q.end_date     && !f.querySelector('[name=end_date]').value)
       f.querySelector('[name=end_date]').value      = q.end_date;
+
+    const hasStartDate = f.querySelector('[name=start_date]').value;
+    const hasEndDate = f.querySelector('[name=end_date]').value;
+    if (hasStartDate && hasEndDate) {
+      calcDuration();
+      showDurationNote();
+    }
   }
 
   async function lookupQuote(num) {
