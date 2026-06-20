@@ -380,8 +380,6 @@ def _sanitize_email_key(email: str) -> str:
 def forgot_password():
     error = None
     message = None
-    reset_link = None
-    smtp_configured = bool(os.getenv("SMTP_EMAIL") and os.getenv("SMTP_PASSWORD"))
 
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
@@ -424,19 +422,15 @@ def forgot_password():
 
                         if email_sent:
                             message = f"Reset link sent to {email}. Please check your email to continue."
-                            reset_link = None
                             log.info("Password reset requested for %s", email)
-                        elif not smtp_configured:
-                            message = "Reset link generated. Click the link below to reset your password."
-                            log.info("Password reset link generated for %s (SMTP not configured): %s", email, reset_link)
                         else:
-                            error = "Email service is not configured. Please contact your administrator."
+                            error = "Failed to send reset email. Please contact your administrator."
                             log.error("Password reset email failed for %s", email)
                 except Exception as e:
                     error = "An error occurred. Please try again later."
                     log.error("Forgot password error: %s", str(e))
 
-    return render_template("forgot_password.html", error=error, message=message, reset_link=reset_link)
+    return render_template("forgot_password.html", error=error, message=message)
 
 @app.route("/reset-password", methods=["GET", "POST"])
 def reset_password():
@@ -515,14 +509,18 @@ def reset_password():
     return render_template("reset_password.html", email=email, token=token, error=error, message=message, valid_token=valid_token)
 
 def send_password_reset_email(email: str, username: str, reset_link: str) -> bool:
+    """Send password reset email. Returns True if sent successfully."""
     try:
         sender_email = os.getenv("SMTP_EMAIL", "").strip()
         sender_password = os.getenv("SMTP_PASSWORD", "").strip()
         smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com").strip()
         smtp_port = int(os.getenv("SMTP_PORT", "587"))
 
-        if not sender_email or not sender_password:
-            log.error("SMTP not configured. Set SMTP_EMAIL and SMTP_PASSWORD environment variables.")
+        if not sender_email:
+            log.error("SMTP_EMAIL not configured. Set in environment variables.")
+            return False
+        if not sender_password:
+            log.error("SMTP_PASSWORD not configured. Set in environment variables.")
             return False
 
         msg = MIMEMultipart("alternative")
@@ -532,35 +530,36 @@ def send_password_reset_email(email: str, username: str, reset_link: str) -> boo
 
         html = f"""
         <html>
-          <body style="font-family: 'Segoe UI', Arial, sans-serif; color: #333;">
+          <body style="font-family: 'Segoe UI', Arial, sans-serif; color: #333; margin: 0; padding: 0;">
             <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
               <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="color: #0d1b2a; margin: 0;">MABS PIMS</h1>
-                <p style="color: #6b7280; margin: 5px 0 0 0;">Project &amp; Invoice Management System</p>
+                <h1 style="color: #0d1b2a; margin: 0; font-size: 28px;">MABS PIMS</h1>
+                <p style="color: #6b7280; margin: 5px 0 0 0; font-size: 14px;">Project &amp; Invoice Management System</p>
               </div>
 
-              <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 24px;">
-                <h2 style="color: #111827; margin-top: 0;">Reset Your Password</h2>
-                <p style="color: #6b7280; line-height: 1.5;">Hi {username},</p>
-                <p style="color: #6b7280; line-height: 1.5;">We received a request to reset your password. Click the button below to create a new password:</p>
+              <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 32px; margin: 20px 0;">
+                <h2 style="color: #111827; margin-top: 0; font-size: 20px;">Password Reset Request</h2>
+                <p style="color: #374151; line-height: 1.6; font-size: 14px;">Hi {username},</p>
+                <p style="color: #374151; line-height: 1.6; font-size: 14px;">We received a request to reset your password. To proceed with the password reset, click the button below:</p>
 
-                <div style="text-align: center; margin: 28px 0;">
-                  <a href="{reset_link}" style="background: #00756f; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">
+                <div style="text-align: center; margin: 32px 0;">
+                  <a href="{reset_link}" style="background: #00756f; color: white; padding: 14px 36px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block; font-size: 15px;">
                     Reset Password
                   </a>
                 </div>
 
-                <p style="color: #6b7280; font-size: 12px; line-height: 1.5;">Or copy and paste this link in your browser:</p>
-                <p style="background: #ffffff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; color: #00756f; font-size: 12px; word-break: break-all; margin: 12px 0;">{reset_link}</p>
+                <p style="color: #6b7280; font-size: 12px; line-height: 1.5; margin: 24px 0;">If the button doesn't work, copy and paste this link in your browser:</p>
+                <p style="background: #ffffff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; color: #00756f; font-size: 12px; word-break: break-all; margin: 12px 0; font-family: monospace;">{reset_link}</p>
 
-                <div style="border-top: 1px solid #e5e7eb; margin-top: 24px; padding-top: 16px;">
-                  <p style="color: #9ca3af; font-size: 12px; margin: 0;">This link will expire in 1 hour.</p>
-                  <p style="color: #9ca3af; font-size: 12px; margin: 8px 0 0 0;">If you didn't request this reset, please ignore this email.</p>
+                <div style="border-top: 1px solid #e5e7eb; margin-top: 32px; padding-top: 16px;">
+                  <p style="color: #9ca3af; font-size: 12px; margin: 0;">This password reset link expires in <strong>1 hour</strong>.</p>
+                  <p style="color: #9ca3af; font-size: 12px; margin: 8px 0 0 0;">If you didn't request this password reset, you can safely ignore this email. Your account remains secure.</p>
                 </div>
               </div>
 
-              <div style="text-align: center; margin-top: 20px;">
-                <p style="color: #9ca3af; font-size: 11px;">© 2026 MABS Engineering LLC. All rights reserved.</p>
+              <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                <p style="color: #9ca3af; font-size: 11px; margin: 0;">MABS PIMS &nbsp;|&nbsp; Secure Password Reset</p>
+                <p style="color: #9ca3af; font-size: 11px; margin: 5px 0 0 0;">© 2026 MABS Engineering LLC. All rights reserved.</p>
               </div>
             </div>
           </body>
@@ -569,15 +568,21 @@ def send_password_reset_email(email: str, username: str, reset_link: str) -> boo
 
         msg.attach(MIMEText(html, "html"))
 
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
+        with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as server:
             server.starttls()
             server.login(sender_email, sender_password)
             server.send_message(msg)
 
-        log.info("Password reset email sent to %s", email)
+        log.info("Password reset email sent successfully to %s", email)
         return True
+    except smtplib.SMTPAuthenticationError:
+        log.error("SMTP authentication failed. Check SMTP_EMAIL and SMTP_PASSWORD.")
+        return False
+    except smtplib.SMTPException as e:
+        log.error("SMTP error sending password reset email to %s: %s", email, str(e))
+        return False
     except Exception as e:
-        log.error("Failed to send password reset email to %s: %s", email, str(e))
+        log.error("Unexpected error sending password reset email to %s: %s", email, str(e))
         return False
 
 # ── Routes: Dashboard ─────────────────────────────────────────────────────────
