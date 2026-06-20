@@ -7787,7 +7787,7 @@ def _send_invoice_email(invoice_id: str):
 
     # Professional text email
     invoice_number = meta.get('invoice_number', '')
-    invoice_status = meta.get('status', 'Draft')  # Status values: Draft, Sent, Viewed, Paid, Partial, Overdue, Cancelled
+    invoice_status = str(meta.get('status', 'Draft')).strip()  # Status values: Draft, Sent, Viewed, Paid, Partial, Overdue, Cancelled
     total_due = _safe_float(meta.get('total', 0))
     due_date = meta.get('due_date', '')
     paid_date = meta.get('paid_date', '')
@@ -7797,14 +7797,17 @@ def _send_invoice_email(invoice_id: str):
     company_email = co.get('email', 'info@mabs-engineering.com')
     company_phone = co.get('phone', '(314) 585-2003')
 
-    if invoice_status == 'Paid':
+    # Check if invoice is paid (handle capitalization and spacing)
+    is_paid = invoice_status.lower() == 'paid'
+    log.info(f"Invoice {invoice_number} status: '{invoice_status}' → is_paid: {is_paid}")
+
+    if is_paid:
         # PAID INVOICE EMAIL
         text_body = f"""Hi {client_name},
 
 Please find the attached paid invoice for your records.
 
 Invoice Details:
-
 Invoice Number: {invoice_number}
 Amount Paid: ${total_due:,.2f}
 Payment Date: {paid_date or 'Received'}
@@ -7812,11 +7815,10 @@ Payment Date: {paid_date or 'Received'}
 Thank you for your payment. If you require any additional information, please let us know.
 
 Best regards,
-
 {company_name}
 {company_address}
-Email: {company_email}
-Phone: {company_phone}
+{company_email}
+{company_phone}
 """
         subject = f"{invoice_number} – Payment Received"
     else:
@@ -7825,18 +7827,16 @@ Phone: {company_phone}
 
 Please find the attached invoice for your review.
 
-**Invoice Details:**
-
-* **Invoice Number:** {invoice_number}
-* **Amount Due:** ${total_due:,.2f}
-* **Due Date:** {due_date}
+Invoice Details:
+Invoice Number: {invoice_number}
+Amount Due: ${total_due:,.2f}
+Due Date: {due_date}
 
 Please review the attached invoice at your convenience. If you have any questions or require additional information, please feel free to contact us.
 
 Thank you for your business. We appreciate your continued trust and support.
 
 Best regards,
-
 {company_name}
 {company_address}
 {company_email}
