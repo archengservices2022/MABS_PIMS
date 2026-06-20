@@ -5,6 +5,8 @@ import json
 import base64
 import tempfile
 import logging
+import secrets
+import hashlib
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from functools import wraps
@@ -332,6 +334,142 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+def firebase_send_password_reset(email: str):
+    """Send password reset email using Firebase. Returns (success, error_msg)"""
+    try:
+        url = f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={FIREBASE_API_KEY}"
+        resp = requests.post(url, json={"email": email, "requestType": "PASSWORD_RESET"}, timeout=10)
+
+        if resp.status_code == 200:
+            return True, ""
+
+        err = resp.json().get("error", {}).get("message", "Failed to send reset email")
+        return False, err
+    except requests.exceptions.Timeout:
+        return False, "Connection timed out"
+    except Exception as exc:
+        return False, str(exc)
+
+@app.route("/api/forgot-password", methods=["POST"])
+def api_forgot_password():
+    """AJAX endpoint for forgot password"""
+    try:
+        data = request.get_json() or {}
+        email = data.get("email", "").strip().lower()
+
+        if not email:
+            return jsonify({"success": False, "error": "Please enter your email address."})
+
+        if not FIREBASE_AVAILABLE:
+            return jsonify({"success": False, "error": "Service unavailable. Please contact your administrator."})
+
+        user_found = False
+        user_data = None
+        users = fb_get("/users") or {}
+
+        for uid, u_data in users.items():
+            if isinstance(u_data, dict) and u_data.get("email", "").lower() == email:
+                user_found = True
+                user_data = u_data
+                break
+
+        if not user_found:
+            return jsonify({"success": False, "error": "Account does not exist. Please contact your administrator."})
+
+        if not user_data.get("active", True):
+            return jsonify({"success": False, "error": "Account does not exist. Please contact your administrator."})
+
+        ok, err_msg = firebase_send_password_reset(email)
+
+        if ok:
+            log.info("Password reset email sent via Firebase for %s", email)
+            return jsonify({"success": True, "message": f"Reset link sent to {email}. Please check your email to continue."})
+        else:
+            log.error("Firebase password reset failed for %s: %s", email, err_msg)
+            return jsonify({"success": False, "error": "Failed to send reset email. Please try again later."})
+
+    except Exception as e:
+        log.error("API forgot password error: %s", str(e))
+        return jsonify({"success": False, "error": "An error occurred. Please try again later."})
+
+def firebase_reset_password_with_code(email: str, password: str, oob_code: str):
+    """Reset password using Firebase OOB code. Returns (ok, error_msg)"""
+    try:
+        url = f"https://identitytoolkit.googleapis.com/v1/accounts:resetPassword?key={FIREBASE_API_KEY}"
+        resp = requests.post(url, json={
+            "oobCode": oob_code,
+            "newPassword": password
+        }, timeout=10)
+
+        if resp.status_code == 200:
+            return True, ""
+
+        err = resp.json().get("error", {}).get("message", "Failed to reset password")
+        return False, err
+    except requests.exceptions.Timeout:
+        return False, "Connection timed out"
+    except Exception as exc:
+        return False, str(exc)
+
+@app.route("/reset-password", methods=["GET", "POST"])
+def reset_password():
+    email = request.args.get("email", "").strip().lower()
+    oob_code = request.args.get("oobCode", "").strip()
+    error = None
+    message = None
+    valid_token = False
+
+    if not email or not oob_code:
+        error = "Invalid reset link. Please request a new one."
+    else:
+        if not FIREBASE_AVAILABLE:
+            error = "Password reset service unavailable. Please contact your administrator."
+        else:
+            try:
+                valid_token = True
+
+                if request.method == "POST":
+                    password = request.form.get("password", "")
+                    confirm = request.form.get("confirm_password", "")
+
+                    if not password or not confirm:
+                        error = "Please enter both password fields."
+                    elif len(password) < 8:
+                        error = "Password must be at least 8 characters long."
+                    elif password != confirm:
+                        error = "Passwords do not match."
+                    else:
+                        try:
+                            ok, err_msg = firebase_reset_password_with_code(email, password, oob_code)
+                            if not ok:
+                                error = "Failed to reset password. " + err_msg
+                                log.error("Password reset failed for %s: %s", email, err_msg)
+                            else:
+                                ok, uid, err_msg = firebase_sign_in(email, password)
+                                if ok:
+                                    profile = load_user_profile(uid)
+                                    if profile and profile.get("active", True):
+                                        role = normalize_role(profile.get("role", "sales"))
+                                        session.permanent = True
+                                        session["user_email"] = email
+                                        session["user_uid"] = uid
+                                        session["user_name"] = profile.get("username", email.split("@")[0])
+                                        session["user_role"] = role
+                                        log.info("Password reset and auto-login for %s", email)
+                                        return redirect(url_for(first_page(role)))
+
+                                message = "Password reset successfully. You can now sign in with your new password."
+                                valid_token = False
+                                log.info("Password reset successful for %s", email)
+                        except Exception as e:
+                            error = "An error occurred. Please try again later."
+                            log.error("Password reset error: %s", str(e))
+            except Exception as e:
+                error = "An error occurred. Please try again later."
+                log.error("Reset password error: %s", str(e))
+
+    return render_template("reset_password.html", email=email, error=error, message=message, valid_token=valid_token)
 
 # ── Routes: Dashboard ─────────────────────────────────────────────────────────
 @app.route("/")
@@ -2936,283 +3074,20 @@ def invoice_delete(invoice_id):
 def invoice_pdf(invoice_id):
     try:
         from reportlab.lib.pagesizes import A4
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib import colors
-        from reportlab.lib.units import mm, inch
     except ImportError:
         flash("reportlab not installed.", "danger")
         return redirect(url_for("invoice_detail", invoice_id=invoice_id))
 
-    import io as _io
-    from pathlib import Path
-    invoice = fb_get(f"/invoices/{invoice_id}")
-    if not invoice:
+    pdf_bytes = _generate_invoice_pdf_bytes(invoice_id)
+    if not pdf_bytes:
         abort(404)
 
-    meta = invoice.get("meta", {})
-    co = company_info()
-    buf = _io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4,
-                            leftMargin=10*mm, rightMargin=10*mm,
-                            topMargin=5*mm, bottomMargin=5*mm)
-    styles = getSampleStyleSheet()
-    story = []
+    invoice = fb_get(f"/invoices/{invoice_id}")
+    meta = invoice.get("meta", {}) if invoice else {}
 
-    styles.add(ParagraphStyle(name='CenteredBold20', alignment=1, fontName='Helvetica-Bold', fontSize=20, leading=24))
-    styles.add(ParagraphStyle(name='Centered10', alignment=1, fontName='Helvetica', fontSize=10, leading=12))
-    styles.add(ParagraphStyle(name='LeftBold16', alignment=0, fontName='Helvetica-Bold', fontSize=16, leading=18))
-    styles.add(ParagraphStyle(name='LeftBold12', alignment=0, fontName='Helvetica-Bold', fontSize=12, leading=14))
-    styles.add(ParagraphStyle(name='Left10', alignment=0, fontName='Helvetica', fontSize=10, leading=12))
-    styles.add(ParagraphStyle(name='LeftBold10', alignment=0, fontName='Helvetica-Bold', fontSize=10, leading=12))
-    styles.add(ParagraphStyle(name='Right10', alignment=2, fontName='Helvetica', fontSize=10, leading=12))
-    styles.add(ParagraphStyle(name='RightBold10', alignment=2, fontName='Helvetica-Bold', fontSize=10, leading=12))
-    styles.add(ParagraphStyle(name='Left9', alignment=0, fontName='Helvetica', fontSize=9, leading=11))
-
-    logo_path = Path(__file__).parent / "static" / "logo.png"
-    logo_img = None
-    if logo_path.exists():
-        try:
-            logo_img = Image(str(logo_path), width=0.95*inch, height=0.95*inch)
-        except (IOError, OSError):
-            pass
-
-    company_name = co.get('name', 'MABS Engineering LLC')
-    address_text = ""
-    for line in co.get('address', '').split('\n'):
-        if line.strip():
-            address_text += f"{line.strip()}<br/>"
-    contact_text = f"Phone: {co.get('phone','')} • Email: {co.get('email','')} • {co.get('website','')}"
-    header_html = f"<b><font size=16>{company_name}</font></b><br/><font size=9>{address_text}{contact_text}</font>"
-
-    if logo_img:
-        hdr_table_data = [[logo_img, Paragraph(header_html, ParagraphStyle("cn", parent=styles["Normal"], fontName="Helvetica", textColor=colors.black, alignment=1))]]
-        hdr_table = Table(hdr_table_data, colWidths=[0.95*inch, doc.width - 0.95*inch])
-        hdr_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (1,0), (1,0), 5), ("BOTTOMPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 0), ("LINEBELOW", (0,0), (-1,-1), 1, colors.black)]))
-        story.append(hdr_table)
-    else:
-        story.append(Paragraph(header_html, ParagraphStyle("cn", parent=styles["Normal"], fontName="Helvetica", textColor=colors.black, alignment=1)))
-        story.append(Table([['']], colWidths=[doc.width], style=[('LINEBELOW', (0,0), (-1,-1), 1, colors.black)]))
-
-    story.append(Spacer(1, 2*mm))
-
-    client_name = meta.get('client_name', '')
-    client_email = ""
-    client_address = ""
-    if client_name:
-        try:
-            client_data = fb_get(f"/clients/{client_name}") or {}
-            client_email = client_data.get("email", "")
-            client_address = client_data.get("address", "")
-        except Exception:
-            pass
-
-    bill_to_lines = []
-    if client_name:
-        bill_to_lines.append(client_name)
-    if client_email:
-        bill_to_lines.append(client_email)
-    if client_address:
-        for line in client_address.split('\n'):
-            if line.strip():
-                bill_to_lines.append(line.strip())
-    bill_to_text = "<br/>".join(bill_to_lines) if bill_to_lines else ""
-
-    invoice_info = f"Invoice Number: {meta.get('invoice_number','')}<br/>Date: {meta.get('invoice_date','')}<br/>Due Date: {meta.get('due_date','')}"
-    header_data = [
-        [Paragraph("<b>Invoice:</b>", styles['Left10']), Paragraph("<b>Bill To:</b>", styles['Left10'])],
-        [Paragraph(invoice_info, styles['Left9']), Paragraph(bill_to_text, styles['Left9']) if bill_to_text else Paragraph("", styles['Left9'])],
-    ]
-    header_table = Table(header_data, colWidths=[doc.width * 0.5, doc.width * 0.5])
-    header_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 2), ('BOTTOMPADDING', (0,0), (-1,-1), 2)]))
-    story.append(header_table)
-    story.append(Spacer(1, 8*mm))
-
-    story.append(Paragraph("ITEMS", ParagraphStyle("items_title", parent=styles["Normal"], fontSize=12, fontName="Helvetica-Bold", textColor=colors.black, alignment=0)))
-    story.append(Spacer(1, 3*mm))
-
-    center_bold_style = ParagraphStyle("center_bold10", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.black, alignment=1)
-    center_style = ParagraphStyle("center10", parent=styles["Normal"], fontSize=10, fontName="Helvetica", textColor=colors.black, alignment=1)
-    item_data = [[Paragraph(h, center_bold_style) for h in ["Project", "Project Name", "Plant", "Qty", "Unit Price", "Payment Stage", "Payment Due"]]]
-
-    linked_projects = meta.get("linked_projects", [])
-    if isinstance(linked_projects, str):
-        linked_projects = [{"project_number": linked_projects}]
-    elif not isinstance(linked_projects, list):
-        linked_projects = []
-
-    for idx, item in enumerate(invoice.get("line_items", [])):
-        qty_val = _safe_float(item.get("quantity", 1))
-        qty = str(int(qty_val)) if qty_val == int(qty_val) else str(qty_val)
-        unit_price_val = _safe_float(item.get('unit_price', 0))
-        unit_price = f"${unit_price_val:,.2f}"
-        project_number = ""
-        project_name = ""
-        plant = ""
-        if idx < len(linked_projects) and isinstance(linked_projects[idx], dict):
-            project_number = linked_projects[idx].get("project_number", "")
-            project_name = linked_projects[idx].get("project_name", "")
-        if not project_number:
-            project_number = meta.get("project_number", "")
-        if not project_name and project_number:
-            try:
-                raw_proj = fb_get("/projects") or {}
-                for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
-                    if isinstance(pdata, dict) and pdata.get("project_number") == project_number:
-                        project_name = pdata.get("project_name", "")
-                        plant = pdata.get("plant", "")
-                        break
-            except Exception:
-                pass
-        if not plant:
-            plant = meta.get("plant", "")
-        if not project_name:
-            description = item.get("description", "")
-            project_name = description.split("—")[0].strip() if "—" in description else description
-
-        payment_stage = ""
-        if idx < len(linked_projects) and isinstance(linked_projects[idx], dict):
-            payment_stage_index = linked_projects[idx].get("payment_stage_index")
-            if payment_stage_index is not None and project_number:
-                try:
-                    raw_proj = fb_get("/projects") or {}
-                    for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
-                        if isinstance(pdata, dict) and pdata.get("project_number") == project_number:
-                            payment_stages = pdata.get("payment_stages", [])
-                            if isinstance(payment_stages, list) and int(payment_stage_index) < len(payment_stages):
-                                stage_data = payment_stages[int(payment_stage_index)]
-                                if isinstance(stage_data, dict):
-                                    payment_stage = stage_data.get("name", "")
-                            break
-                except Exception:
-                    pass
-        if not payment_stage:
-            payment_stage = meta.get("payment_stage", "")
-        if payment_stage and " of " in payment_stage:
-            payment_stage = payment_stage.split(" of ")[0].strip()
-        if not payment_stage:
-            payment_stage = "Final Payment"
-
-        payment_due_val = qty_val * unit_price_val
-        payment_due = f"${payment_due_val:,.2f}"
-        item_data.append([
-            Paragraph(project_number, center_style),
-            Paragraph(project_name, center_style),
-            Paragraph(plant or "", center_style),
-            Paragraph(qty, center_style),
-            Paragraph(unit_price, center_style),
-            Paragraph(payment_stage, center_style),
-            Paragraph(payment_due, center_style)
-        ])
-
-    if len(item_data) == 1:
-        item_data.append([Paragraph("", center_style) for _ in range(7)])
-
-    item_table = Table(item_data, colWidths=[doc.width * 0.18, doc.width * 0.21, doc.width * 0.11, doc.width * 0.08, doc.width * 0.12, doc.width * 0.15, doc.width * 0.15])
-    item_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-        ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#CCCCCC")),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('LEFTPADDING', (0,0), (-1,-1), 3),
-        ('RIGHTPADDING', (0,0), (-1,-1), 3),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
-        ('TOPPADDING', (0,0), (-1,-1), 3),
-    ]))
-    story.append(item_table)
-    story.append(Spacer(1, 5*mm))
-
-    subtotal = _safe_float(meta.get('subtotal', 0))
-    tax_amount = _safe_float(meta.get('tax_amount', 0))
-    tax_rate = _safe_float(meta.get('tax_rate', 0))
-    total_amount = _safe_float(meta.get('total', 0))
-    totals_data = [
-        [Paragraph("Total", styles['Right10']), Paragraph(f"${subtotal:,.2f}", styles['Right10'])],
-        [Paragraph(f"Tax ({tax_rate}%)", styles['Right10']), Paragraph(f"${tax_amount:,.2f}", styles['Right10'])],
-        [Paragraph("TOTAL AMOUNT DUE:", styles['RightBold10']), Paragraph(f"${total_amount:,.2f}", styles['RightBold10'])],
-    ]
-    totals_table = Table(totals_data, colWidths=[doc.width * 0.5, doc.width * 0.5])
-    totals_table.setStyle(TableStyle([
-        ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#CCCCCC")),
-        ('LEFTPADDING', (0,0), (-1,-1), 3),
-        ('RIGHTPADDING', (0,0), (-1,-1), 3),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
-        ('TOPPADDING', (0,0), (-1,-1), 3),
-        ('BACKGROUND', (0, len(totals_data)-1), (-1, len(totals_data)-1), colors.lightgrey),
-        ('FONTNAME', (0, len(totals_data)-1), (-1, len(totals_data)-1), 'Helvetica-Bold'),
-    ]))
-    story.append(totals_table)
-    story.append(Spacer(1, 5*mm))
-
-    story.append(Paragraph("PAYMENT OPTIONS", styles['LeftBold12']))
-    story.append(Spacer(1, 3*mm))
-
-    InvLabel = ParagraphStyle("InvLabel", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.black, leading=12)
-    InvValue = ParagraphStyle("InvValue", parent=styles["Normal"], fontSize=9, fontName="Helvetica", textColor=colors.black, leading=11, leftIndent=3, spaceAfter=3)
-    TableCenter = ParagraphStyle("TableCenter", parent=styles["Normal"], fontSize=8, fontName="Helvetica", textColor=colors.black, alignment=1)
-
-    qr_path = Path(__file__).parent / "static" / "venmo.png"
-    qr_img = None
-    if qr_path.exists():
-        try:
-            qr_img = Image(str(qr_path), width=1.0*inch, height=1.0*inch)
-        except (IOError, OSError):
-            qr_img = None
-
-    right_section = [
-        Table([[Paragraph("<b>Option 2: Zelle QR code</b>", InvLabel)]], colWidths=[doc.width * 0.40], rowHeights=[8*mm],
-              style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#B6D7A8")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
-        Spacer(1, 1*mm),
-    ]
-    if qr_img:
-        right_section.append(Table([[qr_img]], colWidths=[doc.width * 0.40],
-                                   style=TableStyle([("ALIGN", (0,0), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 1*mm), ("BOTTOMPADDING", (0,0), (-1,-1), 1*mm)])))
-    right_section.append(Paragraph("Scan to pay with Zelle", TableCenter))
-
-    left_section = [
-        Table([[Paragraph("<b>Option 1: Check</b>", InvLabel)]], colWidths=[doc.width * 0.55], rowHeights=[7*mm],
-              style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#B6DDE8")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
-        Spacer(1, 1*mm),
-        Paragraph("<b>Payable to:</b> MABS Engineering LLC<br/><b>Mailing Address:</b> 15455 Manchester Rd, PO Box 1144 Manchester, MO 63011", InvValue),
-        Spacer(1, 4*mm),
-        Table([[Paragraph("<b>Option 3: Bank ACH Transfer</b>", InvLabel)]], colWidths=[doc.width * 0.55], rowHeights=[7*mm],
-              style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EA9999")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
-        Spacer(1, 1*mm),
-        Paragraph("Please contact MABS Admin to get our bank information for ACH transfers", InvValue),
-    ]
-
-    payment_table = Table([[left_section, right_section]], colWidths=[doc.width * 0.55, doc.width * 0.40])
-    payment_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('BOX', (0,0), (-1,-1), 1, colors.black), ('INNERGRID', (0,0), (-1,-1), 0.5, colors.black)]))
-    story.append(payment_table)
-
-    story.append(Spacer(1, 3*mm))
-    default_terms = co.get('default_terms', 'Thank you for your business! Best regards, MABS Engineering LLC')
-    notes_text = default_terms if default_terms else meta.get('notes', 'Thank you for your business!')
-    story.append(Paragraph(f"<b>Note:</b> {notes_text}", styles['Left9']))
-
-    calculated_status = _calculate_invoice_status(invoice)
-    if (calculated_status or "").lower() == 'paid':
-        def add_paid_watermark(canvas_obj, doc_obj):
-            canvas_obj.saveState()
-            center_x = A4[0] / 2
-            center_y = A4[1] / 2
-            canvas_obj.setFont("Helvetica-Bold", 130)
-            canvas_obj.setFillColor(colors.HexColor("#00B050"))
-            canvas_obj.setFillAlpha(0.25)
-            canvas_obj.translate(center_x, center_y)
-            canvas_obj.rotate(45)
-            canvas_obj.drawCentredString(0, 0, "PAID")
-            canvas_obj.restoreState()
-        doc.build(story, onFirstPage=add_paid_watermark, onLaterPages=add_paid_watermark)
-    else:
-        doc.build(story)
-
-    buf.seek(0)
     from flask import Response
     fname = f"Invoice_{meta.get('invoice_number','')}.pdf"
-    return Response(buf.getvalue(), mimetype="application/pdf",
+    return Response(pdf_bytes, mimetype="application/pdf",
                     headers={"Content-Disposition": f"inline;filename={fname}"})
 
 # ── Routes: Invoicing Export ──────────────────────────────────────────────────
@@ -7447,19 +7322,578 @@ def quote_to_invoice(quote_id):
 def quote_pdf(quote_id):
     try:
         from reportlab.lib.pagesizes import letter
+    except ImportError:
+        flash("reportlab not installed.", "danger")
+        return redirect(url_for("quote_detail", quote_id=quote_id))
+
+    pdf_bytes = _generate_quote_pdf_bytes(quote_id)
+    if not pdf_bytes:
+        abort(404)
+
+    quote = fb_get(f"/job_forms/{quote_id}")
+    if not quote:
+        abort(404)
+
+    from flask import Response
+    fname = f"Quote_{quote.get('job_number','')}.pdf"
+    return Response(pdf_bytes, mimetype="application/pdf",
+                    headers={"Content-Disposition": f"inline;filename={fname}"})
+
+@app.route("/projects/<project_id>/pdf")
+@role_required("projects")
+def project_pdf(project_id):
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+    except ImportError:
+        flash("reportlab not installed.", "danger")
+        return redirect(url_for("project_detail", project_id=project_id))
+
+    import io as _io
+    project = fb_get(f"/projects/{project_id}")
+    if not project:
+        abort(404)
+
+    co = company_info()
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=0.75*inch, rightMargin=0.75*inch,
+                            topMargin=0.75*inch, bottomMargin=0.75*inch)
+    styles = getSampleStyleSheet()
+    elems = []
+
+    teal   = colors.HexColor("#0F766E")
+    dark   = colors.HexColor("#0F172A")
+    muted  = colors.HexColor("#64748B")
+    light  = colors.HexColor("#F8FAFC")
+    border = colors.HexColor("#E2E8F0")
+
+    lbl = ParagraphStyle("lbl", parent=styles["Normal"], fontSize=8,  fontName="Helvetica-Bold", textColor=muted, spaceAfter=1)
+    val = ParagraphStyle("val", parent=styles["Normal"], fontSize=10, fontName="Helvetica",       textColor=dark, spaceAfter=8)
+    sm  = ParagraphStyle("sm",  parent=styles["Normal"], fontSize=9,  fontName="Helvetica",       textColor=muted)
+    h2  = ParagraphStyle("h2",  parent=styles["Normal"], fontSize=11, fontName="Helvetica-Bold",  textColor=dark, spaceBefore=12, spaceAfter=6)
+
+    # ── Header ──
+    addr = (co.get("address","") or "").replace("\n", " | ")
+    hdr_data = [[
+        Paragraph(f"<b>{co.get('name','')}</b>", ParagraphStyle("cn", parent=styles["Normal"], fontSize=14, fontName="Helvetica-Bold", textColor=dark)),
+        Paragraph("PROJECT DOCUMENT", ParagraphStyle("pd", parent=styles["Normal"], fontSize=18, fontName="Helvetica-Bold", textColor=teal, alignment=2)),
+    ],[
+        Paragraph(f"{addr}<br/>{co.get('phone','')}  |  {co.get('email','')}", sm),
+        Paragraph(f"<b>{project.get('project_number','')}</b>", ParagraphStyle("pn", parent=styles["Normal"], fontSize=12, fontName="Helvetica-Bold", textColor=dark, alignment=2)),
+    ]]
+    hdr = Table(hdr_data, colWidths=[3.5*inch, 3.5*inch])
+    hdr.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"TOP"), ("BOTTOMPADDING",(0,0),(-1,-1),4)]))
+    elems.append(hdr)
+    elems.append(HRFlowable(width="100%", thickness=2, color=teal, spaceAfter=12))
+
+    # ── Project meta ──
+    meta = [
+        [Paragraph("CLIENT", lbl),       Paragraph("STATUS", lbl),          Paragraph("START DATE", lbl),       Paragraph("END DATE", lbl)],
+        [Paragraph(project.get("client_name","—"), val), Paragraph(project.get("status","—"), val), Paragraph(project.get("start_date","—"), val), Paragraph(project.get("end_date","—") or "—", val)],
+        [Paragraph("PROJECT NAME", lbl), Paragraph("", lbl), Paragraph("ASSIGNED TO", lbl), Paragraph("PAYMENT STAGE", lbl)],
+        [Paragraph(project.get("project_name","—"), val), Paragraph("", val), Paragraph(project.get("assigned_to","—") or "—", val), Paragraph(project.get("payment_category","—") or "—", val)],
+    ]
+    mt = Table(meta, colWidths=[2*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+    mt.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"TOP"), ("LEFTPADDING",(0,0),(-1,-1),0), ("SPAN",(0,2),(1,2)), ("SPAN",(0,3),(1,3))]))
+    elems.append(mt)
+
+    # ── Scope ──
+    if project.get("description"):
+        elems.append(Paragraph("SCOPE OF WORK", h2))
+        elems.append(HRFlowable(width="100%", thickness=0.5, color=border, spaceAfter=6))
+        elems.append(Paragraph(project.get("description",""), sm))
+
+    # ── Financial summary ──
+    cv   = _safe_float(project.get("contract_value", 0))
+    paid = _safe_float(project.get("amount_paid",    0))
+    outstanding = cv - paid
+    pct  = int(paid / cv * 100) if cv > 0 else 0
+
+    elems.append(Paragraph("FINANCIAL SUMMARY", h2))
+    elems.append(HRFlowable(width="100%", thickness=0.5, color=border, spaceAfter=6))
+    fin_data = [
+        ["Contract Value",  f"${cv:,.2f}"],
+        ["Amount Paid",     f"${paid:,.2f}"],
+        ["Outstanding",     f"${outstanding:,.2f}"],
+        ["Collection Rate", f"{pct}%"],
+        ["Payment Stage",   project.get("payment_category","—") or "—"],
+    ]
+    fin_tbl = Table(fin_data, colWidths=[2.5*inch, 2*inch])
+    fin_tbl.setStyle(TableStyle([
+        ("FONTNAME",      (0,0), (-1,-1), "Helvetica"),
+        ("FONTSIZE",      (0,0), (-1,-1), 10),
+        ("TEXTCOLOR",     (0,0), (0,-1),  muted),
+        ("FONTNAME",      (1,0), (1,-1),  "Helvetica-Bold"),
+        ("TEXTCOLOR",     (1,2), (1,2),   colors.HexColor("#DC2626") if outstanding > 0 else teal),
+        ("TEXTCOLOR",     (1,0), (1,0),   teal),
+        ("ROWBACKGROUNDS",(0,0), (-1,-1), [colors.white, light]),
+        ("GRID",          (0,0), (-1,-1), 0.4, border),
+        ("TOPPADDING",    (0,0), (-1,-1), 6),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+        ("LEFTPADDING",   (0,0), (-1,-1), 8),
+    ]))
+    elems.append(fin_tbl)
+
+    # ── Notes ──
+    if project.get("notes"):
+        elems.append(Paragraph("NOTES", h2))
+        elems.append(HRFlowable(width="100%", thickness=0.5, color=border, spaceAfter=6))
+        elems.append(Paragraph(project.get("notes",""), sm))
+
+    # ── Signature block ──
+    elems.append(Spacer(1, 30))
+    sig_data = [[
+        Paragraph("_" * 35, ParagraphStyle("sig", parent=styles["Normal"], fontSize=10)),
+        Paragraph("_" * 35, ParagraphStyle("sig2", parent=styles["Normal"], fontSize=10)),
+    ],[
+        Paragraph(f"Client Signature — {project.get('client_name','')}", sm),
+        Paragraph(f"Authorized — {co.get('name','')}", sm),
+    ],[
+        Paragraph("Date: _______________", sm),
+        Paragraph("Date: _______________", sm),
+    ]]
+    sig = Table(sig_data, colWidths=[3.5*inch, 3.5*inch])
+    sig.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"TOP"), ("TOPPADDING",(0,0),(-1,-1),4)]))
+    elems.append(sig)
+
+    # ── Footer ──
+    elems.append(Spacer(1, 20))
+    elems.append(HRFlowable(width="100%", thickness=0.5, color=border, spaceAfter=4))
+    gen_date = datetime.now().strftime("%B %d, %Y")
+    elems.append(Paragraph(f"Document generated {gen_date}  ·  {co.get('name','')}  ·  {co.get('phone','')}  ·  {co.get('email','')}", sm))
+
+    doc.build(elems)
+    buf.seek(0)
+    from flask import Response
+    fname = f"Project_{project.get('project_number','doc')}.pdf"
+    return Response(buf.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": f"inline;filename={fname}"})
+
+# ── Email helper ─────────────────────────────────────────────────────────────
+def _generate_invoice_pdf_bytes(invoice_id: str):
+    """Generate invoice PDF and return as bytes. Returns None on error."""
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import mm, inch
+    except ImportError:
+        return None
+
+    import io as _io
+    from pathlib import Path
+    invoice = fb_get(f"/invoices/{invoice_id}")
+    if not invoice:
+        return None
+
+    meta = invoice.get("meta", {})
+    co = company_info()
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=10*mm, rightMargin=10*mm,
+                            topMargin=5*mm, bottomMargin=5*mm)
+    styles = getSampleStyleSheet()
+    story = []
+
+    styles.add(ParagraphStyle(name='CenteredBold20', alignment=1, fontName='Helvetica-Bold', fontSize=20, leading=24))
+    styles.add(ParagraphStyle(name='Centered10', alignment=1, fontName='Helvetica', fontSize=10, leading=12))
+    styles.add(ParagraphStyle(name='LeftBold16', alignment=0, fontName='Helvetica-Bold', fontSize=16, leading=18))
+    styles.add(ParagraphStyle(name='LeftBold12', alignment=0, fontName='Helvetica-Bold', fontSize=12, leading=14))
+    styles.add(ParagraphStyle(name='Left10', alignment=0, fontName='Helvetica', fontSize=10, leading=12))
+    styles.add(ParagraphStyle(name='LeftBold10', alignment=0, fontName='Helvetica-Bold', fontSize=10, leading=12))
+    styles.add(ParagraphStyle(name='Right10', alignment=2, fontName='Helvetica', fontSize=10, leading=12))
+    styles.add(ParagraphStyle(name='RightBold10', alignment=2, fontName='Helvetica-Bold', fontSize=10, leading=12))
+    styles.add(ParagraphStyle(name='Left9', alignment=0, fontName='Helvetica', fontSize=9, leading=11))
+
+    logo_path = Path(__file__).parent / "static" / "logo.png"
+    logo_img = None
+    if logo_path.exists():
+        try:
+            logo_img = Image(str(logo_path), width=0.95*inch, height=0.95*inch)
+        except (IOError, OSError):
+            pass
+
+    company_name = co.get('name', 'MABS Engineering LLC')
+    address_text = ""
+    for line in co.get('address', '').split('\n'):
+        if line.strip():
+            address_text += f"{line.strip()}<br/>"
+    contact_text = f"Phone: {co.get('phone','')} • Email: {co.get('email','')} • {co.get('website','')}"
+    header_html = f"<b><font size=16>{company_name}</font></b><br/><font size=9>{address_text}{contact_text}</font>"
+
+    if logo_img:
+        hdr_table_data = [[logo_img, Paragraph(header_html, ParagraphStyle("cn", parent=styles["Normal"], fontName="Helvetica", textColor=colors.black, alignment=1))]]
+        hdr_table = Table(hdr_table_data, colWidths=[0.95*inch, doc.width - 0.95*inch])
+        hdr_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (1,0), (1,0), 5), ("BOTTOMPADDING", (0,0), (-1,-1), 0), ("TOPPADDING", (0,0), (-1,-1), 0), ("LINEBELOW", (0,0), (-1,-1), 1, colors.black)]))
+        story.append(hdr_table)
+    else:
+        story.append(Paragraph(header_html, ParagraphStyle("cn", parent=styles["Normal"], fontName="Helvetica", textColor=colors.black, alignment=1)))
+        story.append(Table([['']], colWidths=[doc.width], style=[('LINEBELOW', (0,0), (-1,-1), 1, colors.black)]))
+
+    story.append(Spacer(1, 2*mm))
+
+    client_name = meta.get('client_name', '')
+    client_email = ""
+    client_address = ""
+    if client_name:
+        try:
+            client_data = fb_get(f"/clients/{client_name}") or {}
+            client_email = client_data.get("email", "")
+            client_address = client_data.get("address", "")
+        except Exception:
+            pass
+
+    bill_to_lines = []
+    if client_name:
+        bill_to_lines.append(client_name)
+    if client_email:
+        bill_to_lines.append(client_email)
+    if client_address:
+        for line in client_address.split('\n'):
+            if line.strip():
+                bill_to_lines.append(line.strip())
+    bill_to_text = "<br/>".join(bill_to_lines) if bill_to_lines else ""
+
+    invoice_info = f"Invoice Number: {meta.get('invoice_number','')}<br/>Date: {meta.get('invoice_date','')}<br/>Due Date: {meta.get('due_date','')}"
+    header_data = [
+        [Paragraph("<b>Invoice:</b>", styles['Left10']), Paragraph("<b>Bill To:</b>", styles['Left10'])],
+        [Paragraph(invoice_info, styles['Left9']), Paragraph(bill_to_text, styles['Left9']) if bill_to_text else Paragraph("", styles['Left9'])],
+    ]
+    header_table = Table(header_data, colWidths=[doc.width * 0.5, doc.width * 0.5])
+    header_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 2), ('BOTTOMPADDING', (0,0), (-1,-1), 2)]))
+    story.append(header_table)
+    story.append(Spacer(1, 8*mm))
+
+    story.append(Paragraph("ITEMS", ParagraphStyle("items_title", parent=styles["Normal"], fontSize=12, fontName="Helvetica-Bold", textColor=colors.black, alignment=0)))
+    story.append(Spacer(1, 3*mm))
+
+    center_bold_style = ParagraphStyle("center_bold10", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.black, alignment=1)
+    center_style = ParagraphStyle("center10", parent=styles["Normal"], fontSize=10, fontName="Helvetica", textColor=colors.black, alignment=1)
+    item_data = [[Paragraph(h, center_bold_style) for h in ["Project", "Project Name", "Plant", "Qty", "Unit Price", "Payment Stage", "Payment Due"]]]
+
+    linked_projects = meta.get("linked_projects", [])
+    if isinstance(linked_projects, str):
+        linked_projects = [{"project_number": linked_projects}]
+    elif not isinstance(linked_projects, list):
+        linked_projects = []
+
+    for idx, item in enumerate(invoice.get("line_items", [])):
+        qty_val = _safe_float(item.get("quantity", 1))
+        qty = str(int(qty_val)) if qty_val == int(qty_val) else str(qty_val)
+        unit_price_val = _safe_float(item.get('unit_price', 0))
+        unit_price = f"${unit_price_val:,.2f}"
+        project_number = ""
+        project_name = ""
+        plant = ""
+        if idx < len(linked_projects) and isinstance(linked_projects[idx], dict):
+            project_number = linked_projects[idx].get("project_number", "")
+            project_name = linked_projects[idx].get("project_name", "")
+        if not project_number:
+            project_number = meta.get("project_number", "")
+        if not project_name and project_number:
+            try:
+                raw_proj = fb_get("/projects") or {}
+                for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
+                    if isinstance(pdata, dict) and pdata.get("project_number") == project_number:
+                        project_name = pdata.get("project_name", "")
+                        plant = pdata.get("plant", "")
+                        break
+            except Exception:
+                pass
+        if not plant:
+            plant = meta.get("plant", "")
+        if not project_name:
+            description = item.get("description", "")
+            project_name = description.split("—")[0].strip() if "—" in description else description
+
+        payment_stage = ""
+        if idx < len(linked_projects) and isinstance(linked_projects[idx], dict):
+            payment_stage_index = linked_projects[idx].get("payment_stage_index")
+            if payment_stage_index is not None and project_number:
+                try:
+                    raw_proj = fb_get("/projects") or {}
+                    for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
+                        if isinstance(pdata, dict) and pdata.get("project_number") == project_number:
+                            payment_stages = pdata.get("payment_stages", [])
+                            if isinstance(payment_stages, list) and int(payment_stage_index) < len(payment_stages):
+                                stage_data = payment_stages[int(payment_stage_index)]
+                                if isinstance(stage_data, dict):
+                                    payment_stage = stage_data.get("name", "")
+                            break
+                except Exception:
+                    pass
+        if not payment_stage:
+            payment_stage = meta.get("payment_stage", "")
+        if payment_stage and " of " in payment_stage:
+            payment_stage = payment_stage.split(" of ")[0].strip()
+        if not payment_stage:
+            payment_stage = "Final Payment"
+
+        payment_due_val = qty_val * unit_price_val
+        payment_due = f"${payment_due_val:,.2f}"
+        item_data.append([
+            Paragraph(project_number, center_style),
+            Paragraph(project_name, center_style),
+            Paragraph(plant or "", center_style),
+            Paragraph(qty, center_style),
+            Paragraph(unit_price, center_style),
+            Paragraph(payment_stage, center_style),
+            Paragraph(payment_due, center_style)
+        ])
+
+    if len(item_data) == 1:
+        item_data.append([Paragraph("", center_style) for _ in range(7)])
+
+    item_table = Table(item_data, colWidths=[doc.width * 0.18, doc.width * 0.21, doc.width * 0.11, doc.width * 0.08, doc.width * 0.12, doc.width * 0.15, doc.width * 0.15])
+    item_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+        ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#CCCCCC")),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('LEFTPADDING', (0,0), (-1,-1), 3),
+        ('RIGHTPADDING', (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+    ]))
+    story.append(item_table)
+    story.append(Spacer(1, 5*mm))
+
+    subtotal = _safe_float(meta.get('subtotal', 0))
+    tax_amount = _safe_float(meta.get('tax_amount', 0))
+    tax_rate = _safe_float(meta.get('tax_rate', 0))
+    total_amount = _safe_float(meta.get('total', 0))
+    totals_data = [
+        [Paragraph("Total", styles['Right10']), Paragraph(f"${subtotal:,.2f}", styles['Right10'])],
+        [Paragraph(f"Tax ({tax_rate}%)", styles['Right10']), Paragraph(f"${tax_amount:,.2f}", styles['Right10'])],
+        [Paragraph("TOTAL AMOUNT DUE:", styles['RightBold10']), Paragraph(f"${total_amount:,.2f}", styles['RightBold10'])],
+    ]
+    totals_table = Table(totals_data, colWidths=[doc.width * 0.5, doc.width * 0.5])
+    totals_table.setStyle(TableStyle([
+        ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#CCCCCC")),
+        ('LEFTPADDING', (0,0), (-1,-1), 3),
+        ('RIGHTPADDING', (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+        ('BACKGROUND', (0, len(totals_data)-1), (-1, len(totals_data)-1), colors.lightgrey),
+        ('FONTNAME', (0, len(totals_data)-1), (-1, len(totals_data)-1), 'Helvetica-Bold'),
+    ]))
+    story.append(totals_table)
+    story.append(Spacer(1, 5*mm))
+
+    story.append(Paragraph("PAYMENT OPTIONS", styles['LeftBold12']))
+    story.append(Spacer(1, 3*mm))
+
+    InvLabel = ParagraphStyle("InvLabel", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.black, leading=12)
+    InvValue = ParagraphStyle("InvValue", parent=styles["Normal"], fontSize=9, fontName="Helvetica", textColor=colors.black, leading=11, leftIndent=3, spaceAfter=3)
+    TableCenter = ParagraphStyle("TableCenter", parent=styles["Normal"], fontSize=8, fontName="Helvetica", textColor=colors.black, alignment=1)
+
+    qr_path = Path(__file__).parent / "static" / "venmo.png"
+    qr_img = None
+    if qr_path.exists():
+        try:
+            qr_img = Image(str(qr_path), width=1.0*inch, height=1.0*inch)
+        except (IOError, OSError):
+            qr_img = None
+
+    right_section = [
+        Table([[Paragraph("<b>Option 2: Zelle QR code</b>", InvLabel)]], colWidths=[doc.width * 0.40], rowHeights=[8*mm],
+              style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#B6D7A8")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
+        Spacer(1, 1*mm),
+    ]
+    if qr_img:
+        right_section.append(Table([[qr_img]], colWidths=[doc.width * 0.40],
+                                   style=TableStyle([("ALIGN", (0,0), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 1*mm), ("BOTTOMPADDING", (0,0), (-1,-1), 1*mm)])))
+    right_section.append(Paragraph("Scan to pay with Zelle", TableCenter))
+
+    left_section = [
+        Table([[Paragraph("<b>Option 1: Check</b>", InvLabel)]], colWidths=[doc.width * 0.55], rowHeights=[7*mm],
+              style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#B6DDE8")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
+        Spacer(1, 1*mm),
+        Paragraph("<b>Payable to:</b> MABS Engineering LLC<br/><b>Mailing Address:</b> 15455 Manchester Rd, PO Box 1144 Manchester, MO 63011", InvValue),
+        Spacer(1, 4*mm),
+        Table([[Paragraph("<b>Option 3: Bank ACH Transfer</b>", InvLabel)]], colWidths=[doc.width * 0.55], rowHeights=[7*mm],
+              style=TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EA9999")), ("BOX", (0,0), (-1,-1), 0.8, colors.black), ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 2), ("BOTTOMPADDING", (0,0), (-1,-1), 2), ("LEFTPADDING", (0,0), (-1,-1), 3)])),
+        Spacer(1, 1*mm),
+        Paragraph("Please contact MABS Admin to get our bank information for ACH transfers", InvValue),
+    ]
+
+    payment_table = Table([[left_section, right_section]], colWidths=[doc.width * 0.55, doc.width * 0.40])
+    payment_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0), ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0), ('BOX', (0,0), (-1,-1), 1, colors.black), ('INNERGRID', (0,0), (-1,-1), 0.5, colors.black)]))
+    story.append(payment_table)
+
+    story.append(Spacer(1, 3*mm))
+    default_terms = co.get('default_terms', 'Thank you for your business! Best regards, MABS Engineering LLC')
+    notes_text = default_terms if default_terms else meta.get('notes', 'Thank you for your business!')
+    story.append(Paragraph(f"<b>Note:</b> {notes_text}", styles['Left9']))
+
+    calculated_status = _calculate_invoice_status(invoice)
+    if (calculated_status or "").lower() == 'paid':
+        def add_paid_watermark(canvas_obj, doc_obj):
+            canvas_obj.saveState()
+            center_x = A4[0] / 2
+            center_y = A4[1] / 2
+            canvas_obj.setFont("Helvetica-Bold", 130)
+            canvas_obj.setFillColor(colors.HexColor("#00B050"))
+            canvas_obj.setFillAlpha(0.25)
+            canvas_obj.translate(center_x, center_y)
+            canvas_obj.rotate(45)
+            canvas_obj.drawCentredString(0, 0, "PAID")
+            canvas_obj.restoreState()
+        doc.build(story, onFirstPage=add_paid_watermark, onLaterPages=add_paid_watermark)
+    else:
+        doc.build(story)
+
+    buf.seek(0)
+    return buf.getvalue()
+
+def _send_invoice_email(invoice_id: str):
+    """Send invoice professional text email + PDF attachment to the client. Returns (ok: bool, message: str)."""
+    settings = load_settings()
+    em = settings.get("email", {})
+
+    if not em.get("enabled"):
+        return False, "Email sending is disabled. Enable it in Settings → Email/SMTP."
+
+    invoice = fb_get(f"/invoices/{invoice_id}")
+    if not invoice:
+        return False, "Invoice not found."
+
+    meta        = invoice.get("meta", {})
+    client_name = meta.get("client_name", "")
+    client_data = fb_get(f"/clients/{client_name}") or {}
+    client_email = client_data.get("email", "")
+    if not client_email:
+        return False, f"No email on file for '{client_name}'. Add it in Clients."
+
+    co = company_info()
+
+    # Company info for signature
+    company_name = co.get('name', 'MABS Engineering LLC')
+    company_address = co.get('address', '15455 Manchester Rd, PO Box 1144, Manchester, MO 63011')
+    company_email = co.get('email', 'info@mabs-engineering.com')
+    company_phone = co.get('phone', '(314) 585-2003')
+
+    signature = f"""{company_name}
+{company_address}
+{company_email}
+{company_phone}"""
+
+    # Professional text email
+    invoice_number = meta.get('invoice_number', '')
+    invoice_status = str(meta.get('status', 'Draft')).strip()  # Status values: Draft, Sent, Viewed, Paid, Partial, Overdue, Cancelled
+    total_due = _safe_float(meta.get('total', 0))
+    due_date = meta.get('due_date', '')
+    paid_date = meta.get('paid_date', '')
+
+    company_name = co.get('name', 'MABS Engineering LLC')
+    company_address = co.get('address', '15455 Manchester Rd, PO Box 1144, Manchester, MO 63011')
+    company_email = co.get('email', 'info@mabs-engineering.com')
+    company_phone = co.get('phone', '(314) 585-2003')
+
+    # Check if invoice is paid (handle capitalization and spacing)
+    is_paid = invoice_status.lower() == 'paid'
+    log.info(f"Invoice {invoice_number} status: '{invoice_status}' → is_paid: {is_paid}")
+
+    if is_paid:
+        # PAID INVOICE EMAIL
+        text_body = f"""Hi {client_name},
+
+Please find the attached paid invoice for your records.
+
+Invoice Details:
+Invoice Number: {invoice_number}
+Amount Paid: ${total_due:,.2f}
+Payment Date: {paid_date or 'Received'}
+
+Thank you for your payment. If you require any additional information, please let us know.
+
+Best regards,
+{company_name}
+{company_address}
+{company_email}
+{company_phone}
+"""
+        subject = f"{invoice_number} – Payment Received"
+    else:
+        # UNPAID INVOICE EMAIL
+        text_body = f"""Hi {client_name},
+
+Please find the attached invoice for your review.
+
+Invoice Details:
+Invoice Number: {invoice_number}
+Amount Due: ${total_due:,.2f}
+Due Date: {due_date}
+
+Please review the attached invoice at your convenience. If you have any questions or require additional information, please feel free to contact us.
+
+Thank you for your business. We appreciate your continued trust and support.
+
+Best regards,
+{company_name}
+{company_address}
+{company_email}
+{company_phone}
+"""
+        subject = f"You have a new invoice from {company_name} ({invoice_number})"
+
+    try:
+        msg = MIMEMultipart("mixed")
+        msg["Subject"] = subject
+        msg["From"]    = f"{em.get('from_name', co.get('name',''))} <{em.get('smtp_user','')}>"
+        msg["To"]      = client_email
+
+        msg.attach(MIMEText(text_body, "plain"))
+
+        try:
+            pdf_bytes = _generate_invoice_pdf_bytes(invoice_id)
+            if pdf_bytes:
+                from email.mime.base import MIMEBase
+                from email import encoders
+                pdf_part = MIMEBase("application", "octet-stream")
+                pdf_part.set_payload(pdf_bytes)
+                encoders.encode_base64(pdf_part)
+                pdf_part.add_header("Content-Disposition", "attachment",
+                                   filename=f"Invoice_{meta.get('invoice_number','')}.pdf")
+                msg.attach(pdf_part)
+        except Exception as pdf_err:
+            log.warning("Could not attach PDF to invoice email: %s", pdf_err)
+
+        with smtplib.SMTP(em.get("smtp_host", "smtp.gmail.com"),
+                          int(em.get("smtp_port", 587))) as srv:
+            srv.ehlo()
+            srv.starttls()
+            srv.login(em.get("smtp_user", ""), em.get("smtp_password", ""))
+            srv.sendmail(em.get("smtp_user", ""), [client_email], msg.as_string())
+
+        return True, f"Invoice emailed to {client_email}."
+    except Exception as exc:
+        log.error("Email send error: %s", exc)
+        return False, f"Failed to send email: {exc}"
+
+def _generate_quote_pdf_bytes(quote_id: str):
+    """Generate quote PDF and return as bytes. Returns None on error."""
+    try:
+        from reportlab.lib.pagesizes import letter
         from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib import colors
         from reportlab.lib.units import inch, mm
         from pathlib import Path
     except ImportError:
-        flash("reportlab not installed.", "danger")
-        return redirect(url_for("quote_detail", quote_id=quote_id))
+        return None
 
     import io as _io
     quote = fb_get(f"/job_forms/{quote_id}")
     if not quote:
-        abort(404)
+        return None
 
     co = company_info()
     buf = _io.BytesIO()
@@ -7480,7 +7914,6 @@ def quote_pdf(quote_id):
     section_title = ParagraphStyle("st", parent=styles["Normal"], fontSize=11, fontName="Helvetica-Bold", textColor=dark_gray)
     checkbox_style = ParagraphStyle("cs", parent=styles["Normal"], fontSize=8, fontName="Helvetica", textColor=dark_gray)
 
-    # Logo + Header
     logo_path = Path(__file__).parent / "static" / "logo.png"
     if logo_path.exists():
         try:
@@ -7494,7 +7927,6 @@ def quote_pdf(quote_id):
 
     elems.append(Spacer(1, 0.08*inch))
 
-    # Title with optional sales person
     sales_person = quote.get('salesperson', '')
     fixed_sales_width = 2.0*inch
     center_width = (doc.width - fixed_sales_width) / 2
@@ -7529,7 +7961,6 @@ def quote_pdf(quote_id):
     title_table.setStyle(TableStyle(table_style))
     elems.append(title_table)
     elems.append(Spacer(1, 0.05*inch))
-
     elems.append(Spacer(1, 0.15*inch))
 
     def add_form_field(label, value):
@@ -7870,160 +8301,21 @@ def quote_pdf(quote_id):
 
     doc.build(elems, onFirstPage=quote_footer, onLaterPages=quote_footer)
     buf.seek(0)
-    from flask import Response
-    fname = f"Quote_{quote.get('job_number','')}.pdf"
-    return Response(buf.getvalue(), mimetype="application/pdf",
-                    headers={"Content-Disposition": f"inline;filename={fname}"})
+    return buf.getvalue()
 
-@app.route("/projects/<project_id>/pdf")
-@role_required("projects")
-def project_pdf(project_id):
-    try:
-        from reportlab.lib.pagesizes import A4
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib import colors
-        from reportlab.lib.units import inch
-    except ImportError:
-        flash("reportlab not installed.", "danger")
-        return redirect(url_for("project_detail", project_id=project_id))
-
-    import io as _io
-    project = fb_get(f"/projects/{project_id}")
-    if not project:
-        abort(404)
-
-    co = company_info()
-    buf = _io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4,
-                            leftMargin=0.75*inch, rightMargin=0.75*inch,
-                            topMargin=0.75*inch, bottomMargin=0.75*inch)
-    styles = getSampleStyleSheet()
-    elems = []
-
-    teal   = colors.HexColor("#0F766E")
-    dark   = colors.HexColor("#0F172A")
-    muted  = colors.HexColor("#64748B")
-    light  = colors.HexColor("#F8FAFC")
-    border = colors.HexColor("#E2E8F0")
-
-    lbl = ParagraphStyle("lbl", parent=styles["Normal"], fontSize=8,  fontName="Helvetica-Bold", textColor=muted, spaceAfter=1)
-    val = ParagraphStyle("val", parent=styles["Normal"], fontSize=10, fontName="Helvetica",       textColor=dark, spaceAfter=8)
-    sm  = ParagraphStyle("sm",  parent=styles["Normal"], fontSize=9,  fontName="Helvetica",       textColor=muted)
-    h2  = ParagraphStyle("h2",  parent=styles["Normal"], fontSize=11, fontName="Helvetica-Bold",  textColor=dark, spaceBefore=12, spaceAfter=6)
-
-    # ── Header ──
-    addr = (co.get("address","") or "").replace("\n", " | ")
-    hdr_data = [[
-        Paragraph(f"<b>{co.get('name','')}</b>", ParagraphStyle("cn", parent=styles["Normal"], fontSize=14, fontName="Helvetica-Bold", textColor=dark)),
-        Paragraph("PROJECT DOCUMENT", ParagraphStyle("pd", parent=styles["Normal"], fontSize=18, fontName="Helvetica-Bold", textColor=teal, alignment=2)),
-    ],[
-        Paragraph(f"{addr}<br/>{co.get('phone','')}  |  {co.get('email','')}", sm),
-        Paragraph(f"<b>{project.get('project_number','')}</b>", ParagraphStyle("pn", parent=styles["Normal"], fontSize=12, fontName="Helvetica-Bold", textColor=dark, alignment=2)),
-    ]]
-    hdr = Table(hdr_data, colWidths=[3.5*inch, 3.5*inch])
-    hdr.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"TOP"), ("BOTTOMPADDING",(0,0),(-1,-1),4)]))
-    elems.append(hdr)
-    elems.append(HRFlowable(width="100%", thickness=2, color=teal, spaceAfter=12))
-
-    # ── Project meta ──
-    meta = [
-        [Paragraph("CLIENT", lbl),       Paragraph("STATUS", lbl),          Paragraph("START DATE", lbl),       Paragraph("END DATE", lbl)],
-        [Paragraph(project.get("client_name","—"), val), Paragraph(project.get("status","—"), val), Paragraph(project.get("start_date","—"), val), Paragraph(project.get("end_date","—") or "—", val)],
-        [Paragraph("PROJECT NAME", lbl), Paragraph("", lbl), Paragraph("ASSIGNED TO", lbl), Paragraph("PAYMENT STAGE", lbl)],
-        [Paragraph(project.get("project_name","—"), val), Paragraph("", val), Paragraph(project.get("assigned_to","—") or "—", val), Paragraph(project.get("payment_category","—") or "—", val)],
-    ]
-    mt = Table(meta, colWidths=[2*inch, 1.5*inch, 1.5*inch, 1.5*inch])
-    mt.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"TOP"), ("LEFTPADDING",(0,0),(-1,-1),0), ("SPAN",(0,2),(1,2)), ("SPAN",(0,3),(1,3))]))
-    elems.append(mt)
-
-    # ── Scope ──
-    if project.get("description"):
-        elems.append(Paragraph("SCOPE OF WORK", h2))
-        elems.append(HRFlowable(width="100%", thickness=0.5, color=border, spaceAfter=6))
-        elems.append(Paragraph(project.get("description",""), sm))
-
-    # ── Financial summary ──
-    cv   = _safe_float(project.get("contract_value", 0))
-    paid = _safe_float(project.get("amount_paid",    0))
-    outstanding = cv - paid
-    pct  = int(paid / cv * 100) if cv > 0 else 0
-
-    elems.append(Paragraph("FINANCIAL SUMMARY", h2))
-    elems.append(HRFlowable(width="100%", thickness=0.5, color=border, spaceAfter=6))
-    fin_data = [
-        ["Contract Value",  f"${cv:,.2f}"],
-        ["Amount Paid",     f"${paid:,.2f}"],
-        ["Outstanding",     f"${outstanding:,.2f}"],
-        ["Collection Rate", f"{pct}%"],
-        ["Payment Stage",   project.get("payment_category","—") or "—"],
-    ]
-    fin_tbl = Table(fin_data, colWidths=[2.5*inch, 2*inch])
-    fin_tbl.setStyle(TableStyle([
-        ("FONTNAME",      (0,0), (-1,-1), "Helvetica"),
-        ("FONTSIZE",      (0,0), (-1,-1), 10),
-        ("TEXTCOLOR",     (0,0), (0,-1),  muted),
-        ("FONTNAME",      (1,0), (1,-1),  "Helvetica-Bold"),
-        ("TEXTCOLOR",     (1,2), (1,2),   colors.HexColor("#DC2626") if outstanding > 0 else teal),
-        ("TEXTCOLOR",     (1,0), (1,0),   teal),
-        ("ROWBACKGROUNDS",(0,0), (-1,-1), [colors.white, light]),
-        ("GRID",          (0,0), (-1,-1), 0.4, border),
-        ("TOPPADDING",    (0,0), (-1,-1), 6),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 6),
-        ("LEFTPADDING",   (0,0), (-1,-1), 8),
-    ]))
-    elems.append(fin_tbl)
-
-    # ── Notes ──
-    if project.get("notes"):
-        elems.append(Paragraph("NOTES", h2))
-        elems.append(HRFlowable(width="100%", thickness=0.5, color=border, spaceAfter=6))
-        elems.append(Paragraph(project.get("notes",""), sm))
-
-    # ── Signature block ──
-    elems.append(Spacer(1, 30))
-    sig_data = [[
-        Paragraph("_" * 35, ParagraphStyle("sig", parent=styles["Normal"], fontSize=10)),
-        Paragraph("_" * 35, ParagraphStyle("sig2", parent=styles["Normal"], fontSize=10)),
-    ],[
-        Paragraph(f"Client Signature — {project.get('client_name','')}", sm),
-        Paragraph(f"Authorized — {co.get('name','')}", sm),
-    ],[
-        Paragraph("Date: _______________", sm),
-        Paragraph("Date: _______________", sm),
-    ]]
-    sig = Table(sig_data, colWidths=[3.5*inch, 3.5*inch])
-    sig.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"TOP"), ("TOPPADDING",(0,0),(-1,-1),4)]))
-    elems.append(sig)
-
-    # ── Footer ──
-    elems.append(Spacer(1, 20))
-    elems.append(HRFlowable(width="100%", thickness=0.5, color=border, spaceAfter=4))
-    gen_date = datetime.now().strftime("%B %d, %Y")
-    elems.append(Paragraph(f"Document generated {gen_date}  ·  {co.get('name','')}  ·  {co.get('phone','')}  ·  {co.get('email','')}", sm))
-
-    doc.build(elems)
-    buf.seek(0)
-    from flask import Response
-    fname = f"Project_{project.get('project_number','doc')}.pdf"
-    return Response(buf.getvalue(), mimetype="application/pdf",
-                    headers={"Content-Disposition": f"inline;filename={fname}"})
-
-# ── Email helper ─────────────────────────────────────────────────────────────
-def _send_invoice_email(invoice_id: str):
-    """Send invoice HTML email to the client. Returns (ok: bool, message: str)."""
+def _send_quote_email(quote_id: str):
+    """Send quote professional text email + PDF attachment to the client. Returns (ok: bool, message: str)."""
     settings = load_settings()
     em = settings.get("email", {})
 
     if not em.get("enabled"):
         return False, "Email sending is disabled. Enable it in Settings → Email/SMTP."
 
-    invoice = fb_get(f"/invoices/{invoice_id}")
-    if not invoice:
-        return False, "Invoice not found."
+    quote = fb_get(f"/job_forms/{quote_id}")
+    if not quote:
+        return False, "Quote not found."
 
-    meta        = invoice.get("meta", {})
-    client_name = meta.get("client_name", "")
+    client_name = quote.get("client_name", "")
     client_data = fb_get(f"/clients/{client_name}") or {}
     client_email = client_data.get("email", "")
     if not client_email:
@@ -8031,75 +8323,96 @@ def _send_invoice_email(invoice_id: str):
 
     co = company_info()
 
-    # Build line-items HTML rows
-    rows_html = ""
-    for item in invoice.get("line_items", []):
-        rows_html += (
-            f"<tr>"
-            f"<td style='padding:6px 8px;border-bottom:1px solid #e5e7eb;'>{item.get('description','')}</td>"
-            f"<td style='padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:right;'>{item.get('quantity','')}</td>"
-            f"<td style='padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:right;'>"
-            f"${_safe_float(item.get('unit_price',0)):,.2f}</td>"
-            f"<td style='padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:right;'>"
-            f"${_safe_float(item.get('amount',0)):,.2f}</td>"
-            f"</tr>"
-        )
+    # Get scope/description
+    scope = quote.get('description', '').strip() or quote.get('scope', '').strip()
+    project_name = quote.get('project_name', '').strip()
 
-    notes_block = (f"<p style='margin:8px 0;'><strong>Notes:</strong> {meta.get('notes')}</p>"
-                   if meta.get("notes") else "")
-    terms_block = (f"<p style='margin:8px 0;'><strong>Terms:</strong> {meta.get('terms')}</p>"
-                   if meta.get("terms") else "")
+    # Company info for signature
+    company_name = co.get('name', 'MABS Engineering LLC')
+    company_address = co.get('address', '15455 Manchester Rd, PO Box 1144, Manchester, MO 63011')
+    company_email = co.get('email', 'info@mabs-engineering.com')
+    company_phone = co.get('phone', '(314) 585-2003')
 
-    html_body = f"""
-<html><body style="font-family:Arial,sans-serif;color:#333;max-width:640px;margin:auto;">
-<div style="background:#0F766E;color:white;padding:24px;border-radius:8px 8px 0 0;">
-  <h2 style="margin:0 0 4px;">{co.get('name','')}</h2>
-  <div style="opacity:.8;font-size:12px;">{co.get('address','').replace(chr(10),', ')} &nbsp;|&nbsp;
-    {co.get('phone','')} &nbsp;|&nbsp; {co.get('email','')}</div>
-</div>
-<div style="padding:24px;background:#fff;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;">
-  <h3 style="color:#0F766E;margin:0 0 4px;">INVOICE #{meta.get('invoice_number','')}</h3>
-  <table style="width:100%;margin-bottom:16px;font-size:13px;">
-    <tr>
-      <td><strong>Bill To:</strong> {client_name}</td>
-      <td style="text-align:right;"><strong>Date:</strong> {meta.get('invoice_date','—')}</td>
-    </tr>
-    <tr>
-      <td></td>
-      <td style="text-align:right;"><strong>Due:</strong> {meta.get('due_date','—')}</td>
-    </tr>
-  </table>
-  <table style="width:100%;border-collapse:collapse;font-size:13px;">
-    <thead>
-      <tr style="background:#0F172A;color:white;">
-        <th style="padding:8px;text-align:left;">Description</th>
-        <th style="padding:8px;text-align:right;">Qty</th>
-        <th style="padding:8px;text-align:right;">Unit Price</th>
-        <th style="padding:8px;text-align:right;">Amount</th>
-      </tr>
-    </thead>
-    <tbody>{rows_html}</tbody>
-    <tfoot>
-      <tr>
-        <td colspan="3" style="padding:8px;text-align:right;">Subtotal</td>
-        <td style="padding:8px;text-align:right;">${_safe_float(meta.get('subtotal',0)):,.2f}</td>
-      </tr>
-      <tr style="font-size:15px;font-weight:bold;color:#0F766E;">
-        <td colspan="3" style="padding:8px;text-align:right;">Total Due</td>
-        <td style="padding:8px;text-align:right;">${_safe_float(meta.get('total',0)):,.2f}</td>
-      </tr>
-    </tfoot>
-  </table>
-  {notes_block}{terms_block}
-</div>
-</body></html>"""
+    signature = f"""{company_name}
+{company_address}
+{company_email}
+{company_phone}"""
+
+    # Determine conditions
+    has_project = bool(project_name)
+    has_scope = bool(scope)
+
+    # Build email based on conditions
+    if has_project and has_scope:
+        # Case 1: Project + Services
+        text_body = f"""Hi {client_name},
+
+Thank you for considering us for your {project_name} project. We've prepared a detailed quote for the {scope}.
+
+The attached PDF shows the complete breakdown. Please let me know if you have any questions.
+
+Best regards,
+
+{signature}
+"""
+    elif has_project and not has_scope:
+        # Case 2: Project + NO Services
+        text_body = f"""Hi {client_name},
+
+Thank you for considering us for your {project_name} project. We've prepared a detailed quote.
+
+The attached PDF shows the complete breakdown. Please let me know if you have any questions.
+
+Best regards,
+
+{signature}
+"""
+    elif not has_project and has_scope:
+        # Case 3: NO Project + Services
+        text_body = f"""Hi {client_name},
+
+Thank you for considering us for your project. We've prepared a detailed quote for the {scope}.
+
+The attached PDF shows the complete breakdown. Please let me know if you have any questions.
+
+Best regards,
+
+{signature}
+"""
+    else:
+        # Case 4: NO Project + NO Services
+        text_body = f"""Hi {client_name},
+
+Thank you for considering us for your project. We've prepared a detailed quote.
+
+The attached PDF shows the complete breakdown. Please let me know if you have any questions.
+
+Best regards,
+
+{signature}
+"""
 
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"Invoice #{meta.get('invoice_number','')} from {co.get('name','')}"
+        msg = MIMEMultipart("mixed")
+        msg["Subject"] = f"Quote from {co.get('name','')} - {quote.get('job_number','')}"
         msg["From"]    = f"{em.get('from_name', co.get('name',''))} <{em.get('smtp_user','')}>"
         msg["To"]      = client_email
-        msg.attach(MIMEText(html_body, "html"))
+
+        msg.attach(MIMEText(text_body, "plain"))
+
+        try:
+            pdf_bytes = _generate_quote_pdf_bytes(quote_id)
+            if pdf_bytes:
+                from email.mime.base import MIMEBase
+                from email import encoders
+                pdf_part = MIMEBase("application", "octet-stream")
+                pdf_part.set_payload(pdf_bytes)
+                encoders.encode_base64(pdf_part)
+                pdf_part.add_header("Content-Disposition", "attachment",
+                                   filename=f"Quote_{quote.get('job_number','')}.pdf")
+                msg.attach(pdf_part)
+        except Exception as pdf_err:
+            log.warning("Could not attach PDF to quote email: %s", pdf_err)
 
         with smtplib.SMTP(em.get("smtp_host", "smtp.gmail.com"),
                           int(em.get("smtp_port", 587))) as srv:
@@ -8108,7 +8421,7 @@ def _send_invoice_email(invoice_id: str):
             srv.login(em.get("smtp_user", ""), em.get("smtp_password", ""))
             srv.sendmail(em.get("smtp_user", ""), [client_email], msg.as_string())
 
-        return True, f"Invoice emailed to {client_email}."
+        return True, f"Quote emailed to {client_email}."
     except Exception as exc:
         log.error("Email send error: %s", exc)
         return False, f"Failed to send email: {exc}"
@@ -8127,6 +8440,13 @@ def invoice_send(invoice_id):
             _advance_project_to_in_progress(proj_num)
     flash(msg, "success" if ok else "danger")
     return redirect(url_for("invoice_detail", invoice_id=invoice_id))
+
+@app.route("/quotes/<quote_id>/send", methods=["POST"])
+@role_required("quotes")
+def quote_send(quote_id):
+    ok, msg = _send_quote_email(quote_id)
+    flash(msg, "success" if ok else "danger")
+    return redirect(url_for("quote_detail", quote_id=quote_id))
 
 @app.route("/invoicing/<invoice_id>/payment/add", methods=["POST"])
 @role_required("invoicing")
