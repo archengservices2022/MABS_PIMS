@@ -3587,13 +3587,16 @@ def client_statement(client_name):
         ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
         ("FONTSIZE",      (0,0), (-1,0), 8),
         ("ALIGN",         (0,0), (-1,0), "CENTER"),
+        ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
         ("TOPPADDING",    (0,0), (-1,0), 3), ("BOTTOMPADDING",(0,0),(-1,0),3),
         ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
         ("FONTSIZE",      (0,1), (-1,-1), 8),
         ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, light]),
         ("GRID",          (0,0), (-1,-1), 0.4, border),
-        ("TOPPADDING",    (0,1), (-1,-1), 4), ("BOTTOMPADDING",(0,1),(-1,-1),4),
-        ("VALIGN",        (0,0), (-1,-1), "TOP"),
+        ("TOPPADDING",    (0,1), (-1,-1), 6), ("BOTTOMPADDING",(0,1),(-1,-1),6),
+        ("LEFTPADDING",   (0,1), (-1,-1), 4), ("RIGHTPADDING",(0,1),(-1,-1),4),
+        ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
+        ("ALIGN",         (0,1), (-1,-1), "CENTER"),
         ("ALIGN",         (-3,1),(-1,-1), "RIGHT"),
     ]))
     elems.append(tbl)
