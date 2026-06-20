@@ -253,13 +253,35 @@ def firebase_sign_in(email: str, password: str):
         return False, "", str(exc)
 
 def firebase_reset_password(email: str, password: str):
-    """Reset password using Firebase. Returns (ok, error_msg)"""
-    url = f"https://identitytoolkit.googleapis.com/v1/accounts:update?key={FIREBASE_API_KEY}"
+    """Reset password using Firebase custom signup endpoint. Returns (ok, error_msg)"""
     try:
-        resp = requests.post(url, json={"email": email, "password": password,
-                                        "returnSecureToken": True}, timeout=10)
+        signup_url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={FIREBASE_API_KEY}"
+        resp = requests.post(signup_url, json={
+            "email": email,
+            "password": password,
+            "returnSecureToken": True
+        }, timeout=10)
+
         if resp.status_code == 200:
+            new_uid = resp.json().get("localId", "")
+            users = fb_get("/users") or {}
+            old_uid = None
+            old_user_data = None
+
+            for uid, u_data in users.items():
+                if isinstance(u_data, dict) and u_data.get("email", "").lower() == email:
+                    old_uid = uid
+                    old_user_data = dict(u_data)
+                    break
+
+            if old_uid and old_user_data:
+                old_user_data["firebase_uid"] = new_uid
+                fb_update(f"/users/{new_uid}", old_user_data)
+                if old_uid != new_uid:
+                    fb_delete(f"/users/{old_uid}")
+
             return True, ""
+
         err = resp.json().get("error", {}).get("message", "Failed to reset password")
         return False, err
     except requests.exceptions.Timeout:
@@ -365,30 +387,39 @@ def forgot_password():
                 error = "Password reset service unavailable. Please contact your administrator."
             else:
                 try:
-                    users_ref = db.collection("users")
-                    user_doc = users_ref.document(email).get()
+                    user_found = False
+                    user_data = None
+                    users = fb_get("/users") or {}
 
-                    if not user_doc.exists:
+                    for uid, u_data in users.items():
+                        if isinstance(u_data, dict) and u_data.get("email", "").lower() == email:
+                            user_found = True
+                            user_data = u_data
+                            break
+
+                    if not user_found:
+                        error = "Account does not exist. Please contact your administrator."
+                    elif not user_data.get("active", True):
                         error = "Account does not exist. Please contact your administrator."
                     else:
-                        user_data = user_doc.to_dict() or {}
-                        if not user_data.get("active", True):
-                            error = "Account does not exist. Please contact your administrator."
-                        else:
-                            token = secrets.token_urlsafe(32)
-                            token_hash = hashlib.sha256(token.encode()).hexdigest()
+                        token = secrets.token_urlsafe(32)
+                        token_hash = hashlib.sha256(token.encode()).hexdigest()
 
-                            fb_update(f"/password_reset_tokens/{email}", {
-                                "token_hash": token_hash,
-                                "created_at": datetime.now(timezone.utc).isoformat(),
-                                "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
-                            })
+                        fb_update(f"/password_reset_tokens/{email}", {
+                            "token_hash": token_hash,
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+                        })
 
-                            reset_link = url_for("reset_password", email=email, token=token, _external=True)
-                            send_password_reset_email(email, user_data.get("username", email.split("@")[0]), reset_link)
+                        reset_link = url_for("reset_password", email=email, token=token, _external=True)
+                        email_sent = send_password_reset_email(email, user_data.get("username", email.split("@")[0]), reset_link)
 
+                        if email_sent:
                             message = f"Reset link sent to {email}. Please check your email to continue."
                             log.info("Password reset requested for %s", email)
+                        else:
+                            error = "Email service is not configured. Please contact your administrator."
+                            log.error("Password reset email failed for %s", email)
                 except Exception as e:
                     error = "An error occurred. Please try again later."
                     log.error("Forgot password error: %s", str(e))
@@ -444,6 +475,20 @@ def reset_password():
                                         log.error("Password reset failed for %s: %s", email, err_msg)
                                     else:
                                         fb_delete(f"/password_reset_tokens/{email}")
+
+                                        ok, uid, err_msg = firebase_sign_in(email, password)
+                                        if ok:
+                                            profile = load_user_profile(uid)
+                                            if profile and profile.get("active", True):
+                                                role = normalize_role(profile.get("role", "sales"))
+                                                session.permanent = True
+                                                session["user_email"] = email
+                                                session["user_uid"] = uid
+                                                session["user_name"] = profile.get("username", email.split("@")[0])
+                                                session["user_role"] = role
+                                                log.info("Password reset and auto-login for %s", email)
+                                                return redirect(url_for(first_page(role)))
+
                                         message = "Password reset successfully. You can now sign in with your new password."
                                         valid_token = False
                                         log.info("Password reset successful for %s", email)
@@ -458,13 +503,13 @@ def reset_password():
 
 def send_password_reset_email(email: str, username: str, reset_link: str) -> bool:
     try:
-        sender_email = os.getenv("SMTP_EMAIL", "noreply@mabseng.com")
-        sender_password = os.getenv("SMTP_PASSWORD", "")
-        smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+        sender_email = os.getenv("SMTP_EMAIL", "").strip()
+        sender_password = os.getenv("SMTP_PASSWORD", "").strip()
+        smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com").strip()
         smtp_port = int(os.getenv("SMTP_PORT", "587"))
 
-        if not sender_password:
-            log.warning("SMTP password not configured. Email not sent.")
+        if not sender_email or not sender_password:
+            log.error("SMTP not configured. Set SMTP_EMAIL and SMTP_PASSWORD environment variables.")
             return False
 
         msg = MIMEMultipart("alternative")
