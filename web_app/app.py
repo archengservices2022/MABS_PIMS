@@ -5217,12 +5217,6 @@ def employees():
             "period_end":          period_end,
             "period_label":        period_label,
         })
-    elif is_finance:
-        # Finance role: read-only Directory access
-        context.update({
-            "all_users": _load_all_users(),
-        })
-
     return render_template("employees.html", **context)
 
 @app.route("/employees/clock-in", methods=["POST"])

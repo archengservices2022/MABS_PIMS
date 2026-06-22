@@ -159,7 +159,7 @@
     </a>
   </li>
   {% endif %}
-  {% if user_role in ('admin', 'finance') %}
+  {% if user_role == 'admin' %}
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-directory">
       <i class="bi bi-person-vcard me-1"></i>Directory
