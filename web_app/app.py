@@ -1571,23 +1571,20 @@ def project_detail(project_id):
         for idx, stage in enumerate(data["payment_stages"]):
             stage_amount = _safe_float(stage.get("amount", 0))
 
-            # Calculate amount paid from all invoices for this stage
+            # Calculate amount paid from all invoices for this stage (PAYMENTS ONLY, not tax)
             amount_paid = 0
             due_date = ""
             if idx in stage_invoices:
                 for inv in stage_invoices[idx]:
-                    # Sum invoice payments (amount_paid + tax_payments)
+                    # Sum only invoice payments (amount_paid), NOT tax_payments
                     inv_meta = inv.get("meta", {}) or {}
                     amount_paid += _safe_float(inv_meta.get("amount_paid", 0))
-                    # Also add any tax payments
-                    tax_payments = inv.get("tax_payments", [])
-                    if isinstance(tax_payments, list):
-                        amount_paid += sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
                     due_date = due_date or inv_meta.get("due_date", "")
 
             is_overdue = bool(due_date) and due_date < today_str
 
             # Store calculated amount paid in stage object (so template displays fresh data after invoice deletion)
+            # NOTE: This is PAYMENTS ONLY, not including tax (tax is handled separately in P&L)
             stage["amount_paid"] = amount_paid
 
             # Calculate status based on actual paid vs total
