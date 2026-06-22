@@ -1669,8 +1669,16 @@ def project_detail(project_id):
         is_multi_project = isinstance(linked_projects, list) and len(linked_projects) > 1
 
         if is_multi_project:
-            # Multi-project invoice: use ONLY payment_log filtered by project_number
+            # Multi-project invoice: use payment_log filtered by project_number
             project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == proj_num)
+
+            # Fallback: if no project-specific payments found but invoice has payments, show total
+            # (for payments not yet tagged with project_number)
+            if project_payments == 0:
+                total_invoice_paid = _safe_float(inv_meta.get("amount_paid", 0))
+                if total_invoice_paid > 0:
+                    project_payments = total_invoice_paid
+
             # For tax: allocate proportionally by share
             total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
             project_tax_paid = share * total_tax_paid
