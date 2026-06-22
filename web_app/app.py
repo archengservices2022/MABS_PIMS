@@ -1573,12 +1573,13 @@ def project_detail(project_id):
         print(f"[STAGE_PAYMENT] Processing project={proj_num}, total stages={len(data.get('payment_stages', []))}, stage_invoices keys={list(stage_invoices.keys())}", flush=True)
         for idx, stage in enumerate(data["payment_stages"]):
             stage_amount = _safe_float(stage.get("amount", 0))
+            stage_name = stage.get("name", f"Stage {idx}")
 
             # Calculate amount paid from all invoices for this stage
             # For multi-project invoices, use payment_log filtered by project_number
             amount_paid = 0
             due_date = ""
-            print(f"[STAGE_PAYMENT] Stage {idx}: looking for invoices, has_invoices={idx in stage_invoices}", flush=True)
+            print(f"[STAGE_PAYMENT] Stage {idx} '{stage_name}': amount=${stage_amount}, looking for invoices, has_invoices={idx in stage_invoices}", flush=True)
             if idx in stage_invoices:
                 for inv in stage_invoices[idx]:
                     inv_meta = inv.get("meta", {}) or {}
@@ -1605,11 +1606,15 @@ def project_detail(project_id):
                         amount_paid += share * total_tax_paid
                     else:
                         # Single-project: use amount_paid from meta
-                        amount_paid += _safe_float(inv_meta.get("amount_paid", 0))
+                        amount_from_meta = _safe_float(inv_meta.get("amount_paid", 0))
+                        amount_paid += amount_from_meta
+                        print(f"[STAGE_PAYMENT] Single-project: amount_paid from meta={amount_from_meta}", flush=True)
                         # Also add any tax payments
                         tax_payments = inv.get("tax_payments", [])
                         if isinstance(tax_payments, list):
-                            amount_paid += sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+                            tax_paid_amount = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+                            amount_paid += tax_paid_amount
+                            print(f"[STAGE_PAYMENT] Single-project: tax_paid={tax_paid_amount}", flush=True)
 
             is_overdue = bool(due_date) and due_date < today_str
 
