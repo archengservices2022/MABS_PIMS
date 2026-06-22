@@ -9682,6 +9682,18 @@ def api_admin_reset_timesheets():
     return jsonify({"success": True, "message": "All timesheets deleted."})
 
 
+@app.route("/api/timesheets/<sheet_id>/delete", methods=["POST"])
+@login_required
+def api_timesheet_delete(sheet_id):
+    if normalize_role(session.get("user_role", "")) != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    sheet = fb_get(f"/timesheets/{sheet_id}")
+    if not sheet:
+        return jsonify({"error": "Timesheet not found"}), 404
+    fb_delete(f"/timesheets/{sheet_id}")
+    return jsonify({"success": True})
+
+
 @app.route("/api/timesheets/export")
 @role_required("timesheets")
 def api_timesheets_export():
