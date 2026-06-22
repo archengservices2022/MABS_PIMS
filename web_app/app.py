@@ -1653,11 +1653,16 @@ def project_detail(project_id):
     inv_paid = 0
     for i in project_invoices:
         share = i.get("_project_share", 1.0)
+        inv_meta = i.get("meta", {}) or {}
         payment_log = i.get("payment_log", []) or []
         tax_payments = i.get("tax_payments", []) or []
 
         # Get project payments from payment_log (filtered by project_number)
         project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == proj_num)
+
+        # Fallback for single-project invoices: if no payment_log entries with project_number, use amount_paid from meta
+        if project_payments == 0 and share == 1.0:
+            project_payments = _safe_float(inv_meta.get("amount_paid", 0))
 
         # Get tax paid (allocate proportionally by share)
         total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
