@@ -1642,7 +1642,24 @@ def project_detail(project_id):
     # P&L totals — invoices spanning multiple projects only count their prorated share here
     # Include both invoice amount and tax in total invoiced (to match collected which includes tax payments)
     inv_total   = sum((_safe_float(i.get("meta",{}).get("total", 0)) or _safe_float(i.get("meta",{}).get("subtotal", 0)) + _safe_float(i.get("meta",{}).get("tax_amount", 0))) * i.get("_project_share", 1.0) for i in project_invoices)
-    inv_paid    = sum((_safe_float(i.get("meta",{}).get("amount_paid", 0)) + sum(_safe_float(tp.get("amount", 0)) for tp in i.get("tax_payments", []))) * i.get("_project_share", 1.0) for i in project_invoices)
+
+    # Calculate collected (paid) amount for this project from actual payment_log entries (filtered by project_number)
+    # For multi-project invoices, use payment_log; for single-project use amount_paid from meta
+    inv_paid = 0
+    for i in project_invoices:
+        share = i.get("_project_share", 1.0)
+        payment_log = i.get("payment_log", []) or []
+        tax_payments = i.get("tax_payments", []) or []
+
+        # Get project payments from payment_log (filtered by project_number)
+        project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == proj_num)
+
+        # Get tax paid (allocate proportionally by share)
+        total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+        project_tax_paid = share * total_tax_paid
+
+        # Add this project's payments + tax to total collected
+        inv_paid += project_payments + project_tax_paid
     exp_total   = sum(_safe_float(e.get("amount", 0))                     for e in project_expenses)
     gross_profit = inv_paid - exp_total
 
