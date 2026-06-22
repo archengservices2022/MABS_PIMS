@@ -918,17 +918,26 @@ function calcTotals() {
 function toggleExpNew(chk) {
   const field       = document.getElementById('rushFieldNew');
   const box         = document.getElementById('expBoxNew');
-  const prioritySel = document.querySelector('#tab-new [name="priority"]');
+  // Find priority select - try multiple selectors for reliability
+  let prioritySel = document.querySelector('#tab-new [name="priority"]');
+  if (!prioritySel) {
+    prioritySel = document.querySelector('[name="priority"]');
+  }
+
   if (chk.checked) {
     field.style.removeProperty('display');
     box.classList.replace('border-light','border-warning');
     box.classList.add('bg-warning','bg-opacity-10');
-    if (prioritySel) prioritySel.value = 'Urgent';
+    if (prioritySel) {
+      prioritySel.value = 'Urgent';
+    }
   } else {
     field.style.display = 'none';
     box.classList.replace('border-warning','border-light');
     box.classList.remove('bg-warning','bg-opacity-10');
-    if (prioritySel) prioritySel.value = 'Low';
+    if (prioritySel) {
+      prioritySel.value = 'Low';
+    }
   }
   calcTotals();
 }
