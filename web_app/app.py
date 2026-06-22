@@ -1576,9 +1576,21 @@ def project_detail(project_id):
             due_date = ""
             if idx in stage_invoices:
                 for inv in stage_invoices[idx]:
-                    # Sum only invoice payments (amount_paid), NOT tax_payments
                     inv_meta = inv.get("meta", {}) or {}
-                    amount_paid += _safe_float(inv_meta.get("amount_paid", 0))
+
+                    # Check if this invoice has multiple projects (linked_projects)
+                    linked_projects = inv_meta.get("linked_projects", [])
+                    is_multi_project = isinstance(linked_projects, list) and len(linked_projects) > 1
+
+                    if is_multi_project:
+                        # Multi-project invoice: get payment amount from payment_log filtered by project_number
+                        payment_log = inv.get("payment_log", []) or []
+                        project_payment = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == proj_num)
+                        amount_paid += project_payment
+                    else:
+                        # Single-project invoice: use amount_paid from meta
+                        amount_paid += _safe_float(inv_meta.get("amount_paid", 0))
+
                     due_date = due_date or inv_meta.get("due_date", "")
 
             is_overdue = bool(due_date) and due_date < today_str
