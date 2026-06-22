@@ -109,18 +109,6 @@
           <option value="{{ y }}" {{ 'selected' if year_filter == y }}>{{ y }}</option>
           {% endfor %}
         </select>
-        {% if year_filter %}
-        <select name="month" class="form-select form-select-sm" style="max-width:130px;">
-          <option value="">All Months</option>
-          {% set month_names = ['January','February','March','April','May','June',
-                                'July','August','September','October','November','December'] %}
-          {% for i in range(1, 13) %}
-          <option value="{{ '%02d' % i }}" {{ 'selected' if month_filter == '%02d' % i }}>
-            {{ month_names[i-1] }}
-          </option>
-          {% endfor %}
-        </select>
-        {% endif %}
       </div>
 
       <!-- Row 2: date range -->
