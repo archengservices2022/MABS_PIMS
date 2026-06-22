@@ -2955,15 +2955,11 @@ def invoice_update_amount(invoice_id):
         invoice = fb_get(f"/invoices/{invoice_id}") or {}
         meta = invoice.get("meta", {})
 
-        # Update invoice total and subtotal
+        # Get tax amount and line items first
         tax_amount = _safe_float(meta.get("tax_amount", 0))
-        meta["total"] = str(new_amount + tax_amount)
-        meta["subtotal"] = str(new_amount)
-        meta["updated_at"] = datetime.now(timezone.utc).isoformat()
-        invoice["meta"] = meta
+        line_items = invoice.get("line_items", [])
 
         # Update line items if they exist
-        line_items = invoice.get("line_items", [])
         if line_items:
             # Find the line item for the project being updated
             line_item_idx = 0
@@ -3005,6 +3001,13 @@ def invoice_update_amount(invoice_id):
                     line_items[line_item_idx]["description"] = f"{base_desc} ({dp_pct}%)"
 
             invoice["line_items"] = line_items
+
+            # Recalculate subtotal and total based on ALL line items
+            invoice_subtotal = sum(_safe_float(item.get("amount", 0)) for item in line_items if isinstance(item, dict))
+            meta["subtotal"] = str(invoice_subtotal)
+            meta["total"] = str(invoice_subtotal + tax_amount)
+            meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+            invoice["meta"] = meta
 
         invoice["updated_at"] = datetime.now(timezone.utc).isoformat()
         fb_update(f"/invoices/{invoice_id}", invoice)
