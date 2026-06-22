@@ -4067,18 +4067,30 @@ def financial():
                         if item_proj == pnum:
                             project_line_total += _safe_float(item.get("amount", 0))
 
-                # Calculate share based on line items
-                if inv_subtotal > 0:
-                    share = project_line_total / inv_subtotal
-                else:
-                    share = 1.0
-
-                # Project's tax allocation (proportional to line items)
-                project_tax = share * inv_tax
-
                 # Get project's actual payments from payment_log (filtered by project_number)
                 payment_log = inv_data.get("payment_log", []) or []
                 project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == pnum)
+
+                # Calculate share based on line items (primary method)
+                if inv_subtotal > 0 and project_line_total > 0:
+                    share = project_line_total / inv_subtotal
+                elif project_payments > 0:
+                    # Fallback 1: if no line items with project_number, estimate share from payment_log
+                    total_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+                    if total_payments > 0:
+                        share = project_payments / total_payments
+                    else:
+                        share = 1.0
+                else:
+                    # Fallback 2: use linked_projects metadata
+                    linked = _invoice_linked_projects(inv_data)
+                    if len(linked) > 1:
+                        share = 1.0 / len(linked)
+                    else:
+                        share = 1.0
+
+                # Project's tax allocation (proportional to share)
+                project_tax = share * inv_tax
 
                 # Get project's tax payments (proportional to invoice share)
                 tax_payments = inv_data.get("tax_payments", []) or []
