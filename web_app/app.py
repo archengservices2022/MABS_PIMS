@@ -1576,13 +1576,14 @@ def project_detail(project_id):
             due_date = ""
             if idx in stage_invoices:
                 for inv in stage_invoices[idx]:
-                    # Sum invoice payments (amount_paid + tax_payments)
+                    # Sum invoice payments using payment_log filtered by project_number (not share-based)
                     inv_meta = inv.get("meta", {}) or {}
-                    amount_paid += _safe_float(inv_meta.get("amount_paid", 0))
-                    # Also add any tax payments
-                    tax_payments = inv.get("tax_payments", [])
-                    if isinstance(tax_payments, list):
-                        amount_paid += sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+                    proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (inv.get("payment_log", []) or []) if p.get("project_number") == proj_num)
+                    amount_paid += proj_payments
+                    # Also add any tax payments for this project
+                    tax_payments = inv.get("tax_payments", []) or []
+                    project_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if tp.get("project_number") == proj_num)
+                    amount_paid += project_tax_paid
                     due_date = due_date or inv_meta.get("due_date", "")
 
             is_overdue = bool(due_date) and due_date < today_str
@@ -1621,6 +1622,17 @@ def project_detail(project_id):
         # Store in a separate field for display without modifying stored status
         invoice["_display_status"] = calculated_status
 
+        # Calculate project-specific paid amount from payment_log (not share-based)
+        proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (invoice.get("payment_log", []) or []) if p.get("project_number") == proj_num)
+        tax_payments = invoice.get("tax_payments", []) or []
+        project_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if tp.get("project_number") == proj_num)
+        # Fallback to share-based calculation if no project-specific tax payments found
+        if project_tax_paid == 0 and tax_payments:
+            total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+            project_share = invoice.get("_project_share", 1.0)
+            project_tax_paid = project_share * total_tax_paid
+        invoice["_project_paid"] = proj_payments + project_tax_paid
+
     # Load expenses linked to this project
     raw_exp = fb_get("/balance_sheet_expenses") or {}
     project_expenses = []
@@ -1634,7 +1646,27 @@ def project_detail(project_id):
     # P&L totals — invoices spanning multiple projects only count their prorated share here
     # Include both invoice amount and tax in total invoiced (to match collected which includes tax payments)
     inv_total   = sum((_safe_float(i.get("meta",{}).get("total", 0)) or _safe_float(i.get("meta",{}).get("subtotal", 0)) + _safe_float(i.get("meta",{}).get("tax_amount", 0))) * i.get("_project_share", 1.0) for i in project_invoices)
-    inv_paid    = sum((_safe_float(i.get("meta",{}).get("amount_paid", 0)) + sum(_safe_float(tp.get("amount", 0)) for tp in i.get("tax_payments", []))) * i.get("_project_share", 1.0) for i in project_invoices)
+
+    # For paid amount, use actual payment_log entries filtered by project_number instead of share-based distribution
+    inv_paid = 0
+    for invoice in project_invoices:
+        # Get actual payments from payment_log for this project
+        proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (invoice.get("payment_log", []) or []) if p.get("project_number") == proj_num)
+
+        # Get tax allocation for this project (proportional to share)
+        inv_tax = _safe_float(invoice.get("meta", {}).get("tax_amount", 0))
+        project_share = invoice.get("_project_share", 1.0)
+        project_tax = project_share * inv_tax
+
+        # Get tax payments for this project (filtered by project_number, not share-based)
+        tax_payments = invoice.get("tax_payments", []) or []
+        project_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if tp.get("project_number") == proj_num)
+        # Fallback to share-based calculation if no project-specific tax payments found
+        if project_tax_paid == 0 and tax_payments:
+            total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+            project_tax_paid = project_share * total_tax_paid
+
+        inv_paid += proj_payments + project_tax_paid
     exp_total   = sum(_safe_float(e.get("amount", 0))                     for e in project_expenses)
     gross_profit = inv_paid - exp_total
 
@@ -4071,33 +4103,25 @@ def financial():
                 payment_log = inv_data.get("payment_log", []) or []
                 project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == pnum)
 
-                # Calculate share based on line items (primary method)
+                # Calculate share based on line items (for invoiced amount calculation only)
                 if inv_subtotal > 0 and project_line_total > 0:
                     share = project_line_total / inv_subtotal
-                elif project_payments > 0:
-                    # Fallback 1: if no line items with project_number, estimate share from payment_log
-                    total_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
-                    if total_payments > 0:
-                        share = project_payments / total_payments
-                    else:
-                        share = 1.0
                 else:
-                    # Fallback 2: use linked_projects metadata
+                    # Fallback: use linked_projects metadata for invoiced tax allocation
                     linked = _invoice_linked_projects(inv_data)
                     if len(linked) > 1:
                         share = 1.0 / len(linked)
                     else:
                         share = 1.0
 
-                # Project's tax allocation (proportional to share)
+                # Project's tax allocation (proportional to share, for invoiced amount)
                 project_tax = share * inv_tax
 
-                # Get project's tax payments (proportional to invoice share)
+                # Get project's tax payments (filtered by project_number, NOT share-based)
                 tax_payments = inv_data.get("tax_payments", []) or []
-                total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
-                project_tax_paid = share * total_tax_paid
+                project_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if tp.get("project_number") == pnum)
 
-                # Add to P&L: invoiced = line items + tax, collected = payments + tax paid
+                # Add to P&L: invoiced = line items + tax, collected = actual payments + actual tax paid
                 p_invoiced += project_line_total + project_tax
                 p_collected += project_payments + project_tax_paid
 

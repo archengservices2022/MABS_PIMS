@@ -440,7 +440,7 @@
                     <div class="text-muted" style="font-size:0.75em;">of ${{ "{:,.0f}".format(m.get('total',0)|float) }} invoice total</div>
                     {% endif %}
                   </td>
-                  <td class="text-end text-success">${{ "{:,.0f}".format((m.get('amount_paid',0)|float + tax_paid) * share) }}</td>
+                  <td class="text-end text-success">${{ "{:,.0f}".format(inv.get('_project_paid', 0)|float) }}</td>
                 </tr>
                 {% endfor %}
               </tbody>
