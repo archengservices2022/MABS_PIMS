@@ -1570,6 +1570,7 @@ def project_detail(project_id):
                     stage_invoices[stage_idx].append(inv)
 
         today_str = datetime.now().strftime("%Y-%m-%d")
+        print(f"[STAGE_PAYMENT] Processing project={proj_num}, total stages={len(data.get('payment_stages', []))}, stage_invoices keys={list(stage_invoices.keys())}", flush=True)
         for idx, stage in enumerate(data["payment_stages"]):
             stage_amount = _safe_float(stage.get("amount", 0))
 
@@ -1577,6 +1578,7 @@ def project_detail(project_id):
             # For multi-project invoices, use payment_log filtered by project_number
             amount_paid = 0
             due_date = ""
+            print(f"[STAGE_PAYMENT] Stage {idx}: looking for invoices, has_invoices={idx in stage_invoices}", flush=True)
             if idx in stage_invoices:
                 for inv in stage_invoices[idx]:
                     inv_meta = inv.get("meta", {}) or {}
@@ -1609,6 +1611,7 @@ def project_detail(project_id):
 
             # Store amount_paid for template display
             stage["amount_paid"] = amount_paid
+            print(f"[STAGE_PAID] Project={proj_num}, Stage={idx}, Amount=${stage_amount}, Paid=${amount_paid}, Status={stage.get('status')}", flush=True)
 
             # Calculate status based on actual paid vs total
             if amount_paid >= (stage_amount - 0.01):
