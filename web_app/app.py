@@ -1631,10 +1631,36 @@ def project_detail(project_id):
                 project_expenses.append(edata)
     project_expenses.sort(key=lambda x: x.get("date", ""), reverse=True)
 
-    # P&L totals — invoices spanning multiple projects only count their prorated share here
-    # Include both invoice amount and tax in total invoiced (to match collected which includes tax payments)
-    inv_total   = sum((_safe_float(i.get("meta",{}).get("total", 0)) or _safe_float(i.get("meta",{}).get("subtotal", 0)) + _safe_float(i.get("meta",{}).get("tax_amount", 0))) * i.get("_project_share", 1.0) for i in project_invoices)
-    inv_paid    = sum((_safe_float(i.get("meta",{}).get("amount_paid", 0)) + sum(_safe_float(tp.get("amount", 0)) for tp in i.get("tax_payments", []))) * i.get("_project_share", 1.0) for i in project_invoices)
+    # P&L totals — invoices spanning multiple projects allocate based on line items
+    # For invoiced: use line items + allocated tax
+    # For paid: use payment_log filtered by project_number + allocated tax
+    inv_total = 0
+    inv_paid = 0
+    for inv in project_invoices:
+        inv_meta = inv.get("meta", {}) or {}
+        inv_subtotal = _safe_float(inv_meta.get("subtotal", 0))
+        inv_tax = _safe_float(inv_meta.get("tax_amount", 0))
+
+        # Calculate project's portion from line items
+        line_items = inv.get("line_items", []) or []
+        project_line_total = sum(_safe_float(item.get("amount", 0)) for item in line_items if isinstance(item, dict) and item.get("project_number", "") == proj_num)
+
+        # Calculate share for tax allocation
+        share = (project_line_total / inv_subtotal) if inv_subtotal > 0 else (1.0 / len(_invoice_linked_projects(inv)) if len(_invoice_linked_projects(inv)) > 0 else 1.0)
+
+        # Get project's actual payments from payment_log
+        payment_log = inv.get("payment_log", []) or []
+        project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == proj_num)
+
+        # Get project's tax payments (proportional to share)
+        tax_payments = inv.get("tax_payments", []) or []
+        total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+        project_tax_paid = share * total_tax_paid
+
+        # Add to totals: invoiced = line items + tax, paid = payments + tax paid
+        project_tax = share * inv_tax
+        inv_total += project_line_total + project_tax
+        inv_paid += project_payments + project_tax_paid
     exp_total   = sum(_safe_float(e.get("amount", 0))                     for e in project_expenses)
     gross_profit = inv_paid - exp_total
 
