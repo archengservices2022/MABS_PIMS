@@ -9673,6 +9673,15 @@ def api_timesheets_approve(sheet_id):
     return jsonify({"success": True, "status": status})
 
 
+@app.route("/api/admin/reset-timesheets", methods=["POST"])
+@login_required
+def api_admin_reset_timesheets():
+    if normalize_role(session.get("user_role", "")) != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    fb_delete("/timesheets")
+    return jsonify({"success": True, "message": "All timesheets deleted."})
+
+
 @app.route("/api/timesheets/export")
 @role_required("timesheets")
 def api_timesheets_export():
