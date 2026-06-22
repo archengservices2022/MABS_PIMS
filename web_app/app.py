@@ -1586,6 +1586,14 @@ def project_detail(project_id):
                         # Multi-project invoice: get payment amount from payment_log filtered by project_number
                         payment_log = inv.get("payment_log", []) or []
                         project_payment = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == proj_num)
+
+                        # If no project-specific payments found but invoice has payments, show the invoice amount
+                        # (fallback for payments not yet tagged with project_number)
+                        if project_payment == 0:
+                            total_invoice_paid = _safe_float(inv_meta.get("amount_paid", 0))
+                            if total_invoice_paid > 0:
+                                project_payment = total_invoice_paid
+
                         amount_paid += project_payment
                     else:
                         # Single-project invoice: use amount_paid from meta
