@@ -3127,6 +3127,15 @@ def invoice_delete(invoice_id):
             print(f"Synced payment for project: {proj_num}", flush=True)
 
     flash("Invoice deleted successfully.", "success")
+
+    # Redirect to the first affected project's detail page so user sees updated data
+    if project_numbers_to_sync:
+        first_project = next(iter(project_numbers_to_sync))
+        projects = _load_projects_list() or []
+        for p in projects:
+            if p.get("project_number") == first_project:
+                return redirect(url_for("project_detail", project_id=p.get("firebase_id")))
+
     return redirect(url_for("invoicing"))
 
 @app.route("/invoicing/<invoice_id>/pdf")
