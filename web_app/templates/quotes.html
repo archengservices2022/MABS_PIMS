@@ -1088,11 +1088,11 @@ function updateQuoteSummaryCards() {
   document.getElementById('card-pipeline').textContent = '$' + pipelineValue.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
   document.getElementById('card-won-value').textContent = '$' + wonValue.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
 
-  // Update filter result display - show only when year or other filters are applied
+  // Update filter result display - show only when year is explicitly selected
   const filterAlert = document.getElementById('quoteFilterAlert');
   const filterCount = document.getElementById('quoteFilterCount');
   if (filterAlert && filterCount) {
-    // Show/hide based on year selection (year takes precedence)
+    // Only show when year is explicitly selected (not from automatic date range)
     if (year) {
       // Build filter description
       let filterDesc = '';
@@ -1109,22 +1109,8 @@ function updateQuoteSummaryCards() {
       filterCount.textContent = totalCount;
       document.getElementById('quoteFilterText').innerHTML =
         '<strong>' + filterDesc + '</strong>&nbsp;·&nbsp; <span id="quoteFilterCount">' + totalCount + '</span> result' + (totalCount !== 1 ? 's' : '');
-    } else if (dateFrom || dateTo) {
-      // Show for date range filters
-      filterAlert.style.display = '';
-      filterCount.textContent = totalCount;
-      let filterDesc = '';
-      if (dateFrom && dateTo) {
-        filterDesc = 'Date range: ' + dateFrom + ' to ' + dateTo;
-      } else if (dateFrom) {
-        filterDesc = 'From ' + dateFrom;
-      } else if (dateTo) {
-        filterDesc = 'Up to ' + dateTo;
-      }
-      document.getElementById('quoteFilterText').innerHTML =
-        '<strong>' + filterDesc + '</strong>&nbsp;·&nbsp; <span id="quoteFilterCount">' + totalCount + '</span> result' + (totalCount !== 1 ? 's' : '');
     } else {
-      // Hide when no year and no date filters
+      // Hide when year is not selected (ignore auto-generated date ranges)
       filterAlert.style.display = 'none';
     }
   }
