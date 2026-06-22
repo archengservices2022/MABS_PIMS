@@ -3061,13 +3061,27 @@ def invoice_delete(invoice_id):
     print(f"=== INVOICE DELETE COMPLETE ===\n", flush=True)
 
     # Sync payment amounts for all affected projects
+    affected_project_id = None
     for proj_num in project_numbers_to_sync:
         if proj_num:
             _sync_project_payment(proj_num)
             print(f"Synced payment for project: {proj_num}", flush=True)
+            # Get the firebase_id for the first affected project to redirect to
+            if not affected_project_id:
+                all_projects = fb_get("/projects") or {}
+                for pid, pdata in all_projects.items():
+                    if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
+                        affected_project_id = pid
+                        break
 
     flash("Invoice deleted. Payment stages and revenue reverted to Not Invoiced.", "success")
-    return redirect(url_for("invoicing"))
+
+    # If invoice was linked to a project, redirect to that project's details (so frontend reloads updated paid amounts)
+    # Otherwise redirect to invoicing list
+    if affected_project_id:
+        return redirect(url_for("project_detail", project_id=affected_project_id))
+    else:
+        return redirect(url_for("invoicing"))
 
 @app.route("/invoicing/<invoice_id>/pdf")
 @role_required("invoicing")
