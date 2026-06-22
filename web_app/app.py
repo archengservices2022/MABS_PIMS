@@ -1560,7 +1560,12 @@ def project_detail(project_id):
                 if not isinstance(inv, dict):
                     continue
                 inv_meta = inv.get("meta", {}) or {}
-                if inv_meta.get("project_number") == proj_num:
+                # Check if project is linked to this invoice (single or multi-project)
+                project_is_linked = (
+                    inv_meta.get("project_number") == proj_num or
+                    proj_num in _invoice_linked_projects(inv)
+                )
+                if project_is_linked:
                     stage_idx = inv_meta.get("payment_stage_index", -1)
                     if stage_idx >= 0:
                         if stage_idx not in stage_invoices:
