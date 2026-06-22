@@ -2660,10 +2660,10 @@ def invoice_new():
 
         # Mark stages as invoiced
         if stage_idx_raw != "":
-            # Single project with single stage - use the actual invoice total (including tax)
-            invoice_total = _safe_float(data["meta"].get("total", 0))
+            # Single project with single stage - use only the subtotal (without tax)
+            invoice_subtotal = _safe_float(data["meta"].get("subtotal", 0))
             _mark_project_stage(data["meta"].get("project_number", ""),
-                                int(stage_idx_raw), "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=invoice_total)
+                                int(stage_idx_raw), "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=invoice_subtotal)
         else:
             # Multiple projects - check if line items have stage indices
             item_projects = request.form.getlist("item_project[]")
@@ -2672,17 +2672,18 @@ def invoice_new():
             # Store linked projects info for multi-project invoice detection
             linked_projects = []
 
-            # Mark each stage from line items - use project's share of invoice total
-            invoice_total = _safe_float(data["meta"].get("total", 0))
+            # Mark each stage from line items - use project's actual line item amount (without tax)
+            invoice_subtotal = _safe_float(data["meta"].get("subtotal", 0))
             for i, proj_num in enumerate(item_projects):
                 if i < len(item_stage_indices):
                     stage_idx_str = item_stage_indices[i].strip() if item_stage_indices[i] else ""
                     if stage_idx_str:
                         try:
                             stage_idx = int(stage_idx_str)
-                            # Calculate project's share of the invoice total
-                            project_share = _invoice_project_share(data, proj_num) * invoice_total
-                            _mark_project_stage(proj_num, stage_idx, "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=project_share)
+                            # Get project's actual line item amount (not including tax)
+                            line_items = data.get("line_items", []) or []
+                            project_line_amount = sum(_safe_float(item.get("amount", 0)) for item in line_items if isinstance(item, dict) and item.get("project_number", "") == proj_num)
+                            _mark_project_stage(proj_num, stage_idx, "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=project_line_amount)
                             linked_projects.append({"project_number": proj_num, "payment_stage_index": stage_idx})
                         except (ValueError, IndexError):
                             pass
@@ -2984,9 +2985,9 @@ def invoice_status(invoice_id):
                 "Overdue": "Invoiced",
             }.get(new_status)
             if stage_status:
-                # Update the stage with current invoice total
-                invoice_total = _safe_float(m.get("total", 0))
-                _mark_project_stage(main_proj_num, int(stage_idx_meta), stage_status, invoice_id=invoice_id, amount=invoice_total)
+                # Update the stage with current invoice subtotal (without tax)
+                invoice_subtotal = _safe_float(m.get("subtotal", 0))
+                _mark_project_stage(main_proj_num, int(stage_idx_meta), stage_status, invoice_id=invoice_id, amount=invoice_subtotal)
     if new_status in ("Paid", "Partial"):
         _upsert_revenue_entry(invoice_id, m)
 
