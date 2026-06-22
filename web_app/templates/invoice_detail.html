@@ -270,6 +270,19 @@
             </div>
           </div>
 
+          <!-- Project selection for multi-project invoices -->
+          {% if linked_projects|length > 1 %}
+          <div class="mb-3">
+            <label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Apply Payment To <span class="text-danger">*</span></label>
+            <select name="project_number" class="form-select form-select-sm" required>
+              <option value="">— Select Project —</option>
+              {% for lp in linked_projects %}
+              <option value="{{ lp.get('project_number','') }}">{{ lp.get('project_number','') }} — {{ lp.get('project_name','') }} ({{ "%.0f"|format(lp.get('_share',0) * 100) }}%)</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+
           {% if meta.get('tax_amount',0)|float > 0 %}
           {% set tax_remaining = meta.get('tax_amount',0)|float - (meta.get('tax_paid',0)|float) %}
           {% if tax_remaining > 0 %}
