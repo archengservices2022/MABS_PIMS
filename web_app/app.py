@@ -92,7 +92,7 @@ ROLE_PAGES = {
     "admin":    ["dashboard", "quotes", "projects", "invoicing", "payroll", "financial", "settings", "employees", "sales_dashboard", "timesheets"],
     "sales":    ["sales_dashboard", "quotes", "employees", "timesheets"],
     "projects": ["projects", "invoicing", "employees", "timesheets"],
-    "finance":  ["financial", "payroll", "employees", "timesheets"],
+    "finance":  ["financial", "timesheets"],
     "engineer": ["employees", "timesheets"],
 }
 
@@ -9442,7 +9442,7 @@ def _load_timesheets(week_of: str = "", employee_uid: str = "") -> list:
 @app.route("/timesheets")
 @role_required("timesheets")
 def timesheets():
-    is_admin = normalize_role(session.get("user_role", "")) in ("admin", "finance")
+    is_admin = normalize_role(session.get("user_role", "")) == "admin"
     uid = session.get("user_uid", "")
 
     week_of    = _week_monday(request.args.get("week", ""))
@@ -9603,7 +9603,7 @@ def timesheet_detail(sheet_id):
     sheet["entries"] = sorted(entries, key=lambda e: (e.get("date", ""), e.get("start_time", "")))
 
     uid      = session.get("user_uid", "")
-    is_admin = normalize_role(session.get("user_role", "")) in ("admin", "finance")
+    is_admin = normalize_role(session.get("user_role", "")) == "admin"
     if not is_admin and sheet.get("employee_uid") != uid:
         flash("You don't have permission to view this timesheet.", "danger")
         return redirect(url_for("timesheets"))
@@ -9664,7 +9664,7 @@ def api_timesheets_save():
 @app.route("/api/timesheets/<sheet_id>/approve", methods=["POST"])
 @role_required("timesheets")
 def api_timesheets_approve(sheet_id):
-    if normalize_role(session.get("user_role", "")) not in ("admin", "finance"):
+    if normalize_role(session.get("user_role", "")) != "admin":
         return jsonify({"error": "Admin access required"}), 403
     data   = request.get_json(force=True) or {}
     action = data.get("action", "approve")
@@ -9684,7 +9684,7 @@ def api_timesheets_approve(sheet_id):
 def api_timesheets_export():
     import csv
     import io as _io
-    if normalize_role(session.get("user_role", "")) not in ("admin", "finance"):
+    if normalize_role(session.get("user_role", "")) != "admin":
         flash("Admin access required.", "danger")
         return redirect(url_for("timesheets"))
     week_of = request.args.get("week", _week_monday())

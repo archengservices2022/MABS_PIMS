@@ -58,7 +58,7 @@
 {% endblock %}
 
 {% block content %}
-{% set is_admin = user_role in ('admin', 'finance') %}
+{% set is_admin = user_role == 'admin' %}
 
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
