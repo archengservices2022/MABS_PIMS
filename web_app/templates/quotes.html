@@ -1015,13 +1015,38 @@ window.addEventListener('pageshow', function(e) {
 function updateQuoteSummaryCards() {
   const searchInput = document.querySelector('input[name="q"]');
   const statusSelect = document.querySelector('select[name="status"]');
+  const yearSelect = document.querySelector('select[name="year"]');
+  const monthSelect = document.querySelector('select[name="month"]');
   const dateFromInput = document.querySelector('input[name="from"]');
   const dateToInput = document.querySelector('input[name="to"]');
 
   const search = searchInput?.value?.toLowerCase() || '';
   const status = statusSelect?.value || '';
-  const dateFrom = dateFromInput?.value || '';
-  const dateTo = dateToInput?.value || '';
+  let dateFrom = dateFromInput?.value || '';
+  let dateTo = dateToInput?.value || '';
+
+  // If year/month filters are set, calculate date range from them
+  const year = yearSelect?.value || '';
+  const month = monthSelect?.value || '';
+
+  if (year && month) {
+    // Year and month both selected - filter to that month
+    dateFrom = year + '-' + month + '-01';
+    const nextMonth = parseInt(month) + 1;
+    if (nextMonth > 12) {
+      dateTo = (parseInt(year) + 1) + '-01-01';
+    } else {
+      dateTo = year + '-' + String(nextMonth).padStart(2, '0') + '-01';
+    }
+    // Go back one day from start of next month
+    const d = new Date(dateTo);
+    d.setDate(d.getDate() - 1);
+    dateTo = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  } else if (year) {
+    // Only year selected - filter to that year
+    dateFrom = year + '-01-01';
+    dateTo = year + '-12-31';
+  }
 
   const rows = document.querySelectorAll('.quote-row');
   let totalCount = 0;
@@ -1077,11 +1102,15 @@ function updateQuoteSummaryCards() {
 document.addEventListener('DOMContentLoaded', function() {
   const searchInput = document.querySelector('input[name="q"]');
   const statusSelect = document.querySelector('select[name="status"]');
+  const yearSelect = document.querySelector('select[name="year"]');
+  const monthSelect = document.querySelector('select[name="month"]');
   const dateFromInput = document.querySelector('input[name="from"]');
   const dateToInput = document.querySelector('input[name="to"]');
 
   if (searchInput) searchInput.addEventListener('input', updateQuoteSummaryCards);
   if (statusSelect) statusSelect.addEventListener('change', updateQuoteSummaryCards);
+  if (yearSelect) yearSelect.addEventListener('change', updateQuoteSummaryCards);
+  if (monthSelect) monthSelect.addEventListener('change', updateQuoteSummaryCards);
   if (dateFromInput) dateFromInput.addEventListener('change', updateQuoteSummaryCards);
   if (dateToInput) dateToInput.addEventListener('change', updateQuoteSummaryCards);
 });
