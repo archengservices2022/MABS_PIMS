@@ -1631,10 +1631,51 @@ def project_detail(project_id):
                 project_expenses.append(edata)
     project_expenses.sort(key=lambda x: x.get("date", ""), reverse=True)
 
-    # P&L totals — invoices spanning multiple projects only count their prorated share here
-    # Include both invoice amount and tax in total invoiced (to match collected which includes tax payments)
-    inv_total   = sum((_safe_float(i.get("meta",{}).get("total", 0)) or _safe_float(i.get("meta",{}).get("subtotal", 0)) + _safe_float(i.get("meta",{}).get("tax_amount", 0))) * i.get("_project_share", 1.0) for i in project_invoices)
-    inv_paid    = sum((_safe_float(i.get("meta",{}).get("amount_paid", 0)) + sum(_safe_float(tp.get("amount", 0)) for tp in i.get("tax_payments", []))) * i.get("_project_share", 1.0) for i in project_invoices)
+    # P&L totals — calculate based on actual line items and payments per project
+    inv_total = 0
+    inv_paid = 0
+    for i in project_invoices:
+        meta = i.get("meta", {}) or {}
+        line_items = i.get("line_items", []) or []
+        inv_tax = _safe_float(meta.get("tax_amount", 0))
+        inv_total_amount = _safe_float(meta.get("total", 0))
+
+        # Calculate this project's line items amount
+        project_line_items_total = 0
+        for item in line_items:
+            if not isinstance(item, dict):
+                continue
+            item_proj = str(item.get("project_number", "")).strip()
+            if item_proj == proj_num:
+                project_line_items_total += _safe_float(item.get("amount", 0))
+
+        # Calculate this project's tax allocation (proportional)
+        if inv_total_amount > 0:
+            tax_allocation = (project_line_items_total / inv_total_amount) * inv_tax
+        else:
+            tax_allocation = 0
+
+        inv_total += project_line_items_total + tax_allocation
+
+        # Calculate this project's payments from payment_log
+        payment_log = i.get("payment_log", []) or []
+        project_payments_total = 0
+        for pay in payment_log:
+            if not isinstance(pay, dict):
+                continue
+            pay_proj = str(pay.get("project_number", "")).strip()
+            if pay_proj == proj_num:
+                project_payments_total += _safe_float(pay.get("amount", 0))
+
+        # Calculate this project's tax payments
+        tax_payments = i.get("tax_payments", []) or []
+        project_tax_payments_total = 0
+        if inv_total_amount > 0:
+            project_share = project_line_items_total / inv_total_amount
+            total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if isinstance(tp, dict))
+            project_tax_payments_total = project_share * total_tax_paid
+
+        inv_paid += project_payments_total + project_tax_payments_total
     exp_total   = sum(_safe_float(e.get("amount", 0))                     for e in project_expenses)
     gross_profit = inv_paid - exp_total
 
@@ -1812,10 +1853,18 @@ def project_edit(project_id):
                 existing_stages = data.get("payment_stages") or []
                 for i, amount_data in enumerate(updated_stage_amounts):
                     if i < len(existing_stages) and isinstance(existing_stages[i], dict):
-                        existing_stages[i]["amount"] = _safe_float(amount_data.get("amount", 0))
+                        old_amount = _safe_float(existing_stages[i].get("amount", 0))
+                        new_amount = _safe_float(amount_data.get("amount", 0))
+                        existing_stages[i]["amount"] = new_amount
                         # Preserve status and other fields
                         if "status" in amount_data:
                             existing_stages[i]["status"] = amount_data.get("status")
+
+                        # If amount changed and stage has a linked invoice, update the invoice
+                        if old_amount != new_amount:
+                            invoice_id = existing_stages[i].get("invoice_id", "")
+                            if invoice_id:
+                                _update_invoice_line_item_amount(invoice_id, proj_num, i, new_amount)
 
                 updated["payment_stages"] = existing_stages
                 amounts_updated = True
@@ -2611,10 +2660,10 @@ def invoice_new():
 
         # Mark stages as invoiced
         if stage_idx_raw != "":
-            # Single project with single stage - use the actual invoice total (including tax)
-            invoice_total = _safe_float(data["meta"].get("total", 0))
+            # Single project with single stage - use invoice subtotal (excluding tax)
+            invoice_subtotal = _safe_float(data["meta"].get("subtotal", 0))
             _mark_project_stage(data["meta"].get("project_number", ""),
-                                int(stage_idx_raw), "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=invoice_total)
+                                int(stage_idx_raw), "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=invoice_subtotal)
         else:
             # Multiple projects - check if line items have stage indices
             item_projects = request.form.getlist("item_project[]")
@@ -2623,16 +2672,16 @@ def invoice_new():
             # Store linked projects info for multi-project invoice detection
             linked_projects = []
 
-            # Mark each stage from line items - use project's share of invoice total
-            invoice_total = _safe_float(data["meta"].get("total", 0))
+            # Mark each stage from line items - use project's share of invoice subtotal (excluding tax)
+            invoice_subtotal = _safe_float(data["meta"].get("subtotal", 0))
             for i, proj_num in enumerate(item_projects):
                 if i < len(item_stage_indices):
                     stage_idx_str = item_stage_indices[i].strip() if item_stage_indices[i] else ""
                     if stage_idx_str:
                         try:
                             stage_idx = int(stage_idx_str)
-                            # Calculate project's share of the invoice total
-                            project_share = _invoice_project_share(data, proj_num) * invoice_total
+                            # Calculate project's share of the invoice subtotal (excluding tax)
+                            project_share = _invoice_project_share(data, proj_num) * invoice_subtotal
                             _mark_project_stage(proj_num, stage_idx, "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=project_share)
                             linked_projects.append({"project_number": proj_num, "payment_stage_index": stage_idx})
                         except (ValueError, IndexError):
@@ -2684,6 +2733,12 @@ def invoice_new():
         project_ids = [pid.strip() for pid in multiple_projects.split(",") if pid.strip()]
         all_projects_data = fb_get("/projects") or {}
         raw_invoices = fb_get("/invoices") or {}
+
+        # If only a single project is selected, auto-populate the project field
+        if len(project_ids) == 1 and project_ids[0] in all_projects_data:
+            single_proj_data = all_projects_data[project_ids[0]]
+            if isinstance(single_proj_data, dict):
+                prefill_proj = single_proj_data.get("project_number", "")
 
         for proj_id in project_ids:
             if proj_id in all_projects_data:
@@ -2864,7 +2919,33 @@ def invoice_edit(invoice_id):
     if request.method == "POST":
         updated = _parse_invoice_form(request.form)
         updated["meta"]["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        # Get old invoice data to detect changes
+        old_invoice = data.copy()
+
+        # Check if line items changed
+        old_items = old_invoice.get("line_items", [])
+        new_items = updated.get("line_items", [])
+        items_changed = old_items != new_items
+
+        # If line items changed, recalculate total and subtotal
+        if items_changed:
+            # Recalculate subtotal from line items
+            new_subtotal = sum(_safe_float(item.get("amount", 0)) for item in new_items if isinstance(item, dict))
+            # Recalculate total = subtotal + tax
+            tax_amount = _safe_float(updated["meta"].get("tax_amount", 0))
+            new_total = new_subtotal + tax_amount
+            # Update meta with new values
+            updated["meta"]["subtotal"] = str(new_subtotal)
+            updated["meta"]["total"] = str(new_total)
+
+        # Update invoice in Firebase
         fb_update(f"/invoices/{invoice_id}", updated)
+
+        # If line items changed, recalculate payment stage amounts
+        if items_changed:
+            # Recalculate payment stage amounts based on new line items
+            _recalculate_payment_stage_amounts(invoice_id)
 
         # Use sequential allocation for multi-project invoices
         linked_projects = _invoice_linked_projects(updated)
@@ -2875,7 +2956,7 @@ def invoice_edit(invoice_id):
             _auto_complete_project_if_paid(proj_num)
         if updated["meta"].get("status") in ("Paid", "Partial"):
             _upsert_revenue_entry(invoice_id, updated["meta"])
-        flash("Invoice updated.", "success")
+        flash("Invoice updated and payment amounts recalculated.", "success")
         return redirect(url_for("invoice_detail", invoice_id=invoice_id))
     # Lock unit price if invoice has linked projects (created from payment stages)
     linked_projects = data.get("meta", {}).get("linked_projects", [])
@@ -2929,9 +3010,9 @@ def invoice_status(invoice_id):
                 "Overdue": "Invoiced",
             }.get(new_status)
             if stage_status:
-                # Update the stage with current invoice total
-                invoice_total = _safe_float(m.get("total", 0))
-                _mark_project_stage(main_proj_num, int(stage_idx_meta), stage_status, invoice_id=invoice_id, amount=invoice_total)
+                # Update the stage with current invoice subtotal (excluding tax)
+                invoice_subtotal = _safe_float(m.get("subtotal", 0))
+                _mark_project_stage(main_proj_num, int(stage_idx_meta), stage_status, invoice_id=invoice_id, amount=invoice_subtotal)
     if new_status in ("Paid", "Partial"):
         _upsert_revenue_entry(invoice_id, m)
 
@@ -2945,52 +3026,50 @@ def invoice_update_amount(invoice_id):
     try:
         new_amount = _safe_float(request.form.get("new_amount", 0))
         invoice = fb_get(f"/invoices/{invoice_id}") or {}
-        meta = invoice.get("meta", {})
+        meta = invoice.get("meta", {}) or {}
+        line_items = invoice.get("line_items", []) or []
 
-        # Update invoice total and subtotal
-        tax_amount = _safe_float(meta.get("tax_amount", 0))
-        meta["total"] = str(new_amount + tax_amount)
-        meta["subtotal"] = str(new_amount)
-        meta["updated_at"] = datetime.now(timezone.utc).isoformat()
-        invoice["meta"] = meta
+        if not isinstance(line_items, list) or len(line_items) == 0:
+            return jsonify({"success": False, "error": "No line items found"}), 400
 
-        # Update line items if they exist
-        line_items = invoice.get("line_items", [])
-        if line_items:
+        # Update ONLY the first line item (this is for single-project invoices)
+        if len(line_items) > 0 and isinstance(line_items[0], dict):
             line_items[0]["amount"] = str(new_amount)
             line_items[0]["unit_price"] = str(new_amount)
 
-            # Recalculate Down Payment percentage if it's a down payment item
+            # Update Down Payment percentage if needed
             if "Down Payment" in line_items[0].get("description", ""):
-                # Get contract value from linked_projects metadata or from project
                 linked_projects = meta.get("linked_projects", [])
                 contract_value = 0
+                proj_num = meta.get("project_number", "")
 
                 if linked_projects and isinstance(linked_projects, list) and len(linked_projects) > 0:
-                    # Get contract value from first linked project
-                    proj_num = linked_projects[0].get("project_number", "")
-                    if proj_num:
-                        proj_data = fb_get(f"/projects/{proj_num}") or {}
+                    linked_proj = linked_projects[0] if isinstance(linked_projects[0], dict) else {}
+                    linked_proj_num = linked_proj.get("project_number", "")
+                    if linked_proj_num:
+                        proj_data = fb_get(f"/projects/{linked_proj_num}") or {}
                         contract_value = _safe_float(proj_data.get("contract_value", 0))
                 else:
-                    # Fallback: get from project_number
-                    proj_num = meta.get("project_number", "")
                     if proj_num:
                         proj_data = fb_get(f"/projects/{proj_num}") or {}
                         contract_value = _safe_float(proj_data.get("contract_value", 0))
 
-                # Calculate correct percentage
                 if contract_value > 0:
                     dp_pct = int(round((new_amount / contract_value) * 100))
-                    # Update description with correct percentage
                     desc = line_items[0].get("description", "Down Payment")
                     base_desc = desc.split("(")[0].strip() if "(" in desc else desc
                     line_items[0]["description"] = f"{base_desc} ({dp_pct}%)"
 
-            invoice["line_items"] = line_items
+        # Recalculate subtotal from ALL line items
+        new_subtotal = sum(_safe_float(item.get("amount", 0)) for item in line_items if isinstance(item, dict))
+        tax_amount = _safe_float(meta.get("tax_amount", 0))
 
-        invoice["updated_at"] = datetime.now(timezone.utc).isoformat()
-        fb_update(f"/invoices/{invoice_id}", invoice)
+        fb_update(f"/invoices/{invoice_id}", {
+            "line_items": line_items,
+            "meta/subtotal": str(new_subtotal),
+            "meta/total": str(new_subtotal + tax_amount),
+            "meta/updated_at": datetime.now(timezone.utc).isoformat()
+        })
 
         return jsonify({"success": True, "message": "Invoice updated"})
     except Exception as e:
@@ -3066,7 +3145,16 @@ def invoice_delete(invoice_id):
             _sync_project_payment(proj_num)
             print(f"Synced payment for project: {proj_num}", flush=True)
 
-    flash("Invoice deleted. Payment stages and revenue reverted to Not Invoiced.", "success")
+    flash("Invoice deleted successfully.", "success")
+
+    # If invoice was linked to a project and user came from project details, redirect back there
+    if project_number and project_numbers_to_sync:
+        # Try to find the project ID for this project number
+        projects = _load_projects_list()
+        for p in projects:
+            if p.get("project_number", "") == project_number:
+                return redirect(url_for("project_detail", project_id=p.get("firebase_id", "")))
+
     return redirect(url_for("invoicing"))
 
 @app.route("/invoicing/<invoice_id>/pdf")
@@ -3740,6 +3828,8 @@ def financial():
 
     # Get filter parameters from URL
     filter_expense = request.args.get("filter_expense", "")
+    date_from = request.args.get("from", "")
+    date_to = request.args.get("to", "")
     selected_year = request.args.get("year", str(datetime.now().year))
     try:
         selected_year = int(selected_year)
@@ -3893,7 +3983,17 @@ def financial():
     # Total collected = amount_paid + tax_paid (matches Invoicing tab display)
     total_collected = 0.0
     for r in rev_list:
-        if _extract_year_from_date(r.get("date", "")) == stat_card_year and r.get("invoice_id") in invoices:
+        date_str = r.get("date", "")
+        # Apply year filter
+        if _extract_year_from_date(date_str) != stat_card_year:
+            continue
+        # Apply date range filters
+        if date_from and date_str < date_from:
+            continue
+        if date_to and date_str > date_to:
+            continue
+        # Add amount paid
+        if r.get("invoice_id") in invoices:
             total_collected += _safe_float(r.get("amount_paid", 0))
             inv_id = r.get("invoice_id")
             if inv_id and inv_id in invoices:
@@ -3901,7 +4001,7 @@ def financial():
                 if isinstance(inv_data_r, dict):
                     tax_collected = sum(_safe_float(tp.get("amount", 0))
                                        for tp in (inv_data_r.get("tax_payments", []) or [])
-                                       if _extract_year_from_date(tp.get("date", "")) == stat_card_year)
+                                       if _extract_year_from_date(tp.get("date", "")) == stat_card_year and (not date_from or tp.get("date", "") >= date_from) and (not date_to or tp.get("date", "") <= date_to))
                     total_collected += tax_collected
 
     # Recalculate statuses based on actual payments
@@ -4025,7 +4125,7 @@ def financial():
     for p in projects_list:
         pnum = p.get("project_number", "")
 
-        # Calculate INVOICED and COLLECTED using _invoice_linked_projects (matches Project P&L)
+        # Calculate INVOICED and COLLECTED based on line items and payment_log per project
         p_invoiced = 0
         p_collected = 0
 
@@ -4039,13 +4139,44 @@ def financial():
                 inv_meta = inv_data.get("meta", {}) or {}
                 inv_total = _safe_float(inv_meta.get("total", 0))
                 inv_tax = _safe_float(inv_meta.get("tax_amount", 0))
-                amount_paid_inv = _safe_float(inv_meta.get("amount_paid", 0))
-                tax_paid_inv = sum(_safe_float(tp.get("amount", 0)) for tp in (inv_data.get("tax_payments", []) or []))
-                linked = _invoice_linked_projects(inv_data)
-                if len(linked) > 0:
-                    share = 1.0 / len(linked)
-                    p_invoiced += inv_total * share
-                    p_collected += (amount_paid_inv + tax_paid_inv) * share
+
+                # Calculate this project's line items amount
+                line_items = inv_data.get("line_items", []) or []
+                project_line_items_total = 0
+                for item in line_items:
+                    if not isinstance(item, dict):
+                        continue
+                    item_proj = str(item.get("project_number", "")).strip()
+                    if item_proj == pnum:
+                        project_line_items_total += _safe_float(item.get("amount", 0))
+
+                # Calculate this project's payments from payment_log (line items)
+                payment_log = inv_data.get("payment_log", []) or []
+                project_payments_total = 0
+                for pay in payment_log:
+                    if not isinstance(pay, dict):
+                        continue
+                    pay_proj = str(pay.get("project_number", "")).strip()
+                    if pay_proj == pnum:
+                        project_payments_total += _safe_float(pay.get("amount", 0))
+
+                # Calculate this project's tax payments
+                tax_payments = inv_data.get("tax_payments", []) or []
+                project_tax_payments_total = 0
+                # Proportionally allocate tax payments based on this project's line items share
+                if inv_total > 0:
+                    project_share = project_line_items_total / inv_total
+                    total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if isinstance(tp, dict))
+                    project_tax_payments_total = project_share * total_tax_paid
+
+                # Proportionally allocate invoiced tax based on this project's line items
+                if inv_total > 0:
+                    tax_allocation = (project_line_items_total / inv_total) * inv_tax
+                else:
+                    tax_allocation = 0
+
+                p_invoiced += project_line_items_total + tax_allocation
+                p_collected += project_payments_total + project_tax_payments_total
 
         p_contract = _safe_float(p.get("contract_value",0))
         p_not_invoiced = p_contract - p_invoiced
@@ -6164,11 +6295,15 @@ def _mark_project_stage(project_number: str, stage_index: int, status: str, invo
         stages[stage_index]["invoice_number"] = invoice_number
     if amount is not None:
         stages[stage_index]["amount"] = amount
-    # When reverting to "Pending Invoice", clear the invoice tracking fields
+    # When reverting to "Pending Invoice", clear all invoice tracking and payment fields
     if status == "Pending Invoice":
-        print(f"[MARK_STAGE] Clearing invoice_id and invoice_number", flush=True)
+        print(f"[MARK_STAGE] Clearing invoice_id, invoice_number, and paid amounts", flush=True)
         stages[stage_index].pop("invoice_id", None)
         stages[stage_index].pop("invoice_number", None)
+        stages[stage_index].pop("amount_paid", None)
+        stages[stage_index].pop("date_paid", None)
+        stages[stage_index].pop("payment_method", None)
+        stages[stage_index].pop("payment_reference", None)
     print(f"[MARK_STAGE] Updated stage: {stages[stage_index]}", flush=True)
     fb_update(f"/projects/{pid}", {"payment_stages": stages,
                                    "updated_at": datetime.now(timezone.utc).isoformat()})
@@ -6353,6 +6488,125 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
             "payment_stages": stages,
             "updated_at": datetime.now(timezone.utc).isoformat()
         })
+
+def _update_invoice_line_item_amount(invoice_id: str, project_number: str, stage_index: int, new_amount: float) -> None:
+    """Update invoice line item when payment stage amount changes in project details."""
+    invoice = fb_get(f"/invoices/{invoice_id}") or {}
+    if not isinstance(invoice, dict):
+        return
+
+    meta = invoice.get("meta", {}) or {}
+    line_items = invoice.get("line_items", []) or []
+    if not isinstance(line_items, list) or len(line_items) == 0:
+        return
+
+    tax_amount = _safe_float(meta.get("tax_amount", 0))
+    main_project = meta.get("project_number", "")
+
+    # Find and update the line item for this project
+    # Each line item has a project_number field:
+    # - Empty/blank means it belongs to the main project
+    # - Set value means it belongs to that specific project
+    for idx, item in enumerate(line_items):
+        if not isinstance(item, dict):
+            continue
+
+        item_proj = str(item.get("project_number", "")).strip()
+        # If item has no project_number, it belongs to main_project
+        if not item_proj:
+            item_proj = main_project
+
+        # Update if this line item belongs to the project we're updating
+        if item_proj == project_number:
+            line_items[idx]["amount"] = str(new_amount)
+            break  # Only update the first match
+
+    # Recalculate subtotal from ALL line items
+    new_subtotal = sum(_safe_float(item.get("amount", 0)) for item in line_items if isinstance(item, dict))
+    new_total = new_subtotal + tax_amount
+
+    # Update invoice
+    fb_update(f"/invoices/{invoice_id}", {
+        "line_items": line_items,
+        "meta/subtotal": str(new_subtotal),
+        "meta/total": str(new_total),
+        "meta/updated_at": datetime.now(timezone.utc).isoformat()
+    })
+
+def _recalculate_payment_stage_amounts(invoice_id: str) -> None:
+    """Recalculate payment stage amounts when invoice line items change.
+
+    When a multi-project invoice's line items are updated:
+    1. Calculate each project's new line items total
+    2. Update the project's payment stage amount
+    3. Handle tax allocation proportionally
+    """
+    invoice = fb_get(f"/invoices/{invoice_id}") or {}
+    if not isinstance(invoice, dict):
+        return
+
+    meta = invoice.get("meta", {}) or {}
+    line_items = invoice.get("line_items", []) or []
+    inv_total = _safe_float(meta.get("total", 0))
+    inv_tax = _safe_float(meta.get("tax_amount", 0))
+
+    # Get linked projects
+    linked_projects_meta = meta.get("linked_projects", [])
+    if not isinstance(linked_projects_meta, list) or len(linked_projects_meta) < 2:
+        return  # Single project, no recalculation needed
+
+    # Calculate line items total per project
+    project_line_totals = {}  # proj_num -> line items total
+    for item in line_items:
+        if not isinstance(item, dict):
+            continue
+        item_proj = str(item.get("project_number", "")).strip()
+        item_amount = _safe_float(item.get("amount", 0))
+        if item_proj:
+            project_line_totals[item_proj] = project_line_totals.get(item_proj, 0) + item_amount
+
+    # Load all projects to update their payment stages
+    all_projects = fb_get("/projects") or {}
+
+    # Update each project's payment stage amount
+    for proj_info in linked_projects_meta:
+        if not isinstance(proj_info, dict):
+            continue
+        proj_num = proj_info.get("project_number", "")
+        stage_idx = proj_info.get("payment_stage_index", -1)
+
+        if not proj_num or stage_idx < 0:
+            continue
+
+        # Find project in database
+        proj_id = None
+        proj_data = None
+        if isinstance(all_projects, dict):
+            for pid, pdata in all_projects.items():
+                if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
+                    proj_id = pid
+                    proj_data = pdata
+                    break
+
+        if not proj_id or not proj_data:
+            continue
+
+        stages = proj_data.get("payment_stages") or []
+        if not (0 <= stage_idx < len(stages)):
+            continue
+
+        # Calculate this project's new amount (line items + proportional tax)
+        project_line_total = project_line_totals.get(proj_num, 0)
+        if inv_total > 0:
+            project_tax = (project_line_total / inv_total) * inv_tax
+        else:
+            project_tax = 0
+
+        new_stage_amount = project_line_total + project_tax
+
+        # Update payment stage amount
+        stages[stage_idx]["amount"] = new_stage_amount
+        fb_update(f"/projects/{proj_id}", {"payment_stages": stages, "updated_at": datetime.now(timezone.utc).isoformat()})
 
 def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
     """Allocate invoice payment SEQUENTIALLY across linked projects (sorted by project number).
@@ -9192,26 +9446,31 @@ def update_project_payment_plan(project_id):
         # Update invoice if this was an invoiced stage
         if invoice_id:
             invoice = fb_get(f"/invoices/{invoice_id}") or {}
-            meta = invoice.get("meta", {})
+            if isinstance(invoice, dict):
+                meta = invoice.get("meta", {}) or {}
+                line_items = invoice.get("line_items", []) or []
+                if isinstance(line_items, list) and len(line_items) > 0:
+                    # Get the project number from the project
+                    proj_num = project.get("project_number", "")
 
-            # Update invoice amount
-            amount_diff = new_amount - original_amount
-            old_invoice_total = _safe_float(meta.get("total", 0))
-            new_invoice_total = old_invoice_total + amount_diff
+                    # Update ONLY the line item for the updated project
+                    # Use the amounts array which was passed in
+                    for amount_data in amounts:
+                        idx = amount_data.get("index", 0)
+                        if idx < len(line_items) and isinstance(line_items[idx], dict):
+                            amt = _safe_float(amount_data.get("amount", 0))
+                            line_items[idx]["amount"] = str(amt)
 
-            meta["total"] = str(new_invoice_total)
-            meta["subtotal"] = str(new_invoice_total - _safe_float(meta.get("tax_amount", 0)))
-            invoice["meta"] = meta
+                    # Recalculate subtotal from ALL line items
+                    new_subtotal = sum(_safe_float(item.get("amount", 0)) for item in line_items if isinstance(item, dict))
+                    tax_amount = _safe_float(meta.get("tax_amount", 0))
 
-            # Update line items if they exist
-            line_items = invoice.get("line_items", [])
-            if line_items:
-                line_items[0]["amount"] = str(new_amount)
-                line_items[0]["unit_price"] = str(new_amount)
-                invoice["line_items"] = line_items
-
-            invoice["updated_at"] = datetime.now(timezone.utc).isoformat()
-            fb_update(f"/invoices/{invoice_id}", invoice)
+                    fb_update(f"/invoices/{invoice_id}", {
+                        "line_items": line_items,
+                        "meta/subtotal": str(new_subtotal),
+                        "meta/total": str(new_subtotal + tax_amount),
+                        "meta/updated_at": datetime.now(timezone.utc).isoformat()
+                    })
 
         return {"success": True, "message": "Payment plan updated"}
     except Exception as e:
@@ -9301,26 +9560,47 @@ def update_invoiced_stage(project_id, stage_idx):
         # Update the invoice if it exists
         if invoice_id:
             invoice = fb_get(f"/invoices/{invoice_id}") or {}
-            meta = invoice.get("meta", {})
+            meta = invoice.get("meta", {}) or {}
+            proj_num = project.get("project_number", "")
 
-            # Update invoice amount
-            old_invoice_total = _safe_float(meta.get("total", 0))
-            amount_diff = original_amount - new_amount
-            new_invoice_total = old_invoice_total - amount_diff
+            # Find the correct line item by searching for matching project_number
+            line_items = invoice.get("line_items", []) or []
+            line_item_index = None
 
-            meta["total"] = str(new_invoice_total)
-            meta["subtotal"] = str(new_invoice_total - _safe_float(meta.get("tax_amount", 0)))
-            invoice["meta"] = meta
+            if isinstance(line_items, list):
+                for idx, item in enumerate(line_items):
+                    if isinstance(item, dict):
+                        item_proj = str(item.get("project_number", "")).strip()
+                        if item_proj == proj_num:
+                            line_item_index = idx
+                            break
 
-            # Update line items if they exist
-            line_items = invoice.get("line_items", [])
-            if line_items:
-                line_items[0]["amount"] = str(new_amount)
-                line_items[0]["unit_price"] = str(new_amount)
-                invoice["line_items"] = line_items
+            # Update the correct line item for this project
+            if line_item_index is not None and line_item_index < len(line_items):
+                if isinstance(line_items[line_item_index], dict):
+                    line_items[line_item_index]["amount"] = str(new_amount)
+                    line_items[line_item_index]["unit_price"] = str(new_amount)
 
-            invoice["updated_at"] = datetime.now(timezone.utc).isoformat()
-            fb_update(f"/invoices/{invoice_id}", invoice)
+            # Recalculate subtotal from ALL line items (not just the one we updated)
+            # Make sure we're summing the UPDATED line_items list
+            new_subtotal = 0
+            for item in line_items:
+                if isinstance(item, dict):
+                    item_amount = _safe_float(item.get("amount", 0))
+                    new_subtotal += item_amount
+
+            tax_amount = _safe_float(meta.get("tax_amount", 0))
+
+            # Update meta
+            meta["total"] = str(new_subtotal + tax_amount)
+            meta["subtotal"] = str(new_subtotal)
+
+            # Save everything back
+            fb_update(f"/invoices/{invoice_id}", {
+                "line_items": line_items,
+                "meta": meta,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            })
 
         return {"success": True, "message": "Invoiced amount updated and redistributed"}
     except Exception as e:

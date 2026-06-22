@@ -526,7 +526,8 @@ a[href*="filter_expense"]:hover {
           <tr class="inc-row"
               data-date="{{ r.get('date','') }}"
               data-status="{{ r.get('status','') }}"
-              data-search="{{ r.get('client_name','')|lower }} {{ r.get('invoice_number','')|lower }}">
+              data-search="{{ r.get('client_name','')|lower }} {{ r.get('invoice_number','')|lower }}"
+              data-amount="{{ (r.get('amount_paid',0)|float) + (r.get('tax_amount',0)|float) }}">
             <td class="text-muted small">{{ r.get('date','—') }}</td>
             <td>
               {% if r.get('invoice_id') %}
@@ -556,7 +557,7 @@ a[href*="filter_expense"]:hover {
         <tfoot class="table-light fw-bold">
           <tr>
             <td colspan="8" class="text-end">Total Collected (including tax)</td>
-            <td class="text-end text-success">${{ "{:,.2f}".format(total_collected) }}</td>
+            <td id="incomeTotalCell" class="text-end text-success">${{ "{:,.2f}".format(total_collected) }}</td>
           </tr>
         </tfoot>
       </table>
