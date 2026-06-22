@@ -1584,16 +1584,9 @@ def project_detail(project_id):
 
                     if is_multi_project:
                         # Multi-project invoice: get payment amount from payment_log filtered by project_number
+                        # Payment histories are recorded with project_number, so use that to get project-specific amounts
                         payment_log = inv.get("payment_log", []) or []
                         project_payment = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == proj_num)
-
-                        # If no project-specific payments found but invoice has payments, show the invoice amount
-                        # (fallback for payments not yet tagged with project_number)
-                        if project_payment == 0:
-                            total_invoice_paid = _safe_float(inv_meta.get("amount_paid", 0))
-                            if total_invoice_paid > 0:
-                                project_payment = total_invoice_paid
-
                         amount_paid += project_payment
                     else:
                         # Single-project invoice: use amount_paid from meta
@@ -1670,14 +1663,8 @@ def project_detail(project_id):
 
         if is_multi_project:
             # Multi-project invoice: use payment_log filtered by project_number
+            # Payment histories are recorded with project_number, so use that to get actual project payments
             project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == proj_num)
-
-            # Fallback: if no project-specific payments found but invoice has payments, show total
-            # (for payments not yet tagged with project_number)
-            if project_payments == 0:
-                total_invoice_paid = _safe_float(inv_meta.get("amount_paid", 0))
-                if total_invoice_paid > 0:
-                    project_payments = total_invoice_paid
 
             # For tax: allocate proportionally by share
             total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
