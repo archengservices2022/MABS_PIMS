@@ -3084,7 +3084,7 @@ def invoice_delete(invoice_id):
                         affected_project_id = pid
                         break
 
-    flash("Invoice deleted. Payment stages and revenue reverted to Not Invoiced.", "success")
+    flash("Invoice deleted successfully", "success")
 
     # If invoice was linked to a project, redirect to that project's details (so frontend reloads updated paid amounts)
     # Otherwise redirect to invoicing list
