@@ -118,6 +118,7 @@
     <!-- Action Buttons -->
     <div class="d-flex gap-3 justify-content-end">
       <a href="{{ url_for('timesheets') }}" class="btn btn-outline-secondary">Cancel</a>
+      {% if not (existing_sheet and existing_sheet.status == 'Approved') %}
       <button type="button" onclick="saveSheet('draft')" class="btn btn-outline-secondary">
         <i class="bi bi-floppy me-1"></i>Save Draft
       </button>
@@ -125,6 +126,7 @@
               style="background:#0D9488;color:#fff;border:none;font-weight:600;padding:8px 20px;border-radius:8px;">
         <i class="bi bi-send me-1"></i>Submit Timesheet
       </button>
+      {% endif %}
     </div>
   </div>
 </div>
@@ -132,10 +134,12 @@
 
 {% block scripts %}
 <script>
-const WEEK_OF  = {{ week_of | tojson }};
-const WEEK_DAYS = {{ week_days | tojson }};
-const PROJECTS  = {{ active_projects | tojson }};
-const EXISTING  = {{ (existing_sheet.entries if existing_sheet else []) | tojson }};
+const WEEK_OF    = {{ week_of | tojson }};
+const WEEK_DAYS  = {{ week_days | tojson }};
+const PROJECTS   = {{ active_projects | tojson }};
+const EXISTING   = {{ (existing_sheet.entries if existing_sheet else []) | tojson }};
+const IS_APPROVED = {{ 'true' if (existing_sheet and existing_sheet.status == 'Approved') else 'false' }};
+const TODAY_ISO  = new Date().toISOString().slice(0, 10);
 
 // Build project options HTML
 const projOptions = PROJECTS.map(p => {
@@ -167,13 +171,12 @@ function addRow(entry) {
     projVal = `${entry.project_number||''}|${entry.project_name||''}|${entry.project_id||''}`;
   }
 
-  const todayISO = new Date().toISOString().slice(0, 10);
   tr.innerHTML = `
     <td>
       <select class="entry-day" onchange="calcRow(${id})">
         <option value="">Select day</option>
         ${WEEK_DAYS.map(d => {
-          const isFuture = d.date > todayISO;
+          const isFuture = d.date > TODAY_ISO;
           return `<option value="${d.date}" ${entry.date === d.date ? 'selected':''} ${isFuture ? 'disabled style="color:#cbd5e1"':''}>
             ${d.abbr} ${d.date.slice(5).replace('-','/')}${isFuture ? ' (upcoming)' : ''}
           </option>`;
@@ -214,11 +217,12 @@ function delRow(id) {
 function calcRow(id) {
   const tr = document.getElementById(`row-${id}`);
   if (!tr) return;
+  const date  = tr.querySelector('.entry-day').value;
   const start = tr.querySelector('.entry-start').value;
   const end   = tr.querySelector('.entry-end').value;
   const lunch = parseInt(tr.querySelector('.entry-lunch').value || '0', 10) || 0;
 
-  if (!start || !end) {
+  if (!date || !start || !end) {
     ['reg','ot','tot'].forEach(k => document.getElementById(`${k}-${id}`).textContent = '—');
     updateFooter();
     return;
@@ -259,6 +263,7 @@ function collectEntries() {
   document.querySelectorAll('#entryBody tr').forEach(tr => {
     const id    = tr.dataset.rowId;
     const date  = tr.querySelector('.entry-day').value;
+    if (!date) return; // skip rows with no day selected
     const proj  = tr.querySelector('.entry-proj').value || '';
     const start = tr.querySelector('.entry-start').value;
     const lunch = parseInt(tr.querySelector('.entry-lunch').value || '0', 10) || 0;
@@ -347,13 +352,32 @@ function changeWeek(val) {
     `${d.getFullYear()}-W${String(wkNum).padStart(2, '0')}`;
 })();
 
-// Populate existing entries or add default 5 work-day rows
+// Populate existing entries or add default rows up to today
 document.addEventListener('DOMContentLoaded', function() {
   if (EXISTING && EXISTING.length > 0) {
-    EXISTING.forEach(e => addRow(e));
+    // Only load entries for today or past days — skip future dates
+    const past = EXISTING.filter(e => e.date && e.date <= TODAY_ISO);
+    if (past.length > 0) {
+      past.forEach(e => addRow(e));
+    } else {
+      addRow({});
+    }
   } else {
-    // Default Mon–Fri rows
-    WEEK_DAYS.slice(0, 5).forEach(d => addRow({ date: d.date }));
+    // Default: Mon–Fri rows only up to today
+    const defaultDays = WEEK_DAYS.slice(0, 5).filter(d => d.date <= TODAY_ISO);
+    if (defaultDays.length > 0) {
+      defaultDays.forEach(d => addRow({ date: d.date }));
+    } else {
+      addRow({});
+    }
+  }
+
+  // Lock everything if approved
+  if (IS_APPROVED) {
+    document.querySelectorAll('#entryBody input, #entryBody select').forEach(el => el.disabled = true);
+    document.querySelectorAll('#entryBody button').forEach(el => el.disabled = true);
+    document.querySelector('.add-row-btn').style.display = 'none';
+    document.querySelector('.add-row-btn + p').style.display = 'none';
   }
 });
 </script>
