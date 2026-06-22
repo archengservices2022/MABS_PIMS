@@ -1622,10 +1622,20 @@ def project_detail(project_id):
         # Store in a separate field for display without modifying stored status
         invoice["_display_status"] = calculated_status
 
-        # Calculate project-specific paid amount from payment_log (filtered by project_number, not share-based)
+        # Calculate project-specific paid amount from payment_log (filtered by project_number)
         proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (invoice.get("payment_log", []) or []) if p.get("project_number") == proj_num)
+
+        # Calculate tax paid - allocate proportionally if not per-project
         tax_payments = invoice.get("tax_payments", []) or []
+        total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+
+        # If tax_payments have project_number, filter by it; otherwise use share
         project_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if tp.get("project_number") == proj_num)
+        if project_tax_paid == 0 and total_tax_paid > 0:
+            # Tax payments don't have project_number, allocate by share
+            project_share = invoice.get("_project_share", 1.0)
+            project_tax_paid = project_share * total_tax_paid
+
         invoice["_project_paid"] = proj_payments + project_tax_paid
 
     # Load expenses linked to this project
