@@ -918,11 +918,8 @@ function calcTotals() {
 function toggleExpNew(chk) {
   const field       = document.getElementById('rushFieldNew');
   const box         = document.getElementById('expBoxNew');
-  // Find priority select - try multiple selectors for reliability
-  let prioritySel = document.querySelector('#tab-new [name="priority"]');
-  if (!prioritySel) {
-    prioritySel = document.querySelector('[name="priority"]');
-  }
+  // Find priority select - search in the entire document
+  const prioritySel = document.querySelector('select[name="priority"]');
 
   if (chk.checked) {
     field.style.removeProperty('display');
@@ -937,6 +934,8 @@ function toggleExpNew(chk) {
     box.classList.remove('bg-warning','bg-opacity-10');
     if (prioritySel) {
       prioritySel.value = 'Low';
+      // Trigger change event to ensure any listeners are notified
+      prioritySel.dispatchEvent(new Event('change', { bubbles: true }));
     }
   }
   calcTotals();
