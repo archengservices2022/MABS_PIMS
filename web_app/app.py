@@ -1622,15 +1622,10 @@ def project_detail(project_id):
         # Store in a separate field for display without modifying stored status
         invoice["_display_status"] = calculated_status
 
-        # Calculate project-specific paid amount from payment_log (not share-based)
+        # Calculate project-specific paid amount from payment_log (filtered by project_number, not share-based)
         proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (invoice.get("payment_log", []) or []) if p.get("project_number") == proj_num)
         tax_payments = invoice.get("tax_payments", []) or []
         project_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if tp.get("project_number") == proj_num)
-        # Fallback to share-based calculation if no project-specific tax payments found
-        if project_tax_paid == 0 and tax_payments:
-            total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
-            project_share = invoice.get("_project_share", 1.0)
-            project_tax_paid = project_share * total_tax_paid
         invoice["_project_paid"] = proj_payments + project_tax_paid
 
     # Load expenses linked to this project
@@ -1661,10 +1656,6 @@ def project_detail(project_id):
         # Get tax payments for this project (filtered by project_number, not share-based)
         tax_payments = invoice.get("tax_payments", []) or []
         project_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if tp.get("project_number") == proj_num)
-        # Fallback to share-based calculation if no project-specific tax payments found
-        if project_tax_paid == 0 and tax_payments:
-            total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
-            project_tax_paid = project_share * total_tax_paid
 
         inv_paid += proj_payments + project_tax_paid
     exp_total   = sum(_safe_float(e.get("amount", 0))                     for e in project_expenses)
