@@ -1552,40 +1552,63 @@ def project_detail(project_id):
                 stage["status"] = "Pending Invoice"
 
         # Recalculate payment stage statuses based on actual paid amounts from invoices
-        # First, build a map of invoices by stage
+        # First, build a map of invoices by stage (supports both single and multi-project invoices)
         raw_inv = fb_get("/invoices") or {}
         stage_invoices = {}
         if isinstance(raw_inv, dict):
             for iid, inv in raw_inv.items():
                 if not isinstance(inv, dict):
                     continue
+                # Check if this project is linked to the invoice (handles multi-project invoices)
+                if proj_num not in _invoice_linked_projects(inv):
+                    continue
                 inv_meta = inv.get("meta", {}) or {}
-                if inv_meta.get("project_number") == proj_num:
-                    stage_idx = inv_meta.get("payment_stage_index", -1)
-                    if stage_idx >= 0:
-                        if stage_idx not in stage_invoices:
-                            stage_invoices[stage_idx] = []
-                        stage_invoices[stage_idx].append(inv)
+                stage_idx = inv_meta.get("payment_stage_index", -1)
+                if stage_idx >= 0:
+                    if stage_idx not in stage_invoices:
+                        stage_invoices[stage_idx] = []
+                    stage_invoices[stage_idx].append(inv)
 
         today_str = datetime.now().strftime("%Y-%m-%d")
         for idx, stage in enumerate(data["payment_stages"]):
             stage_amount = _safe_float(stage.get("amount", 0))
 
             # Calculate amount paid from all invoices for this stage
+            # For multi-project invoices, use payment_log filtered by project_number
             amount_paid = 0
             due_date = ""
             if idx in stage_invoices:
                 for inv in stage_invoices[idx]:
-                    # Sum invoice payments (amount_paid + tax_payments)
                     inv_meta = inv.get("meta", {}) or {}
-                    amount_paid += _safe_float(inv_meta.get("amount_paid", 0))
-                    # Also add any tax payments
-                    tax_payments = inv.get("tax_payments", [])
-                    if isinstance(tax_payments, list):
-                        amount_paid += sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
                     due_date = due_date or inv_meta.get("due_date", "")
 
+                    # Check if this is a multi-project invoice
+                    linked_projects = _invoice_linked_projects(inv)
+                    if len(linked_projects) > 1:
+                        # Multi-project: use payment_log filtered by project_number
+                        payment_log = inv.get("payment_log", []) or []
+                        project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == proj_num)
+                        amount_paid += project_payments
+                        # Add proportional tax payment
+                        line_items = inv.get("line_items", []) or []
+                        project_line_total = sum(_safe_float(item.get("amount", 0)) for item in line_items if isinstance(item, dict) and item.get("project_number", "") == proj_num)
+                        inv_subtotal = _safe_float(inv_meta.get("subtotal", 0))
+                        share = (project_line_total / inv_subtotal) if inv_subtotal > 0 else (1.0 / len(linked_projects) if linked_projects else 1.0)
+                        tax_payments = inv.get("tax_payments", []) or []
+                        total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+                        amount_paid += share * total_tax_paid
+                    else:
+                        # Single-project: use amount_paid from meta
+                        amount_paid += _safe_float(inv_meta.get("amount_paid", 0))
+                        # Also add any tax payments
+                        tax_payments = inv.get("tax_payments", [])
+                        if isinstance(tax_payments, list):
+                            amount_paid += sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+
             is_overdue = bool(due_date) and due_date < today_str
+
+            # Store amount_paid for template display
+            stage["amount_paid"] = amount_paid
 
             # Calculate status based on actual paid vs total
             if amount_paid >= (stage_amount - 0.01):
