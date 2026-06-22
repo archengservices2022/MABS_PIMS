@@ -2734,6 +2734,12 @@ def invoice_new():
         all_projects_data = fb_get("/projects") or {}
         raw_invoices = fb_get("/invoices") or {}
 
+        # If only one project selected, auto-populate the main project_number field
+        if len(project_ids) == 1 and project_ids[0] in all_projects_data:
+            single_proj_data = all_projects_data[project_ids[0]]
+            if isinstance(single_proj_data, dict):
+                prefill_proj = single_proj_data.get("project_number", "")
+
         for proj_id in project_ids:
             if proj_id in all_projects_data:
                 proj_data = all_projects_data[proj_id]
