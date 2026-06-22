@@ -92,7 +92,7 @@
   <!-- ══ TAB 1 — ALL QUOTES ══════════════════════════════════════════════════ -->
   <div class="tab-pane fade" id="tab-all">
 
-    <form class="mb-3" method="GET" id="listFilterForm">
+    <form class="mb-3" method="GET" id="listFilterForm" onsubmit="return false;">
       <!-- Row 1: text search + status + year + month -->
       <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
         <input type="text" name="q" class="form-control form-control-sm" style="max-width:200px;"
@@ -103,8 +103,7 @@
           <option value="{{ s }}" {{ 'selected' if status_filter == s }}>{{ s }}</option>
           {% endfor %}
         </select>
-        <select name="year" class="form-select form-select-sm" style="max-width:105px;"
-                onchange="this.form.submit()">
+        <select name="year" class="form-select form-select-sm" style="max-width:105px;">
           <option value="">All Years</option>
           {% for y in available_years %}
           <option value="{{ y }}" {{ 'selected' if year_filter == y }}>{{ y }}</option>
@@ -138,7 +137,7 @@
                 onclick="setListRange('year')">This Year</button>
         <button type="button" class="btn btn-xs btn-outline-secondary"
                 onclick="setListRange('last30')">Last 30 Days</button>
-        <button class="btn btn-sm btn-outline-secondary" type="submit">
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="updateQuoteSummaryCards()">
           <i class="bi bi-search me-1"></i>Apply
         </button>
         {% if search or status_filter or year_filter or month_filter or date_from or date_to %}
@@ -1043,7 +1042,10 @@ function updateQuoteSummaryCards() {
     const matchDateFrom = !dateFrom || rowDate >= dateFrom;
     const matchDateTo = !dateTo || rowDate <= dateTo;
 
-    if (matchSearch && matchStatus && matchDateFrom && matchDateTo) {
+    const isVisible = matchSearch && matchStatus && matchDateFrom && matchDateTo;
+    row.style.display = isVisible ? '' : 'none';
+
+    if (isVisible) {
       totalCount++;
 
       if (rowStatus === 'Open') {
