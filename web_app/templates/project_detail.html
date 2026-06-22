@@ -285,11 +285,11 @@
                       <i class="bi bi-receipt"></i>
                     </button>
                     {% elif st == 'Invoiced' %}
-                    <button type="button" class="btn btn-xs btn-outline-warning" onclick="quickUpdateInvoicedStage({{ loop.index0 }}, '{{ inv_id }}', {{ s.get('amount',0)|float }})" title="Update invoiced amount">
+                    <button type="button" class="btn btn-xs btn-outline-warning" onclick="quickUpdateInvoicedStage({{ loop.index0 }}, '{{ inv_id }}', {{ s.get('amount',0)|float }}, '{{ project.get('project_number','') }}')" title="Update invoiced amount">
                       <i class="bi bi-arrow-repeat"></i>
                     </button>
                     {% elif st == 'Partially Paid' %}
-                    <button type="button" class="btn btn-xs btn-outline-warning" onclick="quickUpdateInvoicedStage({{ loop.index0 }}, '{{ inv_id }}', {{ s.get('amount',0)|float }})" title="Update invoiced amount">
+                    <button type="button" class="btn btn-xs btn-outline-warning" onclick="quickUpdateInvoicedStage({{ loop.index0 }}, '{{ inv_id }}', {{ s.get('amount',0)|float }}, '{{ project.get('project_number','') }}')" title="Update invoiced amount">
                       <i class="bi bi-arrow-repeat"></i>
                     </button>
                     {% elif st == 'Overdue' %}
@@ -1201,12 +1201,13 @@ function updateRemainingForStage() {
 }
 
 // ── Quick Update Invoiced Stage ────────────────────────────────────────────
-async function quickUpdateInvoicedStage(stageIdx, invoiceId, newAmount) {
+async function quickUpdateInvoicedStage(stageIdx, invoiceId, newAmount, projectNumber) {
   if (!invoiceId) { alert('❌ No invoice linked'); return; }
 
   try {
     const form = new FormData();
     form.append('new_amount', newAmount);
+    form.append('project_number', projectNumber);
 
     const resp = await fetch(`/api/invoices/${invoiceId}/update-amount`, {
       method: 'POST',
