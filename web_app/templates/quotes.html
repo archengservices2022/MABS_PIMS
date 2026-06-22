@@ -148,11 +148,10 @@
       </div>
     </form>
 
-    {% if year_filter or month_filter or date_from or date_to %}
-    <div class="alert alert-light py-1 px-3 mb-3 small d-flex align-items-center gap-2"
-         style="border-left:3px solid #0D9488;">
+    <div id="quoteFilterAlert" class="alert alert-light py-1 px-3 mb-3 small d-flex align-items-center gap-2"
+         style="border-left:3px solid #0D9488;{% if not (year_filter or month_filter or date_from or date_to) %}display:none;{% endif %}">
       <i class="bi bi-funnel text-teal"></i>
-      <span>
+      <span id="quoteFilterText">
         {% if date_from and date_to %}
           Date range: <strong>{{ date_from }}</strong> to <strong>{{ date_to }}</strong>
         {% elif date_from %}
@@ -166,10 +165,9 @@
         {% else %}
           Year: <strong>{{ year_filter }}</strong>
         {% endif %}
-        &nbsp;·&nbsp; {{ quotes|length }} result{{ 's' if quotes|length != 1 else '' }}
+        &nbsp;·&nbsp; <span id="quoteFilterCount">{{ quotes|length }}</span> result{{ 's' if quotes|length != 1 else '' }}
       </span>
     </div>
-    {% endif %}
 
     <div class="card-panel">
       <div class="table-responsive">
@@ -1089,6 +1087,42 @@ function updateQuoteSummaryCards() {
   document.getElementById('card-conv-bar').style.width = convRate + '%';
   document.getElementById('card-pipeline').textContent = '$' + pipelineValue.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
   document.getElementById('card-won-value').textContent = '$' + wonValue.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+
+  // Update filter result display
+  const filterAlert = document.getElementById('quoteFilterAlert');
+  const filterCount = document.getElementById('quoteFilterCount');
+  if (filterAlert && filterCount) {
+    if (search || status || year || month || dateFrom || dateTo) {
+      // Build filter description
+      let filterDesc = '';
+      if (year && month) {
+        const monthNames = ['January','February','March','April','May','June',
+                           'July','August','September','October','November','December'];
+        filterDesc = monthNames[parseInt(month) - 1] + ' ' + year;
+      } else if (year) {
+        filterDesc = 'Year: ' + year;
+      } else if (dateFrom && dateTo) {
+        filterDesc = 'Date range: ' + dateFrom + ' to ' + dateTo;
+      } else if (dateFrom) {
+        filterDesc = 'From ' + dateFrom;
+      } else if (dateTo) {
+        filterDesc = 'Up to ' + dateTo;
+      }
+
+      // Update display
+      filterAlert.style.display = '';
+      filterCount.textContent = totalCount;
+
+      // Update filter text if there's a date filter
+      if (filterDesc) {
+        document.getElementById('quoteFilterText').innerHTML =
+          '<strong>' + filterDesc + '</strong>&nbsp;·&nbsp; <span id="quoteFilterCount">' + totalCount + '</span> result' + (totalCount !== 1 ? 's' : '');
+      }
+    } else {
+      // No filters applied
+      filterAlert.style.display = 'none';
+    }
+  }
 }
 
 // Attach listeners to filter inputs
