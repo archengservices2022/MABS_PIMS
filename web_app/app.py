@@ -1570,7 +1570,6 @@ def project_detail(project_id):
                     stage_invoices[stage_idx].append(inv)
 
         today_str = datetime.now().strftime("%Y-%m-%d")
-        print(f"[STAGE_PAYMENT] Processing project={proj_num}, total stages={len(data.get('payment_stages', []))}, stage_invoices keys={list(stage_invoices.keys())}", flush=True)
         for idx, stage in enumerate(data["payment_stages"]):
             stage_amount = _safe_float(stage.get("amount", 0))
             stage_name = stage.get("name", f"Stage {idx}")
@@ -1579,22 +1578,17 @@ def project_detail(project_id):
             # For multi-project invoices, use payment_log filtered by project_number
             amount_paid = 0
             due_date = ""
-            print(f"[STAGE_PAYMENT] Stage {idx} '{stage_name}': amount=${stage_amount}, looking for invoices, has_invoices={idx in stage_invoices}", flush=True)
             if idx in stage_invoices:
                 for inv in stage_invoices[idx]:
                     inv_meta = inv.get("meta", {}) or {}
                     due_date = due_date or inv_meta.get("due_date", "")
-                    inv_num = inv_meta.get("invoice_number", "")
 
                     # Check if this is a multi-project invoice
                     linked_projects = _invoice_linked_projects(inv)
-                    print(f"[STAGE_PAYMENT] Invoice {inv_num}: linked_projects={linked_projects}, is_multi={len(linked_projects) > 1}", flush=True)
                     if len(linked_projects) > 1:
                         # Multi-project: use payment_log filtered by project_number
                         payment_log = inv.get("payment_log", []) or []
-                        print(f"[STAGE_PAYMENT] Multi-project: payment_log={payment_log}", flush=True)
                         project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == proj_num)
-                        print(f"[STAGE_PAYMENT] Project {proj_num} payments: {project_payments}", flush=True)
                         amount_paid += project_payments
                         # Add proportional tax payment
                         line_items = inv.get("line_items", []) or []
@@ -1606,30 +1600,23 @@ def project_detail(project_id):
                         amount_paid += share * total_tax_paid
                     else:
                         # Single-project: use amount_paid from meta
-                        amount_from_meta = _safe_float(inv_meta.get("amount_paid", 0))
-                        amount_paid += amount_from_meta
-                        print(f"[STAGE_PAYMENT] Single-project: amount_paid from meta={amount_from_meta}", flush=True)
+                        amount_paid += _safe_float(inv_meta.get("amount_paid", 0))
                         # Also add any tax payments
                         tax_payments = inv.get("tax_payments", [])
                         if isinstance(tax_payments, list):
-                            tax_paid_amount = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
-                            amount_paid += tax_paid_amount
-                            print(f"[STAGE_PAYMENT] Single-project: tax_paid={tax_paid_amount}", flush=True)
+                            amount_paid += sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
 
             is_overdue = bool(due_date) and due_date < today_str
 
             # Store amount_paid for template display
             stage["amount_paid"] = amount_paid
             stage_status_before = stage.get("status", "")
-            print(f"[STAGE_PAID] Project={proj_num}, Stage={idx}, Amount=${stage_amount}, Paid=${amount_paid}, Status_before={stage_status_before}", flush=True)
 
             # Calculate status based on actual paid vs total
             if amount_paid >= (stage_amount - 0.01):
                 stage["_display_status"] = "Paid"
-                print(f"[STAGE_PAID] → Paid (amount_paid >= stage_amount)", flush=True)
             elif amount_paid > 0:
                 stage["_display_status"] = "Overdue" if is_overdue else "Partially Paid"
-                print(f"[STAGE_PAID] → {stage['_display_status']} (partial payment)", flush=True)
             else:
                 # No payment yet - keep the stage's real status (e.g. "Pending
                 # Invoice" if no invoice has been generated yet, or "Invoiced"
@@ -1638,10 +1625,8 @@ def project_detail(project_id):
                 stage_status = stage.get("status") or "Pending Invoice"
                 if stage_status == "Invoiced" and is_overdue:
                     stage["_display_status"] = "Overdue"
-                    print(f"[STAGE_PAID] → Overdue (invoiced but past due)", flush=True)
                 else:
                     stage["_display_status"] = stage_status
-                    print(f"[STAGE_PAID] → {stage_status} (no payment, keeping original status)", flush=True)
 
     # Load invoices linked to this project (directly, or via per-line-item
     # project overrides on invoices that span multiple projects)
