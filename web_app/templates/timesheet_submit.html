@@ -258,7 +258,7 @@ function addProjectForDay(date) {
 
 function addNewDay() {
   const used = new Set(dayOrder);
-  const available = WEEK_DAYS.filter(d => d.date <= TODAY_ISO && !used.has(d.date));
+  const available = WEEK_DAYS.filter(d => !used.has(d.date));
   if (available.length === 0) {
     if (dayOrder.length > 0) addProjectForDay(dayOrder[dayOrder.length - 1]);
     return;
@@ -400,24 +400,19 @@ function changeWeek(val) {
 
 document.addEventListener('DOMContentLoaded', function() {
   if (EXISTING && EXISTING.length > 0) {
-    const past = EXISTING.filter(e => e.date && e.date <= TODAY_ISO);
-    if (past.length > 0) {
-      const byDate = {}, dateOrder = [];
-      past.forEach(e => {
-        if (!byDate[e.date]) { byDate[e.date] = []; dateOrder.push(e.date); }
-        byDate[e.date].push(e);
-      });
+    const byDate = {}, dateOrder = [];
+    EXISTING.filter(e => e.date).forEach(e => {
+      if (!byDate[e.date]) { byDate[e.date] = []; dateOrder.push(e.date); }
+      byDate[e.date].push(e);
+    });
+    if (dateOrder.length > 0) {
       dateOrder.forEach(date => renderDayGroup(date, byDate[date]));
     } else {
-      renderDayGroup(TODAY_ISO, [{}]);
+      WEEK_DAYS.slice(0, 5).forEach(d => renderDayGroup(d.date, [{}]));
     }
   } else {
-    const defaultDays = WEEK_DAYS.slice(0, 5).filter(d => d.date <= TODAY_ISO);
-    if (defaultDays.length > 0) {
-      defaultDays.forEach(d => renderDayGroup(d.date, [{}]));
-    } else {
-      renderDayGroup(TODAY_ISO, [{}]);
-    }
+    // Default: show Mon–Fri for the whole week
+    WEEK_DAYS.slice(0, 5).forEach(d => renderDayGroup(d.date, [{}]));
   }
 
   if (IS_APPROVED) {
