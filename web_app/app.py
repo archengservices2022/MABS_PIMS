@@ -1656,24 +1656,22 @@ def project_detail(project_id):
         payment_log = i.get("payment_log", []) or []
         tax_payments = i.get("tax_payments", []) or []
 
-        # Get project payments from payment_log (filtered by project_number)
-        project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == proj_num)
+        # Check if this is a multi-project invoice
+        linked_projects = inv_meta.get("linked_projects", [])
+        is_multi_project = isinstance(linked_projects, list) and len(linked_projects) > 1
 
-        # Fallback: if no project-specific payments found, check if we should use total amount_paid with share
-        if project_payments == 0:
-            total_amount_paid = _safe_float(inv_meta.get("amount_paid", 0))
-            if total_amount_paid > 0:
-                # Payments exist but don't have project_number (legacy payments or not yet updated)
-                # For single-project: use full amount; for multi-project: use share proportion
-                if share == 1.0:
-                    project_payments = total_amount_paid
-                else:
-                    # Multi-project: allocate by share until payments are properly tagged with project_number
-                    project_payments = total_amount_paid * share
-
-        # Get tax paid (allocate proportionally by share)
-        total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
-        project_tax_paid = share * total_tax_paid
+        if is_multi_project:
+            # Multi-project invoice: use ONLY payment_log filtered by project_number
+            project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == proj_num)
+            # For tax: allocate proportionally by share
+            total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+            project_tax_paid = share * total_tax_paid
+        else:
+            # Single-project invoice: use amount_paid from meta
+            project_payments = _safe_float(inv_meta.get("amount_paid", 0))
+            # For tax: use all tax payments since it's single project
+            total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+            project_tax_paid = total_tax_paid
 
         # Add this project's payments + tax to total collected
         inv_paid += project_payments + project_tax_paid
