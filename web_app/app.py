@@ -1580,8 +1580,13 @@ def project_detail(project_id):
                     # For multi-project invoices, use payment_log filtered by project_number
                     # For single-project invoices, use amount_paid
                     payment_log = inv.get("payment_log", []) or []
-                    if isinstance(payment_log, list) and payment_log:
-                        # Multi-project invoice: sum payments for this project only
+
+                    # Check if this is a multi-project invoice (has linked_projects or payment_log with project_number entries)
+                    linked_projects = inv_meta.get("linked_projects", [])
+                    is_multi_project = isinstance(linked_projects, list) and len(linked_projects) > 1
+
+                    if is_multi_project and isinstance(payment_log, list):
+                        # Multi-project invoice: sum payments for this project only from payment_log
                         project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == proj_num)
                         amount_paid += project_payments
                     else:
