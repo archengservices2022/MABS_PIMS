@@ -1560,12 +1560,7 @@ def project_detail(project_id):
                 if not isinstance(inv, dict):
                     continue
                 inv_meta = inv.get("meta", {}) or {}
-                # Check if project is linked to this invoice (single or multi-project)
-                project_is_linked = (
-                    inv_meta.get("project_number") == proj_num or
-                    proj_num in _invoice_linked_projects(inv)
-                )
-                if project_is_linked:
+                if inv_meta.get("project_number") == proj_num:
                     stage_idx = inv_meta.get("payment_stage_index", -1)
                     if stage_idx >= 0:
                         if stage_idx not in stage_invoices:
@@ -1576,7 +1571,7 @@ def project_detail(project_id):
         for idx, stage in enumerate(data["payment_stages"]):
             stage_amount = _safe_float(stage.get("amount", 0))
 
-            # Calculate amount paid from all invoices for this stage (PAYMENTS ONLY, not tax)
+            # Calculate amount paid from all invoices for this stage
             amount_paid = 0
             due_date = ""
             if idx in stage_invoices:
@@ -1592,8 +1587,7 @@ def project_detail(project_id):
 
             is_overdue = bool(due_date) and due_date < today_str
 
-            # Store calculated amount paid in stage object (so template displays fresh data after invoice deletion)
-            # NOTE: This is PAYMENTS ONLY, not including tax (tax is handled separately in P&L)
+            # Store amount_paid in stage for display
             stage["amount_paid"] = amount_paid
 
             # Calculate status based on actual paid vs total
