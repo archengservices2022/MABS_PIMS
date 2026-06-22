@@ -1660,9 +1660,17 @@ def project_detail(project_id):
         # Get project payments from payment_log (filtered by project_number)
         project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == proj_num)
 
-        # Fallback for single-project invoices: if no payment_log entries with project_number, use amount_paid from meta
-        if project_payments == 0 and share == 1.0:
-            project_payments = _safe_float(inv_meta.get("amount_paid", 0))
+        # Fallback: if no project-specific payments found, check if we should use total amount_paid with share
+        if project_payments == 0:
+            total_amount_paid = _safe_float(inv_meta.get("amount_paid", 0))
+            if total_amount_paid > 0:
+                # Payments exist but don't have project_number (legacy payments or not yet updated)
+                # For single-project: use full amount; for multi-project: use share proportion
+                if share == 1.0:
+                    project_payments = total_amount_paid
+                else:
+                    # Multi-project: allocate by share until payments are properly tagged with project_number
+                    project_payments = total_amount_paid * share
 
         # Get tax paid (allocate proportionally by share)
         total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
