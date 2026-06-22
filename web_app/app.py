@@ -4036,7 +4036,7 @@ def financial():
     for p in projects_list:
         pnum = p.get("project_number", "")
 
-        # Calculate INVOICED and COLLECTED using _invoice_linked_projects (matches Project P&L)
+        # Calculate INVOICED and COLLECTED based on line items and payment_log filtered by project_number
         p_invoiced = 0
         p_collected = 0
 
@@ -4048,15 +4048,39 @@ def financial():
                 if pnum not in _invoice_linked_projects(inv_data):
                     continue
                 inv_meta = inv_data.get("meta", {}) or {}
-                inv_total = _safe_float(inv_meta.get("total", 0))
+                inv_subtotal = _safe_float(inv_meta.get("subtotal", 0))
                 inv_tax = _safe_float(inv_meta.get("tax_amount", 0))
-                amount_paid_inv = _safe_float(inv_meta.get("amount_paid", 0))
-                tax_paid_inv = sum(_safe_float(tp.get("amount", 0)) for tp in (inv_data.get("tax_payments", []) or []))
-                linked = _invoice_linked_projects(inv_data)
-                if len(linked) > 0:
-                    share = 1.0 / len(linked)
-                    p_invoiced += inv_total * share
-                    p_collected += (amount_paid_inv + tax_paid_inv) * share
+
+                # Calculate project's portion from actual line items
+                line_items = inv_data.get("line_items", []) or []
+                project_line_total = 0
+                for item in line_items:
+                    if isinstance(item, dict):
+                        item_proj = str(item.get("project_number", "")).strip()
+                        if item_proj == pnum:
+                            project_line_total += _safe_float(item.get("amount", 0))
+
+                # Calculate share based on line items
+                if inv_subtotal > 0:
+                    share = project_line_total / inv_subtotal
+                else:
+                    share = 1.0
+
+                # Project's tax allocation (proportional to line items)
+                project_tax = share * inv_tax
+
+                # Get project's actual payments from payment_log (filtered by project_number)
+                payment_log = inv_data.get("payment_log", []) or []
+                project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == pnum)
+
+                # Get project's tax payments (proportional to invoice share)
+                tax_payments = inv_data.get("tax_payments", []) or []
+                total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+                project_tax_paid = share * total_tax_paid
+
+                # Add to P&L: invoiced = line items + tax, collected = payments + tax paid
+                p_invoiced += project_line_total + project_tax
+                p_collected += project_payments + project_tax_paid
 
         p_contract = _safe_float(p.get("contract_value",0))
         p_not_invoiced = p_contract - p_invoiced
