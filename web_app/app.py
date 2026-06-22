@@ -2612,9 +2612,9 @@ def invoice_new():
         # Mark stages as invoiced
         if stage_idx_raw != "":
             # Single project with single stage - use the actual invoice total (including tax)
-            invoice_total = _safe_float(data["meta"].get("total", 0))
+            invoice_subtotal = _safe_float(data["meta"].get("subtotal", 0))
             _mark_project_stage(data["meta"].get("project_number", ""),
-                                int(stage_idx_raw), "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=invoice_total)
+                                int(stage_idx_raw), "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=invoice_subtotal)
         else:
             # Multiple projects - check if line items have stage indices
             item_projects = request.form.getlist("item_project[]")
@@ -2623,16 +2623,16 @@ def invoice_new():
             # Store linked projects info for multi-project invoice detection
             linked_projects = []
 
-            # Mark each stage from line items - use project's share of invoice total
-            invoice_total = _safe_float(data["meta"].get("total", 0))
+            # Mark each stage from line items - use project's share of invoice subtotal (excluding tax)
+            invoice_subtotal = _safe_float(data["meta"].get("subtotal", 0))
             for i, proj_num in enumerate(item_projects):
                 if i < len(item_stage_indices):
                     stage_idx_str = item_stage_indices[i].strip() if item_stage_indices[i] else ""
                     if stage_idx_str:
                         try:
                             stage_idx = int(stage_idx_str)
-                            # Calculate project's share of the invoice total
-                            project_share = _invoice_project_share(data, proj_num) * invoice_total
+                            # Calculate project's share of the invoice subtotal (without tax)
+                            project_share = _invoice_project_share(data, proj_num) * invoice_subtotal
                             _mark_project_stage(proj_num, stage_idx, "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=project_share)
                             linked_projects.append({"project_number": proj_num, "payment_stage_index": stage_idx})
                         except (ValueError, IndexError):
@@ -2929,9 +2929,9 @@ def invoice_status(invoice_id):
                 "Overdue": "Invoiced",
             }.get(new_status)
             if stage_status:
-                # Update the stage with current invoice total
-                invoice_total = _safe_float(m.get("total", 0))
-                _mark_project_stage(main_proj_num, int(stage_idx_meta), stage_status, invoice_id=invoice_id, amount=invoice_total)
+                # Update the stage with current invoice subtotal (without tax)
+                invoice_subtotal = _safe_float(m.get("subtotal", 0))
+                _mark_project_stage(main_proj_num, int(stage_idx_meta), stage_status, invoice_id=invoice_id, amount=invoice_subtotal)
     if new_status in ("Paid", "Partial"):
         _upsert_revenue_entry(invoice_id, m)
 
@@ -4038,14 +4038,39 @@ def financial():
                     continue
                 inv_meta = inv_data.get("meta", {}) or {}
                 inv_total = _safe_float(inv_meta.get("total", 0))
+                inv_subtotal = _safe_float(inv_meta.get("subtotal", 0))
                 inv_tax = _safe_float(inv_meta.get("tax_amount", 0))
                 amount_paid_inv = _safe_float(inv_meta.get("amount_paid", 0))
-                tax_paid_inv = sum(_safe_float(tp.get("amount", 0)) for tp in (inv_data.get("tax_payments", []) or []))
-                linked = _invoice_linked_projects(inv_data)
-                if len(linked) > 0:
-                    share = 1.0 / len(linked)
-                    p_invoiced += inv_total * share
-                    p_collected += (amount_paid_inv + tax_paid_inv) * share
+
+                # Calculate project's share based on actual line items
+                line_items = inv_data.get("line_items", []) or []
+                project_line_total = 0
+                for item in line_items:
+                    if isinstance(item, dict):
+                        item_proj = str(item.get("project_number", "")).strip()
+                        if item_proj == pnum:
+                            project_line_total += _safe_float(item.get("amount", 0))
+
+                # Calculate share of invoice
+                if inv_subtotal > 0:
+                    share = project_line_total / inv_subtotal
+                else:
+                    share = 1.0
+
+                # Calculate project's tax allocation (proportional to line items)
+                project_tax = share * inv_tax
+
+                # Calculate project's collected amount from payment_log
+                payment_log = inv_data.get("payment_log", []) or []
+                project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == pnum)
+
+                # Calculate project's tax payments
+                tax_payments = inv_data.get("tax_payments", []) or []
+                project_tax_payments = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if tp.get("project_number", "") == pnum)
+
+                # Add to P&L: invoiced = line items + tax allocation, collected = payments + tax payments
+                p_invoiced += project_line_total + project_tax
+                p_collected += project_payments + project_tax_payments
 
         p_contract = _safe_float(p.get("contract_value",0))
         p_not_invoiced = p_contract - p_invoiced
