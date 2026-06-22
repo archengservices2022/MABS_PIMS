@@ -1088,11 +1088,12 @@ function updateQuoteSummaryCards() {
   document.getElementById('card-pipeline').textContent = '$' + pipelineValue.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
   document.getElementById('card-won-value').textContent = '$' + wonValue.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
 
-  // Update filter result display
+  // Update filter result display - show only when year or other filters are applied
   const filterAlert = document.getElementById('quoteFilterAlert');
   const filterCount = document.getElementById('quoteFilterCount');
   if (filterAlert && filterCount) {
-    if (search || status || year || month || dateFrom || dateTo) {
+    // Show/hide based on year selection (year takes precedence)
+    if (year) {
       // Build filter description
       let filterDesc = '';
       if (year && month) {
@@ -1101,25 +1102,29 @@ function updateQuoteSummaryCards() {
         filterDesc = monthNames[parseInt(month) - 1] + ' ' + year;
       } else if (year) {
         filterDesc = 'Year: ' + year;
-      } else if (dateFrom && dateTo) {
+      }
+
+      // Show filter alert and update it
+      filterAlert.style.display = '';
+      filterCount.textContent = totalCount;
+      document.getElementById('quoteFilterText').innerHTML =
+        '<strong>' + filterDesc + '</strong>&nbsp;·&nbsp; <span id="quoteFilterCount">' + totalCount + '</span> result' + (totalCount !== 1 ? 's' : '');
+    } else if (dateFrom || dateTo) {
+      // Show for date range filters
+      filterAlert.style.display = '';
+      filterCount.textContent = totalCount;
+      let filterDesc = '';
+      if (dateFrom && dateTo) {
         filterDesc = 'Date range: ' + dateFrom + ' to ' + dateTo;
       } else if (dateFrom) {
         filterDesc = 'From ' + dateFrom;
       } else if (dateTo) {
         filterDesc = 'Up to ' + dateTo;
       }
-
-      // Update display
-      filterAlert.style.display = '';
-      filterCount.textContent = totalCount;
-
-      // Update filter text if there's a date filter
-      if (filterDesc) {
-        document.getElementById('quoteFilterText').innerHTML =
-          '<strong>' + filterDesc + '</strong>&nbsp;·&nbsp; <span id="quoteFilterCount">' + totalCount + '</span> result' + (totalCount !== 1 ? 's' : '');
-      }
+      document.getElementById('quoteFilterText').innerHTML =
+        '<strong>' + filterDesc + '</strong>&nbsp;·&nbsp; <span id="quoteFilterCount">' + totalCount + '</span> result' + (totalCount !== 1 ? 's' : '');
     } else {
-      // No filters applied
+      // Hide when no year and no date filters
       filterAlert.style.display = 'none';
     }
   }
