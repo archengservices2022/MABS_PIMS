@@ -928,6 +928,7 @@ function toggleExpNew(chk) {
     field.style.display = 'none';
     box.classList.replace('border-warning','border-light');
     box.classList.remove('bg-warning','bg-opacity-10');
+    if (prioritySel) prioritySel.value = 'Low';
   }
   calcTotals();
 }
