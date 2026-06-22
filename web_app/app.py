@@ -1587,6 +1587,9 @@ def project_detail(project_id):
 
             is_overdue = bool(due_date) and due_date < today_str
 
+            # Store calculated amount paid in stage object (so template displays fresh data after invoice deletion)
+            stage["amount_paid"] = amount_paid
+
             # Calculate status based on actual paid vs total
             if amount_paid >= (stage_amount - 0.01):
                 stage["_display_status"] = "Paid"
