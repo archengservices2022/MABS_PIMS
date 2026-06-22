@@ -3013,11 +3013,25 @@ def invoice_update_amount(invoice_id):
             # Find the line item for the project being updated
             line_item_idx = 0
             if project_number:
-                # Multi-project invoice: find line item with matching project_number
+                # Method 1: Try to find by project_number in line items
                 for idx, item in enumerate(line_items):
                     if isinstance(item, dict) and item.get("project_number", "").strip() == project_number:
                         line_item_idx = idx
                         break
+                else:
+                    # Method 2: If not found by project_number, check linked_projects metadata
+                    # This handles cases where line items don't have project_number set
+                    linked_projects = meta.get("linked_projects", [])
+                    if isinstance(linked_projects, list):
+                        for proj_info in linked_projects:
+                            if isinstance(proj_info, dict) and proj_info.get("project_number", "") == project_number:
+                                # Found this project in linked_projects
+                                # Find its corresponding line item position
+                                # For now, use the position in linked_projects as the line item index
+                                matched_proj_idx = linked_projects.index(proj_info)
+                                if matched_proj_idx < len(line_items):
+                                    line_item_idx = matched_proj_idx
+                                break
 
             line_items[line_item_idx]["amount"] = str(new_amount)
             line_items[line_item_idx]["unit_price"] = str(new_amount)
