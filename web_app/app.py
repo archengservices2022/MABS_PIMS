@@ -1642,20 +1642,22 @@ def project_detail(project_id):
     # Include both invoice amount and tax in total invoiced (to match collected which includes tax payments)
     inv_total   = sum((_safe_float(i.get("meta",{}).get("total", 0)) or _safe_float(i.get("meta",{}).get("subtotal", 0)) + _safe_float(i.get("meta",{}).get("tax_amount", 0))) * i.get("_project_share", 1.0) for i in project_invoices)
 
-    # For paid amount, use actual payment_log entries filtered by project_number instead of share-based distribution
+    # For paid amount, use actual payment_log entries filtered by project_number (not share-based)
     inv_paid = 0
     for invoice in project_invoices:
         # Get actual payments from payment_log for this project
         proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (invoice.get("payment_log", []) or []) if p.get("project_number") == proj_num)
 
-        # Get tax allocation for this project (proportional to share)
-        inv_tax = _safe_float(invoice.get("meta", {}).get("tax_amount", 0))
-        project_share = invoice.get("_project_share", 1.0)
-        project_tax = project_share * inv_tax
-
-        # Get tax payments for this project (filtered by project_number, not share-based)
+        # Get tax payments - allocate proportionally to project's share if not per-project
         tax_payments = invoice.get("tax_payments", []) or []
+        total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+
+        # If tax_payments have project_number, filter by it; otherwise use share
         project_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if tp.get("project_number") == proj_num)
+        if project_tax_paid == 0 and total_tax_paid > 0:
+            # Tax payments don't have project_number, allocate by share
+            project_share = invoice.get("_project_share", 1.0)
+            project_tax_paid = project_share * total_tax_paid
 
         inv_paid += proj_payments + project_tax_paid
     exp_total   = sum(_safe_float(e.get("amount", 0))                     for e in project_expenses)
