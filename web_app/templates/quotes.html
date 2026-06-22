@@ -1029,18 +1029,17 @@ function updateQuoteSummaryCards() {
   const year = yearSelect?.value || '';
   const month = monthSelect?.value || '';
 
-  // Only apply year/month if manual date range is not set
-  if (!dateFromInput?.value && !dateToInput?.value) {
-    if (year && month) {
-      // Year and month both selected - filter to that month
-      dateFrom = year + '-' + month + '-01';
-      dateTo = year + '-' + month + '-31'; // Day 31 works for all months in string comparison
-    } else if (year) {
-      // Only year selected - filter to that year
-      dateFrom = year + '-01-01';
-      dateTo = year + '-12-31';
-    }
+  // Apply year/month filters if they're set (takes precedence over manual date range)
+  if (year && month) {
+    // Year and month both selected - filter to that month
+    dateFrom = year + '-' + month + '-01';
+    dateTo = year + '-' + month + '-31'; // Day 31 works for all months in string comparison
+  } else if (year) {
+    // Only year selected - filter to that year
+    dateFrom = year + '-01-01';
+    dateTo = year + '-12-31';
   }
+  // If neither year nor month selected, use manual date range inputs (already set above)
 
   const rows = document.querySelectorAll('.quote-row');
   let totalCount = 0;
