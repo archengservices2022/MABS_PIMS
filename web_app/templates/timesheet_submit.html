@@ -142,6 +142,40 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// Parse "9:00 AM", "9:00", "09:00", "9AM", "17:00" → {h, min} or null
+function parseTime(val) {
+  if (!val) return null;
+  val = val.trim().toUpperCase().replace(/\./g, ':');
+  let m = val.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/);
+  if (m) {
+    let h = parseInt(m[1]), min = parseInt(m[2] || '0');
+    if (m[3] === 'AM' && h === 12) h = 0;
+    if (m[3] === 'PM' && h !== 12) h += 12;
+    return { h, min };
+  }
+  m = val.match(/^(\d{1,2}):(\d{2})$/);
+  if (m) return { h: parseInt(m[1]), min: parseInt(m[2]) };
+  m = val.match(/^(\d{1,2})$/);
+  if (m) return { h: parseInt(m[1]), min: 0 };
+  return null;
+}
+
+// Format stored "HH:MM" 24h → "9:00 AM" for display
+function formatTimeDisplay(s) {
+  if (!s) return '';
+  const parts = s.split(':');
+  const h = parseInt(parts[0]), m = parseInt(parts[1] || '0');
+  const period = h >= 12 ? 'PM' : 'AM';
+  return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${period}`;
+}
+
+// Convert display value → stored "HH:MM" 24h
+function timeToStorage(val) {
+  const t = parseTime(val);
+  if (!t) return '';
+  return `${String(t.h).padStart(2,'0')}:${String(t.min).padStart(2,'0')}`;
+}
+
 let rowId = 0;
 const dayOrder = [];
 
@@ -169,8 +203,8 @@ function createProjectRow(id, date, entry) {
         }).join('')}
       </select>
     </td>
-    <td><input type="time" class="entry-start" value="${escHtml(entry.start_time||'')}" oninput="calcRow(${id})"></td>
-    <td><input type="time" class="entry-end"   value="${escHtml(entry.end_time||'')}"   oninput="calcRow(${id})"></td>
+    <td><input type="text" class="entry-start" value="${escHtml(entry.start_time ? formatTimeDisplay(entry.start_time) : '')}" oninput="calcRow(${id})" placeholder="9:00 AM" style="text-align:center;min-width:80px;"></td>
+    <td><input type="text" class="entry-end"   value="${escHtml(entry.end_time   ? formatTimeDisplay(entry.end_time)   : '')}" oninput="calcRow(${id})" placeholder="5:00 PM" style="text-align:center;min-width:80px;"></td>
     <td><div class="hrs-display" id="reg-${id}">—</div></td>
     <td><div class="hrs-display ot-display" id="ot-${id}">—</div></td>
     <td><div class="hrs-display" id="tot-${id}">—</div></td>
@@ -250,18 +284,16 @@ function delRow(id, date) {
 function calcRow(id) {
   const tr = document.getElementById(`row-${id}`);
   if (!tr) return;
-  const start = tr.querySelector('.entry-start').value;
-  const end   = tr.querySelector('.entry-end').value;
+  const startTime = parseTime(tr.querySelector('.entry-start').value);
+  const endTime   = parseTime(tr.querySelector('.entry-end').value);
 
-  if (!start || !end) {
+  if (!startTime || !endTime) {
     ['reg','ot','tot'].forEach(k => { const el = document.getElementById(`${k}-${id}`); if (el) el.textContent = '—'; });
     updateFooter();
     return;
   }
 
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
-  let workedMins = (eh * 60 + em) - (sh * 60 + sm);
+  let workedMins = (endTime.h * 60 + endTime.min) - (startTime.h * 60 + startTime.min);
   if (workedMins < 0) workedMins = 0;
 
   const worked = workedMins / 60;
@@ -295,8 +327,8 @@ function collectEntries() {
     const date  = tr.dataset.date;
     if (!date) return;
     const proj  = tr.querySelector('.entry-proj').value || '';
-    const start = tr.querySelector('.entry-start').value;
-    const end   = tr.querySelector('.entry-end').value;
+    const start = timeToStorage(tr.querySelector('.entry-start').value);
+    const end   = timeToStorage(tr.querySelector('.entry-end').value);
     const notes = tr.querySelector('.entry-notes').value.trim();
 
     const reg = parseFloat(document.getElementById(`reg-${id}`)?.textContent) || 0;
