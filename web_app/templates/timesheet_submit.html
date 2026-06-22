@@ -107,9 +107,13 @@
       </table>
     </div>
 
-    <button type="button" class="add-row-btn mb-4" onclick="addRow()">
+    <button type="button" class="add-row-btn mb-2" onclick="addRow()">
       <i class="bi bi-plus-circle me-1"></i> Add Entry Row
     </button>
+    <p class="text-muted mb-4" style="font-size:.75rem;">
+      <i class="bi bi-info-circle me-1"></i>
+      To log multiple projects on the same day, add a new row and select the same day with a different project and time range.
+    </p>
 
     <!-- Action Buttons -->
     <div class="d-flex gap-3 justify-content-end">
@@ -163,15 +167,17 @@ function addRow(entry) {
     projVal = `${entry.project_number||''}|${entry.project_name||''}|${entry.project_id||''}`;
   }
 
+  const todayISO = new Date().toISOString().slice(0, 10);
   tr.innerHTML = `
     <td>
       <select class="entry-day" onchange="calcRow(${id})">
         <option value="">Select day</option>
-        ${WEEK_DAYS.map(d =>
-          `<option value="${d.date}" ${entry.date === d.date ? 'selected':''}>
-            ${d.abbr} ${d.date.slice(5).replace('-','/')}
-          </option>`
-        ).join('')}
+        ${WEEK_DAYS.map(d => {
+          const isFuture = d.date > todayISO;
+          return `<option value="${d.date}" ${entry.date === d.date ? 'selected':''} ${isFuture ? 'disabled style="color:#cbd5e1"':''}>
+            ${d.abbr} ${d.date.slice(5).replace('-','/')}${isFuture ? ' (upcoming)' : ''}
+          </option>`;
+        }).join('')}
       </select>
     </td>
     <td>

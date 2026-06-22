@@ -71,17 +71,9 @@
        style="background:#0D9488;color:#fff;border:none;padding:6px 14px;border-radius:8px;font-weight:600;">
       <i class="bi bi-plus-lg me-1"></i>Submit Timesheet
     </a>
-    {% if view == 'admin' and is_admin %}
-    <a href="{{ url_for('timesheets_submit') }}" class="btn btn-sm btn-outline-secondary" style="font-size:.8rem;">
-      My Own
-    </a>
+    {% if is_admin %}
     <a href="{{ url_for('api_timesheets_export', week=week_of) }}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-download me-1"></i>Export CSV
-    </a>
-    {% endif %}
-    {% if not is_admin %}
-    <a href="{{ url_for('timesheets', week=week_of) }}" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-grid-3x2 me-1"></i>Team View
     </a>
     {% endif %}
   </div>
