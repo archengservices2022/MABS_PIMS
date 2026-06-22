@@ -3126,7 +3126,7 @@ def invoice_delete(invoice_id):
             _sync_project_payment(proj_num)
             print(f"Synced payment for project: {proj_num}", flush=True)
 
-    flash("Invoice deleted. Payment stages and revenue reverted to Not Invoiced.", "success")
+    flash("Invoice deleted successfully.", "success")
     return redirect(url_for("invoicing"))
 
 @app.route("/invoicing/<invoice_id>/pdf")
