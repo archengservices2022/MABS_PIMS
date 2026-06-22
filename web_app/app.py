@@ -2724,6 +2724,13 @@ def invoice_new():
                     if not prefill_client:
                         prefill_client = proj_data.get("client_name", "") or proj_data.get("company", "")
 
+    # If only one project was loaded via "Load to Projects", auto-populate Project Number field
+    if multiple_projects and not prefill_proj:
+        project_ids = [pid.strip() for pid in multiple_projects.split(",") if pid.strip()]
+        if len(project_ids) == 1 and len(prefill_items) > 0:
+            # Set prefill_proj to the single project number from prefill_items
+            prefill_proj = prefill_items[0].get("project", "")
+
     # Set prefill_name and prefill_amount when single project is selected (with or without stage_idx)
     if prefill_proj:
         for p in projects:
