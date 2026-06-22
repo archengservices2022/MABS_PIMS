@@ -92,7 +92,7 @@ ROLE_PAGES = {
     "admin":    ["dashboard", "quotes", "projects", "invoicing", "payroll", "financial", "settings", "employees", "sales_dashboard", "timesheets"],
     "sales":    ["sales_dashboard", "quotes", "employees", "timesheets"],
     "projects": ["projects", "invoicing", "employees", "timesheets"],
-    "finance":  ["financial", "timesheets"],
+    "finance":  ["financial", "employees", "timesheets"],
     "engineer": ["employees", "timesheets"],
 }
 

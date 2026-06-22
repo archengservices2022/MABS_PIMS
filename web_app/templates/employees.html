@@ -129,13 +129,15 @@
 
 <!-- ── Tab bar ─────────────────────────────────────────────────────────────── -->
 <ul class="nav nav-tabs mb-4" id="empTabs">
+  {% if user_role == 'admin' %}
   <li class="nav-item">
-    <a class="nav-link active" data-bs-toggle="tab" href="#tab-clock">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-clock">
       <i class="bi bi-clock-history me-1"></i>My Time Clock
     </a>
   </li>
+  {% endif %}
   <li class="nav-item">
-    <a class="nav-link" data-bs-toggle="tab" href="#tab-time-off">
+    <a class="nav-link active" data-bs-toggle="tab" href="#tab-time-off">
       <i class="bi bi-calendar-event me-1"></i>Time Off
       {% if user_role == 'admin' and pending_time_off %}
       <span class="badge bg-danger ms-1">{{ pending_time_off|length }}</span>
@@ -171,7 +173,7 @@
 <!-- ══════════════════════════════════════════════════════════════════════════
      MY TIME CLOCK
 ══════════════════════════════════════════════════════════════════════════ -->
-<div class="tab-pane fade show active" id="tab-clock">
+<div class="tab-pane fade {% if user_role == 'admin' %}show active{% endif %}" id="tab-clock">
 
   <!-- Compact stat chips -->
   <div class="row g-3 mb-4">
@@ -477,7 +479,7 @@
 <!-- ══════════════════════════════════════════════════════════════════════════
      TIME OFF
 ══════════════════════════════════════════════════════════════════════════ -->
-<div class="tab-pane fade" id="tab-time-off">
+<div class="tab-pane fade {% if user_role != 'admin' %}show active{% endif %}" id="tab-time-off">
 
   {% set bal = my_time_off_balance %}
   {% set pct_used = ((bal.used / bal.allotment) * 100) | int if bal.allotment > 0 else 0 %}
