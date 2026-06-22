@@ -2944,24 +2944,28 @@ def invoice_update_amount(invoice_id):
     """Update invoice amount from payment stage edit"""
     try:
         new_amount = _safe_float(request.form.get("new_amount", 0))
+        project_number = request.form.get("project_number", "").strip()
         invoice = fb_get(f"/invoices/{invoice_id}") or {}
         meta = invoice.get("meta", {})
-
-        # Update invoice total and subtotal
         tax_amount = _safe_float(meta.get("tax_amount", 0))
-        meta["total"] = str(new_amount + tax_amount)
-        meta["subtotal"] = str(new_amount)
-        meta["updated_at"] = datetime.now(timezone.utc).isoformat()
-        invoice["meta"] = meta
 
         # Update line items if they exist
         line_items = invoice.get("line_items", [])
         if line_items:
-            line_items[0]["amount"] = str(new_amount)
-            line_items[0]["unit_price"] = str(new_amount)
+            # Find the line item for the project being updated
+            line_item_idx = 0
+            if project_number:
+                # Multi-project invoice: find line item with matching project_number
+                for idx, item in enumerate(line_items):
+                    if isinstance(item, dict) and item.get("project_number", "").strip() == project_number:
+                        line_item_idx = idx
+                        break
+
+            line_items[line_item_idx]["amount"] = str(new_amount)
+            line_items[line_item_idx]["unit_price"] = str(new_amount)
 
             # Recalculate Down Payment percentage if it's a down payment item
-            if "Down Payment" in line_items[0].get("description", ""):
+            if "Down Payment" in line_items[line_item_idx].get("description", ""):
                 # Get contract value from linked_projects metadata or from project
                 linked_projects = meta.get("linked_projects", [])
                 contract_value = 0
@@ -2983,12 +2987,19 @@ def invoice_update_amount(invoice_id):
                 if contract_value > 0:
                     dp_pct = int(round((new_amount / contract_value) * 100))
                     # Update description with correct percentage
-                    desc = line_items[0].get("description", "Down Payment")
+                    desc = line_items[line_item_idx].get("description", "Down Payment")
                     base_desc = desc.split("(")[0].strip() if "(" in desc else desc
-                    line_items[0]["description"] = f"{base_desc} ({dp_pct}%)"
+                    line_items[line_item_idx]["description"] = f"{base_desc} ({dp_pct}%)"
 
             invoice["line_items"] = line_items
 
+            # Recalculate subtotal and total based on ALL line items
+            invoice_subtotal = sum(_safe_float(item.get("amount", 0)) for item in line_items if isinstance(item, dict))
+            meta["subtotal"] = str(invoice_subtotal)
+            meta["total"] = str(invoice_subtotal + tax_amount)
+
+        meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+        invoice["meta"] = meta
         invoice["updated_at"] = datetime.now(timezone.utc).isoformat()
         fb_update(f"/invoices/{invoice_id}", invoice)
 
