@@ -4060,17 +4060,19 @@ def financial():
                 # Calculate project's tax allocation (proportional to line items)
                 project_tax = share * inv_tax
 
-                # Calculate project's collected amount from payment_log
+                # Calculate project's collected amount from payment_log (filtered by project_number)
                 payment_log = inv_data.get("payment_log", []) or []
                 project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == pnum)
 
-                # Calculate project's tax payments
+                # Calculate project's collected tax (proportional to invoice share)
+                # Tax payments are recorded without project_number, so we allocate them by share
                 tax_payments = inv_data.get("tax_payments", []) or []
-                project_tax_payments = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if tp.get("project_number", "") == pnum)
+                total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+                project_tax_paid = share * total_tax_paid
 
-                # Add to P&L: invoiced = line items + tax allocation, collected = payments + tax payments
+                # Add to P&L: invoiced = line items + tax allocation, collected = payments + tax paid
                 p_invoiced += project_line_total + project_tax
-                p_collected += project_payments + project_tax_payments
+                p_collected += project_payments + project_tax_paid
 
         p_contract = _safe_float(p.get("contract_value",0))
         p_not_invoiced = p_contract - p_invoiced
