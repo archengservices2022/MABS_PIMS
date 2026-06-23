@@ -1011,6 +1011,11 @@ function updateQuoteSummaryCards() {
   let dateFrom = dateFromInput?.value || '';
   let dateTo = dateToInput?.value || '';
 
+  // Status groups (must match backend definitions in app.py)
+  const OPEN_STATUSES = new Set(['Not Started', 'In Progress']);
+  const APPROVED_STATUSES = new Set(['Approved', 'Completed']);
+  const CONVERTED_STATUSES = new Set(['Converted', 'Invoiced']);
+
   // If year/month filters are set, calculate date range from them
   const year = yearSelect?.value || '';
   const month = monthSelect?.value || '';
@@ -1052,13 +1057,13 @@ function updateQuoteSummaryCards() {
     if (isVisible) {
       totalCount++;
 
-      if (rowStatus === 'Open') {
+      if (OPEN_STATUSES.has(rowStatus)) {
         openCount++;
         pipelineValue += rowTotal;
-      } else if (rowStatus === 'Approved') {
+      } else if (APPROVED_STATUSES.has(rowStatus)) {
         approvedCount++;
         pipelineValue += rowTotal;
-      } else if (rowStatus === 'Converted') {
+      } else if (CONVERTED_STATUSES.has(rowStatus)) {
         convertedCount++;
         wonValue += rowTotal;
       }
