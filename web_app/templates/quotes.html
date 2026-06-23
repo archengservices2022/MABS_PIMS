@@ -918,8 +918,7 @@ function calcTotals() {
 function toggleExpNew(chk) {
   const field       = document.getElementById('rushFieldNew');
   const box         = document.getElementById('expBoxNew');
-  const prioritySel = document.querySelector('#tab-new select[name="priority"]');
-
+  const prioritySel = document.querySelector('#tab-new [name="priority"]');
   if (chk.checked) {
     field.style.removeProperty('display');
     box.classList.replace('border-light','border-warning');
@@ -929,7 +928,6 @@ function toggleExpNew(chk) {
     field.style.display = 'none';
     box.classList.replace('border-warning','border-light');
     box.classList.remove('bg-warning','bg-opacity-10');
-    if (prioritySel) prioritySel.value = 'Normal';
   }
   calcTotals();
 }
@@ -1115,20 +1113,12 @@ document.addEventListener('DOMContentLoaded', function() {
   const dateFromInput = document.querySelector('input[name="from"]');
   const dateToInput = document.querySelector('input[name="to"]');
 
-  // Reset year filter to "All Years" on page load
-  if (yearSelect) {
-    yearSelect.value = '';
-  }
-
   if (searchInput) searchInput.addEventListener('input', updateQuoteSummaryCards);
   if (statusSelect) statusSelect.addEventListener('change', updateQuoteSummaryCards);
   if (yearSelect) yearSelect.addEventListener('change', updateQuoteSummaryCards);
   if (monthSelect) monthSelect.addEventListener('change', updateQuoteSummaryCards);
   if (dateFromInput) dateFromInput.addEventListener('change', updateQuoteSummaryCards);
   if (dateToInput) dateToInput.addEventListener('change', updateQuoteSummaryCards);
-
-  // Trigger filter update on initial load
-  updateQuoteSummaryCards();
 });
 </script>
 {% endblock %}
