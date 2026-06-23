@@ -1885,10 +1885,17 @@ def project_edit(project_id):
         if not amounts_updated:
             existing_stages = data.get("payment_stages") or []
             plan_in_progress = any(s.get("status") != "Pending Invoice" for s in existing_stages if isinstance(s, dict))
+
+            # Check if down payment or installment count changed
+            old_down_pct = _safe_float(data.get("down_payment_percent", 0))
+            old_installments = _safe_float(data.get("installment_count", 1))
+            payment_plan_changed = (down_pct != old_down_pct) or (installments != old_installments)
+
             if plan_in_progress:
                 # Stages already have invoices/payments against them — keep the plan intact
                 flash("Payment plan kept as-is because one or more stages are already invoiced.", "info")
             else:
+                # Always recalculate if payment plan changed or if no existing stages
                 updated["payment_stages"] = _compute_payment_stages(
                     _safe_float(updated["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
 
