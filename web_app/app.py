@@ -9097,7 +9097,7 @@ def payment_delete(invoice_id, idx):
     # Update project status based on remaining payments
     linked_projects = _invoice_linked_projects(fresh_inv)
     for proj_num in linked_projects:
-        proj = _get_project_by_number(proj_num)
+        proj = _find_project_by_number(proj_num)
         if proj:
             proj_id = proj.get("firebase_id", "")
             if proj_id:
@@ -9145,7 +9145,7 @@ def tax_payment_delete(invoice_id, idx):
     # Update project status based on remaining payments
     linked_projects = _invoice_linked_projects(fresh_inv)
     for proj_num in linked_projects:
-        proj = _get_project_by_number(proj_num)
+        proj = _find_project_by_number(proj_num)
         if proj:
             proj_id = proj.get("firebase_id", "")
             if proj_id:
