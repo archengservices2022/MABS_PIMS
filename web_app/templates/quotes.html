@@ -1119,6 +1119,9 @@ document.addEventListener('DOMContentLoaded', function() {
   if (monthSelect) monthSelect.addEventListener('change', updateQuoteSummaryCards);
   if (dateFromInput) dateFromInput.addEventListener('change', updateQuoteSummaryCards);
   if (dateToInput) dateToInput.addEventListener('change', updateQuoteSummaryCards);
+
+  // Update stat cards on initial load with any pre-existing filters
+  updateQuoteSummaryCards();
 });
 </script>
 {% endblock %}
