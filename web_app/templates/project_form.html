@@ -943,18 +943,33 @@ function recalcServiceCosts() {
   if (rushRow) rushRow.style.display = (expedited && rushRate > 0) ? '' : 'none';
   if (rushAmt) rushAmt.textContent = fmtUsd(rushFee);
 
+  const cvField = document.getElementById('contractValue');
+  const originalValue = cvField ? (parseFloat(cvField.dataset.originalValue) || 0) : 0;
+  const isNewProject = originalValue === 0 || (cvField && cvField.dataset.originalValue === undefined);
+
+  // Calculate final contract value
+  let finalContractValue = grandTotal;
+  if (hasRows && !isNewProject) {
+    // When editing: add service costs to original contract value
+    finalContractValue = originalValue + grandTotal;
+  }
+
   const grandEl = document.getElementById('serviceCostGrandTotal');
-  if (grandEl) grandEl.textContent = fmtUsd(grandTotal);
+  if (grandEl) grandEl.textContent = fmtUsd(finalContractValue);
 
   section.style.display = hasRows ? '' : 'none';
 
-  if (hasRows) {
-    const cvField = document.getElementById('contractValue');
-    if (cvField) {
-      cvField.value = grandTotal.toFixed(2);
-      try { handleContractValueChange(); } catch (e) { console.error('handleContractValueChange error:', e); }
-      updatePlanPreview();
+  if (cvField) {
+    if (hasRows) {
+      // Service costs entered: add to original (editing) or replace (new project)
+      cvField.value = finalContractValue.toFixed(2);
+    } else {
+      // No service costs: reset to original value
+      cvField.value = originalValue.toFixed(2);
     }
+
+    try { handleContractValueChange(); } catch (e) { console.error('handleContractValueChange error:', e); }
+    updatePlanPreview();
   }
 }
 
