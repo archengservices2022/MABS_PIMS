@@ -10,7 +10,7 @@
   <h5 class="mb-0">{{ 'Create New Project' if is_new else 'Edit Project' }}</h5>
 </div>
 
-<form method="POST" id="projectForm" onsubmit="return captureUpdatedStages(event)">
+<form method="POST" id="projectForm" onsubmit="captureServiceCosts(); return captureUpdatedStages(event)">
   <input type="hidden" name="source_quote_id" value="{{ prefill_quote_id|default('') }}">
   <div class="row g-3">
     <div class="col-lg-8">
@@ -136,6 +136,39 @@
               </div>
             </div>
           </div>
+          {% set existing_stages = project.get('payment_stages') if project else None %}
+          {% set has_invoiced = existing_stages and (existing_stages|selectattr('status', 'in', ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'])|list|length > 0) %}
+          {% if not has_invoiced %}
+          <div class="col-12" id="serviceCostSection" style="display:none;">
+            <label class="form-label">Service Cost Breakdown <span class="text-muted small fw-normal">— enter a cost for each selected service</span></label>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-1">
+                <thead>
+                  <tr>
+                    <th>Service</th>
+                    <th style="width:160px;">Cost ($)</th>
+                  </tr>
+                </thead>
+                <tbody id="serviceCostBody"></tbody>
+                <tfoot>
+                  <tr>
+                    <td class="text-end fw-600">Subtotal</td>
+                    <td class="fw-600" id="serviceCostTotal">$0.00</td>
+                  </tr>
+                  <tr id="serviceCostRushRow" class="text-warning" style="display:none;">
+                    <td class="text-end fw-600"><i class="bi bi-lightning-charge-fill me-1"></i>Rush Fee</td>
+                    <td class="fw-600" id="serviceCostRushAmt">$0.00</td>
+                  </tr>
+                  <tr class="border-top">
+                    <td class="text-end fw-700">Contract Value</td>
+                    <td class="fw-700 text-teal" id="serviceCostGrandTotal">$0.00</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <div class="form-text">Updates "Contract Value ($)" automatically as you enter costs.</div>
+          </div>
+          {% endif %}
           <div class="col-12">
             <div class="p-3 rounded border {{ 'border-warning bg-warning bg-opacity-10' if project and project.get('expedite') == 'Yes' else 'border-light bg-light' }}"
                  id="expeditedBox">
@@ -792,6 +825,74 @@ function toggleServiceType(cb, boxId) {
 }
 
 // ── Service Cost Breakdown (feeds Contract Value) ────────────────────────────
+function captureServiceCosts() {
+  // Create hidden inputs for service costs before form submission
+  const form = document.getElementById('projectForm');
+  if (!form) return;
+
+  // Remove old service cost inputs
+  form.querySelectorAll('input[name^="service_cost_"]').forEach(el => el.remove());
+
+  // Add current service costs as hidden inputs
+  const body = document.getElementById('serviceCostBody');
+  if (body) {
+    body.querySelectorAll('tr[data-service]').forEach(row => {
+      const service = row.dataset.service;
+      const input = row.querySelector('.svc-cost-input');
+      if (input && service) {
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = `service_cost_${service}`;
+        hidden.value = parseFloat(input.value) || 0;
+        form.appendChild(hidden);
+      }
+    });
+  }
+}
+
+function addServiceCostRow(serviceName) {
+  const body = document.getElementById('serviceCostBody');
+  if (!body) return;
+  if (body.querySelector(`tr[data-service="${serviceName}"]`)) return;
+  const row = document.createElement('tr');
+  row.dataset.service = serviceName;
+
+  const td1 = document.createElement('td');
+  td1.textContent = serviceName;
+
+  const td2 = document.createElement('td');
+  const inp = document.createElement('input');
+  inp.type = 'number';
+  inp.min = '0';
+  inp.step = '0.01';
+  inp.value = '0';
+  inp.className = 'form-control form-control-sm svc-cost-input';
+  inp.oninput = recalcServiceCosts;
+  td2.appendChild(inp);
+
+  row.appendChild(td1);
+  row.appendChild(td2);
+  body.appendChild(row);
+}
+
+function removeServiceCostRow(serviceName) {
+  const body = document.getElementById('serviceCostBody');
+  if (!body) return;
+  const row = body.querySelector(`tr[data-service="${serviceName}"]`);
+  if (row) row.remove();
+}
+
+function updateOtherCostRowLabel(specInp) {
+  const body = document.getElementById('serviceCostBody');
+  if (!body || !specInp) return;
+  const row = body.querySelector('tr[data-service="Other"]');
+  if (!row) return;
+  const td1 = row.querySelector('td');
+  if (!td1) return;
+  const text = specInp.value.trim();
+  td1.textContent = text ? `Other: ${text}` : 'Other';
+}
+
 function toggleExpedited(chk) {
   const rateField = document.getElementById('rushRateField');
   const box       = document.getElementById('expeditedBox');
@@ -804,10 +905,70 @@ function toggleExpedited(chk) {
     box.classList.replace('border-warning', 'border-light');
     box.classList.remove('bg-warning', 'bg-opacity-10');
   }
+  recalcServiceCosts();
+}
+
+function recalcServiceCosts() {
+  const body          = document.getElementById('serviceCostBody');
+  const section       = document.getElementById('serviceCostSection');
+  const expeditedChk  = document.getElementById('expeditedCheck');
+  const rushRateInp   = document.getElementById('rushRate');
+  const rushFeeInput  = document.getElementById('rushFeeInput');
+
+  const expedited = expeditedChk ? expeditedChk.checked : false;
+  const rushRate  = expedited ? (parseFloat(rushRateInp?.value) || 0) : 0;
+
+  let subtotal = 0;
+  let hasRows  = false;
+  if (body) {
+    const inputs = body.querySelectorAll('.svc-cost-input');
+    hasRows = inputs.length > 0;
+    inputs.forEach(inp => subtotal += parseFloat(inp.value) || 0);
+  }
+
+  const rushFee    = subtotal * (rushRate / 100);
+  const grandTotal = subtotal + rushFee;
+
+  if (rushFeeInput) rushFeeInput.value = rushFee.toFixed(2);
+
+  if (!body || !section) return;
+
+  const fmtUsd = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  const totalEl = document.getElementById('serviceCostTotal');
+  if (totalEl) totalEl.textContent = fmtUsd(subtotal);
+
+  const rushRow = document.getElementById('serviceCostRushRow');
+  const rushAmt = document.getElementById('serviceCostRushAmt');
+  if (rushRow) rushRow.style.display = (expedited && rushRate > 0) ? '' : 'none';
+  if (rushAmt) rushAmt.textContent = fmtUsd(rushFee);
+
+  const grandEl = document.getElementById('serviceCostGrandTotal');
+  if (grandEl) grandEl.textContent = fmtUsd(grandTotal);
+
+  section.style.display = hasRows ? '' : 'none';
+
+  if (hasRows) {
+    const cvField = document.getElementById('contractValue');
+    if (cvField) {
+      cvField.value = grandTotal.toFixed(2);
+      try { handleContractValueChange(); } catch (e) { console.error('handleContractValueChange error:', e); }
+      updatePlanPreview();
+    }
+  }
 }
 
 document.addEventListener('DOMContentLoaded', function () {
   updatePlanPreview();
+
+  // ── Initialize existing service costs for editing projects ────────────────
+  {% if not is_new and project %}
+  const existingServiceCosts = {{ project.get('service_costs', {})|tojson }};
+  if (existingServiceCosts && Object.keys(existingServiceCosts).length > 0) {
+    setServiceCosts(existingServiceCosts);
+  }
+  {% endif %}
+
   // ── Quote auto-fill ──────────────────────────────────────────────────────
   const qInput   = document.getElementById('quoteNumberInput');
   const spinner  = document.getElementById('quoteLookupSpinner');
@@ -839,8 +1000,20 @@ document.addEventListener('DOMContentLoaded', function () {
       const specInp = document.getElementById('otherSpecifyInput');
       if (specInp) {
         specInp.value = otherText;
+        updateOtherCostRowLabel(specInp);
       }
     }
+  }
+
+  function setServiceCosts(costs) {
+    const body = document.getElementById('serviceCostBody');
+    if (!body || !costs) return;
+    for (const [service, amount] of Object.entries(costs)) {
+      const row = body.querySelector(`tr[data-service="${service}"]`);
+      const inp = row && row.querySelector('.svc-cost-input');
+      if (inp && (parseFloat(inp.value) || 0) === 0) inp.value = amount;
+    }
+    recalcServiceCosts();
   }
 
   function fillFromQuote(q) {
@@ -859,6 +1032,8 @@ document.addEventListener('DOMContentLoaded', function () {
       setOption(f.querySelector('[name=plant]'), q.plant);
     if (q.service_types && q.service_types.length)
       setServiceTypes(q.service_types);
+    if (q.service_costs)
+      setServiceCosts(q.service_costs);
     if (q.expedite === 'Yes') {
       const expChk = document.getElementById('expeditedCheck');
       const rateInp = document.getElementById('rushRate');

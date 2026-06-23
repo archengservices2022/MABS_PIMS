@@ -7217,6 +7217,18 @@ def _compute_payment_stages(contract_value: float, down_pct: float, installments
     return stages
 
 def _parse_project_form(form) -> dict:
+    # Extract service costs from form (service_cost_<service_name>)
+    service_costs = {}
+    service_types = _parse_service_types(form)
+    for svc in service_types:
+        # Remove "Other: " prefix if present to get the key
+        svc_key = svc.replace("Other: ", "Other") if svc.startswith("Other:") else svc
+        cost_val = form.get(f"service_cost_{svc_key}", "0")
+        try:
+            service_costs[svc] = float(cost_val) if cost_val else 0.0
+        except (ValueError, TypeError):
+            service_costs[svc] = 0.0
+
     return {
         # ── identifiers (match desktop field names exactly) ──────────────────
         "project_number":  form.get("project_number", ""),
@@ -7231,7 +7243,8 @@ def _parse_project_form(form) -> dict:
         "date_received":   form.get("date_received", ""),
         "plant":           form.get("plant", ""),          # 2-letter state code
         "sales":           form.get("sales", ""),
-        "service_types":   _parse_service_types(form),
+        "service_types":   service_types,
+        "service_costs":   service_costs,
         "scope_of_work":   form.get("scope_of_work", ""),
         "expedite":        form.get("expedite", "No"),
         "rush_rate":       form.get("rush_rate", "0"),
