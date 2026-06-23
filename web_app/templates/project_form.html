@@ -136,7 +136,6 @@
               </div>
             </div>
           </div>
-          {% if is_new %}
           <div class="col-12" id="serviceCostSection" style="display:none;">
             <label class="form-label">Service Cost Breakdown <span class="text-muted small fw-normal">— enter a cost for each selected service</span></label>
             <div class="table-responsive">
@@ -166,7 +165,6 @@
             </div>
             <div class="form-text">Updates "Contract Value ($)" automatically as you enter costs.</div>
           </div>
-          {% endif %}
           <div class="col-12">
             <div class="p-3 rounded border {{ 'border-warning bg-warning bg-opacity-10' if project and project.get('expedite') == 'Yes' else 'border-light bg-light' }}"
                  id="expeditedBox">

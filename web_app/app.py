@@ -1798,11 +1798,16 @@ def co_status(project_id, co_idx):
             "amount": co_amount,
             "status": "Pending Invoice",
         })
-        fb_update(f"/projects/{project_id}", {
+        # Auto-update project status to "In Progress" when change order is approved
+        update_data = {
             "change_orders":  cos,
             "contract_value": new_value,
             "payment_stages": stages,
-        })
+        }
+        if project.get("status") == "Not Started":
+            update_data["status"] = "In Progress"
+            update_data["updated_at"] = now_str
+        fb_update(f"/projects/{project_id}", update_data)
         flash(f"{cos[co_idx]['co_number']} approved — contract updated to ${new_value:,.0f} and new payment stage added.", "success")
         return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
     fb_update(f"/projects/{project_id}", {"change_orders": cos})
