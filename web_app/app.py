@@ -3123,6 +3123,25 @@ def invoice_delete(invoice_id):
         if proj_num:
             _sync_project_payment(proj_num)
             print(f"Synced payment for project: {proj_num}", flush=True)
+            # Update project status based on remaining payments
+            proj = _get_project_by_number(proj_num)
+            if proj:
+                proj_id = proj.get("firebase_id", "")
+                if proj_id:
+                    amount_paid = _safe_float(proj.get("amount_paid", 0))
+                    current_status = proj.get("status", "Not Started")
+                    # If still has payments, change to In Progress
+                    if amount_paid > 0 and current_status == "Completed":
+                        fb_update(f"/projects/{proj_id}", {
+                            "status": "In Progress",
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        })
+                    # If no payments left, change to Not Started
+                    elif amount_paid == 0 and current_status != "Not Started":
+                        fb_update(f"/projects/{proj_id}", {
+                            "status": "Not Started",
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        })
 
     flash("Invoice deleted. Payment stages and revenue reverted to Not Invoiced.", "success")
     return redirect(url_for("invoicing"))
@@ -9050,6 +9069,29 @@ def payment_delete(invoice_id, idx):
 
     # Update project stage payment statuses based on payments (after allocation)
     _update_project_stage_payment_status(invoice_id)
+
+    # Update project status based on remaining payments
+    linked_projects = _invoice_linked_projects(fresh_inv)
+    for proj_num in linked_projects:
+        proj = _get_project_by_number(proj_num)
+        if proj:
+            proj_id = proj.get("firebase_id", "")
+            if proj_id:
+                amount_paid = _safe_float(proj.get("amount_paid", 0))
+                current_status = proj.get("status", "Not Started")
+                # If still has payments, change to In Progress
+                if amount_paid > 0 and current_status == "Completed":
+                    fb_update(f"/projects/{proj_id}", {
+                        "status": "In Progress",
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    })
+                # If no payments left, change to Not Started
+                elif amount_paid == 0 and current_status != "Not Started":
+                    fb_update(f"/projects/{proj_id}", {
+                        "status": "Not Started",
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    })
+
     return jsonify({"success": True}), 200
 
 @app.route("/invoicing/<invoice_id>/tax/payment/delete/<int:idx>", methods=["POST"])
@@ -9075,6 +9117,28 @@ def tax_payment_delete(invoice_id, idx):
     })
     # Update project stage payment statuses based on payments
     _update_project_stage_payment_status(invoice_id)
+
+    # Update project status based on remaining payments
+    linked_projects = _invoice_linked_projects(fresh_inv)
+    for proj_num in linked_projects:
+        proj = _get_project_by_number(proj_num)
+        if proj:
+            proj_id = proj.get("firebase_id", "")
+            if proj_id:
+                amount_paid = _safe_float(proj.get("amount_paid", 0))
+                current_status = proj.get("status", "Not Started")
+                # If still has payments, change to In Progress
+                if amount_paid > 0 and current_status == "Completed":
+                    fb_update(f"/projects/{proj_id}", {
+                        "status": "In Progress",
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    })
+                # If no payments left, change to Not Started
+                elif amount_paid == 0 and current_status != "Not Started":
+                    fb_update(f"/projects/{proj_id}", {
+                        "status": "Not Started",
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    })
 
     return jsonify({"success": True}), 200
 
