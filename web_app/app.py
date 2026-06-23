@@ -1798,13 +1798,13 @@ def co_status(project_id, co_idx):
             "amount": co_amount,
             "status": "Pending Invoice",
         })
-        # Auto-update project status to "In Progress" when change order is approved
         update_data = {
             "change_orders":  cos,
             "contract_value": new_value,
             "payment_stages": stages,
         }
-        if project.get("status") == "Not Started":
+        # Auto-update project status to "In Progress" if project is Completed and new CO payment is unpaid
+        if project.get("status") == "Completed" and co_amount > 0:
             update_data["status"] = "In Progress"
             update_data["updated_at"] = now_str
         fb_update(f"/projects/{project_id}", update_data)
