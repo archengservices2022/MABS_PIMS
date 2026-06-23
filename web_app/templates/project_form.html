@@ -10,7 +10,7 @@
   <h5 class="mb-0">{{ 'Create New Project' if is_new else 'Edit Project' }}</h5>
 </div>
 
-<form method="POST" id="projectForm" onsubmit="return captureUpdatedStages(event)">
+<form method="POST" id="projectForm" onsubmit="captureServiceCosts(); return captureUpdatedStages(event)">
   <input type="hidden" name="source_quote_id" value="{{ prefill_quote_id|default('') }}">
   <div class="row g-3">
     <div class="col-lg-8">
@@ -876,6 +876,31 @@ function toggleExpedited(chk) {
   recalcServiceCosts();
 }
 
+function captureServiceCosts() {
+  // Create hidden inputs for service costs before form submission
+  const form = document.getElementById('projectForm');
+  if (!form) return;
+
+  // Remove old service cost inputs
+  form.querySelectorAll('input[name^="service_cost_"]').forEach(el => el.remove());
+
+  // Add current service costs as hidden inputs
+  const body = document.getElementById('serviceCostBody');
+  if (body) {
+    body.querySelectorAll('tr[data-service]').forEach(row => {
+      const service = row.dataset.service;
+      const input = row.querySelector('.svc-cost-input');
+      if (input && service) {
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = `service_cost_${service}`;
+        hidden.value = parseFloat(input.value) || 0;
+        form.appendChild(hidden);
+      }
+    });
+  }
+}
+
 function recalcServiceCosts() {
   const body          = document.getElementById('serviceCostBody');
   const section       = document.getElementById('serviceCostSection');
@@ -928,6 +953,15 @@ function recalcServiceCosts() {
 
 document.addEventListener('DOMContentLoaded', function () {
   updatePlanPreview();
+
+  // ── Initialize existing service costs for editing projects ────────────────
+  {% if not is_new and project %}
+  const existingServiceCosts = {{ project.get('service_costs', {})|tojson }};
+  if (existingServiceCosts && Object.keys(existingServiceCosts).length > 0) {
+    setServiceCosts(existingServiceCosts);
+  }
+  {% endif %}
+
   // ── Quote auto-fill ──────────────────────────────────────────────────────
   const qInput   = document.getElementById('quoteNumberInput');
   const spinner  = document.getElementById('quoteLookupSpinner');
