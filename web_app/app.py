@@ -1862,7 +1862,7 @@ def project_edit(project_id):
             except (json.JSONDecodeError, ValueError):
                 flash("Error processing updated payment amounts.", "warning")
 
-        # Handle custom stage amounts from frontend (for new customizations)
+        # Handle custom stage amounts from frontend (for new customizations or preview stages)
         if not amounts_updated:
             custom_stage_amounts_json = request.form.get("custom_stage_amounts", "")
             if custom_stage_amounts_json and custom_stage_amounts_json != "[]":
@@ -1870,13 +1870,17 @@ def project_edit(project_id):
                     import json
                     custom_stage_amounts = json.loads(custom_stage_amounts_json)
                     if custom_stage_amounts:  # Only process if list is not empty
-                        # Update payment stages with custom amounts
-                        existing_stages = data.get("payment_stages") or []
-                        for i, amount_data in enumerate(custom_stage_amounts):
-                            if i < len(existing_stages) and isinstance(existing_stages[i], dict):
-                                existing_stages[i]["amount"] = _safe_float(amount_data.get("amount", 0))
-
-                        updated["payment_stages"] = existing_stages
+                        # If custom amounts has name and amount fields (from preview),
+                        # these are complete stage objects - use them directly
+                        if custom_stage_amounts and isinstance(custom_stage_amounts[0], dict) and "name" in custom_stage_amounts[0]:
+                            updated["payment_stages"] = custom_stage_amounts
+                        else:
+                            # Update payment stages with custom amounts
+                            existing_stages = data.get("payment_stages") or []
+                            for i, amount_data in enumerate(custom_stage_amounts):
+                                if i < len(existing_stages) and isinstance(existing_stages[i], dict):
+                                    existing_stages[i]["amount"] = _safe_float(amount_data.get("amount", 0))
+                            updated["payment_stages"] = existing_stages
                         amounts_updated = True
                 except (json.JSONDecodeError, ValueError):
                     flash("Error processing custom payment amounts. Using default distribution.", "warning")
