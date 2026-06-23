@@ -1618,9 +1618,17 @@ def project_detail(project_id):
 
     # Recalculate fresh statuses for display (based on actual payments)
     for invoice in project_invoices:
-        # Always calculate invoice status based on ENTIRE invoice payment, not project share
-        calculated_status = _calculate_invoice_status(invoice)
-        invoice["_display_status"] = calculated_status
+        # Use stored meta status if available, otherwise calculate
+        meta = invoice.get("meta", {}) or {}
+        stored_status = meta.get("status", "")
+
+        if stored_status and stored_status in ["Paid", "Partial", "Sent", "Overdue"]:
+            # Use the invoice's stored status
+            invoice["_display_status"] = stored_status
+        else:
+            # Fallback to calculating status based on ENTIRE invoice payment
+            calculated_status = _calculate_invoice_status(invoice)
+            invoice["_display_status"] = calculated_status
 
         # Calculate project-specific paid amount from payment_log (filtered by project_number)
         proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (invoice.get("payment_log", []) or []) if p.get("project_number") == proj_num)
