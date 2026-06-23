@@ -3135,7 +3135,7 @@ def invoice_delete(invoice_id):
             _sync_project_payment(proj_num)
             print(f"Synced payment for project: {proj_num}", flush=True)
             # Update project status based on remaining payments
-            proj = _get_project_by_number(proj_num)
+            proj = _find_project_by_number(proj_num)
             if proj:
                 proj_id = proj.get("firebase_id", "")
                 if proj_id:
