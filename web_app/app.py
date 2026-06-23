@@ -3995,18 +3995,22 @@ def financial():
         amount_paid = _safe_float(inv_meta.get("amount_paid", 0))
         tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in (inv_data.get("tax_payments", []) or []))
         total_paid_for_inv = amount_paid + tax_paid
-        if total_paid_for_inv <= 0:
-            continue
+
         r["amount_paid"] = amount_paid
         r["total"] = inv_total
         r["tax_amount"] = _safe_float(inv_meta.get("tax_amount", 0))
-        # Use stored meta.status instead of recalculating
-        stored_status = inv_meta.get("status", "")
-        if stored_status and stored_status in ["Paid", "Partial"]:
-            r["status"] = stored_status
+
+        # Calculate status based on total vs amount_paid for this P&L invoice
+        if total_paid_for_inv >= (inv_total - 0.01):
+            r["status"] = "Paid"
+        elif total_paid_for_inv > 0:
+            r["status"] = "Partial"
         else:
-            r["status"] = "Paid" if total_paid_for_inv >= inv_total else "Partial"
-        updated_rev_list.append(r)
+            r["status"] = "Unpaid"
+
+        # Only include in P&L if invoice has been paid or is being tracked
+        if r["status"] in ["Paid", "Partial", "Unpaid"]:
+            updated_rev_list.append(r)
     rev_list = updated_rev_list
 
     # Helper to extract year from date string
