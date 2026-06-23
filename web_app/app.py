@@ -2311,6 +2311,16 @@ def invoicing():
     client_filter = request.args.get("client", "")
     plant_filter  = request.args.get("plant", "").strip().upper()
 
+    # Recalculate status for every invoice BEFORE filtering so status_filter works correctly
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    for inv in items:
+        m = inv.get("meta", {})
+        calculated_status = _calculate_invoice_status(inv)
+        due = m.get("due_date", "") or ""
+        if calculated_status in ("Sent", "Viewed", "Partial") and due and due < today_str:
+            calculated_status = "Overdue"
+        m["status"] = calculated_status
+
     if search:
         items = [i for i in items if search in str(i).lower()]
     if status_filter:
@@ -2324,36 +2334,20 @@ def invoicing():
     if date_to:
         items = [i for i in items if (i.get("meta", {}).get("invoice_date") or "") <= date_to]
 
-    # Build filter dropdown lists - show all options (like projects tab) so you can always filter by any value
-    # All clients from database
+    # Build filter dropdown lists
     inv_clients = _load_clients()
-    # All plants from all invoices (before filtering)
     all_plants = sorted({i.get("plant_state", "") for i in all_invoices_raw if i.get("plant_state", "")})
-
-    # Calculate current status based on payments and auto-mark overdue
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    for inv in items:
-        m = inv.get("meta", {})
-        calculated_status = _calculate_invoice_status(inv)
-        m["status"] = calculated_status
-        due = m.get("due_date", "") or ""
-        if calculated_status in ("Sent", "Viewed", "Partial") and due and due < today_str:
-            m["status"] = "Overdue"
 
     statuses = ["Draft", "Sent", "Viewed", "Paid", "Partial", "Overdue", "Cancelled"]
     active_tab = request.args.get("tab", "all-invoices")
 
-    # KPI stats from filtered invoices (matching projects tab behavior)
+    # KPI stats from filtered invoices — status already calculated above
     _kpi_rows = []
     for inv in items:
         m  = inv.get("meta", {}) or {}
-        st = _calculate_invoice_status(inv)
-        due = m.get("due_date", "") or ""
-        if st in ("Sent", "Viewed", "Partial") and due and due < today_str:
-            st = "Overdue"
+        st = m.get("status", "Draft")
         total_val = _safe_float(m.get("total", 0))
         amount_paid = _safe_float(m.get("amount_paid", 0))
-        # Include tax payments in total paid (same as projects tab)
         tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in inv.get("tax_payments", []))
         total_paid = amount_paid + tax_paid
         _kpi_rows.append((st, total_val, total_paid))
