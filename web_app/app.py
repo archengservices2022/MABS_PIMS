@@ -3135,18 +3135,16 @@ def invoice_delete(invoice_id):
             _sync_project_payment(proj_num)
             print(f"Synced payment for project: {proj_num}", flush=True)
             # Update project status based on remaining payments
-            proj = _find_project_by_number(proj_num)
-            if proj:
-                proj_id = proj.get("firebase_id", "")
-                if proj_id:
-                    amount_paid = _safe_float(proj.get("amount_paid", 0))
-                    current_status = proj.get("status", "Not Started")
-                    # If still has payments, change to In Progress
-                    if amount_paid > 0 and current_status == "Completed":
-                        fb_update(f"/projects/{proj_id}", {
-                            "status": "In Progress",
-                            "updated_at": datetime.now(timezone.utc).isoformat()
-                        })
+            proj_id, pdata = _find_project_by_number(proj_num)
+            if proj_id and pdata:
+                amount_paid = _safe_float(pdata.get("amount_paid", 0))
+                current_status = pdata.get("status", "Not Started")
+                # If still has payments, change to In Progress
+                if amount_paid > 0 and current_status == "Completed":
+                    fb_update(f"/projects/{proj_id}", {
+                        "status": "In Progress",
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    })
                     # If no payments left, change to Not Started
                     elif amount_paid == 0 and current_status != "Not Started":
                         fb_update(f"/projects/{proj_id}", {
@@ -9097,24 +9095,22 @@ def payment_delete(invoice_id, idx):
     # Update project status based on remaining payments
     linked_projects = _invoice_linked_projects(fresh_inv)
     for proj_num in linked_projects:
-        proj = _find_project_by_number(proj_num)
-        if proj:
-            proj_id = proj.get("firebase_id", "")
-            if proj_id:
-                amount_paid = _safe_float(proj.get("amount_paid", 0))
-                current_status = proj.get("status", "Not Started")
-                # If still has payments, change to In Progress
-                if amount_paid > 0 and current_status == "Completed":
-                    fb_update(f"/projects/{proj_id}", {
-                        "status": "In Progress",
-                        "updated_at": datetime.now(timezone.utc).isoformat()
-                    })
-                # If no payments left, change to Not Started
-                elif amount_paid == 0 and current_status != "Not Started":
-                    fb_update(f"/projects/{proj_id}", {
-                        "status": "Not Started",
-                        "updated_at": datetime.now(timezone.utc).isoformat()
-                    })
+        proj_id, pdata = _find_project_by_number(proj_num)
+        if proj_id and pdata:
+            amount_paid = _safe_float(pdata.get("amount_paid", 0))
+            current_status = pdata.get("status", "Not Started")
+            # If still has payments, change to In Progress
+            if amount_paid > 0 and current_status == "Completed":
+                fb_update(f"/projects/{proj_id}", {
+                    "status": "In Progress",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
+            # If no payments left, change to Not Started
+            elif amount_paid == 0 and current_status != "Not Started":
+                fb_update(f"/projects/{proj_id}", {
+                    "status": "Not Started",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
 
     return jsonify({"success": True}), 200
 
@@ -9145,24 +9141,22 @@ def tax_payment_delete(invoice_id, idx):
     # Update project status based on remaining payments
     linked_projects = _invoice_linked_projects(fresh_inv)
     for proj_num in linked_projects:
-        proj = _find_project_by_number(proj_num)
-        if proj:
-            proj_id = proj.get("firebase_id", "")
-            if proj_id:
-                amount_paid = _safe_float(proj.get("amount_paid", 0))
-                current_status = proj.get("status", "Not Started")
-                # If still has payments, change to In Progress
-                if amount_paid > 0 and current_status == "Completed":
-                    fb_update(f"/projects/{proj_id}", {
-                        "status": "In Progress",
-                        "updated_at": datetime.now(timezone.utc).isoformat()
-                    })
-                # If no payments left, change to Not Started
-                elif amount_paid == 0 and current_status != "Not Started":
-                    fb_update(f"/projects/{proj_id}", {
-                        "status": "Not Started",
-                        "updated_at": datetime.now(timezone.utc).isoformat()
-                    })
+        proj_id, pdata = _find_project_by_number(proj_num)
+        if proj_id and pdata:
+            amount_paid = _safe_float(pdata.get("amount_paid", 0))
+            current_status = pdata.get("status", "Not Started")
+            # If still has payments, change to In Progress
+            if amount_paid > 0 and current_status == "Completed":
+                fb_update(f"/projects/{proj_id}", {
+                    "status": "In Progress",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
+            # If no payments left, change to Not Started
+            elif amount_paid == 0 and current_status != "Not Started":
+                fb_update(f"/projects/{proj_id}", {
+                    "status": "Not Started",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
 
     return jsonify({"success": True}), 200
 
