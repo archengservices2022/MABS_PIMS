@@ -918,25 +918,18 @@ function calcTotals() {
 function toggleExpNew(chk) {
   const field       = document.getElementById('rushFieldNew');
   const box         = document.getElementById('expBoxNew');
+  const prioritySel = document.querySelector('#tab-new select[name="priority"]');
 
   if (chk.checked) {
     field.style.removeProperty('display');
     box.classList.replace('border-light','border-warning');
     box.classList.add('bg-warning','bg-opacity-10');
-    // Set priority to Urgent
-    const prioritySel = document.querySelector('#tab-new select[name="priority"]');
     if (prioritySel) prioritySel.value = 'Urgent';
   } else {
     field.style.display = 'none';
     box.classList.replace('border-warning','border-light');
     box.classList.remove('bg-warning','bg-opacity-10');
-    // Set priority to Low
-    const prioritySel = document.querySelector('#tab-new select[name="priority"]');
-    if (prioritySel) {
-      console.log('Setting priority to Low, current value:', prioritySel.value);
-      prioritySel.value = 'Low';
-      console.log('After setting, priority value:', prioritySel.value);
-    }
+    if (prioritySel) prioritySel.value = 'Normal';
   }
   calcTotals();
 }
