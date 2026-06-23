@@ -1865,19 +1865,19 @@ def project_edit(project_id):
         # Handle custom stage amounts from frontend (for new customizations)
         if not amounts_updated:
             custom_stage_amounts_json = request.form.get("custom_stage_amounts", "")
-            if custom_stage_amounts_json:
+            if custom_stage_amounts_json and custom_stage_amounts_json != "[]":
                 try:
                     import json
                     custom_stage_amounts = json.loads(custom_stage_amounts_json)
+                    if custom_stage_amounts:  # Only process if list is not empty
+                        # Update payment stages with custom amounts
+                        existing_stages = data.get("payment_stages") or []
+                        for i, amount_data in enumerate(custom_stage_amounts):
+                            if i < len(existing_stages) and isinstance(existing_stages[i], dict):
+                                existing_stages[i]["amount"] = _safe_float(amount_data.get("amount", 0))
 
-                    # Update payment stages with custom amounts
-                    existing_stages = data.get("payment_stages") or []
-                    for i, amount_data in enumerate(custom_stage_amounts):
-                        if i < len(existing_stages) and isinstance(existing_stages[i], dict):
-                            existing_stages[i]["amount"] = _safe_float(amount_data.get("amount", 0))
-
-                    updated["payment_stages"] = existing_stages
-                    amounts_updated = True
+                        updated["payment_stages"] = existing_stages
+                        amounts_updated = True
                 except (json.JSONDecodeError, ValueError):
                     flash("Error processing custom payment amounts. Using default distribution.", "warning")
 
