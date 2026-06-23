@@ -1618,10 +1618,6 @@ def project_detail(project_id):
 
     # Recalculate fresh statuses for display (based on actual payments)
     for invoice in project_invoices:
-        calculated_status = _calculate_invoice_status(invoice)
-        # Store in a separate field for display without modifying stored status
-        invoice["_display_status"] = calculated_status
-
         # Calculate project-specific paid amount from payment_log (filtered by project_number)
         proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (invoice.get("payment_log", []) or []) if p.get("project_number") == proj_num)
 
@@ -1637,6 +1633,38 @@ def project_detail(project_id):
             project_tax_paid = project_share * total_tax_paid
 
         invoice["_project_paid"] = proj_payments + project_tax_paid
+
+        # For multi-project invoices, calculate status based on this project's amount vs total
+        # For single-project invoices, use the overall invoice calculation
+        meta = invoice.get("meta", {}) or {}
+        is_multi_project = len(_invoice_linked_projects(invoice)) > 1
+
+        if is_multi_project:
+            # Calculate this project's share of the invoice total and tax
+            project_share = invoice.get("_project_share", 1.0)
+            invoice_subtotal = _safe_float(meta.get("subtotal", 0)) or (_safe_float(meta.get("total", 0)) - _safe_float(meta.get("tax_amount", 0)))
+            invoice_tax = _safe_float(meta.get("tax_amount", 0))
+
+            project_due = (invoice_subtotal + invoice_tax) * project_share
+            project_paid = proj_payments + project_tax_paid
+
+            # Calculate status based on this project's share
+            if project_paid >= (project_due - 0.01):
+                invoice["_display_status"] = "Paid"
+            elif project_paid > 0:
+                invoice["_display_status"] = "Partial"
+            else:
+                # Check if invoice is overdue
+                due_date = meta.get("due_date", "")
+                today = datetime.now().strftime("%Y-%m-%d")
+                if due_date and due_date < today:
+                    invoice["_display_status"] = "Overdue"
+                else:
+                    invoice["_display_status"] = "Sent"
+        else:
+            # Single project - use overall invoice status
+            calculated_status = _calculate_invoice_status(invoice)
+            invoice["_display_status"] = calculated_status
 
     # Load expenses linked to this project
     raw_exp = fb_get("/balance_sheet_expenses") or {}
@@ -3085,10 +3113,15 @@ def invoice_delete(invoice_id):
 
     print(f"project_number: '{project_number}', payment_stage_index: {payment_stage_index}", flush=True)
 
+    # Get payment amounts to subtract from stages
+    payment_log = inv_data.get("payment_log", []) or []
+    total_payments_deleted = sum(_safe_float(p.get("amount", 0)) for p in payment_log if isinstance(p, dict))
+    print(f"Total payments in deleted invoice: {total_payments_deleted}", flush=True)
+
     if project_number and payment_stage_index is not None:
-        # Single project with single stage
+        # Single project with single stage - clear its amount_paid since this invoice is deleted
         print(f"Reverting single stage: {project_number} stage {payment_stage_index}", flush=True)
-        _mark_project_stage(project_number, payment_stage_index, "Pending Invoice")
+        _mark_project_stage(project_number, payment_stage_index, "Pending Invoice", amount_paid=0)
         project_numbers_to_sync.add(project_number)
     else:
         # Multiple projects - check linked_projects first, then line items
@@ -3101,7 +3134,7 @@ def invoice_delete(invoice_id):
                     stage_idx = lp.get("payment_stage_index")
                     print(f"Processing linked project: proj_num={proj_num}, stage_idx={stage_idx}", flush=True)
                     if proj_num and stage_idx is not None:
-                        _mark_project_stage(proj_num, stage_idx, "Pending Invoice")
+                        _mark_project_stage(proj_num, stage_idx, "Pending Invoice", amount_paid=0)
                         project_numbers_to_sync.add(proj_num)
         else:
             # Fallback: check line items for older invoices
@@ -3114,7 +3147,7 @@ def invoice_delete(invoice_id):
                         stage_idx = item.get("stage_index")
                         print(f"Processing line item: proj_num={proj_num}, stage_idx={stage_idx}", flush=True)
                         if proj_num and stage_idx is not None:
-                            _mark_project_stage(proj_num, stage_idx, "Pending Invoice")
+                            _mark_project_stage(proj_num, stage_idx, "Pending Invoice", amount_paid=0)
                             project_numbers_to_sync.add(proj_num)
 
     # Delete associated revenue entries
@@ -3128,6 +3161,36 @@ def invoice_delete(invoice_id):
     # Delete the invoice
     fb_delete(f"/invoices/{invoice_id}")
     print(f"=== INVOICE DELETE COMPLETE ===\n", flush=True)
+
+    # Recalculate stage amounts_paid for all affected projects based on remaining invoices
+    for proj_num in project_numbers_to_sync:
+        if proj_num:
+            # Find all invoices linked to this project and update their stage amounts_paid
+            all_invoices = fb_get("/invoices") or {}
+            for inv_id, inv_data in (all_invoices.items() if isinstance(all_invoices, dict) else []):
+                if isinstance(inv_data, dict):
+                    inv_meta = inv_data.get("meta", {}) or {}
+                    # Check if this invoice is linked to the project we're updating
+                    linked_projects = inv_meta.get("linked_projects", [])
+                    is_linked = False
+
+                    # Check if project is in linked_projects
+                    if isinstance(linked_projects, list):
+                        for lp in linked_projects:
+                            if isinstance(lp, dict) and lp.get("project_number") == proj_num:
+                                is_linked = True
+                                break
+                            elif isinstance(lp, str) and lp == proj_num:
+                                is_linked = True
+                                break
+
+                    # Also check if it's the main project_number
+                    if inv_meta.get("project_number") == proj_num:
+                        is_linked = True
+
+                    if is_linked:
+                        _update_project_stage_payment_status(inv_id)
+                        print(f"Updated stage amounts_paid for invoice {inv_id}", flush=True)
 
     # Sync payment amounts for all affected projects
     for proj_num in project_numbers_to_sync:
@@ -6260,10 +6323,10 @@ def _find_project_by_number(project_number: str):
                 return pid, pdata
     return None, None
 
-def _mark_project_stage(project_number: str, stage_index: int, status: str, invoice_id: str = None, invoice_number: str = None, amount: float = None) -> None:
-    """Update one stage's status (and optionally its linked invoice id/number/amount) within a project's payment plan."""
+def _mark_project_stage(project_number: str, stage_index: int, status: str, invoice_id: str = None, invoice_number: str = None, amount: float = None, amount_paid: float = None) -> None:
+    """Update one stage's status (and optionally its linked invoice id/number/amount/amount_paid) within a project's payment plan."""
     pid, pdata = _find_project_by_number(project_number)
-    print(f"[MARK_STAGE] project_number={project_number}, stage_idx={stage_index}, status={status}, amount={amount}, pid={pid}", flush=True)
+    print(f"[MARK_STAGE] project_number={project_number}, stage_idx={stage_index}, status={status}, amount={amount}, amount_paid={amount_paid}, pid={pid}", flush=True)
     if not pid:
         print(f"[MARK_STAGE] Project not found!", flush=True)
         return
@@ -6278,6 +6341,8 @@ def _mark_project_stage(project_number: str, stage_index: int, status: str, invo
         stages[stage_index]["invoice_number"] = invoice_number
     if amount is not None:
         stages[stage_index]["amount"] = amount
+    if amount_paid is not None:
+        stages[stage_index]["amount_paid"] = str(amount_paid)
     # When reverting to "Pending Invoice", clear the invoice tracking fields
     if status == "Pending Invoice":
         print(f"[MARK_STAGE] Clearing invoice_id and invoice_number", flush=True)
