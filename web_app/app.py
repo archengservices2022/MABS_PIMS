@@ -3123,25 +3123,6 @@ def invoice_delete(invoice_id):
         if proj_num:
             _sync_project_payment(proj_num)
             print(f"Synced payment for project: {proj_num}", flush=True)
-            # Update project status based on remaining payments
-            proj = _get_project_by_number(proj_num)
-            if proj:
-                proj_id = proj.get("firebase_id", "")
-                if proj_id:
-                    amount_paid = _safe_float(proj.get("amount_paid", 0))
-                    current_status = proj.get("status", "Not Started")
-                    # If still has payments, change to In Progress
-                    if amount_paid > 0 and current_status == "Completed":
-                        fb_update(f"/projects/{proj_id}", {
-                            "status": "In Progress",
-                            "updated_at": datetime.now(timezone.utc).isoformat()
-                        })
-                    # If no payments left, change to Not Started
-                    elif amount_paid == 0 and current_status != "Not Started":
-                        fb_update(f"/projects/{proj_id}", {
-                            "status": "Not Started",
-                            "updated_at": datetime.now(timezone.utc).isoformat()
-                        })
 
     flash("Invoice deleted. Payment stages and revenue reverted to Not Invoiced.", "success")
     return redirect(url_for("invoicing"))
@@ -7217,18 +7198,6 @@ def _compute_payment_stages(contract_value: float, down_pct: float, installments
     return stages
 
 def _parse_project_form(form) -> dict:
-    # Extract service costs from form (service_cost_<service_name>)
-    service_costs = {}
-    service_types = _parse_service_types(form)
-    for svc in service_types:
-        # Remove "Other: " prefix if present to get the key
-        svc_key = svc.replace("Other: ", "Other") if svc.startswith("Other:") else svc
-        cost_val = form.get(f"service_cost_{svc_key}", "0")
-        try:
-            service_costs[svc] = float(cost_val) if cost_val else 0.0
-        except (ValueError, TypeError):
-            service_costs[svc] = 0.0
-
     return {
         # ── identifiers (match desktop field names exactly) ──────────────────
         "project_number":  form.get("project_number", ""),
@@ -7243,8 +7212,7 @@ def _parse_project_form(form) -> dict:
         "date_received":   form.get("date_received", ""),
         "plant":           form.get("plant", ""),          # 2-letter state code
         "sales":           form.get("sales", ""),
-        "service_types":   service_types,
-        "service_costs":   service_costs,
+        "service_types":   _parse_service_types(form),
         "scope_of_work":   form.get("scope_of_work", ""),
         "expedite":        form.get("expedite", "No"),
         "rush_rate":       form.get("rush_rate", "0"),
@@ -9082,29 +9050,6 @@ def payment_delete(invoice_id, idx):
 
     # Update project stage payment statuses based on payments (after allocation)
     _update_project_stage_payment_status(invoice_id)
-
-    # Update project status based on remaining payments
-    linked_projects = _invoice_linked_projects(fresh_inv)
-    for proj_num in linked_projects:
-        proj = _get_project_by_number(proj_num)
-        if proj:
-            proj_id = proj.get("firebase_id", "")
-            if proj_id:
-                amount_paid = _safe_float(proj.get("amount_paid", 0))
-                current_status = proj.get("status", "Not Started")
-                # If still has payments, change to In Progress
-                if amount_paid > 0 and current_status == "Completed":
-                    fb_update(f"/projects/{proj_id}", {
-                        "status": "In Progress",
-                        "updated_at": datetime.now(timezone.utc).isoformat()
-                    })
-                # If no payments left, change to Not Started
-                elif amount_paid == 0 and current_status != "Not Started":
-                    fb_update(f"/projects/{proj_id}", {
-                        "status": "Not Started",
-                        "updated_at": datetime.now(timezone.utc).isoformat()
-                    })
-
     return jsonify({"success": True}), 200
 
 @app.route("/invoicing/<invoice_id>/tax/payment/delete/<int:idx>", methods=["POST"])
@@ -9130,28 +9075,6 @@ def tax_payment_delete(invoice_id, idx):
     })
     # Update project stage payment statuses based on payments
     _update_project_stage_payment_status(invoice_id)
-
-    # Update project status based on remaining payments
-    linked_projects = _invoice_linked_projects(fresh_inv)
-    for proj_num in linked_projects:
-        proj = _get_project_by_number(proj_num)
-        if proj:
-            proj_id = proj.get("firebase_id", "")
-            if proj_id:
-                amount_paid = _safe_float(proj.get("amount_paid", 0))
-                current_status = proj.get("status", "Not Started")
-                # If still has payments, change to In Progress
-                if amount_paid > 0 and current_status == "Completed":
-                    fb_update(f"/projects/{proj_id}", {
-                        "status": "In Progress",
-                        "updated_at": datetime.now(timezone.utc).isoformat()
-                    })
-                # If no payments left, change to Not Started
-                elif amount_paid == 0 and current_status != "Not Started":
-                    fb_update(f"/projects/{proj_id}", {
-                        "status": "Not Started",
-                        "updated_at": datetime.now(timezone.utc).isoformat()
-                    })
 
     return jsonify({"success": True}), 200
 
