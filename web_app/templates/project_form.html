@@ -100,23 +100,31 @@
             <label class="form-label">Service Types <span class="text-muted small fw-normal">— select all that apply</span></label>
             {% set all_services = ['Mechanical','Electrical','Civil','Structural','Plumbing','HVAC','Fire Protection','Geotechnical','Environmental','Other'] %}
             {% set selected_svcs = (project.get('service_types') or []) if project else [] %}
+            {% set existing_stages = project.get('payment_stages') if project else None %}
+            {% set has_invoiced = existing_stages and (existing_stages|selectattr('status', 'in', ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'])|list|length > 0) %}
             {% set ns = namespace(other_val='', other_checked=false) %}
             {% for svc in selected_svcs %}
               {% if svc == 'Other' %}{% set ns.other_checked = true %}
               {% elif svc.startswith('Other:') %}{% set ns.other_checked = true %}{% set ns.other_val = svc[6:]|trim %}
               {% endif %}
             {% endfor %}
+            {% if has_invoiced %}
+            <div class="alert alert-info py-2 px-3 small mb-3">
+              <i class="bi bi-info-circle me-1"></i>Service types are locked because payment stages are invoiced.
+            </div>
+            {% endif %}
             <div class="row g-2">
               {% for st in all_services %}
               {% set is_other = (st == 'Other') %}
               {% set is_checked = (ns.other_checked if is_other else st in selected_svcs) %}
               <div class="col-6 col-md-4 col-lg-3">
-                <div class="form-check border rounded px-3 py-2 h-100 {{ 'svc-selected' if is_checked else 'border-light' }}" id="projSvcBox_{{ loop.index }}">
+                <div class="form-check border rounded px-3 py-2 h-100 {{ 'svc-selected' if is_checked else 'border-light' }} {{ 'opacity-50' if has_invoiced else '' }}" id="projSvcBox_{{ loop.index }}" {% if has_invoiced %}style="pointer-events:none;"{% endif %}>
                   <input class="form-check-input" type="checkbox"
                          name="service_types[]" value="{{ st }}"
                          id="projSvc_{{ loop.index }}"
                          {{ 'checked' if is_checked }}
                          {% if is_other %}data-other="true"{% endif %}
+                         {% if has_invoiced %}disabled{% endif %}
                          onchange="toggleServiceType(this, 'projSvcBox_{{ loop.index }}')">
                   <label class="form-check-label small fw-semibold" for="projSvc_{{ loop.index }}">{{ st }}</label>
                 </div>
@@ -238,14 +246,15 @@
         <h6 class="section-heading">Financials</h6>
         <div class="mb-2">
           <label class="form-label">Contract Value ($)</label>
-          {% set all_invoiced = existing_stages and (existing_stages|selectattr('status', 'ne', 'Pending Invoice')|list|length == existing_stages|length) %}
+          {% set existing_stages = project.get('payment_stages') if project else None %}
+          {% set has_invoiced = existing_stages and (existing_stages|selectattr('status', 'in', ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'])|list|length > 0) %}
           <input type="number" id="contractValue" name="contract_value" class="form-control"
                  value="{{ project.get('contract_value','0') if project else '0' }}"
                  min="0" step="0.01" oninput="(function() { try { handleContractValueChange(); } catch(e) { console.error('handleContractValueChange error:', e); } updatePlanPreview(); })();"
                  data-original-value="{{ project.get('contract_value','0')|float if project else 0 }}"
-                 {% if all_invoiced %}disabled title="Cannot edit: all payment stages are invoiced"{% endif %}>
-          {% if all_invoiced %}
-          <small class="text-muted d-block mt-1"><i class="bi bi-lock me-1"></i>Contract value is locked because all payment stages are invoiced.</small>
+                 {% if has_invoiced %}disabled title="Cannot edit: payment stages are already invoiced"{% endif %}>
+          {% if has_invoiced %}
+          <small class="text-muted d-block mt-1"><i class="bi bi-lock me-1"></i>Contract value is locked because payment stages are invoiced.</small>
           {% endif %}
         </div>
         {% if not is_new %}
@@ -261,25 +270,27 @@
       <div class="card-panel mb-3">
         <h6 class="section-heading">Payment Plan</h6>
         {% set existing_stages = project.get('payment_stages') if project else None %}
-        {% set has_invoiced = existing_stages and (existing_stages|selectattr('status', 'in', ['Invoiced', 'Paid', 'Partially Paid'])|list|length > 0) %}
+        {% set has_invoiced = existing_stages and (existing_stages|selectattr('status', 'in', ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'])|list|length > 0) %}
         <div data-existing-stages="{{ (existing_stages and existing_stages|length > 0)|string|lower }}"></div>
         {% if has_invoiced %}
-        <div class="alert alert-info py-2 px-3 small mb-3">
-          <i class="bi bi-info-circle me-1"></i>Some stages have invoices. Invoiced stages are locked; non-invoiced stages will auto-adjust when contract value changes.
+        <div class="alert alert-warning py-2 px-3 small mb-3">
+          <i class="bi bi-lock me-1"></i>Payment plan is locked because stages are invoiced.
         </div>
         {% endif %}
-        <div class="row g-2 mb-3">
+        <div class="row g-2 mb-3" {% if has_invoiced %}style="opacity:0.6; pointer-events:none;"{% endif %}>
           <div class="col-6">
             <label class="form-label">Down Payment (%)</label>
             <input type="number" id="downPaymentPct" name="down_payment_percent" class="form-control"
                    value="{{ project.get('down_payment_percent', 0) if project else 0 }}"
                    min="0" max="100" step="1" placeholder="0"
+                   {% if has_invoiced %}disabled{% endif %}
                    oninput="updatePlanPreview()">
             <div class="form-text">0 = no down payment</div>
           </div>
           <div class="col-6">
             <label class="form-label">Balance Installments</label>
             <select id="installmentCount" name="installment_count" class="form-select"
+                    {% if has_invoiced %}disabled{% endif %}
                     onchange="updatePlanPreview()">
               {% set curr = project.get('installment_count', 1)|int if project else 1 %}
               <option value="1" {{ 'selected' if curr == 1 }}>1 — Single payment</option>
