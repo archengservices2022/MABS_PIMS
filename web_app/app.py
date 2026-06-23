@@ -4000,7 +4000,12 @@ def financial():
         r["amount_paid"] = amount_paid
         r["total"] = inv_total
         r["tax_amount"] = _safe_float(inv_meta.get("tax_amount", 0))
-        r["status"] = "Paid" if total_paid_for_inv >= inv_total else "Partial"
+        # Use stored meta.status instead of recalculating
+        stored_status = inv_meta.get("status", "")
+        if stored_status and stored_status in ["Paid", "Partial"]:
+            r["status"] = stored_status
+        else:
+            r["status"] = "Paid" if total_paid_for_inv >= inv_total else "Partial"
         updated_rev_list.append(r)
     rev_list = updated_rev_list
 
