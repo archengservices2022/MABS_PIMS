@@ -3145,12 +3145,12 @@ def invoice_delete(invoice_id):
                         "status": "In Progress",
                         "updated_at": datetime.now(timezone.utc).isoformat()
                     })
-                    # If no payments left, change to Not Started
-                    elif amount_paid == 0 and current_status != "Not Started":
-                        fb_update(f"/projects/{proj_id}", {
-                            "status": "Not Started",
-                            "updated_at": datetime.now(timezone.utc).isoformat()
-                        })
+                # If no payments left, change to Not Started
+                elif amount_paid == 0 and current_status != "Not Started":
+                    fb_update(f"/projects/{proj_id}", {
+                        "status": "Not Started",
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    })
 
     flash("Invoice deleted. Payment stages and revenue reverted to Not Invoiced.", "success")
     return redirect(url_for("invoicing"))
