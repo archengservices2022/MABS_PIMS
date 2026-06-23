@@ -3195,7 +3195,7 @@ def invoice_delete(invoice_id):
                         "updated_at": datetime.now(timezone.utc).isoformat()
                     })
 
-    flash("Invoice deleted. Payment stages and revenue reverted to Not Invoiced.", "success")
+    flash("Invoice deleted successfully", "success")
     return redirect(url_for("invoicing"))
 
 @app.route("/invoicing/<invoice_id>/pdf")
