@@ -1585,8 +1585,8 @@ function initModalDropdowns() {
   });
 
   typeArrow.addEventListener('click', () => typeDropdown.classList.toggle('show'));
+  typeInput.addEventListener('focus', () => typeDropdown.classList.add('show'));
   typeInput.addEventListener('input', function() {
-    typeDropdown.classList.add('show');
     const filter = this.value.toLowerCase();
     Array.from(typeDropdown.children).forEach(option => {
       option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
@@ -1597,13 +1597,10 @@ function initModalDropdowns() {
   const catDropdown = document.getElementById('modalCategoryDropdown');
   const catArrow = catInput.parentElement.querySelector('.dropdown-arrow');
 
-  catArrow.addEventListener('click', () => {
-    updateModalCategoryDropdown();
-    catDropdown.classList.toggle('show');
-  });
+  catArrow.addEventListener('click', () => catDropdown.classList.toggle('show'));
+  catInput.addEventListener('focus', () => updateModalCategoryDropdown());
   catInput.addEventListener('change', () => updateModalExpenseNameDropdown());
   catInput.addEventListener('input', function() {
-    catDropdown.classList.add('show');
     const filter = this.value.toLowerCase();
     Array.from(catDropdown.children).forEach(option => {
       option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
@@ -1615,12 +1612,12 @@ function initModalDropdowns() {
   const nameDropdown = document.getElementById('modalExpenseNameDropdown');
   const nameArrow = nameInput.parentElement.querySelector('.dropdown-arrow');
 
-  nameArrow.addEventListener('click', () => {
+  nameArrow.addEventListener('click', () => nameDropdown.classList.toggle('show'));
+  nameInput.addEventListener('focus', () => {
     updateModalExpenseNameDropdown();
-    nameDropdown.classList.toggle('show');
+    nameDropdown.classList.add('show');
   });
   nameInput.addEventListener('input', function() {
-    nameDropdown.classList.add('show');
     const filter = this.value.toLowerCase();
     Array.from(nameDropdown.children).forEach(option => {
       option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
@@ -1646,13 +1643,14 @@ function initModalDropdowns() {
     });
   }
 
-  vendorArrow.addEventListener('click', () => {
+  vendorArrow.addEventListener('click', () => vendorDropdown.classList.toggle('show'));
+
+  vendorInput.addEventListener('focus', () => {
     populateVendorDropdown();
-    vendorDropdown.classList.toggle('show');
+    vendorDropdown.classList.add('show');
   });
 
   vendorInput.addEventListener('input', function() {
-    vendorDropdown.classList.add('show');
     const filter = this.value.toLowerCase();
     Array.from(vendorDropdown.children).forEach(option => {
       option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
@@ -1674,6 +1672,7 @@ function updateModalCategoryDropdown() {
   const type = typeInput.value;
   const cats = categoriesByType[type] || [];
 
+  catDropdown.classList.add('show');
   catDropdown.innerHTML = '';
   cats.forEach(cat => {
     const div = document.createElement('div');

@@ -1891,9 +1891,19 @@ def project_edit(project_id):
                     custom_stage_amounts = json.loads(custom_stage_amounts_json)
                     if custom_stage_amounts:  # Only process if list is not empty
                         # If custom amounts has name and amount fields (from preview),
-                        # these are complete stage objects - use them directly
+                        # ensure they include status and invoice_id fields
                         if custom_stage_amounts and isinstance(custom_stage_amounts[0], dict) and "name" in custom_stage_amounts[0]:
-                            updated["payment_stages"] = custom_stage_amounts
+                            # Ensure all required fields are present
+                            enriched_stages = []
+                            for stage in custom_stage_amounts:
+                                enriched = {
+                                    "name": stage.get("name", ""),
+                                    "amount": _safe_float(stage.get("amount", 0)),
+                                    "status": stage.get("status", "Pending Invoice"),
+                                    "invoice_id": stage.get("invoice_id", "")
+                                }
+                                enriched_stages.append(enriched)
+                            updated["payment_stages"] = enriched_stages
                         else:
                             # Update payment stages with custom amounts
                             existing_stages = data.get("payment_stages") or []

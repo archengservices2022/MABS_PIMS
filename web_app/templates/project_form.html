@@ -776,6 +776,8 @@ function updatePlanPreview() {
     previewStagesData.push({
       name: `Down Payment (${dpPct}%)`,
       amount: dp,
+      status: 'Pending Invoice',
+      invoice_id: '',
       index: 0
     });
     rows.push(`<div class="d-flex justify-content-between py-1 border-bottom"><span>Down Payment (${dpPct}%)</span><span class="fw-600">${fmt(dp)}</span></div>`);
@@ -791,6 +793,8 @@ function updatePlanPreview() {
     previewStagesData.push({
       name: label,
       amount: amt,
+      status: 'Pending Invoice',
+      invoice_id: '',
       index: previewStagesData.length
     });
     rows.push(`<div class="d-flex justify-content-between py-1 ${i<inst-1?'border-bottom':''}"><span>${label}</span><span class="fw-600">${fmt(amt)}</span></div>`);
@@ -1143,6 +1147,8 @@ function initPaymentStagesData() {
     previewStagesData = stageAmountsData.map(s => ({
       name: s.name,
       amount: s.amount,
+      status: s.status || 'Pending Invoice',
+      invoice_id: s.invoice_id || '',
       index: s.index
     }));
 
