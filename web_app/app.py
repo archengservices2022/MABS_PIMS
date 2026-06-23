@@ -1378,6 +1378,19 @@ def projects():
     date_from     = request.args.get("from", "")
     date_to       = request.args.get("to", "")
     client_filter = request.args.get("client", "")
+    plant_filter  = request.args.get("plant", "").strip().upper()
+
+    # Annotate change orders and normalise plant
+    all_plants_set = set()
+    for i in items:
+        cos = i.get("change_orders") or []
+        i["_has_co"] = isinstance(cos, list) and len(cos) > 0
+        pl = (i.get("plant") or "").strip().upper()
+        i["_plant_display"] = pl
+        if pl:
+            all_plants_set.add(pl)
+    all_plants = sorted(all_plants_set)
+
     if search:
         items = [i for i in items if search in str(i).lower()]
     if status_filter:
@@ -1386,6 +1399,8 @@ def projects():
         items = [i for i in items if i.get("_has_overdue")]
     if client_filter:
         items = [i for i in items if i.get("client_name", "") == client_filter]
+    if plant_filter:
+        items = [i for i in items if i.get("_plant_display", "") == plant_filter]
     if date_from:
         items = [i for i in items if (i.get("start_date") or i.get("created_at","")[:10]) >= date_from]
     if date_to:
@@ -1428,7 +1443,8 @@ def projects():
                            search=search, status_filter=status_filter,
                            overdue_filter=overdue_filter, overdue_count=overdue_count,
                            date_from=date_from, date_to=date_to,
-                           client_filter=client_filter,
+                           client_filter=client_filter, plant_filter=plant_filter,
+                           all_plants=all_plants,
                            clients=clients, next_project_num=next_project_num,
                            active_tab=active_tab, status_counts=status_counts,
                            p_total_count=p_total_count, p_total_cv=p_total_cv,

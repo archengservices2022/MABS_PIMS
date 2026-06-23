@@ -131,6 +131,14 @@
             <option value="{{ c }}" {{ 'selected' if client_filter == c }}>{{ c }}</option>
             {% endfor %}
           </select>
+          {% if all_plants %}
+          <select name="plant" class="form-select form-select-sm" style="width:140px;">
+            <option value="">All States</option>
+            {% for pl in all_plants %}
+            <option value="{{ pl }}" {{ 'selected' if plant_filter == pl }}>{{ pl }}</option>
+            {% endfor %}
+          </select>
+          {% endif %}
         </div>
         <button type="button" class="btn btn-sm btn-primary" id="loadBtn" style="display:none;white-space:nowrap;padding:0.5rem 1rem;" onclick="openLoadModal()"></button>
       </div>
@@ -144,14 +152,14 @@
         <button type="submit" class="btn btn-sm btn-outline-secondary">
           <i class="bi bi-search me-1"></i>Apply
         </button>
-        {% if search or status_filter or overdue_filter or date_from or date_to or client_filter %}
+        {% if search or status_filter or overdue_filter or date_from or date_to or client_filter or plant_filter %}
         <a href="{{ url_for('projects') }}" class="btn btn-sm btn-outline-secondary">
           <i class="bi bi-x-lg me-1"></i>Clear
         </a>
         {% endif %}
       </div>
     </form>
-        {% if search or status_filter or overdue_filter or date_from or date_to or client_filter %}
+        {% if search or status_filter or overdue_filter or date_from or date_to or client_filter or plant_filter %}
         <div class="alert alert-light py-1 px-3 mt-2 small d-flex align-items-center gap-2"
              style="border-left:3px solid #0D9488;">
           <i class="bi bi-funnel text-teal"></i>
@@ -160,6 +168,7 @@
             {% if status_filter %} · Status: <strong>{{ status_filter }}</strong>{% endif %}
             {% if overdue_filter %} · <strong class="text-danger">Overdue payments only</strong>{% endif %}
             {% if client_filter %} · Client: <strong>{{ client_filter }}</strong>{% endif %}
+            {% if plant_filter %} · State: <strong>{{ plant_filter }}</strong>{% endif %}
             &nbsp;·&nbsp; {{ projects|length }} result{{ 's' if projects|length != 1 else '' }}
           </span>
         </div>
@@ -175,6 +184,7 @@
               <th>Project #</th>
               <th>Name</th>
               <th>Client</th>
+              <th>State</th>
               <th>Start Date</th>
               <th class="text-end">Contract Value</th>
               <th class="text-end">Paid</th>
@@ -190,9 +200,21 @@
                 onmouseover="continueDragSelect(event, '{{ p.firebase_id }}')"
                 onclick="selectProject(event, '{{ p.firebase_id }}')"
                 style="cursor:pointer;user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;">
-              <td><a href="{{ url_for('project_detail', project_id=p.firebase_id) }}" onclick="event.stopPropagation();" class="text-teal fw-bold" style="text-decoration:none;">{{ p.get('project_number','—') }}</a></td>
+              <td>
+                <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}" onclick="event.stopPropagation();" class="text-teal fw-bold" style="text-decoration:none;">{{ p.get('project_number','—') }}</a>
+                {% if p.get('_has_co') %}
+                <span title="Has Change Order(s)" style="display:inline-flex;align-items:center;gap:2px;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:4px;font-size:.6rem;font-weight:700;padding:1px 5px;margin-left:4px;vertical-align:middle;letter-spacing:.03em;">
+                  <i class="bi bi-arrow-repeat"></i> CO
+                </span>
+                {% endif %}
+              </td>
               <td class="fw-500">{{ p.get('project_name','—') }}</td>
               <td class="text-muted">{{ p.get('client_name','—') }}</td>
+              <td>
+                {% if p.get('_plant_display') %}
+                <span class="badge" style="background:#0D9488;color:#fff;font-size:11px;font-weight:700;letter-spacing:.04em;">{{ p._plant_display }}</span>
+                {% else %}—{% endif %}
+              </td>
               <td>{{ p.get('start_date','—') }}</td>
               <td class="text-end fw-bold">${{ "{:,.0f}".format(p.get('contract_value',0)|float) }}</td>
               <td class="text-end text-success">${{ "{:,.0f}".format(p.get('amount_paid',0)|float) }}</td>
@@ -223,6 +245,7 @@
             {% endfor %}
           </tbody>
         </table>
+
       </div>
     </div>
   </div>
