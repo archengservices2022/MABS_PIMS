@@ -918,34 +918,25 @@ function calcTotals() {
 function toggleExpNew(chk) {
   const field       = document.getElementById('rushFieldNew');
   const box         = document.getElementById('expBoxNew');
-  // Find priority select - get all and filter for the active tab form
-  const allPrioritySels = document.querySelectorAll('select[name="priority"]');
-  let prioritySel = null;
-
-  // Find the priority select in the visible New Quote tab
-  for (let sel of allPrioritySels) {
-    const form = sel.closest('form') || sel.closest('.tab-pane');
-    if (form && form.id === 'tab-new') {
-      prioritySel = sel;
-      break;
-    }
-  }
-
-  // Fallback: if not found by tab, just use the first one
-  if (!prioritySel && allPrioritySels.length > 0) {
-    prioritySel = allPrioritySels[0];
-  }
 
   if (chk.checked) {
     field.style.removeProperty('display');
     box.classList.replace('border-light','border-warning');
     box.classList.add('bg-warning','bg-opacity-10');
-    prioritySel.value = 'Urgent';
+    // Set priority to Urgent
+    const prioritySel = document.querySelector('#tab-new select[name="priority"]');
+    if (prioritySel) prioritySel.value = 'Urgent';
   } else {
     field.style.display = 'none';
     box.classList.replace('border-warning','border-light');
     box.classList.remove('bg-warning','bg-opacity-10');
-    prioritySel.value = 'Low';
+    // Set priority to Low
+    const prioritySel = document.querySelector('#tab-new select[name="priority"]');
+    if (prioritySel) {
+      console.log('Setting priority to Low, current value:', prioritySel.value);
+      prioritySel.value = 'Low';
+      console.log('After setting, priority value:', prioritySel.value);
+    }
   }
   calcTotals();
 }
