@@ -1618,6 +1618,10 @@ def project_detail(project_id):
 
     # Recalculate fresh statuses for display (based on actual payments)
     for invoice in project_invoices:
+        # Always calculate invoice status based on ENTIRE invoice payment, not project share
+        calculated_status = _calculate_invoice_status(invoice)
+        invoice["_display_status"] = calculated_status
+
         # Calculate project-specific paid amount from payment_log (filtered by project_number)
         proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (invoice.get("payment_log", []) or []) if p.get("project_number") == proj_num)
 
@@ -1633,38 +1637,6 @@ def project_detail(project_id):
             project_tax_paid = project_share * total_tax_paid
 
         invoice["_project_paid"] = proj_payments + project_tax_paid
-
-        # For multi-project invoices, calculate status based on this project's amount vs total
-        # For single-project invoices, use the overall invoice calculation
-        meta = invoice.get("meta", {}) or {}
-        is_multi_project = len(_invoice_linked_projects(invoice)) > 1
-
-        if is_multi_project:
-            # Calculate this project's share of the invoice total and tax
-            project_share = invoice.get("_project_share", 1.0)
-            invoice_subtotal = _safe_float(meta.get("subtotal", 0)) or (_safe_float(meta.get("total", 0)) - _safe_float(meta.get("tax_amount", 0)))
-            invoice_tax = _safe_float(meta.get("tax_amount", 0))
-
-            project_due = (invoice_subtotal + invoice_tax) * project_share
-            project_paid = proj_payments + project_tax_paid
-
-            # Calculate status based on this project's share
-            if project_paid >= (project_due - 0.01):
-                invoice["_display_status"] = "Paid"
-            elif project_paid > 0:
-                invoice["_display_status"] = "Partial"
-            else:
-                # Check if invoice is overdue
-                due_date = meta.get("due_date", "")
-                today = datetime.now().strftime("%Y-%m-%d")
-                if due_date and due_date < today:
-                    invoice["_display_status"] = "Overdue"
-                else:
-                    invoice["_display_status"] = "Sent"
-        else:
-            # Single project - use overall invoice status
-            calculated_status = _calculate_invoice_status(invoice)
-            invoice["_display_status"] = calculated_status
 
     # Load expenses linked to this project
     raw_exp = fb_get("/balance_sheet_expenses") or {}
