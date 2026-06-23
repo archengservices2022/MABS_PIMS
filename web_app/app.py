@@ -2369,6 +2369,16 @@ def invoicing():
     items.sort(key=lambda x: x.get("meta", {}).get("created_at", ""), reverse=True)
     all_invoices_raw = list(items)
 
+    # Calculate status for all invoices BEFORE filtering (so filter uses calculated status, not stored status)
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    for inv in items:
+        m = inv.get("meta", {})
+        calculated_status = _calculate_invoice_status(inv)
+        m["status"] = calculated_status
+        due = m.get("due_date", "") or ""
+        if calculated_status in ("Sent", "Viewed", "Partial") and due and due < today_str:
+            m["status"] = "Overdue"
+
     search        = request.args.get("q", "").strip().lower()
     status_filter = request.args.get("status", "")
     date_from     = request.args.get("from", "")
@@ -2394,16 +2404,6 @@ def invoicing():
     inv_clients = _load_clients()
     # All plants from all invoices (before filtering)
     all_plants = sorted({i.get("plant_state", "") for i in all_invoices_raw if i.get("plant_state", "")})
-
-    # Calculate current status based on payments and auto-mark overdue
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    for inv in items:
-        m = inv.get("meta", {})
-        calculated_status = _calculate_invoice_status(inv)
-        m["status"] = calculated_status
-        due = m.get("due_date", "") or ""
-        if calculated_status in ("Sent", "Viewed", "Partial") and due and due < today_str:
-            m["status"] = "Overdue"
 
     statuses = ["Draft", "Sent", "Viewed", "Paid", "Partial", "Overdue", "Cancelled"]
     active_tab = request.args.get("tab", "all-invoices")
