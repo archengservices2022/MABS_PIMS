@@ -1177,11 +1177,11 @@ function saveEditedPaymentPlan() {
     return;
   }
 
-  // Send update to backend
+  // Send update to backend with skipAutoAdjust flag for manual edit all
   fetch(`/api/projects/${projectId}/payment-plan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ amounts: amounts })
+    body: JSON.stringify({ amounts: amounts, skipAutoAdjust: true })
   })
   .then(r => r.json())
   .then(data => {

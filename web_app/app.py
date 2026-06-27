@@ -9707,6 +9707,7 @@ def update_project_payment_plan(project_id):
         original_amount = _safe_float(data.get("originalAmount", 0))
         new_amount = _safe_float(data.get("newAmount", 0))
         permission_granted = data.get("permissionGranted", False)
+        skip_auto_adjust = data.get("skipAutoAdjust", False)
 
         project = fb_get(f"/projects/{project_id}") or {}
         stages = project.get("payment_stages", [])
@@ -9738,8 +9739,9 @@ def update_project_payment_plan(project_id):
 
         # Determine if permission is needed
         # ONLY ask permission if ALL stages are invoiced (no non-invoiced to adjust)
+        # Never ask if user is manually editing all amounts (they balance themselves)
         needs_permission = False
-        if non_invoiced_count == 0 and edited_stage_invoiced:
+        if not skip_auto_adjust and non_invoiced_count == 0 and edited_stage_invoiced:
             # All stages are invoiced and user is editing one
             needs_permission = True
 
@@ -9754,24 +9756,28 @@ def update_project_payment_plan(project_id):
             }, 400
 
         # Auto-adjust logic: ONLY adjust non-invoiced stages (never adjust invoiced)
-        difference = new_amount - old_amount
+        # Skip auto-adjust if user manually edited all amounts
+        if not skip_auto_adjust:
+            difference = new_amount - old_amount
 
-        # Find non-invoiced stages (excluding the one being edited)
-        uninvoiced_indices = [i for i in range(len(stages))
-                             if i != edited_idx and stages[i].get("status") == "Pending Invoice"]
+            # Find non-invoiced stages (excluding the one being edited)
+            uninvoiced_indices = [i for i in range(len(stages))
+                                 if i != edited_idx and stages[i].get("status") == "Pending Invoice"]
 
-        # If there are non-invoiced stages, distribute the difference to them
-        if uninvoiced_indices:
-            per_stage = difference / len(uninvoiced_indices)
-            for idx in uninvoiced_indices:
-                current_amt = _safe_float(amounts[idx].get("amount", 0)) if idx < len(amounts) else _safe_float(stages[idx].get("amount", 0))
-                amounts[idx] = {"index": idx, "amount": max(0, current_amt - per_stage)}
+            # If there are non-invoiced stages, distribute the difference to them
+            if uninvoiced_indices:
+                per_stage = difference / len(uninvoiced_indices)
+                for idx in uninvoiced_indices:
+                    current_amt = _safe_float(amounts[idx].get("amount", 0)) if idx < len(amounts) else _safe_float(stages[idx].get("amount", 0))
+                    amounts[idx] = {"index": idx, "amount": max(0, current_amt - per_stage)}
 
         # Calculate total from (possibly adjusted) amounts
         total = sum(_safe_float(a.get("amount", 0)) for a in amounts)
 
-        # Update contract value if permission granted or if no permission was needed
-        if abs(total - old_contract_value) > 0.01:
+        # Update contract value only if:
+        # - NOT manually editing all amounts (skipAutoAdjust = user keeps CV stable)
+        # - AND permission was granted OR no permission was needed
+        if not skip_auto_adjust and abs(total - old_contract_value) > 0.01:
             if needs_permission or non_invoiced_count > 0 or invoiced_count > 0:
                 project["contract_value"] = str(total)
 
