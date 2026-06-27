@@ -1024,15 +1024,16 @@ function openEditPaymentPlanModal() {
   const downPaymentInput = document.getElementById('editDownPaymentAmount');
   downPaymentInput.value = (downPaymentStage.amount || 0).toFixed(2);
 
-  // Disable down payment input if it's invoiced
-  const isDownPaymentInvoiced = ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'].includes(downPaymentStage.status);
-  downPaymentInput.disabled = isDownPaymentInvoiced;
+  // Disable down payment input ONLY if it's Paid or Overdue (not just Invoiced)
+  // Down Payment should be editable if it's just Invoiced but not Paid
+  const isDownPaymentPaid = ['Paid', 'Overdue'].includes(downPaymentStage.status);
+  downPaymentInput.disabled = isDownPaymentPaid;
 
-  // Show badge and message if invoiced
+  // Show badge and message ONLY if Paid or Overdue
   const badgeEl = document.getElementById('downPaymentBadge');
   const messageEl = document.getElementById('downPaymentMessage');
-  if (isDownPaymentInvoiced) {
-    badgeEl.textContent = downPaymentStage.status || 'Invoiced';
+  if (isDownPaymentPaid) {
+    badgeEl.textContent = downPaymentStage.status || 'Paid';
     badgeEl.className = 'badge status-invoiced';
     badgeEl.style.display = 'inline-block';
     messageEl.style.display = 'block';
