@@ -1430,11 +1430,18 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function updatePreviewStageTotals() {
+  // Get down payment amount
+  const downPaymentAmount = parseFloat(document.getElementById('editDownPaymentAmount')?.value) || 0;
+
+  // Get stage inputs total
   const inputs = document.querySelectorAll('.stage-input');
-  let total = 0;
+  let stagesTotal = 0;
   inputs.forEach(input => {
-    total += parseFloat(input.value) || 0;
+    stagesTotal += parseFloat(input.value) || 0;
   });
+
+  // Calculate total including down payment
+  let total = downPaymentAmount + stagesTotal;
 
   const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
   const totalEl = document.getElementById('previewTotal');
