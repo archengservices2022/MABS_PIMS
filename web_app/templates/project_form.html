@@ -1430,13 +1430,11 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function updatePreviewStageTotals() {
-  // Only sum inputs from the preview stages data - no fancy calculations
+  // Sum only the visible stage inputs in the modal
   let total = 0;
-  previewStagesData.forEach((stage, i) => {
-    const input = document.querySelector(`.stage-input[data-index="${i}"]`);
-    if (input) {
-      total += parseFloat(input.value) || 0;
-    }
+  const inputs = document.querySelectorAll('.modal:last-child .stage-input');
+  inputs.forEach(input => {
+    total += parseFloat(input.value) || 0;
   });
 
   const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
