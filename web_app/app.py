@@ -9436,6 +9436,9 @@ def payment_edit(invoice_id, idx):
     elif not linked_projects and main_project:
         linked_projects = [{"project_number": main_project, "payment_stage_index": meta.get("payment_stage_index", 0)}]
 
+    # Get the project of the payment being edited (to apply form fields only to that project)
+    old_project = log[idx].get("project_number", "") if idx < len(log) else ""
+
     # Step 1: Distribute to projects sequentially (same as invoice_update_amount)
     if linked_projects:
         def get_sort_key(x):
@@ -9472,12 +9475,16 @@ def payment_edit(invoice_id, idx):
                 if not _stage_name and _stage_idx is not None:
                     _stage_name = f"Stage {_stage_idx + 1}"
 
+                # Only apply form fields (date, method, etc.) to the project being edited
+                # Other projects get default values
+                is_edited_project = (proj_num == old_project)
+
                 new_payment_log.append({
                     "amount": str(distribute_to_proj),
-                    "date": request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
-                    "method": request.form.get("method", ""),
-                    "reference": request.form.get("reference", ""),
-                    "notes": request.form.get("notes", ""),
+                    "date": request.form.get("date", datetime.now().strftime("%Y-%m-%d")) if is_edited_project else datetime.now().strftime("%Y-%m-%d"),
+                    "method": request.form.get("method", "") if is_edited_project else "",
+                    "reference": request.form.get("reference", "") if is_edited_project else "",
+                    "notes": request.form.get("notes", "") if is_edited_project else "",
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "project_number": proj_num,
                     "invoice_number": meta.get("invoice_number", ""),
@@ -9486,7 +9493,12 @@ def payment_edit(invoice_id, idx):
                 })
                 remaining_to_distribute -= distribute_to_proj
 
-    # Step 2: Distribute remaining to tax
+    # Step 2: Preserve existing tax payments and only add new ones if remainder
+    old_tax_log = inv_data.get("tax_payments", []) or []
+    if isinstance(old_tax_log, list):
+        new_tax_log = list(old_tax_log)  # Preserve existing tax payments
+
+    # Only add new tax allocation if there's remainder to distribute
     if remaining_to_distribute > 0 and tax_amount > 0:
         tax_needs = min(tax_amount, remaining_to_distribute)
         new_tax_log.append({
