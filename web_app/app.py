@@ -3091,6 +3091,9 @@ def invoice_update_amount(invoice_id):
         invoice["updated_at"] = datetime.now(timezone.utc).isoformat()
         fb_update(f"/invoices/{invoice_id}", invoice)
 
+        # Recalculate payment allocation for multi-project invoices (same as payment creation/addition)
+        _allocate_invoice_payment_sequential(invoice_id)
+
         return jsonify({"success": True, "message": "Invoice updated"})
     except Exception as e:
         log.error("Invoice update error: %s", str(e))
