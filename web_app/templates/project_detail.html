@@ -855,10 +855,16 @@
       <div class="modal-body">
         <form id="editPaymentForm">
           <div class="mb-3">
-            <label class="form-label">Down Payment Amount ($)</label>
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label mb-0">Down Payment Amount ($)</label>
+              <span class="badge status-not-started" id="downPaymentBadge" style="display:none;"></span>
+            </div>
             <input type="number" id="editDownPaymentAmount" class="form-control" step="0.01" min="0"
                    oninput="updateRemainingStages()">
             <small class="text-muted" id="downPaymentPercentageDisplay"></small>
+            <small class="text-muted d-block mt-1" id="downPaymentMessage" style="display:none;">
+              <i class="bi bi-lock-fill"></i> This stage is invoiced and cannot be edited
+            </small>
           </div>
           <div id="editRemainingStagesContainer"></div>
           <div class="alert alert-info small mt-3">
@@ -1021,6 +1027,19 @@ function openEditPaymentPlanModal() {
   // Disable down payment input if it's invoiced
   const isDownPaymentInvoiced = ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'].includes(downPaymentStage.status);
   downPaymentInput.disabled = isDownPaymentInvoiced;
+
+  // Show badge and message if invoiced
+  const badgeEl = document.getElementById('downPaymentBadge');
+  const messageEl = document.getElementById('downPaymentMessage');
+  if (isDownPaymentInvoiced) {
+    badgeEl.textContent = downPaymentStage.status || 'Invoiced';
+    badgeEl.className = 'badge status-invoiced';
+    badgeEl.style.display = 'inline-block';
+    messageEl.style.display = 'block';
+  } else {
+    badgeEl.style.display = 'none';
+    messageEl.style.display = 'none';
+  }
 
   document.getElementById('editContractValue').textContent = '$' + contractValue.toFixed(2);
 
