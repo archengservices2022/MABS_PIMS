@@ -9737,15 +9737,10 @@ def update_project_payment_plan(project_id):
         edited_stage_invoiced = stages[edited_idx].get("status") in ["Invoiced", "Paid", "Partially Paid", "Overdue"]
 
         # Determine if permission is needed
+        # ONLY ask permission if ALL stages are invoiced (no non-invoiced to adjust)
         needs_permission = False
-        if non_invoiced_count == 1 and not edited_stage_invoiced:
-            # Only 1 non-invoiced stage and user is editing it
-            needs_permission = True
-        elif non_invoiced_count == 0 and edited_stage_invoiced:
+        if non_invoiced_count == 0 and edited_stage_invoiced:
             # All stages are invoiced and user is editing one
-            needs_permission = True
-        elif invoiced_count == 0 and non_invoiced_count > 1 and not edited_stage_invoiced:
-            # All stages are non-invoiced and user is editing one - contract value will change
             needs_permission = True
 
         # If permission needed and not granted, return request for permission
