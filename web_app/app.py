@@ -9737,13 +9737,20 @@ def update_project_payment_plan(project_id):
         # Check if edited stage is invoiced
         edited_stage_invoiced = stages[edited_idx].get("status") in ["Invoiced", "Paid", "Partially Paid", "Overdue"]
 
+        # Find non-invoiced stages (excluding the one being edited)
+        uninvoiced_indices = [i for i in range(len(stages))
+                             if i != edited_idx and stages[i].get("status") == "Pending Invoice"]
+
         # Determine if permission is needed
-        # ONLY ask permission if ALL stages are invoiced (no non-invoiced to adjust)
         # Never ask if user is manually editing all amounts (they balance themselves)
         needs_permission = False
-        if not skip_auto_adjust and non_invoiced_count == 0 and edited_stage_invoiced:
-            # All stages are invoiced and user is editing one
-            needs_permission = True
+        if not skip_auto_adjust:
+            # Case 1: All stages are invoiced and user is editing one
+            if non_invoiced_count == 0 and edited_stage_invoiced:
+                needs_permission = True
+            # Case 2: Editing a non-invoiced stage but all other stages are invoiced (no other stages to auto-adjust to)
+            elif not edited_stage_invoiced and len(uninvoiced_indices) == 0:
+                needs_permission = True
 
         # If permission needed and not granted, return request for permission
         if needs_permission and not permission_granted:
@@ -9759,10 +9766,6 @@ def update_project_payment_plan(project_id):
         # Skip auto-adjust if user manually edited all amounts
         if not skip_auto_adjust:
             difference = new_amount - old_amount
-
-            # Find non-invoiced stages (excluding the one being edited)
-            uninvoiced_indices = [i for i in range(len(stages))
-                                 if i != edited_idx and stages[i].get("status") == "Pending Invoice"]
 
             # If there are non-invoiced stages, distribute the difference to them
             if uninvoiced_indices:
