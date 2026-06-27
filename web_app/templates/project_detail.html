@@ -1452,8 +1452,6 @@ function quickInvoiceStage(idx, stageName, amount, projectId) {
 }
 
 // ── Permission Modal Handler ────────────────────────────────────────────
-let pendingUpdateData = null;
-
 function showContractValuePermission(message, newContractValue, onApprove, onDeny) {
   // Create and show permission modal
   const modalHtml = `
@@ -1464,7 +1462,7 @@ function showContractValuePermission(message, newContractValue, onApprove, onDen
             <h5 class="modal-title">
               <i class="bi bi-exclamation-circle text-warning me-2"></i>Confirm Contract Value Change
             </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <button type="button" class="btn-close" onclick="window.modalWasDenied = true; window.onContractValueDeny && window.onContractValueDeny()"></button>
           </div>
           <div class="modal-body">
             <p class="text-muted mb-3">${message}</p>
@@ -1473,10 +1471,10 @@ function showContractValuePermission(message, newContractValue, onApprove, onDen
             </div>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="onContractValueDeny()">
-              Cancel
+            <button type="button" class="btn btn-secondary" onclick="window.modalWasDenied = true; window.onContractValueDeny && window.onContractValueDeny()">
+              <i class="bi bi-x-circle me-1"></i>Cancel
             </button>
-            <button type="button" class="btn btn-warning" onclick="onContractValueApprove()">
+            <button type="button" class="btn btn-warning" onclick="window.modalWasApproved = true; window.onContractValueApprove && window.onContractValueApprove()">
               <i class="bi bi-check-circle me-1"></i>Continue
             </button>
           </div>
@@ -1491,12 +1489,25 @@ function showContractValuePermission(message, newContractValue, onApprove, onDen
 
   document.body.insertAdjacentHTML('beforeend', modalHtml);
 
+  // Reset flags
+  window.modalWasApproved = false;
+  window.modalWasDenied = false;
+
   // Set callbacks
   window.onContractValueApprove = onApprove;
   window.onContractValueDeny = onDeny;
 
   // Show modal
-  const modal = new bootstrap.Modal(document.getElementById('contractValuePermissionModal'));
+  const modalEl = document.getElementById('contractValuePermissionModal');
+  const modal = new bootstrap.Modal(modalEl);
+
+  // Handle modal close (escape key, backdrop click) -> trigger deny if not approved
+  modalEl.addEventListener('hidden.bs.modal', () => {
+    if (!window.modalWasApproved && !window.modalWasDenied && window.onContractValueDeny) {
+      window.onContractValueDeny();
+    }
+  });
+
   modal.show();
 }
 
