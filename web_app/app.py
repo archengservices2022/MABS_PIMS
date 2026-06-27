@@ -9709,9 +9709,9 @@ def update_project_payment_plan(project_id):
 
         project = fb_get(f"/projects/{project_id}") or {}
         stages = project.get("payment_stages", [])
-        contract_value = _safe_float(project.get("contract_value", 0))
+        old_contract_value = _safe_float(project.get("contract_value", 0))
 
-        # First, find which stage was edited (by comparing new amounts to current)
+        # Find which stage was edited (by comparing sent amounts with current)
         edited_idx = -1
         old_amount = 0
         new_amount = 0
@@ -9734,7 +9734,7 @@ def update_project_payment_plan(project_id):
         # Find non-invoiced stages
         uninvoiced_indices = [i for i, s in enumerate(stages) if i != edited_idx and s.get("status") == "Pending Invoice"]
 
-        # If editing invoiced stage and non-invoiced stages exist, redistribute the difference
+        # If editing invoiced stage and non-invoiced stages exist, auto-adjust them
         if edited_stage_invoiced and uninvoiced_indices and edited_idx >= 0:
             difference = new_amount - old_amount
             per_stage = difference / len(uninvoiced_indices)
@@ -9744,15 +9744,12 @@ def update_project_payment_plan(project_id):
                 current_amt = _safe_float(amounts[idx].get("amount", 0)) if idx < len(amounts) else _safe_float(stages[idx].get("amount", 0))
                 amounts[idx] = {"index": idx, "amount": max(0, current_amt - per_stage)}
 
-        # Calculate total from edited amounts
+        # Calculate total from (possibly adjusted) amounts
         total = sum(_safe_float(a.get("amount", 0)) for a in amounts)
 
-        # If total changed from contract value, update contract value accordingly
-        contract_value_changed = abs(total - contract_value) > 0.01
-        if contract_value_changed:
-            old_contract_value = contract_value
-            contract_value = total
-            project["contract_value"] = str(contract_value)
+        # Update contract value if total changed due to auto-adjustment
+        if abs(total - old_contract_value) > 0.01:
+            project["contract_value"] = str(total)
 
         # Update all stages with new amounts
         for amount_data in amounts:
@@ -9788,14 +9785,7 @@ def update_project_payment_plan(project_id):
             invoice["updated_at"] = datetime.now(timezone.utc).isoformat()
             fb_update(f"/invoices/{invoice_id}", invoice)
 
-        # Build success message with contract value change if applicable
-        message = "Payment plan updated"
-        if contract_value_changed:
-            change_amount = contract_value - old_contract_value
-            change_type = "increased" if change_amount > 0 else "decreased"
-            message = f"✓ Payment plan updated. Contract value {change_type} by ${abs(change_amount):.2f} (new: ${contract_value:.2f})"
-
-        return {"success": True, "message": message}
+        return {"success": True, "message": "Payment plan updated"}
     except Exception as e:
         return {"success": False, "error": str(e)}, 500
 
