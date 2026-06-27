@@ -3131,8 +3131,8 @@ def invoice_update_amount(invoice_id):
             new_tax_log = []
             remaining_to_distribute = amount_paid
 
-            # IMPORTANT: Extract ALL projects directly from line_items (not from linked_projects metadata)
-            # This ensures we capture all projects regardless of metadata state
+            # Extract ALL projects from BOTH line_items AND linked_projects metadata
+            # This handles invoices where some projects might not have line items
             projects_from_items = set()
             for item in line_items:
                 if isinstance(item, dict):
@@ -3140,11 +3140,22 @@ def invoice_update_amount(invoice_id):
                     if proj_num:
                         projects_from_items.add(proj_num)
 
-            # Build linked_projects from actual line_items projects
-            if projects_from_items:
+            # Also get projects from linked_projects metadata (might have projects without line items)
+            projects_from_meta = set()
+            for proj_info in (meta.get("linked_projects") or []):
+                if isinstance(proj_info, dict):
+                    proj_num = proj_info.get("project_number", "")
+                    if proj_num:
+                        projects_from_meta.add(proj_num)
+
+            # Merge both sets - include projects from BOTH line_items AND metadata
+            all_projects = projects_from_items | projects_from_meta
+
+            # Build linked_projects from merged project list
+            if all_projects:
                 linked_projects = [
                     {"project_number": proj_num, "payment_stage_index": meta.get("payment_stage_index", 0)}
-                    for proj_num in sorted(projects_from_items)
+                    for proj_num in sorted(all_projects)
                 ]
             elif not linked_projects and main_project:
                 linked_projects = [{"project_number": main_project, "payment_stage_index": meta.get("payment_stage_index", 0)}]
