@@ -1430,18 +1430,12 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function updatePreviewStageTotals() {
-  // Get down payment amount
-  const downPaymentAmount = parseFloat(document.getElementById('editDownPaymentAmount')?.value) || 0;
-
-  // Get stage inputs total
+  // Get all stage inputs (includes down payment if present)
   const inputs = document.querySelectorAll('.stage-input');
-  let stagesTotal = 0;
+  let total = 0;
   inputs.forEach(input => {
-    stagesTotal += parseFloat(input.value) || 0;
+    total += parseFloat(input.value) || 0;
   });
-
-  // Calculate total including down payment
-  let total = downPaymentAmount + stagesTotal;
 
   const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
   const totalEl = document.getElementById('previewTotal');
@@ -1483,9 +1477,10 @@ function saveCustomPreviewStages() {
   inputs.forEach((input, i) => {
     const amount = parseFloat(input.value) || 0;
     total += amount;
-    if (i < previewStagesData.length) {
-      previewStagesData[i].amount = amount;
-      customAmounts.push({ index: i, amount: amount });
+    const dataIndex = parseInt(input.getAttribute('data-index'));
+    if (dataIndex >= 0 && dataIndex < previewStagesData.length) {
+      previewStagesData[dataIndex].amount = amount;
+      customAmounts.push({ index: dataIndex, amount: amount });
     }
   });
 
