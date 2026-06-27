@@ -218,9 +218,6 @@
               </button>
             </div>
           </div>
-          <!-- Floating validation notification -->
-          <div id="amountChangeNotification" style="display:none; position:sticky; top:0; z-index:10; margin-bottom:12px; padding:12px 16px; border-radius:6px; border-left:4px solid; font-size:0.9rem;">
-          </div>
           <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
               <thead>
@@ -276,7 +273,6 @@
                              step="0.01" min="0" value="{{ s.get('amount',0)|float }}" style="width:80px; display:inline-block;"
                              data-original="{{ s.get('amount',0)|float }}"
                              onkeydown="handleEditKeydown(event, {{ loop.index0 }}, '{{ st }}', '{{ inv_id }}')"
-                             oninput="showAmountChangePreview({{ loop.index0 }}, {{ project.get('contract_value', 0)|float }}, {{ s.get('amount',0)|float }})"
                              onblur="saveInlineEdit({{ loop.index0 }}, '{{ st }}', '{{ inv_id }}')">
                     </span>
                   </td>
@@ -1259,107 +1255,6 @@ function updateStagedPayment() {
     }
   })
   .catch(e => alert('❌ Error: ' + e.message));
-}
-
-function showAmountChangePreview(idx, contractValue, originalAmount) {
-  const input = document.getElementById(`amountInput_${idx}`);
-  const notificationEl = document.getElementById('amountChangeNotification');
-
-  if (!input || !notificationEl) return;
-
-  const newAmount = parseFloat(input.value) || 0;
-  const original = parseFloat(input.dataset.original) || originalAmount || 0;
-  const difference = newAmount - original;
-  const currentStage = currentStages[idx];
-
-  // Count invoiced and non-invoiced stages
-  const nonInvoicedStages = currentStages
-    .map((s, i) => i !== idx && s.status === 'Pending Invoice' ? i : -1)
-    .filter(i => i >= 0);
-  const nonInvoicedCount = currentStages.filter(s => s.status === 'Pending Invoice').length;
-  const allInvoiced = nonInvoicedCount === 0;
-
-  if (Math.abs(difference) > 0.01) {
-    let message = '';
-    let bgColor = '';
-    let borderColor = '';
-
-    if (nonInvoicedStages.length > 0) {
-      // There are non-invoiced stages to adjust
-      const perStage = difference / nonInvoicedStages.length;
-      const changeType = difference > 0 ? 'reduce' : 'increase';
-      const changeAmount = Math.abs(perStage);
-
-      bgColor = '#e8f5e9';
-      borderColor = '#4caf50';
-
-      message = `<div style="font-weight:600; color:#2e7d32; margin-bottom:8px;">
-        <i class="bi bi-arrow-repeat me-1"></i>Auto-Adjust Payment Plan
-      </div>
-      <div style="font-size:0.9rem; color:#555; margin-bottom:8px;">
-        This stage will ${difference > 0 ? 'increase' : 'decrease'} by $${Math.abs(difference).toFixed(2)}<br>
-        Other pending stages will ${changeType} by $${changeAmount.toFixed(2)} each
-      </div>
-      <div style="font-size:0.85rem; color:#666; padding:6px; background:rgba(255,255,255,0.5); border-radius:4px; margin-bottom:6px;">`;
-
-      nonInvoicedStages.forEach(i => {
-        const stageName = currentStages[i].name || `Stage ${i+1}`;
-        const oldAmt = currentStages[i].amount || 0;
-        const newAmt = oldAmt - perStage;
-        message += `• ${stageName}: $${oldAmt.toFixed(2)} → $${newAmt.toFixed(2)}<br>`;
-      });
-
-      message += `</div>
-      <div style="padding:8px; background:#fff; border-radius:4px; border:1px solid #4caf50; font-weight:600; color:#2e7d32;">
-        ✓ Contract value remains: $${contractValue.toFixed(2)}
-      </div>`;
-
-    } else if (nonInvoicedCount === 1) {
-      // Only 1 non-invoiced stage (the one being edited)
-      const changeType = difference > 0 ? 'increase' : 'decrease';
-      const changeAmount = Math.abs(difference);
-      const newContractValue = contractValue + difference;
-
-      bgColor = '#fff3e0';
-      borderColor = '#ff9800';
-
-      message = `<div style="font-weight:600; color:#e65100; margin-bottom:8px;">
-        <i class="bi bi-exclamation-circle me-1"></i>⚠️ Permission Required
-      </div>
-      <div style="font-size:0.9rem; color:#555; margin-bottom:8px;">
-        This is the only pending stage - contract value will change
-      </div>
-      <div style="padding:8px; background:#fff; border-radius:4px; border:1px solid #ff9800; font-weight:600; color:#e65100;">
-        Contract Value: $${contractValue.toFixed(2)} → $${newContractValue.toFixed(2)} (${changeType} by $${changeAmount.toFixed(2)})
-      </div>`;
-
-    } else if (allInvoiced) {
-      // All stages are invoiced
-      const changeType = difference > 0 ? 'increase' : 'decrease';
-      const changeAmount = Math.abs(difference);
-      const newContractValue = contractValue + difference;
-
-      bgColor = '#fff3e0';
-      borderColor = '#ff9800';
-
-      message = `<div style="font-weight:600; color:#e65100; margin-bottom:8px;">
-        <i class="bi bi-exclamation-circle me-1"></i>⚠️ Permission Required
-      </div>
-      <div style="font-size:0.9rem; color:#555; margin-bottom:8px;">
-        All stages are invoiced - contract value will change
-      </div>
-      <div style="padding:8px; background:#fff; border-radius:4px; border:1px solid #ff9800; font-weight:600; color:#e65100;">
-        Contract Value: $${contractValue.toFixed(2)} → $${newContractValue.toFixed(2)} (${changeType} by $${changeAmount.toFixed(2)})
-      </div>`;
-    }
-
-    notificationEl.innerHTML = message;
-    notificationEl.style.backgroundColor = bgColor;
-    notificationEl.style.borderColor = borderColor;
-    notificationEl.style.display = 'block';
-  } else {
-    notificationEl.style.display = 'none';
-  }
 }
 
 function toggleInlineEdit(idx, name, amount, status, invoiceId) {
