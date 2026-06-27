@@ -1430,80 +1430,21 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function updatePreviewStageTotals() {
-  // Sum only the visible stage inputs in the modal
-  let total = 0;
-  const modal = document.getElementById('customizeStagesModal');
-  if (modal) {
-    const inputs = modal.querySelectorAll('.stage-input');
-    inputs.forEach(input => {
-      total += parseFloat(input.value) || 0;
-    });
-  }
-
-  const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
-  const totalEl = document.getElementById('previewTotal');
-  const msgEl = document.getElementById('previewValidationMsg');
-  const newValueRow = document.getElementById('contractValueChangeRow');
-  const newValueEl = document.getElementById('contractValueNew');
-
-  if (totalEl) totalEl.textContent = `$${total.toFixed(2)}`;
-
-  // Show new contract value if changed
-  const diff = total - contractValue;
-  if (newValueRow && newValueEl) {
-    if (Math.abs(diff) > 0.01) {
-      newValueRow.style.display = 'flex';
-      newValueEl.textContent = `$${total.toFixed(2)}`;
-
-      // Show change indicator
-      if (msgEl) {
-        const changeType = diff > 0 ? 'increased' : 'decreased';
-        const changeAmount = Math.abs(diff);
-        msgEl.innerHTML = `<div class="text-info small mt-2"><i class="bi bi-info-circle me-1"></i>Contract value will be ${changeType} by $${changeAmount.toFixed(2)}</div>`;
-      }
-    } else {
-      newValueRow.style.display = 'none';
-      if (msgEl) {
-        msgEl.innerHTML = `<div class="text-success small mt-2"><i class="bi bi-check-circle me-1"></i>✓ Total matches current contract value</div>`;
-      }
-    }
-  }
+  // Placeholder - contract value calculation removed
 }
 
 function saveCustomPreviewStages() {
-  const modal = document.getElementById('customizeStagesModal');
-  const inputs = modal ? modal.querySelectorAll('.stage-input') : [];
-  const contractValueEl = document.getElementById('contractValue');
-  const oldContractValue = parseFloat(contractValueEl?.value) || 0;
-  let total = 0;
+  const inputs = document.querySelectorAll('.stage-input');
   const customAmounts = [];
 
   inputs.forEach((input, i) => {
     const amount = parseFloat(input.value) || 0;
-    total += amount;
     const dataIndex = parseInt(input.getAttribute('data-index'));
     if (dataIndex >= 0 && dataIndex < previewStagesData.length) {
       previewStagesData[dataIndex].amount = amount;
       customAmounts.push({ index: dataIndex, amount: amount });
     }
   });
-
-  // If total changed, update contract value
-  if (Math.abs(total - oldContractValue) > 0.01) {
-    contractValueEl.value = total.toFixed(2);
-
-    // Also update hidden input for disabled field preservation
-    const hiddenInputs = document.querySelectorAll('input[name="contract_value"]');
-    hiddenInputs.forEach(input => {
-      if (input.type === 'hidden' || input.disabled) {
-        input.value = total.toFixed(2);
-      }
-    });
-
-    const diff = total - oldContractValue;
-    const diffText = diff > 0 ? `increased by $${diff.toFixed(2)}` : `decreased by $${Math.abs(diff).toFixed(2)}`;
-    alert(`✓ Contract value ${diffText}\n\nNew Contract Value: $${total.toFixed(2)}`);
-  }
 
   // Recalculate down payment percentage if first stage is down payment
   if (previewStagesData.length > 0 && previewStagesData[0].name.includes('Down Payment')) {
