@@ -1552,7 +1552,7 @@ def project_detail(project_id):
                 stage["status"] = "Pending Invoice"
 
         # Recalculate payment stage statuses based on actual paid amounts from invoices
-        # First, build a map of invoices by stage
+        # First, build a map of invoices by stage (supporting multi-project invoices)
         raw_inv = fb_get("/invoices") or {}
         stage_invoices = {}
         if isinstance(raw_inv, dict):
@@ -1560,12 +1560,29 @@ def project_detail(project_id):
                 if not isinstance(inv, dict):
                     continue
                 inv_meta = inv.get("meta", {}) or {}
-                if inv_meta.get("project_number") == proj_num:
+
+                # Check if this project is linked to the invoice (supports multi-project)
+                linked_projects = _invoice_linked_projects(inv)
+                if proj_num not in linked_projects:
+                    continue
+
+                # For multi-project invoices, find the stage index from linked_projects
+                stage_idx = -1
+                lp_list = inv_meta.get("linked_projects") or []
+                if isinstance(lp_list, list):
+                    for lp in lp_list:
+                        if isinstance(lp, dict) and lp.get("project_number") == proj_num:
+                            stage_idx = lp.get("payment_stage_index", -1)
+                            break
+
+                # Fallback to old single-project format
+                if stage_idx < 0:
                     stage_idx = inv_meta.get("payment_stage_index", -1)
-                    if stage_idx >= 0:
-                        if stage_idx not in stage_invoices:
-                            stage_invoices[stage_idx] = []
-                        stage_invoices[stage_idx].append(inv)
+
+                if stage_idx >= 0:
+                    if stage_idx not in stage_invoices:
+                        stage_invoices[stage_idx] = []
+                    stage_invoices[stage_idx].append(inv)
 
         today_str = datetime.now().strftime("%Y-%m-%d")
         for idx, stage in enumerate(data["payment_stages"]):
