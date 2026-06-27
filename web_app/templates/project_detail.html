@@ -1495,36 +1495,38 @@ function showContractValuePermission(message, newContractValue, onApprove, onDen
 
   // Attach event handlers
   document.getElementById('contractValueContinueBtn').onclick = () => {
+    onApprove();
     modal.hide();
     // Clean up backdrop
     setTimeout(() => {
       document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
       document.body.classList.remove('modal-open');
       document.body.style.overflow = '';
-    }, 100);
-    onApprove();
+    }, 150);
   };
 
   document.getElementById('contractValueCancelBtn').onclick = () => {
+    // Revert immediately before hiding modal
+    onDeny();
     modal.hide();
     // Clean up backdrop
     setTimeout(() => {
       document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
       document.body.classList.remove('modal-open');
       document.body.style.overflow = '';
-    }, 100);
-    onDeny();
+    }, 150);
   };
 
   document.getElementById('contractValueModalClose').onclick = () => {
+    // Revert immediately before hiding modal
+    onDeny();
     modal.hide();
     // Clean up backdrop
     setTimeout(() => {
       document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
       document.body.classList.remove('modal-open');
       document.body.style.overflow = '';
-    }, 100);
-    onDeny();
+    }, 150);
   };
 
   modal.show();
