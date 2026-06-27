@@ -1311,41 +1311,9 @@ function saveInlineEdit(idx, status, invoiceId) {
 
   const difference = newAmount - oldAmount;  // Positive if increase, negative if decrease
 
-  // Find remaining non-invoiced stages to check if they can absorb redistribution
-  const remainingUninvoiced = currentStages
-    .map((s, i) => i !== idx && s.status === 'Pending Invoice' ? i : -1)
-    .filter(i => i >= 0);
-
-  // Validate redistribution is possible
-  if (remainingUninvoiced.length > 0 && difference !== 0) {
-    const perStage = difference / remainingUninvoiced.length;
-    let canRedistribute = true;
-    let errorMessage = '';
-
-    remainingUninvoiced.forEach(i => {
-      const projectedAmount = (currentStages[i].amount || 0) - perStage;
-      if (projectedAmount < -0.01) {  // Allow small rounding differences
-        canRedistribute = false;
-        errorMessage = `Not enough available amount in other stages. ${currentStages[i].name || `Stage ${i+1}`} would become $${projectedAmount.toFixed(2)}`;
-      }
-    });
-
-    if (!canRedistribute) {
-      // Show error and DON'T make any changes
-      alert(`❌ Error: Cannot change to $${newAmount.toFixed(2)}. ${errorMessage}`);
-      displaySpan.style.display = 'inline-flex';
-      editSpan.style.display = 'none';
-      input.value = oldAmount.toFixed(2);
-      return;
-    }
-  } else if (remainingUninvoiced.length === 0 && difference !== 0) {
-    // No other stages to redistribute to - cannot change
-    alert(`❌ Error: Cannot change to $${newAmount.toFixed(2)}. No other stages available to redistribute.`);
-    displaySpan.style.display = 'inline-flex';
-    editSpan.style.display = 'none';
-    input.value = oldAmount.toFixed(2);
-    return;
-  }
+  // Allow editing any non-invoiced stage - no redistribution validation needed
+  // The contract value will be recalculated automatically when stages are edited
+  // (This was old redistribution logic that is no longer used)
 
   // Now update stage locally only if validation passed
   currentStages[idx].amount = newAmount;
@@ -1357,16 +1325,8 @@ function saveInlineEdit(idx, status, invoiceId) {
     currentStages[idx].name = `${baseName} (${dpPercent}%)`;
   }
 
-  // Auto-redistribute to remaining non-invoiced stages (ALL except the one being edited)
-  if (remainingUninvoiced.length > 0 && difference !== 0) {
-    const perStage = difference / remainingUninvoiced.length;
-    remainingUninvoiced.forEach(i => {
-      currentStages[i].amount = Math.max(0, (currentStages[i].amount || 0) - perStage);
-    });
-  }
-
   // Save to backend
-  // Always send all stages since we redistribute across all remaining non-invoiced stages
+  // Just save the edited stage - no redistribution across other stages
   const endpoint = `/api/projects/${projectId}/payment-plan`;
 
   const payload = {
@@ -1388,21 +1348,8 @@ function saveInlineEdit(idx, status, invoiceId) {
       // Update UI immediately for all changed stages
       const fmt = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
-      // Update the edited stage
+      // Update the edited stage display
       stageAmountDisplay.textContent = fmt(newAmount);
-
-      // Update all remaining adjusted stages
-      remainingUninvoiced.forEach(i => {
-        const stageDisplay = document.getElementById(`stageAmount_${i}`);
-        const stageInput = document.getElementById(`amountInput_${i}`);
-        if (stageDisplay) {
-          stageDisplay.textContent = fmt(currentStages[i].amount);
-        }
-        // Update dataset for next edit
-        if (stageInput) {
-          stageInput.dataset.originalAmount = currentStages[i].amount;
-        }
-      });
 
       // Update dataset for current stage
       input.dataset.originalAmount = newAmount;
