@@ -3131,8 +3131,22 @@ def invoice_update_amount(invoice_id):
             new_tax_log = []
             remaining_to_distribute = amount_paid
 
-            # Get all projects from line items
-            if not linked_projects and main_project:
+            # IMPORTANT: Extract ALL projects directly from line_items (not from linked_projects metadata)
+            # This ensures we capture all projects regardless of metadata state
+            projects_from_items = set()
+            for item in line_items:
+                if isinstance(item, dict):
+                    proj_num = item.get("project_number", "")
+                    if proj_num:
+                        projects_from_items.add(proj_num)
+
+            # Build linked_projects from actual line_items projects
+            if projects_from_items:
+                linked_projects = [
+                    {"project_number": proj_num, "payment_stage_index": meta.get("payment_stage_index", 0)}
+                    for proj_num in sorted(projects_from_items)
+                ]
+            elif not linked_projects and main_project:
                 linked_projects = [{"project_number": main_project, "payment_stage_index": meta.get("payment_stage_index", 0)}]
 
             # Step 1: Distribute to projects sequentially (sorted by project number)
