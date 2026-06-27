@@ -3117,13 +3117,12 @@ def invoice_update_amount(invoice_id):
 
         # When editing amounts, redistribute payments the SAME WAY as payment_sequential
         # This ensures both work identically - payments distributed sequentially across projects then tax
-        fresh_invoice = fb_get(f"/invoices/{invoice_id}") or {}
-        fresh_meta = fresh_invoice.get("meta", {})
-        amount_paid = _safe_float(fresh_meta.get("amount_paid", 0))
-        tax_amount = _safe_float(fresh_meta.get("tax_amount", 0))
-        line_items = fresh_invoice.get("line_items", []) or []
-        main_project = fresh_meta.get("project_number", "")
-        linked_projects = fresh_meta.get("linked_projects", [])
+        # Use the locally updated invoice object (not fresh from DB) to get updated line_items and metadata
+        amount_paid = _safe_float(meta.get("amount_paid", 0))
+        tax_amount = _safe_float(meta.get("tax_amount", 0))
+        line_items = invoice.get("line_items", []) or []  # Use local updated line_items
+        main_project = meta.get("project_number", "")
+        linked_projects = meta.get("linked_projects", [])  # Use updated linked_projects from meta
 
         # Only redistribute if there's an amount paid (otherwise no payment history to redistribute)
         if amount_paid > 0:
@@ -3134,7 +3133,7 @@ def invoice_update_amount(invoice_id):
 
             # Get all projects from line items
             if not linked_projects and main_project:
-                linked_projects = [{"project_number": main_project, "payment_stage_index": fresh_meta.get("payment_stage_index", 0)}]
+                linked_projects = [{"project_number": main_project, "payment_stage_index": meta.get("payment_stage_index", 0)}]
 
             # Step 1: Distribute to projects sequentially (sorted by project number)
             if linked_projects:
@@ -3163,8 +3162,8 @@ def invoice_update_amount(invoice_id):
                         distribute_to_proj = min(proj_amount, remaining_to_distribute)
 
                         # Get stage info for payment entry
-                        _stage_name = fresh_meta.get("payment_stage", "")
-                        _stage_idx = fresh_meta.get("payment_stage_index")
+                        _stage_name = meta.get("payment_stage", "")
+                        _stage_idx = meta.get("payment_stage_index")
                         if _stage_idx is not None:
                             try:
                                 _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
@@ -3179,7 +3178,7 @@ def invoice_update_amount(invoice_id):
                             "date": datetime.now().strftime("%Y-%m-%d"),
                             "created_at": datetime.now(timezone.utc).isoformat(),
                             "project_number": proj_num,
-                            "invoice_number": fresh_meta.get("invoice_number", ""),
+                            "invoice_number": meta.get("invoice_number", ""),
                             "stage_name": _stage_name,
                             "stage_index": _stage_idx or "",
                         })
