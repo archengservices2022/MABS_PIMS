@@ -3089,12 +3089,30 @@ def invoice_update_amount(invoice_id):
             meta["subtotal"] = str(invoice_subtotal)
             meta["total"] = str(invoice_subtotal + tax_amount)
 
+            # For multi-project invoices: update linked_projects metadata to match current line items
+            # This ensures _allocate_invoice_payment_sequential knows about all projects
+            projects_in_items = set()
+            for item in line_items:
+                if isinstance(item, dict):
+                    proj_num = item.get("project_number", "")
+                    if proj_num:
+                        projects_in_items.add(proj_num)
+
+            # If multiple projects in line items, update linked_projects metadata
+            if len(projects_in_items) > 1:
+                main_stage_idx = meta.get("payment_stage_index", 0)
+                meta["linked_projects"] = [
+                    {"project_number": proj_num, "payment_stage_index": main_stage_idx}
+                    for proj_num in sorted(projects_in_items)
+                ]
+
         meta["updated_at"] = datetime.now(timezone.utc).isoformat()
         invoice["meta"] = meta
         invoice["updated_at"] = datetime.now(timezone.utc).isoformat()
         fb_update(f"/invoices/{invoice_id}", invoice)
 
         # Recalculate payment allocation for multi-project invoices (same as payment creation/addition)
+        # This re-distributes existing payments across all projects sequentially
         _allocate_invoice_payment_sequential(invoice_id)
 
         return jsonify({"success": True, "message": "Invoice updated"})
