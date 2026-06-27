@@ -1359,7 +1359,7 @@ document.addEventListener('DOMContentLoaded', () => {
         html += `
           <div class="mb-2">
             <label class="form-label small">${stage.name}
-              ${isInvoiced ? '<span class="badge bg-warning-subtle text-warning ms-2"><i class="bi bi-lock-fill"></i> Invoiced</span>' : ''}
+              ${isInvoiced ? '<span class="badge bg-success text-dark ms-2"><i class="bi bi-lock-fill"></i> Invoiced</span>' : ''}
             </label>
             <input type="number" class="${inputClass}"
                    data-index="${i}" value="${stage.amount.toFixed(2)}"
@@ -1367,7 +1367,7 @@ document.addEventListener('DOMContentLoaded', () => {
                    ${inputDisabled}
                    oninput="updatePreviewStageTotals()">
             <div class="form-text small text-muted">Current: $${stage.amount.toFixed(2)}</div>
-            ${isInvoiced ? '<div class="form-text small text-warning"><i class="bi bi-info-circle"></i> This stage is invoiced and cannot be edited</div>' : ''}
+            ${isInvoiced ? '<div class="form-text small text-dark"><i class="bi bi-info-circle"></i> This stage is invoiced and cannot be edited</div>' : ''}
           </div>
         `;
         totalEdited += stage.amount;
