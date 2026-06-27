@@ -1273,18 +1273,21 @@ function showAmountChangePreview(idx, contractValue, originalAmount) {
   const currentStage = currentStages[idx];
   const isInvoiced = currentStage && ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'].includes(currentStage.status);
 
-  if (Math.abs(difference) > 0.01) {
-    // Find non-invoiced stages
-    const uninvoicedStages = currentStages
-      .map((s, i) => i !== idx && s.status === 'Pending Invoice' ? i : -1)
-      .filter(i => i >= 0);
+  // Count invoiced and non-invoiced stages
+  const invoicedCount = currentStages.filter(s => ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'].includes(s.status)).length;
+  const nonInvoicedCount = currentStages.filter(s => s.status === 'Pending Invoice').length;
 
+  if (Math.abs(difference) > 0.01) {
     let message = '';
     let bgColor = '';
     let borderColor = '';
 
-    if (isInvoiced && uninvoicedStages.length > 0) {
-      // Invoiced stage changed - redistribute to non-invoiced stages
+    if (isInvoiced && nonInvoicedCount > 0) {
+      // Invoiced stage changed - auto-reduce non-invoiced stages
+      const uninvoicedStages = currentStages
+        .map((s, i) => i !== idx && s.status === 'Pending Invoice' ? i : -1)
+        .filter(i => i >= 0);
+
       const perStage = difference / uninvoicedStages.length;
       const changeType = difference > 0 ? 'reduce' : 'increase';
       const changeAmount = Math.abs(perStage);
@@ -1296,8 +1299,8 @@ function showAmountChangePreview(idx, contractValue, originalAmount) {
         <i class="bi bi-arrow-repeat me-1"></i>Auto-Adjust Payment Plan
       </div>
       <div style="font-size:0.9rem; color:#555; margin-bottom:8px;">
-        This stage will ${difference > 0 ? 'increase' : 'decrease'} by $${Math.abs(difference).toFixed(2)}<br>
-        Other pending stages will ${changeType} by $${changeAmount.toFixed(2)} each
+        This invoiced stage will ${difference > 0 ? 'increase' : 'decrease'} by $${Math.abs(difference).toFixed(2)}<br>
+        Non-invoiced stages will ${changeType} by $${changeAmount.toFixed(2)} each
       </div>
       <div style="font-size:0.85rem; color:#666; padding:6px; background:rgba(255,255,255,0.5); border-radius:4px; margin-bottom:6px;">`;
 
@@ -1312,8 +1315,43 @@ function showAmountChangePreview(idx, contractValue, originalAmount) {
       <div style="padding:8px; background:#fff; border-radius:4px; border:1px solid #4caf50; font-weight:600; color:#2e7d32;">
         ✓ Contract value remains: $${contractValue.toFixed(2)}
       </div>`;
-    } else if (!isInvoiced) {
-      // Non-invoiced stage changed
+
+    } else if (!isInvoiced && invoicedCount > 0) {
+      // Non-invoiced stage changed - auto-reduce invoiced stages
+      const invoicedStages = currentStages
+        .map((s, i) => i !== idx && ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'].includes(s.status) ? i : -1)
+        .filter(i => i >= 0);
+
+      const perStage = difference / invoicedStages.length;
+      const changeType = difference > 0 ? 'reduce' : 'increase';
+      const changeAmount = Math.abs(perStage);
+
+      bgColor = '#e8f5e9';
+      borderColor = '#4caf50';
+
+      message = `<div style="font-weight:600; color:#2e7d32; margin-bottom:8px;">
+        <i class="bi bi-arrow-repeat me-1"></i>Auto-Adjust Payment Plan
+      </div>
+      <div style="font-size:0.9rem; color:#555; margin-bottom:8px;">
+        This pending stage will ${difference > 0 ? 'increase' : 'decrease'} by $${Math.abs(difference).toFixed(2)}<br>
+        Invoiced stages will ${changeType} by $${changeAmount.toFixed(2)} each
+      </div>
+      <div style="font-size:0.85rem; color:#666; padding:6px; background:rgba(255,255,255,0.5); border-radius:4px; margin-bottom:6px;">`;
+
+      invoicedStages.forEach(i => {
+        const stageName = currentStages[i].name || `Stage ${i+1}`;
+        const oldAmt = currentStages[i].amount || 0;
+        const newAmt = oldAmt - perStage;
+        message += `• ${stageName}: $${oldAmt.toFixed(2)} → $${newAmt.toFixed(2)}<br>`;
+      });
+
+      message += `</div>
+      <div style="padding:8px; background:#fff; border-radius:4px; border:1px solid #4caf50; font-weight:600; color:#2e7d32;">
+        ✓ Contract value remains: $${contractValue.toFixed(2)}
+      </div>`;
+
+    } else if (!isInvoiced && invoicedCount === 0) {
+      // Only non-invoiced stages exist
       const changeType = difference > 0 ? 'increase' : 'decrease';
       const changeAmount = Math.abs(difference);
       const newContractValue = contractValue + difference;
@@ -1322,16 +1360,17 @@ function showAmountChangePreview(idx, contractValue, originalAmount) {
       borderColor = '#ff9800';
 
       message = `<div style="font-weight:600; color:#e65100; margin-bottom:8px;">
-        <i class="bi bi-exclamation-circle me-1"></i>Contract Value Change
+        <i class="bi bi-exclamation-circle me-1"></i>Permission Required
       </div>
       <div style="font-size:0.9rem; color:#555; margin-bottom:8px;">
-        This stage amount will ${changeType} by $${changeAmount.toFixed(2)}
+        This will change the contract value (no other stages to adjust)
       </div>
       <div style="padding:8px; background:#fff; border-radius:4px; border:1px solid #ff9800; font-weight:600; color:#e65100;">
         ⚠️ Contract Value: $${contractValue.toFixed(2)} → $${newContractValue.toFixed(2)} (${changeType} by $${changeAmount.toFixed(2)})
       </div>`;
-    } else {
-      // Invoiced stage but no non-invoiced
+
+    } else if (isInvoiced && nonInvoicedCount === 0) {
+      // All stages are invoiced
       const changeType = difference > 0 ? 'increase' : 'decrease';
       const changeAmount = Math.abs(difference);
       const newContractValue = contractValue + difference;
@@ -1340,10 +1379,10 @@ function showAmountChangePreview(idx, contractValue, originalAmount) {
       borderColor = '#ff9800';
 
       message = `<div style="font-weight:600; color:#e65100; margin-bottom:8px;">
-        <i class="bi bi-exclamation-circle me-1"></i>Contract Value Change
+        <i class="bi bi-exclamation-circle me-1"></i>Permission Required
       </div>
       <div style="font-size:0.9rem; color:#555; margin-bottom:8px;">
-        No other stages available to adjust automatically
+        All stages are invoiced (no stages to adjust automatically)
       </div>
       <div style="padding:8px; background:#fff; border-radius:4px; border:1px solid #ff9800; font-weight:600; color:#e65100;">
         ⚠️ Contract Value: $${contractValue.toFixed(2)} → $${newContractValue.toFixed(2)} (${changeType} by $${changeAmount.toFixed(2)})
@@ -1428,53 +1467,8 @@ function saveInlineEdit(idx, status, invoiceId) {
     currentStages[idx].name = `${baseName} (${dpPercent}%)`;
   }
 
-  // Save to backend
-  // Just save the edited stage - no redistribution across other stages
-  const endpoint = `/api/projects/${projectId}/payment-plan`;
-
-  const payload = {
-    amounts: currentStages.map((s, i) => ({ index: i, amount: s.amount }))
-  };
-
-  // Don't update invoice here - let user click Update button in modal to update invoice
-  // Just save the stage amount change, which will trigger page reload
-  // and show Update button if amounts differ from invoice
-
-  fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  })
-  .then(r => r.json())
-  .then(data => {
-    if (data.success) {
-      // Update UI immediately for all changed stages
-      const fmt = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-
-      // Update the edited stage display
-      stageAmountDisplay.textContent = fmt(newAmount);
-
-      // Update dataset for current stage
-      input.dataset.originalAmount = newAmount;
-
-      // Close edit mode
-      displaySpan.style.display = 'inline-flex';
-      editSpan.style.display = 'none';
-
-      // Reload page after successful save
-      setTimeout(() => location.reload(), 300);
-    } else {
-      // Show error only on failure
-      alert('❌ Error: ' + (data.error || 'Could not update'));
-      displaySpan.style.display = 'inline-flex';
-      editSpan.style.display = 'none';
-    }
-  })
-  .catch(e => {
-    alert('❌ Error: ' + e.message);
-    displaySpan.style.display = 'inline-flex';
-    editSpan.style.display = 'none';
-  });
+  // Save with permission check if needed
+  saveAmountChangeWithPermission(idx, contractValue, input.dataset.original || input.defaultValue, editSpan, displaySpan, stageAmountDisplay, input, newAmount);
 }
 
 function prepareUpdateInvoicedStage(idx, name, amount, invoiceId) {
@@ -1596,6 +1590,138 @@ function quickInvoiceStage(idx, stageName, amount, projectId) {
     }
   })
   .catch(e => alert('❌ Error: ' + e.message));
+}
+
+// ── Permission Modal Handler ────────────────────────────────────────────
+let pendingUpdateData = null;
+
+function showContractValuePermission(message, newContractValue, onApprove, onDeny) {
+  // Create and show permission modal
+  const modalHtml = `
+    <div class="modal fade" id="contractValuePermissionModal" tabindex="-1">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header bg-warning bg-opacity-10 border-bottom-2 border-warning">
+            <h5 class="modal-title">
+              <i class="bi bi-exclamation-circle text-warning me-2"></i>Confirm Contract Value Change
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted mb-3">${message}</p>
+            <div class="alert alert-warning alert-sm mb-0">
+              <strong>New Contract Value:</strong> $${newContractValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="onContractValueDeny()">
+              Cancel
+            </button>
+            <button type="button" class="btn btn-warning" onclick="onContractValueApprove()">
+              <i class="bi bi-check-circle me-1"></i>Continue
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Remove existing modal if any
+  const existingModal = document.getElementById('contractValuePermissionModal');
+  if (existingModal) existingModal.remove();
+
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+  // Set callbacks
+  window.onContractValueApprove = onApprove;
+  window.onContractValueDeny = onDeny;
+
+  // Show modal
+  const modal = new bootstrap.Modal(document.getElementById('contractValuePermissionModal'));
+  modal.show();
+}
+
+// Handle inline edit save with permission check
+function saveAmountChangeWithPermission(idx, contractValue, originalAmount, editSpan, displaySpan, stageAmountDisplay, input, newAmount) {
+  const payload = {
+    amounts: currentStages.map((s, i) => ({ index: i, amount: s.amount }))
+  };
+
+  fetch(`/api/projects/${projectId}/payment-plan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      // Update UI and reload
+      stageAmountDisplay.textContent = '$' + newAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      input.dataset.originalAmount = newAmount;
+      displaySpan.style.display = 'inline-flex';
+      editSpan.style.display = 'none';
+      setTimeout(() => location.reload(), 300);
+    } else if (data.needs_permission) {
+      // Show permission modal
+      showContractValuePermission(
+        data.message,
+        data.new_contract_value,
+        () => {
+          // User approved - send with permission flag
+          const modal = bootstrap.Modal.getInstance(document.getElementById('contractValuePermissionModal'));
+          modal.hide();
+
+          const payloadWithPermission = {
+            ...payload,
+            permissionGranted: true
+          };
+
+          fetch(`/api/projects/${projectId}/payment-plan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payloadWithPermission)
+          })
+          .then(r => r.json())
+          .then(data => {
+            if (data.success) {
+              stageAmountDisplay.textContent = '$' + newAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+              input.dataset.originalAmount = newAmount;
+              displaySpan.style.display = 'inline-flex';
+              editSpan.style.display = 'none';
+              setTimeout(() => location.reload(), 300);
+            } else {
+              alert('❌ Error: ' + (data.error || 'Could not update'));
+              displaySpan.style.display = 'inline-flex';
+              editSpan.style.display = 'none';
+            }
+          })
+          .catch(e => {
+            alert('❌ Error: ' + e.message);
+            displaySpan.style.display = 'inline-flex';
+            editSpan.style.display = 'none';
+          });
+        },
+        () => {
+          // User denied - revert changes
+          const modal = bootstrap.Modal.getInstance(document.getElementById('contractValuePermissionModal'));
+          modal.hide();
+          input.value = originalAmount;
+          currentStages[idx].amount = originalAmount;
+          displaySpan.style.display = 'inline-flex';
+          editSpan.style.display = 'none';
+        }
+      );
+    } else {
+      alert('❌ Error: ' + (data.error || 'Could not update'));
+      displaySpan.style.display = 'inline-flex';
+      editSpan.style.display = 'none';
+    }
+  })
+  .catch(e => {
+    alert('❌ Error: ' + e.message);
+    displaySpan.style.display = 'inline-flex';
+    editSpan.style.display = 'none';
+  });
 }
 </script>
 {% endblock %}

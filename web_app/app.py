@@ -9699,13 +9699,14 @@ def _send_overdue_reminder_email(invoice_id: str, invoice: dict):
 @app.route("/api/projects/<project_id>/payment-plan", methods=["POST"])
 @role_required("projects")
 def update_project_payment_plan(project_id):
-    """Update payment plan amounts and redistribute to stages"""
+    """Update payment plan amounts with smart auto-adjustment and permission controls"""
     try:
         data = request.get_json()
         amounts = data.get("amounts", [])
         invoice_id = data.get("invoiceId", "")
         original_amount = _safe_float(data.get("originalAmount", 0))
         new_amount = _safe_float(data.get("newAmount", 0))
+        permission_granted = data.get("permissionGranted", False)
 
         project = fb_get(f"/projects/{project_id}") or {}
         stages = project.get("payment_stages", [])
@@ -9725,31 +9726,65 @@ def update_project_payment_plan(project_id):
                     new_amount = new_amt
                     break
 
+        if edited_idx < 0:
+            return {"success": False, "error": "No stage changed detected"}, 400
+
+        # Count invoiced and non-invoiced stages
+        invoiced_count = sum(1 for s in stages if s.get("status") in ["Invoiced", "Paid", "Partially Paid", "Overdue"])
+        non_invoiced_count = sum(1 for s in stages if s.get("status") == "Pending Invoice")
+
         # Check if edited stage is invoiced
-        edited_stage_invoiced = False
-        if edited_idx >= 0 and edited_idx < len(stages):
-            stage_status = stages[edited_idx].get("status", "")
-            edited_stage_invoiced = stage_status in ["Invoiced", "Paid", "Partially Paid", "Overdue"]
+        edited_stage_invoiced = stages[edited_idx].get("status") in ["Invoiced", "Paid", "Partially Paid", "Overdue"]
 
-        # Find non-invoiced stages
-        uninvoiced_indices = [i for i, s in enumerate(stages) if i != edited_idx and s.get("status") == "Pending Invoice"]
+        # Determine if permission is needed
+        needs_permission = False
+        if non_invoiced_count == 1 and not edited_stage_invoiced:
+            # Only 1 non-invoiced stage and user is editing it
+            needs_permission = True
+        elif non_invoiced_count == 0 and edited_stage_invoiced:
+            # All stages are invoiced and user is editing one
+            needs_permission = True
 
-        # If editing invoiced stage and non-invoiced stages exist, auto-adjust them
-        if edited_stage_invoiced and uninvoiced_indices and edited_idx >= 0:
-            difference = new_amount - old_amount
-            per_stage = difference / len(uninvoiced_indices)
+        # If permission needed and not granted, return request for permission
+        if needs_permission and not permission_granted:
+            new_contract_value = old_contract_value + (new_amount - old_amount)
+            return {
+                "success": False,
+                "needs_permission": True,
+                "message": f"This will change the contract value from ${old_contract_value:,.2f} to ${new_contract_value:,.2f}. Continue?",
+                "new_contract_value": new_contract_value
+            }, 400
 
-            # Auto-adjust non-invoiced stages
-            for idx in uninvoiced_indices:
-                current_amt = _safe_float(amounts[idx].get("amount", 0)) if idx < len(amounts) else _safe_float(stages[idx].get("amount", 0))
-                amounts[idx] = {"index": idx, "amount": max(0, current_amt - per_stage)}
+        # Auto-adjust logic: distribute difference to other stage type
+        difference = new_amount - old_amount
+
+        if edited_stage_invoiced and non_invoiced_count > 0:
+            # Editing invoiced stage: auto-reduce non-invoiced stages
+            uninvoiced_indices = [i for i in range(len(stages))
+                                 if i != edited_idx and stages[i].get("status") == "Pending Invoice"]
+            if uninvoiced_indices:
+                per_stage = difference / len(uninvoiced_indices)
+                for idx in uninvoiced_indices:
+                    current_amt = _safe_float(amounts[idx].get("amount", 0)) if idx < len(amounts) else _safe_float(stages[idx].get("amount", 0))
+                    amounts[idx] = {"index": idx, "amount": max(0, current_amt - per_stage)}
+
+        elif not edited_stage_invoiced and invoiced_count > 0:
+            # Editing non-invoiced stage: auto-reduce invoiced stages
+            invoiced_indices = [i for i in range(len(stages))
+                               if i != edited_idx and stages[i].get("status") in ["Invoiced", "Paid", "Partially Paid", "Overdue"]]
+            if invoiced_indices:
+                per_stage = difference / len(invoiced_indices)
+                for idx in invoiced_indices:
+                    current_amt = _safe_float(amounts[idx].get("amount", 0)) if idx < len(amounts) else _safe_float(stages[idx].get("amount", 0))
+                    amounts[idx] = {"index": idx, "amount": max(0, current_amt - per_stage)}
 
         # Calculate total from (possibly adjusted) amounts
         total = sum(_safe_float(a.get("amount", 0)) for a in amounts)
 
-        # Update contract value if total changed due to auto-adjustment
+        # Update contract value if permission granted or if no permission was needed
         if abs(total - old_contract_value) > 0.01:
-            project["contract_value"] = str(total)
+            if needs_permission or non_invoiced_count > 0 or invoiced_count > 0:
+                project["contract_value"] = str(total)
 
         # Update all stages with new amounts
         for amount_data in amounts:
