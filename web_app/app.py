@@ -2654,7 +2654,10 @@ def invoice_new():
         data["meta"]["created_at"] = datetime.now(timezone.utc).isoformat()
         data["meta"]["updated_at"] = datetime.now(timezone.utc).isoformat()
         data["meta"]["created_by"] = session.get("user_email", "")
-        data["meta"]["status"] = "Draft"
+        # Use status from form if provided, otherwise default to "Draft"
+        form_status = request.form.get("status", "Draft").strip()
+        valid_statuses = {"Draft", "Sent", "Viewed", "Paid", "Partial", "Overdue", "Cancelled"}
+        data["meta"]["status"] = form_status if form_status in valid_statuses else "Draft"
 
         stage_idx_raw = request.form.get("payment_stage_index", "")
         stage_name    = request.form.get("payment_stage", "")
