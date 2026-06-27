@@ -1538,8 +1538,16 @@ function saveAmountChangeWithPermission(idx, contractValue, originalAmount, edit
         data.new_contract_value,
         () => {
           // User approved - send with permission flag
-          const modal = bootstrap.Modal.getInstance(document.getElementById('contractValuePermissionModal'));
-          modal.hide();
+          const modalEl = document.getElementById('contractValuePermissionModal');
+          const modal = bootstrap.Modal.getInstance(modalEl);
+          if (modal) {
+            modal.hide();
+          }
+          // Clean up modal backdrop
+          document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+          // Restore body scroll
+          document.body.classList.remove('modal-open');
+          document.body.style.overflow = '';
 
           const payloadWithPermission = {
             ...payload,
@@ -1573,8 +1581,17 @@ function saveAmountChangeWithPermission(idx, contractValue, originalAmount, edit
         },
         () => {
           // User denied - revert changes
-          const modal = bootstrap.Modal.getInstance(document.getElementById('contractValuePermissionModal'));
-          modal.hide();
+          const modalEl = document.getElementById('contractValuePermissionModal');
+          const modal = bootstrap.Modal.getInstance(modalEl);
+          if (modal) {
+            modal.hide();
+          }
+          // Clean up modal backdrop
+          document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+          // Restore body scroll
+          document.body.classList.remove('modal-open');
+          document.body.style.overflow = '';
+
           input.value = originalAmount;
           currentStages[idx].amount = originalAmount;
           displaySpan.style.display = 'inline-flex';
