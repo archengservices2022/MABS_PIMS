@@ -3115,43 +3115,91 @@ def invoice_update_amount(invoice_id):
         invoice["updated_at"] = datetime.now(timezone.utc).isoformat()
         fb_update(f"/invoices/{invoice_id}", invoice)
 
-        # Recalculate payment allocation for multi-project invoices (same as payment creation/addition)
-        # This re-distributes existing payments across all projects sequentially
-        _allocate_invoice_payment_sequential(invoice_id)
-
-        # After payment re-allocation, handle tax distribution if invoice is paid/partial
-        # This ensures tax payments are properly tracked across projects
+        # When editing amounts, redistribute payments the SAME WAY as payment_sequential
+        # This ensures both work identically - payments distributed sequentially across projects then tax
         fresh_invoice = fb_get(f"/invoices/{invoice_id}") or {}
         fresh_meta = fresh_invoice.get("meta", {})
         amount_paid = _safe_float(fresh_meta.get("amount_paid", 0))
         tax_amount = _safe_float(fresh_meta.get("tax_amount", 0))
+        line_items = fresh_invoice.get("line_items", []) or []
+        main_project = fresh_meta.get("project_number", "")
+        linked_projects = fresh_meta.get("linked_projects", [])
 
-        # If there's payment and tax amount, ensure tax is distributed to tax_payments
-        if amount_paid > 0 and tax_amount > 0:
-            payment_log = fresh_invoice.get("payment_log", []) or []
-            if isinstance(payment_log, list):
-                project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+        # Only redistribute if there's an amount paid (otherwise no payment history to redistribute)
+        if amount_paid > 0:
+            # Clear existing payment logs and rebuild them sequentially (same as payment_sequential)
+            new_payment_log = []
+            new_tax_log = []
+            remaining_to_distribute = amount_paid
 
-                # If remaining payment after project allocation, allocate to tax_payments
-                remaining_for_tax = amount_paid - project_payments
-                if remaining_for_tax > 0:
-                    tax_log = fresh_invoice.get("tax_payments", []) or []
-                    if not isinstance(tax_log, list):
-                        tax_log = []
+            # Get all projects from line items
+            if not linked_projects and main_project:
+                linked_projects = [{"project_number": main_project, "payment_stage_index": fresh_meta.get("payment_stage_index", 0)}]
 
-                    # Update or create tax payment entry
-                    if tax_log:
-                        # Update existing tax payment
-                        tax_log[0]["amount"] = str(remaining_for_tax)
-                    else:
-                        # Create new tax payment entry
-                        tax_log.append({
-                            "amount": str(remaining_for_tax),
+            # Step 1: Distribute to projects sequentially (sorted by project number)
+            if linked_projects:
+                # Sort projects by number
+                def get_sort_key(x):
+                    proj_num = x.get("project_number", "") if isinstance(x, dict) else x
+                    if proj_num and proj_num[-3:].isdigit():
+                        return int(proj_num[-3:])
+                    return proj_num
+                sorted_projects = sorted(linked_projects, key=get_sort_key)
+
+                for proj_info in sorted_projects:
+                    if remaining_to_distribute <= 0:
+                        break
+
+                    proj_num = proj_info.get("project_number", "") if isinstance(proj_info, dict) else proj_info
+                    if not proj_num:
+                        continue
+
+                    # Get this project's line item amount
+                    proj_amount = sum(_safe_float(item.get("amount", 0)) for item in line_items
+                                    if isinstance(item, dict) and item.get("project_number", "").strip() == proj_num)
+
+                    if proj_amount > 0:
+                        # Allocate up to this project's amount
+                        distribute_to_proj = min(proj_amount, remaining_to_distribute)
+
+                        # Get stage info for payment entry
+                        _stage_name = fresh_meta.get("payment_stage", "")
+                        _stage_idx = fresh_meta.get("payment_stage_index")
+                        if _stage_idx is not None:
+                            try:
+                                _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
+                            except (ValueError, TypeError):
+                                _stage_idx = None
+
+                        if not _stage_name and _stage_idx is not None:
+                            _stage_name = f"Stage {_stage_idx + 1}"
+
+                        new_payment_log.append({
+                            "amount": str(distribute_to_proj),
                             "date": datetime.now().strftime("%Y-%m-%d"),
                             "created_at": datetime.now(timezone.utc).isoformat(),
+                            "project_number": proj_num,
+                            "invoice_number": fresh_meta.get("invoice_number", ""),
+                            "stage_name": _stage_name,
+                            "stage_index": _stage_idx or "",
                         })
+                        remaining_to_distribute -= distribute_to_proj
 
-                    fb_update(f"/invoices/{invoice_id}", {"tax_payments": tax_log})
+            # Step 2: Distribute remaining to tax
+            if remaining_to_distribute > 0 and tax_amount > 0:
+                tax_needs = min(tax_amount, remaining_to_distribute)
+                new_tax_log.append({
+                    "amount": str(tax_needs),
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                })
+                remaining_to_distribute -= tax_needs
+
+            # Update Firebase with redistributed payment logs (same structure as payment_sequential)
+            fb_update(f"/invoices/{invoice_id}", {
+                "payment_log": new_payment_log,
+                "tax_payments": new_tax_log if new_tax_log else []
+            })
 
         return jsonify({"success": True, "message": "Invoice updated"})
     except Exception as e:
