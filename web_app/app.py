@@ -3039,7 +3039,7 @@ def invoice_update_amount(invoice_id):
         project_number = request.form.get("project_number", "").strip()
         invoice = fb_get(f"/invoices/{invoice_id}") or {}
         meta = invoice.get("meta", {})
-        tax_amount = _safe_float(meta.get("tax_amount", 0))
+        tax_rate = _safe_float(meta.get("tax_rate", 0))
 
         # Update line items if they exist
         line_items = invoice.get("line_items", [])
@@ -3087,7 +3087,11 @@ def invoice_update_amount(invoice_id):
             # Same approach as payment_sequential: sum actual line item amounts
             invoice_subtotal = sum(_safe_float(item.get("amount", 0)) for item in line_items if isinstance(item, dict))
             meta["subtotal"] = str(invoice_subtotal)
-            meta["total"] = str(invoice_subtotal + tax_amount)
+
+            # Recalculate tax based on new subtotal and tax rate (same as payment_sequential process)
+            new_tax_amount = invoice_subtotal * (tax_rate / 100.0) if tax_rate > 0 else 0
+            meta["tax_amount"] = str(new_tax_amount)
+            meta["total"] = str(invoice_subtotal + new_tax_amount)
 
             # For multi-project invoices: update linked_projects metadata to match current line items
             # This ensures _allocate_invoice_payment_sequential knows about all projects
@@ -3114,6 +3118,40 @@ def invoice_update_amount(invoice_id):
         # Recalculate payment allocation for multi-project invoices (same as payment creation/addition)
         # This re-distributes existing payments across all projects sequentially
         _allocate_invoice_payment_sequential(invoice_id)
+
+        # After payment re-allocation, handle tax distribution if invoice is paid/partial
+        # This ensures tax payments are properly tracked across projects
+        fresh_invoice = fb_get(f"/invoices/{invoice_id}") or {}
+        fresh_meta = fresh_invoice.get("meta", {})
+        amount_paid = _safe_float(fresh_meta.get("amount_paid", 0))
+        tax_amount = _safe_float(fresh_meta.get("tax_amount", 0))
+
+        # If there's payment and tax amount, ensure tax is distributed to tax_payments
+        if amount_paid > 0 and tax_amount > 0:
+            payment_log = fresh_invoice.get("payment_log", []) or []
+            if isinstance(payment_log, list):
+                project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+
+                # If remaining payment after project allocation, allocate to tax_payments
+                remaining_for_tax = amount_paid - project_payments
+                if remaining_for_tax > 0:
+                    tax_log = fresh_invoice.get("tax_payments", []) or []
+                    if not isinstance(tax_log, list):
+                        tax_log = []
+
+                    # Update or create tax payment entry
+                    if tax_log:
+                        # Update existing tax payment
+                        tax_log[0]["amount"] = str(remaining_for_tax)
+                    else:
+                        # Create new tax payment entry
+                        tax_log.append({
+                            "amount": str(remaining_for_tax),
+                            "date": datetime.now().strftime("%Y-%m-%d"),
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                        })
+
+                    fb_update(f"/invoices/{invoice_id}", {"tax_payments": tax_log})
 
         return jsonify({"success": True, "message": "Invoice updated"})
     except Exception as e:
