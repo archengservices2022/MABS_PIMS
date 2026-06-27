@@ -9711,7 +9711,40 @@ def update_project_payment_plan(project_id):
         stages = project.get("payment_stages", [])
         contract_value = _safe_float(project.get("contract_value", 0))
 
-        # Calculate new total from edited amounts
+        # First, find which stage was edited (by comparing new amounts to current)
+        edited_idx = -1
+        old_amount = 0
+        new_amount = 0
+        for idx, amount_data in enumerate(amounts):
+            if idx < len(stages):
+                current_stage_amount = _safe_float(stages[idx].get("amount", 0))
+                new_amt = _safe_float(amount_data.get("amount", 0))
+                if abs(current_stage_amount - new_amt) > 0.01:
+                    edited_idx = idx
+                    old_amount = current_stage_amount
+                    new_amount = new_amt
+                    break
+
+        # Check if edited stage is invoiced
+        edited_stage_invoiced = False
+        if edited_idx >= 0 and edited_idx < len(stages):
+            stage_status = stages[edited_idx].get("status", "")
+            edited_stage_invoiced = stage_status in ["Invoiced", "Paid", "Partially Paid", "Overdue"]
+
+        # Find non-invoiced stages
+        uninvoiced_indices = [i for i, s in enumerate(stages) if i != edited_idx and s.get("status") == "Pending Invoice"]
+
+        # If editing invoiced stage and non-invoiced stages exist, redistribute the difference
+        if edited_stage_invoiced and uninvoiced_indices and edited_idx >= 0:
+            difference = new_amount - old_amount
+            per_stage = difference / len(uninvoiced_indices)
+
+            # Auto-adjust non-invoiced stages
+            for idx in uninvoiced_indices:
+                current_amt = _safe_float(amounts[idx].get("amount", 0)) if idx < len(amounts) else _safe_float(stages[idx].get("amount", 0))
+                amounts[idx] = {"index": idx, "amount": max(0, current_amt - per_stage)}
+
+        # Calculate total from edited amounts
         total = sum(_safe_float(a.get("amount", 0)) for a in amounts)
 
         # If total changed from contract value, update contract value accordingly

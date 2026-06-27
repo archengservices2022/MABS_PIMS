@@ -1270,13 +1270,48 @@ function showAmountChangePreview(idx, contractValue, originalAmount) {
   const newAmount = parseFloat(input.value) || 0;
   const original = parseFloat(input.dataset.original) || originalAmount || 0;
   const difference = newAmount - original;
+  const currentStage = currentStages[idx];
+  const isInvoiced = currentStage && ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'].includes(currentStage.status);
 
   if (Math.abs(difference) > 0.01) {
-    const changeType = difference > 0 ? 'increase' : 'decrease';
-    const changeAmount = Math.abs(difference);
-    const newContractValue = contractValue + difference;
+    // Find non-invoiced stages
+    const uninvoicedStages = currentStages
+      .map((s, i) => i !== idx && s.status === 'Pending Invoice' ? i : -1)
+      .filter(i => i >= 0);
 
-    msgEl.innerHTML = `<i class="bi bi-info-circle me-1"></i>Contract value will ${changeType} by $${changeAmount.toFixed(2)} → $${newContractValue.toFixed(2)}`;
+    let message = '';
+
+    if (isInvoiced && uninvoicedStages.length > 0) {
+      // Invoiced stage changed - redistribute to non-invoiced stages
+      const perStage = difference / uninvoicedStages.length;
+      const changeType = difference > 0 ? 'reduce' : 'increase';
+      const changeAmount = Math.abs(perStage);
+
+      message = `<i class="bi bi-arrow-repeat me-1"></i><strong>Auto-adjust:</strong> Other stages will ${changeType} by $${changeAmount.toFixed(2)} each`;
+
+      // Show which stages will change
+      message += '<div style="font-size:0.7rem; margin-top:4px;">';
+      uninvoicedStages.forEach(i => {
+        const stageName = currentStages[i].name || `Stage ${i+1}`;
+        const newAmount = (currentStages[i].amount || 0) - perStage;
+        message += `• ${stageName}: $${(currentStages[i].amount || 0).toFixed(2)} → $${newAmount.toFixed(2)}<br>`;
+      });
+      message += '</div>';
+    } else if (!isInvoiced) {
+      // Non-invoiced stage changed - just show contract value change
+      const changeType = difference > 0 ? 'increase' : 'decrease';
+      const changeAmount = Math.abs(difference);
+      const newContractValue = contractValue + difference;
+      message = `<i class="bi bi-info-circle me-1"></i>Contract value will ${changeType} by $${changeAmount.toFixed(2)} → $${newContractValue.toFixed(2)}`;
+    } else {
+      // Invoiced stage but no non-invoiced to redistribute to
+      const changeType = difference > 0 ? 'increase' : 'decrease';
+      const changeAmount = Math.abs(difference);
+      const newContractValue = contractValue + difference;
+      message = `<i class="bi bi-exclamation-circle me-1"></i>Contract value will ${changeType} by $${changeAmount.toFixed(2)} → $${newContractValue.toFixed(2)}`;
+    }
+
+    msgEl.innerHTML = message;
     msgEl.style.display = 'block';
   } else {
     msgEl.style.display = 'none';
