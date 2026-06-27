@@ -244,11 +244,15 @@
           <label class="form-label">Contract Value ($)</label>
           {% set existing_stages = project.get('payment_stages') if project else None %}
           {% set has_invoiced = existing_stages and (existing_stages|selectattr('status', 'in', ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'])|list|length > 0) %}
-          <input type="number" id="contractValue" name="contract_value" class="form-control"
-                 value="{{ project.get('contract_value','0') if project else '0' }}"
+          {% set contract_val = project.get('contract_value','0') if project else '0' %}
+          {# Hidden input to preserve value when field is disabled (disabled fields don't submit) #}
+          {% if has_invoiced %}<input type="hidden" name="contract_value" value="{{ contract_val }}">{% endif %}
+          <input type="number" id="contractValue" class="form-control"
+                 value="{{ contract_val }}"
                  min="0" step="0.01" oninput="(function() { try { handleContractValueChange(); } catch(e) { console.error('handleContractValueChange error:', e); } updatePlanPreview(); })();"
-                 data-original-value="{{ project.get('contract_value','0')|float if project else 0 }}"
-                 {% if has_invoiced %}disabled title="Cannot edit: payment stages are invoiced"{% endif %}>
+                 data-original-value="{{ contract_val|float }}"
+                 {% if has_invoiced %}disabled title="Cannot edit: payment stages are invoiced"{% endif %}
+                 {% else %}name="contract_value"{% endif %}>
           {% if has_invoiced %}
           <small class="text-muted d-block mt-1"><i class="bi bi-lock me-1"></i>Contract value is locked because payment stages are invoiced.</small>
           {% endif %}
@@ -276,19 +280,26 @@
         <div class="row g-2 mb-3">
           <div class="col-6">
             <label class="form-label">Down Payment (%)</label>
-            <input type="number" id="downPaymentPct" name="down_payment_percent" class="form-control"
-                   value="{{ project.get('down_payment_percent', 0) if project else 0 }}"
+            {% set down_pct = project.get('down_payment_percent', 0) if project else 0 %}
+            {# Hidden input to preserve value when field is disabled #}
+            {% if has_invoiced %}<input type="hidden" name="down_payment_percent" value="{{ down_pct }}">{% endif %}
+            <input type="number" id="downPaymentPct" class="form-control"
+                   value="{{ down_pct }}"
                    min="0" max="100" step="1" placeholder="0"
                    {% if has_invoiced %}disabled{% endif %}
+                   {% else %}name="down_payment_percent"{% endif %}
                    oninput="updatePlanPreview()">
             <div class="form-text">0 = no down payment</div>
           </div>
           <div class="col-6">
             <label class="form-label">Balance Installments</label>
-            <select id="installmentCount" name="installment_count" class="form-select"
+            {% set curr = project.get('installment_count', 1)|int if project else 1 %}
+            {# Hidden input to preserve value when field is disabled #}
+            {% if has_invoiced %}<input type="hidden" name="installment_count" value="{{ curr }}">{% endif %}
+            <select id="installmentCount" class="form-select"
                     {% if has_invoiced %}disabled{% endif %}
+                    {% else %}name="installment_count"{% endif %}
                     onchange="updatePlanPreview()">
-              {% set curr = project.get('installment_count', 1)|int if project else 1 %}
               <option value="1" {{ 'selected' if curr == 1 }}>1 — Single payment</option>
               {% for n in range(2, 7) %}
               <option value="{{ n }}" {{ 'selected' if curr == n }}>{{ n }} installments</option>
