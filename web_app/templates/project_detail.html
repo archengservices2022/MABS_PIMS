@@ -1462,7 +1462,7 @@ function showContractValuePermission(message, newContractValue, onApprove, onDen
             <h5 class="modal-title">
               <i class="bi bi-exclamation-circle text-warning me-2"></i>Confirm Contract Value Change
             </h5>
-            <button type="button" class="btn-close" onclick="window.modalWasDenied = true; window.onContractValueDeny && window.onContractValueDeny()"></button>
+            <button type="button" class="btn-close" id="contractValueModalClose"></button>
           </div>
           <div class="modal-body">
             <p class="text-muted mb-3">${message}</p>
@@ -1471,10 +1471,10 @@ function showContractValuePermission(message, newContractValue, onApprove, onDen
             </div>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" onclick="window.modalWasDenied = true; window.onContractValueDeny && window.onContractValueDeny()">
+            <button type="button" class="btn btn-secondary" id="contractValueCancelBtn">
               <i class="bi bi-x-circle me-1"></i>Cancel
             </button>
-            <button type="button" class="btn btn-warning" onclick="window.modalWasApproved = true; window.onContractValueApprove && window.onContractValueApprove()">
+            <button type="button" class="btn btn-warning" id="contractValueContinueBtn">
               <i class="bi bi-check-circle me-1"></i>Continue
             </button>
           </div>
@@ -1489,24 +1489,43 @@ function showContractValuePermission(message, newContractValue, onApprove, onDen
 
   document.body.insertAdjacentHTML('beforeend', modalHtml);
 
-  // Reset flags
-  window.modalWasApproved = false;
-  window.modalWasDenied = false;
-
-  // Set callbacks
-  window.onContractValueApprove = onApprove;
-  window.onContractValueDeny = onDeny;
-
   // Show modal
   const modalEl = document.getElementById('contractValuePermissionModal');
   const modal = new bootstrap.Modal(modalEl);
 
-  // Handle modal close (escape key, backdrop click) -> trigger deny if not approved
-  modalEl.addEventListener('hidden.bs.modal', () => {
-    if (!window.modalWasApproved && !window.modalWasDenied && window.onContractValueDeny) {
-      window.onContractValueDeny();
-    }
-  });
+  // Attach event handlers
+  document.getElementById('contractValueContinueBtn').onclick = () => {
+    modal.hide();
+    // Clean up backdrop
+    setTimeout(() => {
+      document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = '';
+    }, 100);
+    onApprove();
+  };
+
+  document.getElementById('contractValueCancelBtn').onclick = () => {
+    modal.hide();
+    // Clean up backdrop
+    setTimeout(() => {
+      document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = '';
+    }, 100);
+    onDeny();
+  };
+
+  document.getElementById('contractValueModalClose').onclick = () => {
+    modal.hide();
+    // Clean up backdrop
+    setTimeout(() => {
+      document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = '';
+    }, 100);
+    onDeny();
+  };
 
   modal.show();
 }
@@ -1538,17 +1557,6 @@ function saveAmountChangeWithPermission(idx, contractValue, originalAmount, edit
         data.new_contract_value,
         () => {
           // User approved - send with permission flag
-          const modalEl = document.getElementById('contractValuePermissionModal');
-          const modal = bootstrap.Modal.getInstance(modalEl);
-          if (modal) {
-            modal.hide();
-          }
-          // Clean up modal backdrop
-          document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
-          // Restore body scroll
-          document.body.classList.remove('modal-open');
-          document.body.style.overflow = '';
-
           const payloadWithPermission = {
             ...payload,
             permissionGranted: true
@@ -1581,17 +1589,6 @@ function saveAmountChangeWithPermission(idx, contractValue, originalAmount, edit
         },
         () => {
           // User denied - revert changes
-          const modalEl = document.getElementById('contractValuePermissionModal');
-          const modal = bootstrap.Modal.getInstance(modalEl);
-          if (modal) {
-            modal.hide();
-          }
-          // Clean up modal backdrop
-          document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
-          // Restore body scroll
-          document.body.classList.remove('modal-open');
-          document.body.style.overflow = '';
-
           input.value = originalAmount;
           currentStages[idx].amount = originalAmount;
           displaySpan.style.display = 'inline-flex';
