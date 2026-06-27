@@ -1509,7 +1509,7 @@ function saveCustomPreviewStages() {
   // Recalculate down payment percentage if first stage is down payment
   if (previewStagesData.length > 0 && previewStagesData[0].name.includes('Down Payment')) {
     const downPaymentAmount = previewStagesData[0].amount;
-    const calculatedPercentage = Math.round((downPaymentAmount / contractValue) * 100);
+    const calculatedPercentage = Math.round((downPaymentAmount / total) * 100);
     previewStagesData[0].name = `Down Payment (${calculatedPercentage}%)`;
 
     // Update the Down Payment (%) input field
