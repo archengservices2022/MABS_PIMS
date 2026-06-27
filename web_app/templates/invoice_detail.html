@@ -482,32 +482,33 @@ function toggleDetailAmtPaid() {
   const paymentForm = document.getElementById('paymentDetailsForm');
   const amountInput = document.getElementById('invoiceAmountInput');
 
-  // Calculate current balance
-  let totalAmount = parseFloat(paymentForm.dataset.totalInvoice || '0');
+  // Calculate remaining balance
+  const totalAmount = parseFloat(paymentForm.dataset.totalInvoice || '0');
   let amountPaid = parseFloat(paymentForm.dataset.amountPaid || '0');
   const taxPaid = parseFloat(paymentForm.dataset.taxPaid || '0');
 
-  // If editing an existing payment, subtract the old amount first to get true remaining
+  // If editing an existing payment, calculate remaining without this payment
+  // This shows what we need to pay to completely finish the invoice
+  let remainingBalance = totalAmount - amountPaid - taxPaid;
+
   if (window.isEditingPayment && window.editPaymentContext) {
     const oldPaymentAmount = parseFloat(window.editPaymentContext.oldAmount || '0');
-    amountPaid = amountPaid - oldPaymentAmount;
+    // Remaining if we remove the old payment being edited
+    remainingBalance = totalAmount - (amountPaid - oldPaymentAmount) - taxPaid;
   }
 
-  const balance = totalAmount - amountPaid - taxPaid;
-
   // Show form only if there's still balance due
-  paymentForm.style.display = (balance > 0.01) ? 'block' : 'none';
+  paymentForm.style.display = (remainingBalance > 0.01) ? 'block' : 'none';
 
-  if (s === 'Paid' && amountInput && balance > 0.01) {
-    // Auto-fill full remaining amount for Paid status, but allow editing like Partial
-    const remaining = balance;
-    amountInput.value = remaining.toFixed(2);
-    amountInput.readOnly = false;  // Keep editable like Partial
-    document.getElementById('displayMaxAmount').textContent = remaining.toFixed(2);
+  if (s === 'Paid' && amountInput && remainingBalance > 0.01) {
+    // Auto-fill full remaining amount for Paid status (what's needed to fully pay invoice)
+    amountInput.value = remainingBalance.toFixed(2);
+    amountInput.readOnly = false;
+    document.getElementById('displayMaxAmount').textContent = remainingBalance.toFixed(2);
     document.getElementById('paymentRemaining').textContent = '0.00';
-    handlePaymentAmountChange();  // Update display same as Partial
-  } else if (amountInput && balance > 0.01) {
-    // For Partial, allow user input
+    handlePaymentAmountChange();
+  } else if (amountInput && remainingBalance > 0.01) {
+    // For Partial status, allow user to enter any amount up to remaining
     amountInput.readOnly = false;
     amountInput.value = '';
     handlePaymentAmountChange();
