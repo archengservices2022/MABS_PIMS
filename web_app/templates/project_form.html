@@ -1430,11 +1430,13 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function updatePreviewStageTotals() {
-  // Get all stage inputs (includes down payment if present)
-  const inputs = document.querySelectorAll('.stage-input');
+  // Only sum inputs from the preview stages data - no fancy calculations
   let total = 0;
-  inputs.forEach(input => {
-    total += parseFloat(input.value) || 0;
+  previewStagesData.forEach((stage, i) => {
+    const input = document.querySelector(`.stage-input[data-index="${i}"]`);
+    if (input) {
+      total += parseFloat(input.value) || 0;
+    }
   });
 
   const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
