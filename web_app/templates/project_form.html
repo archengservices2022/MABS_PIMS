@@ -1358,8 +1358,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         html += `
           <div class="mb-2">
-            <label class="form-label small">${stage.name}
-              ${isInvoiced ? '<span class="badge bg-success text-dark ms-2"><i class="bi bi-lock-fill"></i> Invoiced</span>' : ''}
+            <label class="form-label small" style="color: ${isInvoiced ? '#2e7d32' : 'inherit'}">
+              ${stage.name}
+              ${isInvoiced ? '<span style="color:#2e7d32; font-weight:500;" class="ms-2">Invoiced</span>' : ''}
             </label>
             <input type="number" class="${inputClass}"
                    data-index="${i}" value="${stage.amount.toFixed(2)}"
