@@ -9744,6 +9744,9 @@ def update_project_payment_plan(project_id):
         elif non_invoiced_count == 0 and edited_stage_invoiced:
             # All stages are invoiced and user is editing one
             needs_permission = True
+        elif invoiced_count == 0 and non_invoiced_count > 1 and not edited_stage_invoiced:
+            # All stages are non-invoiced and user is editing one - contract value will change
+            needs_permission = True
 
         # If permission needed and not granted, return request for permission
         if needs_permission and not permission_granted:
