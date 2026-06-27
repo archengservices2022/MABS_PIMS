@@ -1018,12 +1018,9 @@ function openEditPaymentPlanModal() {
   const downPaymentInput = document.getElementById('editDownPaymentAmount');
   downPaymentInput.value = (downPaymentStage.amount || 0).toFixed(2);
 
-  // Disable down payment input if it's paid
-  if (downPaymentStage.status === 'Paid') {
-    downPaymentInput.disabled = true;
-  } else {
-    downPaymentInput.disabled = false;
-  }
+  // Disable down payment input if it's invoiced
+  const isDownPaymentInvoiced = ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'].includes(downPaymentStage.status);
+  downPaymentInput.disabled = isDownPaymentInvoiced;
 
   document.getElementById('editContractValue').textContent = '$' + contractValue.toFixed(2);
 
@@ -1040,8 +1037,7 @@ function updateRemainingStages() {
   // Generate editable inputs for all stages
   let html = '';
   for (let i = 1; i < currentStages.length; i++) {
-    const isInvoiced = currentStages[i].status !== 'Pending Invoice';
-    const isPaid = currentStages[i].status === 'Paid';
+    const isInvoiced = ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'].includes(currentStages[i].status);
     const amount = currentStages[i].amount || 0;
 
     html += `
@@ -1051,7 +1047,8 @@ function updateRemainingStages() {
           <span class="badge status-${isInvoiced ? 'invoiced' : 'not-started'}">${currentStages[i].status || 'Pending Invoice'}</span>
         </div>
         <input type="number" class="form-control stageAmountInput" data-index="${i}" value="${amount.toFixed(2)}"
-               step="0.01" oninput="calculateEditPlanTotal()" ${isPaid ? 'disabled' : ''}/>
+               step="0.01" oninput="calculateEditPlanTotal()" ${isInvoiced ? 'disabled' : ''}/>
+        ${isInvoiced ? '<small class="text-muted d-block mt-1"><i class="bi bi-lock-fill"></i> This stage is invoiced and cannot be edited</small>' : ''}
       </div>
     `;
   }
