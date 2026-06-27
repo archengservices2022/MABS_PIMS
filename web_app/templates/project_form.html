@@ -1471,7 +1471,8 @@ function updatePreviewStageTotals() {
 }
 
 function saveCustomPreviewStages() {
-  const inputs = document.querySelectorAll('.stage-input');
+  const modal = document.getElementById('customizeStagesModal');
+  const inputs = modal ? modal.querySelectorAll('.stage-input') : [];
   const contractValueEl = document.getElementById('contractValue');
   const oldContractValue = parseFloat(contractValueEl?.value) || 0;
   let total = 0;
