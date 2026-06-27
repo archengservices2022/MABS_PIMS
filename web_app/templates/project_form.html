@@ -1488,6 +1488,15 @@ function saveCustomPreviewStages() {
   // If total changed, update contract value
   if (Math.abs(total - oldContractValue) > 0.01) {
     contractValueEl.value = total.toFixed(2);
+
+    // Also update hidden input for disabled field preservation
+    const hiddenInputs = document.querySelectorAll('input[name="contract_value"]');
+    hiddenInputs.forEach(input => {
+      if (input.type === 'hidden' || input.disabled) {
+        input.value = total.toFixed(2);
+      }
+    });
+
     const diff = total - oldContractValue;
     const diffText = diff > 0 ? `increased by $${diff.toFixed(2)}` : `decreased by $${Math.abs(diff).toFixed(2)}`;
     alert(`✓ Contract value ${diffText}\n\nNew Contract Value: $${total.toFixed(2)}`);
