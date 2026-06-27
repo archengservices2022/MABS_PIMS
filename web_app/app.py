@@ -1574,6 +1574,8 @@ def project_detail(project_id):
             # Calculate amount paid from all invoices for this stage
             amount_paid = 0
             due_date = ""
+            invoice_id = ""
+            invoice_number = ""
             if idx in stage_invoices:
                 for inv in stage_invoices[idx]:
                     # Sum invoice payments using payment_log filtered by project_number (not share-based)
@@ -1585,8 +1587,17 @@ def project_detail(project_id):
                     project_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if tp.get("project_number") == proj_num)
                     amount_paid += project_tax_paid
                     due_date = due_date or inv_meta.get("due_date", "")
+                    # Capture invoice details (use first invoice for this stage)
+                    if not invoice_id:
+                        invoice_id = inv.get("firebase_id", "")
+                        invoice_number = inv_meta.get("invoice_number", "")
 
             is_overdue = bool(due_date) and due_date < today_str
+
+            # Store calculated amounts and invoice info on stage for template display
+            stage["amount_paid"] = amount_paid
+            stage["invoice_id"] = invoice_id
+            stage["invoice_number"] = invoice_number
 
             # Calculate status based on actual paid vs total
             if amount_paid >= (stage_amount - 0.01):
