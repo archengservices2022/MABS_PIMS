@@ -483,21 +483,29 @@ function toggleDetailAmtPaid() {
   const amountInput = document.getElementById('invoiceAmountInput');
 
   // Calculate current balance
-  const totalAmount = parseFloat(paymentForm.dataset.totalInvoice || '0');
-  const amountPaid = parseFloat(paymentForm.dataset.amountPaid || '0');
+  let totalAmount = parseFloat(paymentForm.dataset.totalInvoice || '0');
+  let amountPaid = parseFloat(paymentForm.dataset.amountPaid || '0');
   const taxPaid = parseFloat(paymentForm.dataset.taxPaid || '0');
+
+  // If editing an existing payment, subtract the old amount first to get true remaining
+  if (window.isEditingPayment && window.editPaymentContext) {
+    const oldPaymentAmount = parseFloat(window.editPaymentContext.oldAmount || '0');
+    amountPaid = amountPaid - oldPaymentAmount;
+  }
+
   const balance = totalAmount - amountPaid - taxPaid;
 
   // Show form only if there's still balance due
   paymentForm.style.display = (balance > 0.01) ? 'block' : 'none';
 
   if (s === 'Paid' && amountInput && balance > 0.01) {
-    // Auto-fill remaining amount for Paid status
+    // Auto-fill full remaining amount for Paid status, but allow editing like Partial
     const remaining = balance;
     amountInput.value = remaining.toFixed(2);
-    amountInput.readOnly = true;
+    amountInput.readOnly = false;  // Keep editable like Partial
     document.getElementById('displayMaxAmount').textContent = remaining.toFixed(2);
-    document.getElementById('paymentRemaining').textContent = remaining.toFixed(2);
+    document.getElementById('paymentRemaining').textContent = '0.00';
+    handlePaymentAmountChange();  // Update display same as Partial
   } else if (amountInput && balance > 0.01) {
     // For Partial, allow user input
     amountInput.readOnly = false;
