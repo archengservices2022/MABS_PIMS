@@ -9373,45 +9373,149 @@ def tax_payment_delete(invoice_id, idx):
 @app.route("/invoicing/<invoice_id>/payment/<int:idx>/edit", methods=["POST"])
 @role_required("invoicing")
 def payment_edit(invoice_id, idx):
-    """Update a payment entry in the log."""
+    """Update a payment entry in the log - rebuilds payment_log like payment_sequential."""
     inv_data = fb_get(f"/invoices/{invoice_id}") or {}
+    meta = inv_data.get("meta", {})
+
+    # New amount being set
+    new_amount = _safe_float(request.form.get("amount", 0))
+    if new_amount <= 0:
+        return jsonify({"error": "Invalid amount"}), 400
+
+    # Calculate total paid (this becomes our source amount to redistribute)
+    # We're replacing the payment at idx with new_amount, so recalculate total
     log = inv_data.get("payment_log", [])
     if not isinstance(log, list) or idx >= len(log):
         return jsonify({"error": "Payment not found"}), 404
 
-    amount = _safe_float(request.form.get("amount", 0))
-    if amount <= 0:
-        return jsonify({"error": "Invalid amount"}), 400
+    # Old amount at this index
+    old_amount = _safe_float(log[idx].get("amount", 0))
+    # New total paid = (old total - old_amount) + new_amount
+    old_total = sum(_safe_float(p.get("amount", 0)) for p in log)
+    new_total_paid = old_total - old_amount + new_amount
 
-    log[idx].update({
-        "amount": str(amount),
-        "date": request.form.get("date", ""),
-        "method": request.form.get("method", ""),
-        "reference": request.form.get("reference", ""),
-        "notes": request.form.get("notes", ""),
-    })
+    # Update meta.amount_paid
+    meta["amount_paid"] = str(new_total_paid)
+    meta["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-    invoice_paid = sum(_safe_float(p.get("amount", 0)) for p in log)
+    # Get invoice details for redistribution
+    tax_amount = _safe_float(meta.get("tax_amount", 0))
+    line_items = inv_data.get("line_items", []) or []
+    main_project = meta.get("project_number", "")
+
+    # Rebuild payment_log sequentially (same logic as invoice_update_amount)
+    new_payment_log = []
+    new_tax_log = []
+    remaining_to_distribute = new_total_paid
+
+    # Extract ALL projects from both line_items AND linked_projects metadata
+    projects_from_items = set()
+    for item in line_items:
+        if isinstance(item, dict):
+            proj_num = item.get("project_number", "")
+            if proj_num:
+                projects_from_items.add(proj_num)
+
+    projects_from_meta = set()
+    for proj_info in (meta.get("linked_projects") or []):
+        if isinstance(proj_info, dict):
+            proj_num = proj_info.get("project_number", "")
+            if proj_num:
+                projects_from_meta.add(proj_num)
+
+    # Merge both sets
+    all_projects = projects_from_items | projects_from_meta
+
+    # Build linked_projects from merged list
+    linked_projects = []
+    if all_projects:
+        linked_projects = [
+            {"project_number": proj_num, "payment_stage_index": meta.get("payment_stage_index", 0)}
+            for proj_num in sorted(all_projects)
+        ]
+    elif not linked_projects and main_project:
+        linked_projects = [{"project_number": main_project, "payment_stage_index": meta.get("payment_stage_index", 0)}]
+
+    # Step 1: Distribute to projects sequentially (same as invoice_update_amount)
+    if linked_projects:
+        def get_sort_key(x):
+            proj_num = x.get("project_number", "") if isinstance(x, dict) else x
+            if proj_num and proj_num[-3:].isdigit():
+                return int(proj_num[-3:])
+            return proj_num
+        sorted_projects = sorted(linked_projects, key=get_sort_key)
+
+        for proj_info in sorted_projects:
+            if remaining_to_distribute <= 0:
+                break
+
+            proj_num = proj_info.get("project_number", "") if isinstance(proj_info, dict) else proj_info
+            if not proj_num:
+                continue
+
+            # Get this project's line item amount
+            proj_amount = sum(_safe_float(item.get("amount", 0)) for item in line_items
+                            if isinstance(item, dict) and item.get("project_number", "").strip() == proj_num)
+
+            if proj_amount > 0:
+                distribute_to_proj = min(proj_amount, remaining_to_distribute)
+
+                # Get stage info
+                _stage_name = meta.get("payment_stage", "")
+                _stage_idx = meta.get("payment_stage_index")
+                if _stage_idx is not None:
+                    try:
+                        _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
+                    except (ValueError, TypeError):
+                        _stage_idx = None
+
+                if not _stage_name and _stage_idx is not None:
+                    _stage_name = f"Stage {_stage_idx + 1}"
+
+                new_payment_log.append({
+                    "amount": str(distribute_to_proj),
+                    "date": request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+                    "method": request.form.get("method", ""),
+                    "reference": request.form.get("reference", ""),
+                    "notes": request.form.get("notes", ""),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "project_number": proj_num,
+                    "invoice_number": meta.get("invoice_number", ""),
+                    "stage_name": _stage_name,
+                    "stage_index": _stage_idx or "",
+                })
+                remaining_to_distribute -= distribute_to_proj
+
+    # Step 2: Distribute remaining to tax
+    if remaining_to_distribute > 0 and tax_amount > 0:
+        tax_needs = min(tax_amount, remaining_to_distribute)
+        new_tax_log.append({
+            "amount": str(tax_needs),
+            "date": request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+            "method": request.form.get("method", ""),
+            "reference": request.form.get("reference", ""),
+            "notes": request.form.get("notes", ""),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        remaining_to_distribute -= tax_needs
+
+    # Calculate new status
     fresh_inv = dict(inv_data)
-    fresh_inv["payment_log"] = log
+    fresh_inv["payment_log"] = new_payment_log
+    fresh_inv["meta"] = meta
     new_status = _calculate_invoice_status(fresh_inv)
 
+    # Update Firebase with rebuilt payment logs
     fb_update(f"/invoices/{invoice_id}", {
-        "payment_log":          log,
-        "meta/amount_paid":     str(invoice_paid),
-        "meta/status":          new_status,
-        "meta/updated_at":      datetime.now(timezone.utc).isoformat(),
+        "payment_log": new_payment_log,
+        "tax_payments": new_tax_log if new_tax_log else [],
+        "meta/amount_paid": str(new_total_paid),
+        "meta/status": new_status,
+        "meta/updated_at": meta.get("updated_at"),
     })
 
-    # Use sequential allocation for multi-project invoices, sync for single-project
-    linked_projects = _invoice_linked_projects(inv_data)
-    if len(linked_projects) > 1:
-        _allocate_invoice_payment_sequential(invoice_id)
-    else:
-        for proj_num in linked_projects:
-            _sync_project_payment(proj_num)
-
-    # Update project stage payment statuses based on payments
+    # Update project stage payment statuses
+    _allocate_invoice_payment_sequential(invoice_id)
     _update_project_stage_payment_status(invoice_id)
 
     return jsonify({"success": True}), 200
