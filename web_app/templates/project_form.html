@@ -1432,10 +1432,13 @@ document.addEventListener('DOMContentLoaded', () => {
 function updatePreviewStageTotals() {
   // Sum only the visible stage inputs in the modal
   let total = 0;
-  const inputs = document.querySelectorAll('.modal:last-child .stage-input');
-  inputs.forEach(input => {
-    total += parseFloat(input.value) || 0;
-  });
+  const modal = document.getElementById('customizeStagesModal');
+  if (modal) {
+    const inputs = modal.querySelectorAll('.stage-input');
+    inputs.forEach(input => {
+      total += parseFloat(input.value) || 0;
+    });
+  }
 
   const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
   const totalEl = document.getElementById('previewTotal');
