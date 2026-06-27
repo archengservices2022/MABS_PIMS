@@ -9711,10 +9711,15 @@ def update_project_payment_plan(project_id):
         stages = project.get("payment_stages", [])
         contract_value = _safe_float(project.get("contract_value", 0))
 
-        # Validate total equals contract value
+        # Calculate new total from edited amounts
         total = sum(_safe_float(a.get("amount", 0)) for a in amounts)
-        if abs(total - contract_value) > 0.01:
-            return {"success": False, "error": f"Total ({total:.2f}) must equal contract value ({contract_value:.2f})"}
+
+        # If total changed from contract value, update contract value accordingly
+        contract_value_changed = abs(total - contract_value) > 0.01
+        if contract_value_changed:
+            old_contract_value = contract_value
+            contract_value = total
+            project["contract_value"] = str(contract_value)
 
         # Update all stages with new amounts
         for amount_data in amounts:
@@ -9750,7 +9755,14 @@ def update_project_payment_plan(project_id):
             invoice["updated_at"] = datetime.now(timezone.utc).isoformat()
             fb_update(f"/invoices/{invoice_id}", invoice)
 
-        return {"success": True, "message": "Payment plan updated"}
+        # Build success message with contract value change if applicable
+        message = "Payment plan updated"
+        if contract_value_changed:
+            change_amount = contract_value - old_contract_value
+            change_type = "increased" if change_amount > 0 else "decreased"
+            message = f"✓ Payment plan updated. Contract value {change_type} by ${abs(change_amount):.2f} (new: ${contract_value:.2f})"
+
+        return {"success": True, "message": message}
     except Exception as e:
         return {"success": False, "error": str(e)}, 500
 
