@@ -9373,23 +9373,55 @@ def tax_payment_delete(invoice_id, idx):
 @app.route("/invoicing/<invoice_id>/payment/<int:idx>/edit", methods=["POST"])
 @role_required("invoicing")
 def payment_edit(invoice_id, idx):
-    """Update a payment entry in the log - rebuilds payment_log like payment_sequential."""
+    """Update a payment entry in the log."""
     inv_data = fb_get(f"/invoices/{invoice_id}") or {}
     meta = inv_data.get("meta", {})
+    log = inv_data.get("payment_log", [])
+
+    if not isinstance(log, list) or idx >= len(log):
+        return jsonify({"error": "Payment not found"}), 404
 
     # New amount being set
     new_amount = _safe_float(request.form.get("amount", 0))
     if new_amount <= 0:
         return jsonify({"error": "Invalid amount"}), 400
 
-    # Calculate total paid (this becomes our source amount to redistribute)
-    # We're replacing the payment at idx with new_amount, so recalculate total
-    log = inv_data.get("payment_log", [])
-    if not isinstance(log, list) or idx >= len(log):
-        return jsonify({"error": "Payment not found"}), 404
-
     # Old amount at this index
     old_amount = _safe_float(log[idx].get("amount", 0))
+    amount_changed = abs(new_amount - old_amount) > 0.01
+
+    # If only updating fields (date, method, etc.) without amount change, do simple update
+    if not amount_changed:
+        # Just update the single payment entry's fields
+        log[idx].update({
+            "amount": str(new_amount),
+            "date": request.form.get("date", log[idx].get("date", "")),
+            "method": request.form.get("method", ""),
+            "reference": request.form.get("reference", ""),
+            "notes": request.form.get("notes", ""),
+        })
+
+        invoice_paid = sum(_safe_float(p.get("amount", 0)) for p in log)
+        fresh_inv = dict(inv_data)
+        fresh_inv["payment_log"] = log
+        fresh_inv["meta"] = meta
+        new_status = _calculate_invoice_status(fresh_inv)
+
+        meta["amount_paid"] = str(invoice_paid)
+        meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        fb_update(f"/invoices/{invoice_id}", {
+            "payment_log": log,
+            "meta/amount_paid": str(invoice_paid),
+            "meta/status": new_status,
+            "meta/updated_at": meta.get("updated_at"),
+        })
+
+        # Update project stages
+        _update_project_stage_payment_status(invoice_id)
+        return jsonify({"success": True}), 200
+
+    # Amount changed - need to rebuild payment_log with sequential distribution
     # New total paid = (old total - old_amount) + new_amount
     old_total = sum(_safe_float(p.get("amount", 0)) for p in log)
     new_total_paid = old_total - old_amount + new_amount
