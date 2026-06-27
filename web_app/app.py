@@ -9755,28 +9755,19 @@ def update_project_payment_plan(project_id):
                 "new_contract_value": new_contract_value
             }, 400
 
-        # Auto-adjust logic: distribute difference to other stage type
+        # Auto-adjust logic: ONLY adjust non-invoiced stages (never adjust invoiced)
         difference = new_amount - old_amount
 
-        if edited_stage_invoiced and non_invoiced_count > 0:
-            # Editing invoiced stage: auto-reduce non-invoiced stages
-            uninvoiced_indices = [i for i in range(len(stages))
-                                 if i != edited_idx and stages[i].get("status") == "Pending Invoice"]
-            if uninvoiced_indices:
-                per_stage = difference / len(uninvoiced_indices)
-                for idx in uninvoiced_indices:
-                    current_amt = _safe_float(amounts[idx].get("amount", 0)) if idx < len(amounts) else _safe_float(stages[idx].get("amount", 0))
-                    amounts[idx] = {"index": idx, "amount": max(0, current_amt - per_stage)}
+        # Find non-invoiced stages (excluding the one being edited)
+        uninvoiced_indices = [i for i in range(len(stages))
+                             if i != edited_idx and stages[i].get("status") == "Pending Invoice"]
 
-        elif not edited_stage_invoiced and invoiced_count > 0:
-            # Editing non-invoiced stage: auto-reduce invoiced stages
-            invoiced_indices = [i for i in range(len(stages))
-                               if i != edited_idx and stages[i].get("status") in ["Invoiced", "Paid", "Partially Paid", "Overdue"]]
-            if invoiced_indices:
-                per_stage = difference / len(invoiced_indices)
-                for idx in invoiced_indices:
-                    current_amt = _safe_float(amounts[idx].get("amount", 0)) if idx < len(amounts) else _safe_float(stages[idx].get("amount", 0))
-                    amounts[idx] = {"index": idx, "amount": max(0, current_amt - per_stage)}
+        # If there are non-invoiced stages, distribute the difference to them
+        if uninvoiced_indices:
+            per_stage = difference / len(uninvoiced_indices)
+            for idx in uninvoiced_indices:
+                current_amt = _safe_float(amounts[idx].get("amount", 0)) if idx < len(amounts) else _safe_float(stages[idx].get("amount", 0))
+                amounts[idx] = {"index": idx, "amount": max(0, current_amt - per_stage)}
 
         # Calculate total from (possibly adjusted) amounts
         total = sum(_safe_float(a.get("amount", 0)) for a in amounts)
