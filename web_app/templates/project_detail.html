@@ -218,6 +218,9 @@
               </button>
             </div>
           </div>
+          <!-- Floating validation notification -->
+          <div id="amountChangeNotification" style="display:none; position:sticky; top:0; z-index:10; margin-bottom:12px; padding:12px 16px; border-radius:6px; border-left:4px solid; font-size:0.9rem;">
+          </div>
           <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
               <thead>
@@ -268,16 +271,13 @@
                       </button>
                       {% endif %}
                     </span>
-                    <span id="amountEdit_{{ loop.index0 }}" style="display:none; flex-direction:column; align-items:flex-start; gap:6px;">
-                      <div style="display:flex; align-items:center;">
-                        $<input type="number" id="amountInput_{{ loop.index0 }}" class="form-control form-control-sm"
-                               step="0.01" min="0" value="{{ s.get('amount',0)|float }}" style="width:80px; display:inline-block;"
-                               data-original="{{ s.get('amount',0)|float }}"
-                               onkeydown="handleEditKeydown(event, {{ loop.index0 }}, '{{ st }}', '{{ inv_id }}')"
-                               oninput="showAmountChangePreview({{ loop.index0 }}, {{ project.get('contract_value', 0)|float }}, {{ s.get('amount',0)|float }})"
-                               onblur="saveInlineEdit({{ loop.index0 }}, '{{ st }}', '{{ inv_id }}')">
-                      </div>
-                      <div id="amountChangeMsg_{{ loop.index0 }}" style="font-size:0.75rem; color:#0d7c7c; margin-left:24px; display:none;"></div>
+                    <span id="amountEdit_{{ loop.index0 }}" style="display:none; align-items:center;">
+                      $<input type="number" id="amountInput_{{ loop.index0 }}" class="form-control form-control-sm"
+                             step="0.01" min="0" value="{{ s.get('amount',0)|float }}" style="width:80px; display:inline-block;"
+                             data-original="{{ s.get('amount',0)|float }}"
+                             onkeydown="handleEditKeydown(event, {{ loop.index0 }}, '{{ st }}', '{{ inv_id }}')"
+                             oninput="showAmountChangePreview({{ loop.index0 }}, {{ project.get('contract_value', 0)|float }}, {{ s.get('amount',0)|float }})"
+                             onblur="saveInlineEdit({{ loop.index0 }}, '{{ st }}', '{{ inv_id }}')">
                     </span>
                   </td>
                   <td><span class="badge status-{{ status_class.get(st, st|lower|replace(' ','-')) }}">{{ st }}</span></td>
@@ -1263,9 +1263,9 @@ function updateStagedPayment() {
 
 function showAmountChangePreview(idx, contractValue, originalAmount) {
   const input = document.getElementById(`amountInput_${idx}`);
-  const msgEl = document.getElementById(`amountChangeMsg_${idx}`);
+  const notificationEl = document.getElementById('amountChangeNotification');
 
-  if (!input || !msgEl) return;
+  if (!input || !notificationEl) return;
 
   const newAmount = parseFloat(input.value) || 0;
   const original = parseFloat(input.dataset.original) || originalAmount || 0;
@@ -1280,81 +1280,82 @@ function showAmountChangePreview(idx, contractValue, originalAmount) {
       .filter(i => i >= 0);
 
     let message = '';
+    let bgColor = '';
+    let borderColor = '';
 
     if (isInvoiced && uninvoicedStages.length > 0) {
-      // Invoiced stage changed - redistribute to non-invoiced stages (contract value stays same)
+      // Invoiced stage changed - redistribute to non-invoiced stages
       const perStage = difference / uninvoicedStages.length;
       const changeType = difference > 0 ? 'reduce' : 'increase';
       const changeAmount = Math.abs(perStage);
 
-      message = `<div style="display:flex; gap:12px;">
-        <div>
-          <div style="font-weight:600; color:#0d7c7c; margin-bottom:4px;">
-            <i class="bi bi-arrow-repeat me-1"></i>Auto-Adjust Payment Plan
-          </div>
-          <div style="font-size:0.85rem; color:#555;">
-            This stage will be increased by $${Math.abs(difference).toFixed(2)}<br>
-            Other pending stages will ${changeType} by $${changeAmount.toFixed(2)} each
-          </div>
-          <div style="font-size:0.75rem; margin-top:6px; color:#666;">`;
+      bgColor = '#e8f5e9';
+      borderColor = '#4caf50';
+
+      message = `<div style="font-weight:600; color:#2e7d32; margin-bottom:8px;">
+        <i class="bi bi-arrow-repeat me-1"></i>Auto-Adjust Payment Plan
+      </div>
+      <div style="font-size:0.9rem; color:#555; margin-bottom:8px;">
+        This stage will ${difference > 0 ? 'increase' : 'decrease'} by $${Math.abs(difference).toFixed(2)}<br>
+        Other pending stages will ${changeType} by $${changeAmount.toFixed(2)} each
+      </div>
+      <div style="font-size:0.85rem; color:#666; padding:6px; background:rgba(255,255,255,0.5); border-radius:4px; margin-bottom:6px;">`;
 
       uninvoicedStages.forEach(i => {
         const stageName = currentStages[i].name || `Stage ${i+1}`;
         const oldAmt = currentStages[i].amount || 0;
         const newAmt = oldAmt - perStage;
-        message += `<div>• ${stageName}: $${oldAmt.toFixed(2)} → $${newAmt.toFixed(2)}</div>`;
+        message += `• ${stageName}: $${oldAmt.toFixed(2)} → $${newAmt.toFixed(2)}<br>`;
       });
 
       message += `</div>
-          <div style="margin-top:8px; padding:6px 10px; background:#e8f5e9; border-radius:4px; border-left:3px solid #4caf50; font-weight:600; color:#2e7d32; font-size:0.8rem;">
-            ✓ Contract value remains: $${contractValue.toFixed(2)}
-          </div>
-        </div>
+      <div style="padding:8px; background:#fff; border-radius:4px; border:1px solid #4caf50; font-weight:600; color:#2e7d32;">
+        ✓ Contract value remains: $${contractValue.toFixed(2)}
       </div>`;
     } else if (!isInvoiced) {
-      // Non-invoiced stage changed - show contract value will change
+      // Non-invoiced stage changed
       const changeType = difference > 0 ? 'increase' : 'decrease';
       const changeAmount = Math.abs(difference);
       const newContractValue = contractValue + difference;
 
-      message = `<div style="display:flex; gap:12px;">
-        <div>
-          <div style="font-weight:600; color:#d32f2f; margin-bottom:4px;">
-            <i class="bi bi-exclamation-circle me-1"></i>Contract Value Change
-          </div>
-          <div style="font-size:0.85rem; color:#555;">
-            This stage amount will ${changeType} by $${changeAmount.toFixed(2)}
-          </div>
-          <div style="margin-top:8px; padding:6px 10px; background:#fff3e0; border-radius:4px; border-left:3px solid #ff9800; font-weight:600; color:#e65100; font-size:0.8rem;">
-            ⚠️ Contract Value: $${contractValue.toFixed(2)} → $${newContractValue.toFixed(2)} (${changeType} by $${changeAmount.toFixed(2)})
-          </div>
-        </div>
+      bgColor = '#fff3e0';
+      borderColor = '#ff9800';
+
+      message = `<div style="font-weight:600; color:#e65100; margin-bottom:8px;">
+        <i class="bi bi-exclamation-circle me-1"></i>Contract Value Change
+      </div>
+      <div style="font-size:0.9rem; color:#555; margin-bottom:8px;">
+        This stage amount will ${changeType} by $${changeAmount.toFixed(2)}
+      </div>
+      <div style="padding:8px; background:#fff; border-radius:4px; border:1px solid #ff9800; font-weight:600; color:#e65100;">
+        ⚠️ Contract Value: $${contractValue.toFixed(2)} → $${newContractValue.toFixed(2)} (${changeType} by $${changeAmount.toFixed(2)})
       </div>`;
     } else {
-      // Invoiced stage but no non-invoiced to redistribute to
+      // Invoiced stage but no non-invoiced
       const changeType = difference > 0 ? 'increase' : 'decrease';
       const changeAmount = Math.abs(difference);
       const newContractValue = contractValue + difference;
 
-      message = `<div style="display:flex; gap:12px;">
-        <div>
-          <div style="font-weight:600; color:#d32f2f; margin-bottom:4px;">
-            <i class="bi bi-exclamation-circle me-1"></i>Contract Value Change
-          </div>
-          <div style="font-size:0.85rem; color:#555;">
-            No other stages available to adjust automatically
-          </div>
-          <div style="margin-top:8px; padding:6px 10px; background:#fff3e0; border-radius:4px; border-left:3px solid #ff9800; font-weight:600; color:#e65100; font-size:0.8rem;">
-            ⚠️ Contract Value: $${contractValue.toFixed(2)} → $${newContractValue.toFixed(2)} (${changeType} by $${changeAmount.toFixed(2)})
-          </div>
-        </div>
+      bgColor = '#fff3e0';
+      borderColor = '#ff9800';
+
+      message = `<div style="font-weight:600; color:#e65100; margin-bottom:8px;">
+        <i class="bi bi-exclamation-circle me-1"></i>Contract Value Change
+      </div>
+      <div style="font-size:0.9rem; color:#555; margin-bottom:8px;">
+        No other stages available to adjust automatically
+      </div>
+      <div style="padding:8px; background:#fff; border-radius:4px; border:1px solid #ff9800; font-weight:600; color:#e65100;">
+        ⚠️ Contract Value: $${contractValue.toFixed(2)} → $${newContractValue.toFixed(2)} (${changeType} by $${changeAmount.toFixed(2)})
       </div>`;
     }
 
-    msgEl.innerHTML = message;
-    msgEl.style.display = 'block';
+    notificationEl.innerHTML = message;
+    notificationEl.style.backgroundColor = bgColor;
+    notificationEl.style.borderColor = borderColor;
+    notificationEl.style.display = 'block';
   } else {
-    msgEl.style.display = 'none';
+    notificationEl.style.display = 'none';
   }
 }
 
