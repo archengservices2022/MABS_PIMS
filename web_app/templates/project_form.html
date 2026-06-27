@@ -1380,10 +1380,14 @@ document.addEventListener('DOMContentLoaded', () => {
             <span id="previewTotal" class="fw-600">$${totalEdited.toFixed(2)}</span>
           </div>
           <div class="d-flex justify-content-between small text-muted">
-            <span>Contract Value:</span>
-            <span>$${contractValue.toFixed(2)}</span>
+            <span>Current Contract Value:</span>
+            <span id="contractValueOriginal">$${contractValue.toFixed(2)}</span>
           </div>
-          <div id="previewValidationMsg"></div>
+          <div class="d-flex justify-content-between small mt-2" id="contractValueChangeRow" style="display:none;">
+            <span><strong>New Contract Value:</strong></span>
+            <span id="contractValueNew" class="fw-600" style="color:#1976d2;"></span>
+          </div>
+          <div id="previewValidationMsg" style="margin-top:8px;"></div>
         </div>
       `;
 
@@ -1438,21 +1442,37 @@ function updatePreviewStageTotals() {
   const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
   const totalEl = document.getElementById('previewTotal');
   const msgEl = document.getElementById('previewValidationMsg');
+  const newValueRow = document.getElementById('contractValueChangeRow');
+  const newValueEl = document.getElementById('contractValueNew');
 
   if (totalEl) totalEl.textContent = `$${total.toFixed(2)}`;
 
-  if (msgEl) {
-    if (Math.abs(total - contractValue) > 0.01) {
-      msgEl.innerHTML = `<div class="text-danger small mt-2"><i class="bi bi-exclamation-circle me-1"></i>Total payment plan must equal project contract value ($${contractValue.toFixed(2)})</div>`;
+  // Show new contract value if changed
+  const diff = total - contractValue;
+  if (newValueRow && newValueEl) {
+    if (Math.abs(diff) > 0.01) {
+      newValueRow.style.display = 'flex';
+      newValueEl.textContent = `$${total.toFixed(2)}`;
+
+      // Show change indicator
+      if (msgEl) {
+        const changeType = diff > 0 ? 'increased' : 'decreased';
+        const changeAmount = Math.abs(diff);
+        msgEl.innerHTML = `<div class="text-info small mt-2"><i class="bi bi-info-circle me-1"></i>Contract value will be ${changeType} by $${changeAmount.toFixed(2)}</div>`;
+      }
     } else {
-      msgEl.innerHTML = `<div class="text-success small mt-2"><i class="bi bi-check-circle me-1"></i>✓ Total matches project contract value</div>`;
+      newValueRow.style.display = 'none';
+      if (msgEl) {
+        msgEl.innerHTML = `<div class="text-success small mt-2"><i class="bi bi-check-circle me-1"></i>✓ Total matches current contract value</div>`;
+      }
     }
   }
 }
 
 function saveCustomPreviewStages() {
   const inputs = document.querySelectorAll('.stage-input');
-  const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
+  const contractValueEl = document.getElementById('contractValue');
+  const oldContractValue = parseFloat(contractValueEl?.value) || 0;
   let total = 0;
   const customAmounts = [];
 
@@ -1465,9 +1485,12 @@ function saveCustomPreviewStages() {
     }
   });
 
-  if (Math.abs(total - contractValue) > 0.01) {
-    alert(`❌ Error: Total payment plan ($${total.toFixed(2)}) must equal project contract value ($${contractValue.toFixed(2)})\n\nPlease adjust the amounts so they add up correctly.`);
-    return;
+  // If total changed, update contract value
+  if (Math.abs(total - oldContractValue) > 0.01) {
+    contractValueEl.value = total.toFixed(2);
+    const diff = total - oldContractValue;
+    const diffText = diff > 0 ? `increased by $${diff.toFixed(2)}` : `decreased by $${Math.abs(diff).toFixed(2)}`;
+    alert(`✓ Contract value ${diffText}\n\nNew Contract Value: $${total.toFixed(2)}`);
   }
 
   // Recalculate down payment percentage if first stage is down payment
