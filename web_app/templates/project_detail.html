@@ -1452,7 +1452,13 @@ function quickInvoiceStage(idx, stageName, amount, projectId) {
 }
 
 // ── Permission Modal Handler ────────────────────────────────────────────
-function showContractValuePermission(message, newContractValue, onApprove, onDeny) {
+function showContractValuePermission(message, newContractValue, onApprove, onDeny, inputEl) {
+  // Disable input blur to prevent re-triggering save
+  if (inputEl) {
+    inputEl._blurHandler = inputEl.onblur;
+    inputEl.onblur = null;
+  }
+
   // Create and show permission modal
   const modalHtml = `
     <div class="modal fade" id="contractValuePermissionModal" tabindex="-1">
@@ -1495,6 +1501,10 @@ function showContractValuePermission(message, newContractValue, onApprove, onDen
 
   // Attach event handlers
   document.getElementById('contractValueContinueBtn').onclick = () => {
+    // Restore input blur handler
+    if (inputEl && inputEl._blurHandler) {
+      inputEl.onblur = inputEl._blurHandler;
+    }
     onApprove();
     modal.hide();
     // Clean up backdrop
@@ -1506,6 +1516,10 @@ function showContractValuePermission(message, newContractValue, onApprove, onDen
   };
 
   document.getElementById('contractValueCancelBtn').onclick = () => {
+    // Restore input blur handler
+    if (inputEl && inputEl._blurHandler) {
+      inputEl.onblur = inputEl._blurHandler;
+    }
     // Revert immediately before hiding modal
     onDeny();
     modal.hide();
@@ -1518,6 +1532,10 @@ function showContractValuePermission(message, newContractValue, onApprove, onDen
   };
 
   document.getElementById('contractValueModalClose').onclick = () => {
+    // Restore input blur handler
+    if (inputEl && inputEl._blurHandler) {
+      inputEl.onblur = inputEl._blurHandler;
+    }
     // Revert immediately before hiding modal
     onDeny();
     modal.hide();
@@ -1595,7 +1613,8 @@ function saveAmountChangeWithPermission(idx, contractValue, originalAmount, edit
           currentStages[idx].amount = originalAmount;
           displaySpan.style.display = 'inline-flex';
           editSpan.style.display = 'none';
-        }
+        },
+        input
       );
     } else {
       alert('❌ Error: ' + (data.error || 'Could not update'));
