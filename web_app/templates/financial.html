@@ -902,10 +902,9 @@ function initExpenseFormDropdowns() {
   const catDropdown = document.getElementById('expenseCategoryDropdown');
   const catArrow = catInput.parentElement.querySelector('.dropdown-arrow');
 
-  catArrow.addEventListener('click', () => catDropdown.classList.toggle('show'));
-  catInput.addEventListener('click', () => {
+  catArrow.addEventListener('click', () => {
     updateCategoryDropdown();
-    catDropdown.classList.add('show');
+    catDropdown.classList.toggle('show');
   });
   catInput.addEventListener('input', function() {
     const filter = this.value.toLowerCase();
@@ -1031,13 +1030,6 @@ document.addEventListener('DOMContentLoaded', function() {
       const cat = document.getElementById('expenseCategory')?.value || '';
       updateExpenseNameDropdown(cat);
       nameDropdown.classList.toggle('show');
-    });
-    nameInput.addEventListener('click', () => {
-      const cat = document.getElementById('expenseCategory')?.value || '';
-      if (cat) {
-        updateExpenseNameDropdown(cat);
-        nameDropdown.classList.add('show');
-      }
     });
     nameInput.addEventListener('input', function() {
       const filter = this.value.toLowerCase();
