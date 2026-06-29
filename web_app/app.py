@@ -2462,6 +2462,16 @@ def invoicing():
     i_coll_rate   = round(i_total_paid / i_total_val * 100) if i_total_val else 0
     i_overdue_amt = sum(total for st, total, __ in _kpi_rows if st == "Overdue")
 
+    # Ensure all invoices have amount_paid in meta for template compatibility
+    for inv in items:
+        if "meta" not in inv:
+            inv["meta"] = {}
+        if "amount_paid" not in inv["meta"]:
+            # Calculate from payment_log if missing
+            payment_log = inv.get("payment_log", []) or []
+            total_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+            inv["meta"]["amount_paid"] = str(total_paid) if total_paid > 0 else "0"
+
     return render_template("invoicing.html", invoices=items, statuses=statuses,
                            search=search, status_filter=status_filter,
                            date_from=date_from, date_to=date_to,
