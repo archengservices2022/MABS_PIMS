@@ -1851,7 +1851,10 @@ def co_status(project_id, co_idx):
         stages.append({
             "name":   f"{cos[co_idx]['co_number']} – {co_title}",
             "amount": co_amount,
+            "amount_paid": "0",  # Track payments same as regular installments
             "status": "Pending Invoice",
+            "co_number": cos[co_idx]['co_number'],  # Link back to change order
+            "co_index": co_idx,  # Store CO index for reference
         })
         update_data = {
             "change_orders":  cos,
@@ -2766,6 +2769,11 @@ def invoice_new():
         # Initialize amount_paid and tax_paid to 0 for new invoices
         data["meta"]["amount_paid"] = "0"
         data["meta"]["tax_paid"] = "0"
+
+        # Store change order number if this invoice is from a CO
+        co_number = request.form.get("co_number", "").strip()
+        if co_number:
+            data["meta"]["co_number"] = co_number
 
         stage_idx_raw = request.form.get("payment_stage_index", "")
         stage_name    = request.form.get("payment_stage", "")

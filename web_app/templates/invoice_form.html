@@ -34,6 +34,9 @@
     (${{ "{:,.2f}".format(stage_amount|float) }}). This invoice will be linked to that stage.
   </div>
   {% endif %}
+  {% if request.args.get('co_number') %}
+  <input type="hidden" name="co_number" value="{{ request.args.get('co_number') }}">
+  {% endif %}
   <div class="row g-3">
     <div class="col-lg-8">
 
