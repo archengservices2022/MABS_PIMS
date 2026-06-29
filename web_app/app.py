@@ -2686,6 +2686,8 @@ def invoice_new():
         form_status = request.form.get("status", "Draft").strip()
         valid_statuses = {"Draft", "Sent", "Viewed", "Paid", "Partial", "Overdue", "Cancelled"}
         data["meta"]["status"] = form_status if form_status in valid_statuses else "Draft"
+        # Initialize amount_paid to 0 for new invoices
+        data["meta"]["amount_paid"] = "0"
 
         stage_idx_raw = request.form.get("payment_stage_index", "")
         stage_name    = request.form.get("payment_stage", "")
@@ -3009,6 +3011,12 @@ def invoice_edit(invoice_id):
             }
             payment_log.append(new_payment)
             updated["payment_log"] = payment_log
+
+        # Calculate total amount_paid from payment_log for meta (backward compatibility)
+        payment_log = updated.get("payment_log", []) or []
+        if isinstance(payment_log, list):
+            total_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+            updated["meta"]["amount_paid"] = str(total_paid)
 
         fb_update(f"/invoices/{invoice_id}", updated)
 
