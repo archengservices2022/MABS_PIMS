@@ -6914,6 +6914,9 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
         stage_index = meta.get("payment_stage_index", -1)
         if main_project and stage_index >= 0:
             normalized_projects = [{"project_number": main_project, "payment_stage_index": stage_index}]
+        elif main_project and stage_index < 0:
+            # Invoice doesn't have payment_stage_index - we'll search for it by invoice_id later
+            normalized_projects = [{"project_number": main_project, "payment_stage_index": -1, "invoice_id": invoice_id}]
         else:
             return
 
@@ -6927,8 +6930,9 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
 
         project_number = proj_info.get("project_number", "")
         stage_index = proj_info.get("payment_stage_index", -1)
+        inv_id_for_lookup = proj_info.get("invoice_id")
 
-        if not project_number or stage_index < 0:
+        if not project_number:
             continue
 
         # Get project and stage info
@@ -6937,6 +6941,19 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
             continue
 
         stages = pdata.get("payment_stages") or []
+
+        # If stage_index not available, search for stage by invoice_id
+        if stage_index < 0:
+            if inv_id_for_lookup:
+                # Find the stage that has this invoice_id
+                for idx, s in enumerate(stages):
+                    if isinstance(s, dict) and s.get("invoice_id") == inv_id_for_lookup:
+                        stage_index = idx
+                        break
+            if stage_index < 0:
+                # Still not found
+                continue
+
         if not (0 <= stage_index < len(stages)):
             continue
 
