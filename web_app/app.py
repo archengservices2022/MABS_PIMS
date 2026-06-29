@@ -3227,6 +3227,34 @@ def invoice_edit(invoice_id):
 
             # Update project stage payment amounts and status
             _update_project_stage_payment_status(invoice_id)
+        else:
+            # Even if no new payment is being added, ensure the invoice is linked to its stage
+            # This handles the case where a user edits the invoice details without adding payment
+            invoice_number = data["meta"].get("invoice_number", "")
+            main_project = data["meta"].get("project_number", "")
+
+            # Handle single-project invoices with payment_stage_index
+            stage_idx_raw = data["meta"].get("payment_stage_index")
+            if stage_idx_raw is not None and main_project and invoice_number:
+                try:
+                    _mark_project_stage(main_project, int(stage_idx_raw), "Invoiced",
+                                      invoice_id=invoice_id, invoice_number=invoice_number)
+                except (ValueError, TypeError):
+                    pass
+
+            # Handle multi-project invoices with linked_projects
+            linked_projects = data["meta"].get("linked_projects", [])
+            if linked_projects and invoice_number:
+                for proj_info in linked_projects:
+                    if isinstance(proj_info, dict):
+                        proj_num = proj_info.get("project_number", "")
+                        stage_idx = proj_info.get("payment_stage_index")
+                        if proj_num and stage_idx is not None:
+                            try:
+                                _mark_project_stage(proj_num, int(stage_idx), "Invoiced",
+                                                  invoice_id=invoice_id, invoice_number=invoice_number)
+                            except (ValueError, TypeError):
+                                pass
 
         flash("Invoice updated successfully.", "success")
         return redirect(url_for("invoice_detail", invoice_id=invoice_id))
