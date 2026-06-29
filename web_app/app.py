@@ -7057,14 +7057,21 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
                                         break
 
                     if is_for_this_project:
-                        # Sum payments for this invoice and track invoice_id and invoice_number
+                        # Sum payments for this invoice (filter by project_number if available)
                         inv_payment_log = inv.get("payment_log", [])
                         if isinstance(inv_payment_log, list):
-                            project_paid += sum(_safe_float(p.get("amount", 0)) for p in inv_payment_log)
-                        # Store the invoice_id and invoice_number from this invoice
-                        if not linked_invoice_id:
-                            linked_invoice_id = inv_id
-                            linked_invoice_number = inv_meta.get("invoice_number", "")
+                            # Sum only payments for this project
+                            inv_payments = sum(
+                                _safe_float(p.get("amount", 0))
+                                for p in inv_payment_log
+                                if p.get("project_number") == project_number or not p.get("project_number")
+                            )
+                            project_paid += inv_payments
+                            # Only track invoice_id and invoice_number if this invoice has actual payments
+                            if inv_payments > 0 and not linked_invoice_id:
+                                linked_invoice_id = inv_id
+                                linked_invoice_number = inv_meta.get("invoice_number", "")
+                            print(f"[PAYMENT_CALC] Invoice {inv_id}: project={project_number}, payments={inv_payments}, total_paid={project_paid}", flush=True)
 
         # Determine stage status based on actual payments for this project
         if project_paid >= (stage_amount - 0.01):
