@@ -2462,7 +2462,7 @@ def invoicing():
     i_coll_rate   = round(i_total_paid / i_total_val * 100) if i_total_val else 0
     i_overdue_amt = sum(total for st, total, __ in _kpi_rows if st == "Overdue")
 
-    # Ensure all invoices have amount_paid in meta for template compatibility
+    # Ensure all invoices have amount_paid and tax_paid in meta for template compatibility
     for inv in items:
         if "meta" not in inv:
             inv["meta"] = {}
@@ -2471,6 +2471,11 @@ def invoicing():
             payment_log = inv.get("payment_log", []) or []
             total_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
             inv["meta"]["amount_paid"] = str(total_paid) if total_paid > 0 else "0"
+        if "tax_paid" not in inv["meta"]:
+            # Calculate from tax_payments if missing
+            tax_log = inv.get("tax_payments", []) or []
+            tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+            inv["meta"]["tax_paid"] = str(tax_paid) if tax_paid > 0 else "0"
 
     return render_template("invoicing.html", invoices=items, statuses=statuses,
                            search=search, status_filter=status_filter,
@@ -2696,8 +2701,9 @@ def invoice_new():
         form_status = request.form.get("status", "Draft").strip()
         valid_statuses = {"Draft", "Sent", "Viewed", "Paid", "Partial", "Overdue", "Cancelled"}
         data["meta"]["status"] = form_status if form_status in valid_statuses else "Draft"
-        # Initialize amount_paid to 0 for new invoices
+        # Initialize amount_paid and tax_paid to 0 for new invoices
         data["meta"]["amount_paid"] = "0"
+        data["meta"]["tax_paid"] = "0"
 
         stage_idx_raw = request.form.get("payment_stage_index", "")
         stage_name    = request.form.get("payment_stage", "")
@@ -2971,6 +2977,11 @@ def invoice_detail(invoice_id):
     # Update the invoice data with calculated status for display
     data["meta"]["status"] = calculated_status
 
+    # Ensure tax_paid is set in meta for template compatibility
+    if "tax_paid" not in data["meta"]:
+        tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+        data["meta"]["tax_paid"] = str(tax_paid) if tax_paid > 0 else "0"
+
     # Source quote — via the linked project's source_quote field
     source_quote = None
     if linked_project:
@@ -3070,11 +3081,15 @@ def invoice_edit(invoice_id):
             updated["payment_log"] = payment_log
             updated["tax_payments"] = tax_log
 
-        # Calculate total amount_paid from payment_log for meta (backward compatibility)
+        # Calculate total amount_paid from payment_log and tax_paid from tax_payments for meta
         payment_log = updated.get("payment_log", []) or []
+        tax_log = updated.get("tax_payments", []) or []
         if isinstance(payment_log, list):
             total_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
             updated["meta"]["amount_paid"] = str(total_paid)
+        if isinstance(tax_log, list):
+            tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+            updated["meta"]["tax_paid"] = str(tax_paid)
 
         fb_update(f"/invoices/{invoice_id}", updated)
 
