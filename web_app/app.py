@@ -3125,6 +3125,14 @@ def invoice_edit(invoice_id):
         # Ensure invoice_number is not accidentally changed
         if "invoice_number" in original_meta:
             data["meta"]["invoice_number"] = original_meta["invoice_number"]
+        # Preserve payment stage linkage
+        if "payment_stage_index" in original_meta:
+            data["meta"]["payment_stage_index"] = original_meta["payment_stage_index"]
+        if "payment_stage" in original_meta:
+            data["meta"]["payment_stage"] = original_meta["payment_stage"]
+        # Preserve linked_projects for multi-project invoices
+        if "linked_projects" in original_meta:
+            data["meta"]["linked_projects"] = original_meta["linked_projects"]
 
         # Preserve existing payment history when updating invoice details
         if "payment_log" in invoice_data:
