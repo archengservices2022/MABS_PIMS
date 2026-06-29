@@ -3209,9 +3209,10 @@ def invoice_edit(invoice_id):
                 if isinstance(stages, list):
                     for stage_idx, stage in enumerate(stages):
                         if isinstance(stage, dict):
-                            # Recalculate this stage's amount_paid from all invoices
+                            # Recalculate this stage's amount_paid from all invoices linked to this stage
                             all_invoices = fb_get("/invoices") or {}
                             stage_paid = 0.0
+
                             if isinstance(all_invoices, dict):
                                 for inv_id, inv_data in all_invoices.items():
                                     if isinstance(inv_data, dict):
@@ -3224,7 +3225,7 @@ def invoice_edit(invoice_id):
                                             if isinstance(payment_log, list):
                                                 stage_paid += sum(_safe_float(p.get("amount", 0)) for p in payment_log)
 
-                            # Update stage with current amount_paid
+                            # Update stage with current amount_paid (preserve existing invoice_id and invoice_number)
                             stage["amount_paid"] = str(stage_paid)
 
                     # Save updated stages back to project
