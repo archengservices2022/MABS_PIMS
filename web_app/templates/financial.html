@@ -903,7 +903,10 @@ function initExpenseFormDropdowns() {
   const catArrow = catInput.parentElement.querySelector('.dropdown-arrow');
 
   catArrow.addEventListener('click', () => catDropdown.classList.toggle('show'));
-  catInput.addEventListener('focus', () => updateCategoryDropdown());
+  catInput.addEventListener('click', () => {
+    updateCategoryDropdown();
+    catDropdown.classList.add('show');
+  });
   catInput.addEventListener('input', function() {
     const filter = this.value.toLowerCase();
     Array.from(catDropdown.children).forEach(opt => {
@@ -953,7 +956,7 @@ function updateCategoryDropdown() {
   const catDropdown = document.getElementById('expenseCategoryDropdown');
   const type = typeInput.value;
   const cats = categoriesByType[type] || [];
-  catDropdown.classList.add('show');
+  // Don't auto-show dropdown - just populate options
   catDropdown.innerHTML = '';
   cats.forEach(cat => {
     const div = document.createElement('div');
@@ -1004,7 +1007,7 @@ function updateExpenseNameDropdown(category) {
   const names = (expenseNamesByCategory[category] && expenseNamesByCategory[category].length)
     ? expenseNamesByCategory[category]
     : (fallbackNames[category] || []);
-  nameDropdown.classList.toggle('show', names.length > 0);
+  // Don't auto-show dropdown - just populate options
   nameDropdown.innerHTML = '';
   names.forEach(n => {
     const div = document.createElement('div');
@@ -1027,10 +1030,14 @@ document.addEventListener('DOMContentLoaded', function() {
     if (arrow) arrow.addEventListener('click', () => {
       const cat = document.getElementById('expenseCategory')?.value || '';
       updateExpenseNameDropdown(cat);
+      nameDropdown.classList.toggle('show');
     });
-    nameInput.addEventListener('focus', () => {
+    nameInput.addEventListener('click', () => {
       const cat = document.getElementById('expenseCategory')?.value || '';
-      if (cat) updateExpenseNameDropdown(cat);
+      if (cat) {
+        updateExpenseNameDropdown(cat);
+        nameDropdown.classList.add('show');
+      }
     });
     nameInput.addEventListener('input', function() {
       const filter = this.value.toLowerCase();
