@@ -3097,6 +3097,11 @@ def invoice_edit(invoice_id):
         linked_projects = _invoice_linked_projects(updated)
         if len(linked_projects) > 1:
             _allocate_invoice_payment_sequential(invoice_id)
+
+        # Update project stage payment amounts (same as payment_sequential endpoint)
+        _update_project_stage_payment_status(invoice_id)
+
+        # Sync project-level amount_paid and status
         for proj_num in linked_projects:
             _sync_project_payment(proj_num)
             _auto_complete_project_if_paid(proj_num)
