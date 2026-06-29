@@ -3474,13 +3474,16 @@ def invoice_delete(invoice_id):
     # Sync payment amounts for all affected projects
     for proj_num in project_numbers_to_sync:
         if proj_num:
+            # Recalculate all stages for this project from remaining invoices
             _sync_project_payment(proj_num)
             print(f"Synced payment for project: {proj_num}", flush=True)
+
             # Update project status based on remaining payments
             proj_id, pdata = _find_project_by_number(proj_num)
             if proj_id and pdata:
                 amount_paid = _safe_float(pdata.get("amount_paid", 0))
                 current_status = pdata.get("status", "Not Started")
+
                 # If still has payments, change to In Progress
                 if amount_paid > 0 and current_status == "Completed":
                     fb_update(f"/projects/{proj_id}", {
@@ -3491,6 +3494,36 @@ def invoice_delete(invoice_id):
                 elif amount_paid == 0 and current_status != "Not Started":
                     fb_update(f"/projects/{proj_id}", {
                         "status": "Not Started",
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    })
+
+                # Recalculate all payment stage amounts for this project from remaining invoices
+                stages = pdata.get("payment_stages", [])
+                if isinstance(stages, list):
+                    for stage_idx, stage in enumerate(stages):
+                        if isinstance(stage, dict):
+                            # Recalculate this stage's amount_paid from remaining invoices
+                            all_invoices = fb_get("/invoices") or {}
+                            stage_paid = 0.0
+                            if isinstance(all_invoices, dict):
+                                for inv_id, inv_data in all_invoices.items():
+                                    if isinstance(inv_data, dict):
+                                        inv_meta = inv_data.get("meta", {}) or {}
+                                        # Check if this invoice covers this project and stage
+                                        if (inv_meta.get("project_number") == proj_num and
+                                            inv_meta.get("payment_stage_index") == stage_idx):
+                                            # Sum payments for this invoice
+                                            payment_log = inv_data.get("payment_log", [])
+                                            if isinstance(payment_log, list):
+                                                stage_paid += sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+
+                            # Update stage with recalculated amount_paid
+                            stage["amount_paid"] = str(stage_paid)
+                            print(f"[DELETE] Recalculated stage {stage_idx} amount_paid: {stage_paid}")
+
+                    # Save updated stages
+                    fb_update(f"/projects/{proj_id}", {
+                        "payment_stages": stages,
                         "updated_at": datetime.now(timezone.utc).isoformat()
                     })
 
