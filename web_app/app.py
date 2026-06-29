@@ -7033,28 +7033,35 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
                     # Works for both single-project (project_number) and multi-project (linked_projects)
                     is_for_this_project = False
 
-                    # Single-project invoices use project_number
-                    if (inv_meta.get("project_number") == project_number and
-                        inv_meta.get("payment_stage_index") == stage_index):
-                        is_for_this_project = True
+                    # First, check if this is the current invoice being updated (most direct match)
+                    if inv_id == invoice_id:
+                        # For the current invoice, if it's linked to this project, include it
+                        if inv_meta.get("project_number") == project_number:
+                            is_for_this_project = True
                     else:
-                        # Multi-project invoices use linked_projects array
-                        # Handles both dict format [{"project_number": "...", "payment_stage_index": ...}]
-                        # and legacy string format ['MABS-202606-003']
-                        linked_projs = inv_meta.get("linked_projects", [])
-                        if isinstance(linked_projs, list):
-                            for lp in linked_projs:
-                                if isinstance(lp, dict):
-                                    # Dict format: full metadata
-                                    if lp.get("project_number") == project_number and lp.get("payment_stage_index") == stage_index:
-                                        is_for_this_project = True
-                                        break
-                                elif isinstance(lp, str) and lp == project_number:
-                                    # Legacy string format: only has project number
-                                    # For this case, use the invoice's payment_stage_index
-                                    if inv_meta.get("payment_stage_index") == stage_index:
-                                        is_for_this_project = True
-                                        break
+                        # For other invoices, use the standard matching logic
+                        # Single-project invoices use project_number
+                        if (inv_meta.get("project_number") == project_number and
+                            inv_meta.get("payment_stage_index") == stage_index):
+                            is_for_this_project = True
+                        else:
+                            # Multi-project invoices use linked_projects array
+                            # Handles both dict format [{"project_number": "...", "payment_stage_index": ...}]
+                            # and legacy string format ['MABS-202606-003']
+                            linked_projs = inv_meta.get("linked_projects", [])
+                            if isinstance(linked_projs, list):
+                                for lp in linked_projs:
+                                    if isinstance(lp, dict):
+                                        # Dict format: full metadata
+                                        if lp.get("project_number") == project_number and lp.get("payment_stage_index") == stage_index:
+                                            is_for_this_project = True
+                                            break
+                                    elif isinstance(lp, str) and lp == project_number:
+                                        # Legacy string format: only has project number
+                                        # For this case, use the invoice's payment_stage_index
+                                        if inv_meta.get("payment_stage_index") == stage_index:
+                                            is_for_this_project = True
+                                            break
 
                     if is_for_this_project:
                         # Sum payments for this invoice (filter by project_number if available)
