@@ -1538,6 +1538,13 @@ def project_detail(project_id):
     data["firebase_id"] = project_id
     proj_num = data.get("project_number", "")
 
+    # Debug: Log what we loaded from Firebase
+    stages = data.get("payment_stages", [])
+    if isinstance(stages, list):
+        for idx, stage in enumerate(stages):
+            if isinstance(stage, dict):
+                print(f"[LOAD_STAGE] Idx {idx}: status={stage.get('status')}, paid={stage.get('amount_paid')}, inv_id={stage.get('invoice_id')}, inv_num={stage.get('invoice_number')}", flush=True)
+
     # Older projects stored "payment_stages" as a flat list of stage-name
     # strings (no per-stage amount/status tracking). Only the structured
     # list-of-dicts format produced by _compute_payment_stages should drive
