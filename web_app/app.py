@@ -7037,6 +7037,10 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
                     if inv_id == invoice_id:
                         # For the current invoice, if it's linked to this project, include it
                         if inv_meta.get("project_number") == project_number:
+                            # Always preserve the current invoice's number, even if no payments found
+                            if not linked_invoice_number:
+                                linked_invoice_id = inv_id
+                                linked_invoice_number = inv_meta.get("invoice_number", "")
                             is_for_this_project = True
                     else:
                         # For other invoices, use the standard matching logic
