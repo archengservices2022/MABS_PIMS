@@ -75,7 +75,7 @@
 
     {% if 'invoicing' in allowed_pages %}
     <a href="{{ url_for('invoicing') }}"
-       class="nav-item accent-amber {% if request.endpoint in ['invoicing','invoice_new','invoice_detail','invoice_edit'] %}active{% endif %}">
+       class="nav-item accent-amber {% if request.endpoint in ['invoicing','invoice_new','invoice_detail'] %}active{% endif %}">
       <span class="nav-icon"><i class="bi bi-receipt-cutoff"></i></span>
       <span class="nav-label">Invoicing</span>
     </a>
