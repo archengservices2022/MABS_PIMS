@@ -6898,12 +6898,17 @@ def _derive_stage_index_from_line_items(project_number: str, line_items: list) -
     if not isinstance(stages, list):
         return -1
 
-    # Build a map of stage names to indices
+    # Build a map of generated stage names to indices
+    # Stage names are generated the same way as in project_form.html:
+    # "Installment 1 of N", "Installment 2 of N", etc.
+    num_stages = len(stages)
     stage_name_map = {}
-    for idx, stage in enumerate(stages):
-        if isinstance(stage, dict):
-            stage_name = stage.get("name", f"Stage {idx + 1}")
-            stage_name_map[stage_name.lower()] = idx
+    for idx in range(num_stages):
+        if num_stages == 1:
+            stage_name = "Balance Payment"
+        else:
+            stage_name = f"Installment {idx + 1} of {num_stages}"
+        stage_name_map[stage_name.lower()] = idx
 
     # Search line items for stage references
     for item in line_items:
@@ -6913,8 +6918,10 @@ def _derive_stage_index_from_line_items(project_number: str, line_items: list) -
         # Look for stage name in description (e.g., "installment 2 of 3")
         for stage_name, stage_idx in stage_name_map.items():
             if stage_name in desc:
+                print(f"[DERIVE] Found stage {stage_idx} from line item: {desc}", flush=True)
                 return stage_idx
 
+    print(f"[DERIVE] Could not derive stage from line items for project {project_number}", flush=True)
     return -1
 
 def _update_project_stage_payment_status(invoice_id: str) -> None:
