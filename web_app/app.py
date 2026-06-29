@@ -2997,30 +2997,78 @@ def invoice_edit(invoice_id):
         updated = _parse_invoice_form(request.form)
         updated["meta"]["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-        # Handle payment entry if provided
+        # Handle payment entry if provided - use sequential distribution like invoice_detail
         payment_amount = updated.pop("_payment_amount", "").strip()
         payment_date = updated.pop("_payment_date", "").strip()
         payment_reference = updated.pop("_payment_reference", "").strip()
 
         if payment_amount and _safe_float(payment_amount) > 0:
-            # Create payment log entry
-            payment_log = data.get("payment_log", []) or []
+            # Use sequential distribution: allocate to projects first, then tax
+            amount = _safe_float(payment_amount)
+            payment_log = updated.get("payment_log", []) or []
             if not isinstance(payment_log, list):
                 payment_log = []
 
-            # Get the main project from the invoice
-            main_project = updated["meta"].get("project_number", "")
+            tax_log = updated.get("tax_payments", []) or []
+            if not isinstance(tax_log, list):
+                tax_log = []
 
-            # Create new payment entry
-            new_payment = {
-                "amount": payment_amount,
-                "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
-                "method": updated["meta"].get("payment_method", ""),
-                "reference": payment_reference,
-                "project_number": main_project,
-            }
-            payment_log.append(new_payment)
+            main_project = updated["meta"].get("project_number", "")
+            line_items = updated.get("line_items", []) or []
+            tax_amount = _safe_float(updated["meta"].get("tax_amount", 0))
+            linked_projects = updated["meta"].get("linked_projects", [])
+
+            remaining = amount
+
+            # Step 1: Allocate to project(s)
+            if not linked_projects and main_project:
+                linked_projects = [main_project]
+
+            for proj_num in linked_projects:
+                if remaining <= 0:
+                    break
+
+                # Calculate project's invoice amount from line items
+                proj_amount = sum(_safe_float(item.get("amount", 0))
+                                for item in line_items
+                                if isinstance(item, dict) and
+                                (item.get("project_number") == proj_num or not item.get("project_number")))
+
+                # Calculate already received
+                proj_received = sum(_safe_float(p.get("amount", 0))
+                                  for p in payment_log
+                                  if p.get("project_number") == proj_num)
+
+                proj_needs = max(0, proj_amount - proj_received)
+
+                if proj_needs > 0:
+                    allocate = min(proj_needs, remaining)
+                    payment_log.append({
+                        "amount": str(allocate),
+                        "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
+                        "method": updated["meta"].get("payment_method", ""),
+                        "reference": payment_reference,
+                        "project_number": proj_num,
+                    })
+                    remaining -= allocate
+
+            # Step 2: Allocate remaining to tax
+            if remaining > 0 and tax_amount > 0:
+                tax_received = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+                tax_needs = max(0, tax_amount - tax_received)
+
+                if tax_needs > 0:
+                    allocate_tax = min(tax_needs, remaining)
+                    tax_log.append({
+                        "amount": str(allocate_tax),
+                        "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
+                        "method": updated["meta"].get("payment_method", ""),
+                        "reference": payment_reference,
+                    })
+                    remaining -= allocate_tax
+
             updated["payment_log"] = payment_log
+            updated["tax_payments"] = tax_log
 
         # Calculate total amount_paid from payment_log for meta (backward compatibility)
         payment_log = updated.get("payment_log", []) or []
