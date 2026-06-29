@@ -3211,12 +3211,27 @@ def invoice_edit(invoice_id):
 
                 if proj_needs > 0:
                     allocate = min(proj_needs, remaining)
+                    # Get stage name and index for this project
+                    _stage_name = data["meta"].get("payment_stage", "")
+                    _stage_idx = data["meta"].get("payment_stage_index")
+                    if _stage_idx is not None:
+                        try:
+                            _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
+                        except (ValueError, TypeError):
+                            _stage_idx = None
+                    if not _stage_name and _stage_idx is not None:
+                        _stage_name = f"Stage {_stage_idx + 1}"
+
                     payment_log.append({
                         "amount": str(allocate),
                         "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
                         "method": payment_method,
                         "reference": payment_reference,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
                         "project_number": proj_num,
+                        "invoice_number": data["meta"].get("invoice_number", ""),
+                        "stage_name": _stage_name,
+                        "stage_index": _stage_idx or "",
                     })
                     remaining -= allocate
 
@@ -3232,6 +3247,7 @@ def invoice_edit(invoice_id):
                         "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
                         "method": payment_method,
                         "reference": payment_reference,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
                     })
                     remaining -= allocate_tax
 
