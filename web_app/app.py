@@ -3141,13 +3141,19 @@ def invoice_edit(invoice_id):
             data["tax_payments"] = invoice_data["tax_payments"]
 
         # Get payment information from form
-        payment_amount = request.form.get("payment_amount", "").strip()
+        payment_amount_str = request.form.get("payment_amount", "").strip()
         payment_date = request.form.get("payment_date", "").strip()
         payment_method = request.form.get("payment_method", "").strip()
         payment_reference = request.form.get("payment_reference", "").strip()
 
-        # Preserve amount_paid and tax_paid in meta if not adding a new payment
-        if not payment_amount or _safe_float(payment_amount) <= 0:
+        # When editing, calculate the difference between new and old amount_paid
+        # Only distribute the DIFFERENCE as a new payment (don't double-count)
+        old_amount_paid = _safe_float(invoice_data.get("meta", {}).get("amount_paid", 0))
+        new_amount_paid = _safe_float(payment_amount_str) if payment_amount_str else old_amount_paid
+        payment_difference = new_amount_paid - old_amount_paid
+
+        # Preserve amount_paid and tax_paid in meta if not changing payment
+        if payment_difference <= 0:
             # No new payment being added, so preserve existing values
             if "amount_paid" in invoice_data.get("meta", {}):
                 data["meta"]["amount_paid"] = invoice_data["meta"]["amount_paid"]
@@ -3157,9 +3163,9 @@ def invoice_edit(invoice_id):
         # Update invoice in Firebase (meta and line_items, preserving payments)
         fb_update(f"/invoices/{invoice_id}", data)
 
-        if payment_amount and _safe_float(payment_amount) > 0:
+        if payment_difference > 0:
             # Use sequential distribution: allocate to projects first, then tax
-            amount = _safe_float(payment_amount)
+            amount = payment_difference
             payment_log = data.get("payment_log", []) or []
             if not isinstance(payment_log, list):
                 payment_log = []
