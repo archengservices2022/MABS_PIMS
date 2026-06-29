@@ -3537,6 +3537,21 @@ def invoice_delete(invoice_id):
         print(f"Reverting single stage: {project_number} stage {payment_stage_index}", flush=True)
         _mark_project_stage(project_number, payment_stage_index, "Pending Invoice", amount_paid=0)
         project_numbers_to_sync.add(project_number)
+    elif project_number and not payment_stage_index:
+        # Invoice without explicit stage - find the stage by invoice_id
+        print("Invoice without payment_stage_index - finding by invoice_id", flush=True)
+        all_proj = fb_get("/projects") or {}
+        for pid, pdata in (all_proj.items() if isinstance(all_proj, dict) else []):
+            if isinstance(pdata, dict) and pdata.get("project_number", "") == project_number:
+                stages = pdata.get("payment_stages", [])
+                if isinstance(stages, list):
+                    for idx, stage in enumerate(stages):
+                        if isinstance(stage, dict) and stage.get("invoice_id") == invoice_id:
+                            print(f"Found stage {idx} with this invoice_id, reverting", flush=True)
+                            _mark_project_stage(project_number, idx, "Pending Invoice", amount_paid=0)
+                            project_numbers_to_sync.add(project_number)
+                            break
+                break
     else:
         # Multiple projects - check linked_projects first, then line items
         linked_projects = meta.get("linked_projects", [])
