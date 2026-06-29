@@ -3146,11 +3146,15 @@ def invoice_edit(invoice_id):
         payment_method = request.form.get("payment_method", "").strip()
         payment_reference = request.form.get("payment_reference", "").strip()
 
+        print(f"\n[INVOICE_EDIT] payment_amount_str='{payment_amount_str}', payment_date='{payment_date}', payment_method='{payment_method}'", flush=True)
+
         # When editing, calculate the difference between new and old amount_paid
         # Only distribute the DIFFERENCE as a new payment (don't double-count)
         old_amount_paid = _safe_float(invoice_data.get("meta", {}).get("amount_paid", 0))
         new_amount_paid = _safe_float(payment_amount_str) if payment_amount_str else old_amount_paid
         payment_difference = new_amount_paid - old_amount_paid
+
+        print(f"[INVOICE_EDIT] old_amount={old_amount_paid}, new_amount={new_amount_paid}, diff={payment_difference}", flush=True)
 
         # Preserve amount_paid and tax_paid in meta if not changing payment
         if payment_difference <= 0:
@@ -3164,6 +3168,7 @@ def invoice_edit(invoice_id):
         fb_update(f"/invoices/{invoice_id}", data)
 
         if payment_difference > 0:
+            print(f"[INVOICE_EDIT] Processing payment_difference={payment_difference}", flush=True)
             # Use sequential distribution: allocate to projects first, then tax
             amount = payment_difference
             payment_log = data.get("payment_log", []) or []
@@ -3178,6 +3183,8 @@ def invoice_edit(invoice_id):
             line_items = data.get("line_items", []) or []
             tax_amount = _safe_float(data["meta"].get("tax_amount", 0))
             linked_projects = data["meta"].get("linked_projects", [])
+
+            print(f"[INVOICE_EDIT] main_project={main_project}, tax_amount={tax_amount}, linked_projects={linked_projects}", flush=True)
 
             remaining = amount
 
@@ -3232,12 +3239,17 @@ def invoice_edit(invoice_id):
             total_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
             tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
 
+            print(f"[INVOICE_EDIT] Saving payment_log with {len(payment_log)} entries, total_paid={total_paid}, tax_paid={tax_paid}", flush=True)
+            print(f"[INVOICE_EDIT] payment_log={payment_log}", flush=True)
+
             fb_update(f"/invoices/{invoice_id}", {
                 "payment_log": payment_log,
                 "tax_payments": tax_log,
                 "meta/amount_paid": str(total_paid),
                 "meta/tax_paid": str(tax_paid),
             })
+
+            print("[INVOICE_EDIT] Firebase update complete", flush=True)
 
             # Update project stage payment amounts and status
             _update_project_stage_payment_status(invoice_id)
