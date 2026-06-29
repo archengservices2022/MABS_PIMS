@@ -2793,6 +2793,99 @@ def invoice_new():
                     if pdata.get("status", "Not Started") == "Not Started":
                         fb_update(f"/projects/{pid}", {"status": "In Progress"})
 
+        # Handle payment entry if provided when creating invoice
+        payment_amount = data.pop("_payment_amount", "").strip()
+        payment_date = data.pop("_payment_date", "").strip()
+        payment_reference = data.pop("_payment_reference", "").strip()
+
+        if payment_amount and _safe_float(payment_amount) > 0:
+            # Use sequential distribution: allocate to projects first, then tax
+            amount = _safe_float(payment_amount)
+            payment_log = data.get("payment_log", []) or []
+            if not isinstance(payment_log, list):
+                payment_log = []
+
+            tax_log = data.get("tax_payments", []) or []
+            if not isinstance(tax_log, list):
+                tax_log = []
+
+            main_project = data["meta"].get("project_number", "")
+            line_items = data.get("line_items", []) or []
+            tax_amount = _safe_float(data["meta"].get("tax_amount", 0))
+            linked_projects = data["meta"].get("linked_projects", [])
+
+            remaining = amount
+
+            # Step 1: Allocate to project(s)
+            if not linked_projects and main_project:
+                linked_projects = [main_project]
+
+            for proj_num in linked_projects:
+                if remaining <= 0:
+                    break
+
+                # Calculate project's invoice amount from line items
+                proj_amount = sum(_safe_float(item.get("amount", 0))
+                                for item in line_items
+                                if isinstance(item, dict) and
+                                (item.get("project_number") == proj_num or not item.get("project_number")))
+
+                # Calculate already received
+                proj_received = sum(_safe_float(p.get("amount", 0))
+                                  for p in payment_log
+                                  if p.get("project_number") == proj_num)
+
+                proj_needs = max(0, proj_amount - proj_received)
+
+                if proj_needs > 0:
+                    allocate = min(proj_needs, remaining)
+                    payment_log.append({
+                        "amount": str(allocate),
+                        "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
+                        "method": data["meta"].get("payment_method", ""),
+                        "reference": payment_reference,
+                        "project_number": proj_num,
+                    })
+                    remaining -= allocate
+
+            # Step 2: Allocate remaining to tax
+            if remaining > 0 and tax_amount > 0:
+                tax_received = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+                tax_needs = max(0, tax_amount - tax_received)
+
+                if tax_needs > 0:
+                    allocate_tax = min(tax_needs, remaining)
+                    tax_log.append({
+                        "amount": str(allocate_tax),
+                        "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
+                        "method": data["meta"].get("payment_method", ""),
+                        "reference": payment_reference,
+                    })
+                    remaining -= allocate_tax
+
+            # Update invoice with payment data
+            payment_log_data = payment_log
+            tax_log_data = tax_log
+
+            # Calculate total amount_paid and tax_paid
+            total_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log_data)
+            tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log_data)
+
+            fb_update(f"/invoices/{inv_id}", {
+                "payment_log": payment_log_data,
+                "tax_payments": tax_log_data,
+                "meta/amount_paid": str(total_paid),
+                "meta/tax_paid": str(tax_paid),
+            })
+
+            # Update project stage payment amounts and status
+            _update_project_stage_payment_status(inv_id)
+
+            # Sync project-level payments
+            for proj_num in proj_nums_to_update:
+                _sync_project_payment(proj_num)
+                _auto_complete_project_if_paid(proj_num)
+
         flash("Invoice created successfully.", "success")
         return redirect(url_for("invoicing", tab="all-invoices"))
     next_num     = _next_invoice_number()
