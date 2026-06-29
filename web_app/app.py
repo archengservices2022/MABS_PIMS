@@ -5414,8 +5414,9 @@ def export_balance_sheet():
                         if e_year == year and 1 <= e_month <= 12:
                             amt = _safe_float(edata.get("amount", 0))
                             monthly_expenses[e_month-1] += amt
-                            exp_name = edata.get("expense_name", "") or edata.get("description", "—")
-                            expense_breakdown[exp_name] = expense_breakdown.get(exp_name, 0) + amt
+                            # Use vendor name for breakdown, fallback to expense_name if no vendor
+                            vendor_name = edata.get("vendor", "").strip() or edata.get("expense_name", "") or edata.get("description", "—")
+                            expense_breakdown[vendor_name] = expense_breakdown.get(vendor_name, 0) + amt
                     except (ValueError, IndexError):
                         pass
 
