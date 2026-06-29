@@ -99,12 +99,17 @@
           <div class="col-md-4">
             <label class="form-label">Status</label>
             <select name="status" id="invoiceStatus" class="form-select" onchange="togglePaymentFields()">
+              {% if invoice %}
+                {% set current_status = meta.get('status') or invoice.get('status') or 'Draft' %}
+              {% else %}
+                {% set current_status = 'Draft' %}
+              {% endif %}
               {% for s in ['Draft','Sent','Viewed','Paid','Partial','Overdue','Cancelled'] %}
-              <option value="{{ s }}" {{ 'selected' if meta.get('status','Draft') == s }}>{{ s }}</option>
+              <option value="{{ s }}" {{ 'selected' if current_status == s }}>{{ s }}</option>
               {% endfor %}
             </select>
           </div>
-          <div class="col-md-4" id="paymentMethodWrap" style="display:none;">
+          <div class="col-md-3" id="paymentMethodWrap" style="display:none;">
             <label class="form-label">Payment Method</label>
             <select name="payment_method" class="form-select">
               <option value="">— Select —</option>
@@ -113,10 +118,18 @@
               {% endfor %}
             </select>
           </div>
-          <div class="col-md-4" id="amountPaidWrap" style="display:none;">
+          <div class="col-md-3" id="amountPaidWrap" style="display:none;">
             <label class="form-label">Amount Paid ($)</label>
-            <input type="number" name="amount_paid" class="form-control"
-                   value="{{ meta.get('amount_paid','0') }}" min="0" step="0.01">
+            <input type="number" name="payment_amount" class="form-control"
+                   min="0" step="0.01" placeholder="0.00">
+          </div>
+          <div class="col-md-2" id="paymentDateWrap" style="display:none;">
+            <label class="form-label">Payment Date</label>
+            <input type="date" name="payment_date" class="form-control">
+          </div>
+          <div class="col-md-2" id="paymentRefWrap" style="display:none;">
+            <label class="form-label">Reference #</label>
+            <input type="text" name="payment_reference" class="form-control" placeholder="Ref #">
           </div>
         </div>
       </div>
@@ -473,6 +486,14 @@ function togglePaymentFields() {
   const show   = ['Paid', 'Partial'].includes(status);
   document.getElementById('paymentMethodWrap').style.display = show ? '' : 'none';
   document.getElementById('amountPaidWrap').style.display    = show ? '' : 'none';
+  document.getElementById('paymentDateWrap').style.display   = show ? '' : 'none';
+  document.getElementById('paymentRefWrap').style.display    = show ? '' : 'none';
+
+  // Set payment date to today if showing and not already set
+  if (show && !document.querySelector('input[name="payment_date"]').value) {
+    const today = new Date().toISOString().split('T')[0];
+    document.querySelector('input[name="payment_date"]').value = today;
+  }
 }
 
 calcTotals();
@@ -495,6 +516,28 @@ function applyNetTerms() {
 (function() {
   const nt = document.getElementById('netTerms').value;
   if (nt && !document.getElementById('dueDate').value) applyNetTerms();
+})();
+
+// Fetch and set the current invoice status from the API
+(function() {
+  const invoiceNum = document.querySelector('input[name="invoice_number"]');
+  if (invoiceNum && invoiceNum.value && invoiceNum.value.includes('-')) {
+    // Extract invoice ID from form data if available, or use invoice number
+    const invoiceId = '{{ invoice.firebase_id if invoice else '' }}';
+    if (invoiceId) {
+      fetch(`/api/invoices/${invoiceId}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.meta && data.meta.status) {
+            const statusSelect = document.getElementById('invoiceStatus');
+            if (statusSelect) {
+              statusSelect.value = data.meta.status;
+            }
+          }
+        })
+        .catch(e => console.log('Could not fetch invoice status:', e));
+    }
+  }
 })();
 </script>
 {% endblock %}

@@ -2984,6 +2984,32 @@ def invoice_edit(invoice_id):
     if request.method == "POST":
         updated = _parse_invoice_form(request.form)
         updated["meta"]["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        # Handle payment entry if provided
+        payment_amount = updated.pop("_payment_amount", "").strip()
+        payment_date = updated.pop("_payment_date", "").strip()
+        payment_reference = updated.pop("_payment_reference", "").strip()
+
+        if payment_amount and _safe_float(payment_amount) > 0:
+            # Create payment log entry
+            payment_log = data.get("payment_log", []) or []
+            if not isinstance(payment_log, list):
+                payment_log = []
+
+            # Get the main project from the invoice
+            main_project = updated["meta"].get("project_number", "")
+
+            # Create new payment entry
+            new_payment = {
+                "amount": payment_amount,
+                "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
+                "method": updated["meta"].get("payment_method", ""),
+                "reference": payment_reference,
+                "project_number": main_project,
+            }
+            payment_log.append(new_payment)
+            updated["payment_log"] = payment_log
+
         fb_update(f"/invoices/{invoice_id}", updated)
 
         # Use sequential allocation for multi-project invoices
@@ -7555,12 +7581,15 @@ def _parse_invoice_form(form) -> dict:
             "tax_rate":       form.get("tax_rate", "0"),
             "tax_amount":     form.get("tax_amount", "0"),
             "total":          form.get("total", "0"),
-            "amount_paid":    form.get("amount_paid", "0"),
             "notes":          form.get("notes", ""),
             "terms":          form.get("terms", ""),
             "payment_method": form.get("payment_method", ""),
         },
         "line_items": line_items,
+        # Payment details (handled separately in invoice_edit to add to payment_log)
+        "_payment_amount": form.get("payment_amount", ""),
+        "_payment_date": form.get("payment_date", ""),
+        "_payment_reference": form.get("payment_reference", ""),
     }
 
 def _invoice_project_share(invoice_data: dict, project_number: str) -> float:

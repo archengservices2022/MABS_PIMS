@@ -862,8 +862,8 @@
             <input type="number" id="editDownPaymentAmount" class="form-control" step="0.01" min="0"
                    oninput="updateRemainingStages()">
             <small class="text-muted" id="downPaymentPercentageDisplay"></small>
-            <small class="text-muted d-block mt-1" id="downPaymentMessage" style="display:none;">
-              <i class="bi bi-lock-fill"></i> This stage is invoiced and cannot be edited
+            <small class="text-muted d-block mt-1" id="downPaymentMessage" style="display:none !important;">
+              <i class="bi bi-lock-fill"></i> This stage is <span id="downPaymentStatus"></span> and cannot be edited
             </small>
           </div>
           <div id="editRemainingStagesContainer"></div>
@@ -995,6 +995,27 @@ document.addEventListener('DOMContentLoaded', function () {
   if (editModal) {
     editModal.addEventListener('show.bs.modal', openEditPaymentPlanModal);
   }
+
+  // Refresh invoice status from API to show latest status
+  const invoiceStatusBadge = document.getElementById('wfInvoiceStatus');
+  if (invoiceStatusBadge) {
+    const invoiceId = invoiceStatusBadge.getAttribute('data-invoice-id');
+    if (invoiceId) {
+      fetch(`/api/invoices/${invoiceId}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.meta && data.meta.status) {
+            const newStatus = data.meta.status;
+            const oldStatus = invoiceStatusBadge.textContent;
+            if (newStatus !== oldStatus) {
+              invoiceStatusBadge.textContent = newStatus;
+              invoiceStatusBadge.className = 'badge status-' + newStatus.toLowerCase().replace(/ /g, '-');
+            }
+          }
+        })
+        .catch(e => console.log('Could not refresh invoice status:', e));
+    }
+  }
 });
 
 function toggleAmtEdit(idx) {
@@ -1032,14 +1053,19 @@ function openEditPaymentPlanModal() {
   // Show badge and message ONLY if Paid or Overdue
   const badgeEl = document.getElementById('downPaymentBadge');
   const messageEl = document.getElementById('downPaymentMessage');
-  if (isDownPaymentPaid) {
-    badgeEl.textContent = downPaymentStage.status || 'Paid';
+  const statusSpan = document.getElementById('downPaymentStatus');
+
+  // Always hide message by default - only show if explicitly locked
+  messageEl.style.setProperty('display', 'none', 'important');
+  badgeEl.style.display = 'none';
+
+  // Only show if actually locked AND has a status
+  if (isDownPaymentPaid && downPaymentStage.status) {
+    badgeEl.textContent = downPaymentStage.status;
     badgeEl.className = 'badge status-invoiced';
     badgeEl.style.display = 'inline-block';
-    messageEl.style.display = 'block';
-  } else {
-    badgeEl.style.display = 'none';
-    messageEl.style.display = 'none';
+    statusSpan.textContent = downPaymentStage.status;
+    messageEl.style.setProperty('display', 'block', 'important');
   }
 
   document.getElementById('editContractValue').textContent = '$' + contractValue.toFixed(2);
@@ -1068,7 +1094,7 @@ function updateRemainingStages() {
         </div>
         <input type="number" class="form-control stageAmountInput" data-index="${i}" value="${amount.toFixed(2)}"
                step="0.01" oninput="calculateEditPlanTotal()" ${isInvoiced ? 'disabled' : ''}/>
-        ${isInvoiced ? '<small class="text-muted d-block mt-1"><i class="bi bi-lock-fill"></i> This stage is invoiced and cannot be edited</small>' : ''}
+        ${isInvoiced ? '<small class="text-muted d-block mt-1"><i class="bi bi-lock-fill"></i> This stage is ' + currentStages[i].status + ' and cannot be edited</small>' : ''}
       </div>
     `;
   }
@@ -1186,12 +1212,22 @@ function saveEditedPaymentPlan() {
   .then(r => r.json())
   .then(data => {
     if (data.success) {
-      location.reload();
+      // Close modal immediately
+      const modal = bootstrap.Modal.getInstance(document.getElementById('editPaymentPlanModal'));
+      if (modal) modal.hide();
+
+      // Update page display immediately
+      setTimeout(() => {
+        location.reload();
+      }, 300);
     } else {
       alert('❌ Error: ' + (data.error || 'Could not update'));
     }
   })
-  .catch(e => alert('❌ Error: ' + e.message));
+  .catch(e => {
+    console.error('Payment plan update error:', e);
+    alert('❌ Error: ' + e.message);
+  });
 }
 
 function prepareUpdateStage(idx, name, amount, paidAmount) {
