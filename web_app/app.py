@@ -7074,11 +7074,13 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
                                 if p.get("project_number") == project_number or not p.get("project_number")
                             )
                             project_paid += inv_payments
-                            # Only track invoice_id and invoice_number if this invoice has actual payments
-                            if inv_payments > 0 and not linked_invoice_id:
-                                linked_invoice_id = inv_id
-                                linked_invoice_number = inv_meta.get("invoice_number", "")
-                            print(f"[PAYMENT_CALC] Invoice {inv_id}: project={project_number}, payments={inv_payments}, total_paid={project_paid}", flush=True)
+                            # Track invoice_id and invoice_number if this invoice has actual payments
+                            # Prioritize the current invoice being updated (inv_id == invoice_id)
+                            if inv_payments > 0:
+                                if inv_id == invoice_id or not linked_invoice_id:
+                                    linked_invoice_id = inv_id
+                                    linked_invoice_number = inv_meta.get("invoice_number", "")
+                            print(f"[PAYMENT_CALC] Invoice {inv_id}: project={project_number}, payments={inv_payments}, total_paid={project_paid}, current={inv_id == invoice_id}", flush=True)
 
         # Determine stage status based on actual payments for this project
         if project_paid >= (stage_amount - 0.01):
