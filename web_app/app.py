@@ -7040,7 +7040,9 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
                             # Always preserve the current invoice's number, even if no payments found
                             if not linked_invoice_number:
                                 linked_invoice_id = inv_id
-                                linked_invoice_number = inv_meta.get("invoice_number", "")
+                                # Invoice number might be in meta or at top level
+                                linked_invoice_number = inv_meta.get("invoice_number") or inv.get("invoice_number", "")
+                                print(f"[CURRENT_INV] Captured invoice_number for {inv_id}: {linked_invoice_number} (from meta: {inv_meta.get('invoice_number')}, from top: {inv.get('invoice_number')})", flush=True)
                             is_for_this_project = True
                     else:
                         # For other invoices, use the standard matching logic
@@ -7112,11 +7114,15 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
 
         if linked_invoice_id:
             stage["invoice_id"] = linked_invoice_id
+            print(f"[SETTING_ID] Set invoice_id to {linked_invoice_id}", flush=True)
         if linked_invoice_number:
             stage["invoice_number"] = linked_invoice_number
+            print(f"[SETTING_NUM] Set invoice_number to {linked_invoice_number}", flush=True)
+        else:
+            print("[SKIPPING_NUM] Skipped setting invoice_number (linked_invoice_number is empty/None)", flush=True)
 
         log.info(f"[SAVE_STATUS] Saving stage {stage_index} status={new_status} to project {pid}")
-        log.info(f"[SAVE_STAGE] Full stage data: {stage}, amount_paid={stage.get('amount_paid')}")
+        log.info(f"[SAVE_STAGE] Full stage data: {stage}, amount_paid={stage.get('amount_paid')}, invoice_number={stage.get('invoice_number')}")
 
         fb_update(f"/projects/{pid}", {
             "payment_stages": stages,
