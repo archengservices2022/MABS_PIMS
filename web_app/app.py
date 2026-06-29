@@ -3211,6 +3211,9 @@ def invoice_edit(invoice_id):
         # Preserve linked_projects for multi-project invoices
         if "linked_projects" in original_meta:
             data["meta"]["linked_projects"] = original_meta["linked_projects"]
+        # Preserve change order number if this is a CO invoice
+        if "co_number" in original_meta:
+            data["meta"]["co_number"] = original_meta["co_number"]
 
         # Preserve existing payment history when updating invoice details
         if "payment_log" in invoice_data:
