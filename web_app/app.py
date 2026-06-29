@@ -6528,7 +6528,8 @@ def _mark_project_stage(project_number: str, stage_index: int, status: str, invo
 def _calculate_invoice_status(inv_data: dict) -> str:
     """Calculate invoice status based on payments vs total (including tax).
 
-    Returns: "Paid", "Partial", or "Overdue" based on actual payments, regardless of manual status
+    Returns: "Paid", "Partial", or "Overdue" based on actual payments.
+    If no payments, returns the stored status (user-selected).
     """
     meta = inv_data.get("meta", {}) or {}
 
@@ -6570,7 +6571,7 @@ def _calculate_invoice_status(inv_data: dict) -> str:
     elif is_overdue:
         return "Overdue"
     else:
-        return "Sent"
+        return meta.get("status", "Draft")
 
 def _update_project_stage_payment_status(invoice_id: str) -> None:
     """Update project stage statuses based on invoice payments.
