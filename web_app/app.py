@@ -3211,6 +3211,8 @@ def invoice_edit(invoice_id):
                         if isinstance(stage, dict):
                             # Recalculate this stage's amount_paid from invoices linked to it
                             stage_paid = 0.0
+                            found_invoice_id = None
+                            found_invoice_number = None
 
                             # Method 1: Look for invoices by invoice_id stored in the stage
                             stage_invoice_id = stage.get("invoice_id")
@@ -3219,6 +3221,9 @@ def invoice_edit(invoice_id):
                                 payment_log = inv_data.get("payment_log", [])
                                 if isinstance(payment_log, list):
                                     stage_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+                                if stage_paid > 0:
+                                    found_invoice_id = stage_invoice_id
+                                    found_invoice_number = inv_data.get("meta", {}).get("invoice_number", "")
                             else:
                                 # Method 2: Look for invoices by payment_stage_index (fallback)
                                 all_invoices = fb_get("/invoices") or {}
@@ -3233,9 +3238,16 @@ def invoice_edit(invoice_id):
                                                 payment_log = inv_data.get("payment_log", [])
                                                 if isinstance(payment_log, list):
                                                     stage_paid += sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+                                                if stage_paid > 0:
+                                                    found_invoice_id = inv_id
+                                                    found_invoice_number = inv_meta.get("invoice_number", "")
 
-                            # Update stage with current amount_paid (preserve existing invoice_id and invoice_number)
+                            # Update stage with current amount_paid and invoice tracking info
                             stage["amount_paid"] = str(stage_paid)
+                            if found_invoice_id:
+                                stage["invoice_id"] = found_invoice_id
+                            if found_invoice_number:
+                                stage["invoice_number"] = found_invoice_number
 
                     # Save updated stages back to project
                     fb_update(f"/projects/{proj_id}", {
@@ -6938,12 +6950,15 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
         # For single-project invoices, sum payments from the invoice
         is_multi_project = len(linked_projects) > 1
 
+        project_paid = 0
+        linked_invoice_id = None
+        linked_invoice_number = None
+
         if is_multi_project:
             # Use the amount already allocated by sequential allocation
             project_paid = _safe_float(pdata.get("amount_paid", 0))
         else:
             # Sum payments from ALL invoices linked to this stage for this project
-            project_paid = 0
             if isinstance(all_invoices, dict):
                 for inv_id, inv in all_invoices.items():
                     if not isinstance(inv, dict):
@@ -6978,10 +6993,14 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
                                         break
 
                     if is_for_this_project:
-                        # Sum payments for this invoice
+                        # Sum payments for this invoice and track invoice_id and invoice_number
                         inv_payment_log = inv.get("payment_log", [])
                         if isinstance(inv_payment_log, list):
                             project_paid += sum(_safe_float(p.get("amount", 0)) for p in inv_payment_log)
+                        # Store the invoice_id and invoice_number from this invoice
+                        if not linked_invoice_id:
+                            linked_invoice_id = inv_id
+                            linked_invoice_number = inv_meta.get("invoice_number", "")
 
         # Determine stage status based on actual payments for this project
         if project_paid >= (stage_amount - 0.01):
@@ -6993,9 +7012,13 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
 
         log.info(f"[STATUS] Project {project_number} stage {stage_index}: amount={stage_amount}, paid={project_paid}, threshold={stage_amount - 0.01}, status={new_status}")
 
-        # Update stage status with actual paid amount for this project
+        # Update stage status with actual paid amount for this project, and track invoice_id and invoice_number
         stage["status"] = new_status
         stage["amount_paid"] = str(project_paid)
+        if linked_invoice_id:
+            stage["invoice_id"] = linked_invoice_id
+        if linked_invoice_number:
+            stage["invoice_number"] = linked_invoice_number
 
         log.info(f"[SAVE_STATUS] Saving stage {stage_index} status={new_status} to project {pid}")
         log.info(f"[SAVE_STAGE] Full stage data: {stage}")
