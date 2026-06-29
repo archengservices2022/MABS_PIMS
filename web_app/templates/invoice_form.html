@@ -43,7 +43,8 @@
           <div class="col-md-4">
             <label class="form-label">Invoice Number</label>
             <input type="text" name="invoice_number" class="form-control"
-                   value="{{ meta.get('invoice_number', next_num or '') }}" required>
+                   value="{{ meta.get('invoice_number', next_num or '') }}"
+                   {% if not is_new %}readonly{% endif %} required>
           </div>
           <div class="col-md-3">
             <label class="form-label">Invoice Date</label>
@@ -126,6 +127,10 @@
           <div class="col-md-2" id="paymentDateWrap" style="display:none;">
             <label class="form-label">Payment Date</label>
             <input type="date" name="payment_date" class="form-control">
+          </div>
+          <div class="col-md-3" id="paymentRefWrap" style="display:none;">
+            <label class="form-label">Reference #</label>
+            <input type="text" name="payment_reference" class="form-control" placeholder="Check #, Wire ref, etc.">
           </div>
         </div>
       </div>
@@ -483,6 +488,7 @@ function togglePaymentFields() {
   document.getElementById('paymentMethodWrap').style.display = show ? '' : 'none';
   document.getElementById('amountPaidWrap').style.display    = show ? '' : 'none';
   document.getElementById('paymentDateWrap').style.display   = show ? '' : 'none';
+  document.getElementById('paymentRefWrap').style.display    = show ? '' : 'none';
 
   // Set payment date to today if showing and not already set
   if (show && !document.querySelector('input[name="payment_date"]').value) {
@@ -526,7 +532,7 @@ function applyNetTerms() {
   if (nt && !document.getElementById('dueDate').value) applyNetTerms();
 })();
 
-// Fetch and set the current invoice status from the API
+// Fetch and set the current invoice status and payment info from the API
 (function() {
   const invoiceNum = document.querySelector('input[name="invoice_number"]');
   if (invoiceNum && invoiceNum.value && invoiceNum.value.includes('-')) {
@@ -540,6 +546,31 @@ function applyNetTerms() {
             const statusSelect = document.getElementById('invoiceStatus');
             if (statusSelect) {
               statusSelect.value = data.meta.status;
+              togglePaymentFields();
+            }
+          }
+          // Populate payment amount if invoice is being edited and has existing payment
+          if (data && data.meta && data.meta.amount_paid) {
+            const amountPaid = parseFloat(data.meta.amount_paid || '0');
+            if (amountPaid > 0) {
+              const paymentAmountField = document.getElementById('paymentAmountField');
+              if (paymentAmountField) {
+                paymentAmountField.value = amountPaid.toFixed(2);
+              }
+            }
+          }
+          // Populate payment method if exists
+          if (data && data.meta && data.meta.payment_method) {
+            const methodSelect = document.querySelector('select[name="payment_method"]');
+            if (methodSelect) {
+              methodSelect.value = data.meta.payment_method;
+            }
+          }
+          // Populate payment date if exists
+          if (data && data.meta && data.meta.payment_reference) {
+            const refInput = document.querySelector('input[name="payment_reference"]');
+            if (refInput) {
+              refInput.value = data.meta.payment_reference;
             }
           }
         })

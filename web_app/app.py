@@ -3100,6 +3100,131 @@ def invoice_detail(invoice_id):
                            source_quote=source_quote, enriched_payment_log=enriched_payment_log,
                            enriched_tax_payments=enriched_tax_payments)
 
+@app.route("/invoicing/<invoice_id>/edit", methods=["GET", "POST"])
+@role_required("invoicing")
+def invoice_edit(invoice_id):
+    invoice_data = fb_get(f"/invoices/{invoice_id}")
+    if not invoice_data:
+        abort(404)
+
+    clients = _load_clients()
+    projects = _load_projects_list()
+
+    if request.method == "POST":
+        # Handle invoice update
+        data = _parse_invoice_form(request.form)
+
+        # Update metadata with current timestamp
+        data["meta"]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        data["meta"]["updated_by"] = session.get("user_email", "")
+
+        # Keep the original created_at
+        if "created_at" in invoice_data.get("meta", {}):
+            data["meta"]["created_at"] = invoice_data["meta"]["created_at"]
+
+        # Update invoice in Firebase
+        fb_update(f"/invoices/{invoice_id}", data)
+
+        # Handle payment updates if any
+        payment_amount = request.form.get("payment_amount", "").strip()
+        payment_date = request.form.get("payment_date", "").strip()
+        payment_method = request.form.get("payment_method", "").strip()
+        payment_reference = request.form.get("payment_reference", "").strip()
+
+        if payment_amount and _safe_float(payment_amount) > 0:
+            # Use sequential distribution: allocate to projects first, then tax
+            amount = _safe_float(payment_amount)
+            payment_log = data.get("payment_log", []) or []
+            if not isinstance(payment_log, list):
+                payment_log = []
+
+            tax_log = data.get("tax_payments", []) or []
+            if not isinstance(tax_log, list):
+                tax_log = []
+
+            main_project = data["meta"].get("project_number", "")
+            line_items = data.get("line_items", []) or []
+            tax_amount = _safe_float(data["meta"].get("tax_amount", 0))
+            linked_projects = data["meta"].get("linked_projects", [])
+
+            remaining = amount
+
+            # Step 1: Allocate to project(s)
+            if not linked_projects and main_project:
+                linked_projects = [main_project]
+
+            for proj_num in linked_projects:
+                if remaining <= 0:
+                    break
+
+                # Calculate project's invoice amount from line items
+                proj_amount = sum(_safe_float(item.get("amount", 0))
+                                for item in line_items
+                                if isinstance(item, dict) and
+                                (item.get("project_number") == proj_num or not item.get("project_number")))
+
+                # Calculate already received
+                proj_received = sum(_safe_float(p.get("amount", 0))
+                                  for p in payment_log
+                                  if p.get("project_number") == proj_num)
+
+                proj_needs = max(0, proj_amount - proj_received)
+
+                if proj_needs > 0:
+                    allocate = min(proj_needs, remaining)
+                    payment_log.append({
+                        "amount": str(allocate),
+                        "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
+                        "method": payment_method,
+                        "reference": payment_reference,
+                        "project_number": proj_num,
+                    })
+                    remaining -= allocate
+
+            # Step 2: Allocate remaining to tax
+            if remaining > 0 and tax_amount > 0:
+                tax_received = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+                tax_needs = max(0, tax_amount - tax_received)
+
+                if tax_needs > 0:
+                    allocate_tax = min(tax_needs, remaining)
+                    tax_log.append({
+                        "amount": str(allocate_tax),
+                        "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
+                        "method": payment_method,
+                        "reference": payment_reference,
+                    })
+                    remaining -= allocate_tax
+
+            # Update invoice with payment data
+            total_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+            tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+
+            fb_update(f"/invoices/{invoice_id}", {
+                "payment_log": payment_log,
+                "tax_payments": tax_log,
+                "meta/amount_paid": str(total_paid),
+                "meta/tax_paid": str(tax_paid),
+            })
+
+            # Update project stage payment amounts and status
+            _update_project_stage_payment_status(invoice_id)
+
+        flash("Invoice updated successfully.", "success")
+        return redirect(url_for("invoice_detail", invoice_id=invoice_id))
+
+    # GET request - load invoice data for editing
+    meta = invoice_data.get("meta", {})
+
+    # Pass invoice data to form with is_new=False to indicate editing
+    return render_template("invoice_form.html",
+                         invoice=invoice_data,
+                         clients=clients,
+                         projects=projects,
+                         next_num=meta.get("invoice_number", ""),
+                         is_new=False,
+                         invoice_id=invoice_id)
+
 @app.route("/invoicing/<invoice_id>/status", methods=["POST"])
 @role_required("invoicing")
 def invoice_status(invoice_id):
@@ -3151,6 +3276,15 @@ def invoice_status(invoice_id):
 
     flash(f"Invoice updated to {new_status}. Project & balance sheet synced.", "success")
     return redirect(url_for("invoice_detail", invoice_id=invoice_id))
+
+@app.route("/api/invoices/<invoice_id>", methods=["GET"])
+@role_required("invoicing")
+def api_get_invoice(invoice_id):
+    """Get invoice details as JSON for frontend"""
+    invoice = fb_get(f"/invoices/{invoice_id}")
+    if not invoice:
+        return jsonify({"error": "Invoice not found"}), 404
+    return jsonify(invoice)
 
 @app.route("/api/invoices/<invoice_id>/update-amount", methods=["POST"])
 @role_required("invoicing")
@@ -7817,6 +7951,7 @@ def _parse_invoice_form(form) -> dict:
         "line_items": line_items,
         "_payment_amount": form.get("payment_amount", ""),
         "_payment_date": form.get("payment_date", ""),
+        "_payment_method": form.get("payment_method", ""),
         "_payment_reference": form.get("payment_reference", ""),
     }
 
