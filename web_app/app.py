@@ -3118,18 +3118,36 @@ def invoice_edit(invoice_id):
         data["meta"]["updated_at"] = datetime.now(timezone.utc).isoformat()
         data["meta"]["updated_by"] = session.get("user_email", "")
 
-        # Keep the original created_at
-        if "created_at" in invoice_data.get("meta", {}):
-            data["meta"]["created_at"] = invoice_data["meta"]["created_at"]
+        # Keep the original created_at and other preserved fields
+        original_meta = invoice_data.get("meta", {})
+        if "created_at" in original_meta:
+            data["meta"]["created_at"] = original_meta["created_at"]
+        # Ensure invoice_number is not accidentally changed
+        if "invoice_number" in original_meta:
+            data["meta"]["invoice_number"] = original_meta["invoice_number"]
 
-        # Update invoice in Firebase
-        fb_update(f"/invoices/{invoice_id}", data)
+        # Preserve existing payment history when updating invoice details
+        if "payment_log" in invoice_data:
+            data["payment_log"] = invoice_data["payment_log"]
+        if "tax_payments" in invoice_data:
+            data["tax_payments"] = invoice_data["tax_payments"]
 
-        # Handle payment updates if any
+        # Get payment information from form
         payment_amount = request.form.get("payment_amount", "").strip()
         payment_date = request.form.get("payment_date", "").strip()
         payment_method = request.form.get("payment_method", "").strip()
         payment_reference = request.form.get("payment_reference", "").strip()
+
+        # Preserve amount_paid and tax_paid in meta if not adding a new payment
+        if not payment_amount or _safe_float(payment_amount) <= 0:
+            # No new payment being added, so preserve existing values
+            if "amount_paid" in invoice_data.get("meta", {}):
+                data["meta"]["amount_paid"] = invoice_data["meta"]["amount_paid"]
+            if "tax_paid" in invoice_data.get("meta", {}):
+                data["meta"]["tax_paid"] = invoice_data["meta"]["tax_paid"]
+
+        # Update invoice in Firebase (meta and line_items, preserving payments)
+        fb_update(f"/invoices/{invoice_id}", data)
 
         if payment_amount and _safe_float(payment_amount) > 0:
             # Use sequential distribution: allocate to projects first, then tax
