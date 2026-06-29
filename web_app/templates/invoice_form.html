@@ -120,16 +120,12 @@
           </div>
           <div class="col-md-3" id="amountPaidWrap" style="display:none;">
             <label class="form-label">Amount Paid ($)</label>
-            <input type="number" name="payment_amount" class="form-control"
+            <input type="number" id="paymentAmountField" name="payment_amount" class="form-control"
                    min="0" step="0.01" placeholder="0.00">
           </div>
           <div class="col-md-2" id="paymentDateWrap" style="display:none;">
             <label class="form-label">Payment Date</label>
             <input type="date" name="payment_date" class="form-control">
-          </div>
-          <div class="col-md-2" id="paymentRefWrap" style="display:none;">
-            <label class="form-label">Reference #</label>
-            <input type="text" name="payment_reference" class="form-control" placeholder="Ref #">
           </div>
         </div>
       </div>
@@ -487,12 +483,24 @@ function togglePaymentFields() {
   document.getElementById('paymentMethodWrap').style.display = show ? '' : 'none';
   document.getElementById('amountPaidWrap').style.display    = show ? '' : 'none';
   document.getElementById('paymentDateWrap').style.display   = show ? '' : 'none';
-  document.getElementById('paymentRefWrap').style.display    = show ? '' : 'none';
 
   // Set payment date to today if showing and not already set
   if (show && !document.querySelector('input[name="payment_date"]').value) {
     const today = new Date().toISOString().split('T')[0];
     document.querySelector('input[name="payment_date"]').value = today;
+  }
+
+  // For "Paid" status, auto-populate amount with total (including tax)
+  if (status === 'Paid') {
+    const totalDisplay = document.getElementById('totalDisplay')?.textContent || '';
+    const totalMatch = totalDisplay.match(/[\d,]+\.?\d*/);
+    if (totalMatch) {
+      const totalAmount = parseFloat(totalMatch[0].replace(/,/g, ''));
+      document.getElementById('paymentAmountField').value = totalAmount.toFixed(2);
+    }
+  } else if (status === 'Partial') {
+    // Clear amount for Partial so user enters custom amount
+    document.getElementById('paymentAmountField').value = '';
   }
 }
 
