@@ -31,9 +31,9 @@
         <i class="bi bi-envelope me-1"></i>Send Email
       </button>
     </form>
-    <a href="{{ url_for('invoice_edit', invoice_id=invoice.firebase_id) }}" class="btn btn-sm btn-outline-primary">
+    <button type="button" class="btn btn-sm btn-outline-primary" disabled>
       <i class="bi bi-pencil me-1"></i>Edit
-    </a>
+    </button>
     <button type="button" class="btn btn-sm btn-outline-danger"
             onclick="openDeleteModal()">
       <i class="bi bi-trash me-1"></i>Delete
