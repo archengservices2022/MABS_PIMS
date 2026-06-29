@@ -2982,6 +2982,9 @@ def invoice_detail(invoice_id):
         tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
         data["meta"]["tax_paid"] = str(tax_paid) if tax_paid > 0 else "0"
 
+    # Refresh project payment stage amounts to ensure they're always current
+    _update_project_stage_payment_status(invoice_id)
+
     # Source quote — via the linked project's source_quote field
     source_quote = None
     if linked_project:
