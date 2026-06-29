@@ -3195,12 +3195,44 @@ def invoice_edit(invoice_id):
             _allocate_invoice_payment_sequential(invoice_id)
 
         # Update project stage payment amounts (same as payment_sequential endpoint)
+        # This ensures payment stages show the correct paid amounts
         _update_project_stage_payment_status(invoice_id)
 
-        # Sync project-level amount_paid and status
+        # Sync project-level amount_paid and status for all linked projects
         for proj_num in linked_projects:
             _sync_project_payment(proj_num)
             _auto_complete_project_if_paid(proj_num)
+            # Refresh all stages for this project from remaining invoices
+            proj_id, pdata = _find_project_by_number(proj_num)
+            if proj_id and pdata:
+                stages = pdata.get("payment_stages", [])
+                if isinstance(stages, list):
+                    for stage_idx, stage in enumerate(stages):
+                        if isinstance(stage, dict):
+                            # Recalculate this stage's amount_paid from all invoices
+                            all_invoices = fb_get("/invoices") or {}
+                            stage_paid = 0.0
+                            if isinstance(all_invoices, dict):
+                                for inv_id, inv_data in all_invoices.items():
+                                    if isinstance(inv_data, dict):
+                                        inv_meta = inv_data.get("meta", {}) or {}
+                                        # Check if this invoice covers this project and stage
+                                        if (inv_meta.get("project_number") == proj_num and
+                                            inv_meta.get("payment_stage_index") == stage_idx):
+                                            # Sum payments for this invoice
+                                            payment_log = inv_data.get("payment_log", [])
+                                            if isinstance(payment_log, list):
+                                                stage_paid += sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+
+                            # Update stage with current amount_paid
+                            stage["amount_paid"] = str(stage_paid)
+
+                    # Save updated stages back to project
+                    fb_update(f"/projects/{proj_id}", {
+                        "payment_stages": stages,
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    })
+
         if updated["meta"].get("status") in ("Paid", "Partial"):
             _upsert_revenue_entry(invoice_id, updated["meta"])
         flash("Invoice updated.", "success")
