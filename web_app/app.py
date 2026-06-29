@@ -2633,6 +2633,61 @@ def create_bulk_invoices():
         log.error("Bulk invoice creation error: %s", traceback.format_exc())
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route("/projects/<project_id>/change-orders/<int:co_idx>/invoice", methods=["GET"])
+@role_required("invoicing")
+def co_create_invoice(project_id, co_idx):
+    """Create invoice from approved change order - pre-fills with CO details."""
+    project = fb_get(f"/projects/{project_id}") or {}
+    if not project:
+        abort(404)
+
+    cos = project.get("change_orders") or []
+    if not isinstance(cos, list):
+        cos = list(cos.values()) if isinstance(cos, dict) else []
+    if co_idx >= len(cos):
+        abort(404)
+
+    change_order = cos[co_idx]
+
+    # Only allow invoice creation from approved COs
+    if change_order.get("status") != "Approved":
+        flash("Can only create invoice from approved change orders.", "warning")
+        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+
+    # Redirect to invoice creation form with CO data pre-filled
+    # The invoice_new route will handle rendering the form with these parameters
+    co_title = change_order.get("title", change_order.get("co_number", ""))
+    co_amount = _safe_float(change_order.get("amount", 0))
+    co_number = change_order.get("co_number", "")
+    project_number = project.get("project_number", "")
+    client_name = project.get("client_name", "")
+
+    # Find the payment stage for this CO
+    stages = project.get("payment_stages") or []
+    stage_idx = None
+    for idx, stage in enumerate(stages):
+        if isinstance(stage, dict) and co_number in stage.get("name", ""):
+            stage_idx = idx
+            break
+
+    # Build query parameters for pre-filling the form
+    params = {
+        "project": project_number,
+        "client": client_name,
+        "co_number": co_number,
+        "co_title": co_title,
+        "co_amount": str(co_amount),
+    }
+
+    if stage_idx is not None:
+        params["stage_idx"] = stage_idx
+        params["stage_name"] = stages[stage_idx].get("name", "")
+        params["stage_amount"] = str(co_amount)
+
+    # Redirect to invoice_new with CO parameters
+    query_string = "&".join(f"{k}={v}" for k, v in params.items())
+    return redirect(url_for("invoice_new") + f"?{query_string}")
+
 @app.route("/invoicing/new", methods=["GET", "POST"])
 @role_required("invoicing")
 def invoice_new():
@@ -2910,6 +2965,21 @@ def invoice_new():
     prefill_name   = ""
     prefill_amount = ""
     prefill_items  = []
+
+    # Handle change order pre-filling
+    co_number = request.args.get("co_number", "")
+    co_title = request.args.get("co_title", "")
+    co_amount = request.args.get("co_amount", "")
+    if co_number and co_title and co_amount:
+        # This is a change order invoice - use CO details as line item
+        prefill_name = co_title
+        prefill_amount = _safe_float(co_amount)
+        prefill_items = [{
+            "description": f"{co_title} ({co_number})",
+            "project": prefill_proj,
+            "amount": str(prefill_amount),
+            "stage_index": request.args.get("stage_idx", "")
+        }]
 
     # Handle multiple projects from modal (one line item per project, matching desktop software)
     if multiple_projects:
