@@ -7094,14 +7094,25 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
 
         # Update stage status with actual paid amount for this project, and track invoice_id and invoice_number
         stage["status"] = new_status
-        stage["amount_paid"] = str(project_paid)
+        stage["amount_paid"] = str(project_paid) if project_paid > 0 else "0"
+
+        # If we have an invoice_id but amount_paid is still 0, try to use the invoice's recorded amount_paid
+        if project_paid == 0 and linked_invoice_id:
+            current_invoice = fb_get(f"/invoices/{linked_invoice_id}") or {}
+            inv_amount_paid = _safe_float(current_invoice.get("meta", {}).get("amount_paid", 0))
+            if inv_amount_paid > 0:
+                # Use the invoice's amount_paid if we calculated 0
+                stage["amount_paid"] = str(inv_amount_paid)
+                project_paid = inv_amount_paid
+                log.info(f"[FALLBACK] Using invoice amount_paid: {inv_amount_paid}")
+
         if linked_invoice_id:
             stage["invoice_id"] = linked_invoice_id
         if linked_invoice_number:
             stage["invoice_number"] = linked_invoice_number
 
         log.info(f"[SAVE_STATUS] Saving stage {stage_index} status={new_status} to project {pid}")
-        log.info(f"[SAVE_STAGE] Full stage data: {stage}")
+        log.info(f"[SAVE_STAGE] Full stage data: {stage}, amount_paid={stage.get('amount_paid')}")
 
         fb_update(f"/projects/{pid}", {
             "payment_stages": stages,
