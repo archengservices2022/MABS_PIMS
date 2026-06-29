@@ -3209,21 +3209,30 @@ def invoice_edit(invoice_id):
                 if isinstance(stages, list):
                     for stage_idx, stage in enumerate(stages):
                         if isinstance(stage, dict):
-                            # Recalculate this stage's amount_paid from all invoices linked to this stage
-                            all_invoices = fb_get("/invoices") or {}
+                            # Recalculate this stage's amount_paid from invoices linked to it
                             stage_paid = 0.0
 
-                            if isinstance(all_invoices, dict):
-                                for inv_id, inv_data in all_invoices.items():
-                                    if isinstance(inv_data, dict):
-                                        inv_meta = inv_data.get("meta", {}) or {}
-                                        # Check if this invoice covers this project and stage
-                                        if (inv_meta.get("project_number") == proj_num and
-                                            inv_meta.get("payment_stage_index") == stage_idx):
-                                            # Sum payments for this invoice
-                                            payment_log = inv_data.get("payment_log", [])
-                                            if isinstance(payment_log, list):
-                                                stage_paid += sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+                            # Method 1: Look for invoices by invoice_id stored in the stage
+                            stage_invoice_id = stage.get("invoice_id")
+                            if stage_invoice_id:
+                                inv_data = fb_get(f"/invoices/{stage_invoice_id}") or {}
+                                payment_log = inv_data.get("payment_log", [])
+                                if isinstance(payment_log, list):
+                                    stage_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+                            else:
+                                # Method 2: Look for invoices by payment_stage_index (fallback)
+                                all_invoices = fb_get("/invoices") or {}
+                                if isinstance(all_invoices, dict):
+                                    for inv_id, inv_data in all_invoices.items():
+                                        if isinstance(inv_data, dict):
+                                            inv_meta = inv_data.get("meta", {}) or {}
+                                            # Check if this invoice covers this project and stage
+                                            if (inv_meta.get("project_number") == proj_num and
+                                                inv_meta.get("payment_stage_index") == stage_idx):
+                                                # Sum payments for this invoice
+                                                payment_log = inv_data.get("payment_log", [])
+                                                if isinstance(payment_log, list):
+                                                    stage_paid += sum(_safe_float(p.get("amount", 0)) for p in payment_log)
 
                             # Update stage with current amount_paid (preserve existing invoice_id and invoice_number)
                             stage["amount_paid"] = str(stage_paid)
