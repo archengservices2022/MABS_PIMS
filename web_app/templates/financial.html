@@ -789,9 +789,9 @@ a[href*="filter_expense"]:hover {
           </div>
         </div>
         <div class="col-md-6">
-          <label class="form-label form-label-sm fw-600">Category *</label>
+          <label class="form-label form-label-sm fw-600">Category</label>
           <div class="custom-dropdown">
-            <input type="text" name="category" id="expenseCategory" class="form-control form-control-sm" placeholder="Select category..." required>
+            <input type="text" name="category" id="expenseCategory" class="form-control form-control-sm" placeholder="Select category...">
             <span class="dropdown-arrow">▼</span>
             <div class="dropdown-list" id="expenseCategoryDropdown"></div>
           </div>
@@ -800,9 +800,9 @@ a[href*="filter_expense"]:hover {
 
       <div class="row g-3 mb-3">
         <div class="col-md-6">
-          <label class="form-label form-label-sm fw-600">Expense Name *</label>
+          <label class="form-label form-label-sm fw-600">Expense Name</label>
           <div class="custom-dropdown">
-            <input type="text" name="expense_name" id="expenseName" class="form-control form-control-sm" placeholder="Select or type name..." required>
+            <input type="text" name="expense_name" id="expenseName" class="form-control form-control-sm" placeholder="Select or type name...">
             <span class="dropdown-arrow">▼</span>
             <div class="dropdown-list" id="expenseNameDropdown"></div>
           </div>
@@ -819,9 +819,9 @@ a[href*="filter_expense"]:hover {
           <input type="date" name="date" id="expenseDate" class="form-control form-control-sm" value="{{ today_date }}">
         </div>
         <div class="col-md-6">
-          <label class="form-label form-label-sm fw-600">Vendor</label>
+          <label class="form-label form-label-sm fw-600">Vendor *</label>
           <div class="custom-dropdown">
-            <input type="text" name="vendor" id="expenseVendor" class="form-control form-control-sm" placeholder="Vendor name or select...">
+            <input type="text" name="vendor" id="expenseVendor" class="form-control form-control-sm" placeholder="Vendor name or select..." required>
             <span class="dropdown-arrow">▼</span>
             <div class="dropdown-list" id="expenseVendorDropdown"></div>
           </div>
@@ -1404,9 +1404,9 @@ document.addEventListener('DOMContentLoaded', function() {
               </div>
             </div>
             <div class="col-md-6">
-              <label class="form-label form-label-sm fw-600">Category *</label>
+              <label class="form-label form-label-sm fw-600">Category</label>
               <div class="custom-dropdown">
-                <input type="text" name="category" id="modalCategory" class="form-control form-control-sm" placeholder="Select category..." required>
+                <input type="text" name="category" id="modalCategory" class="form-control form-control-sm" placeholder="Select category...">
                 <span class="dropdown-arrow">▼</span>
                 <div class="dropdown-list" id="modalCategoryDropdown"></div>
               </div>
@@ -1415,9 +1415,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
           <div class="row g-3 mb-3">
             <div class="col-md-6">
-              <label class="form-label form-label-sm fw-600">Expense Name *</label>
+              <label class="form-label form-label-sm fw-600">Expense Name</label>
               <div class="custom-dropdown">
-                <input type="text" name="expense_name" id="modalExpenseName" class="form-control form-control-sm" placeholder="Select or type name..." required>
+                <input type="text" name="expense_name" id="modalExpenseName" class="form-control form-control-sm" placeholder="Select or type name...">
                 <span class="dropdown-arrow">▼</span>
                 <div class="dropdown-list" id="modalExpenseNameDropdown"></div>
               </div>
@@ -1434,9 +1434,9 @@ document.addEventListener('DOMContentLoaded', function() {
               <input type="date" name="date" id="modalDate" class="form-control form-control-sm">
             </div>
             <div class="col-md-6">
-              <label class="form-label form-label-sm fw-600">Vendor</label>
+              <label class="form-label form-label-sm fw-600">Vendor *</label>
               <div class="custom-dropdown">
-                <input type="text" name="vendor" id="modalVendor" class="form-control form-control-sm" placeholder="Vendor name or select...">
+                <input type="text" name="vendor" id="modalVendor" class="form-control form-control-sm" placeholder="Vendor name or select..." required>
                 <span class="dropdown-arrow">▼</span>
                 <div class="dropdown-list" id="modalVendorDropdown"></div>
               </div>
