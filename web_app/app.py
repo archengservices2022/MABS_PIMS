@@ -6883,6 +6883,40 @@ def _calculate_invoice_status(inv_data: dict) -> str:
     else:
         return meta.get("status", "Draft")
 
+def _derive_stage_index_from_line_items(project_number: str, line_items: list) -> int:
+    """Try to find stage_index from line items by looking for paid stage references."""
+    if not isinstance(line_items, list):
+        return -1
+
+    # Look for stage name patterns in line item descriptions
+    # e.g., "Testing1 — Installment 2 of 3" -> find stage named "Installment 2 of 3"
+    pid, pdata = _find_project_by_number(project_number)
+    if not pid:
+        return -1
+
+    stages = pdata.get("payment_stages", []) or []
+    if not isinstance(stages, list):
+        return -1
+
+    # Build a map of stage names to indices
+    stage_name_map = {}
+    for idx, stage in enumerate(stages):
+        if isinstance(stage, dict):
+            stage_name = stage.get("name", f"Stage {idx + 1}")
+            stage_name_map[stage_name.lower()] = idx
+
+    # Search line items for stage references
+    for item in line_items:
+        if not isinstance(item, dict):
+            continue
+        desc = item.get("description", "").lower()
+        # Look for stage name in description (e.g., "installment 2 of 3")
+        for stage_name, stage_idx in stage_name_map.items():
+            if stage_name in desc:
+                return stage_idx
+
+    return -1
+
 def _update_project_stage_payment_status(invoice_id: str) -> None:
     """Update project stage statuses based on invoice payments.
 
@@ -6912,6 +6946,12 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
     if not normalized_projects:
         main_project = meta.get("project_number", "")
         stage_index = meta.get("payment_stage_index", -1)
+
+        # If no stage_index in meta, try to derive from line items
+        if stage_index < 0:
+            line_items = inv_data.get("line_items", [])
+            stage_index = _derive_stage_index_from_line_items(main_project, line_items)
+
         if main_project and stage_index >= 0:
             normalized_projects = [{"project_number": main_project, "payment_stage_index": stage_index}]
         elif main_project and stage_index < 0:
