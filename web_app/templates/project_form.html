@@ -780,40 +780,57 @@ function updatePlanPreview() {
 
   const fmt = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
   const rows = [];
-  previewStagesData = [];
 
-  // Always calculate preview from current down payment % and installment count
-  // This ensures the preview updates whenever contract value changes
-  let remaining = cv;
+  // For existing projects with custom amounts, use those instead of recalculating
+  if (stageAmountsData && stageAmountsData.length > 0) {
+    // Use existing custom amounts - don't recalculate
+    previewStagesData = stageAmountsData.map(s => ({
+      name: s.name,
+      amount: s.amount,
+      status: s.status || 'Pending Invoice',
+      invoice_id: s.invoice_id || '',
+      index: s.index
+    }));
 
-  if (dpPct > 0) {
-    const dp = Math.round(cv * dpPct / 100 * 100) / 100;
-    remaining = cv - dp;
-    previewStagesData.push({
-      name: `Down Payment (${dpPct}%)`,
-      amount: dp,
-      status: 'Pending Invoice',
-      invoice_id: '',
-      index: 0
+    // Display the custom amounts
+    previewStagesData.forEach((stage, idx) => {
+      const isLast = idx === previewStagesData.length - 1;
+      rows.push(`<div class="d-flex justify-content-between py-1 ${!isLast?'border-bottom':''}"><span>${stage.name}</span><span class="fw-600">${fmt(stage.amount)}</span></div>`);
     });
-    rows.push(`<div class="d-flex justify-content-between py-1 border-bottom"><span>Down Payment (${dpPct}%)</span><span class="fw-600">${fmt(dp)}</span></div>`);
-  }
+  } else {
+    // New project or no custom amounts - calculate from down payment % and installment count
+    previewStagesData = [];
+    let remaining = cv;
 
-  const share = Math.floor(remaining / inst * 100) / 100;
-  const last  = Math.round((remaining - share * (inst - 1)) * 100) / 100;
-  for (let i = 0; i < inst; i++) {
-    const label = dpPct > 0
-      ? (inst === 1 ? 'Balance Payment' : `Installment ${i+1} of ${inst}`)
-      : (inst === 1 ? 'Full Payment'    : `Installment ${i+1} of ${inst}`);
-    const amt = (i === inst - 1) ? last : share;
-    previewStagesData.push({
-      name: label,
-      amount: amt,
-      status: 'Pending Invoice',
-      invoice_id: '',
-      index: previewStagesData.length
-    });
-    rows.push(`<div class="d-flex justify-content-between py-1 ${i<inst-1?'border-bottom':''}"><span>${label}</span><span class="fw-600">${fmt(amt)}</span></div>`);
+    if (dpPct > 0) {
+      const dp = Math.round(cv * dpPct / 100 * 100) / 100;
+      remaining = cv - dp;
+      previewStagesData.push({
+        name: `Down Payment (${dpPct}%)`,
+        amount: dp,
+        status: 'Pending Invoice',
+        invoice_id: '',
+        index: 0
+      });
+      rows.push(`<div class="d-flex justify-content-between py-1 border-bottom"><span>Down Payment (${dpPct}%)</span><span class="fw-600">${fmt(dp)}</span></div>`);
+    }
+
+    const share = Math.floor(remaining / inst * 100) / 100;
+    const last  = Math.round((remaining - share * (inst - 1)) * 100) / 100;
+    for (let i = 0; i < inst; i++) {
+      const label = dpPct > 0
+        ? (inst === 1 ? 'Balance Payment' : `Installment ${i+1} of ${inst}`)
+        : (inst === 1 ? 'Full Payment'    : `Installment ${i+1} of ${inst}`);
+      const amt = (i === inst - 1) ? last : share;
+      previewStagesData.push({
+        name: label,
+        amount: amt,
+        status: 'Pending Invoice',
+        invoice_id: '',
+        index: previewStagesData.length
+      });
+      rows.push(`<div class="d-flex justify-content-between py-1 ${i<inst-1?'border-bottom':''}"><span>${label}</span><span class="fw-600">${fmt(amt)}</span></div>`);
+    }
   }
 
   stages.innerHTML = rows.join('');
