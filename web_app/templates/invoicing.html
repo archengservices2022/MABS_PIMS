@@ -169,7 +169,9 @@
             {% set meta = inv.get('meta', {}) %}
             <tr onclick="location.href='{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}'"
                 style="cursor:pointer;">
-              <td><span class="fw-bold text-teal">{{ meta.get('invoice_number','—') }}</span></td>
+              <td style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
+                <span class="fw-bold text-teal" style="text-decoration:none;white-space:nowrap;">{{ meta.get('invoice_number','—') }}</span>
+              </td>
               <td>{{ meta.get('client_name','—') }}</td>
               <td class="text-muted small">
                 {%- set main_proj = meta.get('project_number','') %}
