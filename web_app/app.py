@@ -1181,7 +1181,7 @@ def quotes_export_pdf():
         elems.append(Paragraph(_date_range, sub_s))
         elems.append(Spacer(1, 0.15*inch))
 
-    hdrs = ["Quote Number","Client","Project / Scope","Salesperson","Date","Subtotal","Tax","Total","Status"]
+    hdrs = ["Quote Number","Client","Project / Scope","Salesperson","Date","Status","Total"]
     data = [hdrs]
     cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
     for q in items:
@@ -1191,18 +1191,14 @@ def quotes_export_pdf():
             if len(parts) == 3:
                 date_str = f"{parts[1]}-{parts[2]}-{parts[0]}"
         total = _safe_float(q.get('total',0))
-        subtotal = _safe_float(q.get('subtotal',0))
-        tax = total - subtotal
         data.append([
             Paragraph(q.get("job_number","—"), cell_style),
             Paragraph(q.get("client_name","—"), cell_style),
             Paragraph(q.get("project_name") or "—", cell_style),
             Paragraph(q.get("salesperson","—"), cell_style),
             Paragraph(date_str, cell_style),
-            Paragraph(f"${subtotal:,.2f}", cell_style),
-            Paragraph(f"${tax:,.2f}", cell_style),
-            Paragraph(f"${total:,.2f}", cell_style),
             Paragraph(q.get("status","—"), cell_style),
+            Paragraph(f"${total:,.2f}", cell_style),
         ])
 
     cw = [1.2*inch, 2.0*inch, 3.0*inch, 1.8*inch, 1.1*inch, 1.2*inch, 1.1*inch]
