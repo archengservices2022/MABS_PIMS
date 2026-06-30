@@ -292,7 +292,8 @@ def inject_globals():
         "company":     company_info(),
         "now":         datetime.now(),
         "timedelta":   timedelta,
-        "format_date": _format_date_display,  # Make date formatter available in templates
+        "format_date": _format_date_display,  # Make date formatter available in templates (MM-DD-YYYY)
+        "format_date_invoice": _format_date_invoice,  # Invoice-specific formatter (MM-DD-YY)
         **clock_widget,
     }
 
@@ -301,6 +302,11 @@ def inject_globals():
 def format_date_filter(date_str):
     """Jinja filter to format dates as MM-DD-YYYY."""
     return _format_date_display(date_str)
+
+@app.template_filter('format_date_invoice')
+def format_date_invoice_filter(date_str):
+    """Jinja filter to format dates as MM-DD-YY (invoice format)."""
+    return _format_date_invoice(date_str)
 
 # ── Routes: Auth ──────────────────────────────────────────────────────────────
 @app.route("/login", methods=["GET", "POST"])
@@ -7055,14 +7061,29 @@ def _safe_float(val) -> float:
         return 0.0
 
 def _format_date_display(date_str: str) -> str:
-    """Convert date to MM-DD-YY format for display. Handles YYYY-MM-DD format from database."""
+    """Convert date from YYYY-MM-DD format to MM-DD-YYYY for display."""
+    if not date_str or date_str == "—":
+        return "—"
+    try:
+        # Handle both YYYY-MM-DD and other formats
+        if len(str(date_str)) >= 10:
+            date_str = str(date_str)[:10]  # Take only the date part if it's a datetime
+            parts = date_str.split("-")
+            if len(parts) == 3:
+                year, month, day = parts
+                return f"{month}-{day}-{year}"
+    except (ValueError, TypeError, IndexError):
+        pass
+    return str(date_str) if date_str else "—"
+
+def _format_date_invoice(date_str: str) -> str:
+    """Convert date from YYYY-MM-DD format to MM-DD-YY (2-digit year) for invoice display."""
     if not date_str or date_str == "—":
         return "—"
     try:
         date_str = str(date_str).strip()[:10]  # Take only the date part if it's a datetime
         parts = date_str.split("-")
         if len(parts) == 3:
-            # Handle YYYY-MM-DD format from database
             if len(parts[0]) == 4:  # Year is 4 digits (YYYY-MM-DD)
                 year, month, day = parts
                 year_2digit = year[-2:]  # Take last 2 digits (2026 → 26)
