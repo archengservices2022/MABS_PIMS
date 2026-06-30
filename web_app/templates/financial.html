@@ -2793,8 +2793,8 @@ function viewReceipt(expId) {
               </a>
             </td>
             <td style="padding:8px 12px;">{{ e.client_name or '—' }}</td>
-            <td style="padding:8px 12px;">{{ e.invoice_date or '—' }}</td>
-            <td style="padding:8px 12px;">{{ e.due_date or '—' }}</td>
+            <td style="padding:8px 12px;">{{ e.invoice_date or '—' | format_date }}</td>
+            <td style="padding:8px 12px;">{{ e.due_date or '—' | format_date }}</td>
             <td style="padding:8px 12px; text-align:center;">
               {% if e.net_terms %}Net {{ e.net_terms }}{% else %}—{% endif %}
             </td>
