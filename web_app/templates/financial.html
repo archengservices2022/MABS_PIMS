@@ -1190,7 +1190,7 @@ function renderExpenseTable() {
   // Check if filters are active
   const search = (document.getElementById('expenseSearch')?.value || '').toLowerCase();
   const type = (document.getElementById('expenseTypeFilter')?.value || '').toLowerCase();
-  const category = (document.getElementById('expenseCategoryFilter')?.value || '').toLowerCase();
+  const vendor = (document.getElementById('expenseVendorFilter')?.value || '').toLowerCase();
   const dateFrom = document.getElementById('expenseDateFrom')?.value || '';
   const dateTo = document.getElementById('expenseDateTo')?.value || '';
   const hasFilters = search || type || vendor || dateFrom || dateTo;
@@ -1217,10 +1217,10 @@ function renderExpenseTable() {
   if (alert) {
     const search = document.getElementById('expenseSearch')?.value || '';
     const type = document.getElementById('expenseTypeFilter')?.value || '';
-    const category = document.getElementById('expenseCategoryFilter')?.value || '';
+    const vendor = document.getElementById('expenseVendorFilter')?.value || '';
     const dateFrom = document.getElementById('expenseDateFrom')?.value || '';
     const dateTo = document.getElementById('expenseDateTo')?.value || '';
-    const active = search || type || category || dateFrom || dateTo;
+    const active = search || type || vendor || dateFrom || dateTo;
     alert.style.display = active ? '' : 'none';
     if (active) {
       const grandTotal = expenseFilteredRows.reduce((sum, row) => sum + parseFloat(row.querySelector('td:nth-child(7)')?.textContent.replace(/[$,]/g,'') || 0), 0);
