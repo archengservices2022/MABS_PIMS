@@ -658,10 +658,10 @@ a[href*="filter_expense"]:hover {
         <option value="{{ type }}">{{ type }}</option>
         {% endfor %}
       </select>
-      <select id="expenseCategoryFilter" class="form-select form-select-sm" style="width:200px;" onchange="applyExpenseFilters()">
-        <option value="">All Categories</option>
-        {% for cat in all_categories %}
-        <option value="{{ cat }}">{{ cat }}</option>
+      <select id="expenseVendorFilter" class="form-select form-select-sm" style="width:200px;" onchange="applyExpenseFilters()">
+        <option value="">All Vendors</option>
+        {% for vendor in all_vendors %}
+        <option value="{{ vendor }}">{{ vendor }}</option>
         {% endfor %}
       </select>
     </div>
@@ -707,13 +707,13 @@ a[href*="filter_expense"]:hover {
           <tr class="expense-row"
             data-search="{{ (exp.get('expense_name','') or exp.get('description',''))|lower }} {{ exp.get('vendor','')|lower }} {{ exp.get('category','')|lower }}"
             data-type="{{ exp.get('expense_type','') }}"
-            data-category="{{ exp.get('category','') }}"
+            data-vendor="{{ exp.get('vendor','') }}"
             data-date="{{ exp.get('date','') | format_date }}">
             <td class="text-muted small">{{ exp.get('date','—') | format_date }}</td>
             <td class="small text-muted">{{ exp.get('expense_type','—') }}</td>
-            <td class="fw-medium">{{ exp.get('expense_name','—') or exp.get('description','—') }}</td>
+            <td class="small text-muted">{{ exp.get('expense_name','—') or exp.get('description','—') }}</td>
             <td class="small text-muted">{{ exp.get('category','—') }}</td>
-            <td class="text-muted small">{{ exp.get('vendor','—') }}</td>
+            <td class="fw-medium">{{ exp.get('vendor','—') }}</td>
             <td class="text-muted small">{{ exp.get('project_number','—') or '—' }}</td>
             <td class="text-end fw-semibold">${{ "{:,.2f}".format(exp.get('amount',0)|float) }}</td>
             <td>
@@ -1063,7 +1063,7 @@ let expenseFilteredRows = [];
 function getVisibleExpenseRows() {
   const search   = (document.getElementById('expenseSearch')?.value || '').toLowerCase();
   const type     = (document.getElementById('expenseTypeFilter')?.value || '').toLowerCase();
-  const category = (document.getElementById('expenseCategoryFilter')?.value || '').toLowerCase();
+  const vendor = (document.getElementById('expenseVendorFilter')?.value || '').toLowerCase();
   const dateFrom = document.getElementById('expenseDateFrom')?.value || '';
   const dateTo   = document.getElementById('expenseDateTo')?.value || '';
   const rows = Array.from(document.querySelectorAll('#expenseTableBody tr.expense-row'));
@@ -1071,12 +1071,12 @@ function getVisibleExpenseRows() {
   let filteredRows = rows.filter(row => {
     const rowSearch   = (row.dataset.search || '').toLowerCase();
     const rowType     = (row.dataset.type || '').toLowerCase();
-    const rowCategory = (row.dataset.category || '').toLowerCase();
+    const rowVendor = (row.dataset.vendor || '').toLowerCase();
     const rowDate     = (row.dataset.date || '').trim();
 
     const matchSearch   = !search   || rowSearch.includes(search);
     const matchType     = !type     || rowType === type;
-    const matchCategory = !category || rowCategory === category;
+    const matchVendor = !vendor || rowVendor === vendor;
 
     // Format date comparison: convert DD-MM-YYYY to YYYY-MM-DD if needed
     let normalizedRowDate = rowDate;
@@ -1090,11 +1090,11 @@ function getVisibleExpenseRows() {
 
     const matchFrom     = !dateFrom || normalizedRowDate >= dateFrom;
     const matchTo       = !dateTo   || normalizedRowDate <= dateTo;
-    return matchSearch && matchType && matchCategory && matchFrom && matchTo;
+    return matchSearch && matchType && matchVendor && matchFrom && matchTo;
   });
 
   // Sort by date in ascending order (oldest to newest) when filters are applied
-  const hasFilters = search || type || category || dateFrom || dateTo;
+  const hasFilters = search || type || vendor || dateFrom || dateTo;
   if (hasFilters) {
     filteredRows.sort((a, b) => {
       let dateA = (a.dataset.date || '').trim();
@@ -1193,7 +1193,7 @@ function renderExpenseTable() {
   const category = (document.getElementById('expenseCategoryFilter')?.value || '').toLowerCase();
   const dateFrom = document.getElementById('expenseDateFrom')?.value || '';
   const dateTo = document.getElementById('expenseDateTo')?.value || '';
-  const hasFilters = search || type || category || dateFrom || dateTo;
+  const hasFilters = search || type || vendor || dateFrom || dateTo;
 
   // Reorder DOM rows when filters are applied
   if (hasFilters) {
@@ -1260,7 +1260,7 @@ function nextExpensePage() {
 }
 
 function clearExpenseFilters() {
-  ['expenseSearch','expenseTypeFilter','expenseCategoryFilter','expenseDateFrom','expenseDateTo'].forEach(id => {
+  ['expenseSearch','expenseTypeFilter','expenseVendorFilter','expenseDateFrom','expenseDateTo'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
