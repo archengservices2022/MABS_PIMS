@@ -2533,12 +2533,8 @@ def projects_export_pdf():
     for p in items:
         cv   = _safe_float(p.get("contract_value", 0))
         paid = _safe_float(p.get("amount_paid", 0))
-        proj_num = p.get("project_number","—")
-        has_co = bool(p.get("change_orders") and len(p.get("change_orders", {})) > 0)
-        if has_co:
-            proj_num = f"{proj_num}\n★ CO"
         data.append([
-            Paragraph(proj_num, cell_style),
+            Paragraph(p.get("project_number","—"), cell_style),
             Paragraph(p.get("project_name","—") or "—", cell_style),
             Paragraph(p.get("client_name","—") or "—", cell_style),
             Paragraph(fmt_date_pdf(p.get("start_date","")), cell_style),
