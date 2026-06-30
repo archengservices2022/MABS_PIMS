@@ -2384,7 +2384,7 @@ def projects_export_csv():
     w.writerow([f"{co.get('name','')} - Projects Report"])
     w.writerow([])
 
-    headers = ["Project #", "Name", "Client", "Start Date", "End Date", "Contract Value", "Amount Paid", "Outstanding", "Status"]
+    headers = ["Project Number", "Name", "Client", "Start Date", "End Date", "Contract Value", "Amount Paid", "Outstanding", "Status"]
     w.writerow(headers)
 
     for p in items:
@@ -2441,7 +2441,7 @@ def projects_export_excel():
     ws.row_dimensions[1].height = 20
 
     # Add headers
-    headers = ["Project #","Name","Client","Start Date","End Date",
+    headers = ["Project Number","Name","Client","Start Date","End Date",
                "Contract Value ($)","Amount Paid ($)","Outstanding ($)","Status"]
     header_row = 2
     for col, h in enumerate(headers, 1):
@@ -2515,7 +2515,7 @@ def projects_export_pdf():
                               alignment=1)  # CENTER
     elems.append(Paragraph(f"{co.get('name','')} — Projects Report", title_s))
     elems.append(Spacer(1, 0.2*inch))
-    hdrs = ["Project #", "Name", "Client", "Start Date", "End Date", "Contract Value", "Paid", "Outstanding", "Status"]
+    hdrs = ["Project Number", "Name", "Client", "Start Date", "End Date", "Contract Value", "Paid", "Outstanding", "Status"]
     data = [hdrs]
     def fmt_date_pdf(d):
         if not d or d == "—":
@@ -4177,7 +4177,7 @@ def invoicing_export_csv():
     w.writerow([f"{co.get('name','')} - Invoices Report"])
     w.writerow([])
 
-    headers = ["Invoice #", "Client", "Project", "Date", "Due Date", "Status", "Subtotal", "Tax", "Total", "Amount Paid", "Outstanding"]
+    headers = ["Invoice Number", "Client", "Project", "Date", "Due Date", "Status", "Subtotal", "Tax", "Total", "Amount Paid", "Outstanding"]
     w.writerow(headers)
 
     for inv in items:
@@ -4240,7 +4240,7 @@ def invoicing_export_excel():
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 20
 
-    headers = ["Invoice #","Client","Project","Date","Due Date","Status",
+    headers = ["Invoice Number","Client","Project","Date","Due Date","Status",
                "Subtotal ($)","Tax ($)","Total ($)","Paid ($)","Outstanding ($)"]
     header_row = 2
     for col, h in enumerate(headers, 1):
@@ -4320,7 +4320,7 @@ def invoicing_export_pdf():
     elems.append(Paragraph(f"{co.get('name','')} — Invoices Report", title_s))
     from reportlab.platypus import Spacer
     elems.append(Spacer(1, 0.2*inch))
-    hdrs = ["Invoice #", "Client", "Project", "Date", "Due Date", "Subtotal", "Tax", "Total", "Paid", "Outstanding", "Status"]
+    hdrs = ["Invoice Number", "Client", "Project", "Date", "Due Date", "Subtotal", "Tax", "Total", "Paid", "Outstanding", "Status"]
     data = [hdrs]
     def fmt_inv_date(d):
         if not d or d == "—":
