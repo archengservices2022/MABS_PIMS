@@ -6,6 +6,11 @@
 <style>
   #tab-export #projectsTable { display: none !important; }
   #tab-export .card-panel:has(#projectsTable) { display: none !important; }
+  /* Prevent date wrapping in projects table */
+  #projectsTable td:nth-child(5) {
+    white-space: nowrap;
+    min-width: 110px;
+  }
 </style>
 
 <!-- ── Projects Overview ────────────────────────────────────────────────────── -->
