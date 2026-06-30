@@ -1153,7 +1153,7 @@ def quotes_export_pdf():
 
     buf = _io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
-                            leftMargin=0.5*inch, rightMargin=0.5*inch,
+                            leftMargin=0.75*inch, rightMargin=0.75*inch,
                             topMargin=0.5*inch, bottomMargin=0.5*inch)
     styles = getSampleStyleSheet()
     co = company_info()
@@ -2506,7 +2506,7 @@ def projects_export_pdf():
     items = _filter_projects_export(items)
     buf = _io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
-                            leftMargin=0.5*inch, rightMargin=0.5*inch,
+                            leftMargin=0.75*inch, rightMargin=0.75*inch,
                             topMargin=0.5*inch, bottomMargin=0.5*inch)
     styles = getSampleStyleSheet()
     co = company_info()
@@ -4305,7 +4305,7 @@ def invoicing_export_pdf():
     items = _filter_invoices_export(items)
     buf = _io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
-                            leftMargin=0.5*inch, rightMargin=0.5*inch,
+                            leftMargin=0.75*inch, rightMargin=0.75*inch,
                             topMargin=0.5*inch, bottomMargin=0.5*inch)
     styles = getSampleStyleSheet()
     co = company_info()
