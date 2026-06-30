@@ -1633,6 +1633,12 @@ def project_detail(project_id):
                     # Don't include tax payments in amount_paid - tax is tracked separately
                     inv_meta = inv.get("meta", {}) or {}
                     proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (inv.get("payment_log", []) or []) if p.get("project_number") == proj_num)
+
+                    # Fallback: if payment_log entries don't have project_number (legacy data),
+                    # use the stage's amount_paid from allocation
+                    if proj_payments == 0 and proj_num in _invoice_linked_projects(inv):
+                        proj_payments = _safe_float(stage.get("amount_paid", 0))
+
                     amount_paid += proj_payments
                     due_date = due_date or inv_meta.get("due_date", "")
                     # Capture invoice details (use first invoice for this stage)
