@@ -2361,32 +2361,52 @@ def projects_export_excel():
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     items = _filter_projects_export(items)
     wb = openpyxl.Workbook()
-    ws = wb.active; ws.title = "Projects"
+    ws = wb.active
+    ws.title = "Projects"
     hdr_fill = PatternFill(start_color="FF0F172A", end_color="FF0F172A", fill_type="solid")
     hdr_font = Font(color="FFFFFFFF", bold=True, size=11)
+    title_font = Font(bold=True, size=13, color="FF0F766E")
     alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
-    ctr = Alignment(horizontal="center", vertical="center")
+    ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
     rgt = Alignment(horizontal="right",  vertical="center")
+
+    # Add title row
+    co = company_info()
+    ws.merge_cells('A1:I1')
+    title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} — Projects Report")
+    title_cell.font = title_font
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 20
+
+    # Add headers (removed Payment Stage and Assigned To columns)
     headers = ["Project #","Name","Client","Start Date","End Date","Status",
-               "Contract Value ($)","Amount Paid ($)","Outstanding ($)","Payment Stage","Assigned To"]
+               "Contract Value ($)","Amount Paid ($)","Outstanding ($)"]
+    header_row = 2
     for col, h in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=h)
+        cell = ws.cell(row=header_row, column=col, value=h)
         cell.fill = hdr_fill; cell.font = hdr_font; cell.alignment = ctr
-    for ri, p in enumerate(items, 2):
+
+    for ri, p in enumerate(items, header_row + 1):
         cv   = _safe_float(p.get("contract_value", 0))
         paid = _safe_float(p.get("amount_paid", 0))
         row = [p.get("project_number",""), p.get("project_name",""),
                p.get("client_name",""), p.get("start_date",""), p.get("end_date",""),
-               p.get("status",""), cv, paid, cv - paid,
-               p.get("payment_category",""), p.get("assigned_to","")]
+               p.get("status",""), cv, paid, cv - paid]
         for ci, val in enumerate(row, 1):
             cell = ws.cell(row=ri, column=ci, value=val)
-            if ri % 2 == 0: cell.fill = alt_fill
+            if ri % 2 == 0:
+                cell.fill = alt_fill
             if ci in (7, 8, 9):
-                cell.number_format = '"$"#,##0.00'; cell.alignment = rgt
-    for ci, w in enumerate([16, 30, 22, 12, 12, 14, 16, 14, 14, 16, 18], 1):
+                cell.number_format = '"$"#,##0.00'
+                cell.alignment = rgt
+            else:
+                cell.alignment = ctr
+
+    # Increase column widths
+    col_widths = [14, 25, 22, 14, 14, 12, 16, 16, 16]
+    for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
-    ws.freeze_panes = "A2"
+    ws.freeze_panes = f"A{header_row + 1}"
     buf = _io.BytesIO()
     wb.save(buf); buf.seek(0)
     from flask import Response
