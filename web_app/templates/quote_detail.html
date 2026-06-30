@@ -283,9 +283,9 @@
     <div class="card-panel">
       <h6 class="section-heading">Metadata</h6>
       <div class="info-label">Created</div>
-      <div class="info-value small">{{ quote.get('created_at','—')[:19]|replace('T',' ') }}</div>
+      <div class="info-value small">{{ quote.get('created_at','—')[:10] | format_date }}</div>
       <div class="info-label mt-2">Updated</div>
-      <div class="info-value small">{{ quote.get('updated_at','—')[:19]|replace('T',' ') }}</div>
+      <div class="info-value small">{{ quote.get('updated_at','—')[:10] | format_date }}</div>
       <div class="info-label mt-2">Created By</div>
       <div class="info-value small">{{ quote.get('created_by','—') }}</div>
     </div>

@@ -338,9 +338,9 @@
         <div class="card-panel">
           <h6 class="section-heading">Metadata</h6>
           <div class="info-label">Created</div>
-          <div class="info-value small">{{ project.get('created_at','—')[:19]|replace('T',' ') }}</div>
+          <div class="info-value small">{{ project.get('created_at','—')[:10] | format_date }}</div>
           <div class="info-label mt-2">Updated</div>
-          <div class="info-value small">{{ project.get('updated_at','—')[:19]|replace('T',' ') }}</div>
+          <div class="info-value small">{{ project.get('updated_at','—')[:10] | format_date }}</div>
         </div>
       </div>
     </div>
@@ -628,7 +628,7 @@
                     <span class="badge bg-secondary">Draft</span>
                     {% endif %}
                   </td>
-                  <td class="text-muted small">{{ co.get('created_at','')[:10] }}</td>
+                  <td class="text-muted small">{{ co.get('created_at','')[:10] | format_date }}</td>
                   {% if user_role in ('admin','projects') %}
                   <td>
                     {% if co.get('status') == 'Draft' %}
@@ -733,7 +733,7 @@
                 <div>
                   <span class="fw-600 small">{{ note.get('created_by','—') }}</span>
                   <span class="text-muted small ms-2">
-                    {{ note.get('created_at','')[:10] }}
+                    {{ note.get('created_at','')[:10] | format_date }}
                     {{ note.get('created_at','')[11:16] }}
                   </span>
                 </div>

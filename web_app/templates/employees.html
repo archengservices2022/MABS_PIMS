@@ -700,7 +700,7 @@
           <td class="text-muted small">{{ r.start_date }} → {{ r.end_date }}</td>
           <td class="text-center small fw-600">{{ r.get('working_days', '—') }}</td>
           <td class="text-muted small">{{ r.reason or '—' }}</td>
-          <td class="text-muted small">{{ r.requested_at[:10] }}</td>
+          <td class="text-muted small">{{ r.requested_at[:10] | format_date }}</td>
           <td class="text-end">
             <form method="post" action="{{ url_for('employee_time_off_action', request_id=r.firebase_id, action='approve') }}" class="d-inline">
               <button type="submit" class="btn btn-xs btn-outline-success"><i class="bi bi-check-lg"></i> Approve</button>

@@ -381,7 +381,7 @@
         </td>
         <td><span class="sbadge sb-{{ sheet.status | lower }}">{{ sheet.status }}</span></td>
         <td style="color:#94a3b8;font-size:.78rem;">
-          {{ sheet.submitted_at[:10] if sheet.submitted_at else '—' }}
+          {{ (sheet.submitted_at[:10] | format_date) if sheet.submitted_at else '—' }}
         </td>
         <td>
           <div class="d-flex gap-2">

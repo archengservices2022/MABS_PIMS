@@ -326,10 +326,10 @@
       <div class="info-label mt-2">Created</div>
       <div class="info-value small">
         {%- set created = meta.get('created_at') or meta.get('updated_at') or meta.get('invoice_date') %}
-        {{ created[:19]|replace('T',' ') if created else '—' }}
+        {{ (created[:10] | format_date) if created else '—' }}
       </div>
       <div class="info-label mt-2">Updated</div>
-      <div class="info-value small">{{ meta.get('updated_at','—')[:19]|replace('T',' ') }}</div>
+      <div class="info-value small">{{ meta.get('updated_at','—')[:10] | format_date }}</div>
     </div>
   </div>
 </div>
