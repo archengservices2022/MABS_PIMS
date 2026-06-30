@@ -984,23 +984,16 @@ def quotes_export():
     import csv
     output = io.StringIO()
     w = csv.writer(output)
-    co = company_info()
 
     def fmt_csv_date(d):
         if not d or d == "—":
-            return "—"
+            return ""
         d = str(d)[:10]
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    header_text = f"{co.get('name','')} - Quotes Report"
-    w.writerow([header_text.center(80)])
-    w.writerow([])
-
     headers = ["Quote Number", "Client", "Project / Scope", "Salesperson", "Date", "Valid Until", "Status", "Subtotal", "Tax", "Total", "Notes"]
-    col_widths = [26, 25, 35, 20, 18, 18, 14, 16, 14, 16, 30]
-    centered_headers = [h.center(w) for h, w in zip(headers, col_widths)]
-    w.writerow(centered_headers)
+    w.writerow(headers)
 
     for q in items:
         total = _safe_float(q.get("total", 0))
@@ -2373,7 +2366,6 @@ def projects_export_csv():
     items = _filter_projects_export(items)
     output = io.StringIO()
     w = csv.writer(output)
-    co = company_info()
 
     def fmt_csv_date(d):
         if not d or d == "—":
@@ -2382,28 +2374,22 @@ def projects_export_csv():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    header_text = f"{co.get('name','')} - Projects Report"
-    w.writerow([header_text.center(80)])
-    w.writerow([])
-
     headers = ["Project #", "Name", "Client", "Start Date", "End Date", "Contract Value", "Amount Paid", "Outstanding", "Status"]
-    col_widths = [22, 28, 26, 16, 16, 18, 18, 18, 16]
-    centered_headers = [h.center(w) for h, w in zip(headers, col_widths)]
-    w.writerow(centered_headers)
+    w.writerow(headers)
 
     for p in items:
         cv = _safe_float(p.get("contract_value", 0))
         paid = _safe_float(p.get("amount_paid", 0))
         row = [
-            str(p.get("project_number","")).ljust(col_widths[0]),
-            str(p.get("project_name","")).ljust(col_widths[1]),
-            str(p.get("client_name","")).ljust(col_widths[2]),
-            fmt_csv_date(p.get("start_date","")).center(col_widths[3]),
-            fmt_csv_date(p.get("end_date","")).center(col_widths[4]),
-            str(f"{cv:.2f}").rjust(col_widths[5]),
-            str(f"{paid:.2f}").rjust(col_widths[6]),
-            str(f"{cv-paid:.2f}").rjust(col_widths[7]),
-            str(p.get("status","")).center(col_widths[8])
+            p.get("project_number",""),
+            p.get("project_name",""),
+            p.get("client_name",""),
+            fmt_csv_date(p.get("start_date","")),
+            fmt_csv_date(p.get("end_date","")),
+            f"{cv:.2f}",
+            f"{paid:.2f}",
+            f"{cv-paid:.2f}",
+            p.get("status","")
         ]
         w.writerow(row)
 
@@ -4168,7 +4154,6 @@ def invoicing_export_csv():
     items = _filter_invoices_export(items)
     output = io.StringIO()
     w = csv.writer(output)
-    co = company_info()
 
     def fmt_csv_date(d):
         if not d or d == "—":
@@ -4177,14 +4162,8 @@ def invoicing_export_csv():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    header_text = f"{co.get('name','')} - Invoices Report"
-    w.writerow([header_text.center(80)])
-    w.writerow([])
-
     headers = ["Invoice #", "Client", "Project", "Date", "Due Date", "Status", "Subtotal", "Tax", "Total", "Amount Paid", "Outstanding"]
-    col_widths = [16, 25, 32, 14, 14, 14, 16, 14, 16, 14, 14]
-    centered_headers = [h.center(w) for h, w in zip(headers, col_widths)]
-    w.writerow(centered_headers)
+    w.writerow(headers)
 
     for inv in items:
         m = inv.get("meta", {})
@@ -4193,19 +4172,19 @@ def invoicing_export_csv():
         subtotal = _safe_float(m.get("subtotal", 0))
         tax = _safe_float(m.get("tax_amount", 0))
         linked_projects = _invoice_linked_projects(inv)
-        projects_str = ", ".join(sorted(linked_projects)) if linked_projects else "—"
+        projects_str = ", ".join(sorted(linked_projects)) if linked_projects else ""
         row = [
-            str(m.get("invoice_number","")).ljust(col_widths[0]),
-            str(m.get("client_name","")).ljust(col_widths[1]),
-            str(projects_str).ljust(col_widths[2]),
-            fmt_csv_date(m.get("invoice_date","")).center(col_widths[3]),
-            fmt_csv_date(m.get("due_date","")).center(col_widths[4]),
-            str(m.get("status","")).center(col_widths[5]),
-            str(f"{subtotal:.2f}").rjust(col_widths[6]),
-            str(f"{tax:.2f}").rjust(col_widths[7]),
-            str(f"{total:.2f}").rjust(col_widths[8]),
-            str(f"{paid:.2f}").rjust(col_widths[9]),
-            str(f"{total-paid:.2f}").rjust(col_widths[10])
+            m.get("invoice_number",""),
+            m.get("client_name",""),
+            projects_str,
+            fmt_csv_date(m.get("invoice_date","")),
+            fmt_csv_date(m.get("due_date","")),
+            m.get("status",""),
+            f"{subtotal:.2f}",
+            f"{tax:.2f}",
+            f"{total:.2f}",
+            f"{paid:.2f}",
+            f"{total-paid:.2f}"
         ]
         w.writerow(row)
 
