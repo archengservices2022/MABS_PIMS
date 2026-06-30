@@ -7055,22 +7055,18 @@ def _safe_float(val) -> float:
         return 0.0
 
 def _format_date_display(date_str: str) -> str:
-    """Convert date to MM-DD-YYYY format for display. Handles YYYY-MM-DD, MM-DD-YY, and other formats."""
+    """Convert date to MM-DD-YY format for display. Handles YYYY-MM-DD format from database."""
     if not date_str or date_str == "—":
         return "—"
     try:
         date_str = str(date_str).strip()[:10]  # Take only the date part if it's a datetime
         parts = date_str.split("-")
         if len(parts) == 3:
-            # Try YYYY-MM-DD format first
-            if len(parts[0]) == 4:  # Year is 4 digits
+            # Handle YYYY-MM-DD format from database
+            if len(parts[0]) == 4:  # Year is 4 digits (YYYY-MM-DD)
                 year, month, day = parts
-                return f"{month}-{day}-{year}"
-            # If first part is 2 digits, try MM-DD-YY format
-            elif len(parts[0]) == 2 and len(parts[2]) == 2:  # MM-DD-YY
-                month, day, year = parts
-                year = f"20{year}"  # Assume 20xx century
-                return f"{month}-{day}-{year}"
+                year_2digit = year[-2:]  # Take last 2 digits (2026 → 26)
+                return f"{month}-{day}-{year_2digit}"
     except (ValueError, TypeError, IndexError):
         pass
     return str(date_str) if date_str else "—"
