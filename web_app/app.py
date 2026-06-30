@@ -2372,7 +2372,7 @@ def projects_export_csv():
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     items = _filter_projects_export(items)
     output = io.StringIO()
-    w = csv.writer(output, delimiter='\t')
+    w = csv.writer(output)
     co = company_info()
 
     def fmt_csv_date(d):
@@ -4166,7 +4166,7 @@ def invoicing_export_csv():
     items.sort(key=lambda x: x.get("meta", {}).get("created_at", ""), reverse=True)
     items = _filter_invoices_export(items)
     output = io.StringIO()
-    w = csv.writer(output, delimiter='\t')
+    w = csv.writer(output)
     co = company_info()
 
     def fmt_csv_date(d):
