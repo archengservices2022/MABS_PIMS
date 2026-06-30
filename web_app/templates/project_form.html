@@ -781,8 +781,8 @@ function updatePlanPreview() {
   const fmt = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
   const rows = [];
 
-  // For existing projects with custom amounts, use those instead of recalculating
-  if (stageAmountsData && stageAmountsData.length > 0) {
+  // Only preserve custom amounts if user explicitly customized them via the dialog
+  if (hasExplicitCustomAmounts && stageAmountsData && stageAmountsData.length > 0) {
     // Use existing custom amounts - don't recalculate
     previewStagesData = stageAmountsData.map(s => ({
       name: s.name,
@@ -1147,6 +1147,7 @@ document.addEventListener('DOMContentLoaded', function () {
 // ── Payment Plan Stage Editing ──────────────────────────────────────────────────
 let currentEditStageIndex = null;
 let stageAmountsData = [];
+let hasExplicitCustomAmounts = false; // Flag to track if user explicitly customized amounts
 
 function initPaymentStagesData() {
   {% if existing_stages %}
@@ -1261,6 +1262,7 @@ function saveStageAmount() {
   const newAmount = parseFloat(document.getElementById('editStageAmount').value) || 0;
   if (currentEditStageIndex !== null && newAmount > 0) {
     stageAmountsData[currentEditStageIndex].amount = newAmount;
+    hasExplicitCustomAmounts = true; // Mark that user has explicitly customized amounts
     updatePaymentPlanDisplay();
 
     // Create hidden input for backend
@@ -1556,6 +1558,16 @@ function saveCustomPreviewStages() {
       if (dataIndex >= 0 && dataIndex < previewStagesData.length) {
         previewStagesData[dataIndex].amount = amount;
         customAmounts.push({ index: dataIndex, amount: amount });
+      }
+    });
+
+    // Mark that user has explicitly customized amounts
+    hasExplicitCustomAmounts = true;
+
+    // Sync changes back to stageAmountsData so they're preserved
+    customAmounts.forEach(custom => {
+      if (custom.index >= 0 && custom.index < stageAmountsData.length) {
+        stageAmountsData[custom.index].amount = custom.amount;
       }
     });
 
