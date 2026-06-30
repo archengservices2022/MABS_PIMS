@@ -1107,7 +1107,6 @@ def quotes_export_pdf():
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib import colors
         from reportlab.lib.units import inch
-        from reportlab.lib.enums import TA_CENTER, TA_MIDDLE
     except ImportError:
         flash("reportlab is not installed. Run: pip install reportlab", "danger")
         return redirect(url_for("quotes", tab="export"))
@@ -1181,8 +1180,8 @@ def quotes_export_pdf():
         ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
         ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
         ("FONTSIZE",      (0,0), (-1,0), 9),
-        ("ALIGN",         (0,0), (-1,0), TA_CENTER),
-        ("VALIGN",        (0,0), (-1,0), TA_MIDDLE),
+        ("ALIGN",         (0,0), (-1,0), "CENTER"),
+        ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
         ("TOPPADDING",    (0,0), (-1,0), 8),
         ("BOTTOMPADDING", (0,0), (-1,0), 8),
         ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
@@ -1191,8 +1190,8 @@ def quotes_export_pdf():
         ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
         ("TOPPADDING",    (0,1), (-1,-1), 5),
         ("BOTTOMPADDING", (0,1), (-1,-1), 5),
-        ("ALIGN",         (0,1), (-1,-1), TA_CENTER),
-        ("VALIGN",        (0,1), (-1,-1), TA_MIDDLE),
+        ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
     ]))
     elems.append(tbl)
     doc.build(elems)
@@ -2445,7 +2444,6 @@ def projects_export_pdf():
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib import colors
         from reportlab.lib.units import inch
-        from reportlab.lib.enums import TA_CENTER, TA_MIDDLE
     except ImportError:
         flash("reportlab not installed.", "danger")
         return redirect(url_for("projects", tab="export"))
@@ -2499,8 +2497,8 @@ def projects_export_pdf():
         ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
         ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
         ("FONTSIZE",      (0,0), (-1,0), 9),
-        ("ALIGN",         (0,0), (-1,0), TA_CENTER),
-        ("VALIGN",        (0,0), (-1,0), TA_MIDDLE),
+        ("ALIGN",         (0,0), (-1,0), "CENTER"),
+        ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
         ("TOPPADDING",    (0,0), (-1,0), 8),
         ("BOTTOMPADDING", (0,0), (-1,0), 8),
         ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
@@ -2509,8 +2507,8 @@ def projects_export_pdf():
         ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
         ("TOPPADDING",    (0,1), (-1,-1), 5),
         ("BOTTOMPADDING", (0,1), (-1,-1), 5),
-        ("ALIGN",         (0,1), (-1,-1), TA_CENTER),
-        ("VALIGN",        (0,1), (-1,-1), TA_MIDDLE),
+        ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
     ]))
     elems.append(tbl)
     doc.build(elems)
@@ -4223,7 +4221,6 @@ def invoicing_export_pdf():
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib import colors
         from reportlab.lib.units import inch
-        from reportlab.lib.enums import TA_CENTER, TA_MIDDLE
     except ImportError:
         flash("reportlab not installed.", "danger")
         return redirect(url_for("invoicing", tab="export"))
@@ -4281,8 +4278,8 @@ def invoicing_export_pdf():
         ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
         ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
         ("FONTSIZE",      (0,0), (-1,0), 9),
-        ("ALIGN",         (0,0), (-1,0), TA_CENTER),
-        ("VALIGN",        (0,0), (-1,0), TA_MIDDLE),
+        ("ALIGN",         (0,0), (-1,0), "CENTER"),
+        ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
         ("TOPPADDING",    (0,0), (-1,0), 8),
         ("BOTTOMPADDING", (0,0), (-1,0), 8),
         ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
@@ -4291,8 +4288,8 @@ def invoicing_export_pdf():
         ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
         ("TOPPADDING",    (0,1), (-1,-1), 5),
         ("BOTTOMPADDING", (0,1), (-1,-1), 5),
-        ("ALIGN",         (0,1), (-1,-1), TA_CENTER),
-        ("VALIGN",        (0,1), (-1,-1), TA_MIDDLE),
+        ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
     ]))
     elems.append(tbl)
     doc.build(elems)
