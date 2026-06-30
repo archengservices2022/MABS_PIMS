@@ -1181,7 +1181,7 @@ def quotes_export_pdf():
         elems.append(Paragraph(_date_range, sub_s))
         elems.append(Spacer(1, 0.15*inch))
 
-    hdrs = ["Quote Number","Client","Project / Scope","Salesperson","Date","Status","Total"]
+    hdrs = ["Quote Number","Client","Project / Scope","Salesperson","Date","Subtotal","Tax","Total","Status"]
     data = [hdrs]
     cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
     for q in items:
@@ -1190,17 +1190,22 @@ def quotes_export_pdf():
             parts = str(date_str)[:10].split("-")
             if len(parts) == 3:
                 date_str = f"{parts[1]}-{parts[2]}-{parts[0]}"
+        total = _safe_float(q.get('total',0))
+        subtotal = _safe_float(q.get('subtotal',0))
+        tax = total - subtotal
         data.append([
             Paragraph(q.get("job_number","—"), cell_style),
             Paragraph(q.get("client_name","—"), cell_style),
             Paragraph(q.get("project_name") or "—", cell_style),
             Paragraph(q.get("salesperson","—"), cell_style),
             Paragraph(date_str, cell_style),
+            Paragraph(f"${subtotal:,.2f}", cell_style),
+            Paragraph(f"${tax:,.2f}", cell_style),
+            Paragraph(f"${total:,.2f}", cell_style),
             Paragraph(q.get("status","—"), cell_style),
-            Paragraph(f"${_safe_float(q.get('total',0)):,.2f}", cell_style),
         ])
 
-    cw = [1.2*inch, 2.0*inch, 3.0*inch, 1.8*inch, 1.1*inch, 1.2*inch, 1.1*inch]
+    cw = [1.2*inch, 2.0*inch, 3.0*inch, 1.8*inch, 1.1*inch, 1.2*inch, 1.0*inch, 1.1*inch, 1.2*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
@@ -2517,7 +2522,7 @@ def projects_export_pdf():
                               alignment=1)  # CENTER
     elems.append(Paragraph(f"{co.get('name','')} — Projects Report", title_s))
     elems.append(Spacer(1, 0.2*inch))
-    hdrs = ["Project #", "Name", "Client", "Status", "Start Date", "Contract Value", "Paid", "Outstanding"]
+    hdrs = ["Project #", "Name", "Client", "Start Date", "End Date", "Contract Value", "Paid", "Outstanding", "Status"]
     data = [hdrs]
     def fmt_date_pdf(d):
         if not d or d == "—":
@@ -2536,13 +2541,14 @@ def projects_export_pdf():
             Paragraph(p.get("project_number","—"), cell_style),
             Paragraph(p.get("project_name","—") or "—", cell_style),
             Paragraph(p.get("client_name","—") or "—", cell_style),
-            Paragraph(p.get("status","—"), cell_style),
             Paragraph(fmt_date_pdf(p.get("start_date","")), cell_style),
+            Paragraph(fmt_date_pdf(p.get("end_date","")), cell_style),
             Paragraph(f"${cv:,.0f}", cell_style),
             Paragraph(f"${paid:,.0f}", cell_style),
             Paragraph(f"${cv-paid:,.0f}", cell_style),
+            Paragraph(p.get("status","—"), cell_style),
         ])
-    cw = [1.3*inch, 2.5*inch, 2.0*inch, 1.2*inch, 1.2*inch, 1.3*inch, 1.3*inch, 1.3*inch]
+    cw = [1.3*inch, 2.5*inch, 2.0*inch, 1.2*inch, 1.2*inch, 1.3*inch, 1.3*inch, 1.3*inch, 1.2*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
@@ -4318,7 +4324,7 @@ def invoicing_export_pdf():
     elems.append(Paragraph(f"{co.get('name','')} — Invoices Report", title_s))
     from reportlab.platypus import Spacer
     elems.append(Spacer(1, 0.2*inch))
-    hdrs = ["Invoice #", "Client", "Project", "Date", "Due Date", "Status", "Total", "Paid", "Outstanding"]
+    hdrs = ["Invoice #", "Client", "Project", "Date", "Due Date", "Subtotal", "Tax", "Total", "Paid", "Outstanding", "Status"]
     data = [hdrs]
     def fmt_inv_date(d):
         if not d or d == "—":
@@ -4332,18 +4338,22 @@ def invoicing_export_pdf():
         m = inv.get("meta", {})
         total = _safe_float(m.get("total", 0))
         paid  = _safe_float(m.get("amount_paid", 0))
+        subtotal = _safe_float(m.get("subtotal", 0))
+        tax = _safe_float(m.get("tax_amount", 0))
         data.append([
             Paragraph(m.get("invoice_number","—"), cell_style),
             Paragraph(m.get("client_name","—") or "—", cell_style),
             Paragraph(m.get("project_number","") or "—", cell_style),
             Paragraph(fmt_inv_date(m.get("invoice_date","")), cell_style),
             Paragraph(fmt_inv_date(m.get("due_date","")), cell_style),
-            Paragraph(m.get("status","—"), cell_style),
+            Paragraph(f"${subtotal:,.0f}", cell_style),
+            Paragraph(f"${tax:,.0f}", cell_style),
             Paragraph(f"${total:,.0f}", cell_style),
             Paragraph(f"${paid:,.0f}", cell_style),
             Paragraph(f"${total-paid:,.0f}", cell_style),
+            Paragraph(m.get("status","—"), cell_style),
         ])
-    cw = [1.3*inch, 2.2*inch, 1.5*inch, 1.2*inch, 1.2*inch, 1.1*inch, 1.1*inch, 1.1*inch, 1.2*inch]
+    cw = [1.3*inch, 2.2*inch, 1.5*inch, 1.2*inch, 1.2*inch, 1.1*inch, 1.0*inch, 1.1*inch, 1.1*inch, 1.1*inch, 1.2*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
