@@ -600,8 +600,16 @@ function saveEditedStages(btn) {
         valueInput.value = newAmount.toFixed(2);
         displayEl.textContent = '$' + newAmount.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
       }
+
+      // Also update stageAmountsData to ensure amounts are saved with form
+      if (stageAmountsData && idx < stageAmountsData.length) {
+        stageAmountsData[idx].amount = newAmount;
+      }
     }
   });
+
+  // Mark that user has explicitly customized amounts
+  hasExplicitCustomAmounts = true;
 
   // Update total
   let newTotal = 0;
@@ -616,6 +624,17 @@ function saveEditedStages(btn) {
 
   // Close modal
   btn.closest('[style*=fixed]').remove();
+
+  // Create hidden input to preserve updated amounts for form submission
+  const form = document.getElementById('projectForm');
+  let customInput = form.querySelector('input[name="custom_stage_amounts"]');
+  if (!customInput) {
+    customInput = document.createElement('input');
+    customInput.type = 'hidden';
+    customInput.name = 'custom_stage_amounts';
+    form.appendChild(customInput);
+  }
+  customInput.value = JSON.stringify(stageAmountsData);
 
   // Update preview
   updatePlanPreview();
