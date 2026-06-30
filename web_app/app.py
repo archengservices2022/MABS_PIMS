@@ -4116,18 +4116,31 @@ def invoicing_export_excel():
     items.sort(key=lambda x: x.get("meta", {}).get("created_at", ""), reverse=True)
     items = _filter_invoices_export(items)
     wb = openpyxl.Workbook()
-    ws = wb.active; ws.title = "Invoices"
+    ws = wb.active
+    ws.title = "Invoices"
     hdr_fill = PatternFill(start_color="FF0F172A", end_color="FF0F172A", fill_type="solid")
     hdr_font = Font(color="FFFFFFFF", bold=True, size=11)
+    title_font = Font(bold=True, size=13, color="FF0F766E")
     alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
-    ctr = Alignment(horizontal="center", vertical="center")
+    ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
     rgt = Alignment(horizontal="right",  vertical="center")
+
+    # Add title row
+    co = company_info()
+    ws.merge_cells('A1:K1')
+    title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} — Invoices Report")
+    title_cell.font = title_font
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 20
+
     headers = ["Invoice #","Client","Project","Date","Due Date","Status",
                "Subtotal ($)","Tax ($)","Total ($)","Paid ($)","Outstanding ($)"]
+    header_row = 2
     for col, h in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=h)
+        cell = ws.cell(row=header_row, column=col, value=h)
         cell.fill = hdr_fill; cell.font = hdr_font; cell.alignment = ctr
-    for ri, inv in enumerate(items, 2):
+
+    for ri, inv in enumerate(items, header_row + 1):
         m = inv.get("meta", {})
         total = _safe_float(m.get("total", 0))
         paid  = _safe_float(m.get("amount_paid", 0))
@@ -4137,12 +4150,19 @@ def invoicing_export_excel():
                _safe_float(m.get("tax_amount",0)), total, paid, total - paid]
         for ci, val in enumerate(row, 1):
             cell = ws.cell(row=ri, column=ci, value=val)
-            if ri % 2 == 0: cell.fill = alt_fill
+            if ri % 2 == 0:
+                cell.fill = alt_fill
             if ci in (7, 8, 9, 10, 11):
-                cell.number_format = '"$"#,##0.00'; cell.alignment = rgt
-    for ci, w in enumerate([16,22,14,12,12,12,13,10,13,12,14], 1):
+                cell.number_format = '"$"#,##0.00'
+                cell.alignment = rgt
+            else:
+                cell.alignment = ctr
+
+    # Increase column widths
+    col_widths = [16, 25, 16, 14, 14, 12, 14, 12, 14, 14, 14]
+    for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
-    ws.freeze_panes = "A2"
+    ws.freeze_panes = f"A{header_row + 1}"
     buf = _io.BytesIO()
     wb.save(buf); buf.seek(0)
     from flask import Response
