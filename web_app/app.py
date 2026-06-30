@@ -1153,7 +1153,7 @@ def quotes_export_pdf():
 
     buf = _io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
-                            leftMargin=0.75*inch, rightMargin=0.75*inch,
+                            leftMargin=0.5*inch, rightMargin=0.5*inch,
                             topMargin=0.5*inch, bottomMargin=0.5*inch)
     styles = getSampleStyleSheet()
     co = company_info()
