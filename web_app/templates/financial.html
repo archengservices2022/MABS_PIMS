@@ -535,7 +535,7 @@ a[href*="filter_expense"]:hover {
               data-date="{{ r.get('date','') }}"
               data-year="{{ r.get('date','')[:4] }}"
               data-status="{{ r.get('status','') }}"
-              data-amount="{{ ((r.get('amount_paid',0)|float) + (r.get('tax_amount',0)|float))|float }}"
+              data-amount="{{ ((r.get('amount_paid',0)|float) + (r.get('tax_paid',0)|float))|float }}"
               data-search="{{ r.get('client_name','')|lower }} {{ r.get('invoice_number','')|lower }}">
             <td class="text-muted small">{{ r.get('date','—') }}</td>
             <td>
@@ -559,7 +559,7 @@ a[href*="filter_expense"]:hover {
             <td class="text-end">${{ "{:,.2f}".format((r.get('total',0)|float) - (r.get('tax_amount',0)|float)) }}</td>
             <td class="text-end text-muted">${{ "{:,.2f}".format(r.get('tax_amount',0)|float) }}</td>
             <td class="text-end fw-bold">${{ "{:,.2f}".format(r.get('total',0)|float) }}</td>
-            <td class="text-end fw-bold text-success">${{ "{:,.2f}".format((r.get('amount_paid',0)|float) + (r.get('tax_amount',0)|float)) }}</td>
+            <td class="text-end fw-bold text-success">${{ "{:,.2f}".format((r.get('amount_paid',0)|float) + (r.get('tax_paid',0)|float)) }}</td>
           </tr>
           {% endfor %}
         </tbody>

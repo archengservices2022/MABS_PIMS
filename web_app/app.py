@@ -4757,6 +4757,7 @@ def financial():
         total_paid_for_inv = amount_paid + tax_paid
 
         r["amount_paid"] = amount_paid
+        r["tax_paid"] = tax_paid
         r["total"] = inv_total
         r["tax_amount"] = _safe_float(inv_meta.get("tax_amount", 0))
 
