@@ -214,7 +214,7 @@
               {% for sal in salaries %}
               <tr data-salary="1" data-employee="{{ (sal.employee_name or sal.get('employee','')) | lower }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}">
                 <td><strong>{{ sal.employee_name or sal.get('employee','—') }}</strong></td>
-                <td>{{ sal.date or '—' }}</td>
+                <td>{{ sal.date or '—' | format_date }}</td>
                 <td>${{ "{:,.2f}".format(sal.amount | float) }}</td>
                 <td><span class="region-badge {{ 'region-usa' if sal.region == 'Inside America' else 'region-intl' }}">{{ sal.region or '—' }}</span></td>
                 <td>{{ sal.notes or '—' }}</td>
