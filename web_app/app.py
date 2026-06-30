@@ -4313,7 +4313,7 @@ def invoicing_export_pdf():
     items = _filter_invoices_export(items)
     buf = _io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
-                            leftMargin=0.9*inch, rightMargin=0.9*inch,
+                            leftMargin=0.8*inch, rightMargin=0.8*inch,
                             topMargin=0.5*inch, bottomMargin=0.5*inch)
     styles = getSampleStyleSheet()
     co = company_info()
@@ -4357,7 +4357,7 @@ def invoicing_export_pdf():
             Paragraph(f"${total-paid:,.0f}", cell_style),
             Paragraph(m.get("status","—"), cell_style),
         ])
-    cw = [1.0*inch, 1.5*inch, 1.35*inch, 0.85*inch, 0.85*inch, 0.75*inch, 0.7*inch, 0.75*inch, 0.75*inch, 0.75*inch, 0.85*inch]
+    cw = [1.0*inch, 1.5*inch, 1.35*inch, 0.8*inch, 0.8*inch, 0.7*inch, 0.65*inch, 0.7*inch, 0.7*inch, 0.7*inch, 0.8*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
