@@ -4182,7 +4182,7 @@ def invoicing_export_csv():
     w.writerow([])
 
     headers = ["Invoice #", "Client", "Project", "Date", "Due Date", "Status", "Subtotal", "Tax", "Total", "Amount Paid", "Outstanding"]
-    col_widths = [16, 25, 16, 14, 14, 14, 16, 14, 16, 14, 14]
+    col_widths = [16, 25, 32, 14, 14, 14, 16, 14, 16, 14, 14]
     centered_headers = [h.center(w) for h, w in zip(headers, col_widths)]
     w.writerow(centered_headers)
 
@@ -4192,10 +4192,12 @@ def invoicing_export_csv():
         paid = _safe_float(m.get("amount_paid", 0))
         subtotal = _safe_float(m.get("subtotal", 0))
         tax = _safe_float(m.get("tax_amount", 0))
+        linked_projects = _invoice_linked_projects(inv)
+        projects_str = ", ".join(sorted(linked_projects)) if linked_projects else "—"
         row = [
             str(m.get("invoice_number","")).ljust(col_widths[0]),
             str(m.get("client_name","")).ljust(col_widths[1]),
-            str(m.get("project_number","")).ljust(col_widths[2]),
+            str(projects_str).ljust(col_widths[2]),
             fmt_csv_date(m.get("invoice_date","")).center(col_widths[3]),
             fmt_csv_date(m.get("due_date","")).center(col_widths[4]),
             str(m.get("status","")).center(col_widths[5]),
@@ -4262,8 +4264,10 @@ def invoicing_export_excel():
         m = inv.get("meta", {})
         total = _safe_float(m.get("total", 0))
         paid  = _safe_float(m.get("amount_paid", 0))
+        linked_projects = _invoice_linked_projects(inv)
+        projects_str = ", ".join(sorted(linked_projects)) if linked_projects else "—"
         row = [m.get("invoice_number",""), m.get("client_name",""),
-               m.get("project_number",""), fmt_inv_excel_date(m.get("invoice_date","")), fmt_inv_excel_date(m.get("due_date","")),
+               projects_str, fmt_inv_excel_date(m.get("invoice_date","")), fmt_inv_excel_date(m.get("due_date","")),
                m.get("status",""), _safe_float(m.get("subtotal",0)),
                _safe_float(m.get("tax_amount",0)), total, paid, total - paid]
         for ci, val in enumerate(row, 1):
@@ -4275,7 +4279,7 @@ def invoicing_export_excel():
             cell.alignment = ctr
 
     # Increase column widths
-    col_widths = [16, 25, 16, 14, 14, 14, 16, 14, 16, 14, 14]
+    col_widths = [16, 25, 32, 14, 14, 14, 16, 14, 16, 14, 14]
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
     ws.freeze_panes = f"A{header_row + 1}"
@@ -4338,10 +4342,12 @@ def invoicing_export_pdf():
         paid  = _safe_float(m.get("amount_paid", 0))
         subtotal = _safe_float(m.get("subtotal", 0))
         tax = _safe_float(m.get("tax_amount", 0))
+        linked_projects = _invoice_linked_projects(inv)
+        projects_str = "\n".join(sorted(linked_projects)) if linked_projects else "—"
         data.append([
             Paragraph(m.get("invoice_number","—"), cell_style),
             Paragraph(m.get("client_name","—") or "—", cell_style),
-            Paragraph(m.get("project_number","") or "—", cell_style),
+            Paragraph(projects_str, cell_style),
             Paragraph(fmt_inv_date(m.get("invoice_date","")), cell_style),
             Paragraph(fmt_inv_date(m.get("due_date","")), cell_style),
             Paragraph(f"${subtotal:,.0f}", cell_style),
@@ -4351,7 +4357,7 @@ def invoicing_export_pdf():
             Paragraph(f"${total-paid:,.0f}", cell_style),
             Paragraph(m.get("status","—"), cell_style),
         ])
-    cw = [1.0*inch, 1.6*inch, 1.1*inch, 0.9*inch, 0.9*inch, 0.8*inch, 0.75*inch, 0.8*inch, 0.8*inch, 0.8*inch, 0.9*inch]
+    cw = [1.0*inch, 1.5*inch, 1.35*inch, 0.85*inch, 0.85*inch, 0.75*inch, 0.7*inch, 0.75*inch, 0.75*inch, 0.75*inch, 0.85*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
