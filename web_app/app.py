@@ -1183,6 +1183,7 @@ def quotes_export_pdf():
 
     hdrs = ["Quote Number","Client","Project / Scope","Salesperson","Date","Status","Total"]
     data = [hdrs]
+    cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
     for q in items:
         date_str = q.get("date","—")
         if date_str and date_str != "—" and len(str(date_str)) >= 10:
@@ -1190,13 +1191,13 @@ def quotes_export_pdf():
             if len(parts) == 3:
                 date_str = f"{parts[1]}-{parts[2]}-{parts[0]}"
         data.append([
-            q.get("job_number","—"),
-            q.get("client_name","—"),
-            q.get("project_name") or "—",
-            q.get("salesperson","—"),
-            date_str,
-            q.get("status","—"),
-            f"${_safe_float(q.get('total',0)):,.2f}",
+            Paragraph(q.get("job_number","—"), cell_style),
+            Paragraph(q.get("client_name","—"), cell_style),
+            Paragraph(q.get("project_name") or "—", cell_style),
+            Paragraph(q.get("salesperson","—"), cell_style),
+            Paragraph(date_str, cell_style),
+            Paragraph(q.get("status","—"), cell_style),
+            Paragraph(f"${_safe_float(q.get('total',0)):,.2f}", cell_style),
         ])
 
     cw = [1.2*inch, 2.0*inch, 3.0*inch, 1.8*inch, 1.1*inch, 1.2*inch, 1.1*inch]
@@ -2525,18 +2526,21 @@ def projects_export_pdf():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
+    styles = getSampleStyleSheet()
+    cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
+
     for p in items:
         cv   = _safe_float(p.get("contract_value", 0))
         paid = _safe_float(p.get("amount_paid", 0))
         data.append([
-            p.get("project_number","—"),
-            p.get("project_name","—") or "—",
-            p.get("client_name","—") or "—",
-            p.get("status","—"),
-            fmt_date_pdf(p.get("start_date","")),
-            f"${cv:,.0f}",
-            f"${paid:,.0f}",
-            f"${cv-paid:,.0f}",
+            Paragraph(p.get("project_number","—"), cell_style),
+            Paragraph(p.get("project_name","—") or "—", cell_style),
+            Paragraph(p.get("client_name","—") or "—", cell_style),
+            Paragraph(p.get("status","—"), cell_style),
+            Paragraph(fmt_date_pdf(p.get("start_date","")), cell_style),
+            Paragraph(f"${cv:,.0f}", cell_style),
+            Paragraph(f"${paid:,.0f}", cell_style),
+            Paragraph(f"${cv-paid:,.0f}", cell_style),
         ])
     cw = [1.3*inch, 2.5*inch, 2.0*inch, 1.2*inch, 1.2*inch, 1.3*inch, 1.3*inch, 1.3*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
@@ -4323,20 +4327,21 @@ def invoicing_export_pdf():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
+    cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
     for inv in items:
         m = inv.get("meta", {})
         total = _safe_float(m.get("total", 0))
         paid  = _safe_float(m.get("amount_paid", 0))
         data.append([
-            m.get("invoice_number","—"),
-            m.get("client_name","—") or "—",
-            m.get("project_number","") or "—",
-            fmt_inv_date(m.get("invoice_date","")),
-            fmt_inv_date(m.get("due_date","")),
-            m.get("status","—"),
-            f"${total:,.0f}",
-            f"${paid:,.0f}",
-            f"${total-paid:,.0f}",
+            Paragraph(m.get("invoice_number","—"), cell_style),
+            Paragraph(m.get("client_name","—") or "—", cell_style),
+            Paragraph(m.get("project_number","") or "—", cell_style),
+            Paragraph(fmt_inv_date(m.get("invoice_date","")), cell_style),
+            Paragraph(fmt_inv_date(m.get("due_date","")), cell_style),
+            Paragraph(m.get("status","—"), cell_style),
+            Paragraph(f"${total:,.0f}", cell_style),
+            Paragraph(f"${paid:,.0f}", cell_style),
+            Paragraph(f"${total-paid:,.0f}", cell_style),
         ])
     cw = [1.3*inch, 2.2*inch, 1.5*inch, 1.2*inch, 1.2*inch, 1.1*inch, 1.1*inch, 1.1*inch, 1.2*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
