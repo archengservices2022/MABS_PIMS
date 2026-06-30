@@ -984,6 +984,10 @@ def quotes_export():
 
     output = io.StringIO()
     w = csv.writer(output)
+    co = company_info()
+
+    w.writerow([f"{co.get('name','')} - Quotes Report"])
+    w.writerow([])
 
     def fmt_csv_date(d):
         if not d or d == "—":
