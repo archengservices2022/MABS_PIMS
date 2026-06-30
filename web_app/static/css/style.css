@@ -685,11 +685,13 @@ body {
 #tab-all-invoices .table td:nth-child(3) { /* project column — increased width */
   min-width: 180px;
 }
-#tab-all-invoices .table td:nth-child(6) { /* due date column — compact width */
+#tab-all-invoices .table td:nth-child(6) { /* due date column — very compact */
   white-space: nowrap !important;
-  width: 85px;
-  max-width: 85px;
+  width: 70px;
+  max-width: 70px;
+  padding: 12px 4px !important;
 }
-#tab-all-invoices .table td:nth-child(7) { /* total column — decreased width */
-  max-width: 110px;
+#tab-all-invoices .table td:nth-child(7) { /* total column — very compact */
+  max-width: 80px;
+  padding: 12px 4px !important;
 }
