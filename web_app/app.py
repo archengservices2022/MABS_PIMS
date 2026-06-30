@@ -4279,7 +4279,7 @@ def invoicing_export_excel():
             cell.alignment = ctr
 
     # Increase column widths
-    col_widths = [16, 25, 32, 14, 14, 14, 16, 14, 16, 14, 14]
+    col_widths = [22, 25, 38, 14, 14, 14, 16, 14, 16, 14, 14]
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
     ws.freeze_panes = f"A{header_row + 1}"
