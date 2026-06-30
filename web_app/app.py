@@ -1433,19 +1433,9 @@ def projects():
     p_total_cv    = sum(_safe_float(p.get("contract_value", 0)) for p in items)
     p_active_cv   = sum(_safe_float(p.get("contract_value", 0)) for p in items if p.get("status", "") in _ACTIVE_STATUSES)
 
-    # Calculate collected amount from filtered projects' invoices
-    p_total_paid = 0.0
-    for p in items:
-        proj_num = p.get("project_number", "")
-        if proj_num:
-            for iid, idata in (raw_inv.items() if isinstance(raw_inv, dict) else []):
-                if isinstance(idata, dict) and proj_num in _invoice_linked_projects(idata):
-                    inv_meta = idata.get("meta", {}) or {}
-                    p_total_paid += _safe_float(inv_meta.get("amount_paid", 0))
-                    # Also include tax payments
-                    tax_payments = idata.get("tax_payments", [])
-                    if isinstance(tax_payments, list):
-                        p_total_paid += sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+    # Calculate collected amount from projects' amount_paid (already synced from invoices)
+    # Using project.amount_paid avoids double-counting in multi-project invoices
+    p_total_paid = sum(_safe_float(p.get("amount_paid", 0)) for p in items)
 
     p_outstanding = p_total_cv - p_total_paid
 
