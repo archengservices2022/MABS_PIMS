@@ -2518,7 +2518,7 @@ def projects_export_pdf():
                               alignment=1)  # CENTER
     elems.append(Paragraph(f"{co.get('name','')} — Projects Report", title_s))
     elems.append(Spacer(1, 0.2*inch))
-    hdrs = ["Project #", "Name", "Client", "Start Date", "End Date", "Status", "Contract Value", "Paid"]
+    hdrs = ["Project #", "Name", "Client", "Start Date", "End Date", "Contract Value", "Paid", "Outstanding", "Status"]
     data = [hdrs]
     def fmt_date_pdf(d):
         if not d or d == "—":
@@ -2539,11 +2539,12 @@ def projects_export_pdf():
             Paragraph(p.get("client_name","—") or "—", cell_style),
             Paragraph(fmt_date_pdf(p.get("start_date","")), cell_style),
             Paragraph(fmt_date_pdf(p.get("end_date","")), cell_style),
-            Paragraph(p.get("status","—"), cell_style),
             Paragraph(f"${cv:,.0f}", cell_style),
             Paragraph(f"${paid:,.0f}", cell_style),
+            Paragraph(f"${cv-paid:,.0f}", cell_style),
+            Paragraph(p.get("status","—"), cell_style),
         ])
-    cw = [1.2*inch, 2.2*inch, 1.8*inch, 1.1*inch, 1.1*inch, 1.1*inch, 1.2*inch, 1.2*inch]
+    cw = [1.2*inch, 2.2*inch, 1.8*inch, 1.1*inch, 1.1*inch, 1.2*inch, 1.2*inch, 1.2*inch, 1.1*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
