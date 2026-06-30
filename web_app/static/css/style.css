@@ -666,7 +666,9 @@ body {
 /* Prevent wrapping for date columns in tables */
 .inc-row td:nth-child(1),  /* income table date column */
 .exp-row td:nth-child(1),  /* expense table date column */
-#projectsTable td:nth-child(5) { /* projects table start date column */
+#projectsTable td:nth-child(5),  /* projects table start date column */
+.quote-row td:nth-child(1),  /* quotes table quote number column */
+.quote-row td:nth-child(5) { /* quotes table date column */
   white-space: nowrap !important;
-  min-width: 110px;
+  min-width: fit-content;
 }
