@@ -678,3 +678,14 @@ body {
 #tab-all-invoices .table td:nth-child(6) { /* due date column */
   white-space: nowrap !important;
 }
+
+/* Expenses table — adjust column widths */
+#expenseTable .expense-row td:nth-child(1) { /* date column */
+  white-space: nowrap !important;
+}
+#expenseTable .expense-row td:nth-child(3) { /* expense name column — decreased width */
+  max-width: 200px;
+}
+#expenseTable .expense-row td:nth-child(5) { /* vendor column — increased width */
+  min-width: 120px;
+}
