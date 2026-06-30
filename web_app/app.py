@@ -984,6 +984,7 @@ def quotes_export():
     import csv
     output = io.StringIO()
     w = csv.writer(output)
+    co = company_info()
 
     def fmt_csv_date(d):
         if not d or d == "—":
@@ -991,6 +992,10 @@ def quotes_export():
         d = str(d)[:10]
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    # Add company header and blank row
+    w.writerow([f"{co.get('name','')} - Quotes Report"])
+    w.writerow([])
 
     headers = ["Quote Number", "Client", "Project / Scope", "Salesperson", "Date", "Valid Until", "Status", "Subtotal", "Tax", "Total", "Notes"]
     w.writerow(headers)
@@ -1016,7 +1021,7 @@ def quotes_export():
     output.seek(0)
     from flask import Response
     fname = f"quotes_{datetime.now().strftime('%Y%m%d')}.csv"
-    return Response(output.getvalue(), mimetype="text/csv",
+    return Response(output.getvalue(), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
 @app.route("/quotes/export/excel")
@@ -2366,6 +2371,7 @@ def projects_export_csv():
     items = _filter_projects_export(items)
     output = io.StringIO()
     w = csv.writer(output)
+    co = company_info()
 
     def fmt_csv_date(d):
         if not d or d == "—":
@@ -2373,6 +2379,10 @@ def projects_export_csv():
         d = str(d)[:10]
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    # Add company header and blank row
+    w.writerow([f"{co.get('name','')} - Projects Report"])
+    w.writerow([])
 
     headers = ["Project #", "Name", "Client", "Start Date", "End Date", "Contract Value", "Amount Paid", "Outstanding", "Status"]
     w.writerow(headers)
@@ -2396,7 +2406,7 @@ def projects_export_csv():
     output.seek(0)
     from flask import Response
     fname = f"projects_{datetime.now().strftime('%Y%m%d')}.csv"
-    return Response(output.getvalue(), mimetype="text/csv",
+    return Response(output.getvalue(), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
 @app.route("/projects/export/excel")
@@ -4154,6 +4164,7 @@ def invoicing_export_csv():
     items = _filter_invoices_export(items)
     output = io.StringIO()
     w = csv.writer(output)
+    co = company_info()
 
     def fmt_csv_date(d):
         if not d or d == "—":
@@ -4161,6 +4172,10 @@ def invoicing_export_csv():
         d = str(d)[:10]
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    # Add company header and blank row
+    w.writerow([f"{co.get('name','')} - Invoices Report"])
+    w.writerow([])
 
     headers = ["Invoice #", "Client", "Project", "Date", "Due Date", "Status", "Subtotal", "Tax", "Total", "Amount Paid", "Outstanding"]
     w.writerow(headers)
@@ -4191,7 +4206,7 @@ def invoicing_export_csv():
     output.seek(0)
     from flask import Response
     fname = f"invoices_{datetime.now().strftime('%Y%m%d')}.csv"
-    return Response(output.getvalue(), mimetype="text/csv",
+    return Response(output.getvalue(), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
 @app.route("/invoicing/export/excel")
