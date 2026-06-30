@@ -8244,7 +8244,7 @@ def _parse_service_types(form) -> list:
     """Return service_types list, substituting 'Other' with 'Other: {specify}' when filled."""
     types = form.getlist("service_types[]")
     if not types:
-        return None
+        return []  # Allow projects without services (return empty list, not None)
     specify = form.get("other_specify", "").strip()
     if "Other" in types and specify:
         idx = types.index("Other")
