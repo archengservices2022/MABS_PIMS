@@ -2387,7 +2387,7 @@ def projects_export_csv():
     w.writerow([])
 
     headers = ["Project #", "Name", "Client", "Start Date", "End Date", "Contract Value", "Amount Paid", "Outstanding", "Status"]
-    col_widths = [16, 28, 26, 16, 16, 18, 18, 18, 16]
+    col_widths = [22, 28, 26, 16, 16, 18, 18, 18, 16]
     centered_headers = [h.center(w) for h, w in zip(headers, col_widths)]
     w.writerow(centered_headers)
 
@@ -2473,7 +2473,7 @@ def projects_export_excel():
             cell.alignment = ctr
 
     # Increase column widths
-    col_widths = [16, 28, 26, 16, 16, 18, 18, 18, 16]
+    col_widths = [22, 28, 26, 16, 16, 18, 18, 18, 16]
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
     ws.freeze_panes = f"A{header_row + 1}"
