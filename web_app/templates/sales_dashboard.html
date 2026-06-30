@@ -205,7 +205,7 @@
           <td><span class="fw-bold text-teal">{{ q.get('job_number','—') }}</span></td>
           <td>{{ q.get('client_name','—') }}</td>
           <td class="text-muted">{{ (q.get('project_name','') or '—')[:35] }}</td>
-          <td class="text-muted">{{ q.get('date','—') }}</td>
+          <td class="text-muted">{{ q.get('date','—') | format_date }}</td>
           <td>
             {% if q.get('valid_until') %}
               {% if q.get('valid_until') < today_str and q.get('status') not in ('Converted','Invoiced','Approved','Rejected','Cancelled','Expired') %}

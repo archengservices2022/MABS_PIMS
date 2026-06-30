@@ -124,7 +124,7 @@
             <div style="color:rgba(255,255,255,.9); font-weight:700; font-size:1rem;">{{ meta.get('invoice_number','') }}</div>
             <div style="color:rgba(255,255,255,.7); font-size:0.78rem; margin-top:4px;">
               Date: {{ meta.get('invoice_date','—') }}<br>
-              Due: {{ meta.get('due_date','—') }}{% if meta.get('net_terms') %} <span style="opacity:.7;">(Net {{ meta.get('net_terms') }})</span>{% endif %}
+              Due: {{ meta.get('due_date','—') | format_date }}{% if meta.get('net_terms') %} <span style="opacity:.7;">(Net {{ meta.get('net_terms') }})</span>{% endif %}
             </div>
           </div>
         </div>
@@ -368,7 +368,7 @@
                 <div style="font-size:0.8rem; color:#6B7280;">{{ payment.get('project_name') }}</div>
                 {% endif %}
               </td>
-              <td style="padding:10px 12px; color:#475569;">{{ payment.get('date','—') }}</td>
+              <td style="padding:10px 12px; color:#475569;">{{ payment.get('date','—') | format_date }}</td>
               <td style="padding:10px 12px; text-align:right; font-weight:600; color:#15803D;">${{ "{:,.2f}".format(payment.get('amount',0)|float) }}</td>
               <td style="padding:10px 12px; color:#475569;">{{ payment.get('stage_name', 'Invoice Payment') }}</td>
               <td style="padding:10px 12px; color:#475569;">{{ payment.get('method','—') }}</td>
@@ -391,7 +391,7 @@
             {% for payment in enriched_tax_payments %}
             <tr style="border-bottom:1px solid #F1F5F9; background:#F0FFFE;">
               <td style="padding:10px 12px; color:#0D7C7C; font-weight:600;">Tax</td>
-              <td style="padding:10px 12px; color:#475569;">{{ payment.get('date','—') }}</td>
+              <td style="padding:10px 12px; color:#475569;">{{ payment.get('date','—') | format_date }}</td>
               <td style="padding:10px 12px; text-align:right; font-weight:600; color:#0D7C7C;">${{ "{:,.2f}".format(payment.get('amount',0)|float) }}</td>
               <td style="padding:10px 12px; color:#0D7C7C; font-weight:500;">Tax Payment</td>
               <td style="padding:10px 12px; color:#475569;">{{ payment.get('method','—') }}</td>

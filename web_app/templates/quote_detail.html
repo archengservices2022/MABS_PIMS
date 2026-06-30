@@ -97,7 +97,7 @@
         </div>
         <div class="col-sm-4">
           <div class="info-label">Date</div>
-          <div class="info-value">{{ quote.get('date','—') }}</div>
+          <div class="info-value">{{ quote.get('date','—') | format_date }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Valid Until</div>

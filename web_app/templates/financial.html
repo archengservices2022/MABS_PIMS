@@ -532,12 +532,12 @@ a[href*="filter_expense"]:hover {
         <tbody id="incomeTableBody">
           {% for r in rev_list %}
           <tr class="inc-row"
-              data-date="{{ r.get('date','') }}"
+              data-date="{{ r.get('date','') | format_date }}"
               data-year="{{ r.get('date','')[:4] }}"
               data-status="{{ r.get('status','') }}"
               data-amount="{{ ((r.get('amount_paid',0)|float) + (r.get('tax_paid',0)|float))|float }}"
               data-search="{{ r.get('client_name','')|lower }} {{ r.get('invoice_number','')|lower }}">
-            <td class="text-muted small">{{ r.get('date','—') }}</td>
+            <td class="text-muted small">{{ r.get('date','—') | format_date }}</td>
             <td>
               {% if r.get('invoice_id') %}
               <a href="{{ url_for('invoice_detail', invoice_id=r.get('invoice_id','')) }}"
@@ -708,8 +708,8 @@ a[href*="filter_expense"]:hover {
             data-search="{{ (exp.get('expense_name','') or exp.get('description',''))|lower }} {{ exp.get('vendor','')|lower }} {{ exp.get('category','')|lower }}"
             data-type="{{ exp.get('expense_type','') }}"
             data-category="{{ exp.get('category','') }}"
-            data-date="{{ exp.get('date','') }}">
-            <td class="text-muted small">{{ exp.get('date','—') }}</td>
+            data-date="{{ exp.get('date','') | format_date }}">
+            <td class="text-muted small">{{ exp.get('date','—') | format_date }}</td>
             <td class="small text-muted">{{ exp.get('expense_type','—') }}</td>
             <td class="fw-medium">{{ exp.get('expense_name','—') or exp.get('description','—') }}</td>
             <td class="small text-muted">{{ exp.get('category','—') }}</td>

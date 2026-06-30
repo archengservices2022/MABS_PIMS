@@ -175,7 +175,7 @@
           <tbody>
             {% for q in quotes %}
             <tr class="quote-row"
-                data-date="{{ q.get('date','') }}"
+                data-date="{{ q.get('date','') | format_date }}"
                 data-status="{{ q.get('status','Not Started') }}"
                 data-total="{{ q.get('total',0)|float }}"
                 data-search="{{ q.get('client_name','')|lower }} {{ q.get('job_number','')|lower }} {{ q.get('project_name','')|lower }}"
@@ -185,7 +185,7 @@
               <td>{{ q.get('client_name','—') }}</td>
               <td class="text-muted">{{ (q.get('project_name','—') or '—')[:40] }}</td>
               <td>{{ q.get('salesperson','—') }}</td>
-              <td>{{ q.get('date','—') }}</td>
+              <td>{{ q.get('date','—') | format_date }}</td>
               <td>
                 <span class="badge status-{{ q.get('status','Not Started')|lower|replace(' ','-') }}">
                   {{ q.get('status','Not Started') }}

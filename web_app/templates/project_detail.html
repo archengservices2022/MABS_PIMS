@@ -102,7 +102,7 @@
           <h6 class="section-heading">Project Info</h6>
           <div class="row g-2">
             <div class="col-sm-4"><div class="info-label">Client</div><div class="info-value">{{ project.get('client_name') or project.get('company','—') }}</div></div>
-            <div class="col-sm-4"><div class="info-label">Start Date</div><div class="info-value">{{ project.get('start_date','—') }}</div></div>
+            <div class="col-sm-4"><div class="info-label">Start Date</div><div class="info-value">{{ project.get('start_date','—') | format_date }}</div></div>
             <div class="col-sm-4"><div class="info-label">End Date</div><div class="info-value">{{ project.get('end_date','—') or '—' }}</div></div>
             <div class="col-sm-4"><div class="info-label">Sales Person</div><div class="info-value">{{ project.get('sales') or project.get('assigned_to','—') or '—' }}</div></div>
             {% set svcs = project.get('service_types') or [] %}
@@ -131,7 +131,7 @@
             <div class="col-sm-4"><div class="info-label">PO / WO Number</div><div class="info-value">{{ project.get('po_wo_number') }}</div></div>
             {% endif %}
             {% if project.get('date_received') %}
-            <div class="col-sm-4"><div class="info-label">Date Received</div><div class="info-value">{{ project.get('date_received') }}</div></div>
+            <div class="col-sm-4"><div class="info-label">Date Received</div><div class="info-value">{{ project.get('date_received') | format_date }}</div></div>
             {% endif %}
             {% if project.get('plant') or project.get('plant_location') %}
             <div class="col-sm-4"><div class="info-label">Plant (State)</div><div class="info-value">{{ project.get('plant') or project.get('plant_location') }}</div></div>
@@ -483,7 +483,7 @@
               <tbody>
                 {% for exp in project_expenses %}
                 <tr>
-                  <td>{{ exp.get('date','—') }}</td>
+                  <td>{{ exp.get('date','—') | format_date }}</td>
                   <td>{{ exp.get('description','—') }}</td>
                   <td><span class="badge bg-light text-dark border">{{ exp.get('category','—') }}</span></td>
                   <td class="text-end text-danger">${{ "{:,.0f}".format(exp.get('amount',0)|float) }}</td>
