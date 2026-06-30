@@ -661,3 +661,12 @@ body {
   body { background: #fff !important; font-size: 12px; }
   .text-teal { color: #0F766E !important; }
 }
+
+/* ══ DATE FORMATTING — Keep dates on single line ════════════════════════════ */
+/* Prevent wrapping for date columns in tables */
+.inc-row td:nth-child(1),  /* income table date column */
+.exp-row td:nth-child(1),  /* expense table date column */
+#projectsTable td:nth-child(5) { /* projects table start date column */
+  white-space: nowrap !important;
+  min-width: 110px;
+}
