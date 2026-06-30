@@ -679,6 +679,9 @@ body {
   white-space: nowrap !important;
   min-width: fit-content;
 }
+#tab-all-invoices .table td:nth-child(2) { /* client column — increased width */
+  min-width: 180px;
+}
 #tab-all-invoices .table td:nth-child(3) { /* project column — increased width */
   min-width: 180px;
 }
@@ -686,4 +689,7 @@ body {
   white-space: nowrap !important;
   width: 85px;
   max-width: 85px;
+}
+#tab-all-invoices .table td:nth-child(7) { /* total column — decreased width */
+  max-width: 110px;
 }
