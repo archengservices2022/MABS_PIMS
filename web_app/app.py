@@ -4713,6 +4713,230 @@ def payroll():
         employee_profiles=employee_profiles,
         salaries=salaries)
 
+# ── Payroll Export Routes ─────────────────────────────────────────────────────
+@app.route("/payroll/export/csv")
+@login_required
+def payroll_export_csv():
+    import csv
+    import io
+    raw_sal = fb_get("/balance_sheet_salary") or {}
+    salaries = []
+    for sid, sdata in (raw_sal.items() if isinstance(raw_sal, dict) else []):
+        if isinstance(sdata, dict):
+            sdata["firebase_id"] = sid
+            salaries.append(sdata)
+
+    # Apply filters
+    region_filter = request.args.get("region", "")
+    date_from = request.args.get("from", "")
+    date_to = request.args.get("to", "")
+
+    if region_filter:
+        salaries = [s for s in salaries if s.get("region") == region_filter]
+    if date_from:
+        salaries = [s for s in salaries if (s.get("date") or "") >= date_from]
+    if date_to:
+        salaries = [s for s in salaries if (s.get("date") or "") <= date_to]
+
+    salaries.sort(key=lambda s: s.get("date", ""), reverse=False)
+
+    output = io.StringIO()
+    w = csv.writer(output)
+    co = company_info()
+
+    # Add company header and blank row
+    w.writerow([f"{co.get('name','')} - Payroll Report"])
+    w.writerow([])
+
+    headers = ["Employee", "Date", "Amount", "Region", "Notes"]
+    w.writerow(headers)
+
+    for sal in salaries:
+        w.writerow([
+            sal.get("employee_name", ""),
+            sal.get("date", ""),
+            f"{_safe_float(sal.get('amount', 0)):.2f}",
+            sal.get("region", ""),
+            sal.get("notes", "")
+        ])
+
+    from flask import Response
+    fname = f"payroll_{datetime.now().strftime('%Y%m%d')}.csv"
+    return Response(output.getvalue(), mimetype="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f"attachment;filename={fname}"})
+
+@app.route("/payroll/export/excel")
+@login_required
+def payroll_export_excel():
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    import io as _io
+
+    raw_sal = fb_get("/balance_sheet_salary") or {}
+    salaries = []
+    for sid, sdata in (raw_sal.items() if isinstance(raw_sal, dict) else []):
+        if isinstance(sdata, dict):
+            sdata["firebase_id"] = sid
+            salaries.append(sdata)
+
+    # Apply filters
+    region_filter = request.args.get("region", "")
+    date_from = request.args.get("from", "")
+    date_to = request.args.get("to", "")
+
+    if region_filter:
+        salaries = [s for s in salaries if s.get("region") == region_filter]
+    if date_from:
+        salaries = [s for s in salaries if (s.get("date") or "") >= date_from]
+    if date_to:
+        salaries = [s for s in salaries if (s.get("date") or "") <= date_to]
+
+    salaries.sort(key=lambda s: s.get("date", ""), reverse=False)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Payroll"
+
+    hdr_fill = PatternFill(start_color="FF0F172A", end_color="FF0F172A", fill_type="solid")
+    hdr_font = Font(color="FFFFFFFF", bold=True, size=11)
+    title_font = Font(bold=True, size=13, color="FF0F766E")
+    alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
+    ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    co = company_info()
+    ws.merge_cells('A1:E1')
+    title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} - Payroll Report")
+    title_cell.font = title_font
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 20
+
+    headers = ["Employee", "Date", "Amount", "Region", "Notes"]
+    header_row = 2
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=header_row, column=col, value=h)
+        cell.fill = hdr_fill
+        cell.font = hdr_font
+        cell.alignment = ctr
+
+    for ri, sal in enumerate(salaries, header_row + 1):
+        row = [sal.get("employee_name", ""), sal.get("date", ""),
+               _safe_float(sal.get("amount", 0)), sal.get("region", ""), sal.get("notes", "")]
+        for ci, val in enumerate(row, 1):
+            cell = ws.cell(row=ri, column=ci, value=val)
+            if ri % 2 == 0:
+                cell.fill = alt_fill
+            if ci == 3:
+                cell.number_format = '"$"#,##0.00'
+            cell.alignment = ctr
+
+    col_widths = [25, 14, 14, 18, 30]
+    for ci, w in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(ci)].width = w
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    from flask import Response
+    fname = f"payroll_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    return Response(buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment;filename={fname}"})
+
+@app.route("/payroll/export/pdf")
+@login_required
+def payroll_export_pdf():
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+    except ImportError:
+        flash("reportlab not installed.", "danger")
+        return redirect(url_for("payroll"))
+    import io as _io
+
+    raw_sal = fb_get("/balance_sheet_salary") or {}
+    salaries = []
+    for sid, sdata in (raw_sal.items() if isinstance(raw_sal, dict) else []):
+        if isinstance(sdata, dict):
+            sdata["firebase_id"] = sid
+            salaries.append(sdata)
+
+    # Apply filters
+    region_filter = request.args.get("region", "")
+    date_from = request.args.get("from", "")
+    date_to = request.args.get("to", "")
+
+    if region_filter:
+        salaries = [s for s in salaries if s.get("region") == region_filter]
+    if date_from:
+        salaries = [s for s in salaries if (s.get("date") or "") >= date_from]
+    if date_to:
+        salaries = [s for s in salaries if (s.get("date") or "") <= date_to]
+
+    salaries.sort(key=lambda s: s.get("date", ""), reverse=False)
+
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=0.8*inch, rightMargin=0.8*inch,
+                            topMargin=0.5*inch, bottomMargin=0.5*inch)
+    styles = getSampleStyleSheet()
+    co = company_info()
+    elems = []
+
+    title_s = ParagraphStyle("T", parent=styles["Normal"], fontSize=15,
+                              fontName="Helvetica-Bold",
+                              textColor=colors.HexColor("#0F766E"), spaceAfter=3,
+                              alignment=1)
+    elems.append(Paragraph(f"{co.get('name','')} - Payroll Report", title_s))
+    from reportlab.platypus import Spacer
+    elems.append(Spacer(1, 0.2*inch))
+
+    hdrs = ["Employee", "Date", "Amount", "Region", "Notes"]
+    data = [hdrs]
+
+    cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
+    for sal in salaries:
+        data.append([
+            Paragraph(sal.get("employee_name", "—"), cell_style),
+            Paragraph(sal.get("date", "—"), cell_style),
+            Paragraph(f"${_safe_float(sal.get('amount', 0)):,.2f}", cell_style),
+            Paragraph(sal.get("region", "—"), cell_style),
+            Paragraph(sal.get("notes", "—"), cell_style),
+        ])
+
+    cw = [2.0*inch, 1.2*inch, 1.2*inch, 1.3*inch, 1.8*inch]
+    tbl = Table(data, colWidths=cw, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
+        ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+        ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0,0), (-1,0), 9),
+        ("ALIGN",         (0,0), (-1,0), "CENTER"),
+        ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
+        ("TOPPADDING",    (0,0), (-1,0), 8),
+        ("BOTTOMPADDING", (0,0), (-1,0), 8),
+        ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
+        ("FONTSIZE",      (0,1), (-1,-1), 8),
+        ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")]),
+        ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
+        ("TOPPADDING",    (0,1), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,1), (-1,-1), 5),
+        ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
+    ]))
+    elems.append(tbl)
+    doc.build(elems)
+    buf.seek(0)
+
+    from flask import Response
+    fname = f"payroll_{datetime.now().strftime('%Y%m%d')}.pdf"
+    return Response(buf.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": f"attachment;filename={fname}"})
+
 # ── Employee Profile API ──────────────────────────────────────────────────────
 @app.route("/api/employee-profiles", methods=["GET"])
 @login_required
