@@ -983,13 +983,26 @@ def quotes_export():
 
     output = io.StringIO()
     w = csv.writer(output)
-    w.writerow(["Quote #","Client","Project/Scope","Salesperson","Date","Valid Until",
+    co = company_info()
+    w.writerow([f"{co.get('name','')} — Quotes Report"])
+    w.writerow([])
+
+    def fmt_csv_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    w.writerow(["Quote Number","Client","Project / Scope","Salesperson","Date","Valid Until",
                 "Status","Subtotal","Tax","Total","Notes"])
     for q in items:
+        total = _safe_float(q.get("total", 0))
+        subtotal = _safe_float(q.get("subtotal", 0))
+        tax = total - subtotal
         w.writerow([q.get("job_number",""), q.get("client_name",""), q.get("project_name",""),
-                    q.get("salesperson",""), q.get("date",""), q.get("valid_until",""),
-                    q.get("status",""), q.get("subtotal","0"), q.get("tax_amount","0"),
-                    q.get("total","0"), q.get("notes","")])
+                    q.get("salesperson",""), fmt_csv_date(q.get("date","")), fmt_csv_date(q.get("valid_until","")),
+                    q.get("status",""), f"{subtotal:.2f}", f"{tax:.2f}", f"{total:.2f}", q.get("notes","")])
     output.seek(0)
     from flask import Response
     fname = f"quotes_{datetime.now().strftime('%Y%m%d')}.csv"
@@ -1085,7 +1098,7 @@ def quotes_export_excel():
                 cell.alignment = ctr
 
     # Increase column widths
-    col_widths = [14, 25, 35, 20, 14, 14, 12, 14, 12, 14, 30]
+    col_widths = [18, 25, 35, 20, 14, 14, 12, 14, 12, 14, 30]
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
     ws.freeze_panes = f"A{header_row + 1}"
@@ -1200,52 +1213,6 @@ def quotes_export_pdf():
     from flask import Response
     fname = f"quotes_{datetime.now().strftime('%Y%m%d')}.pdf"
     return Response(buf.getvalue(), mimetype="application/pdf",
-                    headers={"Content-Disposition": f"attachment;filename={fname}"})
-
-@app.route("/quotes/export/csv")
-@role_required("quotes")
-def quotes_export_csv():
-    import csv
-    import io
-    raw = fb_get("/job_forms") or {}
-    items = []
-    for fid, fdata in (raw.items() if isinstance(raw, dict) else []):
-        if fdata and isinstance(fdata, dict):
-            items.append(fdata)
-    items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-    if request.args.get("status"):
-        items = [i for i in items if i.get("status","") == request.args["status"]]
-    if request.args.get("from"):
-        items = [i for i in items if (i.get("date") or "") >= request.args["from"]]
-    if request.args.get("to"):
-        items = [i for i in items if (i.get("date") or "") <= request.args["to"]]
-
-    output = io.StringIO()
-    w = csv.writer(output)
-    co = company_info()
-    w.writerow([f"{co.get('name','')} — Quotes Report"])
-    w.writerow([])
-
-    def fmt_csv_date(d):
-        if not d or d == "—":
-            return "—"
-        d = str(d)[:10]
-        parts = d.split("-")
-        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
-
-    w.writerow(["Quote Number","Client","Project / Scope","Salesperson","Date","Valid Until",
-                "Status","Subtotal","Tax","Total","Notes"])
-    for q in items:
-        total = _safe_float(q.get("total", 0))
-        subtotal = _safe_float(q.get("subtotal", 0))
-        tax = total - subtotal
-        w.writerow([q.get("job_number",""), q.get("client_name",""), q.get("project_name",""),
-                    q.get("salesperson",""), fmt_csv_date(q.get("date","")), fmt_csv_date(q.get("valid_until","")),
-                    q.get("status",""), f"{subtotal:.2f}", f"{tax:.2f}", f"{total:.2f}", q.get("notes","")])
-    output.seek(0)
-    from flask import Response
-    fname = f"quotes_{datetime.now().strftime('%Y%m%d')}.csv"
-    return Response(output.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
 @app.route("/sales-people/new", methods=["POST"])
