@@ -92,7 +92,7 @@
   <!-- ══ TAB 1 — ALL QUOTES ══════════════════════════════════════════════════ -->
   <div class="tab-pane fade" id="tab-all">
 
-    <form class="mb-3" method="GET" id="listFilterForm" onsubmit="return false;">
+    <form class="mb-3" method="GET" id="listFilterForm">
       <!-- Row 1: text search + status + year + month -->
       <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
         <input type="text" name="q" class="form-control form-control-sm" style="max-width:200px;"
@@ -125,7 +125,7 @@
                 onclick="setListRange('year')">This Year</button>
         <button type="button" class="btn btn-xs btn-outline-secondary"
                 onclick="setListRange('last30')">Last 30 Days</button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="updateQuoteSummaryCards()">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">
           <i class="bi bi-search me-1"></i>Apply
         </button>
         {% if search or status_filter or year_filter or month_filter or date_from or date_to %}
@@ -175,7 +175,7 @@
           <tbody>
             {% for q in quotes %}
             <tr class="quote-row"
-                data-date="{{ q.get('date','') | format_date }}"
+                data-date="{{ q.get('date','') }}"
                 data-status="{{ q.get('status','Not Started') }}"
                 data-total="{{ q.get('total',0)|float }}"
                 data-search="{{ q.get('client_name','')|lower }} {{ q.get('job_number','')|lower }} {{ q.get('project_name','')|lower }}"
@@ -1128,24 +1128,7 @@ function updateQuoteSummaryCards() {
   }
 }
 
-// Attach listeners to filter inputs
-document.addEventListener('DOMContentLoaded', function() {
-  const searchInput = document.querySelector('input[name="q"]');
-  const statusSelect = document.querySelector('select[name="status"]');
-  const yearSelect = document.querySelector('select[name="year"]');
-  const monthSelect = document.querySelector('select[name="month"]');
-  const dateFromInput = document.querySelector('input[name="from"]');
-  const dateToInput = document.querySelector('input[name="to"]');
-
-  if (searchInput) searchInput.addEventListener('input', updateQuoteSummaryCards);
-  if (statusSelect) statusSelect.addEventListener('change', updateQuoteSummaryCards);
-  if (yearSelect) yearSelect.addEventListener('change', updateQuoteSummaryCards);
-  if (monthSelect) monthSelect.addEventListener('change', updateQuoteSummaryCards);
-  if (dateFromInput) dateFromInput.addEventListener('change', updateQuoteSummaryCards);
-  if (dateToInput) dateToInput.addEventListener('change', updateQuoteSummaryCards);
-
-  // Update stat cards on initial load with any pre-existing filters
-  updateQuoteSummaryCards();
-});
+// Filter form now submits via GET to handle server-side filtering
+// Cards are recalculated by backend based on filtered quotes
 </script>
 {% endblock %}
