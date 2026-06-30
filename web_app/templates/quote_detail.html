@@ -138,7 +138,13 @@
           <div class="info-label"><i class="bi bi-bell me-1 text-teal"></i>Follow-up Date</div>
           <div class="info-value">
             {% if quote.get('follow_up_date') %}
-              {{ quote.get('follow_up_date') }}
+              {% set fu = quote.get('follow_up_date') %}
+              {% set parts = fu.split('-') %}
+              {% if parts|length == 3 %}
+                {{ parts[1] }}-{{ parts[2] }}-{{ parts[0] }}
+              {% else %}
+                {{ fu }}
+              {% endif %}
               <form method="POST"
                     action="{{ url_for('quote_followup_done', quote_id=quote.firebase_id) }}"
                     class="d-inline ms-2">

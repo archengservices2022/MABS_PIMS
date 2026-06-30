@@ -283,7 +283,15 @@
       <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
         <div>
           <div class="fw-500 small">{{ q.get('job_number','—') }} — {{ q.get('project_name') or q.get('client_name','—') }}</div>
-          <div class="text-muted" style="font-size:0.75rem;">{{ q.get('client_name','') }}{% if q.get('follow_up_date') %} · Due {{ q.get('follow_up_date') }}{% endif %}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ q.get('client_name','') }}{% if q.get('follow_up_date') %} · Due
+            {% set fu = q.get('follow_up_date') %}
+            {% set parts = fu.split('-') %}
+            {% if parts|length == 3 %}
+              {{ parts[1] }}-{{ parts[2] }}-{{ parts[0] }}
+            {% else %}
+              {{ fu }}
+            {% endif %}
+          {% endif %}</div>
         </div>
         <div class="d-flex gap-1">
           {% if 'quotes' in allowed_pages and q.get('firebase_id') %}
@@ -428,7 +436,21 @@
       <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
         <div>
           <div class="fw-500 small">{{ r.employee_name }}</div>
-          <div class="text-muted" style="font-size:0.75rem;">{{ r.type }} · {{ r.start_date }} → {{ r.end_date }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ r.type }} ·
+            {% set start_parts = r.start_date.split('-') %}
+            {% set end_parts = r.end_date.split('-') %}
+            {% if start_parts|length == 3 %}
+              {{ start_parts[1] }}-{{ start_parts[2] }}-{{ start_parts[0] }}
+            {% else %}
+              {{ r.start_date }}
+            {% endif %}
+            →
+            {% if end_parts|length == 3 %}
+              {{ end_parts[1] }}-{{ end_parts[2] }}-{{ end_parts[0] }}
+            {% else %}
+              {{ r.end_date }}
+            {% endif %}
+          </div>
         </div>
       </div>
       {% endfor %}
