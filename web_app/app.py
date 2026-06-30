@@ -1026,7 +1026,7 @@ def quotes_export_excel():
     title_font = Font(bold=True, size=13, color="FF0F766E")
     alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
     ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    rgt = Alignment(horizontal="right",  vertical="center")
+    rgt = Alignment(horizontal="right",  vertical="center", wrap_text=True)
 
     # Add title row
     ws.merge_cells('A1:K1')
@@ -1082,7 +1082,6 @@ def quotes_export_excel():
                 cell.alignment = rgt
             else:
                 cell.alignment = ctr
-            cell.alignment.wrap_text = True
 
     # Increase column widths
     col_widths = [14, 25, 35, 20, 14, 14, 12, 14, 12, 14, 30]
@@ -2381,7 +2380,7 @@ def projects_export_excel():
     title_font = Font(bold=True, size=13, color="FF0F766E")
     alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
     ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    rgt = Alignment(horizontal="right",  vertical="center")
+    rgt = Alignment(horizontal="right",  vertical="center", wrap_text=True)
 
     # Add title row
     co = company_info()
@@ -4157,7 +4156,7 @@ def invoicing_export_excel():
     title_font = Font(bold=True, size=13, color="FF0F766E")
     alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
     ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    rgt = Alignment(horizontal="right",  vertical="center")
+    rgt = Alignment(horizontal="right",  vertical="center", wrap_text=True)
 
     # Add title row
     co = company_info()
