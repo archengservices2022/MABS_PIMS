@@ -1686,6 +1686,13 @@ def project_detail(project_id):
         # Calculate project-specific paid amount from payment_log (filtered by project_number)
         proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (invoice.get("payment_log", []) or []) if p.get("project_number") == proj_num)
 
+        # Fallback: if payment_log entries don't have project_number (legacy data),
+        # use the invoice's total amount_paid and allocate by share
+        if proj_payments == 0 and proj_num in _invoice_linked_projects(invoice):
+            project_share = _invoice_project_share(invoice, proj_num)
+            total_amount_paid = _safe_float(invoice.get("meta", {}).get("amount_paid", 0))
+            proj_payments = total_amount_paid * project_share
+
         # Calculate tax paid - allocate proportionally if not per-project
         tax_payments = invoice.get("tax_payments", []) or []
         total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
