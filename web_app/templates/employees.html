@@ -697,7 +697,7 @@
             </div>
           </td>
           <td>{{ r.type }}</td>
-          <td class="text-muted small">{{ r.start_date }} → {{ r.end_date }}</td>
+          <td class="text-muted small">{{ r.start_date | format_date }} → {{ r.end_date | format_date }}</td>
           <td class="text-center small fw-600">{{ r.get('working_days', '—') }}</td>
           <td class="text-muted small">{{ r.reason or '—' }}</td>
           <td class="text-muted small">{{ r.requested_at[:10] | format_date }}</td>
