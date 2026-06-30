@@ -962,7 +962,8 @@ def quotes():
 @app.route("/quotes/export")
 @role_required("quotes")
 def quotes_export():
-    import csv, io
+    import csv
+    import io
     raw = fb_get("/job_forms") or {}
     items = []
     for fid, fdata in (raw.items() if isinstance(raw, dict) else []):
@@ -1052,7 +1053,7 @@ def quotes_export_excel():
         date_cell.alignment = Alignment(horizontal="left", vertical="center")
         ws.row_dimensions[2].height = 16
 
-    headers = ["Quote #","Client","Project / Scope","Salesperson","Date","Valid Until",
+    headers = ["Quote Number","Client","Project / Scope","Salesperson","Date","Valid Until",
                "Status","Subtotal ($)","Tax ($)","Total ($)","Notes"]
     header_row = 3 if _date_range else 2
     for col, h in enumerate(headers, 1):
@@ -1154,7 +1155,7 @@ def quotes_export_pdf():
         elems.append(Paragraph(_date_range, sub_s))
         elems.append(Spacer(1, 0.15*inch))
 
-    hdrs = ["Quote #","Client","Project / Scope","Salesperson","Date","Status","Total"]
+    hdrs = ["Quote Number","Client","Project / Scope","Salesperson","Date","Status","Total"]
     data = [hdrs]
     for q in items:
         date_str = q.get("date","—")
@@ -1199,6 +1200,52 @@ def quotes_export_pdf():
     from flask import Response
     fname = f"quotes_{datetime.now().strftime('%Y%m%d')}.pdf"
     return Response(buf.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": f"attachment;filename={fname}"})
+
+@app.route("/quotes/export/csv")
+@role_required("quotes")
+def quotes_export_csv():
+    import csv
+    import io
+    raw = fb_get("/job_forms") or {}
+    items = []
+    for fid, fdata in (raw.items() if isinstance(raw, dict) else []):
+        if fdata and isinstance(fdata, dict):
+            items.append(fdata)
+    items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    if request.args.get("status"):
+        items = [i for i in items if i.get("status","") == request.args["status"]]
+    if request.args.get("from"):
+        items = [i for i in items if (i.get("date") or "") >= request.args["from"]]
+    if request.args.get("to"):
+        items = [i for i in items if (i.get("date") or "") <= request.args["to"]]
+
+    output = io.StringIO()
+    w = csv.writer(output)
+    co = company_info()
+    w.writerow([f"{co.get('name','')} — Quotes Report"])
+    w.writerow([])
+
+    def fmt_csv_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    w.writerow(["Quote Number","Client","Project / Scope","Salesperson","Date","Valid Until",
+                "Status","Subtotal","Tax","Total","Notes"])
+    for q in items:
+        total = _safe_float(q.get("total", 0))
+        subtotal = _safe_float(q.get("subtotal", 0))
+        tax = total - subtotal
+        w.writerow([q.get("job_number",""), q.get("client_name",""), q.get("project_name",""),
+                    q.get("salesperson",""), fmt_csv_date(q.get("date","")), fmt_csv_date(q.get("valid_until","")),
+                    q.get("status",""), f"{subtotal:.2f}", f"{tax:.2f}", f"{total:.2f}", q.get("notes","")])
+    output.seek(0)
+    from flask import Response
+    fname = f"quotes_{datetime.now().strftime('%Y%m%d')}.csv"
+    return Response(output.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
 @app.route("/sales-people/new", methods=["POST"])
@@ -2333,7 +2380,8 @@ def _filter_projects_export(items):
 @app.route("/projects/export/csv")
 @role_required("projects")
 def projects_export_csv():
-    import csv, io
+    import csv
+    import io
     raw = fb_get("/projects") or {}
     items = []
     for pid, pdata in (raw.items() if isinstance(raw, dict) else []):
@@ -2343,15 +2391,25 @@ def projects_export_csv():
     items = _filter_projects_export(items)
     output = io.StringIO()
     w = csv.writer(output)
+    co = company_info()
+    w.writerow([f"{co.get('name','')} — Projects Report"])
+    w.writerow([])
+
+    def fmt_csv_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
     w.writerow(["Project #","Name","Client","Start Date","End Date","Status",
-                "Contract Value","Amount Paid","Outstanding","Payment Stage","Assigned To"])
+                "Contract Value","Amount Paid","Outstanding"])
     for p in items:
         cv   = _safe_float(p.get("contract_value", 0))
         paid = _safe_float(p.get("amount_paid", 0))
         w.writerow([p.get("project_number",""), p.get("project_name",""),
-                    p.get("client_name",""), p.get("start_date",""), p.get("end_date",""),
-                    p.get("status",""), f"{cv:.2f}", f"{paid:.2f}", f"{cv-paid:.2f}",
-                    p.get("payment_category",""), p.get("assigned_to","")])
+                    p.get("client_name",""), fmt_csv_date(p.get("start_date","")), fmt_csv_date(p.get("end_date","")),
+                    p.get("status",""), f"{cv:.2f}", f"{paid:.2f}", f"{cv-paid:.2f}"])
     output.seek(0)
     from flask import Response
     fname = f"projects_{datetime.now().strftime('%Y%m%d')}.csv"
@@ -4101,7 +4159,8 @@ def _filter_invoices_export(items):
 @app.route("/invoicing/export/csv")
 @role_required("invoicing")
 def invoicing_export_csv():
-    import csv, io
+    import csv
+    import io
     raw = fb_get("/invoices") or {}
     items = []
     for iid, idata in (raw.items() if isinstance(raw, dict) else []):
@@ -4111,6 +4170,10 @@ def invoicing_export_csv():
     items = _filter_invoices_export(items)
     output = io.StringIO()
     w = csv.writer(output)
+    co = company_info()
+    w.writerow([f"{co.get('name','')} — Invoices Report"])
+    w.writerow([])
+
     def fmt_csv_date(d):
         if not d or d == "—":
             return "—"
