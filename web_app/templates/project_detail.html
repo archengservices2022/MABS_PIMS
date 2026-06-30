@@ -433,7 +433,7 @@
                     </span>
                     {% endif %}
                   </td>
-                  <td>{{ m.get('invoice_date','—') }}</td>
+                  <td>{{ m.get('invoice_date','—') | format_date }}</td>
                   <td><span class="badge status-{{ inv.get('_display_status', m.get('status','Draft'))|lower|replace(' ','-') }}">{{ inv.get('_display_status', m.get('status','Draft')) }}</span></td>
                   <td class="text-end">
                     ${{ "{:,.0f}".format(m.get('total',0)|float * share) }}
