@@ -1022,17 +1022,43 @@ def quotes_export_excel():
 
     hdr_fill = PatternFill(start_color="FF0F172A", end_color="FF0F172A", fill_type="solid")
     hdr_font = Font(color="FFFFFFFF", bold=True, size=11)
+    title_font = Font(bold=True, size=13, color="FF0F766E")
     alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
-    ctr = Alignment(horizontal="center", vertical="center")
+    ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
     rgt = Alignment(horizontal="right",  vertical="center")
+
+    # Add title row
+    ws.merge_cells('A1:K1')
+    title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} — Quotes Report")
+    title_cell.font = title_font
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 20
+
+    # Add date range row
+    _pdf_from = request.args.get("from", "")
+    _pdf_to   = request.args.get("to", "")
+    _date_range = ""
+    if _pdf_from and _pdf_to:
+        _date_range = f"{_pdf_from} to {_pdf_to}"
+    elif _pdf_from:
+        _date_range = f"From {_pdf_from}"
+    elif _pdf_to:
+        _date_range = f"Up to {_pdf_to}"
+
+    if _date_range:
+        ws.merge_cells('A2:K2')
+        date_cell = ws.cell(row=2, column=1, value=_date_range)
+        date_cell.alignment = Alignment(horizontal="left", vertical="center")
+        ws.row_dimensions[2].height = 16
 
     headers = ["Quote #","Client","Project / Scope","Salesperson","Date","Valid Until",
                "Status","Subtotal ($)","Tax ($)","Total ($)","Notes"]
+    header_row = 3 if _date_range else 2
     for col, h in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=h)
+        cell = ws.cell(row=header_row, column=col, value=h)
         cell.fill = hdr_fill; cell.font = hdr_font; cell.alignment = ctr
 
-    for ri, q in enumerate(items, 2):
+    for ri, q in enumerate(items, header_row + 1):
         row = [q.get("job_number",""), q.get("client_name",""), q.get("project_name",""),
                q.get("salesperson",""), q.get("date",""), q.get("valid_until",""),
                q.get("status",""), _safe_float(q.get("subtotal",0)),
@@ -1042,13 +1068,19 @@ def quotes_export_excel():
             cell = ws.cell(row=ri, column=ci, value=val)
             if ri % 2 == 0:
                 cell.fill = alt_fill
+            # Center align all cells
             if ci in (8, 9, 10):
                 cell.number_format = '"$"#,##0.00'
                 cell.alignment = rgt
+            else:
+                cell.alignment = ctr
+            cell.alignment.wrap_text = True
 
-    for ci, w in enumerate([14,22,32,18,12,12,14,13,10,13,30], 1):
+    # Increase column widths
+    col_widths = [14, 25, 35, 20, 14, 14, 12, 14, 12, 14, 30]
+    for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
-    ws.freeze_panes = "A2"
+    ws.freeze_panes = f"A{header_row + 1}"
 
     buf = _io.BytesIO()
     wb.save(buf); buf.seek(0)
