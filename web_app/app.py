@@ -2424,13 +2424,10 @@ def projects_export_pdf():
     elems = []
     title_s = ParagraphStyle("T", parent=styles["Normal"], fontSize=15,
                               fontName="Helvetica-Bold",
-                              textColor=colors.HexColor("#0F766E"), spaceAfter=3)
-    sub_s   = ParagraphStyle("S", parent=styles["Normal"], fontSize=9,
-                              textColor=colors.HexColor("#64748B"), spaceAfter=14)
+                              textColor=colors.HexColor("#0F766E"), spaceAfter=3,
+                              alignment=1)  # CENTER
     elems.append(Paragraph(f"{co.get('name','')} — Projects Report", title_s))
-    elems.append(Paragraph(
-        f"Generated {datetime.now().strftime('%B %d, %Y')}  ·  {len(items)} record{'s' if len(items)!=1 else ''}",
-        sub_s))
+    elems.append(Spacer(1, 0.2*inch))
     hdrs = ["Project #", "Name", "Client", "Status", "Start Date", "Contract Value", "Paid", "Outstanding"]
     data = [hdrs]
     for p in items:
@@ -2438,15 +2435,15 @@ def projects_export_pdf():
         paid = _safe_float(p.get("amount_paid", 0))
         data.append([
             p.get("project_number","—"),
-            (p.get("project_name","—") or "—")[:30],
-            (p.get("client_name","—") or "—")[:22],
+            p.get("project_name","—") or "—",
+            p.get("client_name","—") or "—",
             p.get("status","—"),
             p.get("start_date","—") or "—",
             f"${cv:,.0f}",
             f"${paid:,.0f}",
             f"${cv-paid:,.0f}",
         ])
-    cw = [1.4*inch, 2.4*inch, 1.8*inch, 1.2*inch, 1.0*inch, 1.2*inch, 1.0*inch, 1.0*inch]
+    cw = [1.3*inch, 2.5*inch, 2.0*inch, 1.2*inch, 1.2*inch, 1.3*inch, 1.3*inch, 1.3*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
@@ -2454,6 +2451,7 @@ def projects_export_pdf():
         ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
         ("FONTSIZE",      (0,0), (-1,0), 9),
         ("ALIGN",         (0,0), (-1,0), "CENTER"),
+        ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
         ("TOPPADDING",    (0,0), (-1,0), 8),
         ("BOTTOMPADDING", (0,0), (-1,0), 8),
         ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
@@ -2462,8 +2460,8 @@ def projects_export_pdf():
         ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
         ("TOPPADDING",    (0,1), (-1,-1), 5),
         ("BOTTOMPADDING", (0,1), (-1,-1), 5),
-        ("ALIGN",         (-3,1),(-1,-1), "RIGHT"),
-        ("FONTNAME",      (-3,1),(-1,-1), "Helvetica-Bold"),
+        ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
     ]))
     elems.append(tbl)
     doc.build(elems)
