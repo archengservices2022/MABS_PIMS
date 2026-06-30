@@ -109,7 +109,7 @@
               <td>{{ (q.get('client_name','—') or '—')[:22] }}</td>
               <td>
                 <span class="{% if q.get('follow_up_date','') < today_str %}text-danger fw-semibold{% else %}text-muted{% endif %}">
-                  {{ q.get('follow_up_date','—') }}
+                  {{ q.get('follow_up_date','—') | format_date }}
                 </span>
               </td>
               <td>

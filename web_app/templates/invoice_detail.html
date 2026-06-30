@@ -123,7 +123,7 @@
             <div style="font-size:2rem; font-weight:900; color:#fff; letter-spacing:.08em;">INVOICE</div>
             <div style="color:rgba(255,255,255,.9); font-weight:700; font-size:1rem;">{{ meta.get('invoice_number','') }}</div>
             <div style="color:rgba(255,255,255,.7); font-size:0.78rem; margin-top:4px;">
-              Date: {{ meta.get('invoice_date','—') }}<br>
+              Date: {{ meta.get('invoice_date','—') | format_date }}<br>
               Due: {{ meta.get('due_date','—') | format_date }}{% if meta.get('net_terms') %} <span style="opacity:.7;">(Net {{ meta.get('net_terms') }})</span>{% endif %}
             </div>
           </div>
