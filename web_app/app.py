@@ -1164,6 +1164,7 @@ def quotes_export_pdf():
     sub_s   = ParagraphStyle("S", parent=styles["Normal"], fontSize=9,
                               textColor=colors.HexColor("#64748B"), spaceAfter=14,
                               alignment=0)  # 0 = LEFT
+
     elems.append(Paragraph(f"{co.get('name','')} — Quotes Report", title_s))
     elems.append(Spacer(1, 0.2*inch))
     _pdf_from = request.args.get("from", "")
@@ -2685,6 +2686,9 @@ def invoicing():
             tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
             inv["meta"]["tax_paid"] = str(tax_paid) if tax_paid > 0 else "0"
 
+    settings = load_settings()
+    default_tax_rate = settings.get("company", {}).get("default_tax_rate", 0)
+
     return render_template("invoicing.html", invoices=items, statuses=statuses,
                            search=search, status_filter=status_filter,
                            date_from=date_from, date_to=date_to,
@@ -2695,7 +2699,8 @@ def invoicing():
                            i_sent_count=i_sent_count, i_paid_count=i_paid_count,
                            i_over_count=i_over_count, i_total_val=i_total_val,
                            i_total_paid=i_total_paid, i_outstanding=i_outstanding,
-                           i_coll_rate=i_coll_rate, i_overdue_amt=i_overdue_amt)
+                           i_coll_rate=i_coll_rate, i_overdue_amt=i_overdue_amt,
+                           default_tax_rate=default_tax_rate)
 
 @app.route("/api/projects/<project_ids>", methods=["GET"])
 @role_required("projects")
@@ -3300,13 +3305,17 @@ def invoice_new():
     # Lock unit price if loading from project payment stages
     lock_unit_price = isinstance(prefill_items, list) and len(prefill_items) > 0
 
+    settings = load_settings()
+    default_tax_rate = settings.get("company", {}).get("default_tax_rate", 0)
+
     return render_template("invoice_form.html", invoice=None, clients=clients,
                            projects=projects, next_num=next_num, is_new=True,
                            prefill_proj=prefill_proj, prefill_client=prefill_client,
                            prefill_name=prefill_name, prefill_amount=prefill_amount,
                            prefill_items=prefill_items,
                            stage_idx=stage_idx, stage_name=stage_name, stage_amount=stage_amount,
-                           invoiced_stages_map=invoiced_stages_map, lock_unit_price=lock_unit_price)
+                           invoiced_stages_map=invoiced_stages_map, lock_unit_price=lock_unit_price,
+                           default_tax_rate=default_tax_rate)
 
 @app.route("/invoicing/<invoice_id>", methods=["GET"])
 @role_required("invoicing")
@@ -4307,18 +4316,20 @@ def invoicing_export_pdf():
     items = _filter_invoices_export(items)
     buf = _io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
-                            leftMargin=0.8*inch, rightMargin=0.8*inch,
+                            leftMargin=0.2*inch, rightMargin=0.2*inch,
                             topMargin=0.5*inch, bottomMargin=0.5*inch)
     styles = getSampleStyleSheet()
     co = company_info()
     elems = []
     from reportlab.lib.units import inch
+    from reportlab.platypus import Spacer
+
     title_s = ParagraphStyle("T", parent=styles["Normal"], fontSize=15,
                               fontName="Helvetica-Bold",
                               textColor=colors.HexColor("#0F766E"), spaceAfter=3,
                               alignment=1)  # CENTER
+
     elems.append(Paragraph(f"{co.get('name','')} — Invoices Report", title_s))
-    from reportlab.platypus import Spacer
     elems.append(Spacer(1, 0.2*inch))
     hdrs = ["Invoice Number", "Client", "Project", "Date", "Due Date", "Subtotal", "Tax", "Total", "Paid", "Outstanding", "Status"]
     data = [hdrs]
@@ -4351,7 +4362,7 @@ def invoicing_export_pdf():
             Paragraph(f"${total-paid:,.0f}", cell_style),
             Paragraph(m.get("status","—"), cell_style),
         ])
-    cw = [1.0*inch, 1.5*inch, 1.35*inch, 0.8*inch, 0.8*inch, 0.7*inch, 0.65*inch, 0.7*inch, 0.7*inch, 0.7*inch, 0.8*inch]
+    cw = [1.3*inch, 1.5*inch, 1.7*inch, 0.8*inch, 0.8*inch, 0.7*inch, 0.65*inch, 0.7*inch, 0.7*inch, 0.95*inch, 0.8*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
@@ -4748,13 +4759,20 @@ def payroll_export_csv():
     w.writerow([f"{co.get('name','')} - Payroll Report"])
     w.writerow([])
 
+    def fmt_date(d):
+        if not d or d == "—":
+            return ""
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
     headers = ["Employee", "Date", "Amount", "Region", "Notes"]
     w.writerow(headers)
 
     for sal in salaries:
         w.writerow([
             sal.get("employee_name", ""),
-            sal.get("date", ""),
+            fmt_date(sal.get("date", "")),
             f"{_safe_float(sal.get('amount', 0)):.2f}",
             sal.get("region", ""),
             sal.get("notes", "")
@@ -4811,6 +4829,13 @@ def payroll_export_excel():
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 20
 
+    def fmt_excel_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
     headers = ["Employee", "Date", "Amount", "Region", "Notes"]
     header_row = 2
     for col, h in enumerate(headers, 1):
@@ -4820,7 +4845,7 @@ def payroll_export_excel():
         cell.alignment = ctr
 
     for ri, sal in enumerate(salaries, header_row + 1):
-        row = [sal.get("employee_name", ""), sal.get("date", ""),
+        row = [sal.get("employee_name", ""), fmt_excel_date(sal.get("date", "")),
                _safe_float(sal.get("amount", 0)), sal.get("region", ""), sal.get("notes", "")]
         for ci, val in enumerate(row, 1):
             cell = ws.cell(row=ri, column=ci, value=val)
@@ -4895,6 +4920,13 @@ def payroll_export_pdf():
     from reportlab.platypus import Spacer
     elems.append(Spacer(1, 0.2*inch))
 
+    def fmt_pdf_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
     hdrs = ["Employee", "Date", "Amount", "Region", "Notes"]
     data = [hdrs]
 
@@ -4902,7 +4934,7 @@ def payroll_export_pdf():
     for sal in salaries:
         data.append([
             Paragraph(sal.get("employee_name", "—"), cell_style),
-            Paragraph(sal.get("date", "—"), cell_style),
+            Paragraph(fmt_pdf_date(sal.get("date", "")), cell_style),
             Paragraph(f"${_safe_float(sal.get('amount', 0)):,.2f}", cell_style),
             Paragraph(sal.get("region", "—"), cell_style),
             Paragraph(sal.get("notes", "—"), cell_style),
@@ -6997,12 +7029,21 @@ def settings_logo():
         if ext not in (".png", ".jpg", ".jpeg", ".bmp"):
             flash("Unsupported file type. Use PNG or JPG.", "danger")
             return redirect(url_for("settings"))
-        save_path = ASSETS_DIR / f"company_logo{ext}"
+        # Normalize extension: save .jpeg as .jpg
+        if ext == ".jpeg":
+            ext = ".jpg"
         ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+        # Delete old logo files to avoid conflicts
+        for old_file in ASSETS_DIR.glob("company_logo.*"):
+            try:
+                old_file.unlink()
+            except Exception:
+                pass
+        save_path = ASSETS_DIR / f"company_logo{ext}"
         logo_file.save(str(save_path))
         existing = load_settings()
         co = existing.get("company", {})
-        co["logo_path"] = str(save_path)
+        co["logo_path"] = str(save_path.resolve())
         fb_update("/settings", {"company": co})
         _save_local_settings_key("company", co)
         flash("Logo uploaded successfully.", "success")
@@ -7383,6 +7424,36 @@ def user_delete(uid):
     except Exception as exc:
         flash(f"Error: {exc}", "danger")
     return redirect(url_for("settings") + "?tab=users")
+
+# ── Helper: get company logo for PDF generation ────────────────────────────────
+def _get_company_logo_path():
+    """Get the company logo path from settings or fallback candidates."""
+    try:
+        settings = load_settings()
+        logo_path = settings.get("company", {}).get("logo_path", "")
+        candidates = [
+            Path(logo_path) if logo_path else None,
+            ASSETS_DIR / "company_logo.jpg",
+            ASSETS_DIR / "company_logo.png",
+            ASSETS_DIR / "company_logo.jpeg",
+            DATA_DIR / "company_logo.jpg",
+            DATA_DIR / "company_logo.png",
+            DATA_DIR / "company_logo.jpeg",
+            ASSETS_DIR / "logo.jpg",
+            ASSETS_DIR / "logo.png",
+            DATA_DIR / "logo.png",
+        ]
+        for p in candidates:
+            if p:
+                try:
+                    p_obj = Path(p) if isinstance(p, str) else p
+                    if p_obj.exists() and p_obj.is_file():
+                        return str(p_obj.resolve())
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return None
 
 # ── Route: serve company logo ─────────────────────────────────────────────────
 @app.route("/logo")
@@ -9274,12 +9345,14 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
     styles.add(ParagraphStyle(name='RightBold10', alignment=2, fontName='Helvetica-Bold', fontSize=10, leading=12))
     styles.add(ParagraphStyle(name='Left9', alignment=0, fontName='Helvetica', fontSize=9, leading=11))
 
-    logo_path = Path(__file__).parent / "static" / "logo.png"
+    logo_path = _get_company_logo_path()
     logo_img = None
-    if logo_path.exists():
+    if logo_path:
         try:
-            logo_img = Image(str(logo_path), width=0.95*inch, height=0.95*inch)
-        except (IOError, OSError):
+            logo_file = Path(logo_path)
+            if logo_file.exists():
+                logo_img = Image(str(logo_file.resolve()), width=0.95*inch, height=0.95*inch)
+        except Exception:
             pass
 
     company_name = co.get('name', 'MABS Engineering LLC')
@@ -9678,16 +9751,22 @@ def _generate_quote_pdf_bytes(quote_id: str):
     section_title = ParagraphStyle("st", parent=styles["Normal"], fontSize=11, fontName="Helvetica-Bold", textColor=dark_gray)
     checkbox_style = ParagraphStyle("cs", parent=styles["Normal"], fontSize=8, fontName="Helvetica", textColor=dark_gray)
 
-    logo_path = Path(__file__).parent / "static" / "logo.png"
-    if logo_path.exists():
+    logo_path = _get_company_logo_path()
+    if logo_path:
         try:
-            logo = Image(str(logo_path), width=1.0*inch, height=0.85*inch)
-            hdr_data = [[logo, Paragraph(f"<b>{co.get('name','MABS Engineering LLC')}</b>", ParagraphStyle("cn", parent=styles["Normal"], fontSize=22, fontName="Helvetica-Bold", textColor=dark_gray, alignment=1))]]
-            hdr = Table(hdr_data, colWidths=[1.0*inch, doc.width - 1.0*inch])
-            hdr.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (1,0), (1,0), "CENTER"), ("LINEBELOW", (0,0), (-1,-1), 2, teal_line), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (1,0), (1,0), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0)]))
-            elems.append(hdr)
-        except (IOError, OSError):
+            logo_file = Path(logo_path)
+            if logo_file.exists():
+                logo = Image(str(logo_file.resolve()), width=1.0*inch, height=0.85*inch)
+                hdr_data = [[logo, Paragraph(f"<b>{co.get('name','MABS Engineering LLC')}</b>", ParagraphStyle("cn", parent=styles["Normal"], fontSize=22, fontName="Helvetica-Bold", textColor=dark_gray, alignment=1))]]
+                hdr = Table(hdr_data, colWidths=[1.0*inch, doc.width - 1.0*inch])
+                hdr.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (1,0), (1,0), "CENTER"), ("LINEBELOW", (0,0), (-1,-1), 2, teal_line), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (1,0), (1,0), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0)]))
+                elems.append(hdr)
+            else:
+                elems.append(Paragraph(co.get('name','MABS Engineering LLC'), ParagraphStyle("cn", parent=styles["Normal"], fontSize=16, fontName="Helvetica-Bold", textColor=dark_gray)))
+        except Exception:
             elems.append(Paragraph(co.get('name','MABS Engineering LLC'), ParagraphStyle("cn", parent=styles["Normal"], fontSize=16, fontName="Helvetica-Bold", textColor=dark_gray)))
+    else:
+        elems.append(Paragraph(co.get('name','MABS Engineering LLC'), ParagraphStyle("cn", parent=styles["Normal"], fontSize=16, fontName="Helvetica-Bold", textColor=dark_gray)))
 
     elems.append(Spacer(1, 0.08*inch))
 

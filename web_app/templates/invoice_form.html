@@ -244,7 +244,7 @@
         <div class="d-flex justify-content-between align-items-center mb-2">
           <span>Tax Rate (%)</span>
           <input type="number" name="tax_rate" id="taxRate" class="form-control form-control-sm text-end"
-                 style="width:80px;" value="{{ meta.get('tax_rate','0') }}"
+                 style="width:80px;" value="{{ meta.get('tax_rate', default_tax_rate if is_new else '0') }}"
                  min="0" max="100" step="0.01" oninput="calcTotals()">
         </div>
         <div class="d-flex justify-content-between mb-2">
