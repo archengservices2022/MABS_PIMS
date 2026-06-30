@@ -131,10 +131,6 @@
             <label class="form-label">Payment Date</label>
             <input type="date" name="payment_date" class="form-control">
           </div>
-          <div class="col-md-3" id="paymentRefWrap" style="display:none;">
-            <label class="form-label">Reference #</label>
-            <input type="text" name="payment_reference" class="form-control" placeholder="Check #, Wire ref, etc.">
-          </div>
         </div>
       </div>
 
@@ -149,12 +145,12 @@
           <table class="table table-sm">
             <thead>
               <tr>
-                <th style="width:33%">Description</th>
-                <th style="width:20%">Project <i class="bi bi-info-circle text-muted" title="Override which project this line item bills to — useful when one invoice covers multiple projects"></i></th>
+                <th style="width:28%">Description</th>
+                <th style="width:25%">Project <i class="bi bi-info-circle text-muted" title="Override which project this line item bills to — useful when one invoice covers multiple projects"></i></th>
                 <th style="width:10%">Qty</th>
-                <th style="width:15%">Unit Price</th>
-                <th style="width:15%">Amount</th>
-                <th style="width:7%"></th>
+                <th style="width:14%">Unit Price</th>
+                <th style="width:14%">Amount</th>
+                <th style="width:9%"></th>
               </tr>
             </thead>
             <tbody id="lineItemsBody">
@@ -491,7 +487,6 @@ function togglePaymentFields() {
   document.getElementById('paymentMethodWrap').style.display = show ? '' : 'none';
   document.getElementById('amountPaidWrap').style.display    = show ? '' : 'none';
   document.getElementById('paymentDateWrap').style.display   = show ? '' : 'none';
-  document.getElementById('paymentRefWrap').style.display    = show ? '' : 'none';
 
   // Set payment date to today if showing and not already set
   if (show && !document.querySelector('input[name="payment_date"]').value) {
@@ -567,13 +562,6 @@ function applyNetTerms() {
             const methodSelect = document.querySelector('select[name="payment_method"]');
             if (methodSelect) {
               methodSelect.value = data.meta.payment_method;
-            }
-          }
-          // Populate payment date if exists
-          if (data && data.meta && data.meta.payment_reference) {
-            const refInput = document.querySelector('input[name="payment_reference"]');
-            if (refInput) {
-              refInput.value = data.meta.payment_reference;
             }
           }
         })

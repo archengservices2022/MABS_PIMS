@@ -84,7 +84,7 @@
         <div class="row g-3">
           <div class="col-12">
             <label class="form-label">Service Types <span class="text-muted small fw-normal">— select all that apply; each adds a line item</span></label>
-            {% set all_services = ['Mechanical','Electrical','Civil','Structural','Plumbing','HVAC','Fire Protection','Geotechnical','Environmental','Other'] %}
+            {% set all_services = ['Structural','Electrical','Civil','Mechanical','Plumbing','HVAC','Fire Protection','Geotechnical','Environmental','Other'] %}
             {% set selected_svcs = ((quote.get('service_types') or ([quote.get('service_type')] if quote.get('service_type') else [])) if quote else []) %}
             {# Extract existing "Other: XYZ" specify text #}
             {% set ns = namespace(other_val='', other_checked=false) %}
@@ -126,9 +126,9 @@
           <div class="col-md-6">
             <label class="form-label">Priority</label>
             <select name="priority" class="form-select">
-              {% for pv in ['Low','Normal','High','Urgent'] %}
+              {% for pv in ['Low','Medium','High','Urgent'] %}
               <option value="{{ pv }}"
-                {{ 'selected' if quote and quote.get('priority','Normal') == pv else ('selected' if not quote and pv == 'Normal' else '') }}>
+                {{ 'selected' if quote and quote.get('priority','Medium') == pv else ('selected' if not quote and pv == 'Medium' else '') }}>
                 {{ pv }}
               </option>
               {% endfor %}

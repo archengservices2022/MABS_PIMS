@@ -285,6 +285,7 @@
             <input type="number" id="downPaymentPct" name="down_payment_percent" class="form-control"
                    value="{{ down_pct }}"
                    min="0" max="100" step="1" placeholder="0"
+                   data-original-down-pct="{{ down_pct }}"
                    {% if has_invoiced %}disabled{% endif %}
                    oninput="updatePlanPreview()">
             <div class="form-text">0 = no down payment</div>
@@ -1138,24 +1139,30 @@ function initPaymentStagesData() {
     {% endfor %}
   ];
 
-  // Recalculate down payment % from first stage if editing
+  // Use original down payment % from database, don't recalculate from stage amounts
   const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
   if (stageAmountsData.length > 0 && contractValue > 0) {
-    const firstStageAmount = stageAmountsData[0].amount || 0;
-    const calculatedDpPct = Math.round((firstStageAmount / contractValue) * 100);
     const dpInput = document.getElementById('downPaymentPct');
+    const originalDownPct = dpInput?.dataset.originalDownPct
+      ? parseInt(dpInput.dataset.originalDownPct)
+      : 0;
+
     if (dpInput) {
-      dpInput.value = calculatedDpPct;
+      dpInput.value = originalDownPct;
     }
 
-    // Also update stage name with correct percentage
-    stageAmountsData[0].name = `Down Payment (${calculatedDpPct}%)`;
-    console.log('Updated stage name to:', stageAmountsData[0].name);
+    // Also update stage name with correct percentage if this is a down payment stage
+    if (originalDownPct > 0) {
+      stageAmountsData[0].name = `Down Payment (${originalDownPct}%)`;
+      console.log('Updated stage name to:', stageAmountsData[0].name);
+    }
 
     // Update the DOM display of the first payment stage name
-    const firstStageNameEl = document.querySelector('.payment-stage:first-child .fw-600');
-    if (firstStageNameEl) {
-      firstStageNameEl.textContent = `Down Payment (${calculatedDpPct}%)`;
+    if (originalDownPct > 0) {
+      const firstStageNameEl = document.querySelector('.payment-stage:first-child .fw-600');
+      if (firstStageNameEl) {
+        firstStageNameEl.textContent = `Down Payment (${originalDownPct}%)`;
+      }
     }
 
     // Load saved custom amounts into preview data

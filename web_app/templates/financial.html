@@ -305,6 +305,7 @@ a[href*="filter_expense"]:hover {
         <div class="kpi-top"><span class="kpi-label">Total Invoiced</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
         <div class="kpi-value">${{ "{:,.0f}".format(total_invoiced) }}</div>
         <div class="kpi-sub">{{ rev_list|length }} invoice{{ 's' if rev_list|length != 1 }}</div>
+        <div class="kpi-sub"><small style="color:#94a3b8;">{{ prev_year }} & {{ stat_card_year }}</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-2">
@@ -312,6 +313,7 @@ a[href*="filter_expense"]:hover {
         <div class="kpi-top"><span class="kpi-label">Collected</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
         <div class="kpi-value">${{ "{:,.0f}".format(total_paid) }}</div>
         <div class="kpi-sub">{{ collection_pct }}% collection rate</div>
+        <div class="kpi-sub"><small style="color:#94a3b8;">{{ prev_year }} & {{ stat_card_year }}</small></div>
         <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ collection_pct }}%"></div></div>
       </div>
     </div>
@@ -320,27 +322,31 @@ a[href*="filter_expense"]:hover {
         <div class="kpi-top"><span class="kpi-label">Outstanding A/R</span><i class="bi bi-clock-history kpi-icon-sm"></i></div>
         <div class="kpi-value">${{ "{:,.0f}".format(aging_total_outstanding) }}</div>
         <div class="kpi-sub">{{ open_count }} open invoice{{ 's' if open_count != 1 }}</div>
+        <div class="kpi-sub"><small style="color:#94a3b8;">{{ prev_year }} & {{ stat_card_year }}</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-2">
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
         <div class="kpi-value">${{ "{:,.0f}".format(total_expenses) }}</div>
-        <div class="kpi-sub">{{ expenses|length }} entries</div>
+        <div class="kpi-sub">{{ exp_list_year_filtered_count }} <small style="color:#94a3b8;">expenses</small></div>
+        <div class="kpi-sub"><small style="color:#94a3b8;">Across {{ stat_card_year }} Expenses</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-2">
       <div class="kpi-card kpi-purple">
         <div class="kpi-top"><span class="kpi-label">Total Salaries</span><i class="bi bi-people-fill kpi-icon-sm"></i></div>
         <div class="kpi-value">${{ "{:,.0f}".format(total_salaries) }}</div>
-        <div class="kpi-sub">payroll · {{ selected_year }}</div>
+        <div class="kpi-sub">{{ employee_count }} employee{{ 's' if employee_count != 1 else '' }}</div>
+        <div class="kpi-sub"><small style="color:#94a3b8;">{{ stat_card_year }}</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-2">
       <div class="kpi-card {{ 'kpi-green' if net_profit >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
         <div class="kpi-value {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(net_profit) }}</div>
-        <div class="kpi-sub">revenue minus expenses</div>
+        <div class="kpi-sub">revenue & expenses</div>
+        <div class="kpi-sub"><small style="color:#94a3b8;">{{ stat_card_year }}</small></div>
       </div>
     </div>
   </div>
@@ -494,11 +500,13 @@ a[href*="filter_expense"]:hover {
         <span class="status-pill-btn" data-status="Paid"><i class="bi bi-check-circle-fill me-1" style="color:#16a34a;"></i>Paid</span>
         <span class="status-pill-btn" data-status="Partial"><i class="bi bi-circle-half me-1" style="color:#f59e0b;"></i>Partial</span>
       </div>
-      <select id="incomeMonthFilter" class="form-select form-select-sm ms-1" style="width:130px;" onchange="reFilterIncome()">
+      <select id="incomeYearFilter" class="form-select form-select-sm ms-1" style="width:130px;" onchange="onIncomeYearChange()">
+        <option value="">{{ prev_year }}&nbsp;&amp;&nbsp;{{ stat_card_year }}</option>
+        <option value="{{ prev_year }}">{{ prev_year }}</option>
+        <option value="{{ stat_card_year }}">{{ stat_card_year }}</option>
+      </select>
+      <select id="incomeMonthFilter" class="form-select form-select-sm ms-1" style="width:130px; display:none;" onchange="reFilterIncome()">
         <option value="">All Months</option>
-        {% for mn in ['January','February','March','April','May','June','July','August','September','October','November','December'] %}
-        <option value="{{ '%02d'|format(loop.index) }}">{{ mn }}</option>
-        {% endfor %}
       </select>
       <button class="btn btn-xs btn-outline-secondary ms-auto" onclick="clearIncomeFilter()">
         <i class="bi bi-x me-1"></i>Clear
@@ -522,9 +530,10 @@ a[href*="filter_expense"]:hover {
           </tr>
         </thead>
         <tbody id="incomeTableBody">
-          {% for r in rev_list|sort(attribute='date', reverse=True) %}
+          {% for r in rev_list %}
           <tr class="inc-row"
               data-date="{{ r.get('date','') }}"
+              data-year="{{ r.get('date','')[:4] }}"
               data-status="{{ r.get('status','') }}"
               data-amount="{{ ((r.get('amount_paid',0)|float) + (r.get('tax_amount',0)|float))|float }}"
               data-search="{{ r.get('client_name','')|lower }} {{ r.get('invoice_number','')|lower }}">
@@ -605,7 +614,7 @@ a[href*="filter_expense"]:hover {
           {%- endfor -%}
           ${{ "{:,.2f}".format(filtered_total) }}
         </div>
-        <div class="kpi-sub">all time{{ " (filtered)" if filter_expense else "" }}</div>
+        <div class="kpi-sub"><small style="color:#94a3b8;">Across All Expenses</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
@@ -620,7 +629,7 @@ a[href*="filter_expense"]:hover {
           {%- endfor -%}
           {{ filtered_count }}
         </div>
-        <div class="kpi-sub">all time{{ " (filtered)" if filter_expense else "" }}</div>
+        <div class="kpi-sub"><small style="color:#94a3b8;">All Years</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
@@ -1059,18 +1068,57 @@ function getVisibleExpenseRows() {
   const dateTo   = document.getElementById('expenseDateTo')?.value || '';
   const rows = Array.from(document.querySelectorAll('#expenseTableBody tr.expense-row'));
 
-  return rows.filter(row => {
+  let filteredRows = rows.filter(row => {
     const rowSearch   = (row.dataset.search || '').toLowerCase();
     const rowType     = (row.dataset.type || '').toLowerCase();
     const rowCategory = (row.dataset.category || '').toLowerCase();
-    const rowDate     = row.dataset.date || '';
+    const rowDate     = (row.dataset.date || '').trim();
+
     const matchSearch   = !search   || rowSearch.includes(search);
     const matchType     = !type     || rowType === type;
     const matchCategory = !category || rowCategory === category;
-    const matchFrom     = !dateFrom || rowDate >= dateFrom;
-    const matchTo       = !dateTo   || rowDate <= dateTo;
+
+    // Format date comparison: convert DD-MM-YYYY to YYYY-MM-DD if needed
+    let normalizedRowDate = rowDate;
+    if (rowDate && rowDate.includes('-') && !rowDate.match(/^\d{4}-\d{2}-\d{2}/)) {
+      // Convert DD-MM-YYYY or MM-DD-YYYY to YYYY-MM-DD
+      const parts = rowDate.split('-');
+      if (parts.length === 3) {
+        normalizedRowDate = `${parts[2]}-${parts[0]}-${parts[1]}`;
+      }
+    }
+
+    const matchFrom     = !dateFrom || normalizedRowDate >= dateFrom;
+    const matchTo       = !dateTo   || normalizedRowDate <= dateTo;
     return matchSearch && matchType && matchCategory && matchFrom && matchTo;
   });
+
+  // Sort by date in ascending order (oldest to newest) when filters are applied
+  const hasFilters = search || type || category || dateFrom || dateTo;
+  if (hasFilters) {
+    filteredRows.sort((a, b) => {
+      let dateA = (a.dataset.date || '').trim();
+      let dateB = (b.dataset.date || '').trim();
+
+      // Convert DD-MM-YYYY to YYYY-MM-DD for proper chronological sorting
+      if (dateA && !dateA.match(/^\d{4}-\d{2}-\d{2}/)) {
+        const partsA = dateA.split('-');
+        if (partsA.length === 3) {
+          dateA = `${partsA[2]}-${partsA[0]}-${partsA[1]}`;
+        }
+      }
+      if (dateB && !dateB.match(/^\d{4}-\d{2}-\d{2}/)) {
+        const partsB = dateB.split('-');
+        if (partsB.length === 3) {
+          dateB = `${partsB[2]}-${partsB[0]}-${partsB[1]}`;
+        }
+      }
+
+      return dateA.localeCompare(dateB);
+    });
+  }
+
+  return filteredRows;
 }
 
 function applyExpenseFilters() {
@@ -1138,6 +1186,20 @@ function renderExpenseTable() {
   expenseFilteredRows = getVisibleExpenseRows();
   const rows = document.querySelectorAll('#expenseTableBody tr.expense-row');
   const totalPages = Math.ceil(expenseFilteredRows.length / expensePerPage);
+
+  // Check if filters are active
+  const search = (document.getElementById('expenseSearch')?.value || '').toLowerCase();
+  const type = (document.getElementById('expenseTypeFilter')?.value || '').toLowerCase();
+  const category = (document.getElementById('expenseCategoryFilter')?.value || '').toLowerCase();
+  const dateFrom = document.getElementById('expenseDateFrom')?.value || '';
+  const dateTo = document.getElementById('expenseDateTo')?.value || '';
+  const hasFilters = search || type || category || dateFrom || dateTo;
+
+  // Reorder DOM rows when filters are applied
+  if (hasFilters) {
+    const tbody = document.getElementById('expenseTableBody');
+    expenseFilteredRows.forEach(row => tbody.appendChild(row));
+  }
 
   rows.forEach(row => row.style.display = 'none');
 
@@ -1296,11 +1358,10 @@ document.addEventListener('DOMContentLoaded', function() {
 function addExpense(event) {
   event.preventDefault();
   const expenseType = document.getElementById('expenseType').value;
-  const category    = document.getElementById('expenseCategory').value;
-  const expenseName = document.getElementById('expenseName').value;
   const amount      = document.getElementById('expenseAmount').value;
+  const vendor      = document.getElementById('expenseVendor').value;
 
-  if (!expenseType || !category || !expenseName || !amount) {
+  if (!expenseType || !amount || !vendor) {
     alert('Please fill in all required fields');
     return;
   }
@@ -1578,6 +1639,8 @@ function initModalDropdowns() {
     div.onclick = () => {
       typeInput.value = type;
       typeDropdown.classList.remove('show');
+      const catDropdown = document.getElementById('modalCategoryDropdown');
+      catDropdown.classList.remove('show');
       updateModalCategoryDropdown();
     };
     typeDropdown.appendChild(div);
@@ -1596,8 +1659,14 @@ function initModalDropdowns() {
   const catDropdown = document.getElementById('modalCategoryDropdown');
   const catArrow = catInput.parentElement.querySelector('.dropdown-arrow');
 
-  catArrow.addEventListener('click', () => catDropdown.classList.toggle('show'));
-  catInput.addEventListener('focus', () => updateModalCategoryDropdown());
+  catArrow.addEventListener('click', () => {
+    updateModalCategoryDropdown();
+    catDropdown.classList.toggle('show');
+  });
+  catInput.addEventListener('focus', () => {
+    updateModalCategoryDropdown();
+    catDropdown.classList.add('show');
+  });
   catInput.addEventListener('change', () => updateModalExpenseNameDropdown());
   catInput.addEventListener('input', function() {
     const filter = this.value.toLowerCase();
@@ -1656,8 +1725,24 @@ function initModalDropdowns() {
     });
   });
 
-  // Close dropdown when clicking outside
+  // Close all dropdowns when clicking outside
   document.addEventListener('click', function(event) {
+    const typeInput = document.getElementById('modalExpenseType');
+    const typeDropdown = document.getElementById('modalExpenseTypeDropdown');
+    const catInput = document.getElementById('modalCategory');
+    const catDropdown = document.getElementById('modalCategoryDropdown');
+    const nameInput = document.getElementById('modalExpenseName');
+    const nameDropdown = document.getElementById('modalExpenseNameDropdown');
+
+    if (typeInput && !typeInput.parentElement.contains(event.target)) {
+      typeDropdown.classList.remove('show');
+    }
+    if (catInput && !catInput.parentElement.contains(event.target)) {
+      catDropdown.classList.remove('show');
+    }
+    if (nameInput && !nameInput.parentElement.contains(event.target)) {
+      nameDropdown.classList.remove('show');
+    }
     if (!vendorInput.parentElement.contains(event.target)) {
       vendorDropdown.classList.remove('show');
     }
@@ -1671,7 +1756,6 @@ function updateModalCategoryDropdown() {
   const type = typeInput.value;
   const cats = categoriesByType[type] || [];
 
-  catDropdown.classList.add('show');
   catDropdown.innerHTML = '';
   cats.forEach(cat => {
     const div = document.createElement('div');
@@ -1759,11 +1843,12 @@ function previewReceipt() {
 function submitExpenseModal() {
   const expenseId = window.editingExpenseId;
   const expenseType = document.getElementById('modalExpenseType').value;
+  const vendor = document.getElementById('modalVendor').value;
+  const amount = document.getElementById('modalAmount').value;
   const category = document.getElementById('modalCategory').value;
   const expenseName = document.getElementById('modalExpenseName').value;
-  const amount = document.getElementById('modalAmount').value;
 
-  if (!expenseType || !category || !expenseName || !amount) {
+  if (!expenseType || !vendor || !amount) {
     alert('Please fill in all required fields');
     return;
   }
@@ -1857,29 +1942,29 @@ function viewReceipt(expId) {
       <div class="kpi-card kpi-teal">
         <div class="kpi-top"><span class="kpi-label">Total Invoiced</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
         <div class="kpi-value">${{ "{:,.0f}".format(project_pnl|sum(attribute='invoiced')) }}</div>
-        <div class="kpi-sub">across all projects</div>
+        <div class="kpi-sub"><small style="color:#94a3b8;">All projects · {{ stat_card_year }}</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-green">
         <div class="kpi-top"><span class="kpi-label">Total Collected</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
         <div class="kpi-value">${{ "{:,.0f}".format(project_pnl|sum(attribute='paid')) }}</div>
-        <div class="kpi-sub">payments received</div>
+        <div class="kpi-sub"><small style="color:#94a3b8;">All projects · {{ stat_card_year }}</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
         <div class="kpi-value text-danger">${{ "{:,.0f}".format(project_pnl|sum(attribute='expenses')) }}</div>
-        <div class="kpi-sub">across all projects</div>
+        <div class="kpi-sub"><small style="color:#94a3b8;">{{ stat_card_year }} across all projects</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
       {% set total_gp = project_pnl|sum(attribute='gross_profit') %}
       <div class="kpi-card {{ 'kpi-green' if total_gp >= 0 else 'kpi-red' }}">
-        <div class="kpi-top"><span class="kpi-label">Gross Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
+        <div class="kpi-top"><span class="kpi-label">{{ stat_card_year }} Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
         <div class="kpi-value {{ 'text-success' if total_gp >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(total_gp) }}</div>
-        <div class="kpi-sub">collected minus expenses</div>
+        <div class="kpi-sub"><small style="color:#94a3b8;">collected minus expense</small></div>
       </div>
     </div>
   </div>
@@ -2898,6 +2983,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
   function doFilterIncome() {
     var rows    = document.querySelectorAll('#incomeTableBody tr.inc-row');
     var q       = ((document.getElementById('incomeSearch') || {}).value || '').toLowerCase();
+    var yrVal   = ((document.getElementById('incomeYearFilter') || {}).value || '');
     var moVal   = ((document.getElementById('incomeMonthFilter') || {}).value || '');
     var stBtn   = document.querySelector('#incomeStatusGroup .status-pill-btn.sp-active');
     var stFilter = stBtn ? stBtn.dataset.status : 'all';
@@ -2906,6 +2992,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
       var vis = true;
       if (q)     vis = (r.getAttribute('data-search')||'').includes(q);
       if (vis && stFilter !== 'all') vis = (r.getAttribute('data-status')||'') === stFilter;
+      if (vis && yrVal) vis = (r.getAttribute('data-year')||'') === yrVal;
       if (vis && moVal) {
         var ds = (r.getAttribute('data-date')||'');
         vis = ds.length >= 7 && ds.substring(5,7) === moVal;
@@ -2924,10 +3011,31 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     if (tc) tc.textContent = '$' + filteredTotal.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
   }
 
+  window.onIncomeYearChange = function() {
+    var year = ((document.getElementById('incomeYearFilter') || {}).value || '');
+    var monthSel = document.getElementById('incomeMonthFilter');
+    monthSel.innerHTML = '<option value="">All Months</option>';
+
+    if (year) {
+      monthSel.style.display = '';
+      var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      for (var i = 0; i < 12; i++) {
+        var opt = document.createElement('option');
+        opt.value = String(i + 1).padStart(2, '0');
+        opt.textContent = MONTH_NAMES[i];
+        monthSel.appendChild(opt);
+      }
+    } else {
+      monthSel.style.display = 'none';
+    }
+    doFilterIncome();
+  };
+
   window.reFilterIncome = function() { doFilterIncome(); };
 
   window.clearIncomeFilter = function() {
     var s = document.getElementById('incomeSearch'); if(s) s.value='';
+    var yf = document.getElementById('incomeYearFilter'); if(yf) yf.value='';
     var mf = document.getElementById('incomeMonthFilter'); if(mf) mf.value='';
     document.querySelectorAll('#incomeStatusGroup .status-pill-btn').forEach(function(b){
       b.classList.toggle('sp-active', b.dataset.status==='all');
@@ -2942,6 +3050,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
       doFilterIncome();
     });
   });
+
 
   // ── A/R Aging tab filtering ───────────────────────────────────────
   var activeBucket = 'all';
