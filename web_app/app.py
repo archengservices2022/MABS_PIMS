@@ -996,7 +996,11 @@ def quotes_export():
     header_text = f"{co.get('name','')} - Quotes Report"
     w.writerow([header_text.center(80)])
     w.writerow([])
-    w.writerow(["Quote Number", "Client", "Project / Scope", "Salesperson", "Date", "Valid Until", "Status", "Subtotal", "Tax", "Total", "Notes"])
+
+    headers = ["Quote Number", "Client", "Project / Scope", "Salesperson", "Date", "Valid Until", "Status", "Subtotal", "Tax", "Total", "Notes"]
+    col_widths = [18, 25, 35, 20, 14, 14, 14, 16, 14, 16, 30]
+    centered_headers = [h.center(w) for h, w in zip(headers, col_widths)]
+    w.writerow(centered_headers)
 
     for q in items:
         total = _safe_float(q.get("total", 0))
@@ -2379,7 +2383,11 @@ def projects_export_csv():
     header_text = f"{co.get('name','')} - Projects Report"
     w.writerow([header_text.center(80)])
     w.writerow([])
-    w.writerow(["Project #", "Name", "Client", "Start Date", "End Date", "Status", "Contract Value", "Amount Paid", "Outstanding"])
+
+    headers = ["Project #", "Name", "Client", "Start Date", "End Date", "Status", "Contract Value", "Amount Paid", "Outstanding"]
+    col_widths = [14, 25, 22, 14, 14, 14, 16, 16, 16]
+    centered_headers = [h.center(w) for h, w in zip(headers, col_widths)]
+    w.writerow(centered_headers)
 
     for p in items:
         cv = _safe_float(p.get("contract_value", 0))
@@ -4165,7 +4173,11 @@ def invoicing_export_csv():
     header_text = f"{co.get('name','')} - Invoices Report"
     w.writerow([header_text.center(80)])
     w.writerow([])
-    w.writerow(["Invoice #", "Client", "Project", "Date", "Due Date", "Status", "Subtotal", "Tax", "Total", "Amount Paid", "Outstanding"])
+
+    headers = ["Invoice #", "Client", "Project", "Date", "Due Date", "Status", "Subtotal", "Tax", "Total", "Amount Paid", "Outstanding"]
+    col_widths = [16, 25, 16, 14, 14, 14, 16, 14, 16, 14, 14]
+    centered_headers = [h.center(w) for h, w in zip(headers, col_widths)]
+    w.writerow(centered_headers)
 
     for inv in items:
         m = inv.get("meta", {})
