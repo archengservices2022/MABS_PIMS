@@ -1019,6 +1019,7 @@ def quotes_export_excel():
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Quotes"
+    co = company_info()
 
     hdr_fill = PatternFill(start_color="FF0F172A", end_color="FF0F172A", fill_type="solid")
     hdr_font = Font(color="FFFFFFFF", bold=True, size=11)
