@@ -673,25 +673,8 @@ body {
   min-width: fit-content;
 }
 
-/* Invoicing table — keep invoice #, date, due date on one line */
-#tab-all-invoices .table td:nth-child(1),  /* invoice # column */
-#tab-all-invoices .table td:nth-child(5) { /* date column */
+/* Invoicing table — keep date columns on one line */
+#tab-all-invoices .table td:nth-child(5),  /* date column */
+#tab-all-invoices .table td:nth-child(6) { /* due date column */
   white-space: nowrap !important;
-  min-width: fit-content;
-}
-#tab-all-invoices .table td:nth-child(2) { /* client column — increased width */
-  min-width: 180px;
-}
-#tab-all-invoices .table td:nth-child(3) { /* project column — increased width */
-  min-width: 180px;
-}
-#tab-all-invoices .table td:nth-child(6) { /* due date column — very compact */
-  white-space: nowrap !important;
-  width: 70px;
-  max-width: 70px;
-  padding: 12px 4px !important;
-}
-#tab-all-invoices .table td:nth-child(7) { /* total column — very compact */
-  max-width: 80px;
-  padding: 12px 4px !important;
 }
