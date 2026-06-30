@@ -991,7 +991,6 @@ def quotes_export():
 
     title_font = Font(bold=True, size=13, color="FF0F766E")
     ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    rgt = Alignment(horizontal="right", vertical="center", wrap_text=True)
     hdr_fill = PatternFill(start_color="FF0F172A", end_color="FF0F172A", fill_type="solid")
     hdr_font = Font(color="FFFFFFFF", bold=True, size=11)
     alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
@@ -1032,12 +1031,10 @@ def quotes_export():
                 cell.fill = alt_fill
             if ci in (8, 9, 10):
                 cell.number_format = '"$"#,##0.00'
-                cell.alignment = rgt
-            else:
-                cell.alignment = ctr
+            cell.alignment = ctr
         ri += 1
 
-    col_widths = [18, 25, 35, 20, 14, 14, 12, 14, 12, 14, 30]
+    col_widths = [18, 25, 35, 20, 14, 14, 14, 16, 14, 16, 30]
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
     ws.freeze_panes = f"A{header_row + 1}"
@@ -1082,11 +1079,10 @@ def quotes_export_excel():
     title_font = Font(bold=True, size=13, color="FF0F766E")
     alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
     ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    rgt = Alignment(horizontal="right",  vertical="center", wrap_text=True)
 
     # Add title row
     ws.merge_cells('A1:K1')
-    title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} — Quotes Report")
+    title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} - Quotes Report")
     title_cell.font = title_font
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 20
@@ -1132,15 +1128,12 @@ def quotes_export_excel():
             cell = ws.cell(row=ri, column=ci, value=val)
             if ri % 2 == 0:
                 cell.fill = alt_fill
-            # Center align all cells
             if ci in (8, 9, 10):
                 cell.number_format = '"$"#,##0.00'
-                cell.alignment = rgt
-            else:
-                cell.alignment = ctr
+            cell.alignment = ctr
 
     # Increase column widths
-    col_widths = [18, 25, 35, 20, 14, 14, 12, 14, 12, 14, 30]
+    col_widths = [18, 25, 35, 20, 14, 14, 14, 16, 14, 16, 30]
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
     ws.freeze_panes = f"A{header_row + 1}"
@@ -2447,7 +2440,6 @@ def projects_export_excel():
     title_font = Font(bold=True, size=13, color="FF0F766E")
     alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
     ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    rgt = Alignment(horizontal="right",  vertical="center", wrap_text=True)
 
     # Add title row
     co = company_info()
@@ -2484,12 +2476,10 @@ def projects_export_excel():
                 cell.fill = alt_fill
             if ci in (7, 8, 9):
                 cell.number_format = '"$"#,##0.00'
-                cell.alignment = rgt
-            else:
-                cell.alignment = ctr
+            cell.alignment = ctr
 
     # Increase column widths
-    col_widths = [14, 25, 22, 14, 14, 12, 16, 16, 16]
+    col_widths = [14, 25, 22, 14, 14, 14, 16, 16, 16]
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
     ws.freeze_panes = f"A{header_row + 1}"
@@ -4228,7 +4218,6 @@ def invoicing_export_excel():
     title_font = Font(bold=True, size=13, color="FF0F766E")
     alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
     ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    rgt = Alignment(horizontal="right",  vertical="center", wrap_text=True)
 
     # Add title row
     co = company_info()
@@ -4266,12 +4255,10 @@ def invoicing_export_excel():
                 cell.fill = alt_fill
             if ci in (7, 8, 9, 10, 11):
                 cell.number_format = '"$"#,##0.00'
-                cell.alignment = rgt
-            else:
-                cell.alignment = ctr
+            cell.alignment = ctr
 
     # Increase column widths
-    col_widths = [16, 25, 16, 14, 14, 12, 14, 12, 14, 14, 14]
+    col_widths = [16, 25, 16, 14, 14, 14, 16, 14, 16, 14, 14]
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
     ws.freeze_panes = f"A{header_row + 1}"
