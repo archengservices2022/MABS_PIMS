@@ -1058,9 +1058,16 @@ def quotes_export_excel():
         cell = ws.cell(row=header_row, column=col, value=h)
         cell.fill = hdr_fill; cell.font = hdr_font; cell.alignment = ctr
 
+    def fmt_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
     for ri, q in enumerate(items, header_row + 1):
         row = [q.get("job_number",""), q.get("client_name",""), q.get("project_name",""),
-               q.get("salesperson",""), q.get("date",""), q.get("valid_until",""),
+               q.get("salesperson",""), fmt_date(q.get("date","")), fmt_date(q.get("valid_until","")),
                q.get("status",""), _safe_float(q.get("subtotal",0)),
                _safe_float(q.get("tax_amount",0)), _safe_float(q.get("total",0)),
                q.get("notes","")]
@@ -1150,12 +1157,17 @@ def quotes_export_pdf():
     hdrs = ["Quote #","Client","Project / Scope","Salesperson","Date","Status","Total"]
     data = [hdrs]
     for q in items:
+        date_str = q.get("date","—")
+        if date_str and date_str != "—" and len(str(date_str)) >= 10:
+            parts = str(date_str)[:10].split("-")
+            if len(parts) == 3:
+                date_str = f"{parts[1]}-{parts[2]}-{parts[0]}"
         data.append([
             q.get("job_number","—"),
             q.get("client_name","—"),
             q.get("project_name") or "—",
             q.get("salesperson","—"),
-            q.get("date","—"),
+            date_str,
             q.get("status","—"),
             f"${_safe_float(q.get('total',0)):,.2f}",
         ])
@@ -2386,11 +2398,18 @@ def projects_export_excel():
         cell = ws.cell(row=header_row, column=col, value=h)
         cell.fill = hdr_fill; cell.font = hdr_font; cell.alignment = ctr
 
+    def fmt_proj_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
     for ri, p in enumerate(items, header_row + 1):
         cv   = _safe_float(p.get("contract_value", 0))
         paid = _safe_float(p.get("amount_paid", 0))
         row = [p.get("project_number",""), p.get("project_name",""),
-               p.get("client_name",""), p.get("start_date",""), p.get("end_date",""),
+               p.get("client_name",""), fmt_proj_date(p.get("start_date","")), fmt_proj_date(p.get("end_date","")),
                p.get("status",""), cv, paid, cv - paid]
         for ci, val in enumerate(row, 1):
             cell = ws.cell(row=ri, column=ci, value=val)
@@ -2450,6 +2469,13 @@ def projects_export_pdf():
     elems.append(Spacer(1, 0.2*inch))
     hdrs = ["Project #", "Name", "Client", "Status", "Start Date", "Contract Value", "Paid", "Outstanding"]
     data = [hdrs]
+    def fmt_date_pdf(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
     for p in items:
         cv   = _safe_float(p.get("contract_value", 0))
         paid = _safe_float(p.get("amount_paid", 0))
@@ -2458,7 +2484,7 @@ def projects_export_pdf():
             p.get("project_name","—") or "—",
             p.get("client_name","—") or "—",
             p.get("status","—"),
-            p.get("start_date","—") or "—",
+            fmt_date_pdf(p.get("start_date","")),
             f"${cv:,.0f}",
             f"${paid:,.0f}",
             f"${cv-paid:,.0f}",
@@ -4085,6 +4111,13 @@ def invoicing_export_csv():
     items = _filter_invoices_export(items)
     output = io.StringIO()
     w = csv.writer(output)
+    def fmt_csv_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
     w.writerow(["Invoice #","Client","Project","Date","Due Date","Status",
                 "Subtotal","Tax","Total","Amount Paid","Outstanding"])
     for inv in items:
@@ -4092,7 +4125,7 @@ def invoicing_export_csv():
         total = _safe_float(m.get("total", 0))
         paid  = _safe_float(m.get("amount_paid", 0))
         w.writerow([m.get("invoice_number",""), m.get("client_name",""),
-                    m.get("project_number",""), m.get("invoice_date",""), m.get("due_date",""),
+                    m.get("project_number",""), fmt_csv_date(m.get("invoice_date","")), fmt_csv_date(m.get("due_date","")),
                     m.get("status",""), m.get("subtotal","0"), m.get("tax_amount","0"),
                     f"{total:.2f}", f"{paid:.2f}", f"{total-paid:.2f}"])
     output.seek(0)
@@ -4140,12 +4173,19 @@ def invoicing_export_excel():
         cell = ws.cell(row=header_row, column=col, value=h)
         cell.fill = hdr_fill; cell.font = hdr_font; cell.alignment = ctr
 
+    def fmt_inv_excel_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
     for ri, inv in enumerate(items, header_row + 1):
         m = inv.get("meta", {})
         total = _safe_float(m.get("total", 0))
         paid  = _safe_float(m.get("amount_paid", 0))
         row = [m.get("invoice_number",""), m.get("client_name",""),
-               m.get("project_number",""), m.get("invoice_date",""), m.get("due_date",""),
+               m.get("project_number",""), fmt_inv_excel_date(m.get("invoice_date","")), fmt_inv_excel_date(m.get("due_date","")),
                m.get("status",""), _safe_float(m.get("subtotal",0)),
                _safe_float(m.get("tax_amount",0)), total, paid, total - paid]
         for ci, val in enumerate(row, 1):
@@ -4208,6 +4248,13 @@ def invoicing_export_pdf():
     elems.append(Spacer(1, 0.2*inch))
     hdrs = ["Invoice #", "Client", "Project", "Date", "Due Date", "Status", "Total", "Paid", "Outstanding"]
     data = [hdrs]
+    def fmt_inv_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
     for inv in items:
         m = inv.get("meta", {})
         total = _safe_float(m.get("total", 0))
@@ -4216,8 +4263,8 @@ def invoicing_export_pdf():
             m.get("invoice_number","—"),
             m.get("client_name","—") or "—",
             m.get("project_number","") or "—",
-            m.get("invoice_date","—") or "—",
-            m.get("due_date","—") or "—",
+            fmt_inv_date(m.get("invoice_date","")),
+            fmt_inv_date(m.get("due_date","")),
             m.get("status","—"),
             f"${total:,.0f}",
             f"${paid:,.0f}",
