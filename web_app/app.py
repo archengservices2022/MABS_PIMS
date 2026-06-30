@@ -962,10 +962,8 @@ def quotes():
 @app.route("/quotes/export")
 @role_required("quotes")
 def quotes_export():
-    import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment
-    from openpyxl.utils import get_column_letter
-    import io as _io
+    import csv
+    import io
 
     raw = fb_get("/job_forms") or {}
     items = []
@@ -984,22 +982,8 @@ def quotes_export():
     if date_to:
         items = [i for i in items if (i.get("date") or "") <= date_to]
 
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Quotes"
-    co = company_info()
-
-    title_font = Font(bold=True, size=13, color="FF0F766E")
-    ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    hdr_fill = PatternFill(start_color="FF0F172A", end_color="FF0F172A", fill_type="solid")
-    hdr_font = Font(color="FFFFFFFF", bold=True, size=11)
-    alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
-
-    ws.merge_cells('A1:K1')
-    title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} - Quotes Report")
-    title_cell.font = title_font
-    title_cell.alignment = ctr
-    ws.row_dimensions[1].height = 20
+    output = io.StringIO()
+    w = csv.writer(output)
 
     def fmt_csv_date(d):
         if not d or d == "—":
@@ -1008,45 +992,20 @@ def quotes_export():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    headers = ["Quote Number","Client","Project / Scope","Salesperson","Date","Valid Until",
-               "Status","Subtotal","Tax","Total","Notes"]
-    header_row = 2
-    for col, h in enumerate(headers, 1):
-        cell = ws.cell(row=header_row, column=col, value=h)
-        cell.fill = hdr_fill
-        cell.font = hdr_font
-        cell.alignment = ctr
-
-    ri = header_row + 1
+    w.writerow(["Quote Number","Client","Project / Scope","Salesperson","Date","Valid Until",
+                "Status","Subtotal","Tax","Total","Notes"])
     for q in items:
         total = _safe_float(q.get("total", 0))
         subtotal = _safe_float(q.get("subtotal", 0))
         tax = total - subtotal
-        row = [q.get("job_number",""), q.get("client_name",""), q.get("project_name",""),
-               q.get("salesperson",""), fmt_csv_date(q.get("date","")), fmt_csv_date(q.get("valid_until","")),
-               q.get("status",""), subtotal, tax, total, q.get("notes","")]
-        for ci, val in enumerate(row, 1):
-            cell = ws.cell(row=ri, column=ci, value=val)
-            if ri % 2 == 0:
-                cell.fill = alt_fill
-            if ci in (8, 9, 10):
-                cell.number_format = '"$"#,##0.00'
-            cell.alignment = ctr
-        ri += 1
-
-    col_widths = [18, 25, 35, 20, 14, 14, 14, 16, 14, 16, 30]
-    for ci, w in enumerate(col_widths, 1):
-        ws.column_dimensions[get_column_letter(ci)].width = w
-    ws.freeze_panes = f"A{header_row + 1}"
-
-    buf = _io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
+        w.writerow([q.get("job_number",""), q.get("client_name",""), q.get("project_name",""),
+                    q.get("salesperson",""), fmt_csv_date(q.get("date","")), fmt_csv_date(q.get("valid_until","")),
+                    q.get("status",""), f"{subtotal:.2f}", f"{tax:.2f}", f"{total:.2f}", q.get("notes","")])
+    output.seek(0)
     from flask import Response
-    fname = f"quotes_{datetime.now().strftime('%Y%m%d')}.xlsx"
-    return Response(buf.getvalue(),
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment;filename={fname}"})
+    fname = f"quotes_{datetime.now().strftime('%Y%m%d')}.csv"
+    return Response(output.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment;filename={fname}"})
 
 @app.route("/quotes/export/excel")
 @role_required("quotes")
