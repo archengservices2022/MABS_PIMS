@@ -983,7 +983,7 @@ def quotes_export():
 
     import csv
     output = io.StringIO()
-    w = csv.writer(output, delimiter='\t')
+    w = csv.writer(output)
     co = company_info()
 
     def fmt_csv_date(d):
