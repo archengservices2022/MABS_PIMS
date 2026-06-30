@@ -962,7 +962,6 @@ def quotes():
 @app.route("/quotes/export")
 @role_required("quotes")
 def quotes_export():
-    import csv
     import io
 
     raw = fb_get("/job_forms") or {}
@@ -982,12 +981,10 @@ def quotes_export():
     if date_to:
         items = [i for i in items if (i.get("date") or "") <= date_to]
 
+    import csv
     output = io.StringIO()
-    w = csv.writer(output)
+    w = csv.writer(output, delimiter='\t')
     co = company_info()
-
-    w.writerow([f"{co.get('name','')} - Quotes Report"])
-    w.writerow([])
 
     def fmt_csv_date(d):
         if not d or d == "—":
@@ -996,15 +993,28 @@ def quotes_export():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    w.writerow(["Quote Number","Client","Project / Scope","Salesperson","Date","Valid Until",
-                "Status","Subtotal","Tax","Total","Notes"])
+    w.writerow([f"{co.get('name','')} - Quotes Report"])
+    w.writerow([])
+    w.writerow(["Quote Number", "Client", "Project / Scope", "Salesperson", "Date", "Valid Until", "Status", "Subtotal", "Tax", "Total", "Notes"])
+
     for q in items:
         total = _safe_float(q.get("total", 0))
         subtotal = _safe_float(q.get("subtotal", 0))
         tax = total - subtotal
-        w.writerow([q.get("job_number",""), q.get("client_name",""), q.get("project_name",""),
-                    q.get("salesperson",""), fmt_csv_date(q.get("date","")), fmt_csv_date(q.get("valid_until","")),
-                    q.get("status",""), f"{subtotal:.2f}", f"{tax:.2f}", f"{total:.2f}", q.get("notes","")])
+        w.writerow([
+            q.get("job_number",""),
+            q.get("client_name",""),
+            q.get("project_name",""),
+            q.get("salesperson",""),
+            fmt_csv_date(q.get("date","")),
+            fmt_csv_date(q.get("valid_until","")),
+            q.get("status",""),
+            f"{subtotal:.2f}",
+            f"{tax:.2f}",
+            f"{total:.2f}",
+            q.get("notes","")
+        ])
+
     output.seek(0)
     from flask import Response
     fname = f"quotes_{datetime.now().strftime('%Y%m%d')}.csv"
@@ -2355,10 +2365,8 @@ def projects_export_csv():
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     items = _filter_projects_export(items)
     output = io.StringIO()
-    w = csv.writer(output)
+    w = csv.writer(output, delimiter='\t')
     co = company_info()
-    w.writerow([f"{co.get('name','')} - Projects Report"])
-    w.writerow([])
 
     def fmt_csv_date(d):
         if not d or d == "—":
@@ -2367,14 +2375,25 @@ def projects_export_csv():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    w.writerow(["Project #","Name","Client","Start Date","End Date","Status",
-                "Contract Value","Amount Paid","Outstanding"])
+    w.writerow([f"{co.get('name','')} - Projects Report"])
+    w.writerow([])
+    w.writerow(["Project #", "Name", "Client", "Start Date", "End Date", "Status", "Contract Value", "Amount Paid", "Outstanding"])
+
     for p in items:
-        cv   = _safe_float(p.get("contract_value", 0))
+        cv = _safe_float(p.get("contract_value", 0))
         paid = _safe_float(p.get("amount_paid", 0))
-        w.writerow([p.get("project_number",""), p.get("project_name",""),
-                    p.get("client_name",""), fmt_csv_date(p.get("start_date","")), fmt_csv_date(p.get("end_date","")),
-                    p.get("status",""), f"{cv:.2f}", f"{paid:.2f}", f"{cv-paid:.2f}"])
+        w.writerow([
+            p.get("project_number",""),
+            p.get("project_name",""),
+            p.get("client_name",""),
+            fmt_csv_date(p.get("start_date","")),
+            fmt_csv_date(p.get("end_date","")),
+            p.get("status",""),
+            f"{cv:.2f}",
+            f"{paid:.2f}",
+            f"{cv-paid:.2f}"
+        ])
+
     output.seek(0)
     from flask import Response
     fname = f"projects_{datetime.now().strftime('%Y%m%d')}.csv"
@@ -4131,10 +4150,8 @@ def invoicing_export_csv():
     items.sort(key=lambda x: x.get("meta", {}).get("created_at", ""), reverse=True)
     items = _filter_invoices_export(items)
     output = io.StringIO()
-    w = csv.writer(output)
+    w = csv.writer(output, delimiter='\t')
     co = company_info()
-    w.writerow([f"{co.get('name','')} - Invoices Report"])
-    w.writerow([])
 
     def fmt_csv_date(d):
         if not d or d == "—":
@@ -4143,16 +4160,30 @@ def invoicing_export_csv():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    w.writerow(["Invoice #","Client","Project","Date","Due Date","Status",
-                "Subtotal","Tax","Total","Amount Paid","Outstanding"])
+    w.writerow([f"{co.get('name','')} - Invoices Report"])
+    w.writerow([])
+    w.writerow(["Invoice #", "Client", "Project", "Date", "Due Date", "Status", "Subtotal", "Tax", "Total", "Amount Paid", "Outstanding"])
+
     for inv in items:
         m = inv.get("meta", {})
         total = _safe_float(m.get("total", 0))
-        paid  = _safe_float(m.get("amount_paid", 0))
-        w.writerow([m.get("invoice_number",""), m.get("client_name",""),
-                    m.get("project_number",""), fmt_csv_date(m.get("invoice_date","")), fmt_csv_date(m.get("due_date","")),
-                    m.get("status",""), m.get("subtotal","0"), m.get("tax_amount","0"),
-                    f"{total:.2f}", f"{paid:.2f}", f"{total-paid:.2f}"])
+        paid = _safe_float(m.get("amount_paid", 0))
+        subtotal = _safe_float(m.get("subtotal", 0))
+        tax = _safe_float(m.get("tax_amount", 0))
+        w.writerow([
+            m.get("invoice_number",""),
+            m.get("client_name",""),
+            m.get("project_number",""),
+            fmt_csv_date(m.get("invoice_date","")),
+            fmt_csv_date(m.get("due_date","")),
+            m.get("status",""),
+            f"{subtotal:.2f}",
+            f"{tax:.2f}",
+            f"{total:.2f}",
+            f"{paid:.2f}",
+            f"{total-paid:.2f}"
+        ])
+
     output.seek(0)
     from flask import Response
     fname = f"invoices_{datetime.now().strftime('%Y%m%d')}.csv"
