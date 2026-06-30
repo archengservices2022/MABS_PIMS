@@ -672,3 +672,11 @@ body {
   white-space: nowrap !important;
   min-width: fit-content;
 }
+
+/* Invoicing table — keep invoice #, date, due date on one line */
+#tab-all-invoices .table td:nth-child(1),  /* invoice # column */
+#tab-all-invoices .table td:nth-child(5),  /* date column */
+#tab-all-invoices .table td:nth-child(6) { /* due date column */
+  white-space: nowrap !important;
+  min-width: fit-content;
+}

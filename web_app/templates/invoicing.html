@@ -189,7 +189,7 @@
                   <span class="text-muted small">—</span>
                 {%- endif %}
               </td>
-              <td>{{ meta.get('invoice_date','—') }}</td>
+              <td>{{ meta.get('invoice_date','—') | format_date }}</td>
               <td>{{ meta.get('due_date','—') | format_date }}{% if meta.get('net_terms') %}<br><span class="text-muted small">Net {{ meta.get('net_terms') }}</span>{% endif %}</td>
               <td class="text-end fw-bold">${{ "{:,.2f}".format(meta.get('total',0)|float) }}</td>
               <td class="text-end text-success">
