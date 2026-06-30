@@ -209,7 +209,7 @@
         {% if my_open_entry and my_open_entry.date < today_str %}
         <div class="alert alert-warning py-2 mb-3 text-start" style="font-size:13px;">
           <i class="bi bi-exclamation-triangle-fill me-1"></i>
-          Still clocked in from <strong>{{ my_open_entry.date }}</strong> —
+          Still clocked in from <strong>{{ my_open_entry.date | format_date }}</strong> —
           {{ my_open_entry.project_name or my_open_entry.project_number or 'General / Admin' }}.
           <form method="post" action="{{ url_for('employee_close_entry', entry_id=my_open_entry.firebase_id) }}" class="d-flex gap-2 mt-2">
             <input type="datetime-local" name="clock_out" value="{{ my_open_entry.date }}T17:00"
@@ -595,7 +595,7 @@
             {% for r in my_time_off %}
             <tr>
               <td class="fw-500">{{ r.type }}</td>
-              <td class="text-muted small">{{ r.start_date }} → {{ r.end_date }}</td>
+              <td class="text-muted small">{{ r.start_date | format_date }} → {{ r.end_date | format_date }}</td>
               <td class="text-muted small">
                 {% if r.type != 'Unpaid' %}
                   {{ r.get('working_days', '—') }}
@@ -800,7 +800,7 @@
         </div>
         <div class="profile-row">
           <div class="profile-row-label"><i class="bi bi-calendar3 me-1"></i>Hire Date</div>
-          <div class="profile-row-value">{{ profile_user.get('hire_date') or '—' }}</div>
+          <div class="profile-row-value">{{ (profile_user.get('hire_date') or '—') | format_date }}</div>
         </div>
         <div class="profile-row">
           <div class="profile-row-label"><i class="bi bi-person-badge me-1"></i>Role</div>
@@ -877,7 +877,7 @@
             </div>
           </td>
           <td class="text-muted small">{{ e.project_name or e.project_number or 'General / Admin' }}</td>
-          <td class="text-muted small">{{ e.date }} {{ e.clock_in[11:16] }}</td>
+          <td class="text-muted small">{{ e.date | format_date }} {{ e.clock_in[11:16] }}</td>
           <td>
             <form id="close-entry-{{ e.firebase_id }}" method="post"
                   action="{{ url_for('employee_close_entry', entry_id=e.firebase_id) }}" class="d-flex gap-2">
@@ -937,7 +937,7 @@
             </span>
           </td>
           <td class="text-muted">{{ u.get('department') or '—' }}</td>
-          <td class="text-muted">{{ u.get('hire_date') or '—' }}</td>
+          <td class="text-muted">{{ (u.get('hire_date') or '—') | format_date }}</td>
           <td>
             {% if open_entry %}
             <span class="badge-working">
