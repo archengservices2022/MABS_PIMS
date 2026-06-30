@@ -1095,22 +1095,25 @@ def quotes_export_pdf():
 
     title_s = ParagraphStyle("T", parent=styles["Normal"], fontSize=15,
                               fontName="Helvetica-Bold",
-                              textColor=colors.HexColor("#0F766E"), spaceAfter=3)
+                              textColor=colors.HexColor("#0F766E"), spaceAfter=3,
+                              alignment=1)  # 1 = CENTER
     sub_s   = ParagraphStyle("S", parent=styles["Normal"], fontSize=9,
-                              textColor=colors.HexColor("#64748B"), spaceAfter=14)
-    elems.append(Paragraph(f"{co.get('name','')} — Quote Report", title_s))
+                              textColor=colors.HexColor("#64748B"), spaceAfter=14,
+                              alignment=0)  # 0 = LEFT
+    elems.append(Paragraph(f"{co.get('name','')} — Quotes Report", title_s))
+    elems.append(Spacer(1, 0.2*inch))
     _pdf_from = request.args.get("from", "")
     _pdf_to   = request.args.get("to", "")
     _date_range = ""
     if _pdf_from and _pdf_to:
-        _date_range = f"  ·  {_pdf_from} to {_pdf_to}"
+        _date_range = f"{_pdf_from} to {_pdf_to}"
     elif _pdf_from:
-        _date_range = f"  ·  From {_pdf_from}"
+        _date_range = f"From {_pdf_from}"
     elif _pdf_to:
-        _date_range = f"  ·  Up to {_pdf_to}"
-    elems.append(Paragraph(
-        f"Generated {datetime.now().strftime('%B %d, %Y')}  ·  {len(items)} record{'s' if len(items)!=1 else ''}{_date_range}",
-        sub_s))
+        _date_range = f"Up to {_pdf_to}"
+    if _date_range:
+        elems.append(Paragraph(_date_range, sub_s))
+        elems.append(Spacer(1, 0.15*inch))
 
     hdrs = ["Quote #","Client","Project / Scope","Salesperson","Date","Status","Total"]
     data = [hdrs]
@@ -1118,14 +1121,14 @@ def quotes_export_pdf():
         data.append([
             q.get("job_number","—"),
             q.get("client_name","—"),
-            (q.get("project_name") or "—")[:38],
+            q.get("project_name") or "—",
             q.get("salesperson","—"),
             q.get("date","—"),
             q.get("status","—"),
             f"${_safe_float(q.get('total',0)):,.2f}",
         ])
 
-    cw = [1.1*inch, 1.8*inch, 2.9*inch, 1.5*inch, 1.0*inch, 1.2*inch, 1.0*inch]
+    cw = [1.2*inch, 2.0*inch, 3.0*inch, 1.8*inch, 1.1*inch, 1.2*inch, 1.1*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
@@ -1133,6 +1136,7 @@ def quotes_export_pdf():
         ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
         ("FONTSIZE",      (0,0), (-1,0), 9),
         ("ALIGN",         (0,0), (-1,0), "CENTER"),
+        ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
         ("TOPPADDING",    (0,0), (-1,0), 8),
         ("BOTTOMPADDING", (0,0), (-1,0), 8),
         ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
@@ -1141,8 +1145,8 @@ def quotes_export_pdf():
         ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
         ("TOPPADDING",    (0,1), (-1,-1), 5),
         ("BOTTOMPADDING", (0,1), (-1,-1), 5),
-        ("ALIGN",         (-1,1),(-1,-1), "RIGHT"),
-        ("FONTNAME",      (-1,1),(-1,-1), "Helvetica-Bold"),
+        ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
     ]))
     elems.append(tbl)
     doc.build(elems)
