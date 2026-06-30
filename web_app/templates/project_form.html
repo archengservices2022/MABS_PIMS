@@ -444,18 +444,19 @@ let previewStagesData = [];
 function captureUpdatedStages(event) {
   const form = event.target;
 
-  // Check if preview amounts are available (new or edited project with preview)
-  if (previewStagesData && previewStagesData.length > 0) {
-    console.log('captureUpdatedStages: Using preview amounts:', previewStagesData);
+  // Only send preview amounts as custom if user explicitly customized them
+  // Otherwise, let the backend recalculate based on down payment % and installments
+  if (hasExplicitCustomAmounts && previewStagesData && previewStagesData.length > 0) {
+    console.log('captureUpdatedStages: Using custom preview amounts:', previewStagesData);
 
-    // Send preview amounts as custom_stage_amounts
+    // Send preview amounts as custom_stage_amounts (user explicitly customized)
     const hiddenInput = document.createElement('input');
     hiddenInput.type = 'hidden';
     hiddenInput.name = 'custom_stage_amounts';
     hiddenInput.value = JSON.stringify(previewStagesData);
     form.appendChild(hiddenInput);
 
-    console.log('✓ Captured preview amounts and added as custom_stage_amounts');
+    console.log('✓ Captured custom preview amounts and added as custom_stage_amounts');
     return true;
   }
 
