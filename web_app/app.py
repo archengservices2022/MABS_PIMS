@@ -2386,8 +2386,8 @@ def projects_export_csv():
     w.writerow([header_text.center(80)])
     w.writerow([])
 
-    headers = ["Project #", "Name", "Client", "Start Date", "End Date", "Status", "Contract Value", "Amount Paid", "Outstanding"]
-    col_widths = [14, 25, 22, 14, 14, 14, 16, 16, 16]
+    headers = ["Project #", "Name", "Client", "Start Date", "End Date", "Contract Value", "Amount Paid", "Outstanding", "Status"]
+    col_widths = [16, 28, 26, 16, 16, 18, 18, 18, 16]
     centered_headers = [h.center(w) for h, w in zip(headers, col_widths)]
     w.writerow(centered_headers)
 
@@ -2400,10 +2400,10 @@ def projects_export_csv():
             p.get("client_name",""),
             fmt_csv_date(p.get("start_date","")),
             fmt_csv_date(p.get("end_date","")),
-            p.get("status",""),
             f"{cv:.2f}",
             f"{paid:.2f}",
-            f"{cv-paid:.2f}"
+            f"{cv-paid:.2f}",
+            p.get("status","")
         ])
 
     output.seek(0)
@@ -2443,9 +2443,9 @@ def projects_export_excel():
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 20
 
-    # Add headers (removed Payment Stage and Assigned To columns)
-    headers = ["Project #","Name","Client","Start Date","End Date","Status",
-               "Contract Value ($)","Amount Paid ($)","Outstanding ($)"]
+    # Add headers
+    headers = ["Project #","Name","Client","Start Date","End Date",
+               "Contract Value ($)","Amount Paid ($)","Outstanding ($)","Status"]
     header_row = 2
     for col, h in enumerate(headers, 1):
         cell = ws.cell(row=header_row, column=col, value=h)
@@ -2463,17 +2463,17 @@ def projects_export_excel():
         paid = _safe_float(p.get("amount_paid", 0))
         row = [p.get("project_number",""), p.get("project_name",""),
                p.get("client_name",""), fmt_proj_date(p.get("start_date","")), fmt_proj_date(p.get("end_date","")),
-               p.get("status",""), cv, paid, cv - paid]
+               cv, paid, cv - paid, p.get("status","")]
         for ci, val in enumerate(row, 1):
             cell = ws.cell(row=ri, column=ci, value=val)
             if ri % 2 == 0:
                 cell.fill = alt_fill
-            if ci in (7, 8, 9):
+            if ci in (6, 7, 8):
                 cell.number_format = '"$"#,##0.00'
             cell.alignment = ctr
 
     # Increase column widths
-    col_widths = [14, 25, 22, 14, 14, 14, 16, 16, 16]
+    col_widths = [16, 28, 26, 16, 16, 18, 18, 18, 16]
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
     ws.freeze_panes = f"A{header_row + 1}"
