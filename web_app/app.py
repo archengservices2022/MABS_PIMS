@@ -2507,7 +2507,7 @@ def projects_export_pdf():
     items = _filter_projects_export(items)
     buf = _io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
-                            leftMargin=0.75*inch, rightMargin=0.75*inch,
+                            leftMargin=1.0*inch, rightMargin=1.0*inch,
                             topMargin=0.5*inch, bottomMargin=0.5*inch)
     styles = getSampleStyleSheet()
     co = company_info()
@@ -2543,7 +2543,7 @@ def projects_export_pdf():
             Paragraph(f"${cv:,.0f}", cell_style),
             Paragraph(f"${paid:,.0f}", cell_style),
         ])
-    cw = [1.3*inch, 2.5*inch, 2.0*inch, 1.2*inch, 1.2*inch, 1.2*inch, 1.3*inch, 1.3*inch]
+    cw = [1.2*inch, 2.2*inch, 1.8*inch, 1.1*inch, 1.1*inch, 1.1*inch, 1.2*inch, 1.2*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
