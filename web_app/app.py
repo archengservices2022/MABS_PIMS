@@ -993,7 +993,8 @@ def quotes_export():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    w.writerow([f"{co.get('name','')} - Quotes Report"])
+    header_text = f"{co.get('name','')} - Quotes Report"
+    w.writerow([header_text.center(80)])
     w.writerow([])
     w.writerow(["Quote Number", "Client", "Project / Scope", "Salesperson", "Date", "Valid Until", "Status", "Subtotal", "Tax", "Total", "Notes"])
 
@@ -2375,7 +2376,8 @@ def projects_export_csv():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    w.writerow([f"{co.get('name','')} - Projects Report"])
+    header_text = f"{co.get('name','')} - Projects Report"
+    w.writerow([header_text.center(80)])
     w.writerow([])
     w.writerow(["Project #", "Name", "Client", "Start Date", "End Date", "Status", "Contract Value", "Amount Paid", "Outstanding"])
 
@@ -4160,7 +4162,8 @@ def invoicing_export_csv():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    w.writerow([f"{co.get('name','')} - Invoices Report"])
+    header_text = f"{co.get('name','')} - Invoices Report"
+    w.writerow([header_text.center(80)])
     w.writerow([])
     w.writerow(["Invoice #", "Client", "Project", "Date", "Due Date", "Status", "Subtotal", "Tax", "Total", "Amount Paid", "Outstanding"])
 
