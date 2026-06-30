@@ -112,6 +112,9 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET", "mabs-pims-secret-2025-change-in-prod")
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
 
+# Register Jinja2 filters (will be added after _format_date_display is defined)
+# We'll add these filters later in the code once the functions are defined
+
 # ── Auth decorators ───────────────────────────────────────────────────────────
 def login_required(f):
     @wraps(f)
@@ -289,8 +292,15 @@ def inject_globals():
         "company":     company_info(),
         "now":         datetime.now(),
         "timedelta":   timedelta,
+        "format_date": _format_date_display,  # Make date formatter available in templates
         **clock_widget,
     }
+
+# Register Jinja2 filters for date formatting
+@app.template_filter('format_date')
+def format_date_filter(date_str):
+    """Jinja filter to format dates as MM-DD-YYYY."""
+    return _format_date_display(date_str)
 
 # ── Routes: Auth ──────────────────────────────────────────────────────────────
 @app.route("/login", methods=["GET", "POST"])
@@ -7043,6 +7053,43 @@ def _safe_float(val) -> float:
         return float(str(val or 0).replace(",", ""))
     except (ValueError, TypeError):
         return 0.0
+
+def _format_date_display(date_str: str) -> str:
+    """Convert date from YYYY-MM-DD format to MM-DD-YYYY for display."""
+    if not date_str or date_str == "—":
+        return "—"
+    try:
+        # Handle both YYYY-MM-DD and other formats
+        if len(str(date_str)) >= 10:
+            date_str = str(date_str)[:10]  # Take only the date part if it's a datetime
+            parts = date_str.split("-")
+            if len(parts) == 3:
+                year, month, day = parts
+                return f"{month}-{day}-{year}"
+    except (ValueError, TypeError, IndexError):
+        pass
+    return str(date_str) if date_str else "—"
+
+def _format_date_input(date_str: str) -> str:
+    """Convert date from display format MM-DD-YYYY to input format YYYY-MM-DD."""
+    if not date_str:
+        return ""
+    try:
+        # If already in YYYY-MM-DD format, return as-is
+        if date_str and len(date_str) == 10 and date_str[4] == "-":
+            return date_str
+        # Convert from MM-DD-YYYY to YYYY-MM-DD
+        parts = date_str.replace("/", "-").split("-")
+        if len(parts) == 3:
+            # Detect format based on part sizes
+            if len(parts[0]) == 4:  # YYYY-MM-DD
+                return date_str
+            else:  # MM-DD-YYYY
+                month, day, year = parts
+                return f"{year}-{month}-{day}"
+    except (ValueError, TypeError):
+        pass
+    return date_str
 
 def _get_next_payment_stage(project: dict, all_invoices: dict = None) -> dict:
     """Get next uninvoiced payment stage.
