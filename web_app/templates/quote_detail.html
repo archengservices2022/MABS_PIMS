@@ -101,11 +101,11 @@
         </div>
         <div class="col-sm-4">
           <div class="info-label">Valid Until</div>
-          <div class="info-value">{{ quote.get('valid_until','—') }}</div>
+          <div class="info-value">{{ quote.get('valid_until','—') | format_date }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Expected Completion</div>
-          <div class="info-value">{{ quote.get('expected_completion','—') or '—' }}</div>
+          <div class="info-value">{{ (quote.get('expected_completion') | format_date) if quote.get('expected_completion') else '—' }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Priority</div>
@@ -300,7 +300,7 @@
        style="border-left:4px solid #F59E0B;background:#FFFBEB;color:#92400E;"
        data-valid="{{ valid_until }}">
     <i class="bi bi-clock-history"></i>
-    <span>This quote is valid until <strong>{{ valid_until }}</strong>.
+    <span>This quote is valid until <strong>{{ valid_until | format_date }}</strong>.
     <span id="expiryCountdown"></span></span>
   </div>
 {% endif %}
