@@ -998,7 +998,7 @@ def quotes_export():
     w.writerow([])
 
     headers = ["Quote Number", "Client", "Project / Scope", "Salesperson", "Date", "Valid Until", "Status", "Subtotal", "Tax", "Total", "Notes"]
-    col_widths = [22, 25, 35, 20, 16, 16, 14, 16, 14, 16, 30]
+    col_widths = [26, 25, 35, 20, 18, 18, 14, 16, 14, 16, 30]
     centered_headers = [h.center(w) for h, w in zip(headers, col_widths)]
     w.writerow(centered_headers)
 
