@@ -5003,6 +5003,326 @@ def payroll_export_pdf():
     return Response(buf.getvalue(), mimetype="application/pdf",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
+# ── Financial Export Routes ───────────────────────────────────────────────────
+
+def _fmt_date_export(d):
+    if not d or d == "—":
+        return ""
+    d = str(d)[:10]
+    parts = d.split("-")
+    return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+def _export_response(buf_or_str, fmt, name_prefix):
+    from flask import Response
+    ts = datetime.now().strftime("%Y%m%d")
+    if fmt == "pdf":
+        return Response(buf_or_str.getvalue(), mimetype="application/pdf",
+                        headers={"Content-Disposition": f"attachment;filename={name_prefix}_{ts}.pdf"})
+    if fmt == "excel":
+        return Response(buf_or_str.getvalue(),
+                        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        headers={"Content-Disposition": f"attachment;filename={name_prefix}_{ts}.xlsx"})
+    return Response(buf_or_str.getvalue(), mimetype="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f"attachment;filename={name_prefix}_{ts}.csv"})
+
+def _make_excel(title, headers, rows, col_widths, num_cols=None):
+    import openpyxl, io as _io
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = title
+    hdr_fill = PatternFill(start_color="FF0F172A", end_color="FF0F172A", fill_type="solid")
+    hdr_font = Font(color="FFFFFFFF", bold=True, size=10)
+    title_font = Font(bold=True, size=12, color="FF0F766E")
+    alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
+    ctr = Alignment(horizontal="center", vertical="center", wrap_text=False)
+    co = company_info()
+    ncols = len(headers)
+    ws.merge_cells(f"A1:{get_column_letter(ncols)}1")
+    tc = ws.cell(row=1, column=1, value=f"{co.get('name','')} – {title}"); tc.font = title_font
+    tc.alignment = Alignment(horizontal="center", vertical="center")
+    for ci, h in enumerate(headers, 1):
+        cell = ws.cell(row=2, column=ci, value=h)
+        cell.fill = hdr_fill; cell.font = hdr_font; cell.alignment = ctr
+    num_cols = num_cols or []
+    for ri, row in enumerate(rows, 3):
+        for ci, val in enumerate(row, 1):
+            cell = ws.cell(row=ri, column=ci, value=val)
+            if ri % 2 == 0: cell.fill = alt_fill
+            if ci in num_cols: cell.number_format = '"$"#,##0.00'
+            cell.alignment = ctr
+    for ci, w in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(ci)].width = w
+    buf = _io.BytesIO(); wb.save(buf); buf.seek(0)
+    return buf
+
+def _make_pdf(title, headers, data_rows, col_widths_inch):
+    import io as _io
+    try:
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+    except ImportError:
+        return None
+    buf = _io.BytesIO()
+    use_landscape = len(headers) > 7
+    pagesize = landscape(A4) if use_landscape else A4
+    doc = SimpleDocTemplate(buf, pagesize=pagesize,
+                            leftMargin=0.5*inch, rightMargin=0.5*inch,
+                            topMargin=0.4*inch, bottomMargin=0.4*inch)
+    styles = getSampleStyleSheet()
+    co = company_info()
+    title_s = ParagraphStyle("T", parent=styles["Normal"], fontSize=13,
+                              fontName="Helvetica-Bold",
+                              textColor=colors.HexColor("#0F766E"), spaceAfter=4, alignment=1)
+    cell_s = ParagraphStyle("C", parent=styles["Normal"], fontSize=7.5, alignment=1, leading=9)
+    elems = [Paragraph(f"{co.get('name','')} – {title}", title_s), Spacer(1, 0.15*inch)]
+    tdata = [[Paragraph(str(h), ParagraphStyle("H", parent=styles["Normal"],
+              fontSize=8, fontName="Helvetica-Bold", textColor=colors.white, alignment=1)) for h in headers]]
+    for row in data_rows:
+        tdata.append([Paragraph(str(v) if v is not None else "—", cell_s) for v in row])
+    tbl = Table(tdata, colWidths=[w*inch for w in col_widths_inch], repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
+        ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+        ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0,0), (-1,0), 8),
+        ("ALIGN",         (0,0), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+        ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")]),
+        ("GRID",          (0,0), (-1,-1), 0.3, colors.HexColor("#E2E8F0")),
+        ("TOPPADDING",    (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+    ]))
+    elems.append(tbl)
+    doc.build(elems)
+    buf.seek(0)
+    return buf
+
+# ── Income exports ────────────────────────────────────────────────────────────
+@app.route("/financial/income/export/<fmt>")
+@login_required
+def financial_income_export(fmt):
+    import csv, io as _io
+    year = request.args.get("year", str(datetime.now().year))
+    revenue = fb_get("/revenue") or {}
+    invoices_raw = fb_get("/invoices") or {}
+    invoices = invoices_raw if isinstance(invoices_raw, dict) else {}
+
+    rows = []
+    if isinstance(revenue, dict):
+        for rid, rdata in revenue.items():
+            if not isinstance(rdata, dict): continue
+            inv_id = rdata.get("invoice_id")
+            if not inv_id or inv_id not in invoices: continue
+            inv_data = invoices[inv_id]
+            inv_meta = inv_data.get("meta", {}) or {}
+            inv_date = inv_meta.get("invoice_date", "") or rdata.get("date", "")
+            if _extract_year_from_date(inv_date) != int(year): continue
+            status = rdata.get("status", "")
+            if status not in ("Paid", "Partial"): continue
+            pay_log = inv_data.get("payment_log", []) or []
+            amt_paid = sum(_safe_float(p.get("amount", 0)) for p in pay_log)
+            tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in (inv_data.get("tax_payments", []) or []))
+            inv_total = _safe_float(inv_meta.get("subtotal", 0)) + _safe_float(inv_meta.get("tax_amount", 0))
+            coll_date = max(pay_log, key=lambda p: p.get("date", "")).get("date", rdata.get("date", "")) if pay_log else rdata.get("date", "")
+            method = (max(pay_log, key=lambda p: p.get("date", "")).get("method", "") if pay_log else "") or inv_meta.get("payment_method", "")
+            rows.append([
+                _fmt_date_export(inv_date),
+                _fmt_date_export(coll_date),
+                inv_meta.get("invoice_number", rdata.get("invoice_number", "")),
+                rdata.get("client_name", ""),
+                rdata.get("project_number", ""),
+                status,
+                method,
+                _safe_float(inv_meta.get("subtotal", 0)),
+                _safe_float(inv_meta.get("tax_amount", 0)),
+                inv_total,
+                amt_paid + tax_paid,
+            ])
+    rows.sort(key=lambda r: r[0])
+    headers = ["Invoice Date", "Collection Date", "Invoice #", "Client", "Project",
+               "Status", "Payment Method", "Subtotal", "Tax", "Invoice Total", "Amount Paid"]
+    if fmt == "excel":
+        buf = _make_excel(f"Income {year}", headers, rows,
+                          [13,13,14,20,16,10,13,12,10,13,13], num_cols=[8,9,10,11])
+        return _export_response(buf, "excel", f"income_{year}")
+    if fmt == "pdf":
+        fmt_rows = [[r[0],r[1],r[2],r[3],r[4],r[5],r[6],
+                     f"${r[7]:,.2f}",f"${r[8]:,.2f}",f"${r[9]:,.2f}",f"${r[10]:,.2f}"] for r in rows]
+        buf = _make_pdf(f"Income Report {year}", headers, fmt_rows,
+                        [1.1,1.1,1.2,1.6,1.3,0.7,0.9,0.9,0.7,1.0,1.0])
+        if not buf: return redirect(url_for("financial"))
+        return _export_response(buf, "pdf", f"income_{year}")
+    # CSV
+    out = _io.StringIO(); w = csv.writer(out)
+    w.writerow([f"{company_info().get('name','')} – Income Report {year}"]); w.writerow([])
+    w.writerow(headers)
+    for r in rows:
+        w.writerow([r[0],r[1],r[2],r[3],r[4],r[5],r[6],
+                    f"{r[7]:.2f}",f"{r[8]:.2f}",f"{r[9]:.2f}",f"{r[10]:.2f}"])
+    return _export_response(out, "csv", f"income_{year}")
+
+# ── Expenses exports ──────────────────────────────────────────────────────────
+@app.route("/financial/expenses/export/<fmt>")
+@login_required
+def financial_expenses_export(fmt):
+    import csv, io as _io
+    raw = fb_get("/expenses") or {}
+    expenses = []
+    if isinstance(raw, dict):
+        for eid, edata in raw.items():
+            if isinstance(edata, dict):
+                edata["firebase_id"] = eid
+                expenses.append(edata)
+    expenses.sort(key=lambda e: e.get("date", ""))
+    headers = ["Date", "Expense Type", "Expense Name", "Category", "Vendor", "Project", "Amount"]
+    rows = [[_fmt_date_export(e.get("date","")),
+             e.get("expense_type",""), e.get("expense_name","") or e.get("description",""),
+             e.get("category",""), e.get("vendor",""), e.get("project_number",""),
+             _safe_float(e.get("amount",0))] for e in expenses]
+    if fmt == "excel":
+        buf = _make_excel("Expenses", headers, rows, [12,16,22,14,18,12,12], num_cols=[7])
+        return _export_response(buf, "excel", "expenses")
+    if fmt == "pdf":
+        fmt_rows = [[r[0],r[1],r[2],r[3],r[4],r[5],f"${r[6]:,.2f}"] for r in rows]
+        buf = _make_pdf("Expenses Report", headers, fmt_rows, [1.1,1.2,1.8,1.1,1.4,1.0,1.0])
+        if not buf: return redirect(url_for("financial"))
+        return _export_response(buf, "pdf", "expenses")
+    out = _io.StringIO(); w = csv.writer(out)
+    w.writerow([f"{company_info().get('name','')} – Expenses Report"]); w.writerow([])
+    w.writerow(headers)
+    for r in rows: w.writerow([r[0],r[1],r[2],r[3],r[4],r[5],f"{r[6]:.2f}"])
+    return _export_response(out, "csv", "expenses")
+
+# ── By Project exports ────────────────────────────────────────────────────────
+@app.route("/financial/by-project/export/<fmt>")
+@login_required
+def financial_byproject_export(fmt):
+    import csv, io as _io
+    year = int(request.args.get("year", datetime.now().year))
+    projects = _load_projects_list()
+    inv_raw = fb_get("/invoices") or {}
+    invoices = inv_raw if isinstance(inv_raw, dict) else {}
+    exp_raw = fb_get("/expenses") or {}
+    exp_list = [v for v in (exp_raw.values() if isinstance(exp_raw, dict) else []) if isinstance(v, dict)]
+
+    rows = []
+    for p in projects:
+        pnum = p.get("project_number", "")
+        p_invoiced = p_collected = 0.0
+        for inv_id, inv_data in invoices.items():
+            if not isinstance(inv_data, dict): continue
+            if pnum not in _invoice_linked_projects(inv_data): continue
+            inv_meta = inv_data.get("meta", {}) or {}
+            inv_date = inv_meta.get("invoice_date", "")
+            if _extract_year_from_date(inv_date) != year: continue
+            line_items = inv_data.get("line_items", []) or []
+            proj_line = sum(_safe_float(li.get("amount", 0)) for li in line_items
+                            if isinstance(li, dict) and str(li.get("project_number","")).strip() == pnum)
+            inv_subtotal = _safe_float(inv_meta.get("subtotal", 0))
+            inv_tax = _safe_float(inv_meta.get("tax_amount", 0))
+            share = (proj_line / inv_subtotal) if inv_subtotal > 0 and proj_line > 0 else (
+                1.0 / max(1, len(_invoice_linked_projects(inv_data))))
+            pay_log = inv_data.get("payment_log", []) or []
+            proj_paid = sum(_safe_float(pl.get("amount", 0)) for pl in pay_log if pl.get("project_number","") == pnum)
+            tax_payments = inv_data.get("tax_payments", []) or []
+            total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+            proj_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if tp.get("project_number") == pnum) or share * total_tax_paid
+            p_invoiced += proj_line + share * inv_tax
+            p_collected += proj_paid + proj_tax_paid
+        p_cos = p.get("change_orders") or []
+        if not isinstance(p_cos, list): p_cos = list(p_cos.values()) if isinstance(p_cos, dict) else []
+        co_total = sum(_safe_float(co.get("amount", 0)) for co in p_cos if co.get("status") == "Approved")
+        p_contract = _safe_float(p.get("base_contract_value") or p.get("contract_value", 0)) + co_total
+        p_expenses = sum(_safe_float(e.get("amount", 0)) for e in exp_list if e.get("project_number", "") == pnum)
+        p_gp = p_collected - p_expenses
+        outstanding = max(0.0, p_contract - p_collected)
+        margin = min(100.0, (p_collected / p_contract * 100) if p_contract > 0 else 0.0)
+        if p_invoiced == 0 and p_collected == 0 and p_expenses == 0: continue
+        rows.append([pnum, p.get("project_name",""), p.get("client_name",""), p.get("status",""),
+                     p_contract, p_invoiced, p_collected, outstanding, p_expenses, p_gp, f"{margin:.0f}%"])
+    rows.sort(key=lambda r: r[0], reverse=True)
+    headers = ["Project #","Project Name","Client","Status","Contract","Invoiced","Collected","Outstanding","Expenses","Gross Profit","Margin"]
+    if fmt == "excel":
+        num_rows = [[r[0],r[1],r[2],r[3],r[4],r[5],r[6],r[7],r[8],r[9],r[10]] for r in rows]
+        buf = _make_excel(f"By Project {year}", headers, num_rows,
+                          [12,22,18,12,13,13,13,13,13,13,9], num_cols=[5,6,7,8,9,10])
+        return _export_response(buf, "excel", f"by_project_{year}")
+    if fmt == "pdf":
+        fmt_rows = [[r[0],r[1],r[2],r[3],f"${r[4]:,.2f}",f"${r[5]:,.2f}",
+                     f"${r[6]:,.2f}",f"${r[7]:,.2f}",f"${r[8]:,.2f}",f"${r[9]:,.2f}",r[10]] for r in rows]
+        buf = _make_pdf(f"By Project {year}", headers, fmt_rows,
+                        [0.8,1.6,1.4,0.85,1.0,1.0,1.0,1.0,1.0,1.0,0.7])
+        if not buf: return redirect(url_for("financial"))
+        return _export_response(buf, "pdf", f"by_project_{year}")
+    out = _io.StringIO(); w = csv.writer(out)
+    w.writerow([f"{company_info().get('name','')} – By Project {year}"]); w.writerow([])
+    w.writerow(headers)
+    for r in rows: w.writerow([r[0],r[1],r[2],r[3],f"{r[4]:.2f}",f"{r[5]:.2f}",
+                                f"{r[6]:.2f}",f"{r[7]:.2f}",f"{r[8]:.2f}",f"{r[9]:.2f}",r[10]])
+    return _export_response(out, "csv", f"by_project_{year}")
+
+# ── A/R Aging exports ─────────────────────────────────────────────────────────
+@app.route("/financial/aging/export/<fmt>")
+@login_required
+def financial_aging_export(fmt):
+    import csv, io as _io
+    today_d = datetime.now().date()
+    inv_raw = fb_get("/invoices") or {}
+    BUCKET_LABELS = {"current":"Current","1_30":"1-30 Days","31_60":"31-60 Days","61_90":"61-90 Days","90plus":"90+ Days"}
+    buckets = {"current":[],"1_30":[],"31_60":[],"61_90":[],"90plus":[]}
+    for inv_id, inv in (inv_raw.items() if isinstance(inv_raw, dict) else []):
+        if not isinstance(inv, dict): continue
+        meta = inv.get("meta", {}) or {}
+        status = meta.get("status", "")
+        if status in ("Paid", "Cancelled", "Draft"): continue
+        amt_paid = sum(_safe_float(p.get("amount",0)) for p in (inv.get("payment_log",[]) or []))
+        tax_paid = sum(_safe_float(tp.get("amount",0)) for tp in (inv.get("tax_payments",[]) or []))
+        total = _safe_float(meta.get("subtotal",0)) + _safe_float(meta.get("tax_amount",0))
+        balance = total - amt_paid - tax_paid
+        if balance <= 0: continue
+        inv_date_str = meta.get("invoice_date","") or meta.get("date","")
+        net_terms = int(meta.get("net_terms", 30) or 30)
+        try:
+            inv_date_d = datetime.strptime(str(inv_date_str)[:10], "%Y-%m-%d").date()
+            due_date_d = inv_date_d + timedelta(days=net_terms)
+            days_overdue = (today_d - due_date_d).days
+        except Exception:
+            days_overdue = 0; due_date_d = today_d; inv_date_d = today_d
+        entry = {"invoice_number": meta.get("invoice_number",""), "client_name": meta.get("client_name",""),
+                 "invoice_date": str(inv_date_d), "due_date": str(due_date_d),
+                 "net_terms": net_terms, "days_overdue": days_overdue, "balance": balance,
+                 "firebase_id": inv_id}
+        if days_overdue <= 0: buckets["current"].append(entry)
+        elif days_overdue <= 30: buckets["1_30"].append(entry)
+        elif days_overdue <= 60: buckets["31_60"].append(entry)
+        elif days_overdue <= 90: buckets["61_90"].append(entry)
+        else: buckets["90plus"].append(entry)
+
+    all_rows = []
+    for key in ["current","1_30","31_60","61_90","90plus"]:
+        for e in sorted(buckets[key], key=lambda x: x["days_overdue"], reverse=True):
+            days_label = f"Due in {-e['days_overdue']} days" if e["days_overdue"] <= 0 else f"{e['days_overdue']} days"
+            all_rows.append([BUCKET_LABELS[key], e["invoice_number"], e["client_name"],
+                             _fmt_date_export(e["invoice_date"]), _fmt_date_export(e["due_date"]),
+                             f"Net {e['net_terms']}", days_label, e["balance"]])
+    headers = ["Bucket","Invoice","Client","Invoice Date","Due Date","Net Terms","Days Overdue","Balance Due"]
+    if fmt == "excel":
+        buf = _make_excel("A/R Aging", headers, all_rows, [12,14,20,12,12,10,12,13], num_cols=[8])
+        return _export_response(buf, "excel", "ar_aging")
+    if fmt == "pdf":
+        fmt_rows = [[r[0],r[1],r[2],r[3],r[4],r[5],r[6],f"${r[7]:,.2f}"] for r in all_rows]
+        buf = _make_pdf("A/R Aging Report", headers, fmt_rows, [1.0,1.1,1.6,1.0,1.0,0.8,1.0,1.0])
+        if not buf: return redirect(url_for("financial"))
+        return _export_response(buf, "pdf", "ar_aging")
+    out = _io.StringIO(); w = csv.writer(out)
+    w.writerow([f"{company_info().get('name','')} – A/R Aging Report"]); w.writerow([])
+    w.writerow(headers)
+    for r in all_rows: w.writerow([r[0],r[1],r[2],r[3],r[4],r[5],r[6],f"{r[7]:.2f}"])
+    return _export_response(out, "csv", "ar_aging")
+
 # ── Employee Profile API ──────────────────────────────────────────────────────
 @app.route("/api/employee-profiles", methods=["GET"])
 @login_required

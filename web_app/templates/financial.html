@@ -551,9 +551,18 @@ a[href*="filter_expense"]:hover {
       <button class="btn btn-xs btn-outline-secondary ms-auto" onclick="clearIncomeFilter()">
         <i class="bi bi-x me-1"></i>Clear
       </button>
-      <button class="btn btn-xs btn-outline-teal" onclick="exportIncomeCSV()" title="Export visible rows to CSV">
-        <i class="bi bi-download me-1"></i>Export CSV
-      </button>
+      <div class="dropdown">
+        <button class="btn btn-xs btn-outline-teal dropdown-toggle" data-bs-toggle="dropdown">
+          <i class="bi bi-download me-1"></i>Export
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+          <li><h6 class="dropdown-header" style="font-size:10px;">EXPORT OPTIONS</h6></li>
+          <li><a class="dropdown-item" href="{{ url_for('financial_income_export', fmt='pdf') }}?year={{ stat_card_year }}"><i class="bi bi-file-earmark-pdf text-danger me-2"></i>PDF Report</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('financial_income_export', fmt='excel') }}?year={{ stat_card_year }}"><i class="bi bi-file-earmark-excel text-success me-2"></i>Excel (.xlsx)</a></li>
+          <li><hr class="dropdown-divider my-1"></li>
+          <li><a class="dropdown-item" href="#" onclick="exportIncomeCSV();return false;"><i class="bi bi-filetype-csv me-2" style="color:#0F766E;"></i>CSV (current filter)</a></li>
+        </ul>
+      </div>
     </div>
 
     {% if rev_list %}
@@ -594,7 +603,7 @@ a[href*="filter_expense"]:hover {
                 <span class="text-muted">—</span>
               {% endif %}
             </td>
-            <td>
+            <td style="white-space:nowrap;">
               {% if r.get('invoice_id') %}
               <a href="{{ url_for('invoice_detail', invoice_id=r.get('invoice_id','')) }}"
                  class="fw-bold text-teal text-decoration-none">{{ r.get('invoice_number','—') }}</a>
@@ -746,7 +755,16 @@ a[href*="filter_expense"]:hover {
       <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setExpenseDateRange('year')">This Year</button>
       <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setExpenseDateRange('last30')">Last 30 Days</button>
       <button type="button" class="btn btn-xs btn-outline-secondary" onclick="clearExpenseFilters()"><i class="bi bi-x me-1"></i>Clear</button>
-      <button type="button" class="btn btn-xs btn-outline-teal" onclick="exportExpenseCSV()" title="Export visible rows to CSV"><i class="bi bi-download me-1"></i>Export CSV</button>
+      <div class="dropdown">
+        <button class="btn btn-xs btn-outline-teal dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-download me-1"></i>Export</button>
+        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+          <li><h6 class="dropdown-header" style="font-size:10px;">EXPORT OPTIONS</h6></li>
+          <li><a class="dropdown-item" href="{{ url_for('financial_expenses_export', fmt='pdf') }}"><i class="bi bi-file-earmark-pdf text-danger me-2"></i>PDF Report</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('financial_expenses_export', fmt='excel') }}"><i class="bi bi-file-earmark-excel text-success me-2"></i>Excel (.xlsx)</a></li>
+          <li><hr class="dropdown-divider my-1"></li>
+          <li><a class="dropdown-item" href="#" onclick="exportExpenseCSV();return false;"><i class="bi bi-filetype-csv me-2" style="color:#0F766E;"></i>CSV (current filter)</a></li>
+        </ul>
+      </div>
     </div>
     <div id="expenseFilterAlert" class="alert alert-info py-2 px-3 mb-0 small" style="display:none;"></div>
   </div>
@@ -2090,9 +2108,16 @@ function viewReceipt(expId) {
       <h6 class="panel-title mb-0">Profit &amp; Loss by Project</h6>
       <div class="d-flex align-items-center gap-2">
         <span class="text-muted small">Click a row to open the project</span>
-        <button class="btn btn-xs btn-outline-teal" onclick="exportByProjectCSV()" title="Export to CSV">
-          <i class="bi bi-download me-1"></i>Export CSV
-        </button>
+        <div class="dropdown">
+          <button class="btn btn-xs btn-outline-teal dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-download me-1"></i>Export</button>
+          <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+            <li><h6 class="dropdown-header" style="font-size:10px;">EXPORT OPTIONS</h6></li>
+            <li><a class="dropdown-item" href="{{ url_for('financial_byproject_export', fmt='pdf') }}?year={{ stat_card_year }}"><i class="bi bi-file-earmark-pdf text-danger me-2"></i>PDF Report</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('financial_byproject_export', fmt='excel') }}?year={{ stat_card_year }}"><i class="bi bi-file-earmark-excel text-success me-2"></i>Excel (.xlsx)</a></li>
+            <li><hr class="dropdown-divider my-1"></li>
+            <li><a class="dropdown-item" href="#" onclick="exportByProjectCSV();return false;"><i class="bi bi-filetype-csv me-2" style="color:#0F766E;"></i>CSV (all rows)</a></li>
+          </ul>
+        </div>
       </div>
     </div>
     <div class="table-responsive">
@@ -2848,9 +2873,16 @@ function viewReceipt(expId) {
         <button onclick="clearAgingFilter()" class="btn btn-xs btn-outline-secondary">
           <i class="bi bi-x me-1"></i>Clear
         </button>
-        <button onclick="exportAgingCSV()" class="btn btn-xs btn-outline-teal" title="Export visible rows to CSV">
-          <i class="bi bi-download me-1"></i>Export CSV
-        </button>
+        <div class="dropdown">
+          <button class="btn btn-xs btn-outline-teal dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-download me-1"></i>Export</button>
+          <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+            <li><h6 class="dropdown-header" style="font-size:10px;">EXPORT OPTIONS</h6></li>
+            <li><a class="dropdown-item" href="{{ url_for('financial_aging_export', fmt='pdf') }}"><i class="bi bi-file-earmark-pdf text-danger me-2"></i>PDF Report</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('financial_aging_export', fmt='excel') }}"><i class="bi bi-file-earmark-excel text-success me-2"></i>Excel (.xlsx)</a></li>
+            <li><hr class="dropdown-divider my-1"></li>
+            <li><a class="dropdown-item" href="#" onclick="exportAgingCSV();return false;"><i class="bi bi-filetype-csv me-2" style="color:#0F766E;"></i>CSV (current filter)</a></li>
+          </ul>
+        </div>
       </div>
     </div>
 
