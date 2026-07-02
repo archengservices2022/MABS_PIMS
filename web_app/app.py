@@ -44,8 +44,8 @@ DATA_DIR = BASE_DIR / "data"
 ASSETS_DIR = BASE_DIR / "assets"
 
 # ── Firebase config ───────────────────────────────────────────────────────────
-FIREBASE_API_KEY = "AIzaSyBZIG4Gj_ZRRCqI1DXcf8DSXpO_9PkTgeY"
-FIREBASE_DB_URL  = "https://pims-955e3-default-rtdb.firebaseio.com"
+FIREBASE_API_KEY = "AIzaSyD6F6T_KIZ90TkCOL03-jSXTeuPM5WVwJY"
+FIREBASE_DB_URL  = "https://invoice-7fe93-default-rtdb.firebaseio.com"
 
 FIREBASE_AVAILABLE = False
 db = None
