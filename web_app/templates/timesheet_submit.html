@@ -192,16 +192,18 @@ function getDayInfo(date) {
   return WEEK_DAYS.find(d => d.date === date) || null;
 }
 
-function createProjectRow(id, date, entry) {
+function createProjectRow(id, date, entry, locked) {
   entry = entry || {};
   const tr = document.createElement('tr');
   tr.id = `row-${id}`;
   tr.dataset.rowId = id;
   tr.dataset.date = date;
+  if (locked) tr.style.opacity = '0.55';
 
+  const dis = locked ? 'disabled' : '';
   tr.innerHTML = `
     <td>
-      <select class="entry-proj" onchange="calcRow(${id})">
+      <select class="entry-proj" onchange="calcRow(${id})" ${dis}>
         <option value="">— General / Admin —</option>
         ${PROJECTS.map(p => {
           const val = `${escHtml(p.project_number||'')}|${escHtml(p.project_name||'')}|${escHtml(p.firebase_id||'')}`;
@@ -212,19 +214,20 @@ function createProjectRow(id, date, entry) {
         }).join('')}
       </select>
     </td>
-    <td><input type="text" class="entry-start" value="${escHtml(entry.start_time ? formatTimeDisplay(entry.start_time) : '')}" oninput="calcRow(${id})" placeholder="9:00 AM" style="text-align:center;min-width:80px;"></td>
-    <td><input type="text" class="entry-end"   value="${escHtml(entry.end_time   ? formatTimeDisplay(entry.end_time)   : '')}" oninput="calcRow(${id})" placeholder="5:00 PM" style="text-align:center;min-width:80px;"></td>
+    <td><input type="text" class="entry-start" value="${escHtml(entry.start_time ? formatTimeDisplay(entry.start_time) : '')}" oninput="calcRow(${id})" placeholder="9:00 AM" style="text-align:center;min-width:80px;" ${dis}></td>
+    <td><input type="text" class="entry-end"   value="${escHtml(entry.end_time   ? formatTimeDisplay(entry.end_time)   : '')}" oninput="calcRow(${id})" placeholder="5:00 PM" style="text-align:center;min-width:80px;" ${dis}></td>
     <td><div class="hrs-display" id="reg-${id}">—</div></td>
     <td><div class="hrs-display ot-display" id="ot-${id}">—</div></td>
     <td><div class="hrs-display" id="tot-${id}">—</div></td>
-    <td><input type="text" class="entry-notes" value="${escHtml(entry.notes||'')}" placeholder="Notes"></td>
-    <td><button type="button" class="del-row-btn" onclick="delRow(${id},'${date}')" title="Remove"><i class="bi bi-trash3"></i></button></td>
+    <td><input type="text" class="entry-notes" value="${escHtml(entry.notes||'')}" placeholder="Notes" ${dis}></td>
+    <td>${locked ? '' : `<button type="button" class="del-row-btn" onclick="delRow(${id},'${date}')" title="Remove"><i class="bi bi-trash3"></i></button>`}</td>
   `;
   return tr;
 }
 
 function renderDayGroup(date, entries) {
-  const body = document.getElementById('entryBody');
+  const body   = document.getElementById('entryBody');
+  const locked = date > TODAY_ISO;
   dayOrder.push(date);
 
   const info     = getDayInfo(date);
@@ -234,12 +237,13 @@ function renderDayGroup(date, entries) {
   const headerTr = document.createElement('tr');
   headerTr.className = 'ts-day-header';
   headerTr.dataset.dayHeader = date;
-  headerTr.innerHTML = `<td colspan="8"><i class="bi bi-calendar3 me-2"></i>${escHtml(dayLabel)}</td>`;
+  const lockIcon = locked ? ' <i class="bi bi-lock-fill text-muted ms-1" title="Future date — not editable" style="font-size:11px;"></i>' : '';
+  headerTr.innerHTML = `<td colspan="8"><i class="bi bi-calendar3 me-2"></i>${escHtml(dayLabel)}${lockIcon}</td>`;
   body.appendChild(headerTr);
 
   (entries && entries.length ? entries : [{}]).forEach(e => {
     const id = ++rowId;
-    const tr = createProjectRow(id, date, e);
+    const tr = createProjectRow(id, date, e, locked);
     body.appendChild(tr);
     calcRow(id);
   });
@@ -247,16 +251,18 @@ function renderDayGroup(date, entries) {
   const addTr = document.createElement('tr');
   addTr.className = 'add-project-row';
   addTr.dataset.addForDay = date;
-  addTr.innerHTML = `
-    <td colspan="8" style="padding:4px 8px 8px;">
-      <button type="button" class="add-day-proj-btn" onclick="addProjectForDay('${date}')">
-        <i class="bi bi-plus-circle me-1"></i>Add project for ${escHtml(dayAbbr)}
-      </button>
-    </td>`;
+  addTr.innerHTML = locked
+    ? `<td colspan="8"></td>`
+    : `<td colspan="8" style="padding:4px 8px 8px;">
+        <button type="button" class="add-day-proj-btn" onclick="addProjectForDay('${date}')">
+          <i class="bi bi-plus-circle me-1"></i>Add project for ${escHtml(dayAbbr)}
+        </button>
+      </td>`;
   body.appendChild(addTr);
 }
 
 function addProjectForDay(date) {
+  if (date > TODAY_ISO) return;
   const addTr = document.querySelector(`[data-add-for-day="${date}"]`);
   if (!addTr) return;
   const id = ++rowId;
@@ -293,8 +299,19 @@ function delRow(id, date) {
 function calcRow(id) {
   const tr = document.getElementById(`row-${id}`);
   if (!tr) return;
-  const startTime = parseTime(tr.querySelector('.entry-start').value);
-  const endTime   = parseTime(tr.querySelector('.entry-end').value);
+  let startTime = parseTime(tr.querySelector('.entry-start').value);
+  let endTime   = parseTime(tr.querySelector('.entry-end').value);
+
+  // Smart PM: if end ≤ start and user didn't type AM/PM, assume end is PM
+  if (startTime && endTime && endTime.h < 12) {
+    const endRaw    = tr.querySelector('.entry-end').value.trim().toUpperCase();
+    const hasAmPm   = /AM|PM/.test(endRaw);
+    const startMins = startTime.h * 60 + startTime.min;
+    const endMins   = endTime.h * 60 + endTime.min;
+    if (!hasAmPm && endMins <= startMins) {
+      endTime = { h: endTime.h + 12, min: endTime.min };
+    }
+  }
 
   if (!startTime || !endTime) {
     ['reg','ot','tot'].forEach(k => { const el = document.getElementById(`${k}-${id}`); if (el) el.textContent = '—'; });

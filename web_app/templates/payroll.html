@@ -127,6 +127,17 @@
 .empty-state-icon { font-size: 56px; margin-bottom: 15px; }
 .empty-state-title { font-size: 18px; font-weight: 600; color: #0f172a; margin-bottom: 8px; }
 
+/* Year + Month group headers */
+.year-group-header  { background: #e2e8f0; cursor: pointer; user-select: none; }
+.year-group-header td  { padding: 10px 14px; font-weight: 800; font-size: 14px; color: #0f172a; border-bottom: 2px solid #cbd5e1; }
+.year-group-header:hover td  { background: #d4dce8; }
+.period-group-header { background: #f8fafc; cursor: pointer; user-select: none; }
+.period-group-header td { padding: 8px 14px; font-weight: 700; font-size: 13px; color: #374151; border-bottom: 1px solid #e2e8f0; }
+.period-group-header:hover td { background: #f1f5f9; }
+.period-toggle { display:inline-block; width:18px; transition: transform .2s; }
+.year-group-header.collapsed  .period-toggle { transform: rotate(-90deg); }
+.period-group-header.collapsed .period-toggle { transform: rotate(-90deg); }
+
 .summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 25px; }
 .summary-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; text-align: center; }
 .summary-card-label { font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 700; margin-bottom: 8px; letter-spacing: .5px; }
@@ -182,15 +193,15 @@
       <div class="summary-cards" id="salaryCards">
         <div class="summary-card usa">
           <div class="summary-card-label">Inside America</div>
-          <div class="summary-card-value">${{ "{:,.2f}".format(usa_total | float) }}</div>
+          <div class="summary-card-value" id="cardUSA">${{ "{:,.2f}".format(usa_total | float) }}</div>
         </div>
         <div class="summary-card intl">
           <div class="summary-card-label">Outside America</div>
-          <div class="summary-card-value">${{ "{:,.2f}".format(intl_total | float) }}</div>
+          <div class="summary-card-value" id="cardIntl">${{ "{:,.2f}".format(intl_total | float) }}</div>
         </div>
         <div class="summary-card">
           <div class="summary-card-label">Total</div>
-          <div class="summary-card-value">${{ "{:,.2f}".format((usa_total + intl_total) | float) }}</div>
+          <div class="summary-card-value" id="cardTotal">${{ "{:,.2f}".format((usa_total + intl_total) | float) }}</div>
         </div>
       </div>
 
@@ -239,7 +250,7 @@
               {% for sal in salaries %}
               {% set sal_period = (sal.date[:7] | default('')) %}
               {% set sal_period_label = sal.date[:4] + '-' + sal.date[5:7] if sal.date and sal.date|length >= 7 else '—' %}
-              <tr data-salary="1" data-employee="{{ (sal.employee_name or sal.get('employee','')) | lower }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}">
+              <tr data-salary="1" data-employee="{{ (sal.employee_name or sal.get('employee','')) | lower }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}" data-amount="{{ sal.amount | float }}">
                 <td><strong>{{ sal.employee_name or sal.get('employee','—') }}</strong></td>
                 <td>{{ sal.date or '—' }}</td>
                 <td style="color:#475569;font-size:.82rem;">{{ sal.date[:7] if sal.date and sal.date|length >= 7 else '—' }}</td>
@@ -409,30 +420,144 @@
 </div>
 
 <script>
+// ── Two-level grouping: Year → Month ─────────────────────────────────────────
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function fmt(n) {
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function formatMonthLabel(period) {
+  if (!period || period === '—') return period;
+  const [, m] = period.split('-');
+  return MONTHS[parseInt(m, 10) - 1];
+}
+
+function buildPeriodGroups() {
+  const tbody      = document.getElementById('salaryTableBody');
+  const rows       = Array.from(tbody.querySelectorAll('tr[data-salary]'));
+  const today      = localDate(new Date());
+  const currentPer = today.slice(0, 7);   // YYYY-MM
+  const currentYr  = today.slice(0, 4);   // YYYY
+
+  // Tag each row with period + year
+  rows.forEach(r => {
+    const p = (r.dataset.date || '').slice(0, 7) || '—';
+    r.dataset.periodGroup = p;
+    r.dataset.yearGroup   = p.slice(0, 4) || '—';
+  });
+
+  // Unique years (in order of appearance)
+  const seenY = new Set(), years = [];
+  rows.forEach(r => { const y = r.dataset.yearGroup; if (!seenY.has(y)) { seenY.add(y); years.push(y); } });
+
+  years.forEach(year => {
+    const yearRows     = rows.filter(r => r.dataset.yearGroup === year);
+    const yearTotal    = yearRows.reduce((s, r) => s + parseFloat(r.dataset.amount || 0), 0);
+    const yearCollapsed = year !== currentYr;
+
+    // Unique months within this year
+    const seenM = new Set(), months = [];
+    yearRows.forEach(r => { const p = r.dataset.periodGroup; if (!seenM.has(p)) { seenM.add(p); months.push(p); } });
+
+    // --- Year header row ---
+    const yearHdr = document.createElement('tr');
+    yearHdr.className = 'year-group-header' + (yearCollapsed ? ' collapsed' : '');
+    yearHdr.dataset.yearHeader = year;
+    yearHdr.onclick = () => toggleYear(year);
+    yearHdr.innerHTML = `<td colspan="8">
+      <span class="period-toggle"><i class="bi bi-chevron-down"></i></span>
+      <strong style="font-size:14px;">${year}</strong>
+      <span class="text-muted ms-2" style="font-size:12px;font-weight:400;">${months.length} month${months.length !== 1 ? 's' : ''}</span>
+      <span class="ms-2 fw-semibold" style="color:#15803d;font-size:13px;" data-year-total="${year}">$${fmt(yearTotal)}</span>
+    </td>`;
+    tbody.insertBefore(yearHdr, yearRows[0]);
+
+    // --- Month header rows ---
+    months.forEach(period => {
+      const periodRows    = rows.filter(r => r.dataset.periodGroup === period);
+      const periodTotal   = periodRows.reduce((s, r) => s + parseFloat(r.dataset.amount || 0), 0);
+      const count         = periodRows.length;
+      const monthCollapsed = period !== currentPer;
+
+      const mHdr = document.createElement('tr');
+      mHdr.className = 'period-group-header' + (monthCollapsed ? ' collapsed' : '');
+      mHdr.dataset.periodHeader = period;
+      mHdr.dataset.yearGroup    = year;
+      mHdr.onclick = (e) => { e.stopPropagation(); togglePeriod(period); };
+      // Hidden initially if year is collapsed
+      if (yearCollapsed) mHdr.style.display = 'none';
+      mHdr.innerHTML = `<td colspan="8" style="padding-left:28px;">
+        <span class="period-toggle"><i class="bi bi-chevron-down"></i></span>
+        <strong>${formatMonthLabel(period)}</strong>
+        <span class="text-muted ms-2" style="font-size:12px;font-weight:400;">${count} record${count !== 1 ? 's' : ''}</span>
+        <span class="ms-2 fw-semibold" style="color:#15803d;font-size:13px;" data-period-total="${period}">$${fmt(periodTotal)}</span>
+      </td>`;
+      tbody.insertBefore(mHdr, periodRows[0]);
+
+      // Data rows: hidden if year collapsed OR month collapsed
+      periodRows.forEach(r => {
+        r.dataset.yearHidden   = yearCollapsed  ? '1' : '';
+        r.dataset.periodHidden = monthCollapsed ? '1' : '';
+        if (yearCollapsed || monthCollapsed) r.style.display = 'none';
+        // Indent data rows slightly
+        r.style.paddingLeft = '40px';
+      });
+    });
+  });
+}
+
+function toggleYear(year) {
+  const hdr = document.querySelector(`[data-year-header="${year}"]`);
+  if (!hdr) return;
+  const nowCollapsed = hdr.classList.toggle('collapsed');
+  // Show/hide month headers for this year
+  document.querySelectorAll(`[data-period-header][data-year-group="${year}"]`).forEach(mHdr => {
+    mHdr.style.display = nowCollapsed ? 'none' : '';
+  });
+  // Show/hide data rows for this year
+  document.querySelectorAll(`[data-year-group="${year}"][data-salary]`).forEach(r => {
+    r.dataset.yearHidden = nowCollapsed ? '1' : '';
+    updateRowVisibility(r);
+  });
+}
+
+function togglePeriod(period) {
+  const hdr = document.querySelector(`[data-period-header="${period}"]`);
+  if (!hdr) return;
+  const nowCollapsed = hdr.classList.toggle('collapsed');
+  document.querySelectorAll(`[data-period-group="${period}"][data-salary]`).forEach(r => {
+    r.dataset.periodHidden = nowCollapsed ? '1' : '';
+    updateRowVisibility(r);
+  });
+}
+
+function updateRowVisibility(row) {
+  const hidden = row.dataset.yearHidden === '1'
+              || row.dataset.periodHidden === '1'
+              || row.dataset.filterHidden === '1';
+  row.style.display = hidden ? 'none' : '';
+}
+
 document.addEventListener('DOMContentLoaded', function() {
-  // Initialize filters from URL parameters
+  buildPeriodGroups();
+
   const params = new URLSearchParams(window.location.search);
   const employeeFilter = params.get('employee');
-  const regionFilter = params.get('region');
-  const yearFilter = params.get('year');
+  const regionFilter   = params.get('region');
+  const yearFilter     = params.get('year');
 
-  if (employeeFilter) {
-    document.getElementById('searchEmployee').value = employeeFilter;
-  }
-  if (regionFilter) {
-    document.getElementById('filterRegion').value = regionFilter;
-  }
+  if (employeeFilter) document.getElementById('searchEmployee').value = employeeFilter;
+  if (regionFilter)   document.getElementById('filterRegion').value   = regionFilter;
   if (yearFilter) {
-    // Set date range for the year
     document.getElementById('dateFrom').value = yearFilter + '-01-01';
-    document.getElementById('dateTo').value = yearFilter + '-12-31';
+    document.getElementById('dateTo').value   = yearFilter + '-12-31';
   }
 
-  // Apply filters if any were provided
   if (employeeFilter || regionFilter || yearFilter) {
     applySalaryFilters();
   } else {
-    loadSalaryData();
+    // Default: show current month
+    setDateRange('month');
   }
 });
 
@@ -449,17 +574,65 @@ function applySalaryFilters() {
   const region   = document.getElementById('filterRegion').value;
   const dateFrom = document.getElementById('dateFrom').value;
   const dateTo   = document.getElementById('dateTo').value;
-  const rows = document.querySelectorAll('#salaryTableBody tr[data-salary]');
-  rows.forEach(row => {
-    const emp  = (row.dataset.employee || '').toLowerCase();
-    const reg  = row.dataset.region || '';
-    const date = row.dataset.date || '';
-    const show = (!search || emp.includes(search))
-              && (!region || reg === region)
-              && (!dateFrom || date >= dateFrom)
-              && (!dateTo   || date <= dateTo);
-    row.style.display = show ? '' : 'none';
+
+  // Per-period accumulators for summary cards and header totals
+  const periodTotals  = {};
+  const periodVisible = {};
+  let usaTotal = 0, intlTotal = 0;
+
+  document.querySelectorAll('#salaryTableBody tr[data-salary]').forEach(row => {
+    const emp    = (row.dataset.employee || '').toLowerCase();
+    const reg    = row.dataset.region || '';
+    const date   = row.dataset.date || '';
+    const period = row.dataset.periodGroup || '';
+    const passes = (!search || emp.includes(search))
+                && (!region || reg === region)
+                && (!dateFrom || date >= dateFrom)
+                && (!dateTo   || date <= dateTo);
+    row.dataset.filterHidden = passes ? '' : '1';
+    updateRowVisibility(row);
+    if (passes) {
+      const amt = parseFloat(row.dataset.amount || 0);
+      periodTotals[period]  = (periodTotals[period]  || 0) + amt;
+      periodVisible[period] = (periodVisible[period] || 0) + 1;
+      if (reg === 'Inside America')  usaTotal  += amt;
+      if (reg === 'Outside America') intlTotal += amt;
+    }
   });
+
+  // Update month headers
+  document.querySelectorAll('#salaryTableBody tr[data-period-header]').forEach(hdr => {
+    const p   = hdr.dataset.periodHeader;
+    const yr  = hdr.dataset.yearGroup;
+    const vis = (periodVisible[p] || 0) > 0;
+    // Keep hidden if its year is collapsed
+    const yearCollapsed = document.querySelector(`[data-year-header="${yr}"]`)?.classList.contains('collapsed');
+    hdr.style.display = (vis && !yearCollapsed) ? '' : 'none';
+    const totalEl = hdr.querySelector('[data-period-total]');
+    if (totalEl) totalEl.textContent = '$' + fmt(periodTotals[p] || 0);
+  });
+
+  // Update year headers
+  const yearVisible = {}, yearTotals = {};
+  document.querySelectorAll('#salaryTableBody tr[data-salary]').forEach(row => {
+    if (row.dataset.filterHidden !== '1') {
+      const yr  = row.dataset.yearGroup || '—';
+      const amt = parseFloat(row.dataset.amount || 0);
+      yearVisible[yr] = (yearVisible[yr] || 0) + 1;
+      yearTotals[yr]  = (yearTotals[yr]  || 0) + amt;
+    }
+  });
+  document.querySelectorAll('#salaryTableBody tr[data-year-header]').forEach(hdr => {
+    const yr = hdr.dataset.yearHeader;
+    hdr.style.display = (yearVisible[yr] || 0) > 0 ? '' : 'none';
+    const totalEl = hdr.querySelector('[data-year-total]');
+    if (totalEl) totalEl.textContent = '$' + fmt(yearTotals[yr] || 0);
+  });
+
+  // Update summary cards to reflect filtered data
+  document.getElementById('cardUSA').textContent   = '$' + fmt(usaTotal);
+  document.getElementById('cardIntl').textContent  = '$' + fmt(intlTotal);
+  document.getElementById('cardTotal').textContent = '$' + fmt(usaTotal + intlTotal);
 }
 
 function setDateRange(range) {
@@ -601,17 +774,14 @@ function deleteSalary(id) {
     .catch(() => location.reload());
 }
 
-// Real-time filter listeners (client-side filtering of server-rendered rows)
+// Real-time filter listeners
 document.addEventListener('DOMContentLoaded', () => {
-  // Block future dates on the salary date input
   document.getElementById('sal_date').setAttribute('max', new Date().toISOString().slice(0, 10));
   initEmployeeAutocomplete();
   document.getElementById('searchEmployee').addEventListener('input', applySalaryFilters);
   document.getElementById('filterRegion').addEventListener('change', applySalaryFilters);
   document.getElementById('dateFrom').addEventListener('change', applySalaryFilters);
   document.getElementById('dateTo').addEventListener('change', applySalaryFilters);
-
-  // Initialize export links
   buildPayrollExportLinks();
 });
 

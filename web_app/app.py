@@ -96,16 +96,38 @@ ROLE_PAGES = {
     "engineer": ["employees", "timesheets"],
 }
 
+ALL_PAGES = ["dashboard", "quotes", "projects", "invoicing", "payroll",
+             "financial", "settings", "employees", "sales_dashboard", "timesheets"]
+
+PAGE_LABELS = {
+    "dashboard":      "Dashboard",
+    "quotes":         "Quotes",
+    "projects":       "Projects",
+    "invoicing":      "Invoicing",
+    "payroll":        "Payroll",
+    "financial":      "Financial",
+    "settings":       "Settings",
+    "employees":      "Employees",
+    "sales_dashboard":"Sales Dashboard",
+    "timesheets":     "Timesheets",
+}
+
 def normalize_role(role: str) -> str:
     r = str(role or "sales").strip().lower()
     return r if r in ROLE_PAGES else "sales"
 
-def can_access(role: str, page: str) -> bool:
-    return page in ROLE_PAGES.get(normalize_role(role), [])
+def get_allowed_pages(role: str, custom_pages=None) -> list:
+    """Return the effective page list: custom override if set, else role default."""
+    if custom_pages and isinstance(custom_pages, list) and len(custom_pages) > 0:
+        return custom_pages
+    return ROLE_PAGES.get(normalize_role(role), [])
 
-def first_page(role: str) -> str:
-    pages = ROLE_PAGES.get(normalize_role(role), ["quotes"])
-    return pages[0]
+def can_access(role: str, page: str, custom_pages=None) -> bool:
+    return page in get_allowed_pages(role, custom_pages)
+
+def first_page(role: str, custom_pages=None) -> str:
+    pages = get_allowed_pages(role, custom_pages)
+    return pages[0] if pages else "quotes"
 
 # ── Flask app ─────────────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -130,9 +152,11 @@ def role_required(page_key):
         def decorated(*args, **kwargs):
             if "user_email" not in session:
                 return redirect(url_for("login"))
-            if not can_access(session.get("user_role", ""), page_key):
+            role         = session.get("user_role", "")
+            custom_pages = session.get("custom_pages") or None
+            if not can_access(role, page_key, custom_pages):
                 flash("You don't have permission to access this page.", "danger")
-                return redirect(url_for(first_page(session.get("user_role", "sales"))))
+                return redirect(url_for(first_page(role, custom_pages)))
             return f(*args, **kwargs)
         return decorated
     return decorator
@@ -288,7 +312,7 @@ def inject_globals():
         "user_email":  session.get("user_email", ""),
         "user_role":   role,
         "user_uid":    uid,
-        "allowed_pages": ROLE_PAGES.get(normalize_role(role), []),
+        "allowed_pages": get_allowed_pages(role, session.get("custom_pages") or None),
         "company":     company_info(),
         "now":         datetime.now(),
         "timedelta":   timedelta,
@@ -335,14 +359,16 @@ def login():
                 elif not profile.get("active", True):
                     error = "Your account is inactive. Contact your administrator."
                 else:
-                    role = normalize_role(profile.get("role", "sales"))
-                    session.permanent = True
-                    session["user_email"] = email
-                    session["user_uid"]   = uid
-                    session["user_name"]  = profile.get("username", email.split("@")[0])
-                    session["user_role"]  = role
-                    log.info("Login: %s (%s)", email, role)
-                    return redirect(url_for(first_page(role)))
+                    role         = normalize_role(profile.get("role", "sales"))
+                    custom_pages = profile.get("custom_pages") or None
+                    session.permanent        = True
+                    session["user_email"]    = email
+                    session["user_uid"]      = uid
+                    session["user_name"]     = profile.get("username", email.split("@")[0])
+                    session["user_role"]     = role
+                    session["custom_pages"]  = custom_pages
+                    log.info("Login: %s (%s) pages=%s", email, role, custom_pages or "role-default")
+                    return redirect(url_for(first_page(role, custom_pages)))
 
     return render_template("login.html", error=error)
 
@@ -6912,6 +6938,22 @@ def employee_update(uid):
     flash("Employee details updated.", "success")
     return redirect(url_for("employees") + "#team")
 
+@app.route("/api/users/<uid>/pages", methods=["PATCH"])
+@role_required("settings")
+def user_pages_update(uid):
+    """Set custom page list for a user. Empty list = revert to role default."""
+    if normalize_role(session.get("user_role", "")) != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    data  = request.get_json() or {}
+    pages = data.get("custom_pages", [])
+    # Validate — only known page keys accepted
+    pages = [p for p in pages if p in ALL_PAGES]
+    fb_update(f"/users/{uid}", {
+        "custom_pages": pages if pages else None,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return jsonify({"ok": True, "custom_pages": pages})
+
 @app.route("/api/users/<uid>/details", methods=["PATCH"])
 @role_required("settings")
 def user_details_update(uid):
@@ -7013,7 +7055,8 @@ def employee_close_entry(entry_id):
 def settings():
     all_users = _load_all_users()
     settings_data = load_settings()
-    return render_template("settings.html", users=all_users, settings=settings_data)
+    return render_template("settings.html", users=all_users, settings=settings_data,
+                           role_pages=ROLE_PAGES, all_pages=ALL_PAGES, page_labels=PAGE_LABELS)
 
 @app.route("/settings/company", methods=["POST"])
 @role_required("settings")

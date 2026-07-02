@@ -383,6 +383,12 @@
                               data-rate="{{ u.get('hourly_rate', 0) }}"
                               data-salary="{{ u.get('monthly_salary', 0) }}"
                               title="Edit Details"><i class="bi bi-pencil"></i></button>
+                      <button class="btn btn-xs btn-outline-info pages-btn"
+                              data-uid="{{ u.firebase_uid }}"
+                              data-name="{{ u.get('username','') | e }}"
+                              data-role="{{ u.get('role','sales') }}"
+                              data-custompages="{{ (u.get('custom_pages') or []) | tojson | e }}"
+                              title="Customize Pages"><i class="bi bi-layout-sidebar"></i></button>
                       <form method="POST" action="{{ url_for('user_toggle', uid=u.firebase_uid) }}">
                         <button type="submit" class="btn btn-xs btn-outline-secondary"
                                 title="{{ 'Deactivate' if u.get('active', True) else 'Activate' }}">
@@ -452,6 +458,38 @@
     </div>
   </div>
 
+<!-- ── Customize User Pages Modal ──────────────────────────────────────────── -->
+<div class="modal fade" id="userPagesModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">Customize Pages — <span id="pagesUserName"></span> <span id="pagesRoleBadge" class="badge ms-1" style="font-size:10px;"></span></h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-2">
+        <p class="text-muted mb-2" style="font-size:11px;">
+          Check the pages this user can access. Leave all checked = use role default.
+        </p>
+        <input type="hidden" id="pagesUid">
+        <input type="hidden" id="pagesRole">
+        <div id="pagesCheckboxes" class="d-flex flex-column gap-1" style="font-size:13px;">
+          {# rendered by JS #}
+        </div>
+        <div class="mt-2">
+          <button class="btn btn-xs btn-outline-secondary" onclick="resetPagesToRole()">
+            <i class="bi bi-arrow-counterclockwise"></i> Reset to Role Default
+          </button>
+        </div>
+        <div id="pagesMsg" class="mt-2" style="font-size:12px;"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="saveUserPages()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── Edit Employee Details Modal ──────────────────────────────────────────── -->
 <div class="modal fade" id="editUserModal" tabindex="-1">
   <div class="modal-dialog modal-sm">
@@ -495,6 +533,10 @@
 
 {% block scripts %}
 <script>
+const ALL_PAGES   = {{ all_pages | tojson }};
+const PAGE_LABELS = {{ page_labels | tojson }};
+const ROLE_DEFAULTS = {{ role_pages | tojson }};
+
 document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.edit-user-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
@@ -506,6 +548,26 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('editMonthlySalary').value= parseFloat(d.salary) > 0 ? parseFloat(d.salary) : '';
       document.getElementById('editUserMsg').innerHTML  = '';
       new bootstrap.Modal(document.getElementById('editUserModal')).show();
+    });
+  });
+
+  document.querySelectorAll('.pages-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var uid   = btn.dataset.uid;
+      var name  = btn.dataset.name;
+      var role  = btn.dataset.role;
+      var saved;
+      try { saved = JSON.parse(btn.dataset.custompages || '[]'); } catch(e) { saved = []; }
+      document.getElementById('pagesUid').value       = uid;
+      document.getElementById('pagesRole').value      = role;
+      document.getElementById('pagesUserName').textContent = name;
+      document.getElementById('pagesMsg').innerHTML   = '';
+      var badge = document.getElementById('pagesRoleBadge');
+      badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+      badge.style.background = {admin:'#dc2626',finance:'#0D9488',projects:'#7C3AED',engineer:'#0369a1',sales:'#d97706'}[role] || '#6b7280';
+      badge.style.color = '#fff';
+      buildPagesCheckboxes(role, saved);
+      new bootstrap.Modal(document.getElementById('userPagesModal')).show();
     });
   });
 });
@@ -525,6 +587,53 @@ async function saveUserDetails() {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body)
+    });
+    var data = await res.json();
+    if (!res.ok || data.error) { msg.innerHTML = '<span class="text-danger">' + (data.error || 'Error') + '</span>'; return; }
+    msg.innerHTML = '<span class="text-success">Saved!</span>';
+    setTimeout(function(){ location.reload(); }, 600);
+  } catch(e) { msg.innerHTML = '<span class="text-danger">Request failed.</span>'; }
+}
+
+function buildPagesCheckboxes(role, selectedPages) {
+  var defaults = ROLE_DEFAULTS[role] || [];
+  var active   = (selectedPages && selectedPages.length > 0) ? selectedPages : defaults;
+  var html = '';
+  ALL_PAGES.forEach(function(p) {
+    var checked  = active.indexOf(p) !== -1 ? 'checked' : '';
+    var isDefault = defaults.indexOf(p) !== -1;
+    var badge    = isDefault ? ' <span class="badge bg-secondary" style="font-size:9px;">role default</span>' : '';
+    html += '<div class="form-check">'
+          + '<input class="form-check-input pages-checkbox" type="checkbox" value="' + p + '" id="pc_' + p + '" ' + checked + '>'
+          + '<label class="form-check-label" for="pc_' + p + '">' + PAGE_LABELS[p] + badge + '</label>'
+          + '</div>';
+  });
+  document.getElementById('pagesCheckboxes').innerHTML = html;
+}
+
+function resetPagesToRole() {
+  var role     = document.getElementById('pagesRole').value;
+  var defaults = ROLE_DEFAULTS[role] || [];
+  document.querySelectorAll('.pages-checkbox').forEach(function(cb) {
+    cb.checked = defaults.indexOf(cb.value) !== -1;
+  });
+}
+
+async function saveUserPages() {
+  var uid  = document.getElementById('pagesUid').value;
+  var msg  = document.getElementById('pagesMsg');
+  var role = document.getElementById('pagesRole').value;
+  var pages = [];
+  document.querySelectorAll('.pages-checkbox:checked').forEach(function(cb) { pages.push(cb.value); });
+  var defaults = ROLE_DEFAULTS[role] || [];
+  var isDefault = defaults.length === pages.length && defaults.every(function(p){ return pages.indexOf(p) !== -1; });
+  var payload = isDefault ? [] : pages;
+  msg.innerHTML = '<span class="text-muted">Saving…</span>';
+  try {
+    var res  = await fetch('/api/users/' + uid + '/pages', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({custom_pages: payload})
     });
     var data = await res.json();
     if (!res.ok || data.error) { msg.innerHTML = '<span class="text-danger">' + (data.error || 'Error') + '</span>'; return; }
