@@ -745,7 +745,8 @@ a[href*="filter_expense"]:hover {
       <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setExpenseDateRange('month')">This Month</button>
       <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setExpenseDateRange('year')">This Year</button>
       <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setExpenseDateRange('last30')">Last 30 Days</button>
-      <button type="button" class="btn btn-sm btn-light" onclick="clearExpenseFilters()">Clear</button>
+      <button type="button" class="btn btn-xs btn-outline-secondary" onclick="clearExpenseFilters()"><i class="bi bi-x me-1"></i>Clear</button>
+      <button type="button" class="btn btn-xs btn-outline-teal" onclick="exportExpenseCSV()" title="Export visible rows to CSV"><i class="bi bi-download me-1"></i>Export CSV</button>
     </div>
     <div id="expenseFilterAlert" class="alert alert-info py-2 px-3 mb-0 small" style="display:none;"></div>
   </div>
@@ -1418,6 +1419,49 @@ function setExpenseDateRange(range) {
   if (fromEl) fromEl.value = from;
   if (toEl)   toEl.value   = to;
   applyExpenseFilters();
+}
+
+function exportExpenseCSV() {
+  const rows = getVisibleExpenseRows();
+  const headers = ['Date','Expense Type','Expense Name','Category','Vendor','Project','Amount'];
+  const lines = [headers.map(h => '"'+h+'"').join(',')];
+  rows.forEach(function(row) {
+    const cells = row.querySelectorAll('td');
+    function cellText(i) {
+      return (cells[i] ? cells[i].textContent.trim().replace(/\s+/g,' ') : '').replace(/"/g,'""');
+    }
+    // Amount: strip $ and commas for clean number
+    const amtRaw = cellText(6).replace(/[$,]/g,'');
+    lines.push([
+      '"'+cellText(0)+'"',
+      '"'+cellText(1)+'"',
+      '"'+cellText(2)+'"',
+      '"'+cellText(3)+'"',
+      '"'+cellText(4)+'"',
+      '"'+cellText(5)+'"',
+      parseFloat(amtRaw||0).toFixed(2)
+    ].join(','));
+  });
+  const csv  = lines.join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  // Build filename from active filters
+  const type   = (document.getElementById('expenseTypeFilter')?.value||'').replace(/\s+/g,'-');
+  const vendor = (document.getElementById('expenseVendorFilter')?.value||'').replace(/\s+/g,'-');
+  const from   = document.getElementById('expenseDateFrom')?.value||'';
+  const to     = document.getElementById('expenseDateTo')?.value||'';
+  let label = 'expenses';
+  if (type)   label += '-'+type;
+  if (vendor) label += '-'+vendor;
+  if (from)   label += '-from'+from;
+  if (to)     label += '-to'+to;
+  a.download = label + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // Initialize pagination on page load
