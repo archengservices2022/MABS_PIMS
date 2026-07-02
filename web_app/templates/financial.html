@@ -2088,7 +2088,12 @@ function viewReceipt(expId) {
   <div class="card-panel">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h6 class="panel-title mb-0">Profit &amp; Loss by Project</h6>
-      <span class="text-muted small">Click a row to open the project</span>
+      <div class="d-flex align-items-center gap-2">
+        <span class="text-muted small">Click a row to open the project</span>
+        <button class="btn btn-xs btn-outline-teal" onclick="exportByProjectCSV()" title="Export to CSV">
+          <i class="bi bi-download me-1"></i>Export CSV
+        </button>
+      </div>
     </div>
     <div class="table-responsive">
       <table class="table table-hover table-sm mb-0 align-middle">
@@ -2101,6 +2106,7 @@ function viewReceipt(expId) {
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Contract</th>
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Invoiced</th>
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Collected</th>
+            <th class="text-end" style="color: #ffffff; font-weight: 700;">Outstanding</th>
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Expenses</th>
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Gross Profit</th>
             {% if total_labor_cost and total_labor_cost > 0 %}
@@ -2112,15 +2118,23 @@ function viewReceipt(expId) {
         </thead>
         <tbody>
           {% for row in project_pnl|sort(attribute='project_number') %}
-          {% set margin = (row.gross_profit / row.paid * 100) if row.paid > 0 else 0 %}
+          {% set margin = [[100.0, ((row.paid / row.contract_value * 100) if row.contract_value > 0 else 0)] | min, 0] | max %}
           <tr onclick="location.href='{{ url_for('project_detail', project_id=row.firebase_id) }}'" style="cursor:pointer;">
             <td><span class="fw-bold text-teal">{{ row.project_number }}</span></td>
             <td class="fw-medium">{{ row.project_name }}</td>
             <td class="text-muted small">{{ row.client_name }}</td>
             <td>{{ status_badge(row.status, 'Not Started') }}</td>
-            <td class="text-end">${{ "{:,.2f}".format(row.contract_value) }}</td>
+            <td class="text-end">
+              ${{ "{:,.2f}".format(row.contract_value) }}
+              {% if row.co_total and row.co_total > 0 %}
+              <div class="text-muted" style="font-size:10px;">+${{ "{:,.2f}".format(row.co_total) }} CO</div>
+              {% endif %}
+            </td>
             <td class="text-end text-teal fw-semibold">${{ "{:,.2f}".format(row.invoiced) }}</td>
             <td class="text-end text-success fw-semibold">${{ "{:,.2f}".format(row.paid) }}</td>
+            <td class="text-end fw-semibold {{ 'text-danger' if row.outstanding > 0 else 'text-muted' }}">
+              {{ ("$" + "{:,.2f}".format(row.outstanding)) if row.outstanding > 0 else "—" }}
+            </td>
             <td class="text-end text-danger">${{ "{:,.2f}".format(row.expenses) }}</td>
             <td class="text-end fw-bold {{ 'text-success' if row.gross_profit >= 0 else 'text-danger' }}">
               ${{ "{:,.2f}".format(row.gross_profit) }}
@@ -2132,7 +2146,7 @@ function viewReceipt(expId) {
             </td>
             {% endif %}
             <td class="text-end">
-              <span class="badge {{ 'bg-success' if margin >= 20 else ('bg-warning text-dark' if margin >= 0 else 'bg-danger') }}">
+              <span class="badge {{ 'bg-success' if margin >= 100 else ('bg-warning text-dark' if margin >= 50 else 'bg-danger') }}">
                 {{ "%.0f"|format(margin) }}%
               </span>
             </td>
@@ -2145,6 +2159,7 @@ function viewReceipt(expId) {
             <td class="text-end">${{ "{:,.2f}".format(project_pnl|sum(attribute='contract_value')) }}</td>
             <td class="text-end text-teal">${{ "{:,.2f}".format(project_pnl|sum(attribute='invoiced')) }}</td>
             <td class="text-end text-success fw-semibold">${{ "{:,.2f}".format(project_pnl|sum(attribute='paid')) }}</td>
+            <td class="text-end text-danger">${{ "{:,.2f}".format(project_pnl|sum(attribute='outstanding')) }}</td>
             <td class="text-end text-danger">${{ "{:,.2f}".format(project_pnl|sum(attribute='expenses')) }}</td>
             <td class="text-end {{ 'text-success' if project_pnl|sum(attribute='gross_profit') >= 0 else 'text-danger' }}">
               ${{ "{:,.2f}".format(project_pnl|sum(attribute='gross_profit')) }}
@@ -3234,6 +3249,66 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     URL.revokeObjectURL(url);
   };
 
+
+  // ── By Project export ────────────────────────────────────────────
+  window.exportByProjectCSV = function() {
+    var tbody = document.querySelector('#tab-by-project table tbody');
+    if (!tbody) return;
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+    // Detect if Labor Cost / Net Profit columns exist (conditional on total_labor_cost)
+    var hasLabor = document.querySelector('#tab-by-project thead th') &&
+      Array.from(document.querySelectorAll('#tab-by-project thead th')).some(function(th){ return th.textContent.trim() === 'Labor Cost'; });
+    var headers = ['Project #','Project Name','Client','Status','Contract','Invoiced','Collected','Outstanding','Expenses','Gross Profit'];
+    if (hasLabor) { headers.push('Labor Cost'); headers.push('Net Profit'); }
+    headers.push('Margin');
+    var lines = [headers.map(function(h){ return '"'+h+'"'; }).join(',')];
+    rows.forEach(function(row) {
+      var cells = row.querySelectorAll('td');
+      if (!cells.length) return;
+      function cellText(i) {
+        if (!cells[i]) return '';
+        // For Contract cell, only take first line (strip CO sub-text)
+        var t = cells[i].firstChild ? cells[i].firstChild.textContent : cells[i].textContent;
+        return t.trim().replace(/\s+/g,' ').replace(/"/g,'""');
+      }
+      function numCell(i) {
+        if (!cells[i]) return '0.00';
+        var t = cells[i].textContent.trim().replace(/[$,]/g,'').replace(/—/g,'0');
+        return parseFloat(t||0).toFixed(2);
+      }
+      var idx = 0;
+      var line = [
+        '"'+cellText(idx++)+'"',  // Project #
+        '"'+cellText(idx++)+'"',  // Project Name
+        '"'+cellText(idx++)+'"',  // Client
+        '"'+cellText(idx++)+'"',  // Status
+        numCell(idx++),           // Contract
+        numCell(idx++),           // Invoiced
+        numCell(idx++),           // Collected
+        numCell(idx++),           // Outstanding
+        numCell(idx++),           // Expenses
+        numCell(idx++)            // Gross Profit
+      ];
+      if (hasLabor) {
+        line.push(numCell(idx++)); // Labor Cost
+        line.push(numCell(idx++)); // Net Profit
+      }
+      // Margin: strip % sign
+      var marginCell = cells[idx] ? cells[idx].textContent.trim().replace('%','').trim() : '0';
+      line.push(parseFloat(marginCell||0).toFixed(0)+'%');
+      lines.push(line.join(','));
+    });
+    var csv  = lines.join('\r\n');
+    var blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a');
+    a.href     = url;
+    a.download = 'by-project.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   // ── A/R Aging tab filtering ───────────────────────────────────────
   var activeBucket = 'all';

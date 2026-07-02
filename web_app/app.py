@@ -5541,8 +5541,15 @@ def financial():
                 p_invoiced += project_line_total + project_tax
                 p_collected += project_payments + project_tax_paid
 
-        p_contract = _safe_float(p.get("contract_value",0))
+        # Contract = base contract + approved change orders
+        p_cos = p.get("change_orders") or []
+        if not isinstance(p_cos, list):
+            p_cos = list(p_cos.values()) if isinstance(p_cos, dict) else []
+        p_co_total = sum(_safe_float(co.get("amount", 0)) for co in p_cos if co.get("status") == "Approved")
+        p_base_contract = _safe_float(p.get("base_contract_value") or p.get("contract_value", 0))
+        p_contract = p_base_contract + p_co_total
         p_not_invoiced = p_contract - p_invoiced
+        p_outstanding = max(0.0, p_contract - p_collected)
         p_expenses = sum(_safe_float(e.get("amount",0))                     for e in exp_list if e.get("project_number","") == pnum)
         p_gross_profit = p_collected - p_expenses
         p_labor_cost = labor_cost_by_project.get(pnum, 0.0)
@@ -5552,9 +5559,11 @@ def financial():
             "client_name":    p.get("client_name",""),
             "status":         p.get("status",""),
             "contract_value": p_contract,
+            "co_total":       p_co_total,
             "invoiced":       p_invoiced,
             "not_invoiced":   p_not_invoiced,
             "paid":           p_collected,
+            "outstanding":    p_outstanding,
             "expenses":       p_expenses,
             "gross_profit":   p_gross_profit,
             "labor_cost":     p_labor_cost,
