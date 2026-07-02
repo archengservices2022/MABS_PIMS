@@ -6720,7 +6720,78 @@ def employees():
             "period_end":          period_end,
             "period_label":        period_label,
         })
+    # Medical allowance claims
+    all_medical_raw = fb_get("/medical_claims") or {}
+    all_medical_list = []
+    for cid, cdata in (all_medical_raw.items() if isinstance(all_medical_raw, dict) else []):
+        if cdata and isinstance(cdata, dict):
+            cdata["firebase_id"] = cid
+            all_medical_list.append(cdata)
+    all_medical_list.sort(key=lambda x: x.get("submitted_at", ""), reverse=True)
+    context["my_medical_claims"] = [c for c in all_medical_list if c.get("employee_uid") == uid]
+    if is_admin:
+        context["all_medical_claims"] = all_medical_list
+
     return render_template("employees.html", **context)
+
+@app.route("/employees/medical-claims/form")
+@role_required("employees")
+def medical_claim_form_download():
+    return render_template("medical_claim_form.html",
+                           user_name=session.get("user_name", ""),
+                           today=datetime.now().strftime("%Y-%m-%d"))
+
+@app.route("/employees/medical-claims/new", methods=["POST"])
+@role_required("employees")
+def medical_claim_new():
+    uid  = session.get("user_uid", "")
+    name = session.get("user_name", "")
+    amount = request.form.get("amount_claimed", "0") or "0"
+    try:
+        amount = float(amount)
+    except ValueError:
+        amount = 0.0
+    claim = {
+        "employee_uid":    uid,
+        "employee_name":   name,
+        "claim_date":      request.form.get("claim_date", ""),
+        "expense_type":    request.form.get("expense_type", "Medical"),
+        "amount_claimed":  amount,
+        "description":     request.form.get("description", "").strip(),
+        "provider":        request.form.get("provider", "").strip(),
+        "receipt_ref":     request.form.get("receipt_ref", "").strip(),
+        "status":          "Pending",
+        "amount_approved": None,
+        "admin_notes":     None,
+        "reviewed_by":     None,
+        "reviewed_at":     None,
+        "submitted_at":    datetime.now(timezone.utc).isoformat(),
+    }
+    fb_push("/medical_claims", claim)
+    flash("Medical allowance claim submitted successfully.", "success")
+    return redirect(url_for("employees") + "#medical")
+
+@app.route("/employees/medical-claims/<claim_id>/review", methods=["POST"])
+@role_required("employees")
+def medical_claim_review(claim_id):
+    if normalize_role(session.get("user_role", "")) != "admin":
+        flash("Admin access required.", "danger")
+        return redirect(url_for("employees") + "#medical")
+    action = request.form.get("action", "")
+    status = "Approved" if action == "approve" else "Rejected"
+    try:
+        amt_approved = float(request.form.get("amount_approved", 0) or 0)
+    except ValueError:
+        amt_approved = 0.0
+    fb_update(f"/medical_claims/{claim_id}", {
+        "status":          status,
+        "amount_approved": amt_approved if status == "Approved" else None,
+        "admin_notes":     request.form.get("admin_notes", "").strip(),
+        "reviewed_by":     session.get("user_name", ""),
+        "reviewed_at":     datetime.now(timezone.utc).isoformat(),
+    })
+    flash(f"Claim {status.lower()} successfully.", "success")
+    return redirect(url_for("employees") + "#medical")
 
 @app.route("/employees/clock-in", methods=["POST"])
 @role_required("employees")

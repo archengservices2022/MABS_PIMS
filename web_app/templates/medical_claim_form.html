@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Medical Allowance Claim Form</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; font-size: 13px; color: #111; padding: 30px; max-width: 750px; margin: auto; }
+  h1 { font-size: 20px; font-weight: 800; text-align: center; margin-bottom: 2px; }
+  .subtitle { text-align: center; color: #555; font-size: 12px; margin-bottom: 20px; }
+  .divider { border: none; border-top: 2px solid #0D9488; margin: 12px 0; }
+  .section-title { font-size: 12px; font-weight: 700; text-transform: uppercase;
+                   letter-spacing: .5px; color: #0D9488; margin: 16px 0 8px; }
+  .field-row { display: flex; gap: 16px; margin-bottom: 12px; }
+  .field { flex: 1; }
+  .field label { display: block; font-size: 11px; font-weight: 700; color: #555;
+                 text-transform: uppercase; margin-bottom: 3px; }
+  .field .line { border-bottom: 1px solid #333; min-height: 22px; padding-bottom: 2px; }
+  .field .value { font-size: 13px; color: #111; }
+  .notes-box { border: 1px solid #333; min-height: 60px; padding: 6px; border-radius: 3px; }
+  .sig-row { display: flex; gap: 30px; margin-top: 30px; }
+  .sig-block { flex: 1; }
+  .sig-block .sig-line { border-bottom: 1px solid #333; margin-bottom: 4px; height: 36px; }
+  .sig-block label { font-size: 11px; color: #555; }
+  .badge-status { display: inline-block; padding: 2px 10px; border-radius: 20px;
+                  font-size: 11px; font-weight: 700; background: #fef9c3; color: #92400e; }
+  .header-logo { text-align: center; margin-bottom: 6px; }
+  .ref { text-align: right; font-size: 11px; color: #999; margin-bottom: 8px; }
+  @media print {
+    body { padding: 15px; }
+    .no-print { display: none; }
+    a { text-decoration: none; color: inherit; }
+  }
+</style>
+</head>
+<body>
+
+<div class="no-print" style="text-align:right;margin-bottom:16px;">
+  <button onclick="window.print()" style="background:#0D9488;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;">
+    &#128438; Print / Save as PDF
+  </button>
+  <button onclick="window.close()" style="background:#e2e8f0;color:#333;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px;margin-left:8px;">
+    Close
+  </button>
+</div>
+
+<h1>MABS Engineering</h1>
+<div class="subtitle">Medical Allowance Claim Form</div>
+<hr class="divider">
+
+<div class="ref">Form Date: {{ today }}</div>
+
+<div class="section-title">Employee Information</div>
+<div class="field-row">
+  <div class="field">
+    <label>Employee Name</label>
+    <div class="line value">{{ user_name }}</div>
+  </div>
+  <div class="field">
+    <label>Date of Submission</label>
+    <div class="line"></div>
+  </div>
+  <div class="field">
+    <label>Department / Role</label>
+    <div class="line"></div>
+  </div>
+</div>
+
+<div class="section-title">Claim Details</div>
+<div class="field-row">
+  <div class="field">
+    <label>Expense Date</label>
+    <div class="line"></div>
+  </div>
+  <div class="field">
+    <label>Expense Type</label>
+    <div class="line"></div>
+    <div style="font-size:10px;color:#888;margin-top:3px;">Medical · Dental · Vision · Prescription · Other</div>
+  </div>
+  <div class="field">
+    <label>Amount Claimed ($)</label>
+    <div class="line"></div>
+  </div>
+</div>
+<div class="field-row">
+  <div class="field">
+    <label>Provider / Hospital Name</label>
+    <div class="line"></div>
+  </div>
+  <div class="field">
+    <label>Receipt / Invoice Number</label>
+    <div class="line"></div>
+  </div>
+</div>
+<div style="margin-bottom:12px;">
+  <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#555;display:block;margin-bottom:4px;">Description of Expense</label>
+  <div class="notes-box"></div>
+</div>
+
+<div class="section-title">Declaration</div>
+<p style="font-size:12px;color:#444;margin-bottom:14px;">
+  I hereby declare that the above expenses were genuinely incurred by me and are in accordance with the company's
+  Medical Allowance policy. All supporting receipts are attached.
+</p>
+
+<div class="sig-row">
+  <div class="sig-block">
+    <div class="sig-line"></div>
+    <label>Employee Signature &amp; Date</label>
+  </div>
+  <div class="sig-block">
+    <div class="sig-line"></div>
+    <label>Manager / Admin Signature &amp; Date</label>
+  </div>
+</div>
+
+<div class="section-title" style="margin-top:28px;">For Office Use Only</div>
+<div class="field-row">
+  <div class="field">
+    <label>Amount Approved ($)</label>
+    <div class="line"></div>
+  </div>
+  <div class="field">
+    <label>Status</label>
+    <div class="line"></div>
+    <div style="font-size:10px;color:#888;margin-top:3px;">Approved · Rejected · Pending</div>
+  </div>
+  <div class="field">
+    <label>Processed By</label>
+    <div class="line"></div>
+  </div>
+</div>
+<div style="margin-top:8px;">
+  <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#555;display:block;margin-bottom:4px;">Admin Notes</label>
+  <div class="notes-box"></div>
+</div>
+
+<hr class="divider" style="margin-top:30px;">
+<div style="text-align:center;font-size:10px;color:#aaa;margin-top:6px;">
+  MABS Engineering · Medical Allowance Claim Form · Please attach original receipts
+</div>
+
+</body>
+</html>

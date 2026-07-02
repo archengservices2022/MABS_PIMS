@@ -142,6 +142,14 @@
       <i class="bi bi-person-circle me-1"></i>My Profile
     </a>
   </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-medical">
+      <i class="bi bi-heart-pulse me-1"></i>Medical Allowance
+      {% if my_medical_claims | selectattr('status','equalto','Pending') | list | length %}
+      <span class="badge bg-warning text-dark ms-1" style="font-size:10px;">{{ my_medical_claims | selectattr('status','equalto','Pending') | list | length }}</span>
+      {% endif %}
+    </a>
+  </li>
   {% if user_role == 'admin' %}
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-team">
@@ -1217,6 +1225,201 @@
 {% endblock %}
 
 
+<!-- ══════════════════════════════════════════════════════════════════════════
+     MEDICAL ALLOWANCE
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade" id="tab-medical">
+  <div class="row g-3">
+
+    <!-- Submit New Claim -->
+    <div class="col-lg-4">
+      <div class="card-panel">
+        <h6 class="panel-title mb-3"><i class="bi bi-clipboard2-plus me-1" style="color:#0D9488;"></i>Submit a Claim</h6>
+        <form method="POST" action="{{ url_for('medical_claim_new') }}">
+          <div class="mb-2">
+            <label class="form-label fw-semibold" style="font-size:12px;">Expense Date</label>
+            <input type="date" name="claim_date" class="form-control form-control-sm" required
+                   max="{{ today_str }}">
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold" style="font-size:12px;">Expense Type</label>
+            <select name="expense_type" class="form-select form-select-sm" required>
+              <option value="Medical">Medical</option>
+              <option value="Dental">Dental</option>
+              <option value="Vision">Vision</option>
+              <option value="Prescription">Prescription</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold" style="font-size:12px;">Amount Claimed ($)</label>
+            <input type="number" name="amount_claimed" class="form-control form-control-sm"
+                   min="0.01" step="0.01" placeholder="0.00" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold" style="font-size:12px;">Provider / Hospital</label>
+            <input type="text" name="provider" class="form-control form-control-sm" placeholder="e.g. City Hospital">
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold" style="font-size:12px;">Description</label>
+            <textarea name="description" class="form-control form-control-sm" rows="2"
+                      placeholder="Brief description of the expense" required></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold" style="font-size:12px;">Receipt / Ref #</label>
+            <input type="text" name="receipt_ref" class="form-control form-control-sm" placeholder="Optional">
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-sm btn-teal">
+              <i class="bi bi-send me-1"></i>Submit Claim
+            </button>
+            <a href="{{ url_for('medical_claim_form_download') }}" target="_blank"
+               class="btn btn-sm btn-outline-secondary">
+              <i class="bi bi-printer me-1"></i>Print Form
+            </a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- My Claims History -->
+    <div class="col-lg-8">
+      <div class="card-panel">
+        <h6 class="panel-title mb-3"><i class="bi bi-clock-history me-1" style="color:#0D9488;"></i>My Claims</h6>
+        {% if my_medical_claims %}
+        <div class="table-responsive">
+          <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
+            <thead style="background:#f8fafc;">
+              <tr>
+                <th>Date</th><th>Type</th><th>Provider</th>
+                <th class="text-end">Claimed</th><th class="text-end">Approved</th>
+                <th>Status</th><th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for c in my_medical_claims %}
+            <tr>
+              <td>{{ c.claim_date or '—' }}</td>
+              <td>{{ c.expense_type or '—' }}</td>
+              <td class="text-muted">{{ c.provider or '—' }}</td>
+              <td class="text-end fw-semibold">${{ '%.2f'|format(c.amount_claimed|float) }}</td>
+              <td class="text-end text-success fw-semibold">
+                {% if c.amount_approved is not none and c.amount_approved != '' %}
+                  ${{ '%.2f'|format(c.amount_approved|float) }}
+                {% else %}—{% endif %}
+              </td>
+              <td>
+                {% set cs = c.status or 'Pending' %}
+                <span class="badge" style="font-size:11px;
+                  {% if cs == 'Approved' %}background:#dcfce7;color:#15803d;
+                  {% elif cs == 'Rejected' %}background:#fee2e2;color:#991b1b;
+                  {% else %}background:#fef9c3;color:#92400e;{% endif %}">
+                  {{ cs }}
+                </span>
+              </td>
+              <td class="text-muted small">{{ c.admin_notes or '—' }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-5">
+          <i class="bi bi-heart-pulse" style="font-size:36px;opacity:.25;"></i>
+          <div class="mt-2 small">No claims submitted yet.</div>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Admin: All Claims -->
+      {% if user_role == 'admin' %}
+      <div class="card-panel mt-3">
+        <h6 class="panel-title mb-3"><i class="bi bi-people me-1" style="color:#7C3AED;"></i>All Employee Claims</h6>
+        {% if all_medical_claims %}
+        <div class="table-responsive">
+          <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
+            <thead style="background:#f8fafc;">
+              <tr>
+                <th>Employee</th><th>Date</th><th>Type</th><th>Provider</th>
+                <th class="text-end">Claimed</th><th>Status</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for c in all_medical_claims %}
+            <tr>
+              <td><strong>{{ c.employee_name or '—' }}</strong></td>
+              <td>{{ c.claim_date or '—' }}</td>
+              <td>{{ c.expense_type or '—' }}</td>
+              <td class="text-muted">{{ c.provider or '—' }}</td>
+              <td class="text-end fw-semibold">${{ '%.2f'|format(c.amount_claimed|float) }}</td>
+              <td>
+                {% set cs = c.status or 'Pending' %}
+                <span class="badge" style="font-size:11px;
+                  {% if cs == 'Approved' %}background:#dcfce7;color:#15803d;
+                  {% elif cs == 'Rejected' %}background:#fee2e2;color:#991b1b;
+                  {% else %}background:#fef9c3;color:#92400e;{% endif %}">
+                  {{ cs }}
+                </span>
+              </td>
+              <td>
+                {% if c.status == 'Pending' %}
+                <button class="btn btn-xs btn-outline-success"
+                        onclick="openMedReview('{{ c.firebase_id }}','{{ c.employee_name }}','{{ c.amount_claimed }}','approve')"
+                        title="Approve"><i class="bi bi-check-lg"></i></button>
+                <button class="btn btn-xs btn-outline-danger ms-1"
+                        onclick="openMedReview('{{ c.firebase_id }}','{{ c.employee_name }}','{{ c.amount_claimed }}','reject')"
+                        title="Reject"><i class="bi bi-x-lg"></i></button>
+                {% else %}
+                <span class="text-muted small">{{ c.reviewed_by or '' }}</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-4 small">No claims from any employee yet.</div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Medical Review Modal (admin) -->
+{% if user_role == 'admin' %}
+<div class="modal fade" id="medReviewModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="medReviewTitle">Review Claim</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="medReviewForm">
+        <div class="modal-body py-2">
+          <input type="hidden" name="action" id="medReviewAction">
+          <div class="mb-2" id="medApprovedRow">
+            <label class="form-label fw-semibold" style="font-size:12px;">Amount Approved ($)</label>
+            <input type="number" name="amount_approved" id="medApprovedAmt"
+                   class="form-control form-control-sm" min="0" step="0.01">
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold" style="font-size:12px;">Notes</label>
+            <input type="text" name="admin_notes" class="form-control form-control-sm"
+                   placeholder="Optional notes to employee">
+          </div>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm" id="medReviewSubmitBtn">Confirm</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% block scripts %}
 <script>
 // Live elapsed timer
@@ -1236,7 +1439,7 @@
 
 // Tab persistence via URL hash
 (function () {
-  const map = { clock:'#tab-clock', 'time-off':'#tab-time-off', profile:'#tab-profile', team:'#tab-team', directory:'#tab-directory' };
+  const map = { clock:'#tab-clock', 'time-off':'#tab-time-off', profile:'#tab-profile', team:'#tab-team', directory:'#tab-directory', medical:'#tab-medical' };
   const hash = (window.location.hash || '').replace('#','');
   const target = map[hash];
   if (target) {
@@ -1424,5 +1627,28 @@ document.addEventListener('DOMContentLoaded', function() {
   var typeEl = document.getElementById('timeOffType');
   if (typeEl) typeEl.addEventListener('change', calcRequestedDays);
 });
+
+// Medical Allowance review modal
+window.openMedReview = function(claimId, empName, amtClaimed, action) {
+  const form  = document.getElementById('medReviewForm');
+  if (!form) return;
+  form.action = '/employees/medical-claims/' + claimId + '/review';
+  document.getElementById('medReviewAction').value = action;
+  document.getElementById('medReviewTitle').textContent =
+    (action === 'approve' ? 'Approve' : 'Reject') + ' claim — ' + empName;
+  const approvedRow = document.getElementById('medApprovedRow');
+  const submitBtn   = document.getElementById('medReviewSubmitBtn');
+  if (action === 'approve') {
+    approvedRow.style.display = '';
+    document.getElementById('medApprovedAmt').value = parseFloat(amtClaimed) || '';
+    submitBtn.className = 'btn btn-sm btn-success';
+    submitBtn.textContent = 'Approve';
+  } else {
+    approvedRow.style.display = 'none';
+    submitBtn.className = 'btn btn-sm btn-danger';
+    submitBtn.textContent = 'Reject';
+  }
+  new bootstrap.Modal(document.getElementById('medReviewModal')).show();
+};
 </script>
 {% endblock %}
