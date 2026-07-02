@@ -133,6 +133,26 @@
 .summary-card-value { font-size: 26px; font-weight: 800; color: #0f172a; }
 .summary-card.usa  { border-left: 4px solid #3b82f6; }
 .summary-card.intl { border-left: 4px solid #f59e0b; }
+
+/* Export Cards */
+.card-panel { background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; }
+.section-heading { font-size: 14px; font-weight: 700; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; }
+.export-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; text-align: center; transition: all 0.2s; }
+.export-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.export-card h6 { margin: 0 0 8px 0; font-size: 14px; }
+.export-card .text-muted { margin: 0; }
+.btn { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.btn-danger { background: #DC2626; color: white; padding: 10px 16px; border-radius: 6px; font-weight: 600; transition: background 0.2s; }
+.btn-danger:hover { background: #B91C1C; }
+.btn-success { background: #16A34A; color: white; padding: 10px 16px; border-radius: 6px; font-weight: 600; transition: background 0.2s; }
+.btn-success:hover { background: #15803D; }
+.btn-primary { background: #0D9488; color: white; padding: 10px 16px; border-radius: 6px; font-weight: 600; transition: background 0.2s; }
+.btn-primary:hover { background: #0A7860; }
+.w-100 { width: 100%; }
+.fw-bold { font-weight: 700; }
+.mb-1 { margin-bottom: 0.25rem; }
+.mb-3 { margin-bottom: 1rem; }
+.mb-4 { margin-bottom: 1.5rem; }
 </style>
 {% endblock %}
 
@@ -145,6 +165,9 @@
     </button>
     <button class="payroll-tab-button" onclick="switchTab('add-salary', event)">
       <i class="bi bi-plus-circle me-2" style="font-size:16px;"></i>Add Salary
+    </button>
+    <button class="payroll-tab-button" onclick="switchTab('export', event)">
+      <i class="bi bi-download me-2" style="font-size:16px;"></i>Export
     </button>
   </div>
 
@@ -214,7 +237,7 @@
               {% for sal in salaries %}
               <tr data-salary="1" data-employee="{{ (sal.employee_name or sal.get('employee','')) | lower }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}">
                 <td><strong>{{ sal.employee_name or sal.get('employee','—') }}</strong></td>
-                <td>{{ sal.date or '—' }}</td>
+                <td>{{ sal.date or '—' | format_date }}</td>
                 <td>${{ "{:,.2f}".format(sal.amount | float) }}</td>
                 <td><span class="region-badge {{ 'region-usa' if sal.region == 'Inside America' else 'region-intl' }}">{{ sal.region or '—' }}</span></td>
                 <td>{{ sal.notes or '—' }}</td>
@@ -294,6 +317,71 @@
             <button type="reset" class="btn-secondary" onclick="resetSalaryForm()">Clear</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Export Tab ──────────────────────────────────────────── -->
+  <div id="export" class="payroll-tab-content">
+    <div class="card-panel mb-4">
+      <h6 class="section-heading mb-3">Filter Export</h6>
+      <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
+        <select id="exportRegion" class="form-select form-select-sm" style="width:180px;" onchange="buildPayrollExportLinks()">
+          <option value="">All Regions</option>
+          <option value="Inside America">Inside America</option>
+          <option value="Outside America">Outside America</option>
+        </select>
+      </div>
+      <div class="d-flex gap-2 flex-wrap align-items-center">
+        <span class="text-muted small" style="min-width:75px;">Start date:</span>
+        <input type="date" id="exportFrom" class="form-control form-control-sm" style="width:160px;" oninput="buildPayrollExportLinks()">
+        <span class="text-muted small">to</span>
+        <input type="date" id="exportTo" class="form-control form-control-sm" style="width:160px;" oninput="buildPayrollExportLinks()">
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setPayrollExportRange('month')">This Month</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setPayrollExportRange('year')">This Year</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setPayrollExportRange('last30')">Last 30 Days</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="clearPayrollExportFilters()">Clear</button>
+      </div>
+    </div>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="export-card">
+          <div style="font-size:2.5rem;color:#DC2626;margin-bottom:12px;">
+            <i class="bi bi-file-earmark-pdf-fill"></i>
+          </div>
+          <h6 class="fw-bold mb-1">PDF Report</h6>
+          <p class="text-muted small mb-3">Professional PDF with all payroll data</p>
+          <a id="exportPayrollPdfLink" href="{{ url_for('payroll_export_pdf') }}"
+             class="btn btn-sm btn-danger w-100">
+            <i class="bi bi-download me-1"></i>Download PDF
+          </a>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="export-card">
+          <div style="font-size:2.5rem;color:#16A34A;margin-bottom:12px;">
+            <i class="bi bi-file-earmark-spreadsheet-fill"></i>
+          </div>
+          <h6 class="fw-bold mb-1">Excel Spreadsheet</h6>
+          <p class="text-muted small mb-3">Styled .xlsx with all payroll details</p>
+          <a id="exportPayrollExcelLink" href="{{ url_for('payroll_export_excel') }}"
+             class="btn btn-sm btn-success w-100">
+            <i class="bi bi-download me-1"></i>Download Excel
+          </a>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="export-card">
+          <div style="font-size:2.5rem;color:#2563EB;margin-bottom:12px;">
+            <i class="bi bi-file-earmark-text-fill"></i>
+          </div>
+          <h6 class="fw-bold mb-1">CSV Export</h6>
+          <p class="text-muted small mb-3">Comma-separated values file</p>
+          <a id="exportPayrollCsvLink" href="{{ url_for('payroll_export_csv') }}"
+             class="btn btn-sm btn-primary w-100">
+            <i class="bi bi-download me-1"></i>Download CSV
+          </a>
+        </div>
       </div>
     </div>
   </div>
@@ -486,6 +574,55 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('filterRegion').addEventListener('change', applySalaryFilters);
   document.getElementById('dateFrom').addEventListener('change', applySalaryFilters);
   document.getElementById('dateTo').addEventListener('change', applySalaryFilters);
+
+  // Initialize export links
+  buildPayrollExportLinks();
 });
+
+// ── Export Functions ──────────────────────────────────────
+const PDF_PAYROLL   = "{{ url_for('payroll_export_pdf') }}";
+const EXCEL_PAYROLL = "{{ url_for('payroll_export_excel') }}";
+const CSV_PAYROLL   = "{{ url_for('payroll_export_csv') }}";
+
+function buildPayrollExportLinks() {
+  const params = new URLSearchParams();
+  const r  = document.getElementById('exportRegion').value;
+  const f  = document.getElementById('exportFrom').value;
+  const t  = document.getElementById('exportTo').value;
+  if (r) params.set('region', r);
+  if (f) params.set('from', f);
+  if (t) params.set('to', t);
+  const q = params.toString() ? '?' + params.toString() : '';
+  document.getElementById('exportPayrollPdfLink').href   = PDF_PAYROLL   + q;
+  document.getElementById('exportPayrollExcelLink').href = EXCEL_PAYROLL + q;
+  document.getElementById('exportPayrollCsvLink').href   = CSV_PAYROLL   + q;
+}
+
+function clearPayrollExportFilters() {
+  document.getElementById('exportRegion').value = '';
+  document.getElementById('exportFrom').value   = '';
+  document.getElementById('exportTo').value     = '';
+  buildPayrollExportLinks();
+}
+
+function setPayrollExportRange(type) {
+  const now = new Date();
+  if (type === 'month') {
+    document.getElementById('exportFrom').value = localDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    document.getElementById('exportTo').value   = localDate(new Date(now.getFullYear(), now.getMonth()+1, 0));
+  } else if (type === 'year') {
+    document.getElementById('exportFrom').value = `${now.getFullYear()}-01-01`;
+    document.getElementById('exportTo').value   = `${now.getFullYear()}-12-31`;
+  } else if (type === 'last30') {
+    const f = new Date(now); f.setDate(f.getDate()-30);
+    document.getElementById('exportFrom').value = localDate(f);
+    document.getElementById('exportTo').value   = localDate(now);
+  }
+  buildPayrollExportLinks();
+}
+
+function localDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 </script>
 {% endblock %}

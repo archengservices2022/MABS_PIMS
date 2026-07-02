@@ -170,7 +170,9 @@
             {% set meta = inv.get('meta', {}) %}
             <tr onclick="location.href='{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}'"
                 style="cursor:pointer;">
-              <td><span class="fw-bold text-teal">{{ meta.get('invoice_number','—') }}</span></td>
+              <td style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
+                <span class="fw-bold text-teal" style="text-decoration:none;white-space:nowrap;">{{ meta.get('invoice_number','—') }}</span>
+              </td>
               <td>{{ meta.get('client_name','—') }}</td>
               <td class="text-muted small">
                 {%- set main_proj = meta.get('project_number','') %}
@@ -190,8 +192,8 @@
                   <span class="text-muted small">—</span>
                 {%- endif %}
               </td>
-              <td>{{ meta.get('invoice_date','—') }}</td>
-              <td>{{ meta.get('due_date','—') }}{% if meta.get('net_terms') %}<br><span class="text-muted small">Net {{ meta.get('net_terms') }}</span>{% endif %}</td>
+              <td>{{ meta.get('invoice_date','—') | format_date_invoice }}</td>
+              <td>{{ meta.get('due_date','—') | format_date_invoice }}{% if meta.get('net_terms') %}<br><span class="text-muted small">Net {{ meta.get('net_terms') }}</span>{% endif %}</td>
               <td class="text-end fw-bold">${{ "{:,.2f}".format(meta.get('total',0)|float) }}</td>
               <td class="text-end text-success">
                 {%- set line_paid = meta.get('amount_paid',0)|float -%}

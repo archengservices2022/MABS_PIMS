@@ -34,6 +34,9 @@
     (${{ "{:,.2f}".format(stage_amount|float) }}). This invoice will be linked to that stage.
   </div>
   {% endif %}
+  {% if request.args.get('co_number') %}
+  <input type="hidden" name="co_number" value="{{ request.args.get('co_number') }}">
+  {% endif %}
   <div class="row g-3">
     <div class="col-lg-8">
 
@@ -43,7 +46,8 @@
           <div class="col-md-4">
             <label class="form-label">Invoice Number</label>
             <input type="text" name="invoice_number" class="form-control"
-                   value="{{ meta.get('invoice_number', next_num or '') }}" required>
+                   value="{{ meta.get('invoice_number', next_num or '') }}"
+                   {% if not is_new %}readonly{% endif %} required>
           </div>
           <div class="col-md-3">
             <label class="form-label">Invoice Date</label>
@@ -99,12 +103,17 @@
           <div class="col-md-4">
             <label class="form-label">Status</label>
             <select name="status" id="invoiceStatus" class="form-select" onchange="togglePaymentFields()">
+              {% if invoice %}
+                {% set current_status = meta.get('status') or invoice.get('status') or 'Draft' %}
+              {% else %}
+                {% set current_status = 'Draft' %}
+              {% endif %}
               {% for s in ['Draft','Sent','Viewed','Paid','Partial','Overdue','Cancelled'] %}
-              <option value="{{ s }}" {{ 'selected' if meta.get('status','Draft') == s }}>{{ s }}</option>
+              <option value="{{ s }}" {{ 'selected' if current_status == s }}>{{ s }}</option>
               {% endfor %}
             </select>
           </div>
-          <div class="col-md-4" id="paymentMethodWrap" style="display:none;">
+          <div class="col-md-3" id="paymentMethodWrap" style="display:none;">
             <label class="form-label">Payment Method</label>
             <select name="payment_method" class="form-select">
               <option value="">— Select —</option>
@@ -113,10 +122,14 @@
               {% endfor %}
             </select>
           </div>
-          <div class="col-md-4" id="amountPaidWrap" style="display:none;">
+          <div class="col-md-3" id="amountPaidWrap" style="display:none;">
             <label class="form-label">Amount Paid ($)</label>
-            <input type="number" name="amount_paid" class="form-control"
-                   value="{{ meta.get('amount_paid','0') }}" min="0" step="0.01">
+            <input type="number" id="paymentAmountField" name="payment_amount" class="form-control"
+                   min="0" step="0.01" placeholder="0.00">
+          </div>
+          <div class="col-md-2" id="paymentDateWrap" style="display:none;">
+            <label class="form-label">Payment Date</label>
+            <input type="date" name="payment_date" class="form-control">
           </div>
         </div>
       </div>
@@ -132,12 +145,12 @@
           <table class="table table-sm">
             <thead>
               <tr>
-                <th style="width:33%">Description</th>
-                <th style="width:20%">Project <i class="bi bi-info-circle text-muted" title="Override which project this line item bills to — useful when one invoice covers multiple projects"></i></th>
+                <th style="width:26%">Description</th>
+                <th style="width:25%">Project <i class="bi bi-info-circle text-muted" title="Override which project this line item bills to — useful when one invoice covers multiple projects"></i></th>
                 <th style="width:10%">Qty</th>
-                <th style="width:15%">Unit Price</th>
-                <th style="width:15%">Amount</th>
-                <th style="width:7%"></th>
+                <th style="width:17%">Unit Price</th>
+                <th style="width:14%">Amount</th>
+                <th style="width:8%"></th>
               </tr>
             </thead>
             <tbody id="lineItemsBody">
@@ -231,7 +244,7 @@
         <div class="d-flex justify-content-between align-items-center mb-2">
           <span>Tax Rate (%)</span>
           <input type="number" name="tax_rate" id="taxRate" class="form-control form-control-sm text-end"
-                 style="width:80px;" value="{{ meta.get('tax_rate','0') }}"
+                 style="width:80px;" value="{{ meta.get('tax_rate', default_tax_rate if is_new else '0') }}"
                  min="0" max="100" step="0.01" oninput="calcTotals()">
         </div>
         <div class="d-flex justify-content-between mb-2">
@@ -473,6 +486,26 @@ function togglePaymentFields() {
   const show   = ['Paid', 'Partial'].includes(status);
   document.getElementById('paymentMethodWrap').style.display = show ? '' : 'none';
   document.getElementById('amountPaidWrap').style.display    = show ? '' : 'none';
+  document.getElementById('paymentDateWrap').style.display   = show ? '' : 'none';
+
+  // Set payment date to today if showing and not already set
+  if (show && !document.querySelector('input[name="payment_date"]').value) {
+    const today = new Date().toISOString().split('T')[0];
+    document.querySelector('input[name="payment_date"]').value = today;
+  }
+
+  // For "Paid" status, auto-populate amount with total (including tax)
+  if (status === 'Paid') {
+    const totalDisplay = document.getElementById('totalDisplay')?.textContent || '';
+    const totalMatch = totalDisplay.match(/[\d,]+\.?\d*/);
+    if (totalMatch) {
+      const totalAmount = parseFloat(totalMatch[0].replace(/,/g, ''));
+      document.getElementById('paymentAmountField').value = totalAmount.toFixed(2);
+    }
+  } else if (status === 'Partial') {
+    // Clear amount for Partial so user enters custom amount
+    document.getElementById('paymentAmountField').value = '';
+  }
 }
 
 calcTotals();
@@ -495,6 +528,46 @@ function applyNetTerms() {
 (function() {
   const nt = document.getElementById('netTerms').value;
   if (nt && !document.getElementById('dueDate').value) applyNetTerms();
+})();
+
+// Fetch and set the current invoice status and payment info from the API
+(function() {
+  const invoiceNum = document.querySelector('input[name="invoice_number"]');
+  if (invoiceNum && invoiceNum.value && invoiceNum.value.includes('-')) {
+    // Extract invoice ID from form data if available, or use invoice number
+    const invoiceId = '{{ invoice.firebase_id if invoice else '' }}';
+    if (invoiceId) {
+      fetch(`/api/invoices/${invoiceId}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.meta && data.meta.status) {
+            const statusSelect = document.getElementById('invoiceStatus');
+            if (statusSelect) {
+              statusSelect.value = data.meta.status;
+              togglePaymentFields();
+            }
+          }
+          // Populate payment amount if invoice is being edited and has existing payment
+          if (data && data.meta && data.meta.amount_paid) {
+            const amountPaid = parseFloat(data.meta.amount_paid || '0');
+            if (amountPaid > 0) {
+              const paymentAmountField = document.getElementById('paymentAmountField');
+              if (paymentAmountField) {
+                paymentAmountField.value = amountPaid.toFixed(2);
+              }
+            }
+          }
+          // Populate payment method if exists
+          if (data && data.meta && data.meta.payment_method) {
+            const methodSelect = document.querySelector('select[name="payment_method"]');
+            if (methodSelect) {
+              methodSelect.value = data.meta.payment_method;
+            }
+          }
+        })
+        .catch(e => console.log('Could not fetch invoice status:', e));
+    }
+  }
 })();
 </script>
 {% endblock %}

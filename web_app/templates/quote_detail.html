@@ -24,7 +24,7 @@
       <i class="bi bi-file-earmark-pdf me-1"></i>PDF
     </a>
 
-    {% set already_won = quote.get('status','') in ['Converted','Invoiced'] %}
+    {% set already_won = quote.get('status','') in ['Converted','Invoiced'] or quote.get('linked_project_id') %}
 
     {% if already_won %}
     <span class="btn btn-sm btn-outline-success disabled">
@@ -97,15 +97,15 @@
         </div>
         <div class="col-sm-4">
           <div class="info-label">Date</div>
-          <div class="info-value">{{ quote.get('date','—') }}</div>
+          <div class="info-value">{{ quote.get('date','—') | format_date }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Valid Until</div>
-          <div class="info-value">{{ quote.get('valid_until','—') }}</div>
+          <div class="info-value">{{ quote.get('valid_until','—') | format_date }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Expected Completion</div>
-          <div class="info-value">{{ quote.get('expected_completion','—') or '—' }}</div>
+          <div class="info-value">{{ (quote.get('expected_completion') | format_date) if quote.get('expected_completion') else '—' }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Priority</div>
@@ -138,7 +138,13 @@
           <div class="info-label"><i class="bi bi-bell me-1 text-teal"></i>Follow-up Date</div>
           <div class="info-value">
             {% if quote.get('follow_up_date') %}
-              {{ quote.get('follow_up_date') }}
+              {% set fu = quote.get('follow_up_date') %}
+              {% set parts = fu.split('-') %}
+              {% if parts|length == 3 %}
+                {{ parts[1] }}-{{ parts[2] }}-{{ parts[0] }}
+              {% else %}
+                {{ fu }}
+              {% endif %}
               <form method="POST"
                     action="{{ url_for('quote_followup_done', quote_id=quote.firebase_id) }}"
                     class="d-inline ms-2">
@@ -283,9 +289,9 @@
     <div class="card-panel">
       <h6 class="section-heading">Metadata</h6>
       <div class="info-label">Created</div>
-      <div class="info-value small">{{ quote.get('created_at','—')[:19]|replace('T',' ') }}</div>
+      <div class="info-value small">{{ quote.get('created_at','—')[:10] | format_date }}</div>
       <div class="info-label mt-2">Updated</div>
-      <div class="info-value small">{{ quote.get('updated_at','—')[:19]|replace('T',' ') }}</div>
+      <div class="info-value small">{{ quote.get('updated_at','—')[:10] | format_date }}</div>
       <div class="info-label mt-2">Created By</div>
       <div class="info-value small">{{ quote.get('created_by','—') }}</div>
     </div>
@@ -300,7 +306,7 @@
        style="border-left:4px solid #F59E0B;background:#FFFBEB;color:#92400E;"
        data-valid="{{ valid_until }}">
     <i class="bi bi-clock-history"></i>
-    <span>This quote is valid until <strong>{{ valid_until }}</strong>.
+    <span>This quote is valid until <strong>{{ valid_until | format_date }}</strong>.
     <span id="expiryCountdown"></span></span>
   </div>
 {% endif %}

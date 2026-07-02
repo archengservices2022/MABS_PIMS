@@ -116,7 +116,7 @@
           </a>
         {% endif %}
         <div class="mt-1">
-          <span class="badge status-{{ _inv_status|lower|replace(' ','-') }}">{{ _inv_status }}</span>
+          <span class="badge status-{{ _inv_status|lower|replace(' ','-') }}" id="wfInvoiceStatus" data-invoice-id="{{ wf_invoice_id }}">{{ _inv_status }}</span>
         </div>
         {% if _inv_is_draft and wf_step != 3 and 'invoicing' in allowed_pages %}
         <a href="{{ url_for('invoice_detail', invoice_id=wf_invoice_id) }}"

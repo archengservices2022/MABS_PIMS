@@ -103,25 +103,12 @@
           <option value="{{ s }}" {{ 'selected' if status_filter == s }}>{{ s }}</option>
           {% endfor %}
         </select>
-        <select name="year" class="form-select form-select-sm" style="max-width:105px;"
-                onchange="this.form.submit()">
+        <select name="year" class="form-select form-select-sm" style="max-width:105px;">
           <option value="">All Years</option>
           {% for y in available_years %}
           <option value="{{ y }}" {{ 'selected' if year_filter == y }}>{{ y }}</option>
           {% endfor %}
         </select>
-        {% if year_filter %}
-        <select name="month" class="form-select form-select-sm" style="max-width:130px;">
-          <option value="">All Months</option>
-          {% set month_names = ['January','February','March','April','May','June',
-                                'July','August','September','October','November','December'] %}
-          {% for i in range(1, 13) %}
-          <option value="{{ '%02d' % i }}" {{ 'selected' if month_filter == '%02d' % i }}>
-            {{ month_names[i-1] }}
-          </option>
-          {% endfor %}
-        </select>
-        {% endif %}
       </div>
 
       <!-- Row 2: date range -->
@@ -138,7 +125,7 @@
                 onclick="setListRange('year')">This Year</button>
         <button type="button" class="btn btn-xs btn-outline-secondary"
                 onclick="setListRange('last30')">Last 30 Days</button>
-        <button class="btn btn-sm btn-outline-secondary" type="submit">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">
           <i class="bi bi-search me-1"></i>Apply
         </button>
         {% if search or status_filter or year_filter or month_filter or date_from or date_to %}
@@ -149,11 +136,10 @@
       </div>
     </form>
 
-    {% if year_filter or month_filter or date_from or date_to %}
-    <div class="alert alert-light py-1 px-3 mb-3 small d-flex align-items-center gap-2"
-         style="border-left:3px solid #0D9488;">
+    <div id="quoteFilterAlert" class="alert alert-light py-1 px-3 mb-3 small d-flex align-items-center gap-2"
+         style="border-left:3px solid #0D9488;{% if not (year_filter or month_filter or date_from or date_to) %}display:none;{% endif %}">
       <i class="bi bi-funnel text-teal"></i>
-      <span>
+      <span id="quoteFilterText">
         {% if date_from and date_to %}
           Date range: <strong>{{ date_from }}</strong> to <strong>{{ date_to }}</strong>
         {% elif date_from %}
@@ -167,10 +153,9 @@
         {% else %}
           Year: <strong>{{ year_filter }}</strong>
         {% endif %}
-        &nbsp;·&nbsp; {{ quotes|length }} result{{ 's' if quotes|length != 1 else '' }}
+        &nbsp;·&nbsp; <span id="quoteFilterCount">{{ quotes|length }}</span> result{{ 's' if quotes|length != 1 else '' }}
       </span>
     </div>
-    {% endif %}
 
     <div class="card-panel">
       <div class="table-responsive">
@@ -200,7 +185,7 @@
               <td>{{ q.get('client_name','—') }}</td>
               <td class="text-muted">{{ (q.get('project_name','—') or '—')[:40] }}</td>
               <td>{{ q.get('salesperson','—') }}</td>
-              <td>{{ q.get('date','—') }}</td>
+              <td>{{ q.get('date','—') | format_date }}</td>
               <td>
                 <span class="badge status-{{ q.get('status','Not Started')|lower|replace(' ','-') }}">
                   {{ q.get('status','Not Started') }}
@@ -583,7 +568,16 @@
                     <i class="bi bi-exclamation-circle me-1"></i>{{ od }}d overdue
                   </span>
                 {% endif %}
-                <div class="text-muted small mt-1">{{ fu }}</div>
+                <div class="text-muted small mt-1">
+                  {% if fu %}
+                    {% set parts = fu.split('-') %}
+                    {% if parts|length == 3 %}
+                      {{ parts[1] }}-{{ parts[2] }}-{{ parts[0] }}
+                    {% else %}
+                      {{ fu }}
+                    {% endif %}
+                  {% endif %}
+                </div>
               </td>
               <td>
                 <span class="badge status-{{ q.get('status','Not Started')|lower|replace(' ','-') }}">
@@ -682,7 +676,17 @@
                     <i class="bi bi-calendar me-1"></i>In {{ days_ahead }} days
                   </span>
                 {% endif %}
-                <div class="text-muted small mt-1">{{ q.get('follow_up_date','') }}</div>
+                <div class="text-muted small mt-1">
+                  {% set fu = q.get('follow_up_date','') %}
+                  {% if fu %}
+                    {% set parts = fu.split('-') %}
+                    {% if parts|length == 3 %}
+                      {{ parts[1] }}-{{ parts[2] }}-{{ parts[0] }}
+                    {% else %}
+                      {{ fu }}
+                    {% endif %}
+                  {% endif %}
+                </div>
               </td>
               <td>
                 <span class="badge status-{{ q.get('status','Not Started')|lower|replace(' ','-') }}">
@@ -1016,13 +1020,36 @@ window.addEventListener('pageshow', function(e) {
 function updateQuoteSummaryCards() {
   const searchInput = document.querySelector('input[name="q"]');
   const statusSelect = document.querySelector('select[name="status"]');
+  const yearSelect = document.querySelector('select[name="year"]');
+  const monthSelect = document.querySelector('select[name="month"]');
   const dateFromInput = document.querySelector('input[name="from"]');
   const dateToInput = document.querySelector('input[name="to"]');
 
   const search = searchInput?.value?.toLowerCase() || '';
   const status = statusSelect?.value || '';
-  const dateFrom = dateFromInput?.value || '';
-  const dateTo = dateToInput?.value || '';
+  let dateFrom = dateFromInput?.value || '';
+  let dateTo = dateToInput?.value || '';
+
+  // Status groups (must match backend definitions in app.py)
+  const OPEN_STATUSES = new Set(['Not Started', 'In Progress']);
+  const APPROVED_STATUSES = new Set(['Approved', 'Completed']);
+  const CONVERTED_STATUSES = new Set(['Converted', 'Invoiced']);
+
+  // If year/month filters are set, calculate date range from them
+  const year = yearSelect?.value || '';
+  const month = monthSelect?.value || '';
+
+  // Apply year/month filters if they're set (takes precedence over manual date range)
+  if (year && month) {
+    // Year and month both selected - filter to that month
+    dateFrom = year + '-' + month + '-01';
+    dateTo = year + '-' + month + '-31'; // Day 31 works for all months in string comparison
+  } else if (year) {
+    // Only year selected - filter to that year
+    dateFrom = year + '-01-01';
+    dateTo = year + '-12-31';
+  }
+  // If neither year nor month selected, use manual date range inputs (already set above)
 
   const rows = document.querySelectorAll('.quote-row');
   let totalCount = 0;
@@ -1043,16 +1070,19 @@ function updateQuoteSummaryCards() {
     const matchDateFrom = !dateFrom || rowDate >= dateFrom;
     const matchDateTo = !dateTo || rowDate <= dateTo;
 
-    if (matchSearch && matchStatus && matchDateFrom && matchDateTo) {
+    const isVisible = matchSearch && matchStatus && matchDateFrom && matchDateTo;
+    row.style.display = isVisible ? '' : 'none';
+
+    if (isVisible) {
       totalCount++;
 
-      if (rowStatus === 'Open') {
+      if (OPEN_STATUSES.has(rowStatus)) {
         openCount++;
         pipelineValue += rowTotal;
-      } else if (rowStatus === 'Approved') {
+      } else if (APPROVED_STATUSES.has(rowStatus)) {
         approvedCount++;
         pipelineValue += rowTotal;
-      } else if (rowStatus === 'Converted') {
+      } else if (CONVERTED_STATUSES.has(rowStatus)) {
         convertedCount++;
         wonValue += rowTotal;
       }
@@ -1069,19 +1099,36 @@ function updateQuoteSummaryCards() {
   document.getElementById('card-conv-bar').style.width = convRate + '%';
   document.getElementById('card-pipeline').textContent = '$' + pipelineValue.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
   document.getElementById('card-won-value').textContent = '$' + wonValue.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+
+  // Update filter result display - show only when year is explicitly selected
+  const filterAlert = document.getElementById('quoteFilterAlert');
+  const filterCount = document.getElementById('quoteFilterCount');
+  if (filterAlert && filterCount) {
+    // Only show when year is explicitly selected (not from automatic date range)
+    if (year) {
+      // Build filter description
+      let filterDesc = '';
+      if (year && month) {
+        const monthNames = ['January','February','March','April','May','June',
+                           'July','August','September','October','November','December'];
+        filterDesc = monthNames[parseInt(month) - 1] + ' ' + year;
+      } else if (year) {
+        filterDesc = 'Year: ' + year;
+      }
+
+      // Show filter alert and update it
+      filterAlert.style.display = '';
+      filterCount.textContent = totalCount;
+      document.getElementById('quoteFilterText').innerHTML =
+        '<strong>' + filterDesc + '</strong>&nbsp;·&nbsp; <span id="quoteFilterCount">' + totalCount + '</span> result' + (totalCount !== 1 ? 's' : '');
+    } else {
+      // Hide when year is not selected (ignore auto-generated date ranges)
+      filterAlert.style.display = 'none';
+    }
+  }
 }
 
-// Attach listeners to filter inputs
-document.addEventListener('DOMContentLoaded', function() {
-  const searchInput = document.querySelector('input[name="q"]');
-  const statusSelect = document.querySelector('select[name="status"]');
-  const dateFromInput = document.querySelector('input[name="from"]');
-  const dateToInput = document.querySelector('input[name="to"]');
-
-  if (searchInput) searchInput.addEventListener('input', updateQuoteSummaryCards);
-  if (statusSelect) statusSelect.addEventListener('change', updateQuoteSummaryCards);
-  if (dateFromInput) dateFromInput.addEventListener('change', updateQuoteSummaryCards);
-  if (dateToInput) dateToInput.addEventListener('change', updateQuoteSummaryCards);
-});
+// Filter form now submits via GET to handle server-side filtering
+// Cards are recalculated by backend based on filtered quotes
 </script>
 {% endblock %}

@@ -4,8 +4,11 @@
 
 {% block content %}
 <style>
-  #tab-export #projectsTable { display: none !important; }
-  #tab-export .card-panel:has(#projectsTable) { display: none !important; }
+  /* Prevent date wrapping in projects table */
+  #projectsTable td:nth-child(5) {
+    white-space: nowrap;
+    min-width: 110px;
+  }
 </style>
 
 <!-- ── Projects Overview ────────────────────────────────────────────────────── -->
@@ -215,7 +218,7 @@
                 <span class="badge" style="background:#0D9488;color:#fff;font-size:11px;font-weight:700;letter-spacing:.04em;">{{ p._plant_display }}</span>
                 {% else %}—{% endif %}
               </td>
-              <td>{{ p.get('start_date','—') }}</td>
+              <td>{{ p.get('start_date','—') | format_date }}</td>
               <td class="text-end fw-bold">${{ "{:,.0f}".format(p.get('contract_value',0)|float) }}</td>
               <td class="text-end text-success">${{ "{:,.0f}".format(p.get('amount_paid',0)|float) }}</td>
               <td>
@@ -394,25 +397,33 @@ function setExportRange(type) {
   buildExportLinks();
 }
 
-// Hide table when export tab is active
+// Hide table when export tab is active, show when all-projects tab is active
 document.addEventListener('DOMContentLoaded', function() {
-  const exportTab = document.getElementById('tab-export');
   const projectsTable = document.getElementById('projectsTable');
+  const tableCardPanel = projectsTable ? projectsTable.closest('.card-panel') : null;
 
-  if (projectsTable && projectsTable.closest('#tab-export')) {
-    projectsTable.closest('.card-panel').remove();
+  if (!tableCardPanel) {
+    buildExportLinks();
+    return;
   }
 
-  // Also prevent table from showing on tab switch
+  // Hide table initially if export tab is active
+  const exportTab = document.getElementById('tab-export');
+  if (exportTab && exportTab.classList.contains('active')) {
+    tableCardPanel.style.display = 'none';
+  }
+
+  // Handle tab switching - hide table when export tab is shown
   document.querySelectorAll('[href="#tab-export"]').forEach(link => {
     link.addEventListener('shown.bs.tab', function() {
-      if (projectsTable) projectsTable.parentElement.parentElement.style.display = 'none';
+      if (tableCardPanel) tableCardPanel.style.display = 'none';
     });
   });
 
+  // Handle tab switching - show table when all-projects tab is shown
   document.querySelectorAll('[href="#tab-all-projects"]').forEach(link => {
     link.addEventListener('shown.bs.tab', function() {
-      if (projectsTable) projectsTable.parentElement.parentElement.style.display = 'block';
+      if (tableCardPanel) tableCardPanel.style.display = '';
     });
   });
 

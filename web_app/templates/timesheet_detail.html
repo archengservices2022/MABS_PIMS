@@ -87,13 +87,13 @@
     </div>
     {% if sheet.submitted_at %}
     <div class="stat-box">
-      <div class="stat-val" style="font-size:.85rem;padding-top:4px;">{{ sheet.submitted_at[:10] }}</div>
+      <div class="stat-val" style="font-size:.85rem;padding-top:4px;">{{ sheet.submitted_at[:10] | format_date }}</div>
       <div class="stat-lbl">Submitted</div>
     </div>
     {% endif %}
     {% if sheet.approved_at %}
     <div class="stat-box">
-      <div class="stat-val" style="font-size:.85rem;padding-top:4px;">{{ sheet.approved_at[:10] }}</div>
+      <div class="stat-val" style="font-size:.85rem;padding-top:4px;">{{ sheet.approved_at[:10] | format_date }}</div>
       <div class="stat-lbl">Reviewed</div>
     </div>
     {% endif %}
@@ -122,13 +122,13 @@
           {% if entry.date != ns.prev_date %}
           <tr class="day-group-header">
             <td colspan="9">
-              <i class="bi bi-calendar3 me-2"></i>{{ entry.date or 'No date' }}
+              <i class="bi bi-calendar3 me-2"></i>{{ entry.date | format_date if entry.date else 'No date' }}
             </td>
           </tr>
           {% set ns.prev_date = entry.date %}
           {% endif %}
           <tr>
-            <td style="color:#94a3b8;font-size:.78rem;">{{ entry.date or '—' }}</td>
+            <td style="color:#94a3b8;font-size:.78rem;">{{ entry.date | format_date if entry.date else '—' }}</td>
             <td>
               {% if entry.project_name %}
               <strong>{{ entry.project_name }}</strong>
@@ -173,13 +173,13 @@
   <div class="approved-banner">
     <i class="bi bi-check-circle-fill me-2"></i>
     Approved by <strong>{{ sheet.approved_by or 'manager' }}</strong>
-    {% if sheet.approved_at %}on {{ sheet.approved_at[:10] }}{% endif %}
+    {% if sheet.approved_at %}on {{ sheet.approved_at[:10] | format_date }}{% endif %}
   </div>
   {% elif sheet.status == 'Rejected' %}
   <div class="rejected-banner">
     <i class="bi bi-x-circle-fill me-2"></i>
     Rejected by <strong>{{ sheet.approved_by or 'manager' }}</strong>
-    {% if sheet.approved_at %}on {{ sheet.approved_at[:10] }}{% endif %}
+    {% if sheet.approved_at %}on {{ sheet.approved_at[:10] | format_date }}{% endif %}
     {% if sheet.rejection_notes %} — {{ sheet.rejection_notes }}{% endif %}
   </div>
   {% endif %}

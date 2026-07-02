@@ -44,7 +44,7 @@ DATA_DIR = BASE_DIR / "data"
 ASSETS_DIR = BASE_DIR / "assets"
 
 # ── Firebase config ───────────────────────────────────────────────────────────
-FIREBASE_API_KEY = "AIzaSyD6F6T_KIZ90TkCOL03-jSXTeuPM5WVwJY"
+FIREBASE_API_KEY = "AIzaSyBZIG4Gj_ZRRCqI1DXcf8DSXpO_9PkTgeY"
 FIREBASE_DB_URL  = "https://invoice-7fe93-default-rtdb.firebaseio.com"
 
 FIREBASE_AVAILABLE = False
@@ -111,6 +111,9 @@ def first_page(role: str) -> str:
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET", "mabs-pims-secret-2025-change-in-prod")
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
+
+# Register Jinja2 filters (will be added after _format_date_display is defined)
+# We'll add these filters later in the code once the functions are defined
 
 # ── Auth decorators ───────────────────────────────────────────────────────────
 def login_required(f):
@@ -289,8 +292,21 @@ def inject_globals():
         "company":     company_info(),
         "now":         datetime.now(),
         "timedelta":   timedelta,
+        "format_date": _format_date_display,  # Make date formatter available in templates (MM-DD-YYYY)
+        "format_date_invoice": _format_date_invoice,  # Invoice-specific formatter (MM-DD-YY)
         **clock_widget,
     }
+
+# Register Jinja2 filters for date formatting
+@app.template_filter('format_date')
+def format_date_filter(date_str):
+    """Jinja filter to format dates as MM-DD-YYYY."""
+    return _format_date_display(date_str)
+
+@app.template_filter('format_date_invoice')
+def format_date_invoice_filter(date_str):
+    """Jinja filter to format dates as MM-DD-YY (invoice format)."""
+    return _format_date_invoice(date_str)
 
 # ── Routes: Auth ──────────────────────────────────────────────────────────────
 @app.route("/login", methods=["GET", "POST"])
@@ -691,7 +707,8 @@ def dashboard():
         quot_status_counts[_st] = quot_status_counts.get(_st, 0) + 1
         if _st not in {"Rejected", "Cancelled", "Expired"}:
             quotes_pipeline_value += _safe_float(_q.get("total", 0))
-        if _st in {"Converted", "Invoiced"}:
+        # Count as converted if: status is Converted/Invoiced OR has linked_project_id (was converted)
+        if _st in {"Converted", "Invoiced"} or _q.get("linked_project_id"):
             quotes_converted += 1
     _total_quotes = len(quot_list)
     quotes_conversion_rate = int(quotes_converted / _total_quotes * 100) if _total_quotes > 0 else 0
@@ -921,10 +938,12 @@ def quotes():
     q_total     = len(all_items_raw)
     q_open      = sum(1 for q in all_items_raw if q.get("status", "Not Started") in _OPEN_STATUSES)
     q_approved  = sum(1 for q in all_items_raw if q.get("status", "") in _APPROVED_STATUSES)
-    q_converted = sum(1 for q in all_items_raw if q.get("status", "") in _CONVERTED_STATUSES)
+    # Count as converted if: status is Converted/Invoiced OR has linked_project_id (was converted)
+    q_converted = sum(1 for q in all_items_raw if q.get("status", "") in _CONVERTED_STATUSES or q.get("linked_project_id"))
     q_conv_rate = round(q_converted / q_total * 100) if q_total else 0
     q_pipeline  = sum(_safe_float(q.get("total", 0)) for q in all_items_raw if q.get("status", "Not Started") in _OPEN_STATUSES | _APPROVED_STATUSES)
-    q_won_val   = sum(_safe_float(q.get("total", 0)) for q in all_items_raw if q.get("status", "") in _CONVERTED_STATUSES)
+    # Count won value if: status is Converted/Invoiced OR has linked_project_id (was converted)
+    q_won_val   = sum(_safe_float(q.get("total", 0)) for q in all_items_raw if q.get("status", "") in _CONVERTED_STATUSES or q.get("linked_project_id"))
 
     return render_template("quotes.html", quotes=items, statuses=statuses,
                            search=search, status_filter=status_filter,
@@ -943,7 +962,8 @@ def quotes():
 @app.route("/quotes/export")
 @role_required("quotes")
 def quotes_export():
-    import csv, io
+    import io
+
     raw = fb_get("/job_forms") or {}
     items = []
     for fid, fdata in (raw.items() if isinstance(raw, dict) else []):
@@ -961,19 +981,47 @@ def quotes_export():
     if date_to:
         items = [i for i in items if (i.get("date") or "") <= date_to]
 
+    import csv
     output = io.StringIO()
     w = csv.writer(output)
-    w.writerow(["Quote #","Client","Project/Scope","Salesperson","Date","Valid Until",
-                "Status","Subtotal","Tax","Total","Notes"])
+    co = company_info()
+
+    def fmt_csv_date(d):
+        if not d or d == "—":
+            return ""
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    # Add company header and blank row
+    w.writerow([f"{co.get('name','')} - Quotes Report"])
+    w.writerow([])
+
+    headers = ["Quote Number", "Client", "Project / Scope", "Salesperson", "Date", "Valid Until", "Status", "Subtotal", "Tax", "Total", "Notes"]
+    w.writerow(headers)
+
     for q in items:
-        w.writerow([q.get("job_number",""), q.get("client_name",""), q.get("project_name",""),
-                    q.get("salesperson",""), q.get("date",""), q.get("valid_until",""),
-                    q.get("status",""), q.get("subtotal","0"), q.get("tax_amount","0"),
-                    q.get("total","0"), q.get("notes","")])
+        total = _safe_float(q.get("total", 0))
+        subtotal = _safe_float(q.get("subtotal", 0))
+        tax = total - subtotal
+        w.writerow([
+            q.get("job_number",""),
+            q.get("client_name",""),
+            q.get("project_name",""),
+            q.get("salesperson",""),
+            fmt_csv_date(q.get("date","")),
+            fmt_csv_date(q.get("valid_until","")),
+            q.get("status",""),
+            f"{subtotal:.2f}",
+            f"{tax:.2f}",
+            f"{total:.2f}",
+            q.get("notes","")
+        ])
+
     output.seek(0)
     from flask import Response
     fname = f"quotes_{datetime.now().strftime('%Y%m%d')}.csv"
-    return Response(output.getvalue(), mimetype="text/csv",
+    return Response(output.getvalue(), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
 @app.route("/quotes/export/excel")
@@ -1000,22 +1048,55 @@ def quotes_export_excel():
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Quotes"
+    co = company_info()
 
     hdr_fill = PatternFill(start_color="FF0F172A", end_color="FF0F172A", fill_type="solid")
     hdr_font = Font(color="FFFFFFFF", bold=True, size=11)
+    title_font = Font(bold=True, size=13, color="FF0F766E")
     alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
-    ctr = Alignment(horizontal="center", vertical="center")
-    rgt = Alignment(horizontal="right",  vertical="center")
+    ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    headers = ["Quote #","Client","Project / Scope","Salesperson","Date","Valid Until",
+    # Add title row
+    ws.merge_cells('A1:K1')
+    title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} - Quotes Report")
+    title_cell.font = title_font
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 20
+
+    # Add date range row
+    _pdf_from = request.args.get("from", "")
+    _pdf_to   = request.args.get("to", "")
+    _date_range = ""
+    if _pdf_from and _pdf_to:
+        _date_range = f"{_pdf_from} to {_pdf_to}"
+    elif _pdf_from:
+        _date_range = f"From {_pdf_from}"
+    elif _pdf_to:
+        _date_range = f"Up to {_pdf_to}"
+
+    if _date_range:
+        ws.merge_cells('A2:K2')
+        date_cell = ws.cell(row=2, column=1, value=_date_range)
+        date_cell.alignment = Alignment(horizontal="left", vertical="center")
+        ws.row_dimensions[2].height = 16
+
+    headers = ["Quote Number","Client","Project / Scope","Salesperson","Date","Valid Until",
                "Status","Subtotal ($)","Tax ($)","Total ($)","Notes"]
+    header_row = 3 if _date_range else 2
     for col, h in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=h)
+        cell = ws.cell(row=header_row, column=col, value=h)
         cell.fill = hdr_fill; cell.font = hdr_font; cell.alignment = ctr
 
-    for ri, q in enumerate(items, 2):
+    def fmt_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    for ri, q in enumerate(items, header_row + 1):
         row = [q.get("job_number",""), q.get("client_name",""), q.get("project_name",""),
-               q.get("salesperson",""), q.get("date",""), q.get("valid_until",""),
+               q.get("salesperson",""), fmt_date(q.get("date","")), fmt_date(q.get("valid_until","")),
                q.get("status",""), _safe_float(q.get("subtotal",0)),
                _safe_float(q.get("tax_amount",0)), _safe_float(q.get("total",0)),
                q.get("notes","")]
@@ -1025,11 +1106,13 @@ def quotes_export_excel():
                 cell.fill = alt_fill
             if ci in (8, 9, 10):
                 cell.number_format = '"$"#,##0.00'
-                cell.alignment = rgt
+            cell.alignment = ctr
 
-    for ci, w in enumerate([14,22,32,18,12,12,14,13,10,13,30], 1):
+    # Increase column widths
+    col_widths = [18, 25, 35, 20, 14, 14, 14, 16, 14, 16, 30]
+    for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
-    ws.freeze_panes = "A2"
+    ws.freeze_panes = f"A{header_row + 1}"
 
     buf = _io.BytesIO()
     wb.save(buf); buf.seek(0)
@@ -1076,37 +1159,48 @@ def quotes_export_pdf():
 
     title_s = ParagraphStyle("T", parent=styles["Normal"], fontSize=15,
                               fontName="Helvetica-Bold",
-                              textColor=colors.HexColor("#0F766E"), spaceAfter=3)
+                              textColor=colors.HexColor("#0F766E"), spaceAfter=3,
+                              alignment=1)  # 1 = CENTER
     sub_s   = ParagraphStyle("S", parent=styles["Normal"], fontSize=9,
-                              textColor=colors.HexColor("#64748B"), spaceAfter=14)
-    elems.append(Paragraph(f"{co.get('name','')} — Quote Report", title_s))
+                              textColor=colors.HexColor("#64748B"), spaceAfter=14,
+                              alignment=0)  # 0 = LEFT
+
+    elems.append(Paragraph(f"{co.get('name','')} — Quotes Report", title_s))
+    elems.append(Spacer(1, 0.2*inch))
     _pdf_from = request.args.get("from", "")
     _pdf_to   = request.args.get("to", "")
     _date_range = ""
     if _pdf_from and _pdf_to:
-        _date_range = f"  ·  {_pdf_from} to {_pdf_to}"
+        _date_range = f"{_pdf_from} to {_pdf_to}"
     elif _pdf_from:
-        _date_range = f"  ·  From {_pdf_from}"
+        _date_range = f"From {_pdf_from}"
     elif _pdf_to:
-        _date_range = f"  ·  Up to {_pdf_to}"
-    elems.append(Paragraph(
-        f"Generated {datetime.now().strftime('%B %d, %Y')}  ·  {len(items)} record{'s' if len(items)!=1 else ''}{_date_range}",
-        sub_s))
+        _date_range = f"Up to {_pdf_to}"
+    if _date_range:
+        elems.append(Paragraph(_date_range, sub_s))
+        elems.append(Spacer(1, 0.15*inch))
 
-    hdrs = ["Quote #","Client","Project / Scope","Salesperson","Date","Status","Total"]
+    hdrs = ["Quote Number","Client","Project / Scope","Salesperson","Date","Status","Total"]
     data = [hdrs]
+    cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
     for q in items:
+        date_str = q.get("date","—")
+        if date_str and date_str != "—" and len(str(date_str)) >= 10:
+            parts = str(date_str)[:10].split("-")
+            if len(parts) == 3:
+                date_str = f"{parts[1]}-{parts[2]}-{parts[0]}"
+        total = _safe_float(q.get('total',0))
         data.append([
-            q.get("job_number","—"),
-            q.get("client_name","—"),
-            (q.get("project_name") or "—")[:38],
-            q.get("salesperson","—"),
-            q.get("date","—"),
-            q.get("status","—"),
-            f"${_safe_float(q.get('total',0)):,.2f}",
+            Paragraph(q.get("job_number","—"), cell_style),
+            Paragraph(q.get("client_name","—"), cell_style),
+            Paragraph(q.get("project_name") or "—", cell_style),
+            Paragraph(q.get("salesperson","—"), cell_style),
+            Paragraph(date_str, cell_style),
+            Paragraph(q.get("status","—"), cell_style),
+            Paragraph(f"${total:,.2f}", cell_style),
         ])
 
-    cw = [1.1*inch, 1.8*inch, 2.9*inch, 1.5*inch, 1.0*inch, 1.2*inch, 1.0*inch]
+    cw = [1.2*inch, 2.0*inch, 3.0*inch, 1.8*inch, 1.1*inch, 1.2*inch, 1.1*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
@@ -1114,6 +1208,7 @@ def quotes_export_pdf():
         ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
         ("FONTSIZE",      (0,0), (-1,0), 9),
         ("ALIGN",         (0,0), (-1,0), "CENTER"),
+        ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
         ("TOPPADDING",    (0,0), (-1,0), 8),
         ("BOTTOMPADDING", (0,0), (-1,0), 8),
         ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
@@ -1122,8 +1217,8 @@ def quotes_export_pdf():
         ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
         ("TOPPADDING",    (0,1), (-1,-1), 5),
         ("BOTTOMPADDING", (0,1), (-1,-1), 5),
-        ("ALIGN",         (-1,1),(-1,-1), "RIGHT"),
-        ("FONTNAME",      (-1,1),(-1,-1), "Helvetica-Bold"),
+        ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
     ]))
     elems.append(tbl)
     doc.build(elems)
@@ -1180,6 +1275,17 @@ def quotes_new():
     sales_ppl = _load_sales_people()
     if request.method == "POST":
         data = _parse_quote_form(request.form)
+
+        # Validate quote number is not duplicate
+        job_num = data.get("job_number", "").strip()
+        if job_num:
+            existing_quote, _ = _find_quote_by_number(job_num)
+            if existing_quote:
+                flash(f"Quote number {job_num} already exists. Please use a different number.", "danger")
+                return render_template("quote_form.html", quote=data, clients=clients,
+                                     sales_people=sales_ppl, is_new=True,
+                                     next_num=_next_quote_number())
+
         data["created_at"] = datetime.now(timezone.utc).isoformat()
         data["updated_at"] = datetime.now(timezone.utc).isoformat()
         data["created_by"] = session.get("user_email", "")
@@ -1315,7 +1421,7 @@ def quote_status(quote_id):
         "updated_at": datetime.now(timezone.utc).isoformat()
     })
     flash(f"Status updated to {new_status}.", "success")
-    return redirect(url_for("quote_detail", quote_id=quote_id))
+    return redirect(url_for("quotes"))
 
 @app.route("/projects/<project_id>/quote", methods=["GET", "POST"])
 @role_required("quotes")
@@ -1423,19 +1529,9 @@ def projects():
     p_total_cv    = sum(_safe_float(p.get("contract_value", 0)) for p in items)
     p_active_cv   = sum(_safe_float(p.get("contract_value", 0)) for p in items if p.get("status", "") in _ACTIVE_STATUSES)
 
-    # Calculate collected amount from filtered projects' invoices
-    p_total_paid = 0.0
-    for p in items:
-        proj_num = p.get("project_number", "")
-        if proj_num:
-            for iid, idata in (raw_inv.items() if isinstance(raw_inv, dict) else []):
-                if isinstance(idata, dict) and proj_num in _invoice_linked_projects(idata):
-                    inv_meta = idata.get("meta", {}) or {}
-                    p_total_paid += _safe_float(inv_meta.get("amount_paid", 0))
-                    # Also include tax payments
-                    tax_payments = idata.get("tax_payments", [])
-                    if isinstance(tax_payments, list):
-                        p_total_paid += sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+    # Calculate collected amount from projects' amount_paid (already synced from invoices)
+    # Using project.amount_paid avoids double-counting in multi-project invoices
+    p_total_paid = sum(_safe_float(p.get("amount_paid", 0)) for p in items)
 
     p_outstanding = p_total_cv - p_total_paid
 
@@ -1483,6 +1579,16 @@ def project_new():
             except (json.JSONDecodeError, ValueError):
                 custom_stage_amounts = None
 
+        # Validate PO/WO number is not duplicate
+        po_wo_num = data.get("po_wo_number", "").strip()
+        if po_wo_num:
+            all_projects = fb_get("/projects") or {}
+            if isinstance(all_projects, dict):
+                for proj_data in all_projects.values():
+                    if isinstance(proj_data, dict) and proj_data.get("po_wo_number", "").strip() == po_wo_num:
+                        flash(f"PO/WO number {po_wo_num} already exists. Please use a different number.", "danger")
+                        return redirect(url_for("project_new"))
+
         # Always generate project number server-side to prevent duplicates
         data["project_number"] = _next_project_number()
         down_pct = _safe_float(data.get("down_payment_percent", 0))
@@ -1514,8 +1620,9 @@ def project_new():
         data["created_by"] = session.get("user_email", "")
 
         if source_quote:
-            data["source_quote"]     = source_quote_id
-            data["source_quote_num"] = source_quote.get("job_number", "")
+            data["source_quote_id"]   = source_quote_id
+            data["source_quote"]      = source_quote_id
+            data["source_quote_num"]  = source_quote.get("job_number", "")
 
         pid = fb_push("/projects", data)
 
@@ -1554,6 +1661,13 @@ def project_detail(project_id):
     data["firebase_id"] = project_id
     proj_num = data.get("project_number", "")
 
+    # Debug: Log what we loaded from Firebase
+    stages = data.get("payment_stages", [])
+    if isinstance(stages, list):
+        for idx, stage in enumerate(stages):
+            if isinstance(stage, dict):
+                print(f"[LOAD_STAGE] Idx {idx}: status={stage.get('status')}, paid={stage.get('amount_paid')}, inv_id={stage.get('invoice_id')}, inv_num={stage.get('invoice_number')}", flush=True)
+
     # Older projects stored "payment_stages" as a flat list of stage-name
     # strings (no per-stage amount/status tracking). Only the structured
     # list-of-dicts format produced by _compute_payment_stages should drive
@@ -1568,7 +1682,7 @@ def project_detail(project_id):
                 stage["status"] = "Pending Invoice"
 
         # Recalculate payment stage statuses based on actual paid amounts from invoices
-        # First, build a map of invoices by stage
+        # First, build a map of invoices by stage (supporting multi-project invoices)
         raw_inv = fb_get("/invoices") or {}
         stage_invoices = {}
         if isinstance(raw_inv, dict):
@@ -1576,12 +1690,29 @@ def project_detail(project_id):
                 if not isinstance(inv, dict):
                     continue
                 inv_meta = inv.get("meta", {}) or {}
-                if inv_meta.get("project_number") == proj_num:
+
+                # Check if this project is linked to the invoice (supports multi-project)
+                linked_projects = _invoice_linked_projects(inv)
+                if proj_num not in linked_projects:
+                    continue
+
+                # For multi-project invoices, find the stage index from linked_projects
+                stage_idx = -1
+                lp_list = inv_meta.get("linked_projects") or []
+                if isinstance(lp_list, list):
+                    for lp in lp_list:
+                        if isinstance(lp, dict) and lp.get("project_number") == proj_num:
+                            stage_idx = lp.get("payment_stage_index", -1)
+                            break
+
+                # Fallback to old single-project format
+                if stage_idx < 0:
                     stage_idx = inv_meta.get("payment_stage_index", -1)
-                    if stage_idx >= 0:
-                        if stage_idx not in stage_invoices:
-                            stage_invoices[stage_idx] = []
-                        stage_invoices[stage_idx].append(inv)
+
+                if stage_idx >= 0:
+                    if stage_idx not in stage_invoices:
+                        stage_invoices[stage_idx] = []
+                    stage_invoices[stage_idx].append(inv)
 
         today_str = datetime.now().strftime("%Y-%m-%d")
         for idx, stage in enumerate(data["payment_stages"]):
@@ -1590,18 +1721,33 @@ def project_detail(project_id):
             # Calculate amount paid from all invoices for this stage
             amount_paid = 0
             due_date = ""
+            invoice_id = ""
+            invoice_number = ""
             if idx in stage_invoices:
                 for inv in stage_invoices[idx]:
-                    # Sum invoice payments (amount_paid + tax_payments)
+                    # Sum invoice payments using payment_log filtered by project_number (not share-based)
+                    # Don't include tax payments in amount_paid - tax is tracked separately
                     inv_meta = inv.get("meta", {}) or {}
-                    amount_paid += _safe_float(inv_meta.get("amount_paid", 0))
-                    # Also add any tax payments
-                    tax_payments = inv.get("tax_payments", [])
-                    if isinstance(tax_payments, list):
-                        amount_paid += sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+                    proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (inv.get("payment_log", []) or []) if p.get("project_number") == proj_num)
+
+                    # Fallback: if payment_log entries don't have project_number (legacy data),
+                    # use the stage's amount_paid from allocation
+                    if proj_payments == 0 and proj_num in _invoice_linked_projects(inv):
+                        proj_payments = _safe_float(stage.get("amount_paid", 0))
+
+                    amount_paid += proj_payments
                     due_date = due_date or inv_meta.get("due_date", "")
+                    # Capture invoice details (use first invoice for this stage)
+                    if not invoice_id:
+                        invoice_id = inv.get("firebase_id", "")
+                        invoice_number = inv_meta.get("invoice_number", "")
 
             is_overdue = bool(due_date) and due_date < today_str
+
+            # Store calculated amounts and invoice info on stage for template display
+            stage["amount_paid"] = amount_paid
+            stage["invoice_id"] = invoice_id
+            stage["invoice_number"] = invoice_number
 
             # Calculate status based on actual paid vs total
             if amount_paid >= (stage_amount - 0.01):
@@ -1633,9 +1779,52 @@ def project_detail(project_id):
 
     # Recalculate fresh statuses for display (based on actual payments)
     for invoice in project_invoices:
-        calculated_status = _calculate_invoice_status(invoice)
-        # Store in a separate field for display without modifying stored status
-        invoice["_display_status"] = calculated_status
+        # Calculate project-specific paid amount from payment_log (filtered by project_number)
+        proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (invoice.get("payment_log", []) or []) if p.get("project_number") == proj_num)
+
+        # Fallback: if payment_log entries don't have project_number (legacy data),
+        # use the invoice's total amount_paid and allocate by share
+        if proj_payments == 0 and proj_num in _invoice_linked_projects(invoice):
+            project_share = _invoice_project_share(invoice, proj_num)
+            total_amount_paid = _safe_float(invoice.get("meta", {}).get("amount_paid", 0))
+            proj_payments = total_amount_paid * project_share
+
+        # Calculate tax paid - allocate proportionally if not per-project
+        tax_payments = invoice.get("tax_payments", []) or []
+        total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+
+        # If tax_payments have project_number, filter by it; otherwise use share
+        project_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if tp.get("project_number") == proj_num)
+        if project_tax_paid == 0 and total_tax_paid > 0:
+            # Tax payments don't have project_number, allocate by share
+            project_share = invoice.get("_project_share", 1.0)
+            project_tax_paid = project_share * total_tax_paid
+
+        invoice["_project_paid"] = proj_payments + project_tax_paid
+
+        # Calculate status based on this project's paid vs this project's total
+        meta = invoice.get("meta", {}) or {}
+        project_share = invoice.get("_project_share", 1.0)
+        invoice_subtotal = _safe_float(meta.get("subtotal", 0)) or (_safe_float(meta.get("total", 0)) - _safe_float(meta.get("tax_amount", 0)))
+        invoice_tax = _safe_float(meta.get("tax_amount", 0))
+
+        # This project's portion of the invoice
+        project_invoice_due = (invoice_subtotal + invoice_tax) * project_share
+        project_paid = invoice["_project_paid"]
+
+        # Status based on this project's amounts
+        if project_paid >= (project_invoice_due - 0.01):
+            invoice["_display_status"] = "Paid"
+        elif project_paid > 0:
+            invoice["_display_status"] = "Partial"
+        else:
+            # Check if overdue
+            due_date = meta.get("due_date", "")
+            today = datetime.now().strftime("%Y-%m-%d")
+            if due_date and due_date < today:
+                invoice["_display_status"] = "Overdue"
+            else:
+                invoice["_display_status"] = "Sent"
 
     # Load expenses linked to this project
     raw_exp = fb_get("/balance_sheet_expenses") or {}
@@ -1650,7 +1839,25 @@ def project_detail(project_id):
     # P&L totals — invoices spanning multiple projects only count their prorated share here
     # Include both invoice amount and tax in total invoiced (to match collected which includes tax payments)
     inv_total   = sum((_safe_float(i.get("meta",{}).get("total", 0)) or _safe_float(i.get("meta",{}).get("subtotal", 0)) + _safe_float(i.get("meta",{}).get("tax_amount", 0))) * i.get("_project_share", 1.0) for i in project_invoices)
-    inv_paid    = sum((_safe_float(i.get("meta",{}).get("amount_paid", 0)) + sum(_safe_float(tp.get("amount", 0)) for tp in i.get("tax_payments", []))) * i.get("_project_share", 1.0) for i in project_invoices)
+
+    # For paid amount, use actual payment_log entries filtered by project_number (not share-based)
+    inv_paid = 0
+    for invoice in project_invoices:
+        # Get actual payments from payment_log for this project
+        proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (invoice.get("payment_log", []) or []) if p.get("project_number") == proj_num)
+
+        # Get tax payments - allocate proportionally to project's share if not per-project
+        tax_payments = invoice.get("tax_payments", []) or []
+        total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+
+        # If tax_payments have project_number, filter by it; otherwise use share
+        project_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if tp.get("project_number") == proj_num)
+        if project_tax_paid == 0 and total_tax_paid > 0:
+            # Tax payments don't have project_number, allocate by share
+            project_share = invoice.get("_project_share", 1.0)
+            project_tax_paid = project_share * total_tax_paid
+
+        inv_paid += proj_payments + project_tax_paid
     exp_total   = sum(_safe_float(e.get("amount", 0))                     for e in project_expenses)
     gross_profit = inv_paid - exp_total
 
@@ -1777,13 +1984,21 @@ def co_status(project_id, co_idx):
         stages.append({
             "name":   f"{cos[co_idx]['co_number']} – {co_title}",
             "amount": co_amount,
+            "amount_paid": "0",  # Track payments same as regular installments
             "status": "Pending Invoice",
+            "co_number": cos[co_idx]['co_number'],  # Link back to change order
+            "co_index": co_idx,  # Store CO index for reference
         })
-        fb_update(f"/projects/{project_id}", {
+        update_data = {
             "change_orders":  cos,
             "contract_value": new_value,
             "payment_stages": stages,
-        })
+        }
+        # Auto-update project status to "In Progress" if project is Completed and new CO payment is unpaid
+        if project.get("status") == "Completed" and co_amount > 0:
+            update_data["status"] = "In Progress"
+            update_data["updated_at"] = now_str
+        fb_update(f"/projects/{project_id}", update_data)
         flash(f"{cos[co_idx]['co_number']} approved — contract updated to ${new_value:,.0f} and new payment stage added.", "success")
         return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
     fb_update(f"/projects/{project_id}", {"change_orders": cos})
@@ -1838,22 +2053,36 @@ def project_edit(project_id):
             except (json.JSONDecodeError, ValueError):
                 flash("Error processing updated payment amounts.", "warning")
 
-        # Handle custom stage amounts from frontend (for new customizations)
+        # Handle custom stage amounts from frontend (for new customizations or preview stages)
         if not amounts_updated:
             custom_stage_amounts_json = request.form.get("custom_stage_amounts", "")
-            if custom_stage_amounts_json:
+            if custom_stage_amounts_json and custom_stage_amounts_json != "[]":
                 try:
                     import json
                     custom_stage_amounts = json.loads(custom_stage_amounts_json)
-
-                    # Update payment stages with custom amounts
-                    existing_stages = data.get("payment_stages") or []
-                    for i, amount_data in enumerate(custom_stage_amounts):
-                        if i < len(existing_stages) and isinstance(existing_stages[i], dict):
-                            existing_stages[i]["amount"] = _safe_float(amount_data.get("amount", 0))
-
-                    updated["payment_stages"] = existing_stages
-                    amounts_updated = True
+                    if custom_stage_amounts:  # Only process if list is not empty
+                        # If custom amounts has name and amount fields (from preview),
+                        # ensure they include status and invoice_id fields
+                        if custom_stage_amounts and isinstance(custom_stage_amounts[0], dict) and "name" in custom_stage_amounts[0]:
+                            # Ensure all required fields are present
+                            enriched_stages = []
+                            for stage in custom_stage_amounts:
+                                enriched = {
+                                    "name": stage.get("name", ""),
+                                    "amount": _safe_float(stage.get("amount", 0)),
+                                    "status": stage.get("status", "Pending Invoice"),
+                                    "invoice_id": stage.get("invoice_id", "")
+                                }
+                                enriched_stages.append(enriched)
+                            updated["payment_stages"] = enriched_stages
+                        else:
+                            # Update payment stages with custom amounts
+                            existing_stages = data.get("payment_stages") or []
+                            for i, amount_data in enumerate(custom_stage_amounts):
+                                if i < len(existing_stages) and isinstance(existing_stages[i], dict):
+                                    existing_stages[i]["amount"] = _safe_float(amount_data.get("amount", 0))
+                            updated["payment_stages"] = existing_stages
+                        amounts_updated = True
                 except (json.JSONDecodeError, ValueError):
                     flash("Error processing custom payment amounts. Using default distribution.", "warning")
 
@@ -1861,10 +2090,17 @@ def project_edit(project_id):
         if not amounts_updated:
             existing_stages = data.get("payment_stages") or []
             plan_in_progress = any(s.get("status") != "Pending Invoice" for s in existing_stages if isinstance(s, dict))
+
+            # Check if down payment or installment count changed
+            old_down_pct = _safe_float(data.get("down_payment_percent", 0))
+            old_installments = _safe_float(data.get("installment_count", 1))
+            payment_plan_changed = (down_pct != old_down_pct) or (installments != old_installments)
+
             if plan_in_progress:
                 # Stages already have invoices/payments against them — keep the plan intact
                 flash("Payment plan kept as-is because one or more stages are already invoiced.", "info")
             else:
+                # Always recalculate if payment plan changed or if no existing stages
                 updated["payment_stages"] = _compute_payment_stages(
                     _safe_float(updated["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
 
@@ -2060,7 +2296,20 @@ def project_stage_set_amount(project_id, stage_idx):
 @app.route("/projects/<project_id>/delete", methods=["POST"])
 @role_required("projects")
 def project_delete(project_id):
+    project = fb_get(f"/projects/{project_id}") or {}
+    source_quote_id = project.get("source_quote_id")
+
     fb_delete(f"/projects/{project_id}")
+
+    # If project was created from a quote, reset quote status to "Approved"
+    if source_quote_id:
+        fb_update(f"/job_forms/{source_quote_id}", {
+            "status": "Approved",
+            "linked_project_id": None,
+            "linked_project_num": None,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        })
+
     flash("Project deleted.", "success")
     return redirect(url_for("projects"))
 
@@ -2116,7 +2365,8 @@ def _filter_projects_export(items):
 @app.route("/projects/export/csv")
 @role_required("projects")
 def projects_export_csv():
-    import csv, io
+    import csv
+    import io
     raw = fb_get("/projects") or {}
     items = []
     for pid, pdata in (raw.items() if isinstance(raw, dict) else []):
@@ -2126,19 +2376,42 @@ def projects_export_csv():
     items = _filter_projects_export(items)
     output = io.StringIO()
     w = csv.writer(output)
-    w.writerow(["Project #","Name","Client","Start Date","End Date","Status",
-                "Contract Value","Amount Paid","Outstanding","Payment Stage","Assigned To"])
+    co = company_info()
+
+    def fmt_csv_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    # Add company header and blank row
+    w.writerow([f"{co.get('name','')} - Projects Report"])
+    w.writerow([])
+
+    headers = ["Project Number", "Name", "Client", "Start Date", "End Date", "Contract Value", "Amount Paid", "Outstanding", "Status"]
+    w.writerow(headers)
+
     for p in items:
-        cv   = _safe_float(p.get("contract_value", 0))
+        cv = _safe_float(p.get("contract_value", 0))
         paid = _safe_float(p.get("amount_paid", 0))
-        w.writerow([p.get("project_number",""), p.get("project_name",""),
-                    p.get("client_name",""), p.get("start_date",""), p.get("end_date",""),
-                    p.get("status",""), f"{cv:.2f}", f"{paid:.2f}", f"{cv-paid:.2f}",
-                    p.get("payment_category",""), p.get("assigned_to","")])
+        row = [
+            p.get("project_number",""),
+            p.get("project_name",""),
+            p.get("client_name",""),
+            fmt_csv_date(p.get("start_date","")),
+            fmt_csv_date(p.get("end_date","")),
+            f"{cv:.2f}",
+            f"{paid:.2f}",
+            f"{cv-paid:.2f}",
+            p.get("status","")
+        ]
+        w.writerow(row)
+
     output.seek(0)
     from flask import Response
     fname = f"projects_{datetime.now().strftime('%Y%m%d')}.csv"
-    return Response(output.getvalue(), mimetype="text/csv",
+    return Response(output.getvalue(), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
 @app.route("/projects/export/excel")
@@ -2156,32 +2429,56 @@ def projects_export_excel():
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     items = _filter_projects_export(items)
     wb = openpyxl.Workbook()
-    ws = wb.active; ws.title = "Projects"
+    ws = wb.active
+    ws.title = "Projects"
     hdr_fill = PatternFill(start_color="FF0F172A", end_color="FF0F172A", fill_type="solid")
     hdr_font = Font(color="FFFFFFFF", bold=True, size=11)
+    title_font = Font(bold=True, size=13, color="FF0F766E")
     alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
-    ctr = Alignment(horizontal="center", vertical="center")
-    rgt = Alignment(horizontal="right",  vertical="center")
-    headers = ["Project #","Name","Client","Start Date","End Date","Status",
-               "Contract Value ($)","Amount Paid ($)","Outstanding ($)","Payment Stage","Assigned To"]
+    ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    # Add title row
+    co = company_info()
+    ws.merge_cells('A1:I1')
+    title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} - Projects Report")
+    title_cell.font = title_font
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 20
+
+    # Add headers
+    headers = ["Project Number","Name","Client","Start Date","End Date",
+               "Contract Value ($)","Amount Paid ($)","Outstanding ($)","Status"]
+    header_row = 2
     for col, h in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=h)
+        cell = ws.cell(row=header_row, column=col, value=h)
         cell.fill = hdr_fill; cell.font = hdr_font; cell.alignment = ctr
-    for ri, p in enumerate(items, 2):
+
+    def fmt_proj_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    for ri, p in enumerate(items, header_row + 1):
         cv   = _safe_float(p.get("contract_value", 0))
         paid = _safe_float(p.get("amount_paid", 0))
         row = [p.get("project_number",""), p.get("project_name",""),
-               p.get("client_name",""), p.get("start_date",""), p.get("end_date",""),
-               p.get("status",""), cv, paid, cv - paid,
-               p.get("payment_category",""), p.get("assigned_to","")]
+               p.get("client_name",""), fmt_proj_date(p.get("start_date","")), fmt_proj_date(p.get("end_date","")),
+               cv, paid, cv - paid, p.get("status","")]
         for ci, val in enumerate(row, 1):
             cell = ws.cell(row=ri, column=ci, value=val)
-            if ri % 2 == 0: cell.fill = alt_fill
-            if ci in (7, 8, 9):
-                cell.number_format = '"$"#,##0.00'; cell.alignment = rgt
-    for ci, w in enumerate([16, 30, 22, 12, 12, 14, 16, 14, 14, 16, 18], 1):
+            if ri % 2 == 0:
+                cell.fill = alt_fill
+            if ci in (6, 7, 8):
+                cell.number_format = '"$"#,##0.00'
+            cell.alignment = ctr
+
+    # Increase column widths
+    col_widths = [22, 28, 26, 16, 16, 18, 18, 18, 16]
+    for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
-    ws.freeze_panes = "A2"
+    ws.freeze_panes = f"A{header_row + 1}"
     buf = _io.BytesIO()
     wb.save(buf); buf.seek(0)
     from flask import Response
@@ -2212,36 +2509,44 @@ def projects_export_pdf():
     items = _filter_projects_export(items)
     buf = _io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
-                            leftMargin=0.5*inch, rightMargin=0.5*inch,
+                            leftMargin=0.9*inch, rightMargin=0.9*inch,
                             topMargin=0.5*inch, bottomMargin=0.5*inch)
     styles = getSampleStyleSheet()
     co = company_info()
     elems = []
     title_s = ParagraphStyle("T", parent=styles["Normal"], fontSize=15,
                               fontName="Helvetica-Bold",
-                              textColor=colors.HexColor("#0F766E"), spaceAfter=3)
-    sub_s   = ParagraphStyle("S", parent=styles["Normal"], fontSize=9,
-                              textColor=colors.HexColor("#64748B"), spaceAfter=14)
+                              textColor=colors.HexColor("#0F766E"), spaceAfter=3,
+                              alignment=1)  # CENTER
     elems.append(Paragraph(f"{co.get('name','')} — Projects Report", title_s))
-    elems.append(Paragraph(
-        f"Generated {datetime.now().strftime('%B %d, %Y')}  ·  {len(items)} record{'s' if len(items)!=1 else ''}",
-        sub_s))
-    hdrs = ["Project #", "Name", "Client", "Status", "Start Date", "Contract Value", "Paid", "Outstanding"]
+    elems.append(Spacer(1, 0.2*inch))
+    hdrs = ["Project Number", "Name", "Client", "Start Date", "End Date", "Contract Value", "Paid", "Outstanding", "Status"]
     data = [hdrs]
+    def fmt_date_pdf(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    styles = getSampleStyleSheet()
+    cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
+
     for p in items:
         cv   = _safe_float(p.get("contract_value", 0))
         paid = _safe_float(p.get("amount_paid", 0))
         data.append([
-            p.get("project_number","—"),
-            (p.get("project_name","—") or "—")[:30],
-            (p.get("client_name","—") or "—")[:22],
-            p.get("status","—"),
-            p.get("start_date","—") or "—",
-            f"${cv:,.0f}",
-            f"${paid:,.0f}",
-            f"${cv-paid:,.0f}",
+            Paragraph(p.get("project_number","—"), cell_style),
+            Paragraph(p.get("project_name","—") or "—", cell_style),
+            Paragraph(p.get("client_name","—") or "—", cell_style),
+            Paragraph(fmt_date_pdf(p.get("start_date","")), cell_style),
+            Paragraph(fmt_date_pdf(p.get("end_date","")), cell_style),
+            Paragraph(f"${cv:,.0f}", cell_style),
+            Paragraph(f"${paid:,.0f}", cell_style),
+            Paragraph(f"${cv-paid:,.0f}", cell_style),
+            Paragraph(p.get("status","—"), cell_style),
         ])
-    cw = [1.4*inch, 2.4*inch, 1.8*inch, 1.2*inch, 1.0*inch, 1.2*inch, 1.0*inch, 1.0*inch]
+    cw = [1.5*inch, 2.0*inch, 1.6*inch, 1.0*inch, 1.0*inch, 1.0*inch, 1.0*inch, 1.0*inch, 1.0*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
@@ -2249,6 +2554,7 @@ def projects_export_pdf():
         ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
         ("FONTSIZE",      (0,0), (-1,0), 9),
         ("ALIGN",         (0,0), (-1,0), "CENTER"),
+        ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
         ("TOPPADDING",    (0,0), (-1,0), 8),
         ("BOTTOMPADDING", (0,0), (-1,0), 8),
         ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
@@ -2257,8 +2563,8 @@ def projects_export_pdf():
         ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
         ("TOPPADDING",    (0,1), (-1,-1), 5),
         ("BOTTOMPADDING", (0,1), (-1,-1), 5),
-        ("ALIGN",         (-3,1),(-1,-1), "RIGHT"),
-        ("FONTNAME",      (-3,1),(-1,-1), "Helvetica-Bold"),
+        ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
     ]))
     elems.append(tbl)
     doc.build(elems)
@@ -2303,6 +2609,16 @@ def invoicing():
             items.append(idata)
     items.sort(key=lambda x: x.get("meta", {}).get("created_at", ""), reverse=True)
     all_invoices_raw = list(items)
+
+    # Calculate status for all invoices BEFORE filtering (so filter uses calculated status, not stored status)
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    for inv in items:
+        m = inv.get("meta", {})
+        calculated_status = _calculate_invoice_status(inv)
+        m["status"] = calculated_status
+        due = m.get("due_date", "") or ""
+        if calculated_status in ("Sent", "Viewed", "Partial") and due and due < today_str:
+            m["status"] = "Overdue"
 
     search        = request.args.get("q", "").strip().lower()
     status_filter = request.args.get("status", "")
@@ -2363,6 +2679,24 @@ def invoicing():
     i_coll_rate   = round(i_total_paid / i_total_val * 100) if i_total_val else 0
     i_overdue_amt = sum(total for st, total, __ in _kpi_rows if st == "Overdue")
 
+    # Ensure all invoices have amount_paid and tax_paid in meta for template compatibility
+    for inv in items:
+        if "meta" not in inv:
+            inv["meta"] = {}
+        if "amount_paid" not in inv["meta"]:
+            # Calculate from payment_log if missing
+            payment_log = inv.get("payment_log", []) or []
+            total_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+            inv["meta"]["amount_paid"] = str(total_paid) if total_paid > 0 else "0"
+        if "tax_paid" not in inv["meta"]:
+            # Calculate from tax_payments if missing
+            tax_log = inv.get("tax_payments", []) or []
+            tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+            inv["meta"]["tax_paid"] = str(tax_paid) if tax_paid > 0 else "0"
+
+    settings = load_settings()
+    default_tax_rate = settings.get("company", {}).get("default_tax_rate", 0)
+
     return render_template("invoicing.html", invoices=items, statuses=statuses,
                            search=search, status_filter=status_filter,
                            date_from=date_from, date_to=date_to,
@@ -2373,7 +2707,8 @@ def invoicing():
                            i_sent_count=i_sent_count, i_paid_count=i_paid_count,
                            i_over_count=i_over_count, i_total_val=i_total_val,
                            i_total_paid=i_total_paid, i_outstanding=i_outstanding,
-                           i_coll_rate=i_coll_rate, i_overdue_amt=i_overdue_amt)
+                           i_coll_rate=i_coll_rate, i_overdue_amt=i_overdue_amt,
+                           default_tax_rate=default_tax_rate)
 
 @app.route("/api/projects/<project_ids>", methods=["GET"])
 @role_required("projects")
@@ -2512,6 +2847,61 @@ def create_bulk_invoices():
         log.error("Bulk invoice creation error: %s", traceback.format_exc())
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route("/projects/<project_id>/change-orders/<int:co_idx>/invoice", methods=["GET"])
+@role_required("invoicing")
+def co_create_invoice(project_id, co_idx):
+    """Create invoice from approved change order - pre-fills with CO details."""
+    project = fb_get(f"/projects/{project_id}") or {}
+    if not project:
+        abort(404)
+
+    cos = project.get("change_orders") or []
+    if not isinstance(cos, list):
+        cos = list(cos.values()) if isinstance(cos, dict) else []
+    if co_idx >= len(cos):
+        abort(404)
+
+    change_order = cos[co_idx]
+
+    # Only allow invoice creation from approved COs
+    if change_order.get("status") != "Approved":
+        flash("Can only create invoice from approved change orders.", "warning")
+        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+
+    # Redirect to invoice creation form with CO data pre-filled
+    # The invoice_new route will handle rendering the form with these parameters
+    co_title = change_order.get("title", change_order.get("co_number", ""))
+    co_amount = _safe_float(change_order.get("amount", 0))
+    co_number = change_order.get("co_number", "")
+    project_number = project.get("project_number", "")
+    client_name = project.get("client_name", "")
+
+    # Find the payment stage for this CO
+    stages = project.get("payment_stages") or []
+    stage_idx = None
+    for idx, stage in enumerate(stages):
+        if isinstance(stage, dict) and co_number in stage.get("name", ""):
+            stage_idx = idx
+            break
+
+    # Build query parameters for pre-filling the form
+    params = {
+        "project": project_number,
+        "client": client_name,
+        "co_number": co_number,
+        "co_title": co_title,
+        "co_amount": str(co_amount),
+    }
+
+    if stage_idx is not None:
+        params["stage_idx"] = stage_idx
+        params["stage_name"] = stages[stage_idx].get("name", "")
+        params["stage_amount"] = str(co_amount)
+
+    # Redirect to invoice_new with CO parameters
+    query_string = "&".join(f"{k}={v}" for k, v in params.items())
+    return redirect(url_for("invoice_new") + f"?{query_string}")
+
 @app.route("/invoicing/new", methods=["GET", "POST"])
 @role_required("invoicing")
 def invoice_new():
@@ -2556,6 +2946,15 @@ def invoice_new():
             flash(f"Cannot create invoice. The following stages are already invoiced: {', '.join(duplicate_stages)}", "danger")
             return redirect(url_for("invoice_new"))
 
+        # Validate invoice number is not duplicate
+        invoice_num = data.get("meta", {}).get("invoice_number", "").strip()
+        if invoice_num:
+            if isinstance(raw_invoices, dict):
+                for inv_data in raw_invoices.values():
+                    if isinstance(inv_data, dict) and inv_data.get("meta", {}).get("invoice_number", "").strip() == invoice_num:
+                        flash(f"Invoice number {invoice_num} already exists. Please use a different number.", "danger")
+                        return redirect(url_for("invoice_new"))
+
         # Check if project is fully invoiced
         if project_number:
             for pid, pdata in (all_projects.items() if isinstance(all_projects, dict) else []):
@@ -2583,7 +2982,18 @@ def invoice_new():
         data["meta"]["created_at"] = datetime.now(timezone.utc).isoformat()
         data["meta"]["updated_at"] = datetime.now(timezone.utc).isoformat()
         data["meta"]["created_by"] = session.get("user_email", "")
-        data["meta"]["status"] = "Draft"
+        # Use status from form if provided, otherwise default to "Draft"
+        form_status = request.form.get("status", "Draft").strip()
+        valid_statuses = {"Draft", "Sent", "Viewed", "Paid", "Partial", "Overdue", "Cancelled"}
+        data["meta"]["status"] = form_status if form_status in valid_statuses else "Draft"
+        # Initialize amount_paid and tax_paid to 0 for new invoices
+        data["meta"]["amount_paid"] = "0"
+        data["meta"]["tax_paid"] = "0"
+
+        # Store change order number if this invoice is from a CO
+        co_number = request.form.get("co_number", "").strip()
+        if co_number:
+            data["meta"]["co_number"] = co_number
 
         stage_idx_raw = request.form.get("payment_stage_index", "")
         stage_name    = request.form.get("payment_stage", "")
@@ -2621,10 +3031,11 @@ def invoice_new():
 
         # Mark stages as invoiced
         if stage_idx_raw != "":
-            # Single project with single stage - use the actual invoice total (including tax)
-            invoice_total = _safe_float(data["meta"].get("total", 0))
+            # Single project with single stage - use only the subtotal (without tax)
+            # Payment stages should show only the project amount, not including tax
+            invoice_subtotal = _safe_float(data["meta"].get("subtotal", 0))
             _mark_project_stage(data["meta"].get("project_number", ""),
-                                int(stage_idx_raw), "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=invoice_total)
+                                int(stage_idx_raw), "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=invoice_subtotal)
         else:
             # Multiple projects - check if line items have stage indices
             item_projects = request.form.getlist("item_project[]")
@@ -2633,17 +3044,18 @@ def invoice_new():
             # Store linked projects info for multi-project invoice detection
             linked_projects = []
 
-            # Mark each stage from line items - use project's share of invoice total
-            invoice_total = _safe_float(data["meta"].get("total", 0))
+            # Mark each stage from line items - use project's actual line item amount (without tax)
+            invoice_subtotal = _safe_float(data["meta"].get("subtotal", 0))
             for i, proj_num in enumerate(item_projects):
                 if i < len(item_stage_indices):
                     stage_idx_str = item_stage_indices[i].strip() if item_stage_indices[i] else ""
                     if stage_idx_str:
                         try:
                             stage_idx = int(stage_idx_str)
-                            # Calculate project's share of the invoice total
-                            project_share = _invoice_project_share(data, proj_num) * invoice_total
-                            _mark_project_stage(proj_num, stage_idx, "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=project_share)
+                            # Get project's actual line item amount (not including tax)
+                            line_items = data.get("line_items", []) or []
+                            project_line_amount = sum(_safe_float(item.get("amount", 0)) for item in line_items if isinstance(item, dict) and item.get("project_number", "") == proj_num)
+                            _mark_project_stage(proj_num, stage_idx, "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=project_line_amount)
                             linked_projects.append({"project_number": proj_num, "payment_stage_index": stage_idx})
                         except (ValueError, IndexError):
                             pass
@@ -2671,6 +3083,118 @@ def invoice_new():
                     if pdata.get("status", "Not Started") == "Not Started":
                         fb_update(f"/projects/{pid}", {"status": "In Progress"})
 
+        # Handle payment entry if provided when creating invoice
+        payment_amount = data.pop("_payment_amount", "").strip()
+        payment_date = data.pop("_payment_date", "").strip()
+        payment_reference = data.pop("_payment_reference", "").strip()
+
+        if payment_amount and _safe_float(payment_amount) > 0:
+            # Use sequential distribution: allocate to projects first, then tax
+            amount = _safe_float(payment_amount)
+            payment_log = data.get("payment_log", []) or []
+            if not isinstance(payment_log, list):
+                payment_log = []
+
+            tax_log = data.get("tax_payments", []) or []
+            if not isinstance(tax_log, list):
+                tax_log = []
+
+            main_project = data["meta"].get("project_number", "")
+            line_items = data.get("line_items", []) or []
+            tax_amount = _safe_float(data["meta"].get("tax_amount", 0))
+            linked_projects = data["meta"].get("linked_projects", [])
+
+            remaining = amount
+
+            # Step 1: Allocate to project(s)
+            if not linked_projects and main_project:
+                linked_projects = [main_project]
+
+            for proj_num in linked_projects:
+                if remaining <= 0:
+                    break
+
+                # Calculate project's invoice amount from line items
+                proj_amount = sum(_safe_float(item.get("amount", 0))
+                                for item in line_items
+                                if isinstance(item, dict) and
+                                (item.get("project_number") == proj_num or not item.get("project_number")))
+
+                # Calculate already received
+                proj_received = sum(_safe_float(p.get("amount", 0))
+                                  for p in payment_log
+                                  if p.get("project_number") == proj_num)
+
+                proj_needs = max(0, proj_amount - proj_received)
+
+                if proj_needs > 0:
+                    allocate = min(proj_needs, remaining)
+                    # Get stage name and index for this project
+                    _stage_name = data["meta"].get("payment_stage", "")
+                    _stage_idx = data["meta"].get("payment_stage_index")
+                    if _stage_idx is not None:
+                        try:
+                            _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
+                        except (ValueError, TypeError):
+                            _stage_idx = None
+                    if not _stage_name and _stage_idx is not None:
+                        _stage_name = f"Stage {_stage_idx + 1}"
+
+                    payment_log.append({
+                        "amount": str(allocate),
+                        "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
+                        "method": data["meta"].get("payment_method", ""),
+                        "reference": payment_reference,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "project_number": proj_num,
+                        "invoice_number": data["meta"].get("invoice_number", ""),
+                        "stage_name": _stage_name,
+                        "stage_index": _stage_idx or "",
+                    })
+                    remaining -= allocate
+
+            # Step 2: Allocate remaining to tax
+            if remaining > 0 and tax_amount > 0:
+                tax_received = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+                tax_needs = max(0, tax_amount - tax_received)
+
+                if tax_needs > 0:
+                    allocate_tax = min(tax_needs, remaining)
+                    tax_log.append({
+                        "amount": str(allocate_tax),
+                        "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
+                        "method": data["meta"].get("payment_method", ""),
+                        "reference": payment_reference,
+                    })
+                    remaining -= allocate_tax
+
+            # Update invoice with payment data
+            payment_log_data = payment_log
+            tax_log_data = tax_log
+
+            # Calculate total amount_paid and tax_paid
+            total_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log_data)
+            tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log_data)
+
+            fb_update(f"/invoices/{inv_id}", {
+                "payment_log": payment_log_data,
+                "tax_payments": tax_log_data,
+                "meta/amount_paid": str(total_paid),
+                "meta/tax_paid": str(tax_paid),
+            })
+
+            # Update project stage payment amounts and status
+            _update_project_stage_payment_status(inv_id)
+
+            # Sync project-level payments
+            for proj_num in proj_nums_to_update:
+                _sync_project_payment(proj_num)
+                _auto_complete_project_if_paid(proj_num)
+
+            # Update financial entries
+            fresh_meta = (fb_get(f"/invoices/{inv_id}") or {}).get("meta", {})
+            _upsert_revenue_entry(inv_id, fresh_meta)
+
         flash("Invoice created successfully.", "success")
         return redirect(url_for("invoicing", tab="all-invoices"))
     next_num     = _next_invoice_number()
@@ -2689,11 +3213,32 @@ def invoice_new():
     prefill_amount = ""
     prefill_items  = []
 
+    # Handle change order pre-filling
+    co_number = request.args.get("co_number", "")
+    co_title = request.args.get("co_title", "")
+    co_amount = request.args.get("co_amount", "")
+    if co_number and co_title and co_amount:
+        # This is a change order invoice - use CO details as line item
+        prefill_name = co_title
+        prefill_amount = _safe_float(co_amount)
+        prefill_items = [{
+            "description": f"{co_title} ({co_number})",
+            "project": prefill_proj,
+            "amount": str(prefill_amount),
+            "stage_index": request.args.get("stage_idx", "")
+        }]
+
     # Handle multiple projects from modal (one line item per project, matching desktop software)
     if multiple_projects:
         project_ids = [pid.strip() for pid in multiple_projects.split(",") if pid.strip()]
         all_projects_data = fb_get("/projects") or {}
         raw_invoices = fb_get("/invoices") or {}
+
+        # Auto-populate Project Number field if only one project selected
+        if len(project_ids) == 1 and project_ids[0] in all_projects_data:
+            single_proj_data = all_projects_data[project_ids[0]]
+            if isinstance(single_proj_data, dict):
+                prefill_proj = single_proj_data.get("project_number", "")
 
         for proj_id in project_ids:
             if proj_id in all_projects_data:
@@ -2768,13 +3313,17 @@ def invoice_new():
     # Lock unit price if loading from project payment stages
     lock_unit_price = isinstance(prefill_items, list) and len(prefill_items) > 0
 
+    settings = load_settings()
+    default_tax_rate = settings.get("company", {}).get("default_tax_rate", 0)
+
     return render_template("invoice_form.html", invoice=None, clients=clients,
                            projects=projects, next_num=next_num, is_new=True,
                            prefill_proj=prefill_proj, prefill_client=prefill_client,
                            prefill_name=prefill_name, prefill_amount=prefill_amount,
                            prefill_items=prefill_items,
                            stage_idx=stage_idx, stage_name=stage_name, stage_amount=stage_amount,
-                           invoiced_stages_map=invoiced_stages_map, lock_unit_price=lock_unit_price)
+                           invoiced_stages_map=invoiced_stages_map, lock_unit_price=lock_unit_price,
+                           default_tax_rate=default_tax_rate)
 
 @app.route("/invoicing/<invoice_id>", methods=["GET"])
 @role_required("invoicing")
@@ -2849,6 +3398,14 @@ def invoice_detail(invoice_id):
     # Update the invoice data with calculated status for display
     data["meta"]["status"] = calculated_status
 
+    # Ensure tax_paid is set in meta for template compatibility
+    if "tax_paid" not in data["meta"]:
+        tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+        data["meta"]["tax_paid"] = str(tax_paid) if tax_paid > 0 else "0"
+
+    # Refresh project payment stage amounts to ensure they're always current
+    _update_project_stage_payment_status(invoice_id)
+
     # Source quote — via the linked project's source_quote field
     source_quote = None
     if linked_project:
@@ -2867,34 +3424,255 @@ def invoice_detail(invoice_id):
 @app.route("/invoicing/<invoice_id>/edit", methods=["GET", "POST"])
 @role_required("invoicing")
 def invoice_edit(invoice_id):
-    data = fb_get(f"/invoices/{invoice_id}") or {}
-    data["firebase_id"] = invoice_id
-    clients  = _load_clients()
+    invoice_data = fb_get(f"/invoices/{invoice_id}")
+    if not invoice_data:
+        abort(404)
+
+    clients = _load_clients()
     projects = _load_projects_list()
+
     if request.method == "POST":
-        updated = _parse_invoice_form(request.form)
-        updated["meta"]["updated_at"] = datetime.now(timezone.utc).isoformat()
-        fb_update(f"/invoices/{invoice_id}", updated)
+        # Handle invoice update
+        data = _parse_invoice_form(request.form)
 
-        # Use sequential allocation for multi-project invoices
-        linked_projects = _invoice_linked_projects(updated)
-        if len(linked_projects) > 1:
-            _allocate_invoice_payment_sequential(invoice_id)
-        for proj_num in linked_projects:
-            _sync_project_payment(proj_num)
-            _auto_complete_project_if_paid(proj_num)
-        if updated["meta"].get("status") in ("Paid", "Partial"):
-            _upsert_revenue_entry(invoice_id, updated["meta"])
-        flash("Invoice updated.", "success")
+        # Update metadata with current timestamp
+        data["meta"]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        data["meta"]["updated_by"] = session.get("user_email", "")
+
+        # Keep the original created_at and other preserved fields
+        original_meta = invoice_data.get("meta", {})
+        if "created_at" in original_meta:
+            data["meta"]["created_at"] = original_meta["created_at"]
+        # Ensure invoice_number is not accidentally changed
+        if "invoice_number" in original_meta:
+            data["meta"]["invoice_number"] = original_meta["invoice_number"]
+        # Preserve payment stage linkage
+        if "payment_stage_index" in original_meta:
+            data["meta"]["payment_stage_index"] = original_meta["payment_stage_index"]
+        if "payment_stage" in original_meta:
+            data["meta"]["payment_stage"] = original_meta["payment_stage"]
+        # Preserve linked_projects for multi-project invoices
+        if "linked_projects" in original_meta:
+            data["meta"]["linked_projects"] = original_meta["linked_projects"]
+        # Preserve change order number if this is a CO invoice
+        if "co_number" in original_meta:
+            data["meta"]["co_number"] = original_meta["co_number"]
+
+        # Preserve existing payment history when updating invoice details
+        if "payment_log" in invoice_data:
+            data["payment_log"] = invoice_data["payment_log"]
+        if "tax_payments" in invoice_data:
+            data["tax_payments"] = invoice_data["tax_payments"]
+
+        # Get payment information from form
+        payment_amount_str = request.form.get("payment_amount", "").strip()
+        payment_date = request.form.get("payment_date", "").strip()
+        payment_method = request.form.get("payment_method", "").strip()
+        payment_reference = request.form.get("payment_reference", "").strip()
+
+        print(f"\n[INVOICE_EDIT] START - invoice_id={invoice_id}", flush=True)
+        print(f"[INVOICE_EDIT] payment_amount_str='{payment_amount_str}', payment_date='{payment_date}', payment_method='{payment_method}'", flush=True)
+        print(f"[INVOICE_EDIT] All form keys: {list(request.form.keys())}", flush=True)
+
+        # When editing, calculate the difference between new and old amount_paid
+        # Only distribute the DIFFERENCE as a new payment (don't double-count)
+        old_amount_paid = _safe_float(invoice_data.get("meta", {}).get("amount_paid", 0))
+        new_amount_paid = _safe_float(payment_amount_str) if payment_amount_str else old_amount_paid
+        payment_difference = new_amount_paid - old_amount_paid
+
+        print(f"[INVOICE_EDIT] old_amount={old_amount_paid}, new_amount={new_amount_paid}, diff={payment_difference}", flush=True)
+        print(f"[INVOICE_EDIT] Current meta: {invoice_data.get('meta', {})}", flush=True)
+
+        # Preserve amount_paid and tax_paid in meta if not changing payment
+        if payment_difference <= 0:
+            # No new payment being added, so preserve existing values
+            if "amount_paid" in invoice_data.get("meta", {}):
+                data["meta"]["amount_paid"] = invoice_data["meta"]["amount_paid"]
+            if "tax_paid" in invoice_data.get("meta", {}):
+                data["meta"]["tax_paid"] = invoice_data["meta"]["tax_paid"]
+
+        # Update invoice in Firebase (meta and line_items, preserving payments)
+        fb_update(f"/invoices/{invoice_id}", data)
+
+        if payment_difference > 0:
+            print(f"[INVOICE_EDIT] Processing payment_difference={payment_difference}", flush=True)
+            # Use sequential distribution: allocate to projects first, then tax
+            amount = payment_difference
+            payment_log = data.get("payment_log", []) or []
+            if not isinstance(payment_log, list):
+                payment_log = []
+
+            tax_log = data.get("tax_payments", []) or []
+            if not isinstance(tax_log, list):
+                tax_log = []
+
+            main_project = data["meta"].get("project_number", "")
+            line_items = data.get("line_items", []) or []
+            tax_amount = _safe_float(data["meta"].get("tax_amount", 0))
+            linked_projects = data["meta"].get("linked_projects", [])
+
+            print(f"[INVOICE_EDIT] main_project={main_project}, tax_amount={tax_amount}, linked_projects={linked_projects}", flush=True)
+
+            remaining = amount
+
+            # Step 1: Allocate to project(s)
+            if not linked_projects and main_project:
+                linked_projects = [main_project]
+
+            for proj_item in linked_projects:
+                if remaining <= 0:
+                    break
+
+                # Extract project number from dict or string
+                if isinstance(proj_item, dict):
+                    proj_num = proj_item.get("project_number", "")
+                else:
+                    proj_num = proj_item
+
+                if not proj_num:
+                    continue
+
+                print(f"[INVOICE_EDIT] Processing project: {proj_num}", flush=True)
+
+                # Calculate project's invoice amount from line items
+                proj_amount = sum(_safe_float(item.get("amount", 0))
+                                for item in line_items
+                                if isinstance(item, dict) and
+                                (item.get("project_number") == proj_num or not item.get("project_number")))
+
+                # Calculate already received
+                proj_received = sum(_safe_float(p.get("amount", 0))
+                                  for p in payment_log
+                                  if p.get("project_number") == proj_num)
+
+                proj_needs = max(0, proj_amount - proj_received)
+
+                if proj_needs > 0:
+                    allocate = min(proj_needs, remaining)
+                    # Get stage name and index for this project
+                    _stage_name = data["meta"].get("payment_stage", "")
+                    _stage_idx = data["meta"].get("payment_stage_index")
+                    if _stage_idx is not None:
+                        try:
+                            _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
+                        except (ValueError, TypeError):
+                            _stage_idx = None
+                    if not _stage_name and _stage_idx is not None:
+                        _stage_name = f"Stage {_stage_idx + 1}"
+
+                    payment_log.append({
+                        "amount": str(allocate),
+                        "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
+                        "method": payment_method,
+                        "reference": payment_reference,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "project_number": proj_num,
+                        "invoice_number": data["meta"].get("invoice_number", ""),
+                        "stage_name": _stage_name,
+                        "stage_index": _stage_idx or "",
+                    })
+                    remaining -= allocate
+
+            # Step 2: Allocate remaining to tax
+            if remaining > 0 and tax_amount > 0:
+                tax_received = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+                tax_needs = max(0, tax_amount - tax_received)
+
+                if tax_needs > 0:
+                    allocate_tax = min(tax_needs, remaining)
+                    tax_log.append({
+                        "amount": str(allocate_tax),
+                        "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
+                        "method": payment_method,
+                        "reference": payment_reference,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    })
+                    remaining -= allocate_tax
+
+            # Update invoice with payment data
+            total_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+            tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+
+            print("\n[INVOICE_EDIT] PAYMENT DISTRIBUTION COMPLETE", flush=True)
+            print(f"[INVOICE_EDIT] payment_log entries: {len(payment_log)}, total_paid={total_paid}, tax_paid={tax_paid}", flush=True)
+            print(f"[INVOICE_EDIT] payment_log={payment_log}", flush=True)
+            print(f"[INVOICE_EDIT] tax_log={tax_log}", flush=True)
+
+            # Update invoice with payment log and totals
+            update_dict = {
+                "payment_log": payment_log,
+                "tax_payments": tax_log,
+                "meta/amount_paid": str(total_paid),
+                "meta/tax_paid": str(tax_paid),
+            }
+            print(f"[INVOICE_EDIT] Updating Firebase with: {update_dict}", flush=True)
+            fb_update(f"/invoices/{invoice_id}", update_dict)
+
+            # Verify the update by reading back
+            updated_invoice = fb_get(f"/invoices/{invoice_id}")
+            updated_meta = updated_invoice.get("meta", {}) if updated_invoice else {}
+            print(f"[INVOICE_EDIT] After update - amount_paid={updated_meta.get('amount_paid')}, tax_paid={updated_meta.get('tax_paid')}", flush=True)
+            print("[INVOICE_EDIT] Firebase update complete", flush=True)
+
+            # Update project stage payment amounts and status
+            _update_project_stage_payment_status(invoice_id)
+
+            # Sync project-level payment and financial summary (same as Add Payment dialog)
+            fresh_inv = fb_get(f"/invoices/{invoice_id}") or data
+            linked_projects = _invoice_linked_projects(fresh_inv)
+            for proj_num in linked_projects:
+                _sync_project_payment(proj_num)
+                _auto_complete_project_if_paid(proj_num)
+
+            # Update financial entries
+            fresh_meta = (fb_get(f"/invoices/{invoice_id}") or {}).get("meta", {})
+            _upsert_revenue_entry(invoice_id, fresh_meta)
+        else:
+            # Even if no new payment is being added, recalculate stage status based on actual payments
+            # This ensures the stage shows Paid/Partial/Invoiced correctly
+            _update_project_stage_payment_status(invoice_id)
+
+            # Also link invoice to its stage
+            invoice_number = data["meta"].get("invoice_number", "")
+            main_project = data["meta"].get("project_number", "")
+
+            # Handle single-project invoices with payment_stage_index
+            stage_idx_raw = data["meta"].get("payment_stage_index")
+            if stage_idx_raw is not None and main_project and invoice_number:
+                try:
+                    _mark_project_stage(main_project, int(stage_idx_raw), "Invoiced",
+                                      invoice_id=invoice_id, invoice_number=invoice_number)
+                except (ValueError, TypeError):
+                    pass
+
+            # Handle multi-project invoices with linked_projects
+            linked_projects = data["meta"].get("linked_projects", [])
+            if linked_projects and invoice_number:
+                for proj_info in linked_projects:
+                    if isinstance(proj_info, dict):
+                        proj_num = proj_info.get("project_number", "")
+                        stage_idx = proj_info.get("payment_stage_index")
+                        if proj_num and stage_idx is not None:
+                            try:
+                                _mark_project_stage(proj_num, int(stage_idx), "Invoiced",
+                                                  invoice_id=invoice_id, invoice_number=invoice_number)
+                            except (ValueError, TypeError):
+                                pass
+
+        flash("Invoice updated successfully.", "success")
         return redirect(url_for("invoice_detail", invoice_id=invoice_id))
-    # Lock unit price if invoice has linked projects (created from payment stages)
-    linked_projects = data.get("meta", {}).get("linked_projects", [])
-    lock_unit_price = isinstance(linked_projects, list) and len(linked_projects) > 0
 
-    projects = _enrich_projects_with_next_stage(projects)
+    # GET request - load invoice data for editing
+    meta = invoice_data.get("meta", {})
 
-    return render_template("invoice_form.html", invoice=data, clients=clients,
-                           projects=projects, next_num=None, is_new=False, lock_unit_price=lock_unit_price)
+    # Pass invoice data to form with is_new=False to indicate editing
+    return render_template("invoice_form.html",
+                         invoice=invoice_data,
+                         clients=clients,
+                         projects=projects,
+                         next_num=meta.get("invoice_number", ""),
+                         is_new=False,
+                         invoice_id=invoice_id)
 
 @app.route("/invoicing/<invoice_id>/status", methods=["POST"])
 @role_required("invoicing")
@@ -2939,51 +3717,62 @@ def invoice_status(invoice_id):
                 "Overdue": "Invoiced",
             }.get(new_status)
             if stage_status:
-                # Update the stage with current invoice total
-                invoice_total = _safe_float(m.get("total", 0))
-                _mark_project_stage(main_proj_num, int(stage_idx_meta), stage_status, invoice_id=invoice_id, amount=invoice_total)
+                # Update the stage with invoice subtotal (without tax)
+                invoice_subtotal = _safe_float(m.get("subtotal", 0)) or (_safe_float(m.get("total", 0)) - _safe_float(m.get("tax_amount", 0)))
+                _mark_project_stage(main_proj_num, int(stage_idx_meta), stage_status, invoice_id=invoice_id, amount=invoice_subtotal)
     if new_status in ("Paid", "Partial"):
         _upsert_revenue_entry(invoice_id, m)
 
     flash(f"Invoice updated to {new_status}. Project & balance sheet synced.", "success")
     return redirect(url_for("invoice_detail", invoice_id=invoice_id))
 
+@app.route("/api/invoices/<invoice_id>", methods=["GET"])
+@role_required("invoicing")
+def api_get_invoice(invoice_id):
+    """Get invoice details as JSON for frontend"""
+    invoice = fb_get(f"/invoices/{invoice_id}")
+    if not invoice:
+        return jsonify({"error": "Invoice not found"}), 404
+    return jsonify(invoice)
+
 @app.route("/api/invoices/<invoice_id>/update-amount", methods=["POST"])
 @role_required("invoicing")
 def invoice_update_amount(invoice_id):
-    """Update invoice amount from payment stage edit"""
+    """Update invoice line item amount from payment stage edit - handles multi-project invoices"""
     try:
         new_amount = _safe_float(request.form.get("new_amount", 0))
+        project_number = request.form.get("project_number", "").strip()
         invoice = fb_get(f"/invoices/{invoice_id}") or {}
         meta = invoice.get("meta", {})
-
-        # Update invoice total and subtotal
-        tax_amount = _safe_float(meta.get("tax_amount", 0))
-        meta["total"] = str(new_amount + tax_amount)
-        meta["subtotal"] = str(new_amount)
-        meta["updated_at"] = datetime.now(timezone.utc).isoformat()
-        invoice["meta"] = meta
+        tax_rate = _safe_float(meta.get("tax_rate", 0))
 
         # Update line items if they exist
         line_items = invoice.get("line_items", [])
         if line_items:
-            line_items[0]["amount"] = str(new_amount)
-            line_items[0]["unit_price"] = str(new_amount)
+            # Find the correct line item to update
+            line_item_idx = 0
+
+            if project_number:
+                # For multi-project invoices: find line item by project_number
+                # This matches the payment_log approach where payments are tracked by project_number
+                for idx, item in enumerate(line_items):
+                    if isinstance(item, dict) and item.get("project_number", "").strip() == project_number:
+                        line_item_idx = idx
+                        break
+
+            # Update only the identified line item's amount and unit_price
+            line_items[line_item_idx]["amount"] = str(new_amount)
+            line_items[line_item_idx]["unit_price"] = str(new_amount)
 
             # Recalculate Down Payment percentage if it's a down payment item
-            if "Down Payment" in line_items[0].get("description", ""):
-                # Get contract value from linked_projects metadata or from project
-                linked_projects = meta.get("linked_projects", [])
+            if "Down Payment" in line_items[line_item_idx].get("description", ""):
+                # Get contract value from project data
                 contract_value = 0
-
-                if linked_projects and isinstance(linked_projects, list) and len(linked_projects) > 0:
-                    # Get contract value from first linked project
-                    proj_num = linked_projects[0].get("project_number", "")
-                    if proj_num:
-                        proj_data = fb_get(f"/projects/{proj_num}") or {}
-                        contract_value = _safe_float(proj_data.get("contract_value", 0))
+                if project_number:
+                    proj_data = fb_get(f"/projects/{project_number}") or {}
+                    contract_value = _safe_float(proj_data.get("contract_value", 0))
                 else:
-                    # Fallback: get from project_number
+                    # Fallback: get from main project_number
                     proj_num = meta.get("project_number", "")
                     if proj_num:
                         proj_data = fb_get(f"/projects/{proj_num}") or {}
@@ -2993,14 +3782,178 @@ def invoice_update_amount(invoice_id):
                 if contract_value > 0:
                     dp_pct = int(round((new_amount / contract_value) * 100))
                     # Update description with correct percentage
-                    desc = line_items[0].get("description", "Down Payment")
+                    desc = line_items[line_item_idx].get("description", "Down Payment")
                     base_desc = desc.split("(")[0].strip() if "(" in desc else desc
-                    line_items[0]["description"] = f"{base_desc} ({dp_pct}%)"
+                    line_items[line_item_idx]["description"] = f"{base_desc} ({dp_pct}%)"
 
             invoice["line_items"] = line_items
 
+            # Recalculate subtotal and total as sum of ALL line items (critical for multi-project!)
+            # Same approach as payment_sequential: sum actual line item amounts
+            invoice_subtotal = sum(_safe_float(item.get("amount", 0)) for item in line_items if isinstance(item, dict))
+            meta["subtotal"] = str(invoice_subtotal)
+
+            # Recalculate tax based on new subtotal and tax rate (same as payment_sequential process)
+            new_tax_amount = invoice_subtotal * (tax_rate / 100.0) if tax_rate > 0 else 0
+            meta["tax_amount"] = str(new_tax_amount)
+            meta["total"] = str(invoice_subtotal + new_tax_amount)
+
+            # For multi-project invoices: update linked_projects metadata to match current line items
+            # This ensures _allocate_invoice_payment_sequential knows about all projects
+            projects_in_items = set()
+            for item in line_items:
+                if isinstance(item, dict):
+                    proj_num = item.get("project_number", "")
+                    if proj_num:
+                        projects_in_items.add(proj_num)
+
+            # If multiple projects in line items, update linked_projects with CORRECT stage_index for each
+            if len(projects_in_items) > 1:
+                linked_projects_list = []
+                for proj_num in sorted(projects_in_items):
+                    # Find the correct stage_index for this project by matching line item descriptions
+                    detected_stage_idx = meta.get("payment_stage_index", 0)  # Default fallback
+
+                    for item in line_items:
+                        if isinstance(item, dict) and item.get("project_number", "").strip() == proj_num:
+                            # Found a line item for this project
+                            item_desc = item.get("description", "")
+                            # Look for stage name in the line item description
+                            proj_id, proj_data = _find_project_by_number(proj_num)
+                            if proj_data:
+                                proj_stages = proj_data.get("payment_stages", [])
+                                for pidx, pstage in enumerate(proj_stages):
+                                    if isinstance(pstage, dict):
+                                        pstage_name = pstage.get("name", "")
+                                        if pstage_name and pstage_name in item_desc:
+                                            detected_stage_idx = pidx
+                                            break
+                            break
+
+                    linked_projects_list.append({
+                        "project_number": proj_num,
+                        "payment_stage_index": detected_stage_idx
+                    })
+
+                meta["linked_projects"] = linked_projects_list
+
+        meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+        invoice["meta"] = meta
         invoice["updated_at"] = datetime.now(timezone.utc).isoformat()
         fb_update(f"/invoices/{invoice_id}", invoice)
+
+        # When editing amounts, redistribute payments the SAME WAY as payment_sequential
+        # This ensures both work identically - payments distributed sequentially across projects then tax
+        # Use the locally updated invoice object (not fresh from DB) to get updated line_items and metadata
+        amount_paid = _safe_float(meta.get("amount_paid", 0))
+        tax_amount = _safe_float(meta.get("tax_amount", 0))
+        line_items = invoice.get("line_items", []) or []  # Use local updated line_items
+        main_project = meta.get("project_number", "")
+        linked_projects = meta.get("linked_projects", [])  # Use updated linked_projects from meta
+
+        # Only redistribute if there's an amount paid (otherwise no payment history to redistribute)
+        if amount_paid > 0:
+            # Clear existing payment logs and rebuild them sequentially (same as payment_sequential)
+            new_payment_log = []
+            new_tax_log = []
+            remaining_to_distribute = amount_paid
+
+            # Extract ALL projects from BOTH line_items AND linked_projects metadata
+            # This handles invoices where some projects might not have line items
+            projects_from_items = set()
+            for item in line_items:
+                if isinstance(item, dict):
+                    proj_num = item.get("project_number", "")
+                    if proj_num:
+                        projects_from_items.add(proj_num)
+
+            # Also get projects from linked_projects metadata (might have projects without line items)
+            projects_from_meta = set()
+            for proj_info in (meta.get("linked_projects") or []):
+                if isinstance(proj_info, dict):
+                    proj_num = proj_info.get("project_number", "")
+                    if proj_num:
+                        projects_from_meta.add(proj_num)
+
+            # Merge both sets - include projects from BOTH line_items AND metadata
+            all_projects = projects_from_items | projects_from_meta
+
+            # Build linked_projects from merged project list
+            if all_projects:
+                linked_projects = [
+                    {"project_number": proj_num, "payment_stage_index": meta.get("payment_stage_index", 0)}
+                    for proj_num in sorted(all_projects)
+                ]
+            elif not linked_projects and main_project:
+                linked_projects = [{"project_number": main_project, "payment_stage_index": meta.get("payment_stage_index", 0)}]
+
+            # Step 1: Distribute to projects sequentially (sorted by project number)
+            if linked_projects:
+                # Sort projects by number
+                def get_sort_key(x):
+                    proj_num = x.get("project_number", "") if isinstance(x, dict) else x
+                    if proj_num and proj_num[-3:].isdigit():
+                        return int(proj_num[-3:])
+                    return proj_num
+                sorted_projects = sorted(linked_projects, key=get_sort_key)
+
+                for proj_info in sorted_projects:
+                    if remaining_to_distribute <= 0:
+                        break
+
+                    proj_num = proj_info.get("project_number", "") if isinstance(proj_info, dict) else proj_info
+                    if not proj_num:
+                        continue
+
+                    # Get this project's line item amount
+                    proj_amount = sum(_safe_float(item.get("amount", 0)) for item in line_items
+                                    if isinstance(item, dict) and item.get("project_number", "").strip() == proj_num)
+
+                    if proj_amount > 0:
+                        # Allocate up to this project's amount
+                        distribute_to_proj = min(proj_amount, remaining_to_distribute)
+
+                        # Get stage info for payment entry
+                        _stage_name = meta.get("payment_stage", "")
+                        _stage_idx = meta.get("payment_stage_index")
+                        if _stage_idx is not None:
+                            try:
+                                _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
+                            except (ValueError, TypeError):
+                                _stage_idx = None
+
+                        if not _stage_name and _stage_idx is not None:
+                            _stage_name = f"Stage {_stage_idx + 1}"
+
+                        new_payment_log.append({
+                            "amount": str(distribute_to_proj),
+                            "date": datetime.now().strftime("%Y-%m-%d"),
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                            "project_number": proj_num,
+                            "invoice_number": meta.get("invoice_number", ""),
+                            "stage_name": _stage_name,
+                            "stage_index": _stage_idx or "",
+                        })
+                        remaining_to_distribute -= distribute_to_proj
+
+            # Step 2: Distribute remaining to tax
+            if remaining_to_distribute > 0 and tax_amount > 0:
+                tax_needs = min(tax_amount, remaining_to_distribute)
+                new_tax_log.append({
+                    "amount": str(tax_needs),
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                })
+                remaining_to_distribute -= tax_needs
+
+            # Update Firebase with redistributed payment logs (same structure as payment_sequential)
+            fb_update(f"/invoices/{invoice_id}", {
+                "payment_log": new_payment_log,
+                "tax_payments": new_tax_log if new_tax_log else []
+            })
+
+        # Resync project stage payment status to ensure invoice_number is properly linked
+        _update_project_stage_payment_status(invoice_id)
 
         return jsonify({"success": True, "message": "Invoice updated"})
     except Exception as e:
@@ -3026,11 +3979,31 @@ def invoice_delete(invoice_id):
 
     print(f"project_number: '{project_number}', payment_stage_index: {payment_stage_index}", flush=True)
 
+    # Get payment amounts to subtract from stages
+    payment_log = inv_data.get("payment_log", []) or []
+    total_payments_deleted = sum(_safe_float(p.get("amount", 0)) for p in payment_log if isinstance(p, dict))
+    print(f"Total payments in deleted invoice: {total_payments_deleted}", flush=True)
+
     if project_number and payment_stage_index is not None:
-        # Single project with single stage
+        # Single project with single stage - clear its amount_paid since this invoice is deleted
         print(f"Reverting single stage: {project_number} stage {payment_stage_index}", flush=True)
-        _mark_project_stage(project_number, payment_stage_index, "Pending Invoice")
+        _mark_project_stage(project_number, payment_stage_index, "Pending Invoice", amount_paid=0)
         project_numbers_to_sync.add(project_number)
+    elif project_number and not payment_stage_index:
+        # Invoice without explicit stage - find the stage by invoice_id
+        print("Invoice without payment_stage_index - finding by invoice_id", flush=True)
+        all_proj = fb_get("/projects") or {}
+        for pid, pdata in (all_proj.items() if isinstance(all_proj, dict) else []):
+            if isinstance(pdata, dict) and pdata.get("project_number", "") == project_number:
+                stages = pdata.get("payment_stages", [])
+                if isinstance(stages, list):
+                    for idx, stage in enumerate(stages):
+                        if isinstance(stage, dict) and stage.get("invoice_id") == invoice_id:
+                            print(f"Found stage {idx} with this invoice_id, reverting", flush=True)
+                            _mark_project_stage(project_number, idx, "Pending Invoice", amount_paid=0)
+                            project_numbers_to_sync.add(project_number)
+                            break
+                break
     else:
         # Multiple projects - check linked_projects first, then line items
         linked_projects = meta.get("linked_projects", [])
@@ -3042,7 +4015,7 @@ def invoice_delete(invoice_id):
                     stage_idx = lp.get("payment_stage_index")
                     print(f"Processing linked project: proj_num={proj_num}, stage_idx={stage_idx}", flush=True)
                     if proj_num and stage_idx is not None:
-                        _mark_project_stage(proj_num, stage_idx, "Pending Invoice")
+                        _mark_project_stage(proj_num, stage_idx, "Pending Invoice", amount_paid=0)
                         project_numbers_to_sync.add(proj_num)
         else:
             # Fallback: check line items for older invoices
@@ -3055,7 +4028,7 @@ def invoice_delete(invoice_id):
                         stage_idx = item.get("stage_index")
                         print(f"Processing line item: proj_num={proj_num}, stage_idx={stage_idx}", flush=True)
                         if proj_num and stage_idx is not None:
-                            _mark_project_stage(proj_num, stage_idx, "Pending Invoice")
+                            _mark_project_stage(proj_num, stage_idx, "Pending Invoice", amount_paid=0)
                             project_numbers_to_sync.add(proj_num)
 
     # Delete associated revenue entries
@@ -3070,13 +4043,93 @@ def invoice_delete(invoice_id):
     fb_delete(f"/invoices/{invoice_id}")
     print(f"=== INVOICE DELETE COMPLETE ===\n", flush=True)
 
+    # Recalculate stage amounts_paid for all affected projects based on remaining invoices
+    for proj_num in project_numbers_to_sync:
+        if proj_num:
+            # Find all invoices linked to this project and update their stage amounts_paid
+            all_invoices = fb_get("/invoices") or {}
+            for inv_id, inv_data in (all_invoices.items() if isinstance(all_invoices, dict) else []):
+                if isinstance(inv_data, dict):
+                    inv_meta = inv_data.get("meta", {}) or {}
+                    # Check if this invoice is linked to the project we're updating
+                    linked_projects = inv_meta.get("linked_projects", [])
+                    is_linked = False
+
+                    # Check if project is in linked_projects
+                    if isinstance(linked_projects, list):
+                        for lp in linked_projects:
+                            if isinstance(lp, dict) and lp.get("project_number") == proj_num:
+                                is_linked = True
+                                break
+                            elif isinstance(lp, str) and lp == proj_num:
+                                is_linked = True
+                                break
+
+                    # Also check if it's the main project_number
+                    if inv_meta.get("project_number") == proj_num:
+                        is_linked = True
+
+                    if is_linked:
+                        _update_project_stage_payment_status(inv_id)
+                        print(f"Updated stage amounts_paid for invoice {inv_id}", flush=True)
+
     # Sync payment amounts for all affected projects
     for proj_num in project_numbers_to_sync:
         if proj_num:
+            # Recalculate all stages for this project from remaining invoices
             _sync_project_payment(proj_num)
             print(f"Synced payment for project: {proj_num}", flush=True)
 
-    flash("Invoice deleted. Payment stages and revenue reverted to Not Invoiced.", "success")
+            # Update project status based on remaining payments
+            proj_id, pdata = _find_project_by_number(proj_num)
+            if proj_id and pdata:
+                amount_paid = _safe_float(pdata.get("amount_paid", 0))
+                current_status = pdata.get("status", "Not Started")
+
+                # If still has payments, change to In Progress
+                if amount_paid > 0 and current_status == "Completed":
+                    fb_update(f"/projects/{proj_id}", {
+                        "status": "In Progress",
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    })
+                # If no payments left, change to Not Started
+                elif amount_paid == 0 and current_status != "Not Started":
+                    fb_update(f"/projects/{proj_id}", {
+                        "status": "Not Started",
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    })
+
+                # Recalculate all payment stage amounts for this project from remaining invoices
+                stages = pdata.get("payment_stages", [])
+                if isinstance(stages, list):
+                    for stage_idx, stage in enumerate(stages):
+                        if isinstance(stage, dict):
+                            # Recalculate this stage's amount_paid from remaining invoices
+                            all_invoices = fb_get("/invoices") or {}
+                            stage_paid = 0.0
+                            if isinstance(all_invoices, dict):
+                                for inv_id, inv_data in all_invoices.items():
+                                    if isinstance(inv_data, dict):
+                                        inv_meta = inv_data.get("meta", {}) or {}
+                                        # Check if this invoice covers this project and stage
+                                        if (inv_meta.get("project_number") == proj_num and
+                                            inv_meta.get("payment_stage_index") == stage_idx):
+                                            # Sum payments for this invoice
+                                            payment_log = inv_data.get("payment_log", [])
+                                            if isinstance(payment_log, list):
+                                                stage_paid += sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+
+                            # Update stage with recalculated amount_paid
+                            stage["amount_paid"] = str(stage_paid)
+                            print(f"[DELETE] Recalculated stage {stage_idx} amount_paid: {stage_paid}")
+
+                    # Save updated stages
+                    fb_update(f"/projects/{proj_id}", {
+                        "payment_stages": stages,
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    })
+
+    flash("Invoice deleted successfully", "success")
     return redirect(url_for("invoicing"))
 
 @app.route("/invoicing/<invoice_id>/pdf")
@@ -3117,7 +4170,8 @@ def _filter_invoices_export(items):
 @app.route("/invoicing/export/csv")
 @role_required("invoicing")
 def invoicing_export_csv():
-    import csv, io
+    import csv
+    import io
     raw = fb_get("/invoices") or {}
     items = []
     for iid, idata in (raw.items() if isinstance(raw, dict) else []):
@@ -3127,20 +4181,49 @@ def invoicing_export_csv():
     items = _filter_invoices_export(items)
     output = io.StringIO()
     w = csv.writer(output)
-    w.writerow(["Invoice #","Client","Project","Date","Due Date","Status",
-                "Subtotal","Tax","Total","Amount Paid","Outstanding"])
+    co = company_info()
+
+    def fmt_csv_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    # Add company header and blank row
+    w.writerow([f"{co.get('name','')} - Invoices Report"])
+    w.writerow([])
+
+    headers = ["Invoice Number", "Client", "Project", "Date", "Due Date", "Status", "Subtotal", "Tax", "Total", "Amount Paid", "Outstanding"]
+    w.writerow(headers)
+
     for inv in items:
         m = inv.get("meta", {})
         total = _safe_float(m.get("total", 0))
-        paid  = _safe_float(m.get("amount_paid", 0))
-        w.writerow([m.get("invoice_number",""), m.get("client_name",""),
-                    m.get("project_number",""), m.get("invoice_date",""), m.get("due_date",""),
-                    m.get("status",""), m.get("subtotal","0"), m.get("tax_amount","0"),
-                    f"{total:.2f}", f"{paid:.2f}", f"{total-paid:.2f}"])
+        paid = _safe_float(m.get("amount_paid", 0))
+        subtotal = _safe_float(m.get("subtotal", 0))
+        tax = _safe_float(m.get("tax_amount", 0))
+        linked_projects = _invoice_linked_projects(inv)
+        projects_str = ", ".join(sorted(linked_projects)) if linked_projects else ""
+        row = [
+            m.get("invoice_number",""),
+            m.get("client_name",""),
+            projects_str,
+            fmt_csv_date(m.get("invoice_date","")),
+            fmt_csv_date(m.get("due_date","")),
+            m.get("status",""),
+            f"{subtotal:.2f}",
+            f"{tax:.2f}",
+            f"{total:.2f}",
+            f"{paid:.2f}",
+            f"{total-paid:.2f}"
+        ]
+        w.writerow(row)
+
     output.seek(0)
     from flask import Response
     fname = f"invoices_{datetime.now().strftime('%Y%m%d')}.csv"
-    return Response(output.getvalue(), mimetype="text/csv",
+    return Response(output.getvalue(), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
 @app.route("/invoicing/export/excel")
@@ -3158,33 +4241,59 @@ def invoicing_export_excel():
     items.sort(key=lambda x: x.get("meta", {}).get("created_at", ""), reverse=True)
     items = _filter_invoices_export(items)
     wb = openpyxl.Workbook()
-    ws = wb.active; ws.title = "Invoices"
+    ws = wb.active
+    ws.title = "Invoices"
     hdr_fill = PatternFill(start_color="FF0F172A", end_color="FF0F172A", fill_type="solid")
     hdr_font = Font(color="FFFFFFFF", bold=True, size=11)
+    title_font = Font(bold=True, size=13, color="FF0F766E")
     alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
-    ctr = Alignment(horizontal="center", vertical="center")
-    rgt = Alignment(horizontal="right",  vertical="center")
-    headers = ["Invoice #","Client","Project","Date","Due Date","Status",
+    ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    # Add title row
+    co = company_info()
+    ws.merge_cells('A1:K1')
+    title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} - Invoices Report")
+    title_cell.font = title_font
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 20
+
+    headers = ["Invoice Number","Client","Project","Date","Due Date","Status",
                "Subtotal ($)","Tax ($)","Total ($)","Paid ($)","Outstanding ($)"]
+    header_row = 2
     for col, h in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=h)
+        cell = ws.cell(row=header_row, column=col, value=h)
         cell.fill = hdr_fill; cell.font = hdr_font; cell.alignment = ctr
-    for ri, inv in enumerate(items, 2):
+
+    def fmt_inv_excel_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    for ri, inv in enumerate(items, header_row + 1):
         m = inv.get("meta", {})
         total = _safe_float(m.get("total", 0))
         paid  = _safe_float(m.get("amount_paid", 0))
+        linked_projects = _invoice_linked_projects(inv)
+        projects_str = ", ".join(sorted(linked_projects)) if linked_projects else "—"
         row = [m.get("invoice_number",""), m.get("client_name",""),
-               m.get("project_number",""), m.get("invoice_date",""), m.get("due_date",""),
+               projects_str, fmt_inv_excel_date(m.get("invoice_date","")), fmt_inv_excel_date(m.get("due_date","")),
                m.get("status",""), _safe_float(m.get("subtotal",0)),
                _safe_float(m.get("tax_amount",0)), total, paid, total - paid]
         for ci, val in enumerate(row, 1):
             cell = ws.cell(row=ri, column=ci, value=val)
-            if ri % 2 == 0: cell.fill = alt_fill
+            if ri % 2 == 0:
+                cell.fill = alt_fill
             if ci in (7, 8, 9, 10, 11):
-                cell.number_format = '"$"#,##0.00'; cell.alignment = rgt
-    for ci, w in enumerate([16,22,14,12,12,12,13,10,13,12,14], 1):
+                cell.number_format = '"$"#,##0.00'
+            cell.alignment = ctr
+
+    # Increase column widths
+    col_widths = [22, 25, 44, 14, 14, 14, 16, 14, 16, 14, 14]
+    for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
-    ws.freeze_panes = "A2"
+    ws.freeze_panes = f"A{header_row + 1}"
     buf = _io.BytesIO()
     wb.save(buf); buf.seek(0)
     from flask import Response
@@ -3215,38 +4324,53 @@ def invoicing_export_pdf():
     items = _filter_invoices_export(items)
     buf = _io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
-                            leftMargin=0.5*inch, rightMargin=0.5*inch,
+                            leftMargin=0.2*inch, rightMargin=0.2*inch,
                             topMargin=0.5*inch, bottomMargin=0.5*inch)
     styles = getSampleStyleSheet()
     co = company_info()
     elems = []
+    from reportlab.lib.units import inch
+    from reportlab.platypus import Spacer
+
     title_s = ParagraphStyle("T", parent=styles["Normal"], fontSize=15,
                               fontName="Helvetica-Bold",
-                              textColor=colors.HexColor("#0F766E"), spaceAfter=3)
-    sub_s   = ParagraphStyle("S", parent=styles["Normal"], fontSize=9,
-                              textColor=colors.HexColor("#64748B"), spaceAfter=14)
-    elems.append(Paragraph(f"{co.get('name','')} — Invoice Report", title_s))
-    elems.append(Paragraph(
-        f"Generated {datetime.now().strftime('%B %d, %Y')}  ·  {len(items)} record{'s' if len(items)!=1 else ''}",
-        sub_s))
-    hdrs = ["Invoice #", "Client", "Project", "Date", "Due Date", "Status", "Total", "Paid", "Outstanding"]
+                              textColor=colors.HexColor("#0F766E"), spaceAfter=3,
+                              alignment=1)  # CENTER
+
+    elems.append(Paragraph(f"{co.get('name','')} — Invoices Report", title_s))
+    elems.append(Spacer(1, 0.2*inch))
+    hdrs = ["Invoice Number", "Client", "Project", "Date", "Due Date", "Subtotal", "Tax", "Total", "Paid", "Outstanding", "Status"]
     data = [hdrs]
+    def fmt_inv_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
     for inv in items:
         m = inv.get("meta", {})
         total = _safe_float(m.get("total", 0))
         paid  = _safe_float(m.get("amount_paid", 0))
+        subtotal = _safe_float(m.get("subtotal", 0))
+        tax = _safe_float(m.get("tax_amount", 0))
+        linked_projects = _invoice_linked_projects(inv)
+        projects_str = "\n".join(sorted(linked_projects)) if linked_projects else "—"
         data.append([
-            m.get("invoice_number","—"),
-            (m.get("client_name","—") or "—")[:20],
-            (m.get("project_number","") or "—")[:14],
-            m.get("invoice_date","—") or "—",
-            m.get("due_date","—") or "—",
-            m.get("status","—"),
-            f"${total:,.0f}",
-            f"${paid:,.0f}",
-            f"${total-paid:,.0f}",
+            Paragraph(m.get("invoice_number","—"), cell_style),
+            Paragraph(m.get("client_name","—") or "—", cell_style),
+            Paragraph(projects_str, cell_style),
+            Paragraph(fmt_inv_date(m.get("invoice_date","")), cell_style),
+            Paragraph(fmt_inv_date(m.get("due_date","")), cell_style),
+            Paragraph(f"${subtotal:,.0f}", cell_style),
+            Paragraph(f"${tax:,.0f}", cell_style),
+            Paragraph(f"${total:,.0f}", cell_style),
+            Paragraph(f"${paid:,.0f}", cell_style),
+            Paragraph(f"${total-paid:,.0f}", cell_style),
+            Paragraph(m.get("status","—"), cell_style),
         ])
-    cw = [1.2*inch, 1.8*inch, 1.3*inch, 1.0*inch, 1.0*inch, 1.0*inch, 1.0*inch, 1.0*inch, 1.0*inch]
+    cw = [1.3*inch, 1.5*inch, 1.7*inch, 0.8*inch, 0.8*inch, 0.7*inch, 0.65*inch, 0.7*inch, 0.7*inch, 0.95*inch, 0.8*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
@@ -3254,6 +4378,7 @@ def invoicing_export_pdf():
         ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
         ("FONTSIZE",      (0,0), (-1,0), 9),
         ("ALIGN",         (0,0), (-1,0), "CENTER"),
+        ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
         ("TOPPADDING",    (0,0), (-1,0), 8),
         ("BOTTOMPADDING", (0,0), (-1,0), 8),
         ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
@@ -3262,8 +4387,8 @@ def invoicing_export_pdf():
         ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
         ("TOPPADDING",    (0,1), (-1,-1), 5),
         ("BOTTOMPADDING", (0,1), (-1,-1), 5),
-        ("ALIGN",         (-3,1),(-1,-1), "RIGHT"),
-        ("FONTNAME",      (-3,1),(-1,-1), "Helvetica-Bold"),
+        ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
     ]))
     elems.append(tbl)
     doc.build(elems)
@@ -3607,6 +4732,251 @@ def payroll():
         employee_profiles=employee_profiles,
         salaries=salaries)
 
+# ── Payroll Export Routes ─────────────────────────────────────────────────────
+@app.route("/payroll/export/csv")
+@login_required
+def payroll_export_csv():
+    import csv
+    import io
+    raw_sal = fb_get("/balance_sheet_salary") or {}
+    salaries = []
+    for sid, sdata in (raw_sal.items() if isinstance(raw_sal, dict) else []):
+        if isinstance(sdata, dict):
+            sdata["firebase_id"] = sid
+            salaries.append(sdata)
+
+    # Apply filters
+    region_filter = request.args.get("region", "")
+    date_from = request.args.get("from", "")
+    date_to = request.args.get("to", "")
+
+    if region_filter:
+        salaries = [s for s in salaries if s.get("region") == region_filter]
+    if date_from:
+        salaries = [s for s in salaries if (s.get("date") or "") >= date_from]
+    if date_to:
+        salaries = [s for s in salaries if (s.get("date") or "") <= date_to]
+
+    salaries.sort(key=lambda s: s.get("date", ""), reverse=False)
+
+    output = io.StringIO()
+    w = csv.writer(output)
+    co = company_info()
+
+    # Add company header and blank row
+    w.writerow([f"{co.get('name','')} - Payroll Report"])
+    w.writerow([])
+
+    def fmt_date(d):
+        if not d or d == "—":
+            return ""
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    headers = ["Employee", "Date", "Amount", "Region", "Notes"]
+    w.writerow(headers)
+
+    for sal in salaries:
+        w.writerow([
+            sal.get("employee_name", ""),
+            fmt_date(sal.get("date", "")),
+            f"{_safe_float(sal.get('amount', 0)):.2f}",
+            sal.get("region", ""),
+            sal.get("notes", "")
+        ])
+
+    from flask import Response
+    fname = f"payroll_{datetime.now().strftime('%Y%m%d')}.csv"
+    return Response(output.getvalue(), mimetype="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f"attachment;filename={fname}"})
+
+@app.route("/payroll/export/excel")
+@login_required
+def payroll_export_excel():
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    import io as _io
+
+    raw_sal = fb_get("/balance_sheet_salary") or {}
+    salaries = []
+    for sid, sdata in (raw_sal.items() if isinstance(raw_sal, dict) else []):
+        if isinstance(sdata, dict):
+            sdata["firebase_id"] = sid
+            salaries.append(sdata)
+
+    # Apply filters
+    region_filter = request.args.get("region", "")
+    date_from = request.args.get("from", "")
+    date_to = request.args.get("to", "")
+
+    if region_filter:
+        salaries = [s for s in salaries if s.get("region") == region_filter]
+    if date_from:
+        salaries = [s for s in salaries if (s.get("date") or "") >= date_from]
+    if date_to:
+        salaries = [s for s in salaries if (s.get("date") or "") <= date_to]
+
+    salaries.sort(key=lambda s: s.get("date", ""), reverse=False)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Payroll"
+
+    hdr_fill = PatternFill(start_color="FF0F172A", end_color="FF0F172A", fill_type="solid")
+    hdr_font = Font(color="FFFFFFFF", bold=True, size=11)
+    title_font = Font(bold=True, size=13, color="FF0F766E")
+    alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
+    ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    co = company_info()
+    ws.merge_cells('A1:E1')
+    title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} - Payroll Report")
+    title_cell.font = title_font
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 20
+
+    def fmt_excel_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    headers = ["Employee", "Date", "Amount", "Region", "Notes"]
+    header_row = 2
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=header_row, column=col, value=h)
+        cell.fill = hdr_fill
+        cell.font = hdr_font
+        cell.alignment = ctr
+
+    for ri, sal in enumerate(salaries, header_row + 1):
+        row = [sal.get("employee_name", ""), fmt_excel_date(sal.get("date", "")),
+               _safe_float(sal.get("amount", 0)), sal.get("region", ""), sal.get("notes", "")]
+        for ci, val in enumerate(row, 1):
+            cell = ws.cell(row=ri, column=ci, value=val)
+            if ri % 2 == 0:
+                cell.fill = alt_fill
+            if ci == 3:
+                cell.number_format = '"$"#,##0.00'
+            cell.alignment = ctr
+
+    col_widths = [25, 14, 14, 18, 30]
+    for ci, w in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(ci)].width = w
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    from flask import Response
+    fname = f"payroll_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    return Response(buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment;filename={fname}"})
+
+@app.route("/payroll/export/pdf")
+@login_required
+def payroll_export_pdf():
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+    except ImportError:
+        flash("reportlab not installed.", "danger")
+        return redirect(url_for("payroll"))
+    import io as _io
+
+    raw_sal = fb_get("/balance_sheet_salary") or {}
+    salaries = []
+    for sid, sdata in (raw_sal.items() if isinstance(raw_sal, dict) else []):
+        if isinstance(sdata, dict):
+            sdata["firebase_id"] = sid
+            salaries.append(sdata)
+
+    # Apply filters
+    region_filter = request.args.get("region", "")
+    date_from = request.args.get("from", "")
+    date_to = request.args.get("to", "")
+
+    if region_filter:
+        salaries = [s for s in salaries if s.get("region") == region_filter]
+    if date_from:
+        salaries = [s for s in salaries if (s.get("date") or "") >= date_from]
+    if date_to:
+        salaries = [s for s in salaries if (s.get("date") or "") <= date_to]
+
+    salaries.sort(key=lambda s: s.get("date", ""), reverse=False)
+
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=0.8*inch, rightMargin=0.8*inch,
+                            topMargin=0.5*inch, bottomMargin=0.5*inch)
+    styles = getSampleStyleSheet()
+    co = company_info()
+    elems = []
+
+    title_s = ParagraphStyle("T", parent=styles["Normal"], fontSize=15,
+                              fontName="Helvetica-Bold",
+                              textColor=colors.HexColor("#0F766E"), spaceAfter=3,
+                              alignment=1)
+    elems.append(Paragraph(f"{co.get('name','')} - Payroll Report", title_s))
+    from reportlab.platypus import Spacer
+    elems.append(Spacer(1, 0.2*inch))
+
+    def fmt_pdf_date(d):
+        if not d or d == "—":
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    hdrs = ["Employee", "Date", "Amount", "Region", "Notes"]
+    data = [hdrs]
+
+    cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
+    for sal in salaries:
+        data.append([
+            Paragraph(sal.get("employee_name", "—"), cell_style),
+            Paragraph(fmt_pdf_date(sal.get("date", "")), cell_style),
+            Paragraph(f"${_safe_float(sal.get('amount', 0)):,.2f}", cell_style),
+            Paragraph(sal.get("region", "—"), cell_style),
+            Paragraph(sal.get("notes", "—"), cell_style),
+        ])
+
+    cw = [2.0*inch, 1.2*inch, 1.2*inch, 1.3*inch, 1.8*inch]
+    tbl = Table(data, colWidths=cw, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
+        ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+        ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0,0), (-1,0), 9),
+        ("ALIGN",         (0,0), (-1,0), "CENTER"),
+        ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
+        ("TOPPADDING",    (0,0), (-1,0), 8),
+        ("BOTTOMPADDING", (0,0), (-1,0), 8),
+        ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
+        ("FONTSIZE",      (0,1), (-1,-1), 8),
+        ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")]),
+        ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
+        ("TOPPADDING",    (0,1), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,1), (-1,-1), 5),
+        ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
+    ]))
+    elems.append(tbl)
+    doc.build(elems)
+    buf.seek(0)
+
+    from flask import Response
+    fname = f"payroll_{datetime.now().strftime('%Y%m%d')}.pdf"
+    return Response(buf.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": f"attachment;filename={fname}"})
+
 # ── Employee Profile API ──────────────────────────────────────────────────────
 @app.route("/api/employee-profiles", methods=["GET"])
 @login_required
@@ -3807,6 +5177,10 @@ def financial():
                     pass
         return filtered
 
+    # Create a list for Overview tab KPI cards that filters by present running year (stat_card_year)
+    # This is separate from the Balance Sheet view which uses selected_year
+    exp_list_for_overview = filter_by_year(exp_list_raw, datetime.now().year)
+
     # Filter for balance sheet (only selected year)
     exp_list_raw_filtered = filter_by_year(exp_list_raw, selected_year)
     exp_list_filtered = group_expenses_by_name(exp_list_raw_filtered)
@@ -3876,13 +5250,23 @@ def financial():
         amount_paid = _safe_float(inv_meta.get("amount_paid", 0))
         tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in (inv_data.get("tax_payments", []) or []))
         total_paid_for_inv = amount_paid + tax_paid
-        if total_paid_for_inv <= 0:
-            continue
+
         r["amount_paid"] = amount_paid
+        r["tax_paid"] = tax_paid
         r["total"] = inv_total
         r["tax_amount"] = _safe_float(inv_meta.get("tax_amount", 0))
-        r["status"] = "Paid" if total_paid_for_inv >= inv_total else "Partial"
-        updated_rev_list.append(r)
+
+        # Calculate status based on total vs amount_paid for this P&L invoice
+        if total_paid_for_inv >= (inv_total - 0.01):
+            r["status"] = "Paid"
+        elif total_paid_for_inv > 0:
+            r["status"] = "Partial"
+        else:
+            r["status"] = "Unpaid"
+
+        # Only include in P&L if invoice has been paid or is partially paid (not Unpaid)
+        if r["status"] in ["Paid", "Partial"]:
+            updated_rev_list.append(r)
     rev_list = updated_rev_list
 
     # Helper to extract year from date string
@@ -3893,12 +5277,16 @@ def financial():
         except (ValueError, IndexError, TypeError):
             return None
 
-    # Get selected year for stat cards filtering
+    # Get actual current year for stat cards (always use current system year, not URL filter)
+    stat_card_year = datetime.now().year
+    prev_year = stat_card_year - 1
+
+    # Get selected year for Balance Sheet filtering (can be different from current year)
     selected_year = request.args.get("year", str(datetime.now().year))
     try:
-        stat_card_year = int(selected_year)
+        selected_year = int(selected_year)
     except (ValueError, TypeError):
-        stat_card_year = datetime.now().year
+        selected_year = datetime.now().year
 
     # Total collected = amount_paid + tax_paid (matches Invoicing tab display)
     total_collected = 0.0
@@ -3914,11 +5302,17 @@ def financial():
                                        if _extract_year_from_date(tp.get("date", "")) == stat_card_year)
                     total_collected += tax_collected
 
+    # Filter Income tab to show invoices from present running year and previous year
+    rev_list = [r for r in rev_list if _extract_year_from_date(invoices.get(r.get("invoice_id"), {}).get("meta", {}).get("invoice_date", "")) in [stat_card_year, prev_year]]
+
+    # Sort by date ascending (oldest to newest)
+    rev_list = sorted(rev_list, key=lambda r: r.get('date', ''))
+
     # Recalculate statuses based on actual payments
     for inv in inv_list:
         inv["meta"]["status"] = _calculate_invoice_status(inv)
 
-    # Filter invoices by selected year for stat cards
+    # Filter invoices by present running year for stat cards (Overview tab)
     inv_list_filtered = [i for i in inv_list
                         if _extract_year_from_date(i.get("meta", {}).get("invoice_date", "")) == stat_card_year]
 
@@ -3928,10 +5322,23 @@ def financial():
     total_tax_paid    = sum(_safe_float(p.get("amount", 0)) for inv in inv_list_filtered for p in inv.get("tax_payments", []))
     total_paid        += total_tax_paid
     total_outstanding = total_invoiced - total_paid
-    exp_list_year_filtered = [e for e in exp_list if _extract_year_from_date(e.get("date", "")) == stat_card_year]
+    # Use Overview-filtered expenses (filtered by present running year, not selected year)
+    exp_list_year_filtered = group_expenses_by_name(exp_list_for_overview)
     total_expenses    = sum(_safe_float(e.get("amount", 0)) for e in exp_list_year_filtered)
     exp_list_year_filtered_count = len(exp_list_year_filtered)
     net_profit        = total_paid - total_expenses
+
+    # Calculate previous year data for year-over-year comparison
+    prev_year = stat_card_year - 1
+    inv_list_prev_year = [i for i in inv_list
+                          if _extract_year_from_date(i.get("meta", {}).get("invoice_date", "")) == prev_year]
+    prev_year_total_invoiced = sum(_safe_float(i.get("meta", {}).get("total", 0)) for i in inv_list_prev_year)
+    prev_year_total_paid = sum(_safe_float(i.get("meta", {}).get("amount_paid", 0)) for i in inv_list_prev_year)
+    prev_year_total_tax_paid = sum(_safe_float(p.get("amount", 0)) for inv in inv_list_prev_year for p in inv.get("tax_payments", []))
+    prev_year_total_paid += prev_year_total_tax_paid
+    prev_year_total_outstanding = prev_year_total_invoiced - prev_year_total_paid
+    exp_list_prev_year = [e for e in exp_list if _extract_year_from_date(e.get("date", "")) == prev_year]
+    prev_year_total_expenses = sum(_safe_float(e.get("amount", 0)) for e in exp_list_prev_year)
 
     # Monthly breakdown for chart (last 6 months)
     monthly_revenue  = {}
@@ -4035,7 +5442,7 @@ def financial():
     for p in projects_list:
         pnum = p.get("project_number", "")
 
-        # Calculate INVOICED and COLLECTED using _invoice_linked_projects (matches Project P&L)
+        # Calculate INVOICED and COLLECTED based on line items and payment_log (not equal split!)
         p_invoiced = 0
         p_collected = 0
 
@@ -4046,16 +5453,55 @@ def financial():
                     continue
                 if pnum not in _invoice_linked_projects(inv_data):
                     continue
+                # Filter by current running year based on invoice_date
                 inv_meta = inv_data.get("meta", {}) or {}
-                inv_total = _safe_float(inv_meta.get("total", 0))
+                inv_date_str = inv_meta.get("invoice_date", "")
+                inv_year = _extract_year_from_date(inv_date_str)
+                if inv_year != stat_card_year:
+                    continue
+                inv_subtotal = _safe_float(inv_meta.get("subtotal", 0))
                 inv_tax = _safe_float(inv_meta.get("tax_amount", 0))
-                amount_paid_inv = _safe_float(inv_meta.get("amount_paid", 0))
-                tax_paid_inv = sum(_safe_float(tp.get("amount", 0)) for tp in (inv_data.get("tax_payments", []) or []))
-                linked = _invoice_linked_projects(inv_data)
-                if len(linked) > 0:
-                    share = 1.0 / len(linked)
-                    p_invoiced += inv_total * share
-                    p_collected += (amount_paid_inv + tax_paid_inv) * share
+
+                # Calculate project's portion from actual line items
+                line_items = inv_data.get("line_items", []) or []
+                project_line_total = 0
+                for item in line_items:
+                    if isinstance(item, dict):
+                        item_proj = str(item.get("project_number", "")).strip()
+                        if item_proj == pnum:
+                            project_line_total += _safe_float(item.get("amount", 0))
+
+                # Get project's actual payments from payment_log (filtered by project_number)
+                payment_log = inv_data.get("payment_log", []) or []
+                project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == pnum)
+
+                # Calculate share based on line items (for invoiced amount calculation only)
+                if inv_subtotal > 0 and project_line_total > 0:
+                    share = project_line_total / inv_subtotal
+                else:
+                    # Fallback: use linked_projects metadata for invoiced tax allocation
+                    linked = _invoice_linked_projects(inv_data)
+                    if len(linked) > 1:
+                        share = 1.0 / len(linked)
+                    else:
+                        share = 1.0
+
+                # Project's tax allocation (proportional to share, for invoiced amount)
+                project_tax = share * inv_tax
+
+                # Get project's tax payments - allocate proportionally if not per-project
+                tax_payments = inv_data.get("tax_payments", []) or []
+                total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
+
+                # If tax_payments have project_number, filter by it; otherwise use share
+                project_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if tp.get("project_number") == pnum)
+                if project_tax_paid == 0 and total_tax_paid > 0:
+                    # Tax payments don't have project_number, allocate by share
+                    project_tax_paid = share * total_tax_paid
+
+                # Add to P&L: invoiced = line items + tax, collected = actual payments + actual tax paid
+                p_invoiced += project_line_total + project_tax
+                p_collected += project_payments + project_tax_paid
 
         p_contract = _safe_float(p.get("contract_value",0))
         p_not_invoiced = p_contract - p_invoiced
@@ -4078,6 +5524,9 @@ def financial():
             "firebase_id":    p.get("firebase_id",""),
         })
     project_pnl.sort(key=lambda x: x["project_number"], reverse=True)
+
+    # Filter project_pnl to show only projects with activity in current running year
+    project_pnl = [p for p in project_pnl if _safe_float(p.get("invoiced", 0)) > 0 or _safe_float(p.get("paid", 0)) > 0 or _safe_float(p.get("expenses", 0)) > 0]
 
     # ── Monthly payment drill-down for Balance Sheet ──────────────────────────
     _proj_num_to_id = {p.get("project_number", ""): p.get("firebase_id", "") for p in projects_list}
@@ -4221,10 +5670,18 @@ def financial():
                 else:
                     salaries_domestic_raw.append(sdata)
 
-    # Filter salaries by selected year (must recompute total_salaries AFTER filtering)
-    salaries_domestic_raw = filter_by_year(salaries_domestic_raw, selected_year)
-    salaries_international_raw = filter_by_year(salaries_international_raw, selected_year)
+    # Filter salaries by present running year for KPI cards (stat_card_year is always current year)
+    salaries_domestic_raw = filter_by_year(salaries_domestic_raw, stat_card_year)
+    salaries_international_raw = filter_by_year(salaries_international_raw, stat_card_year)
     total_salaries = sum(_safe_float(s.get("amount", 0)) for s in salaries_domestic_raw + salaries_international_raw)
+
+    # Count unique employees with salary entries in present running year
+    employees_with_salaries = set()
+    for s in salaries_domestic_raw + salaries_international_raw:
+        emp_name = s.get("employee_name") or s.get("name")
+        if emp_name:
+            employees_with_salaries.add(emp_name)
+    employee_count = len(employees_with_salaries)
 
     # Group salaries by name, sum amounts, track latest date; sort by date desc
     def group_by_name(items, entries_tracking=None):
@@ -4531,12 +5988,19 @@ def financial():
         total_paid=total_paid,
         total_outstanding=total_outstanding,
         total_expenses=total_expenses,
+        prev_year_total_invoiced=prev_year_total_invoiced,
+        prev_year_total_paid=prev_year_total_paid,
+        prev_year_total_outstanding=prev_year_total_outstanding,
+        prev_year_total_expenses=prev_year_total_expenses,
         exp_list_year_filtered_count=exp_list_year_filtered_count,
         total_revenue=total_revenue,
         total_salaries=total_salaries,
+        employee_count=employee_count,
         net_profit=net_profit,
         total_labor_cost=total_labor_cost,
         net_profit_after_labor=net_profit_after_labor,
+        stat_card_year=stat_card_year,
+        prev_year=prev_year,
         chart_labels=json.dumps(all_months),
         chart_revenue=json.dumps(rev_data),
         chart_expenses=json.dumps(exp_data),
@@ -4751,8 +6215,9 @@ def export_balance_sheet():
                         if e_year == year and 1 <= e_month <= 12:
                             amt = _safe_float(edata.get("amount", 0))
                             monthly_expenses[e_month-1] += amt
-                            exp_name = edata.get("expense_name", "") or edata.get("description", "—")
-                            expense_breakdown[exp_name] = expense_breakdown.get(exp_name, 0) + amt
+                            # Use vendor name for breakdown, fallback to expense_name if no vendor
+                            vendor_name = edata.get("vendor", "").strip() or edata.get("expense_name", "") or edata.get("description", "—")
+                            expense_breakdown[vendor_name] = expense_breakdown.get(vendor_name, 0) + amt
                     except (ValueError, IndexError):
                         pass
 
@@ -5572,12 +7037,21 @@ def settings_logo():
         if ext not in (".png", ".jpg", ".jpeg", ".bmp"):
             flash("Unsupported file type. Use PNG or JPG.", "danger")
             return redirect(url_for("settings"))
-        save_path = ASSETS_DIR / f"company_logo{ext}"
+        # Normalize extension: save .jpeg as .jpg
+        if ext == ".jpeg":
+            ext = ".jpg"
         ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+        # Delete old logo files to avoid conflicts
+        for old_file in ASSETS_DIR.glob("company_logo.*"):
+            try:
+                old_file.unlink()
+            except Exception:
+                pass
+        save_path = ASSETS_DIR / f"company_logo{ext}"
         logo_file.save(str(save_path))
         existing = load_settings()
         co = existing.get("company", {})
-        co["logo_path"] = str(save_path)
+        co["logo_path"] = str(save_path.resolve())
         fb_update("/settings", {"company": co})
         _save_local_settings_key("company", co)
         flash("Logo uploaded successfully.", "success")
@@ -5959,6 +7433,36 @@ def user_delete(uid):
         flash(f"Error: {exc}", "danger")
     return redirect(url_for("settings") + "?tab=users")
 
+# ── Helper: get company logo for PDF generation ────────────────────────────────
+def _get_company_logo_path():
+    """Get the company logo path from settings or fallback candidates."""
+    try:
+        settings = load_settings()
+        logo_path = settings.get("company", {}).get("logo_path", "")
+        candidates = [
+            Path(logo_path) if logo_path else None,
+            ASSETS_DIR / "company_logo.jpg",
+            ASSETS_DIR / "company_logo.png",
+            ASSETS_DIR / "company_logo.jpeg",
+            DATA_DIR / "company_logo.jpg",
+            DATA_DIR / "company_logo.png",
+            DATA_DIR / "company_logo.jpeg",
+            ASSETS_DIR / "logo.jpg",
+            ASSETS_DIR / "logo.png",
+            DATA_DIR / "logo.png",
+        ]
+        for p in candidates:
+            if p:
+                try:
+                    p_obj = Path(p) if isinstance(p, str) else p
+                    if p_obj.exists() and p_obj.is_file():
+                        return str(p_obj.resolve())
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return None
+
 # ── Route: serve company logo ─────────────────────────────────────────────────
 @app.route("/logo")
 def company_logo():
@@ -6061,6 +7565,59 @@ def _safe_float(val) -> float:
     except (ValueError, TypeError):
         return 0.0
 
+def _format_date_display(date_str: str) -> str:
+    """Convert date from YYYY-MM-DD format to MM-DD-YYYY for display."""
+    if not date_str or date_str == "—":
+        return "—"
+    try:
+        # Handle both YYYY-MM-DD and other formats
+        if len(str(date_str)) >= 10:
+            date_str = str(date_str)[:10]  # Take only the date part if it's a datetime
+            parts = date_str.split("-")
+            if len(parts) == 3:
+                year, month, day = parts
+                return f"{month}-{day}-{year}"
+    except (ValueError, TypeError, IndexError):
+        pass
+    return str(date_str) if date_str else "—"
+
+def _format_date_invoice(date_str: str) -> str:
+    """Convert date from YYYY-MM-DD format to MM-DD-YY (2-digit year) for invoice display."""
+    if not date_str or date_str == "—":
+        return "—"
+    try:
+        date_str = str(date_str).strip()[:10]  # Take only the date part if it's a datetime
+        parts = date_str.split("-")
+        if len(parts) == 3:
+            if len(parts[0]) == 4:  # Year is 4 digits (YYYY-MM-DD)
+                year, month, day = parts
+                year_2digit = year[-2:]  # Take last 2 digits (2026 → 26)
+                return f"{month}-{day}-{year_2digit}"
+    except (ValueError, TypeError, IndexError):
+        pass
+    return str(date_str) if date_str else "—"
+
+def _format_date_input(date_str: str) -> str:
+    """Convert date from display format MM-DD-YYYY to input format YYYY-MM-DD."""
+    if not date_str:
+        return ""
+    try:
+        # If already in YYYY-MM-DD format, return as-is
+        if date_str and len(date_str) == 10 and date_str[4] == "-":
+            return date_str
+        # Convert from MM-DD-YYYY to YYYY-MM-DD
+        parts = date_str.replace("/", "-").split("-")
+        if len(parts) == 3:
+            # Detect format based on part sizes
+            if len(parts[0]) == 4:  # YYYY-MM-DD
+                return date_str
+            else:  # MM-DD-YYYY
+                month, day, year = parts
+                return f"{year}-{month}-{day}"
+    except (ValueError, TypeError):
+        pass
+    return date_str
+
 def _get_next_payment_stage(project: dict, all_invoices: dict = None) -> dict:
     """Get next uninvoiced payment stage.
     Returns: {stage_idx, stage_name, amount, blocked, reason}
@@ -6150,10 +7707,10 @@ def _find_project_by_number(project_number: str):
                 return pid, pdata
     return None, None
 
-def _mark_project_stage(project_number: str, stage_index: int, status: str, invoice_id: str = None, invoice_number: str = None, amount: float = None) -> None:
-    """Update one stage's status (and optionally its linked invoice id/number/amount) within a project's payment plan."""
+def _mark_project_stage(project_number: str, stage_index: int, status: str, invoice_id: str = None, invoice_number: str = None, amount: float = None, amount_paid: float = None) -> None:
+    """Update one stage's status (and optionally its linked invoice id/number/amount/amount_paid) within a project's payment plan."""
     pid, pdata = _find_project_by_number(project_number)
-    print(f"[MARK_STAGE] project_number={project_number}, stage_idx={stage_index}, status={status}, amount={amount}, pid={pid}", flush=True)
+    print(f"[MARK_STAGE] project_number={project_number}, stage_idx={stage_index}, status={status}, amount={amount}, amount_paid={amount_paid}, pid={pid}", flush=True)
     if not pid:
         print(f"[MARK_STAGE] Project not found!", flush=True)
         return
@@ -6168,6 +7725,8 @@ def _mark_project_stage(project_number: str, stage_index: int, status: str, invo
         stages[stage_index]["invoice_number"] = invoice_number
     if amount is not None:
         stages[stage_index]["amount"] = amount
+    if amount_paid is not None:
+        stages[stage_index]["amount_paid"] = str(amount_paid)
     # When reverting to "Pending Invoice", clear the invoice tracking fields
     if status == "Pending Invoice":
         print(f"[MARK_STAGE] Clearing invoice_id and invoice_number", flush=True)
@@ -6180,7 +7739,8 @@ def _mark_project_stage(project_number: str, stage_index: int, status: str, invo
 def _calculate_invoice_status(inv_data: dict) -> str:
     """Calculate invoice status based on payments vs total (including tax).
 
-    Returns: "Paid", "Partial", or "Overdue" based on actual payments, regardless of manual status
+    Returns: "Paid", "Partial", or "Overdue" based on actual payments.
+    If no payments, returns the stored status (user-selected).
     """
     meta = inv_data.get("meta", {}) or {}
 
@@ -6222,7 +7782,163 @@ def _calculate_invoice_status(inv_data: dict) -> str:
     elif is_overdue:
         return "Overdue"
     else:
-        return "Sent"
+        return meta.get("status", "Draft")
+
+def _derive_stage_index_from_line_items(project_number: str, line_items: list) -> int:
+    """Try to find stage_index from line items by looking for paid stage references."""
+    if not isinstance(line_items, list):
+        return -1
+
+    # Look for stage name patterns in line item descriptions
+    # e.g., "Testing1 — Installment 2 of 3" -> find stage named "Installment 2 of 3"
+    pid, pdata = _find_project_by_number(project_number)
+    if not pid:
+        return -1
+
+    stages = pdata.get("payment_stages", []) or []
+    if not isinstance(stages, list):
+        return -1
+
+    # Build a map of generated stage names to indices
+    # Stage names are generated the same way as in project_form.html:
+    # "Installment 1 of N", "Installment 2 of N", etc.
+    num_stages = len(stages)
+    stage_name_map = {}
+    for idx in range(num_stages):
+        if num_stages == 1:
+            stage_name = "Balance Payment"
+        else:
+            stage_name = f"Installment {idx + 1} of {num_stages}"
+        stage_name_map[stage_name.lower()] = idx
+
+    # Search line items for stage references
+    for item in line_items:
+        if not isinstance(item, dict):
+            continue
+        desc = item.get("description", "").lower()
+        # Look for stage name in description (e.g., "installment 2 of 3")
+        for stage_name, stage_idx in stage_name_map.items():
+            if stage_name in desc:
+                print(f"[DERIVE] Found stage {stage_idx} from line item: {desc}", flush=True)
+                return stage_idx
+
+    print(f"[DERIVE] Could not derive stage from line items for project {project_number}", flush=True)
+    return -1
+
+def _update_single_project_stage_payment_status(invoice_id: str, project_number: str, stage_index: int) -> None:
+    """Update payment status for a SINGLE project/stage linked to an invoice.
+
+    Unlike _update_project_stage_payment_status which updates all linked projects,
+    this only updates the specific project/stage being edited.
+    Used when editing a stage amount from project details to avoid affecting other projects.
+    """
+    # Find the specific project
+    pid, pdata = _find_project_by_number(project_number)
+    if not pid:
+        return
+
+    stages = pdata.get("payment_stages") or []
+    if not (0 <= stage_index < len(stages)):
+        return
+
+    stage = stages[stage_index]
+    stage_amount = _safe_float(stage.get("amount", 0))
+
+    if stage_amount <= 0:
+        return
+
+    # Get all invoices for payment calculation
+    all_invoices = fb_get("/invoices") or {}
+
+    # Calculate payments for THIS project/stage from all invoices
+    linked_invoice_id = None
+    linked_invoice_number = None
+    project_paid = 0
+
+    print(f"[UPDATE_SINGLE_STAGE] Looking for invoices for project {project_number} stage {stage_index}", flush=True)
+
+    if isinstance(all_invoices, dict):
+        for inv_id, inv in all_invoices.items():
+            if not isinstance(inv, dict):
+                continue
+            inv_meta = inv.get("meta", {}) or {}
+
+            # Check if invoice covers this project and stage
+            is_for_this_project = False
+
+            # Check if this is the current invoice being updated
+            if inv_id == invoice_id:
+                if inv_meta.get("project_number") == project_number:
+                    is_for_this_project = True
+                else:
+                    # For multi-project invoices, check linked_projects
+                    linked_projs = inv_meta.get("linked_projects", [])
+                    if isinstance(linked_projs, list):
+                        for lp in linked_projs:
+                            if isinstance(lp, dict):
+                                if lp.get("project_number") == project_number and lp.get("payment_stage_index") == stage_index:
+                                    is_for_this_project = True
+                                    break
+            else:
+                # For other invoices, check if they're linked to this project/stage
+                if (inv_meta.get("project_number") == project_number and
+                    inv_meta.get("payment_stage_index") == stage_index):
+                    is_for_this_project = True
+                else:
+                    linked_projs = inv_meta.get("linked_projects", [])
+                    if isinstance(linked_projs, list):
+                        for lp in linked_projs:
+                            if isinstance(lp, dict):
+                                if lp.get("project_number") == project_number and lp.get("payment_stage_index") == stage_index:
+                                    is_for_this_project = True
+                                    break
+
+            if is_for_this_project:
+                print(f"[UPDATE_SINGLE_STAGE] Found matching invoice {inv_id} for project {project_number} stage {stage_index}", flush=True)
+                # Sum payments for this project
+                inv_payment_log = inv.get("payment_log", [])
+                if isinstance(inv_payment_log, list):
+                    inv_payments = sum(
+                        _safe_float(p.get("amount", 0))
+                        for p in inv_payment_log
+                        if p.get("project_number") == project_number or not p.get("project_number")
+                    )
+                    project_paid += inv_payments
+                    # Track the invoice if it has payments or is the current one
+                    if inv_payments > 0 or inv_id == invoice_id:
+                        linked_invoice_id = inv_id
+                        linked_invoice_number = inv_meta.get("invoice_number", "")
+                        print(f"[UPDATE_SINGLE_STAGE] Set invoice_number={linked_invoice_number} for invoice {inv_id}", flush=True)
+
+    # Determine status based on actual payments
+    if project_paid >= (stage_amount - 0.01):
+        new_status = "Paid"
+    elif project_paid > 0:
+        new_status = "Partially Paid"
+    else:
+        new_status = "Invoiced"
+
+    # Update ONLY this stage
+    stage["status"] = new_status
+    stage["amount_paid"] = str(project_paid) if project_paid > 0 else "0"
+
+    print(f"[UPDATE_SINGLE_STAGE] Before update: stage has invoice_number='{stage.get('invoice_number', 'MISSING')}'", flush=True)
+
+    if linked_invoice_id:
+        stage["invoice_id"] = linked_invoice_id
+    if linked_invoice_number:
+        stage["invoice_number"] = linked_invoice_number
+        print(f"[UPDATE_SINGLE_STAGE] Setting invoice_number={linked_invoice_number}", flush=True)
+    else:
+        print(f"[UPDATE_SINGLE_STAGE] No invoice_number found! linked_invoice_id={linked_invoice_id}, linked_invoice_number={linked_invoice_number}", flush=True)
+
+    # Save back to Firebase
+    print(f"[UPDATE_SINGLE_STAGE] After update: stage has invoice_number='{stage.get('invoice_number', 'MISSING')}'", flush=True)
+    fb_update(f"/projects/{pid}", {
+        "payment_stages": stages,
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    })
+    print(f"[UPDATE_SINGLE_STAGE] Saved stage with invoice_number='{stage.get('invoice_number', 'MISSING')}'", flush=True)
 
 def _update_project_stage_payment_status(invoice_id: str) -> None:
     """Update project stage statuses based on invoice payments.
@@ -6253,8 +7969,17 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
     if not normalized_projects:
         main_project = meta.get("project_number", "")
         stage_index = meta.get("payment_stage_index", -1)
+
+        # If no stage_index in meta, try to derive from line items
+        if stage_index < 0:
+            line_items = inv_data.get("line_items", [])
+            stage_index = _derive_stage_index_from_line_items(main_project, line_items)
+
         if main_project and stage_index >= 0:
             normalized_projects = [{"project_number": main_project, "payment_stage_index": stage_index}]
+        elif main_project and stage_index < 0:
+            # Invoice doesn't have payment_stage_index - we'll search for it by invoice_id later
+            normalized_projects = [{"project_number": main_project, "payment_stage_index": -1, "invoice_id": invoice_id}]
         else:
             return
 
@@ -6268,8 +7993,9 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
 
         project_number = proj_info.get("project_number", "")
         stage_index = proj_info.get("payment_stage_index", -1)
+        inv_id_for_lookup = proj_info.get("invoice_id")
 
-        if not project_number or stage_index < 0:
+        if not project_number:
             continue
 
         # Get project and stage info
@@ -6278,6 +8004,19 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
             continue
 
         stages = pdata.get("payment_stages") or []
+
+        # If stage_index not available, search for stage by invoice_id
+        if stage_index < 0:
+            if inv_id_for_lookup:
+                # Find the stage that has this invoice_id
+                for idx, s in enumerate(stages):
+                    if isinstance(s, dict) and s.get("invoice_id") == inv_id_for_lookup:
+                        stage_index = idx
+                        break
+            if stage_index < 0:
+                # Still not found
+                continue
+
         if not (0 <= stage_index < len(stages)):
             continue
 
@@ -6291,12 +8030,46 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
         # For single-project invoices, sum payments from the invoice
         is_multi_project = len(linked_projects) > 1
 
+        project_paid = 0
+        linked_invoice_id = None
+        linked_invoice_number = None
+
         if is_multi_project:
-            # Use the amount already allocated by sequential allocation
-            project_paid = _safe_float(pdata.get("amount_paid", 0))
+            # For multi-project invoices, use the stage's amount_paid (not the project total)
+            project_paid = _safe_float(stage.get("amount_paid", 0))
+
+            # Also find and set the invoice_number for this stage
+            if isinstance(all_invoices, dict):
+                for inv_id, inv in all_invoices.items():
+                    if not isinstance(inv, dict):
+                        continue
+                    inv_meta = inv.get("meta", {}) or {}
+
+                    # Check if this invoice is linked to this project and stage
+                    linked_projs = inv_meta.get("linked_projects", [])
+                    is_for_this_stage = False
+
+                    if isinstance(linked_projs, list):
+                        for lp in linked_projs:
+                            if isinstance(lp, dict):
+                                if lp.get("project_number") == project_number and lp.get("payment_stage_index") == stage_index:
+                                    is_for_this_stage = True
+                                    break
+                            elif isinstance(lp, str) and lp == project_number:
+                                if inv_meta.get("payment_stage_index") == stage_index:
+                                    is_for_this_stage = True
+                                    break
+
+                    if is_for_this_stage:
+                        if not linked_invoice_number:
+                            linked_invoice_id = inv_id
+                            linked_invoice_number = inv_meta.get("invoice_number", "")
+                            print(f"[MULTI_INV] Found invoice {linked_invoice_number} for project {project_number} stage {stage_index}", flush=True)
+                            # For current invoice, prioritize it
+                            if inv_id == invoice_id:
+                                break
         else:
             # Sum payments from ALL invoices linked to this stage for this project
-            project_paid = 0
             if isinstance(all_invoices, dict):
                 for inv_id, inv in all_invoices.items():
                     if not isinstance(inv, dict):
@@ -6307,34 +8080,60 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
                     # Works for both single-project (project_number) and multi-project (linked_projects)
                     is_for_this_project = False
 
-                    # Single-project invoices use project_number
-                    if (inv_meta.get("project_number") == project_number and
-                        inv_meta.get("payment_stage_index") == stage_index):
-                        is_for_this_project = True
+                    # First, check if this is the current invoice being updated (most direct match)
+                    if inv_id == invoice_id:
+                        # For the current invoice, if it's linked to this project, include it
+                        if inv_meta.get("project_number") == project_number:
+                            # Always preserve the current invoice's number, even if no payments found
+                            if not linked_invoice_number:
+                                linked_invoice_id = inv_id
+                                # Invoice number might be in meta or at top level
+                                linked_invoice_number = inv_meta.get("invoice_number") or inv.get("invoice_number", "")
+                                print(f"[CURRENT_INV] Captured invoice_number for {inv_id}: {linked_invoice_number} (from meta: {inv_meta.get('invoice_number')}, from top: {inv.get('invoice_number')})", flush=True)
+                            is_for_this_project = True
                     else:
-                        # Multi-project invoices use linked_projects array
-                        # Handles both dict format [{"project_number": "...", "payment_stage_index": ...}]
-                        # and legacy string format ['MABS-202606-003']
-                        linked_projs = inv_meta.get("linked_projects", [])
-                        if isinstance(linked_projs, list):
-                            for lp in linked_projs:
-                                if isinstance(lp, dict):
-                                    # Dict format: full metadata
-                                    if lp.get("project_number") == project_number and lp.get("payment_stage_index") == stage_index:
-                                        is_for_this_project = True
-                                        break
-                                elif isinstance(lp, str) and lp == project_number:
-                                    # Legacy string format: only has project number
-                                    # For this case, use the invoice's payment_stage_index
-                                    if inv_meta.get("payment_stage_index") == stage_index:
-                                        is_for_this_project = True
-                                        break
+                        # For other invoices, use the standard matching logic
+                        # Single-project invoices use project_number
+                        if (inv_meta.get("project_number") == project_number and
+                            inv_meta.get("payment_stage_index") == stage_index):
+                            is_for_this_project = True
+                        else:
+                            # Multi-project invoices use linked_projects array
+                            # Handles both dict format [{"project_number": "...", "payment_stage_index": ...}]
+                            # and legacy string format ['MABS-202606-003']
+                            linked_projs = inv_meta.get("linked_projects", [])
+                            if isinstance(linked_projs, list):
+                                for lp in linked_projs:
+                                    if isinstance(lp, dict):
+                                        # Dict format: full metadata
+                                        if lp.get("project_number") == project_number and lp.get("payment_stage_index") == stage_index:
+                                            is_for_this_project = True
+                                            break
+                                    elif isinstance(lp, str) and lp == project_number:
+                                        # Legacy string format: only has project number
+                                        # For this case, use the invoice's payment_stage_index
+                                        if inv_meta.get("payment_stage_index") == stage_index:
+                                            is_for_this_project = True
+                                            break
 
                     if is_for_this_project:
-                        # Sum payments for this invoice
+                        # Sum payments for this invoice (filter by project_number if available)
                         inv_payment_log = inv.get("payment_log", [])
                         if isinstance(inv_payment_log, list):
-                            project_paid += sum(_safe_float(p.get("amount", 0)) for p in inv_payment_log)
+                            # Sum only payments for this project
+                            inv_payments = sum(
+                                _safe_float(p.get("amount", 0))
+                                for p in inv_payment_log
+                                if p.get("project_number") == project_number or not p.get("project_number")
+                            )
+                            project_paid += inv_payments
+                            # Track invoice_id and invoice_number if this invoice has actual payments
+                            # Prioritize the current invoice being updated (inv_id == invoice_id)
+                            if inv_payments > 0:
+                                if inv_id == invoice_id or not linked_invoice_id:
+                                    linked_invoice_id = inv_id
+                                    linked_invoice_number = inv_meta.get("invoice_number", "")
+                            print(f"[PAYMENT_CALC] Invoice {inv_id}: project={project_number}, payments={inv_payments}, total_paid={project_paid}, current={inv_id == invoice_id}", flush=True)
 
         # Determine stage status based on actual payments for this project
         if project_paid >= (stage_amount - 0.01):
@@ -6346,12 +8145,31 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
 
         log.info(f"[STATUS] Project {project_number} stage {stage_index}: amount={stage_amount}, paid={project_paid}, threshold={stage_amount - 0.01}, status={new_status}")
 
-        # Update stage status with actual paid amount for this project
+        # Update stage status with actual paid amount for this project, and track invoice_id and invoice_number
         stage["status"] = new_status
-        stage["amount_paid"] = str(project_paid)
+        stage["amount_paid"] = str(project_paid) if project_paid > 0 else "0"
+
+        # If we have an invoice_id but amount_paid is still 0, try to use the invoice's recorded amount_paid
+        if project_paid == 0 and linked_invoice_id:
+            current_invoice = fb_get(f"/invoices/{linked_invoice_id}") or {}
+            inv_amount_paid = _safe_float(current_invoice.get("meta", {}).get("amount_paid", 0))
+            if inv_amount_paid > 0:
+                # Use the invoice's amount_paid if we calculated 0
+                stage["amount_paid"] = str(inv_amount_paid)
+                project_paid = inv_amount_paid
+                log.info(f"[FALLBACK] Using invoice amount_paid: {inv_amount_paid}")
+
+        if linked_invoice_id:
+            stage["invoice_id"] = linked_invoice_id
+            print(f"[SETTING_ID] Set invoice_id to {linked_invoice_id}", flush=True)
+        if linked_invoice_number:
+            stage["invoice_number"] = linked_invoice_number
+            print(f"[SETTING_NUM] Set invoice_number to {linked_invoice_number}", flush=True)
+        else:
+            print("[SKIPPING_NUM] Skipped setting invoice_number (linked_invoice_number is empty/None)", flush=True)
 
         log.info(f"[SAVE_STATUS] Saving stage {stage_index} status={new_status} to project {pid}")
-        log.info(f"[SAVE_STAGE] Full stage data: {stage}")
+        log.info(f"[SAVE_STAGE] Full stage data: {stage}, amount_paid={stage.get('amount_paid')}, invoice_number={stage.get('invoice_number')}")
 
         fb_update(f"/projects/{pid}", {
             "payment_stages": stages,
@@ -7013,7 +8831,7 @@ def _parse_service_types(form) -> list:
     """Return service_types list, substituting 'Other' with 'Other: {specify}' when filled."""
     types = form.getlist("service_types[]")
     if not types:
-        return None
+        return []  # Allow projects without services (return empty list, not None)
     specify = form.get("other_specify", "").strip()
     if "Other" in types and specify:
         idx = types.index("Other")
@@ -7103,7 +8921,12 @@ def _compute_payment_stages(contract_value: float, down_pct: float, installments
 
     installments = max(1, min(int(installments or 1), 6))
     if installments <= 1:
-        label = "Final Payment" if down_pct > 0 else "Full Payment"
+        if down_pct > 0:
+            # Has down payment + 1 final payment
+            label = "Final Payment"
+        else:
+            # Only 1 payment, no down payment - display as "Full Payment"
+            label = "Full Payment"
         stages.append({"name": label, "amount": remaining, "status": "Pending Invoice", "invoice_id": ""})
     else:
         per_installment = round(remaining / installments, 2)
@@ -7116,6 +8939,18 @@ def _compute_payment_stages(contract_value: float, down_pct: float, installments
     return stages
 
 def _parse_project_form(form) -> dict:
+    # Extract service costs from form (service_cost_<service_name>)
+    service_costs = {}
+    service_types = _parse_service_types(form)
+    for svc in service_types:
+        # Remove "Other: " prefix if present to get the key
+        svc_key = svc.replace("Other: ", "Other") if svc.startswith("Other:") else svc
+        cost_val = form.get(f"service_cost_{svc_key}", "0")
+        try:
+            service_costs[svc] = float(cost_val) if cost_val else 0.0
+        except (ValueError, TypeError):
+            service_costs[svc] = 0.0
+
     return {
         # ── identifiers (match desktop field names exactly) ──────────────────
         "project_number":  form.get("project_number", ""),
@@ -7130,7 +8965,8 @@ def _parse_project_form(form) -> dict:
         "date_received":   form.get("date_received", ""),
         "plant":           form.get("plant", ""),          # 2-letter state code
         "sales":           form.get("sales", ""),
-        "service_types":   _parse_service_types(form),
+        "service_types":   service_types,
+        "service_costs":   service_costs,
         "scope_of_work":   form.get("scope_of_work", ""),
         "expedite":        form.get("expedite", "No"),
         "rush_rate":       form.get("rush_rate", "0"),
@@ -7193,12 +9029,15 @@ def _parse_invoice_form(form) -> dict:
             "tax_rate":       form.get("tax_rate", "0"),
             "tax_amount":     form.get("tax_amount", "0"),
             "total":          form.get("total", "0"),
-            "amount_paid":    form.get("amount_paid", "0"),
             "notes":          form.get("notes", ""),
             "terms":          form.get("terms", ""),
             "payment_method": form.get("payment_method", ""),
         },
         "line_items": line_items,
+        "_payment_amount": form.get("payment_amount", ""),
+        "_payment_date": form.get("payment_date", ""),
+        "_payment_method": form.get("payment_method", ""),
+        "_payment_reference": form.get("payment_reference", ""),
     }
 
 def _invoice_project_share(invoice_data: dict, project_number: str) -> float:
@@ -7514,12 +9353,14 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
     styles.add(ParagraphStyle(name='RightBold10', alignment=2, fontName='Helvetica-Bold', fontSize=10, leading=12))
     styles.add(ParagraphStyle(name='Left9', alignment=0, fontName='Helvetica', fontSize=9, leading=11))
 
-    logo_path = Path(__file__).parent / "static" / "logo.png"
+    logo_path = _get_company_logo_path()
     logo_img = None
-    if logo_path.exists():
+    if logo_path:
         try:
-            logo_img = Image(str(logo_path), width=0.95*inch, height=0.95*inch)
-        except (IOError, OSError):
+            logo_file = Path(logo_path)
+            if logo_file.exists():
+                logo_img = Image(str(logo_file.resolve()), width=0.95*inch, height=0.95*inch)
+        except Exception:
             pass
 
     company_name = co.get('name', 'MABS Engineering LLC')
@@ -7918,16 +9759,22 @@ def _generate_quote_pdf_bytes(quote_id: str):
     section_title = ParagraphStyle("st", parent=styles["Normal"], fontSize=11, fontName="Helvetica-Bold", textColor=dark_gray)
     checkbox_style = ParagraphStyle("cs", parent=styles["Normal"], fontSize=8, fontName="Helvetica", textColor=dark_gray)
 
-    logo_path = Path(__file__).parent / "static" / "logo.png"
-    if logo_path.exists():
+    logo_path = _get_company_logo_path()
+    if logo_path:
         try:
-            logo = Image(str(logo_path), width=1.0*inch, height=0.85*inch)
-            hdr_data = [[logo, Paragraph(f"<b>{co.get('name','MABS Engineering LLC')}</b>", ParagraphStyle("cn", parent=styles["Normal"], fontSize=22, fontName="Helvetica-Bold", textColor=dark_gray, alignment=1))]]
-            hdr = Table(hdr_data, colWidths=[1.0*inch, doc.width - 1.0*inch])
-            hdr.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (1,0), (1,0), "CENTER"), ("LINEBELOW", (0,0), (-1,-1), 2, teal_line), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (1,0), (1,0), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0)]))
-            elems.append(hdr)
-        except (IOError, OSError):
+            logo_file = Path(logo_path)
+            if logo_file.exists():
+                logo = Image(str(logo_file.resolve()), width=1.0*inch, height=0.85*inch)
+                hdr_data = [[logo, Paragraph(f"<b>{co.get('name','MABS Engineering LLC')}</b>", ParagraphStyle("cn", parent=styles["Normal"], fontSize=22, fontName="Helvetica-Bold", textColor=dark_gray, alignment=1))]]
+                hdr = Table(hdr_data, colWidths=[1.0*inch, doc.width - 1.0*inch])
+                hdr.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (1,0), (1,0), "CENTER"), ("LINEBELOW", (0,0), (-1,-1), 2, teal_line), ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (1,0), (1,0), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0)]))
+                elems.append(hdr)
+            else:
+                elems.append(Paragraph(co.get('name','MABS Engineering LLC'), ParagraphStyle("cn", parent=styles["Normal"], fontSize=16, fontName="Helvetica-Bold", textColor=dark_gray)))
+        except Exception:
             elems.append(Paragraph(co.get('name','MABS Engineering LLC'), ParagraphStyle("cn", parent=styles["Normal"], fontSize=16, fontName="Helvetica-Bold", textColor=dark_gray)))
+    else:
+        elems.append(Paragraph(co.get('name','MABS Engineering LLC'), ParagraphStyle("cn", parent=styles["Normal"], fontSize=16, fontName="Helvetica-Bold", textColor=dark_gray)))
 
     elems.append(Spacer(1, 0.08*inch))
 
@@ -8245,7 +10092,6 @@ def _generate_quote_pdf_bytes(quote_id: str):
         fontSize=8,
         leading=10,
         textColor=dark_gray,
-        leftIndent=20,
     )
 
     elems.append(Spacer(1, 0.5*mm))
@@ -8968,6 +10814,27 @@ def payment_delete(invoice_id, idx):
 
     # Update project stage payment statuses based on payments (after allocation)
     _update_project_stage_payment_status(invoice_id)
+
+    # Update project status based on remaining payments
+    linked_projects = _invoice_linked_projects(fresh_inv)
+    for proj_num in linked_projects:
+        proj_id, pdata = _find_project_by_number(proj_num)
+        if proj_id and pdata:
+            amount_paid = _safe_float(pdata.get("amount_paid", 0))
+            current_status = pdata.get("status", "Not Started")
+            # If still has payments, change to In Progress
+            if amount_paid > 0 and current_status == "Completed":
+                fb_update(f"/projects/{proj_id}", {
+                    "status": "In Progress",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
+            # If no payments left, change to Not Started
+            elif amount_paid == 0 and current_status != "Not Started":
+                fb_update(f"/projects/{proj_id}", {
+                    "status": "Not Started",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
+
     return jsonify({"success": True}), 200
 
 @app.route("/invoicing/<invoice_id>/tax/payment/delete/<int:idx>", methods=["POST"])
@@ -8994,6 +10861,26 @@ def tax_payment_delete(invoice_id, idx):
     # Update project stage payment statuses based on payments
     _update_project_stage_payment_status(invoice_id)
 
+    # Update project status based on remaining payments
+    linked_projects = _invoice_linked_projects(fresh_inv)
+    for proj_num in linked_projects:
+        proj_id, pdata = _find_project_by_number(proj_num)
+        if proj_id and pdata:
+            amount_paid = _safe_float(pdata.get("amount_paid", 0))
+            current_status = pdata.get("status", "Not Started")
+            # If still has payments, change to In Progress
+            if amount_paid > 0 and current_status == "Completed":
+                fb_update(f"/projects/{proj_id}", {
+                    "status": "In Progress",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
+            # If no payments left, change to Not Started
+            elif amount_paid == 0 and current_status != "Not Started":
+                fb_update(f"/projects/{proj_id}", {
+                    "status": "Not Started",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
+
     return jsonify({"success": True}), 200
 
 @app.route("/invoicing/<invoice_id>/payment/<int:idx>/edit", methods=["POST"])
@@ -9001,43 +10888,191 @@ def tax_payment_delete(invoice_id, idx):
 def payment_edit(invoice_id, idx):
     """Update a payment entry in the log."""
     inv_data = fb_get(f"/invoices/{invoice_id}") or {}
+    meta = inv_data.get("meta", {})
     log = inv_data.get("payment_log", [])
+
     if not isinstance(log, list) or idx >= len(log):
         return jsonify({"error": "Payment not found"}), 404
 
-    amount = _safe_float(request.form.get("amount", 0))
-    if amount <= 0:
+    # New amount being set
+    new_amount = _safe_float(request.form.get("amount", 0))
+    if new_amount <= 0:
         return jsonify({"error": "Invalid amount"}), 400
 
-    log[idx].update({
-        "amount": str(amount),
-        "date": request.form.get("date", ""),
-        "method": request.form.get("method", ""),
-        "reference": request.form.get("reference", ""),
-        "notes": request.form.get("notes", ""),
-    })
+    # Old amount at this index
+    old_amount = _safe_float(log[idx].get("amount", 0))
+    amount_changed = abs(new_amount - old_amount) > 0.01
 
-    invoice_paid = sum(_safe_float(p.get("amount", 0)) for p in log)
+    # If only updating fields (date, method, etc.) without amount change, do simple update
+    if not amount_changed:
+        # Just update the single payment entry's fields
+        log[idx].update({
+            "amount": str(new_amount),
+            "date": request.form.get("date", log[idx].get("date", "")),
+            "method": request.form.get("method", ""),
+            "reference": request.form.get("reference", ""),
+            "notes": request.form.get("notes", ""),
+        })
+
+        invoice_paid = sum(_safe_float(p.get("amount", 0)) for p in log)
+        fresh_inv = dict(inv_data)
+        fresh_inv["payment_log"] = log
+        fresh_inv["meta"] = meta
+        new_status = _calculate_invoice_status(fresh_inv)
+
+        meta["amount_paid"] = str(invoice_paid)
+        meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        fb_update(f"/invoices/{invoice_id}", {
+            "payment_log": log,
+            "meta/amount_paid": str(invoice_paid),
+            "meta/status": new_status,
+            "meta/updated_at": meta.get("updated_at"),
+        })
+
+        # Update project stages
+        _update_project_stage_payment_status(invoice_id)
+        return jsonify({"success": True}), 200
+
+    # Amount changed - need to rebuild payment_log with sequential distribution
+    # New total paid = (old total - old_amount) + new_amount
+    old_total = sum(_safe_float(p.get("amount", 0)) for p in log)
+    new_total_paid = old_total - old_amount + new_amount
+
+    # Update meta.amount_paid
+    meta["amount_paid"] = str(new_total_paid)
+    meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    # Get invoice details for redistribution
+    tax_amount = _safe_float(meta.get("tax_amount", 0))
+    line_items = inv_data.get("line_items", []) or []
+    main_project = meta.get("project_number", "")
+
+    # Rebuild payment_log sequentially (same logic as invoice_update_amount)
+    new_payment_log = []
+    new_tax_log = []
+    remaining_to_distribute = new_total_paid
+
+    # Extract ALL projects from both line_items AND linked_projects metadata
+    projects_from_items = set()
+    for item in line_items:
+        if isinstance(item, dict):
+            proj_num = item.get("project_number", "")
+            if proj_num:
+                projects_from_items.add(proj_num)
+
+    projects_from_meta = set()
+    for proj_info in (meta.get("linked_projects") or []):
+        if isinstance(proj_info, dict):
+            proj_num = proj_info.get("project_number", "")
+            if proj_num:
+                projects_from_meta.add(proj_num)
+
+    # Merge both sets
+    all_projects = projects_from_items | projects_from_meta
+
+    # Build linked_projects from merged list
+    linked_projects = []
+    if all_projects:
+        linked_projects = [
+            {"project_number": proj_num, "payment_stage_index": meta.get("payment_stage_index", 0)}
+            for proj_num in sorted(all_projects)
+        ]
+    elif not linked_projects and main_project:
+        linked_projects = [{"project_number": main_project, "payment_stage_index": meta.get("payment_stage_index", 0)}]
+
+    # Get the project of the payment being edited (to apply form fields only to that project)
+    old_project = log[idx].get("project_number", "") if idx < len(log) else ""
+
+    # Step 1: Distribute to projects sequentially (same as invoice_update_amount)
+    if linked_projects:
+        def get_sort_key(x):
+            proj_num = x.get("project_number", "") if isinstance(x, dict) else x
+            if proj_num and proj_num[-3:].isdigit():
+                return int(proj_num[-3:])
+            return proj_num
+        sorted_projects = sorted(linked_projects, key=get_sort_key)
+
+        for proj_info in sorted_projects:
+            if remaining_to_distribute <= 0:
+                break
+
+            proj_num = proj_info.get("project_number", "") if isinstance(proj_info, dict) else proj_info
+            if not proj_num:
+                continue
+
+            # Get this project's line item amount
+            proj_amount = sum(_safe_float(item.get("amount", 0)) for item in line_items
+                            if isinstance(item, dict) and item.get("project_number", "").strip() == proj_num)
+
+            if proj_amount > 0:
+                distribute_to_proj = min(proj_amount, remaining_to_distribute)
+
+                # Get stage info
+                _stage_name = meta.get("payment_stage", "")
+                _stage_idx = meta.get("payment_stage_index")
+                if _stage_idx is not None:
+                    try:
+                        _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
+                    except (ValueError, TypeError):
+                        _stage_idx = None
+
+                if not _stage_name and _stage_idx is not None:
+                    _stage_name = f"Stage {_stage_idx + 1}"
+
+                # Only apply form fields (date, method, etc.) to the project being edited
+                # Other projects get default values
+                is_edited_project = (proj_num == old_project)
+
+                new_payment_log.append({
+                    "amount": str(distribute_to_proj),
+                    "date": request.form.get("date", datetime.now().strftime("%Y-%m-%d")) if is_edited_project else datetime.now().strftime("%Y-%m-%d"),
+                    "method": request.form.get("method", "") if is_edited_project else "",
+                    "reference": request.form.get("reference", "") if is_edited_project else "",
+                    "notes": request.form.get("notes", "") if is_edited_project else "",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "project_number": proj_num,
+                    "invoice_number": meta.get("invoice_number", ""),
+                    "stage_name": _stage_name,
+                    "stage_index": _stage_idx or "",
+                })
+                remaining_to_distribute -= distribute_to_proj
+
+    # Step 2: Preserve existing tax payments and only add new ones if remainder
+    old_tax_log = inv_data.get("tax_payments", []) or []
+    if isinstance(old_tax_log, list):
+        new_tax_log = list(old_tax_log)  # Preserve existing tax payments
+
+    # Only add new tax allocation if there's remainder to distribute
+    if remaining_to_distribute > 0 and tax_amount > 0:
+        tax_needs = min(tax_amount, remaining_to_distribute)
+        new_tax_log.append({
+            "amount": str(tax_needs),
+            "date": request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+            "method": request.form.get("method", ""),
+            "reference": request.form.get("reference", ""),
+            "notes": request.form.get("notes", ""),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        remaining_to_distribute -= tax_needs
+
+    # Calculate new status
     fresh_inv = dict(inv_data)
-    fresh_inv["payment_log"] = log
+    fresh_inv["payment_log"] = new_payment_log
+    fresh_inv["meta"] = meta
     new_status = _calculate_invoice_status(fresh_inv)
 
+    # Update Firebase with rebuilt payment logs
     fb_update(f"/invoices/{invoice_id}", {
-        "payment_log":          log,
-        "meta/amount_paid":     str(invoice_paid),
-        "meta/status":          new_status,
-        "meta/updated_at":      datetime.now(timezone.utc).isoformat(),
+        "payment_log": new_payment_log,
+        "tax_payments": new_tax_log if new_tax_log else [],
+        "meta/amount_paid": str(new_total_paid),
+        "meta/status": new_status,
+        "meta/updated_at": meta.get("updated_at"),
     })
 
-    # Use sequential allocation for multi-project invoices, sync for single-project
-    linked_projects = _invoice_linked_projects(inv_data)
-    if len(linked_projects) > 1:
-        _allocate_invoice_payment_sequential(invoice_id)
-    else:
-        for proj_num in linked_projects:
-            _sync_project_payment(proj_num)
-
-    # Update project stage payment statuses based on payments
+    # Update project stage payment statuses
+    _allocate_invoice_payment_sequential(invoice_id)
     _update_project_stage_payment_status(invoice_id)
 
     return jsonify({"success": True}), 200
@@ -9166,22 +11201,90 @@ def _send_overdue_reminder_email(invoice_id: str, invoice: dict):
 @app.route("/api/projects/<project_id>/payment-plan", methods=["POST"])
 @role_required("projects")
 def update_project_payment_plan(project_id):
-    """Update payment plan amounts and redistribute to stages"""
+    """Update payment plan amounts with smart auto-adjustment and permission controls"""
     try:
         data = request.get_json()
         amounts = data.get("amounts", [])
         invoice_id = data.get("invoiceId", "")
         original_amount = _safe_float(data.get("originalAmount", 0))
         new_amount = _safe_float(data.get("newAmount", 0))
+        permission_granted = data.get("permissionGranted", False)
+        skip_auto_adjust = data.get("skipAutoAdjust", False)
 
         project = fb_get(f"/projects/{project_id}") or {}
         stages = project.get("payment_stages", [])
-        contract_value = _safe_float(project.get("contract_value", 0))
+        old_contract_value = _safe_float(project.get("contract_value", 0))
 
-        # Validate total equals contract value
+        # Find which stage was edited (by comparing sent amounts with current)
+        edited_idx = -1
+        old_amount = 0
+        new_amount = 0
+        for idx, amount_data in enumerate(amounts):
+            if idx < len(stages):
+                current_stage_amount = _safe_float(stages[idx].get("amount", 0))
+                new_amt = _safe_float(amount_data.get("amount", 0))
+                if abs(current_stage_amount - new_amt) > 0.01:
+                    edited_idx = idx
+                    old_amount = current_stage_amount
+                    new_amount = new_amt
+                    break
+
+        if edited_idx < 0:
+            return {"success": False, "error": "No stage changed detected"}, 400
+
+        # Count invoiced and non-invoiced stages
+        invoiced_count = sum(1 for s in stages if s.get("status") in ["Invoiced", "Paid", "Partially Paid", "Overdue"])
+        non_invoiced_count = sum(1 for s in stages if s.get("status") == "Pending Invoice")
+
+        # Check if edited stage is invoiced
+        edited_stage_invoiced = stages[edited_idx].get("status") in ["Invoiced", "Paid", "Partially Paid", "Overdue"]
+
+        # Find non-invoiced stages (excluding the one being edited)
+        uninvoiced_indices = [i for i in range(len(stages))
+                             if i != edited_idx and stages[i].get("status") == "Pending Invoice"]
+
+        # Determine if permission is needed
+        # Never ask if user is manually editing all amounts (they balance themselves)
+        needs_permission = False
+        if not skip_auto_adjust:
+            # Case 1: All stages are invoiced and user is editing one
+            if non_invoiced_count == 0 and edited_stage_invoiced:
+                needs_permission = True
+            # Case 2: Editing a non-invoiced stage but all other stages are invoiced (no other stages to auto-adjust to)
+            elif not edited_stage_invoiced and len(uninvoiced_indices) == 0:
+                needs_permission = True
+
+        # If permission needed and not granted, return request for permission
+        if needs_permission and not permission_granted:
+            new_contract_value = old_contract_value + (new_amount - old_amount)
+            return {
+                "success": False,
+                "needs_permission": True,
+                "message": f"This will change the contract value from ${old_contract_value:,.2f} to ${new_contract_value:,.2f}. Continue?",
+                "new_contract_value": new_contract_value
+            }, 400
+
+        # Auto-adjust logic: ONLY adjust non-invoiced stages (never adjust invoiced)
+        # Skip auto-adjust if user manually edited all amounts
+        if not skip_auto_adjust:
+            difference = new_amount - old_amount
+
+            # If there are non-invoiced stages, distribute the difference to them
+            if uninvoiced_indices:
+                per_stage = difference / len(uninvoiced_indices)
+                for idx in uninvoiced_indices:
+                    current_amt = _safe_float(amounts[idx].get("amount", 0)) if idx < len(amounts) else _safe_float(stages[idx].get("amount", 0))
+                    amounts[idx] = {"index": idx, "amount": max(0, current_amt - per_stage)}
+
+        # Calculate total from (possibly adjusted) amounts
         total = sum(_safe_float(a.get("amount", 0)) for a in amounts)
-        if abs(total - contract_value) > 0.01:
-            return {"success": False, "error": f"Total ({total:.2f}) must equal contract value ({contract_value:.2f})"}
+
+        # Update contract value only if:
+        # - NOT manually editing all amounts (skipAutoAdjust = user keeps CV stable)
+        # - AND permission was granted OR no permission was needed
+        if not skip_auto_adjust and abs(total - old_contract_value) > 0.01:
+            if needs_permission or non_invoiced_count > 0 or invoiced_count > 0:
+                project["contract_value"] = str(total)
 
         # Update all stages with new amounts
         for amount_data in amounts:
@@ -9254,6 +11357,46 @@ def update_project_stage(project_id, stage_idx):
 
             meta["total"] = str(new_invoice_total)
             meta["subtotal"] = str(new_invoice_total - _safe_float(meta.get("tax_amount", 0)))
+
+            # For multi-project invoices, also update line items and linked_projects to stay in sync
+            line_items = invoice.get("line_items", [])
+            if line_items and amount_diff != 0:
+                # Find and update the line item for this project's stage
+                project_number = project.get("project_number", "")
+
+                # For each line item, check if it's for this stage/project
+                for item in line_items:
+                    if isinstance(item, dict):
+                        # Check if this item is for the current project (or default project)
+                        item_proj = item.get("project_number", "").strip() or meta.get("project_number", "")
+                        stage_name = stages[stage_idx].get("name", "")
+                        item_desc = item.get("description", "")
+
+                        # Match by project number and stage name in description
+                        if item_proj == project_number and stage_name and stage_name in item_desc:
+                            item["amount"] = str(new_amount)
+                            item["unit_price"] = str(new_amount)
+                            break
+
+                # Recalculate linked_projects from line items
+                # For multi-project invoices on the same payment plan, all projects use the same stage_idx
+                projects_in_items = {}
+                for item in line_items:
+                    if isinstance(item, dict):
+                        proj_num = item.get("project_number", "")
+                        if proj_num:
+                            # Use the stage_idx being edited - all projects in same invoice use same stage
+                            projects_in_items[proj_num] = stage_idx
+
+                # Update linked_projects if multiple projects
+                if len(projects_in_items) > 1:
+                    meta["linked_projects"] = [
+                        {"project_number": proj_num, "payment_stage_index": projects_in_items[proj_num]}
+                        for proj_num in sorted(projects_in_items.keys())
+                    ]
+
+                invoice["line_items"] = line_items
+
             invoice["meta"] = meta
             fb_update(f"/invoices/{invoice_id}", invoice)
 
@@ -9270,6 +11413,14 @@ def update_project_stage(project_id, stage_idx):
         project["payment_stages"] = stages
         project["updated_at"] = datetime.now(timezone.utc).isoformat()
         fb_update(f"/projects/{project_id}", project)
+
+        # If this stage has an invoice, resync ONLY this project's stage (not all linked projects)
+        invoice_id = stages[stage_idx].get("invoice_id", "")
+        if invoice_id:
+            # Only update this specific project/stage, not all projects in the invoice
+            proj_num = project.get("project_number", "")
+            print(f"[UPDATE_STAGE] Resyncing invoice {invoice_id} for project {proj_num} stage {stage_idx}", flush=True)
+            _update_single_project_stage_payment_status(invoice_id, proj_num, stage_idx)
 
         return {"success": True, "message": "Stage updated"}
     except Exception as e:
@@ -9325,6 +11476,9 @@ def update_invoiced_stage(project_id, stage_idx):
 
             invoice["updated_at"] = datetime.now(timezone.utc).isoformat()
             fb_update(f"/invoices/{invoice_id}", invoice)
+
+            # Resync project stage payment status to ensure invoice_number is properly linked
+            _update_project_stage_payment_status(invoice_id)
 
         return {"success": True, "message": "Invoiced amount updated and redistributed"}
     except Exception as e:

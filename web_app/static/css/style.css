@@ -661,3 +661,31 @@ body {
   body { background: #fff !important; font-size: 12px; }
   .text-teal { color: #0F766E !important; }
 }
+
+/* ══ DATE FORMATTING — Keep dates on single line ════════════════════════════ */
+/* Prevent wrapping for date columns in tables */
+.inc-row td:nth-child(1),  /* income table date column */
+.exp-row td:nth-child(1),  /* expense table date column */
+#projectsTable td:nth-child(5),  /* projects table start date column */
+.quote-row td:nth-child(1),  /* quotes table quote number column */
+.quote-row td:nth-child(5) { /* quotes table date column */
+  white-space: nowrap !important;
+  min-width: fit-content;
+}
+
+/* Invoicing table — keep date columns on one line */
+#tab-all-invoices .table td:nth-child(5),  /* date column */
+#tab-all-invoices .table td:nth-child(6) { /* due date column */
+  white-space: nowrap !important;
+}
+
+/* Expenses table — adjust column widths */
+#expenseTable .expense-row td:nth-child(1) { /* date column */
+  white-space: nowrap !important;
+}
+#expenseTable .expense-row td:nth-child(3) { /* expense name column — decreased width */
+  max-width: 200px;
+}
+#expenseTable .expense-row td:nth-child(5) { /* vendor column — increased width */
+  min-width: 120px;
+}
