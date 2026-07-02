@@ -551,6 +551,9 @@ a[href*="filter_expense"]:hover {
       <button class="btn btn-xs btn-outline-secondary ms-auto" onclick="clearIncomeFilter()">
         <i class="bi bi-x me-1"></i>Clear
       </button>
+      <button class="btn btn-xs btn-outline-teal" onclick="exportIncomeCSV()" title="Export visible rows to CSV">
+        <i class="bi bi-download me-1"></i>Export CSV
+      </button>
     </div>
 
     {% if rev_list %}
@@ -3138,6 +3141,54 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
       doFilterIncome();
     });
   });
+
+  window.exportIncomeCSV = function() {
+    var rows = document.querySelectorAll('#incomeTableBody tr.inc-row');
+    var headers = ['Invoice Date','Collection Date','Invoice #','Client','Project','Status','Payment Method','Subtotal','Tax','Invoice Total','Amount Paid'];
+    var lines = [headers.map(function(h){ return '"'+h+'"'; }).join(',')];
+    rows.forEach(function(row) {
+      if (row.style.display === 'none') return;
+      var cells = row.querySelectorAll('td');
+      // cells[0]=Invoice Date, [1]=Collection Date, [2]=Invoice#, [3]=Client, [4]=Project, [5]=Status badge, [6]=Method badge, [7]=Subtotal, [8]=Tax, [9]=Total, [10]=Paid
+      function cellText(i) {
+        return (cells[i] ? cells[i].textContent.trim().replace(/\s+/g,' ') : '').replace(/"/g,'""');
+      }
+      // Use data attributes for numeric amounts (clean, no $)
+      var subtotal = parseFloat(row.getAttribute('data-subtotal')||'0').toFixed(2);
+      var tax      = parseFloat(row.getAttribute('data-tax')||'0').toFixed(2);
+      var total    = parseFloat(row.getAttribute('data-total')||'0').toFixed(2);
+      var paid     = parseFloat(row.getAttribute('data-amount')||'0').toFixed(2);
+      lines.push([
+        '"'+cellText(0)+'"',
+        '"'+cellText(1)+'"',
+        '"'+cellText(2)+'"',
+        '"'+cellText(3)+'"',
+        '"'+cellText(4)+'"',
+        '"'+cellText(5)+'"',
+        '"'+cellText(6)+'"',
+        subtotal,
+        tax,
+        total,
+        paid
+      ].join(','));
+    });
+    var csv  = lines.join('\r\n');
+    var blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a');
+    a.href = url;
+    // Build filename from current filters
+    var yr = ((document.getElementById('incomeYearFilter')||{}).value||'');
+    var mo = ((document.getElementById('incomeMonthFilter')||{}).value||'');
+    var stBtn = document.querySelector('#incomeStatusGroup .status-pill-btn.sp-active');
+    var st = stBtn && stBtn.dataset.status !== 'all' ? '-'+stBtn.dataset.status : '';
+    var label = 'income' + (yr?'-'+yr:'') + (mo?'-'+mo:'') + st;
+    a.download = label + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
 
   // ── A/R Aging tab filtering ───────────────────────────────────────
