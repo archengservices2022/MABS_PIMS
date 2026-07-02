@@ -5073,6 +5073,7 @@ def create_salary():
         "notes":         data.get("notes", ""),
         "region":        region,
         "year":          year,
+        "salary_status": data.get("salary_status", "Paid"),
         "created_at":    datetime.now(timezone.utc).isoformat(),
     }
     fb_push("/balance_sheet_salary", sal_data)
@@ -5099,6 +5100,7 @@ def update_salary(sal_id):
         "notes":         data.get("notes", ""),
         "region":        region,
         "year":          year,
+        "salary_status": data.get("salary_status", "Paid"),
         "updated_at":    datetime.now(timezone.utc).isoformat(),
     }
     fb_update(f"/balance_sheet_salary/{sal_id}", sal_data)
@@ -6842,20 +6844,26 @@ def employee_time_off_new():
         return redirect(url_for("employees"))
 
     req_type = request.form.get("type", "Vacation")
-    working_days = _count_working_days(start_date, end_date) if req_type != "Unpaid" else 0
+    if req_type == "Half Day":
+        working_days = 0.5
+    elif req_type == "Unpaid":
+        working_days = 0
+    else:
+        working_days = _count_working_days(start_date, end_date)
     fb_push("/time_off_requests", {
-        "employee_uid":  session.get("user_uid", ""),
-        "employee_name": session.get("user_name", ""),
-        "type":          req_type,
-        "start_date":    start_date,
-        "end_date":      end_date,
-        "working_days":  working_days,
-        "reason":        request.form.get("reason", "").strip(),
-        "status":        "Pending",
-        "requested_at":  datetime.now(timezone.utc).isoformat(),
-        "reviewed_by":   "",
-        "reviewed_at":   "",
-        "review_note":   "",
+        "employee_uid":    session.get("user_uid", ""),
+        "employee_name":   session.get("user_name", ""),
+        "type":            req_type,
+        "half_day_period": request.form.get("half_day_period", "") if req_type == "Half Day" else "",
+        "start_date":      start_date,
+        "end_date":        end_date,
+        "working_days":    working_days,
+        "reason":          request.form.get("reason", "").strip(),
+        "status":          "Pending",
+        "requested_at":    datetime.now(timezone.utc).isoformat(),
+        "reviewed_by":     "",
+        "reviewed_at":     "",
+        "review_note":     "",
     })
     flash("Time off request submitted.", "success")
     return redirect(url_for("employees") + "#time-off")
@@ -11857,6 +11865,28 @@ def api_timesheet_delete(sheet_id):
     fb_delete(f"/timesheets/{sheet_id}")
     return jsonify({"success": True})
 
+
+@app.route("/api/timesheets/previous")
+@login_required
+def api_timesheet_previous():
+    """Return project entries from the most recent timesheet before the given week."""
+    uid = session.get("user_uid", "")
+    week_of = request.args.get("week", "")
+    all_sheets = fb_get("/timesheets") or {}
+    my_sheets = []
+    for k, v in all_sheets.items():
+        if isinstance(v, dict) and v.get("employee_uid") == uid:
+            v["firebase_id"] = k
+            my_sheets.append(v)
+    prev_sheets = [s for s in my_sheets if s.get("week_of", "") < week_of] if week_of else my_sheets
+    if not prev_sheets:
+        return jsonify({"entries": []})
+    prev_sheets.sort(key=lambda x: x.get("week_of", ""), reverse=True)
+    last = prev_sheets[0]
+    carry = [{"project_number": e.get("project_number",""), "project_name": e.get("project_name",""),
+              "project_id": e.get("project_id",""), "date": e.get("date","")}
+             for e in (last.get("entries") or [])]
+    return jsonify({"entries": carry, "week_of": last.get("week_of","")})
 
 @app.route("/api/timesheets/export")
 @role_required("timesheets")

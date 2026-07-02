@@ -78,6 +78,15 @@
       <span class="text-muted" style="font-size:.78rem;">{{ week_label }}</span>
     </div>
 
+    <!-- Previous week carry-forward banner (shown by JS if applicable) -->
+    <div id="prevWeekBanner" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 16px;margin-bottom:14px;font-size:.83rem;color:#1e40af;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <span><i class="bi bi-arrow-counterclockwise me-1"></i>Previous week had entries. <strong id="prevWeekLabel"></strong></span>
+      <div class="d-flex gap-2">
+        <button type="button" class="btn btn-sm" onclick="copyPrevWeek()" style="background:#1d4ed8;color:#fff;font-size:.75rem;padding:3px 12px;border:none;border-radius:6px;">Copy Projects</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('prevWeekBanner').style.display='none';" style="font-size:.75rem;padding:3px 10px;">Dismiss</button>
+      </div>
+    </div>
+
     <!-- Entry Table -->
     <div class="table-responsive mb-3">
       <table class="ts-entry-table" id="entryTable">
@@ -352,6 +361,13 @@ function saveSheet(action) {
     alert('Please add at least one entry before submitting.');
     return;
   }
+  if (action === 'submit') {
+    const totalHours = parseFloat(document.getElementById('footTotal').textContent) || 0;
+    if (totalHours === 0) {
+      alert('Total hours are 0.00. Please enter valid start and end times before submitting.');
+      return;
+    }
+  }
 
   const btn = event.target;
   btn.disabled = true;
@@ -398,6 +414,35 @@ function changeWeek(val) {
     `${d.getFullYear()}-W${String(wkNum).padStart(2, '0')}`;
 })();
 
+let _prevWeekEntries = [];
+
+function copyPrevWeek() {
+  if (!_prevWeekEntries.length) return;
+  document.getElementById('prevWeekBanner').style.display = 'none';
+  // Clear current rows
+  document.querySelectorAll('#entryBody tr').forEach(tr => tr.remove());
+  dayOrder.length = 0;
+  rowId = 0;
+  // Render Mon-Fri with prev week's projects pre-selected (no times)
+  const byDate = {};
+  _prevWeekEntries.forEach(e => {
+    const origDate = e.date;
+    // Map to corresponding weekday in current week
+    const origDay = WEEK_DAYS.find(d => {
+      const od = new Date(origDate + 'T00:00:00');
+      const nd = new Date(d.date + 'T00:00:00');
+      return od.getDay() === nd.getDay();
+    });
+    const targetDate = origDay ? origDay.date : null;
+    if (!targetDate) return;
+    if (!byDate[targetDate]) byDate[targetDate] = [];
+    byDate[targetDate].push({ project_number: e.project_number, project_name: e.project_name, project_id: e.project_id });
+  });
+  WEEK_DAYS.slice(0, 5).forEach(d => {
+    renderDayGroup(d.date, byDate[d.date] && byDate[d.date].length ? byDate[d.date] : [{}]);
+  });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
   if (EXISTING && EXISTING.length > 0) {
     const byDate = {}, dateOrder = [];
@@ -413,6 +458,20 @@ document.addEventListener('DOMContentLoaded', function() {
   } else {
     // Default: show Mon–Fri for the whole week
     WEEK_DAYS.slice(0, 5).forEach(d => renderDayGroup(d.date, [{}]));
+    // Check if previous week has entries to carry forward
+    if (!IS_APPROVED) {
+      fetch('/api/timesheets/previous?week=' + encodeURIComponent(WEEK_OF))
+        .then(r => r.json())
+        .then(data => {
+          if (data.entries && data.entries.length > 0) {
+            _prevWeekEntries = data.entries;
+            const banner = document.getElementById('prevWeekBanner');
+            document.getElementById('prevWeekLabel').textContent = 'Week of ' + (data.week_of || '');
+            banner.style.display = 'flex';
+          }
+        })
+        .catch(() => {});
+    }
   }
 
   if (IS_APPROVED) {

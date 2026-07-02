@@ -226,7 +226,9 @@
             <tr>
               <th>Employee</th>
               <th>Date</th>
+              <th>Period</th>
               <th>Amount</th>
+              <th>Status</th>
               <th>Region</th>
               <th>Notes</th>
               <th>Actions</th>
@@ -235,15 +237,25 @@
           <tbody id="salaryTableBody">
             {% if salaries %}
               {% for sal in salaries %}
+              {% set sal_period = (sal.date[:7] | default('')) %}
+              {% set sal_period_label = sal.date[:4] + '-' + sal.date[5:7] if sal.date and sal.date|length >= 7 else '—' %}
               <tr data-salary="1" data-employee="{{ (sal.employee_name or sal.get('employee','')) | lower }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}">
                 <td><strong>{{ sal.employee_name or sal.get('employee','—') }}</strong></td>
-                <td>{{ sal.date or '—' | format_date }}</td>
+                <td>{{ sal.date or '—' }}</td>
+                <td style="color:#475569;font-size:.82rem;">{{ sal.date[:7] if sal.date and sal.date|length >= 7 else '—' }}</td>
                 <td>${{ "{:,.2f}".format(sal.amount | float) }}</td>
+                <td>
+                  {% set ss = sal.get('salary_status','Paid') %}
+                  <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;
+                    {% if ss == 'Paid' %}background:#dcfce7;color:#15803d;
+                    {% elif ss == 'Pending' %}background:#fef9c3;color:#92400e;
+                    {% else %}background:#dbeafe;color:#1d4ed8;{% endif %}">{{ ss }}</span>
+                </td>
                 <td><span class="region-badge {{ 'region-usa' if sal.region == 'Inside America' else 'region-intl' }}">{{ sal.region or '—' }}</span></td>
                 <td>{{ sal.notes or '—' }}</td>
                 <td>
                   <div class="action-buttons">
-                    <button onclick="editSalary('{{ sal.firebase_id }}','{{ (sal.employee_name or '') | replace("'","&#39;") }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace("'","&#39;") }}')" class="btn-sm" title="Edit" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
+                    <button onclick="editSalary('{{ sal.firebase_id }}','{{ (sal.employee_name or '') | replace("'","&#39;") }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace("'","&#39;") }}','{{ sal.get('salary_status','Paid') }}')" class="btn-sm" title="Edit" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
                       <i class="bi bi-pencil"></i>
                     </button>
                     <button onclick="deleteSalary('{{ sal.firebase_id }}')" class="btn-sm" title="Delete" style="background:#DC2626;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
@@ -291,8 +303,8 @@
             </div>
 
             <div class="form-group">
-              <label for="sal_amount">Amount</label>
-              <input type="number" id="sal_amount" step="0.01" required />
+              <label for="sal_amount">Amount ($)</label>
+              <input type="number" id="sal_amount" step="0.01" min="0" required />
             </div>
 
             <div class="form-group">
@@ -301,6 +313,15 @@
                 <option value="">Select Region</option>
                 <option value="Inside America">Inside America</option>
                 <option value="Outside America">Outside America</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="sal_status">Salary Status</label>
+              <select id="sal_status">
+                <option value="Paid">Paid</option>
+                <option value="Pending">Pending</option>
+                <option value="Processing">Processing</option>
               </select>
             </div>
 
@@ -499,13 +520,14 @@ function renderEmployeeOptions(filter) {
   });
 }
 
-function editSalary(id, employee, date, amount, region, notes) {
+function editSalary(id, employee, date, amount, region, notes, status) {
   document.getElementById('salary_id').value = id;
   document.getElementById('sal_employee').value = employee;
   document.getElementById('sal_date').value = date;
   document.getElementById('sal_amount').value = amount;
   document.getElementById('sal_region').value = region;
   document.getElementById('sal_notes').value = notes || '';
+  document.getElementById('sal_status').value = status || 'Paid';
   document.getElementById('submitBtnText').textContent = 'Update Salary Entry';
   // Switch to add-salary tab
   document.querySelectorAll('.payroll-tab-content').forEach(t => t.classList.remove('active'));
@@ -525,13 +547,23 @@ function addSalary(e) {
   const employeeName = (document.getElementById('sal_employee').value || '').trim();
   if (!employeeName) { alert('Please enter an employee name'); return; }
 
+  const dateVal = document.getElementById('sal_date').value;
+  if (dateVal > new Date().toISOString().slice(0, 10)) {
+    alert('Date cannot be a future date.'); return;
+  }
+  const amountVal = parseFloat(document.getElementById('sal_amount').value);
+  if (isNaN(amountVal) || amountVal < 0) {
+    alert('Amount cannot be negative.'); return;
+  }
+
   const salaryId = document.getElementById('salary_id').value;
   const data = {
-    employee_name: employeeName,
-    date:          document.getElementById('sal_date').value,
-    amount:        document.getElementById('sal_amount').value,
-    region:        document.getElementById('sal_region').value,
-    notes:         document.getElementById('sal_notes').value,
+    employee_name:  employeeName,
+    date:           dateVal,
+    amount:         amountVal,
+    region:         document.getElementById('sal_region').value,
+    notes:          document.getElementById('sal_notes').value,
+    salary_status:  document.getElementById('sal_status').value || 'Paid',
   };
 
   const method = salaryId ? 'PUT' : 'POST';
@@ -560,7 +592,9 @@ function addSalary(e) {
 }
 
 function deleteSalary(id) {
-  if (!confirm('Delete this salary entry?')) return;
+  if (!confirm('Delete this salary entry?\n\nThis action requires admin approval and cannot be undone.')) return;
+  const confirm2 = prompt('Type DELETE to confirm removal:');
+  if (confirm2 !== 'DELETE') { alert('Deletion cancelled.'); return; }
   fetch(`/api/payroll/salaries/${id}`, {method: 'DELETE'})
     .then(r => r.json())
     .then(res => { if (res.success) location.reload(); })
@@ -569,6 +603,8 @@ function deleteSalary(id) {
 
 // Real-time filter listeners (client-side filtering of server-rendered rows)
 document.addEventListener('DOMContentLoaded', () => {
+  // Block future dates on the salary date input
+  document.getElementById('sal_date').setAttribute('max', new Date().toISOString().slice(0, 10));
   initEmployeeAutocomplete();
   document.getElementById('searchEmployee').addEventListener('input', applySalaryFilters);
   document.getElementById('filterRegion').addEventListener('change', applySalaryFilters);

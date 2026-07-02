@@ -180,20 +180,20 @@
             <div class="d-flex gap-1 justify-content-center flex-wrap">
               {% if row.sheet.status == 'Submitted' %}
                 <button onclick="approveSheet('{{ row.sheet.firebase_id }}','approve')"
-                        class="btn btn-sm" style="background:#15803d;color:#fff;font-size:.65rem;padding:3px 8px;border-radius:6px;border:none;">
+                        class="btn btn-sm" title="Approve" style="background:#15803d;color:#fff;font-size:.65rem;padding:3px 8px;border-radius:6px;border:none;">
                   <i class="bi bi-check2"></i>
                 </button>
                 <button onclick="approveSheet('{{ row.sheet.firebase_id }}','reject')"
-                        class="btn btn-sm btn-outline-danger" style="font-size:.65rem;padding:3px 8px;border-radius:6px;">
+                        class="btn btn-sm btn-outline-danger" title="Reject" style="font-size:.65rem;padding:3px 8px;border-radius:6px;">
                   <i class="bi bi-x"></i>
                 </button>
               {% endif %}
               <a href="{{ url_for('timesheet_detail', sheet_id=row.sheet.firebase_id) }}"
-                 class="btn btn-sm btn-outline-secondary" style="font-size:.65rem;padding:3px 8px;border-radius:6px;">
+                 class="btn btn-sm btn-outline-secondary" title="View Details" style="font-size:.65rem;padding:3px 8px;border-radius:6px;">
                 <i class="bi bi-eye"></i>
               </a>
               <button onclick="deleteSheet('{{ row.sheet.firebase_id }}')"
-                      class="btn btn-sm btn-outline-danger" style="font-size:.65rem;padding:3px 8px;border-radius:6px;">
+                      class="btn btn-sm btn-outline-danger" title="Delete" style="font-size:.65rem;padding:3px 8px;border-radius:6px;">
                 <i class="bi bi-trash3"></i>
               </button>
             </div>

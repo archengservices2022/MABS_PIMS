@@ -552,9 +552,17 @@
         <form method="post" action="{{ url_for('employee_time_off_new') }}" id="timeOffForm">
           <div class="mb-2">
             <label class="form-label small fw-semibold">Type</label>
-            <select name="type" class="form-select form-select-sm" id="timeOffType">
+            <select name="type" class="form-select form-select-sm" id="timeOffType" onchange="onLeaveTypeChange()">
               <option>Vacation</option><option>Sick</option>
-              <option>Personal</option><option>Unpaid</option>
+              <option>Personal</option><option>Half Day</option><option>Unpaid</option>
+            </select>
+          </div>
+          <!-- Half Day period selector (shown only for Half Day) -->
+          <div id="halfDayRow" class="mb-2" style="display:none;">
+            <label class="form-label small fw-semibold">Half Day Period</label>
+            <select name="half_day_period" id="halfDayPeriod" class="form-select form-select-sm">
+              <option value="AM">Morning (AM)</option>
+              <option value="PM">Afternoon (PM)</option>
             </select>
           </div>
           <div class="row g-2 mb-2">
@@ -562,7 +570,7 @@
               <label class="form-label small fw-semibold">Start Date</label>
               <input type="date" name="start_date" id="toStartDate" class="form-control form-control-sm" required oninput="calcRequestedDays()">
             </div>
-            <div class="col-6">
+            <div class="col-6" id="endDateCol">
               <label class="form-label small fw-semibold">End Date</label>
               <input type="date" name="end_date" id="toEndDate" class="form-control form-control-sm" required oninput="calcRequestedDays()">
             </div>
@@ -594,10 +602,17 @@
             <tbody>
             {% for r in my_time_off %}
             <tr>
-              <td class="fw-500">{{ r.type }}</td>
-              <td class="text-muted small">{{ r.start_date | format_date }} → {{ r.end_date | format_date }}</td>
+              <td class="fw-500">
+                {{ r.type }}
+                {% if r.type == 'Half Day' and r.get('half_day_period') %}
+                <span style="font-size:.65rem;background:#e0e7ff;color:#3730a3;border-radius:4px;padding:1px 5px;font-weight:700;">{{ r.half_day_period }}</span>
+                {% endif %}
+              </td>
+              <td class="text-muted small">{{ r.start_date | format_date }}{% if r.type != 'Half Day' %} → {{ r.end_date | format_date }}{% endif %}</td>
               <td class="text-muted small">
-                {% if r.type != 'Unpaid' %}
+                {% if r.type == 'Half Day' %}
+                  0.5
+                {% elif r.type != 'Unpaid' %}
                   {{ r.get('working_days', '—') }}
                 {% else %}
                   <span class="text-muted">unpaid</span>
@@ -1342,6 +1357,27 @@ function countWorkingDays(startStr, endStr) {
   return count;
 }
 
+window.onLeaveTypeChange = function() {
+  var type = (document.getElementById('timeOffType') || {}).value || '';
+  var halfDayRow = document.getElementById('halfDayRow');
+  var endDateCol = document.getElementById('endDateCol');
+  var toEndDate  = document.getElementById('toEndDate');
+  var toStartDate = document.getElementById('toStartDate');
+  if (type === 'Half Day') {
+    if (halfDayRow) halfDayRow.style.display = '';
+    // For half day, end date = start date; hide end date field
+    if (endDateCol) endDateCol.style.display = 'none';
+    if (toEndDate && toStartDate) toEndDate.value = toStartDate.value;
+    toStartDate && toStartDate.addEventListener('input', function() {
+      if (toEndDate) toEndDate.value = this.value;
+    });
+  } else {
+    if (halfDayRow) halfDayRow.style.display = 'none';
+    if (endDateCol) endDateCol.style.display = '';
+  }
+  calcRequestedDays();
+};
+
 window.calcRequestedDays = function() {
   var s = (document.getElementById('toStartDate') || {}).value;
   var e = (document.getElementById('toEndDate')   || {}).value;
@@ -1349,7 +1385,19 @@ window.calcRequestedDays = function() {
   var infoDiv  = document.getElementById('requestedDaysInfo');
   var infoText = document.getElementById('requestedDaysText');
   var submitBtn = document.getElementById('timeOffSubmitBtn');
-  if (!s || !e || !infoDiv) return;
+  if (!infoDiv) return;
+  // Half Day: sync end date to start date
+  if (type === 'Half Day') {
+    var edEl = document.getElementById('toEndDate');
+    if (edEl && s) edEl.value = s;
+    if (!s) return;
+    infoDiv.style.display = 'block';
+    infoDiv.style.background = '#F0FDF4';
+    infoText.innerHTML = '<i class="bi bi-calendar-check me-1" style="color:#16A34A;"></i><span style="color:#16A34A;"><strong>0.5 day</strong> requested.</span>';
+    if (submitBtn) submitBtn.disabled = false;
+    return;
+  }
+  if (!s || !e) return;
   var days = countWorkingDays(s, e);
   var remaining = {{ my_time_off_balance.remaining }};
   var isUnpaid = type === 'Unpaid';
