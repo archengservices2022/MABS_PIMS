@@ -558,11 +558,13 @@ a[href*="filter_expense"]:hover {
       <table class="table table-hover table-sm mb-0 align-middle">
         <thead>
           <tr>
-            <th>Date</th>
+            <th>Invoice Date</th>
+            <th>Collection Date</th>
             <th>Invoice #</th>
             <th>Client</th>
             <th>Project</th>
             <th>Status</th>
+            <th>Method</th>
             <th class="text-end">Subtotal</th>
             <th class="text-end">Tax</th>
             <th class="text-end">Invoice Total</th>
@@ -572,15 +574,23 @@ a[href*="filter_expense"]:hover {
         <tbody id="incomeTableBody">
           {% for r in rev_list %}
           <tr class="inc-row"
-              data-date="{{ r.get('date','') | format_date }}"
-              data-year="{{ r.get('date','')[:4] }}"
+              data-date="{{ r.get('collection_date', r.get('date','')) | format_date }}"
+              data-year="{{ r.get('invoice_date', r.get('date',''))[:4] }}"
               data-status="{{ r.get('status','') }}"
               data-amount="{{ ((r.get('amount_paid',0)|float) + (r.get('tax_paid',0)|float))|float }}"
               data-subtotal="{{ ((r.get('total',0)|float) - (r.get('tax_amount',0)|float)) }}"
               data-tax="{{ r.get('tax_amount',0)|float }}"
               data-total="{{ r.get('total',0)|float }}"
               data-search="{{ r.get('client_name','')|lower }} {{ r.get('invoice_number','')|lower }}">
-            <td class="text-muted small">{{ r.get('date','—') | format_date }}</td>
+            <td class="text-muted small">{{ r.get('invoice_date', r.get('date','—')) | format_date }}</td>
+            <td class="text-muted small">
+              {% set cd = r.get('collection_date', '') %}
+              {% if cd %}
+                {{ cd | format_date }}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
             <td>
               {% if r.get('invoice_id') %}
               <a href="{{ url_for('invoice_detail', invoice_id=r.get('invoice_id','')) }}"
@@ -599,6 +609,22 @@ a[href*="filter_expense"]:hover {
               {% endif %}
             </td>
             <td>{{ status_badge(r.get('status'), 'Paid') }}</td>
+            <td>
+              {% set pm = r.get('payment_method','') %}
+              {% if pm %}
+                {% if pm|lower == 'cash' %}
+                  <span class="badge" style="background:#dcfce7;color:#15803d;font-size:11px;"><i class="bi bi-cash me-1"></i>Cash</span>
+                {% elif pm|lower in ('bank','bank transfer','wire') %}
+                  <span class="badge" style="background:#dbeafe;color:#1d4ed8;font-size:11px;"><i class="bi bi-bank me-1"></i>Bank</span>
+                {% elif pm|lower in ('card','credit card','debit card') %}
+                  <span class="badge" style="background:#f3e8ff;color:#7c3aed;font-size:11px;"><i class="bi bi-credit-card me-1"></i>Card</span>
+                {% else %}
+                  <span class="badge bg-secondary" style="font-size:11px;">{{ pm }}</span>
+                {% endif %}
+              {% else %}
+                <span class="text-muted small">—</span>
+              {% endif %}
+            </td>
             <td class="text-end">${{ "{:,.2f}".format((r.get('total',0)|float) - (r.get('tax_amount',0)|float)) }}</td>
             <td class="text-end text-muted">${{ "{:,.2f}".format(r.get('tax_amount',0)|float) }}</td>
             <td class="text-end fw-bold">${{ "{:,.2f}".format(r.get('total',0)|float) }}</td>
@@ -608,7 +634,7 @@ a[href*="filter_expense"]:hover {
         </tbody>
         <tfoot class="table-light fw-bold">
           <tr>
-            <td colspan="8" class="text-end">Total Collected (including tax)</td>
+            <td colspan="10" class="text-end">Total Collected (including tax)</td>
             <td id="incomeTotalCell" class="text-end text-success">${{ "{:,.2f}".format(total_collected) }}</td>
           </tr>
         </tfoot>

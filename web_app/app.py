@@ -5279,10 +5279,20 @@ def financial():
         tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in (inv_data.get("tax_payments", []) or []))
         total_paid_for_inv = amount_paid + tax_paid
 
-        r["amount_paid"] = amount_paid
-        r["tax_paid"] = tax_paid
-        r["total"] = inv_total
-        r["tax_amount"] = _safe_float(inv_meta.get("tax_amount", 0))
+        r["amount_paid"]   = amount_paid
+        r["tax_paid"]      = tax_paid
+        r["total"]         = inv_total
+        r["tax_amount"]    = _safe_float(inv_meta.get("tax_amount", 0))
+        r["invoice_date"]  = inv_meta.get("invoice_date", "") or r.get("date", "")
+        # Collection date = latest payment_log entry date, fallback to revenue record date
+        pay_log = inv_data.get("payment_log", []) or []
+        if pay_log:
+            latest = max(pay_log, key=lambda p: p.get("date", ""))
+            r["collection_date"]  = latest.get("date", r.get("date", ""))
+            r["payment_method"]   = latest.get("method", "") or inv_meta.get("payment_method", "")
+        else:
+            r["collection_date"]  = r.get("date", "")
+            r["payment_method"]   = inv_meta.get("payment_method", "")
 
         # Calculate status based on total vs amount_paid for this P&L invoice
         if total_paid_for_inv >= (inv_total - 0.01):
