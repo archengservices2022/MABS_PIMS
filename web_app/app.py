@@ -5703,6 +5703,10 @@ def financial():
     salaries_international_raw = filter_by_year(salaries_international_raw, stat_card_year)
     total_salaries = sum(_safe_float(s.get("amount", 0)) for s in salaries_domestic_raw + salaries_international_raw)
 
+    # Recalculate net profit now that total_salaries is known
+    net_profit             = total_paid - total_expenses - total_salaries
+    net_profit_after_labor = net_profit - total_labor_cost
+
     # Count unique employees with salary entries in present running year
     employees_with_salaries = set()
     for s in salaries_domestic_raw + salaries_international_raw:

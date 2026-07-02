@@ -303,7 +303,7 @@ a[href*="filter_expense"]:hover {
     <div class="col-6 col-xl-2">
       <div class="kpi-card kpi-teal">
         <div class="kpi-top"><span class="kpi-label">Total Invoiced</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
-        <div class="kpi-value">${{ "{:,.0f}".format(total_invoiced) }}</div>
+        <div class="kpi-value">${{ "{:,.2f}".format(total_invoiced) }}</div>
         <div class="kpi-sub">{{ rev_list|length }} invoice{{ 's' if rev_list|length != 1 }}</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">{{ prev_year }} & {{ stat_card_year }}</small></div>
       </div>
@@ -311,7 +311,7 @@ a[href*="filter_expense"]:hover {
     <div class="col-6 col-xl-2">
       <div class="kpi-card kpi-green">
         <div class="kpi-top"><span class="kpi-label">Collected</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
-        <div class="kpi-value">${{ "{:,.0f}".format(total_paid) }}</div>
+        <div class="kpi-value">${{ "{:,.2f}".format(total_paid) }}</div>
         <div class="kpi-sub">{{ collection_pct }}% collection rate</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">{{ prev_year }} & {{ stat_card_year }}</small></div>
         <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ collection_pct }}%"></div></div>
@@ -320,7 +320,7 @@ a[href*="filter_expense"]:hover {
     <div class="col-6 col-xl-2">
       <div class="kpi-card kpi-amber">
         <div class="kpi-top"><span class="kpi-label">Outstanding A/R</span><i class="bi bi-clock-history kpi-icon-sm"></i></div>
-        <div class="kpi-value">${{ "{:,.0f}".format(aging_total_outstanding) }}</div>
+        <div class="kpi-value">${{ "{:,.2f}".format(aging_total_outstanding) }}</div>
         <div class="kpi-sub">{{ open_count }} open invoice{{ 's' if open_count != 1 }}</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">{{ prev_year }} & {{ stat_card_year }}</small></div>
       </div>
@@ -328,7 +328,7 @@ a[href*="filter_expense"]:hover {
     <div class="col-6 col-xl-2">
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
-        <div class="kpi-value">${{ "{:,.0f}".format(total_expenses) }}</div>
+        <div class="kpi-value">${{ "{:,.2f}".format(total_expenses) }}</div>
         <div class="kpi-sub">{{ exp_list_year_filtered_count }} <small style="color:#94a3b8;">expenses</small></div>
         <div class="kpi-sub"><small style="color:#94a3b8;">Across {{ stat_card_year }} Expenses</small></div>
       </div>
@@ -336,7 +336,7 @@ a[href*="filter_expense"]:hover {
     <div class="col-6 col-xl-2">
       <div class="kpi-card kpi-purple">
         <div class="kpi-top"><span class="kpi-label">Total Salaries</span><i class="bi bi-people-fill kpi-icon-sm"></i></div>
-        <div class="kpi-value">${{ "{:,.0f}".format(total_salaries) }}</div>
+        <div class="kpi-value">${{ "{:,.2f}".format(total_salaries) }}</div>
         <div class="kpi-sub">{{ employee_count }} employee{{ 's' if employee_count != 1 else '' }}</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">{{ stat_card_year }}</small></div>
       </div>
@@ -344,8 +344,8 @@ a[href*="filter_expense"]:hover {
     <div class="col-6 col-xl-2">
       <div class="kpi-card {{ 'kpi-green' if net_profit >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
-        <div class="kpi-value {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(net_profit) }}</div>
-        <div class="kpi-sub">revenue & expenses</div>
+        <div class="kpi-value {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">${{ "{:,.2f}".format(net_profit) }}</div>
+        <div class="kpi-sub">collected − expenses − salaries</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">{{ stat_card_year }}</small></div>
       </div>
     </div>
@@ -385,27 +385,27 @@ a[href*="filter_expense"]:hover {
         <!-- Key metrics -->
         <div class="summary-row">
           <span class="text-muted small">Total Invoiced</span>
-          <span class="fw-bold">${{ "{:,.0f}".format(total_invoiced) }}</span>
+          <span class="fw-bold">${{ "{:,.2f}".format(total_invoiced) }}</span>
         </div>
         <div class="summary-row">
           <span class="text-muted small">Collected</span>
-          <span class="fw-bold text-success">${{ "{:,.0f}".format(total_paid) }}</span>
+          <span class="fw-bold text-success">${{ "{:,.2f}".format(total_paid) }}</span>
         </div>
         <div class="summary-row">
           <span class="text-muted small">Outstanding A/R</span>
-          <span class="fw-bold {{ 'text-warning' if aging_total_outstanding > 0 else 'text-success' }}">${{ "{:,.0f}".format(aging_total_outstanding) }}</span>
+          <span class="fw-bold {{ 'text-warning' if aging_total_outstanding > 0 else 'text-success' }}">${{ "{:,.2f}".format(aging_total_outstanding) }}</span>
         </div>
         <div class="summary-row">
           <span class="text-muted small">Total Expenses</span>
-          <span class="fw-bold text-danger">${{ "{:,.0f}".format(total_expenses) }}</span>
+          <span class="fw-bold text-danger">${{ "{:,.2f}".format(total_expenses) }}</span>
         </div>
         <div class="summary-row">
           <span class="text-muted small">Total Salaries</span>
-          <span class="fw-bold text-danger">${{ "{:,.0f}".format(total_salaries) }}</span>
+          <span class="fw-bold text-danger">${{ "{:,.2f}".format(total_salaries) }}</span>
         </div>
         <div class="summary-row">
           <span class="text-muted small">Net Profit</span>
-          <span class="{{ 'pnl-badge-pos' if net_profit >= 0 else 'pnl-badge-neg' }}">${{ "{:,.0f}".format(net_profit) }}</span>
+          <span class="{{ 'pnl-badge-pos' if net_profit >= 0 else 'pnl-badge-neg' }}">${{ "{:,.2f}".format(net_profit) }}</span>
         </div>
 
         <!-- Collection rate bar -->
@@ -435,7 +435,7 @@ a[href*="filter_expense"]:hover {
           <div class="ar-aging-row">
             <div class="d-flex justify-content-between">
               <span class="text-muted">{{ label }}</span>
-              <span class="fw-semibold" style="color:{{ color }};">${{ "{:,.0f}".format(amt) }}</span>
+              <span class="fw-semibold" style="color:{{ color }};">${{ "{:,.2f}".format(amt) }}</span>
             </div>
             <div class="ar-aging-bar"><div class="ar-aging-bar-fill" style="width:{{ pct }}%;background:{{ color }};"></div></div>
           </div>
@@ -1941,21 +1941,21 @@ function viewReceipt(expId) {
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-teal">
         <div class="kpi-top"><span class="kpi-label">Total Invoiced</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
-        <div class="kpi-value">${{ "{:,.0f}".format(project_pnl|sum(attribute='invoiced')) }}</div>
+        <div class="kpi-value">${{ "{:,.2f}".format(project_pnl|sum(attribute='invoiced')) }}</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">All projects · {{ stat_card_year }}</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-green">
         <div class="kpi-top"><span class="kpi-label">Total Collected</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
-        <div class="kpi-value">${{ "{:,.0f}".format(project_pnl|sum(attribute='paid')) }}</div>
+        <div class="kpi-value">${{ "{:,.2f}".format(project_pnl|sum(attribute='paid')) }}</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">All projects · {{ stat_card_year }}</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
-        <div class="kpi-value text-danger">${{ "{:,.0f}".format(project_pnl|sum(attribute='expenses')) }}</div>
+        <div class="kpi-value text-danger">${{ "{:,.2f}".format(project_pnl|sum(attribute='expenses')) }}</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">{{ stat_card_year }} across all projects</small></div>
       </div>
     </div>
@@ -1963,7 +1963,7 @@ function viewReceipt(expId) {
       {% set total_gp = project_pnl|sum(attribute='gross_profit') %}
       <div class="kpi-card {{ 'kpi-green' if total_gp >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">{{ stat_card_year }} Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
-        <div class="kpi-value {{ 'text-success' if total_gp >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(total_gp) }}</div>
+        <div class="kpi-value {{ 'text-success' if total_gp >= 0 else 'text-danger' }}">${{ "{:,.2f}".format(total_gp) }}</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">collected minus expense</small></div>
       </div>
     </div>
@@ -2002,17 +2002,17 @@ function viewReceipt(expId) {
             <td class="fw-medium">{{ row.project_name }}</td>
             <td class="text-muted small">{{ row.client_name }}</td>
             <td>{{ status_badge(row.status, 'Not Started') }}</td>
-            <td class="text-end">${{ "{:,.0f}".format(row.contract_value) }}</td>
-            <td class="text-end text-teal fw-semibold">${{ "{:,.0f}".format(row.invoiced) }}</td>
-            <td class="text-end text-success fw-semibold">${{ "{:,.0f}".format(row.paid) }}</td>
-            <td class="text-end text-danger">${{ "{:,.0f}".format(row.expenses) }}</td>
+            <td class="text-end">${{ "{:,.2f}".format(row.contract_value) }}</td>
+            <td class="text-end text-teal fw-semibold">${{ "{:,.2f}".format(row.invoiced) }}</td>
+            <td class="text-end text-success fw-semibold">${{ "{:,.2f}".format(row.paid) }}</td>
+            <td class="text-end text-danger">${{ "{:,.2f}".format(row.expenses) }}</td>
             <td class="text-end fw-bold {{ 'text-success' if row.gross_profit >= 0 else 'text-danger' }}">
-              ${{ "{:,.0f}".format(row.gross_profit) }}
+              ${{ "{:,.2f}".format(row.gross_profit) }}
             </td>
             {% if total_labor_cost and total_labor_cost > 0 %}
-            <td class="text-end text-danger">${{ "{:,.0f}".format(row.labor_cost) }}</td>
+            <td class="text-end text-danger">${{ "{:,.2f}".format(row.labor_cost) }}</td>
             <td class="text-end fw-bold {{ 'text-success' if row.net_profit >= 0 else 'text-danger' }}">
-              ${{ "{:,.0f}".format(row.net_profit) }}
+              ${{ "{:,.2f}".format(row.net_profit) }}
             </td>
             {% endif %}
             <td class="text-end">
@@ -2026,17 +2026,17 @@ function viewReceipt(expId) {
         <tfoot class="fw-bold" style="background:#F8FAFC;border-top:2px solid #E2E8F0;">
           <tr>
             <td colspan="4" class="text-end text-muted small">Totals</td>
-            <td class="text-end">${{ "{:,.0f}".format(project_pnl|sum(attribute='contract_value')) }}</td>
-            <td class="text-end text-teal">${{ "{:,.0f}".format(project_pnl|sum(attribute='invoiced')) }}</td>
-            <td class="text-end text-success fw-semibold">${{ "{:,.0f}".format(project_pnl|sum(attribute='paid')) }}</td>
-            <td class="text-end text-danger">${{ "{:,.0f}".format(project_pnl|sum(attribute='expenses')) }}</td>
+            <td class="text-end">${{ "{:,.2f}".format(project_pnl|sum(attribute='contract_value')) }}</td>
+            <td class="text-end text-teal">${{ "{:,.2f}".format(project_pnl|sum(attribute='invoiced')) }}</td>
+            <td class="text-end text-success fw-semibold">${{ "{:,.2f}".format(project_pnl|sum(attribute='paid')) }}</td>
+            <td class="text-end text-danger">${{ "{:,.2f}".format(project_pnl|sum(attribute='expenses')) }}</td>
             <td class="text-end {{ 'text-success' if project_pnl|sum(attribute='gross_profit') >= 0 else 'text-danger' }}">
-              ${{ "{:,.0f}".format(project_pnl|sum(attribute='gross_profit')) }}
+              ${{ "{:,.2f}".format(project_pnl|sum(attribute='gross_profit')) }}
             </td>
             {% if total_labor_cost and total_labor_cost > 0 %}
-            <td class="text-end text-danger">${{ "{:,.0f}".format(project_pnl|sum(attribute='labor_cost')) }}</td>
+            <td class="text-end text-danger">${{ "{:,.2f}".format(project_pnl|sum(attribute='labor_cost')) }}</td>
             <td class="text-end {{ 'text-success' if project_pnl|sum(attribute='net_profit') >= 0 else 'text-danger' }}">
-              ${{ "{:,.0f}".format(project_pnl|sum(attribute='net_profit')) }}
+              ${{ "{:,.2f}".format(project_pnl|sum(attribute='net_profit')) }}
             </td>
             {% endif %}
             <td></td>
@@ -2122,7 +2122,7 @@ function viewReceipt(expId) {
         <div class="kpi-value" style="color:#D97706;">${{ "{:,.2f}".format(bs_aging_total_outstanding) }}</div>
         <div class="kpi-sub">
           {% set bs_overdue_amt = bs_aging_totals['1_30'] + bs_aging_totals['31_60'] + bs_aging_totals['61_90'] + bs_aging_totals['90plus'] %}
-          {% if bs_overdue_amt > 0 %}<span style="color:#DC2626;">${{ "{:,.0f}".format(bs_overdue_amt) }} overdue</span>{% elif bs_aging_total_outstanding > 0 %}all current{% else %}none for {{ selected_year }}{% endif %}
+          {% if bs_overdue_amt > 0 %}<span style="color:#DC2626;">${{ "{:,.2f}".format(bs_overdue_amt) }} overdue</span>{% elif bs_aging_total_outstanding > 0 %}all current{% else %}none for {{ selected_year }}{% endif %}
         </div>
       </div>
     </div>
@@ -2141,10 +2141,11 @@ function viewReceipt(expId) {
       </div>
     </div>
     <div class="col-6 col-xl">
-      <div class="kpi-card {{ 'kpi-green' if (total_revenue | default(0)) - (total_expenses | default(0)) >= 0 else 'kpi-red' }}">
+      {% set bs_net = (total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0)) %}
+      <div class="kpi-card {{ 'kpi-green' if bs_net >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit/Loss</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
-        <div id="bsKpiNet" class="kpi-value {{ 'text-success' if (total_revenue | default(0)) - (total_expenses | default(0)) >= 0 else 'text-danger' }}">${{ "{:,.2f}".format((total_revenue | default(0)) - (total_expenses | default(0))) }}</div>
-        <div class="kpi-sub">revenue minus expenses</div>
+        <div id="bsKpiNet" class="kpi-value {{ 'text-success' if bs_net >= 0 else 'text-danger' }}">${{ "{:,.2f}".format(bs_net) }}</div>
+        <div class="kpi-sub">collected − expenses − salaries</div>
       </div>
     </div>
   </div>
@@ -2742,7 +2743,7 @@ function viewReceipt(expId) {
     {% for key, label, badge_cls, hint in buckets %}
     <div class="col-6 col-xl">
       <div class="card-panel text-center py-3">
-        <div class="fw-bold mb-1" style="font-size:1.25rem;">${{ "{:,.0f}".format(aging_totals[key]) }}</div>
+        <div class="fw-bold mb-1" style="font-size:1.25rem;">${{ "{:,.2f}".format(aging_totals[key]) }}</div>
         <span class="badge {{ badge_cls }} mb-1">{{ label }}</span>
         <div class="text-muted small">{{ aging_buckets[key]|length }} invoice{{ 's' if aging_buckets[key]|length != 1 }}</div>
       </div>
@@ -2750,7 +2751,7 @@ function viewReceipt(expId) {
     {% endfor %}
     <div class="col-6 col-xl">
       <div class="card-panel text-center py-3" style="border:2px solid #0F766E;">
-        <div class="fw-bold mb-1" style="font-size:1.25rem; color:#0F766E;">${{ "{:,.0f}".format(aging_total_outstanding) }}</div>
+        <div class="fw-bold mb-1" style="font-size:1.25rem; color:#0F766E;">${{ "{:,.2f}".format(aging_total_outstanding) }}</div>
         <span class="badge bg-teal mb-1">Total Outstanding</span>
         <div class="text-muted small">All unpaid</div>
       </div>
