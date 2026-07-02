@@ -486,6 +486,46 @@ a[href*="filter_expense"]:hover {
      INCOME TAB
 ═════════════════════════════════════════════════════════════════ -->
 <div class="tab-pane fade {{ 'show active' if active_tab == 'income' else '' }}" id="tab-income">
+
+  <!-- ── Summary Cards ── -->
+  {% set inc = namespace(subtotal=0, tax=0, total=0, paid=0) %}
+  {% for r in rev_list %}
+    {% set inc.subtotal = inc.subtotal + (r.get('total',0)|float) - (r.get('tax_amount',0)|float) %}
+    {% set inc.tax      = inc.tax      + (r.get('tax_amount',0)|float) %}
+    {% set inc.total    = inc.total    + (r.get('total',0)|float) %}
+    {% set inc.paid     = inc.paid     + (r.get('amount_paid',0)|float) + (r.get('tax_paid',0)|float) %}
+  {% endfor %}
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-teal">
+        <div class="kpi-top"><span class="kpi-label">Subtotal</span><i class="bi bi-file-text kpi-icon-sm"></i></div>
+        <div class="kpi-value" id="incKpiSubtotal">${{ "{:,.2f}".format(inc.subtotal) }}</div>
+        <div class="kpi-sub">before tax</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-amber">
+        <div class="kpi-top"><span class="kpi-label">Tax</span><i class="bi bi-percent kpi-icon-sm"></i></div>
+        <div class="kpi-value" id="incKpiTax">${{ "{:,.2f}".format(inc.tax) }}</div>
+        <div class="kpi-sub">tax collected</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-purple">
+        <div class="kpi-top"><span class="kpi-label">Invoice Total</span><i class="bi bi-receipt kpi-icon-sm"></i></div>
+        <div class="kpi-value" id="incKpiTotal">${{ "{:,.2f}".format(inc.total) }}</div>
+        <div class="kpi-sub">subtotal + tax</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl-3">
+      <div class="kpi-card kpi-green">
+        <div class="kpi-top"><span class="kpi-label">Amount Paid</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
+        <div class="kpi-value" id="incKpiPaid">${{ "{:,.2f}".format(inc.paid) }}</div>
+        <div class="kpi-sub">collected to date</div>
+      </div>
+    </div>
+  </div>
+
   <div class="card-panel">
     <div class="d-flex justify-content-between align-items-center mb-2">
       <h6 class="panel-title mb-0">Income — Paid &amp; Partial Invoices</h6>
@@ -536,6 +576,9 @@ a[href*="filter_expense"]:hover {
               data-year="{{ r.get('date','')[:4] }}"
               data-status="{{ r.get('status','') }}"
               data-amount="{{ ((r.get('amount_paid',0)|float) + (r.get('tax_paid',0)|float))|float }}"
+              data-subtotal="{{ ((r.get('total',0)|float) - (r.get('tax_amount',0)|float)) }}"
+              data-tax="{{ r.get('tax_amount',0)|float }}"
+              data-total="{{ r.get('total',0)|float }}"
               data-search="{{ r.get('client_name','')|lower }} {{ r.get('invoice_number','')|lower }}">
             <td class="text-muted small">{{ r.get('date','—') | format_date }}</td>
             <td>
@@ -2998,7 +3041,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     var moVal   = ((document.getElementById('incomeMonthFilter') || {}).value || '');
     var stBtn   = document.querySelector('#incomeStatusGroup .status-pill-btn.sp-active');
     var stFilter = stBtn ? stBtn.dataset.status : 'all';
-    var shown = 0, filteredTotal = 0;
+    var shown = 0, filteredTotal = 0, filteredSubtotal = 0, filteredTax = 0, filteredInvTotal = 0;
     rows.forEach(function(r) {
       var vis = true;
       if (q)     vis = (r.getAttribute('data-search')||'').includes(q);
@@ -3011,15 +3054,23 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
       r.style.display = vis ? '' : 'none';
       if (vis) {
         shown++;
-        filteredTotal += parseFloat(r.getAttribute('data-amount') || '0');
+        filteredTotal    += parseFloat(r.getAttribute('data-amount')   || '0');
+        filteredSubtotal += parseFloat(r.getAttribute('data-subtotal') || '0');
+        filteredTax      += parseFloat(r.getAttribute('data-tax')      || '0');
+        filteredInvTotal += parseFloat(r.getAttribute('data-total')    || '0');
       }
     });
+    function fmtAmt(n) { return '$' + n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); }
     var ci = document.getElementById('incomeCountInfo');
     if (ci) ci.textContent = shown + ' / ' + rows.length + ' entries';
     var nr = document.getElementById('incomeNoResults');
     if (nr) nr.style.display = (shown===0 && rows.length>0) ? '' : 'none';
     var tc = document.getElementById('incomeTotalCell');
-    if (tc) tc.textContent = '$' + filteredTotal.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    if (tc) tc.textContent = fmtAmt(filteredTotal);
+    var ks = document.getElementById('incKpiSubtotal');  if (ks) ks.textContent = fmtAmt(filteredSubtotal);
+    var kt = document.getElementById('incKpiTax');       if (kt) kt.textContent = fmtAmt(filteredTax);
+    var ki = document.getElementById('incKpiTotal');     if (ki) ki.textContent = fmtAmt(filteredInvTotal);
+    var kp = document.getElementById('incKpiPaid');      if (kp) kp.textContent = fmtAmt(filteredTotal);
   }
 
   window.onIncomeYearChange = function() {
