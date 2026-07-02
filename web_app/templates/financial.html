@@ -2845,8 +2845,11 @@ function viewReceipt(expId) {
       <div class="d-flex gap-2 align-items-center">
         <input type="text" id="agingSearch" placeholder="Client or invoice #..."
                class="form-control form-control-sm" style="width:200px;" oninput="filterAging()">
-        <button onclick="clearAgingFilter()" class="btn btn-sm btn-outline-secondary">
+        <button onclick="clearAgingFilter()" class="btn btn-xs btn-outline-secondary">
           <i class="bi bi-x me-1"></i>Clear
+        </button>
+        <button onclick="exportAgingCSV()" class="btn btn-xs btn-outline-teal" title="Export visible rows to CSV">
+          <i class="bi bi-download me-1"></i>Export CSV
         </button>
       </div>
     </div>
@@ -3385,6 +3388,49 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
   });
 
 })();
+
+// Export A/R Aging to CSV
+function exportAgingCSV() {
+  var BUCKET_LABELS = {
+    'current': 'Current', '1_30': '1-30 Days',
+    '31_60': '31-60 Days', '61_90': '61-90 Days', '90plus': '90+ Days'
+  };
+  var rows = Array.from(document.querySelectorAll('.aging-row'));
+  var visible = rows.filter(function(r) { return r.style.display !== 'none'; });
+  var headers = ['Bucket','Invoice','Client','Invoice Date','Due Date','Net Terms','Days Overdue','Balance Due'];
+  var lines = [headers.map(function(h){ return '"'+h+'"'; }).join(',')];
+  visible.forEach(function(row) {
+    var cells = row.querySelectorAll('td');
+    function cellText(i) {
+      return (cells[i] ? cells[i].textContent.trim().replace(/\s+/g,' ') : '').replace(/"/g,'""');
+    }
+    var bucket = BUCKET_LABELS[row.getAttribute('data-bucket')] || row.getAttribute('data-bucket') || '';
+    var balanceRaw = cellText(6).replace(/[$,]/g,'');
+    lines.push([
+      '"'+bucket+'"',
+      '"'+cellText(0)+'"',  // Invoice
+      '"'+cellText(1)+'"',  // Client
+      '"'+cellText(2)+'"',  // Invoice Date
+      '"'+cellText(3)+'"',  // Due Date
+      '"'+cellText(4)+'"',  // Net Terms
+      '"'+cellText(5)+'"',  // Days Overdue
+      parseFloat(balanceRaw||0).toFixed(2)
+    ].join(','));
+  });
+  var csv  = lines.join('\r\n');
+  var blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href = url;
+  // Include active bucket in filename
+  var bucketPill = document.querySelector('.bucket-pill.bp-active');
+  var bucketLabel = bucketPill ? bucketPill.textContent.trim().replace(/\s+/g,'-') : 'all';
+  a.download = 'ar-aging-' + bucketLabel + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 // Export Balance Sheet to Excel
 function exportBalanceSheet() {
