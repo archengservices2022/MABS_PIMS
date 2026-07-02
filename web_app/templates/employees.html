@@ -483,43 +483,46 @@
 <div class="tab-pane fade show active" id="tab-time-off">
 
   {% set bal = my_time_off_balance %}
-  {% set pct_used = ((bal.used / bal.allotment) * 100) | int if bal.allotment > 0 else 0 %}
+  {% set pct_used = ((bal.used_hours / bal.allotment_hours) * 100) | int if bal.allotment_hours > 0 else 0 %}
 
   <!-- Balance Banner -->
-  <div class="card-panel mb-3" style="border-left:4px solid {% if bal.remaining == 0 %}#DC2626{% elif bal.remaining <= 3 %}#F59E0B{% else %}#0D9488{% endif %};">
+  <div class="card-panel mb-3" style="border-left:4px solid {% if bal.remaining_hours == 0 %}#DC2626{% elif bal.remaining_hours <= 24 %}#F59E0B{% else %}#0D9488{% endif %};">
     <div class="d-flex justify-content-between align-items-center mb-2">
       <h6 class="panel-title mb-0">
         <i class="bi bi-umbrella me-2" style="color:#0D9488;"></i>{{ current_year }} Time Off Balance
       </h6>
-      <span class="text-muted small">{{ bal.allotment }} days allotted per year</span>
+      <span class="text-muted small">{{ bal.allotment }} days &times; 8 hrs = {{ bal.allotment_hours | int }} hrs allotted</span>
     </div>
     <div class="row g-3 mb-2">
       <div class="col-4 text-center">
-        <div style="font-size:1.6rem; font-weight:800; color:#0D9488;">{{ bal.allotment }}</div>
-        <div class="text-muted small">Total Days</div>
+        <div style="font-size:1.6rem; font-weight:800; color:#0D9488;">{{ bal.allotment_hours | int }}</div>
+        <div class="text-muted small">Total Hours</div>
+        <div class="text-muted" style="font-size:10px;">{{ bal.allotment }} days</div>
       </div>
       <div class="col-4 text-center">
-        <div style="font-size:1.6rem; font-weight:800; color:#D97706;">{{ bal.used }}</div>
+        <div style="font-size:1.6rem; font-weight:800; color:#D97706;">{{ "%.1f" | format(bal.used_hours) }}</div>
         <div class="text-muted small">Used</div>
+        <div class="text-muted" style="font-size:10px;">{{ "%.1f" | format(bal.used) }} days</div>
       </div>
       <div class="col-4 text-center">
-        <div style="font-size:1.6rem; font-weight:800; color:{% if bal.remaining == 0 %}#DC2626{% elif bal.remaining <= 3 %}#F59E0B{% else %}#16A34A{% endif %};">{{ bal.remaining }}</div>
+        <div style="font-size:1.6rem; font-weight:800; color:{% if bal.remaining_hours == 0 %}#DC2626{% elif bal.remaining_hours <= 24 %}#F59E0B{% else %}#16A34A{% endif %};">{{ "%.1f" | format(bal.remaining_hours) }}</div>
         <div class="text-muted small">Remaining</div>
+        <div class="text-muted" style="font-size:10px;">{{ "%.1f" | format(bal.remaining) }} days</div>
       </div>
     </div>
     <div class="progress" style="height:10px; border-radius:6px;">
-      <div class="progress-bar {% if bal.remaining == 0 %}bg-danger{% elif bal.remaining <= 3 %}bg-warning{% else %}bg-success{% endif %}"
+      <div class="progress-bar {% if bal.remaining_hours == 0 %}bg-danger{% elif bal.remaining_hours <= 24 %}bg-warning{% else %}bg-success{% endif %}"
            style="width:{{ pct_used }}%; border-radius:6px;"></div>
     </div>
-    {% if bal.remaining == 0 %}
+    {% if bal.remaining_hours == 0 %}
     <div class="mt-2 d-flex align-items-center gap-2" style="background:#FEF2F2; border:1px solid #FECACA; border-radius:6px; padding:8px 12px;">
       <i class="bi bi-x-circle-fill" style="color:#DC2626;"></i>
-      <span style="color:#DC2626; font-weight:600; font-size:13px;">No more vacation days available for {{ current_year }}.</span>
+      <span style="color:#DC2626; font-weight:600; font-size:13px;">No more time off hours available for {{ current_year }}.</span>
     </div>
-    {% elif bal.remaining <= 3 %}
+    {% elif bal.remaining_hours <= 24 %}
     <div class="mt-2 d-flex align-items-center gap-2" style="background:#FFFBEB; border:1px solid #FCD34D; border-radius:6px; padding:8px 12px;">
       <i class="bi bi-exclamation-triangle-fill" style="color:#F59E0B;"></i>
-      <span style="color:#92400E; font-weight:600; font-size:13px;">Only {{ bal.remaining }} day{{ 's' if bal.remaining != 1 }} remaining for {{ current_year }}.</span>
+      <span style="color:#92400E; font-weight:600; font-size:13px;">Only {{ "%.1f" | format(bal.remaining_hours) }} hrs ({{ "%.1f" | format(bal.remaining) }} days) remaining for {{ current_year }}.</span>
     </div>
     {% endif %}
   </div>
@@ -530,14 +533,15 @@
         <h6 class="panel-title mb-3">
           <i class="bi bi-calendar-plus me-1" style="color:#0D9488;"></i>Request Time Off
         </h6>
-        {% if bal.remaining == 0 %}
+        {% if bal.remaining_hours == 0 %}
         <div class="text-center py-3" style="background:#FEF2F2; border-radius:8px;">
           <i class="bi bi-x-circle-fill" style="font-size:28px; color:#DC2626;"></i>
-          <div class="mt-2 fw-600" style="color:#DC2626;">No vacation days remaining</div>
-          <div class="text-muted small mt-1">You have used all {{ bal.allotment }} days for {{ current_year }}.<br>You may still request <strong>Unpaid</strong> leave.</div>
+          <div class="mt-2 fw-600" style="color:#DC2626;">No time off hours remaining</div>
+          <div class="text-muted small mt-1">You have used all {{ bal.allotment_hours | int }} hrs for {{ current_year }}.<br>You may still request <strong>Unpaid</strong> leave.</div>
         </div>
         <form method="post" action="{{ url_for('employee_time_off_new') }}" class="mt-3">
           <input type="hidden" name="type" value="Unpaid">
+          <input type="hidden" name="hours_per_day" value="8">
           <div class="row g-2 mb-2">
             <div class="col-6">
               <label class="form-label small fw-semibold">Start Date</label>
@@ -558,32 +562,36 @@
         </form>
         {% else %}
         <form method="post" action="{{ url_for('employee_time_off_new') }}" id="timeOffForm">
-          <div class="mb-2">
-            <label class="form-label small fw-semibold">Type</label>
-            <select name="type" class="form-select form-select-sm" id="timeOffType" onchange="onLeaveTypeChange()">
-              <option>Vacation</option><option>Sick</option>
-              <option>Personal</option><option>Half Day</option><option>Unpaid</option>
-            </select>
-          </div>
-          <!-- Half Day period selector (shown only for Half Day) -->
-          <div id="halfDayRow" class="mb-2" style="display:none;">
-            <label class="form-label small fw-semibold">Half Day Period</label>
-            <select name="half_day_period" id="halfDayPeriod" class="form-select form-select-sm">
-              <option value="AM">Morning (AM)</option>
-              <option value="PM">Afternoon (PM)</option>
-            </select>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Type</label>
+              <select name="type" class="form-select form-select-sm" id="timeOffType" onchange="onLeaveTypeChange()">
+                <option>Vacation</option><option>Sick</option>
+                <option>Personal</option><option>Unpaid</option>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Hours Per Day</label>
+              <div class="input-group input-group-sm">
+                <input type="number" name="hours_per_day" id="hoursPerDay"
+                       class="form-control form-control-sm" min="0.5" max="8" step="0.5" value="8"
+                       oninput="calcRequestedDays()">
+                <span class="input-group-text text-muted" style="font-size:11px;">/ 8 hrs</span>
+              </div>
+            </div>
           </div>
           <div class="row g-2 mb-2">
             <div class="col-6">
               <label class="form-label small fw-semibold">Start Date</label>
               <input type="date" name="start_date" id="toStartDate" class="form-control form-control-sm" required oninput="calcRequestedDays()">
             </div>
-            <div class="col-6" id="endDateCol">
+            <div class="col-6">
               <label class="form-label small fw-semibold">End Date</label>
               <input type="date" name="end_date" id="toEndDate" class="form-control form-control-sm" required oninput="calcRequestedDays()">
             </div>
           </div>
-          <div id="requestedDaysInfo" style="display:none;" class="mb-2 p-2 rounded" style="background:#F0FDF4;">
+          <!-- Live calculation summary -->
+          <div id="requestedDaysInfo" style="display:none;" class="mb-2 p-2 rounded" style="background:#F0FDF4; border:1px solid #D1FAE5;">
             <span class="small" id="requestedDaysText"></span>
           </div>
           <div class="mb-3">
@@ -606,9 +614,15 @@
         {% if my_time_off %}
         <div class="table-responsive">
           <table class="table table-sm table-hover mb-0 align-middle">
-            <thead><tr><th>Type</th><th>Dates</th><th>Days</th><th>Reason</th><th>Status</th></tr></thead>
+            <thead><tr><th>Type</th><th>Dates</th><th>Hours</th><th>Reason</th><th>Status</th></tr></thead>
             <tbody>
             {% for r in my_time_off %}
+            {% set r_hours = r.get('total_hours') %}
+            {% if r_hours is none %}
+              {% if r.type == 'Half Day' %}{% set r_hours = 4 %}
+              {% elif r.type == 'Unpaid' %}{% set r_hours = none %}
+              {% else %}{% set r_hours = (r.get('working_days', 0) | float) * 8 %}{% endif %}
+            {% endif %}
             <tr>
               <td class="fw-500">
                 {{ r.type }}
@@ -616,15 +630,20 @@
                 <span style="font-size:.65rem;background:#e0e7ff;color:#3730a3;border-radius:4px;padding:1px 5px;font-weight:700;">{{ r.half_day_period }}</span>
                 {% endif %}
               </td>
-              <td class="text-muted small">{{ r.start_date | format_date }}{% if r.type != 'Half Day' %} → {{ r.end_date | format_date }}{% endif %}</td>
               <td class="text-muted small">
-                {% if r.type == 'Half Day' %}
-                  0.5
-                {% elif r.type != 'Unpaid' %}
-                  {{ r.get('working_days', '—') }}
-                {% else %}
-                  <span class="text-muted">unpaid</span>
+                {{ r.start_date | format_date }}
+                {% if r.start_date != r.end_date %} → {{ r.end_date | format_date }}{% endif %}
+                {% if r.get('hours_per_day') and r.get('hours_per_day') | float < 8 %}
+                <span class="text-muted" style="font-size:10px;">({{ r.hours_per_day }}h/day)</span>
                 {% endif %}
+              </td>
+              <td class="text-muted small fw-semibold">
+                {% if r.type == 'Unpaid' %}
+                  <span class="text-muted">unpaid</span>
+                {% elif r_hours is not none %}
+                  {{ "%.1f" | format(r_hours | float) }} hrs
+                  <div style="font-size:10px;color:#94a3b8;">{{ r.get('working_days', 0) }} day{{ 's' if r.get('working_days',1)|float != 1 }}</div>
+                {% else %}—{% endif %}
               </td>
               <td class="text-muted small">{{ r.reason or '—' }}</td>
               <td><span class="badge status-{{ r.status|lower }}">{{ r.status }}</span></td>
@@ -704,24 +723,38 @@
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0 align-middle">
         <thead>
-          <tr><th>Employee</th><th>Type</th><th>Dates</th><th class="text-center">Days</th><th>Reason</th><th>Requested</th><th class="text-end">Action</th></tr>
+          <tr><th>Employee</th><th>Type</th><th>Dates</th><th class="text-center">Hours</th><th>Reason</th><th>Requested</th><th class="text-end">Action</th></tr>
         </thead>
         <tbody>
         {% for r in pending_time_off %}
-        {% set emp_bal = all_time_off_balances.get(r.employee_uid, {'remaining':15}) %}
+        {% set emp_bal = all_time_off_balances.get(r.employee_uid, {'remaining_hours': 120, 'remaining': 15}) %}
+        {% set r_hours = r.get('total_hours') %}
+        {% if r_hours is none %}
+          {% if r.type == 'Half Day' %}{% set r_hours = 4 %}
+          {% elif r.type != 'Unpaid' %}{% set r_hours = (r.get('working_days', 0) | float) * 8 %}{% endif %}
+        {% endif %}
         <tr>
           <td>
             <div class="d-flex align-items-center gap-2">
               <span class="emp-avatar" style="width:28px;height:28px;font-size:11px;">{{ (r.employee_name or 'U')[0]|upper }}</span>
               <div>
                 <div class="fw-500">{{ r.employee_name }}</div>
-                <div class="text-muted" style="font-size:11px;">{{ emp_bal.remaining }} days left</div>
+                <div class="text-muted" style="font-size:11px;">{{ "%.1f" | format(emp_bal.remaining_hours | float) }} hrs left</div>
               </div>
             </div>
           </td>
           <td>{{ r.type }}</td>
-          <td class="text-muted small">{{ r.start_date | format_date }} → {{ r.end_date | format_date }}</td>
-          <td class="text-center small fw-600">{{ r.get('working_days', '—') }}</td>
+          <td class="text-muted small">
+            {{ r.start_date | format_date }}{% if r.start_date != r.end_date %} → {{ r.end_date | format_date }}{% endif %}
+            {% if r.get('hours_per_day') and r.get('hours_per_day') | float < 8 %}
+            <span class="text-muted" style="font-size:10px;">({{ r.hours_per_day }}h/day)</span>
+            {% endif %}
+          </td>
+          <td class="text-center small fw-600">
+            {% if r.type == 'Unpaid' %}<span class="text-muted">unpaid</span>
+            {% elif r_hours is not none %}{{ "%.1f" | format(r_hours | float) }} hrs
+            {% else %}—{% endif %}
+          </td>
           <td class="text-muted small">{{ r.reason or '—' }}</td>
           <td class="text-muted small">{{ r.requested_at[:10] | format_date }}</td>
           <td class="text-end">
@@ -1562,70 +1595,52 @@ function countWorkingDays(startStr, endStr) {
 
 window.onLeaveTypeChange = function() {
   var type = (document.getElementById('timeOffType') || {}).value || '';
-  var halfDayRow = document.getElementById('halfDayRow');
-  var endDateCol = document.getElementById('endDateCol');
-  var toEndDate  = document.getElementById('toEndDate');
-  var toStartDate = document.getElementById('toStartDate');
-  if (type === 'Half Day') {
-    if (halfDayRow) halfDayRow.style.display = '';
-    // For half day, end date = start date; hide end date field
-    if (endDateCol) endDateCol.style.display = 'none';
-    if (toEndDate && toStartDate) toEndDate.value = toStartDate.value;
-    toStartDate && toStartDate.addEventListener('input', function() {
-      if (toEndDate) toEndDate.value = this.value;
-    });
-  } else {
-    if (halfDayRow) halfDayRow.style.display = 'none';
-    if (endDateCol) endDateCol.style.display = '';
-  }
+  var hpdEl = document.getElementById('hoursPerDay');
+  // Auto-set hours per day for Unpaid (keep at 8 by default)
+  if (hpdEl && type === 'Unpaid') { hpdEl.value = 8; }
   calcRequestedDays();
 };
 
 window.calcRequestedDays = function() {
   var s = (document.getElementById('toStartDate') || {}).value;
   var e = (document.getElementById('toEndDate')   || {}).value;
-  var type = (document.getElementById('timeOffType') || {}).value || '';
-  var infoDiv  = document.getElementById('requestedDaysInfo');
-  var infoText = document.getElementById('requestedDaysText');
+  var type      = (document.getElementById('timeOffType') || {}).value || '';
+  var hpdEl     = document.getElementById('hoursPerDay');
+  var hoursPerDay = hpdEl ? Math.max(0.5, Math.min(8, parseFloat(hpdEl.value) || 8)) : 8;
+  var infoDiv   = document.getElementById('requestedDaysInfo');
+  var infoText  = document.getElementById('requestedDaysText');
   var submitBtn = document.getElementById('timeOffSubmitBtn');
   if (!infoDiv) return;
-  // Half Day: sync end date to start date
-  if (type === 'Half Day') {
-    var edEl = document.getElementById('toEndDate');
-    if (edEl && s) edEl.value = s;
-    if (!s) return;
-    infoDiv.style.display = 'block';
-    infoDiv.style.background = '#F0FDF4';
-    infoText.innerHTML = '<i class="bi bi-calendar-check me-1" style="color:#16A34A;"></i><span style="color:#16A34A;"><strong>0.5 day</strong> requested.</span>';
-    if (submitBtn) submitBtn.disabled = false;
-    return;
-  }
-  if (!s || !e) return;
+  if (!s || !e) { infoDiv.style.display = 'none'; return; }
   var days = countWorkingDays(s, e);
-  var remaining = {{ my_time_off_balance.remaining }};
+  var totalHours = Math.round(days * hoursPerDay * 10) / 10;
+  var remainingHours = {{ my_time_off_balance.remaining_hours }};
   var isUnpaid = type === 'Unpaid';
   infoDiv.style.display = 'block';
+  infoDiv.style.cssText = 'display:block;padding:8px 10px;border-radius:6px;margin-bottom:8px;border:1px solid #D1FAE5;background:#F0FDF4;';
   if (days <= 0) {
-    infoDiv.style.background = '#FEF2F2';
-    infoText.innerHTML = '<i class="bi bi-x-circle me-1" style="color:#DC2626;"></i><span style="color:#DC2626;">End date must be after start date.</span>';
+    infoDiv.style.cssText = 'display:block;padding:8px 10px;border-radius:6px;margin-bottom:8px;border:1px solid #FECACA;background:#FEF2F2;';
+    infoText.innerHTML = '<i class="bi bi-x-circle me-1" style="color:#DC2626;"></i><span style="color:#DC2626;">End date must be on or after start date.</span>';
     if (submitBtn) submitBtn.disabled = true;
     return;
   }
-  if (!isUnpaid && days > remaining) {
-    infoDiv.style.background = '#FEF2F2';
-    infoText.innerHTML = '<i class="bi bi-x-circle me-1" style="color:#DC2626;"></i><span style="color:#DC2626;"><strong>' + days + ' working day' + (days!==1?'s':'') + '</strong> requested — exceeds your <strong>' + remaining + '</strong> remaining day' + (remaining!==1?'s':'') + '. Consider Unpaid leave for extra days.</span>';
+  var hrsLabel = hoursPerDay + ' hr' + (hoursPerDay !== 1 ? 's' : '') + '/day';
+  if (!isUnpaid && totalHours > remainingHours) {
+    infoDiv.style.cssText = 'display:block;padding:8px 10px;border-radius:6px;margin-bottom:8px;border:1px solid #FECACA;background:#FEF2F2;';
+    infoText.innerHTML = '<i class="bi bi-x-circle me-1" style="color:#DC2626;"></i><span style="color:#DC2626;"><strong>' + days + ' day' + (days!==1?'s':'') + ' × ' + hrsLabel + ' = ' + totalHours + ' hrs</strong> requested — exceeds your <strong>' + remainingHours + ' hrs</strong> remaining. Consider Unpaid leave.</span>';
     if (submitBtn) submitBtn.disabled = true;
   } else {
-    infoDiv.style.background = '#F0FDF4';
-    infoText.innerHTML = '<i class="bi bi-calendar-check me-1" style="color:#16A34A;"></i><span style="color:#16A34A;"><strong>' + days + ' working day' + (days!==1?'s':'') + '</strong> requested.' + (!isUnpaid ? ' You will have <strong>' + (remaining - days) + '</strong> day' + ((remaining-days)!==1?'s':'') + ' left.' : '') + '</span>';
+    var leftHrs = Math.round((remainingHours - totalHours) * 10) / 10;
+    infoText.innerHTML = '<i class="bi bi-calendar-check me-1" style="color:#16A34A;"></i><span style="color:#16A34A;"><strong>' + days + ' day' + (days!==1?'s':'') + ' × ' + hrsLabel + ' = <span style="font-size:1.05em;">' + totalHours + ' hrs</span></strong> requested.' + (!isUnpaid ? ' You will have <strong>' + leftHrs + ' hrs</strong> left.' : '') + '</span>';
     if (submitBtn) submitBtn.disabled = false;
   }
 };
 
-// Recalculate if type changes
 document.addEventListener('DOMContentLoaded', function() {
   var typeEl = document.getElementById('timeOffType');
+  var hpdEl  = document.getElementById('hoursPerDay');
   if (typeEl) typeEl.addEventListener('change', calcRequestedDays);
+  if (hpdEl)  hpdEl.addEventListener('input',  calcRequestedDays);
 });
 
 // Medical Allowance review modal

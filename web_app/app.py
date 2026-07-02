@@ -7284,12 +7284,16 @@ def employee_time_off_new():
         return redirect(url_for("employees"))
 
     req_type = request.form.get("type", "Vacation")
+    hours_per_day = max(0.5, min(8.0, _safe_float(request.form.get("hours_per_day", 8))))
     if req_type == "Half Day":
-        working_days = 0.5
+        working_days = _count_working_days(start_date, end_date)
+        hours_per_day = 4.0
     elif req_type == "Unpaid":
-        working_days = 0
+        working_days = _count_working_days(start_date, end_date)
+        hours_per_day = hours_per_day
     else:
         working_days = _count_working_days(start_date, end_date)
+    total_hours = round(working_days * hours_per_day, 2)
     fb_push("/time_off_requests", {
         "employee_uid":    session.get("user_uid", ""),
         "employee_name":   session.get("user_name", ""),
@@ -7298,6 +7302,8 @@ def employee_time_off_new():
         "start_date":      start_date,
         "end_date":        end_date,
         "working_days":    working_days,
+        "hours_per_day":   hours_per_day,
+        "total_hours":     total_hours,
         "reason":          request.form.get("reason", "").strip(),
         "status":          "Pending",
         "requested_at":    datetime.now(timezone.utc).isoformat(),
@@ -9163,6 +9169,7 @@ def _load_time_off_requests() -> List[dict]:
     return []
 
 DEFAULT_TIME_OFF_DAYS = 15
+HOURS_PER_DAY = 8
 
 def _count_working_days(start_str: str, end_str: str) -> int:
     """Count Mon–Fri working days between start and end dates (inclusive)."""
@@ -9183,9 +9190,9 @@ def _count_working_days(start_str: str, end_str: str) -> int:
         return 0
 
 def _time_off_balance(all_requests: list, uid: str, year: int) -> dict:
-    """Return {allotment, used, remaining} working days for a user in a given year."""
+    """Return {allotment_hours, used_hours, remaining_hours, allotment, used, remaining} for a user in a given year."""
     year_str = str(year)
-    used = 0
+    used_hours = 0.0
     for r in all_requests:
         if r.get("employee_uid") != uid:
             continue
@@ -9196,9 +9203,26 @@ def _time_off_balance(all_requests: list, uid: str, year: int) -> dict:
         start = r.get("start_date", "")
         if not start or not start.startswith(year_str):
             continue
-        used += _count_working_days(start, r.get("end_date", start))
-    remaining = max(0, DEFAULT_TIME_OFF_DAYS - used)
-    return {"allotment": DEFAULT_TIME_OFF_DAYS, "used": used, "remaining": remaining}
+        # Use stored total_hours if available, otherwise fall back to working_days × 8
+        if r.get("total_hours") is not None:
+            used_hours += _safe_float(r.get("total_hours", 0))
+        elif r.get("type") == "Half Day":
+            used_hours += 4.0
+        else:
+            used_hours += _count_working_days(start, r.get("end_date", start)) * HOURS_PER_DAY
+    allotment_hours = DEFAULT_TIME_OFF_DAYS * HOURS_PER_DAY
+    remaining_hours = max(0.0, allotment_hours - used_hours)
+    # Also keep day-based values for backwards compat
+    used_days = used_hours / HOURS_PER_DAY
+    remaining_days = remaining_hours / HOURS_PER_DAY
+    return {
+        "allotment_hours": allotment_hours,
+        "used_hours": used_hours,
+        "remaining_hours": remaining_hours,
+        "allotment": DEFAULT_TIME_OFF_DAYS,
+        "used": used_days,
+        "remaining": remaining_days,
+    }
 
 def _sum_minutes_by_project(entries: List[dict]) -> dict:
     """Sum closed time-entry minutes grouped by project label."""
