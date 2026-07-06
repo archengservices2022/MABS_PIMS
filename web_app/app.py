@@ -5169,7 +5169,7 @@ def financial_income_export(fmt):
 @login_required
 def financial_expenses_export(fmt):
     import csv, io as _io
-    raw = fb_get("/expenses") or {}
+    raw = fb_get("/balance_sheet_expenses") or {}
     expenses = []
     if isinstance(raw, dict):
         for eid, edata in raw.items():
@@ -5177,23 +5177,24 @@ def financial_expenses_export(fmt):
                 edata["firebase_id"] = eid
                 expenses.append(edata)
     expenses.sort(key=lambda e: e.get("date", ""))
-    headers = ["Date", "Expense Type", "Expense Name", "Category", "Vendor", "Project", "Amount"]
+    headers = ["Date", "Expense Type", "Expense Name", "Category", "Vendor", "Project", "Amount", "Submitted By"]
     rows = [[_fmt_date_export(e.get("date","")),
              e.get("expense_type",""), e.get("expense_name","") or e.get("description",""),
              e.get("category",""), e.get("vendor",""), e.get("project_number",""),
-             _safe_float(e.get("amount",0))] for e in expenses]
+             _safe_float(e.get("amount",0)),
+             e.get("submitted_by_name","") or e.get("created_by","")] for e in expenses]
     if fmt == "excel":
-        buf = _make_excel("Expenses", headers, rows, [12,16,22,14,18,12,12], num_cols=[7])
+        buf = _make_excel("Expenses", headers, rows, [12,16,22,14,18,12,12,16], num_cols=[7])
         return _export_response(buf, "excel", "expenses")
     if fmt == "pdf":
-        fmt_rows = [[r[0],r[1],r[2],r[3],r[4],r[5],f"${r[6]:,.2f}"] for r in rows]
-        buf = _make_pdf("Expenses Report", headers, fmt_rows, [1.1,1.2,1.8,1.1,1.4,1.0,1.0])
+        fmt_rows = [[r[0],r[1],r[2],r[3],r[4],r[5],f"${r[6]:,.2f}",r[7]] for r in rows]
+        buf = _make_pdf("Expenses Report", headers, fmt_rows, [1.0,1.1,1.6,1.0,1.3,0.9,0.9,1.2])
         if not buf: return redirect(url_for("financial"))
         return _export_response(buf, "pdf", "expenses")
     out = _io.StringIO(); w = csv.writer(out)
     w.writerow([f"{company_info().get('name','')} – Expenses Report"]); w.writerow([])
     w.writerow(headers)
-    for r in rows: w.writerow([r[0],r[1],r[2],r[3],r[4],r[5],f"{r[6]:.2f}"])
+    for r in rows: w.writerow([r[0],r[1],r[2],r[3],r[4],r[5],f"{r[6]:.2f}",r[7]])
     return _export_response(out, "csv", "expenses")
 
 # ── By Project exports ────────────────────────────────────────────────────────
@@ -6422,18 +6423,21 @@ def financial():
 @role_required("financial")
 def expense_new():
     data = {
-        "expense_type":   request.form.get("expense_type", ""),
-        "expense_name":   request.form.get("expense_name", ""),
-        "description":    request.form.get("description", "") or request.form.get("expense_name", ""),
-        "amount":         request.form.get("amount", "0"),
-        "category":       request.form.get("category", ""),
-        "date":           request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
-        "vendor":         request.form.get("vendor", ""),
-        "project_number": request.form.get("project_number", ""),
-        "notes":          request.form.get("notes", ""),
-        "created_by":     session.get("user_email", ""),
-        "created_at":     datetime.now(timezone.utc).isoformat(),
-        "updated_at":     datetime.now(timezone.utc).isoformat(),
+        "expense_type":      request.form.get("expense_type", ""),
+        "expense_name":      request.form.get("expense_name", ""),
+        "description":       request.form.get("description", "") or request.form.get("expense_name", ""),
+        "amount":            request.form.get("amount", "0"),
+        "category":          request.form.get("category", ""),
+        "date":              request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+        "vendor":            request.form.get("vendor", ""),
+        "project_number":    request.form.get("project_number", ""),
+        "notes":             request.form.get("notes", ""),
+        "created_by":        session.get("user_email", ""),
+        "submitted_by_name": session.get("user_name", ""),
+        "submitted_by_uid":  session.get("user_uid", ""),
+        "status":            "Approved",
+        "created_at":        datetime.now(timezone.utc).isoformat(),
+        "updated_at":        datetime.now(timezone.utc).isoformat(),
     }
     # Handle receipt upload (base64 encoding)
     if 'receipt' in request.files:
@@ -7075,6 +7079,55 @@ def employees():
     if is_admin:
         context["all_medical_claims"] = all_medical_list
 
+    # Expense types / categories / names for employee submission form
+    # "Other Expenses" (salary, tax, medical, bank charges) is excluded — those are admin/payroll entries
+    # "Salaries, Labor & Related Costs" is excluded from O&M for the same reason
+    _custom_cats = fb_get("/custom_categories") or {}
+    _names_by_cat = _custom_cats.get("expense_names", {}) if isinstance(_custom_cats.get("expense_names"), dict) else {}
+
+    EMP_EXPENSE_TYPES = ["O & M (Operations & Maintenance)", "Capital Expenses", "Other Expenses"]
+    EMP_CATS_BY_TYPE = {
+        "O & M (Operations & Maintenance)": [
+            "Facilities & Utilities",
+            "Office & Admin Overhead",
+            "Engineering Software & IT",
+            "Professional Services",
+            "Insurance & Compliance",
+            "Travel, Site Visits & Vehicles",
+            "Marketing & Business Development",
+            "Training, Licensure & Development",
+            "Safety & Field Supplies",
+            "Miscellaneous O & M",
+        ],
+        "Capital Expenses": [
+            "Computer & Office Equipment",
+            "Field & Inspection Equipment",
+            "Furniture & Fixtures",
+            "Vehicles",
+            "Software (Capitalized)",
+            "Leasehold Improvements",
+        ],
+        "Other Expenses": [],
+    }
+    context["emp_expense_types"]      = EMP_EXPENSE_TYPES
+    context["emp_categories_by_type"] = json.dumps(EMP_CATS_BY_TYPE)
+    context["emp_names_by_cat"]       = json.dumps(_names_by_cat)
+
+    # Employee expense submissions
+    raw_emp_exp = fb_get("/expenses") or {}
+    all_emp_expenses = []
+    if isinstance(raw_emp_exp, dict):
+        for eid, edata in raw_emp_exp.items():
+            if isinstance(edata, dict):
+                edata["firebase_id"] = eid
+                all_emp_expenses.append(edata)
+    all_emp_expenses.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    context["my_expenses"] = [e for e in all_emp_expenses if e.get("submitted_by_uid") == uid]
+    if is_admin:
+        context["pending_expenses"] = [e for e in all_emp_expenses if e.get("status") == "Pending"]
+    else:
+        context["pending_expenses"] = []
+
     return render_template("employees.html", **context)
 
 @app.route("/employees/medical-claims/form")
@@ -7135,6 +7188,165 @@ def medical_claim_review(claim_id):
     })
     flash(f"Claim {status.lower()} successfully.", "success")
     return redirect(url_for("employees") + "#medical")
+
+@app.route("/employees/expenses/submit", methods=["POST"])
+@role_required("employees")
+def employee_expense_submit():
+    # Receipt is mandatory
+    if 'receipt' not in request.files or not request.files['receipt'].filename:
+        flash("A receipt is required to submit an expense.", "danger")
+        return redirect(url_for("employees") + "#expenses")
+
+    receipt_file = request.files['receipt']
+    try:
+        file_content = receipt_file.read()
+        receipt_base64 = base64.b64encode(file_content).decode('utf-8')
+        receipt_filename = receipt_file.filename
+        receipt_type = receipt_file.content_type
+    except Exception as e:
+        app.logger.error(f"Expense receipt upload error: {e}")
+        flash("Receipt upload failed. Please try again.", "danger")
+        return redirect(url_for("employees") + "#expenses")
+
+    data = {
+        "expense_type":      request.form.get("expense_type", ""),
+        "expense_name":      request.form.get("expense_name", ""),
+        "description":       request.form.get("expense_name", ""),
+        "amount":            request.form.get("amount", "0"),
+        "category":          request.form.get("category", ""),
+        "date":              request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+        "vendor":            request.form.get("vendor", "").strip(),
+        "project_number":    request.form.get("project_number", ""),
+        "notes":             request.form.get("notes", "").strip(),
+        "submitted_by_name": session.get("user_name", ""),
+        "submitted_by_uid":  session.get("user_uid", ""),
+        "submitted_by_email":session.get("user_email", ""),
+        "status":            "Pending",
+        "created_at":        datetime.now(timezone.utc).isoformat(),
+        "updated_at":        datetime.now(timezone.utc).isoformat(),
+        "receipt_base64":    receipt_base64,
+        "receipt_filename":  receipt_filename,
+        "receipt_type":      receipt_type,
+    }
+    fb_push("/expenses", data)
+    flash("Expense submitted and pending admin approval.", "success")
+    return redirect(url_for("employees") + "#expenses")
+
+
+@app.route("/employees/expenses/<exp_id>/review", methods=["POST"])
+@role_required("employees")
+def employee_expense_review(exp_id):
+    if normalize_role(session.get("user_role", "")) != "admin":
+        flash("Admin access required.", "danger")
+        return redirect(url_for("employees") + "#expenses")
+
+    action = request.form.get("action", "")
+    review_note = request.form.get("review_note", "").strip()
+    if action not in ("approve", "reject"):
+        flash("Invalid action.", "danger")
+        return redirect(url_for("employees") + "#expenses")
+
+    new_status = "Approved" if action == "approve" else "Rejected"
+    now_str = datetime.now(timezone.utc).isoformat()
+    fb_update(f"/expenses/{exp_id}", {
+        "status":      new_status,
+        "reviewed_by": session.get("user_name", ""),
+        "reviewed_at": now_str,
+        "review_note": review_note,
+        "updated_at":  now_str,
+    })
+
+    if new_status == "Approved":
+        # Copy into balance_sheet_expenses so it appears in Financial tab
+        exp_data = fb_get(f"/expenses/{exp_id}") or {}
+        if isinstance(exp_data, dict):
+            exp_data["firebase_id"] = exp_id
+            exp_data["created_by"] = exp_data.get("submitted_by_email", "")
+            fb_push("/balance_sheet_expenses", exp_data)
+            # Also mirror to /balance_sheet_expenses keyed by same id
+            fb_update(f"/balance_sheet_expenses/{exp_id}", exp_data)
+
+    flash(f"Expense {new_status.lower()}.", "success")
+    return redirect(url_for("employees") + "#expenses")
+
+
+@app.route("/employees/expenses/<exp_id>/receipt", methods=["GET"])
+@role_required("employees")
+def employee_expense_receipt(exp_id):
+    exp_data = fb_get(f"/expenses/{exp_id}") or {}
+    uid = session.get("user_uid", "")
+    role = normalize_role(session.get("user_role", ""))
+    # Only admin or the submitter can view
+    if role != "admin" and exp_data.get("submitted_by_uid") != uid:
+        return jsonify({"error": "Not authorized"}), 403
+    receipt_b64 = exp_data.get("receipt_base64", "")
+    receipt_filename = exp_data.get("receipt_filename", "receipt")
+    receipt_type = exp_data.get("receipt_type", "application/octet-stream")
+    if not receipt_b64:
+        return jsonify({"error": "No receipt found"}), 404
+    data_url = f"data:{receipt_type};base64,{receipt_b64}"
+    return jsonify({"url": data_url, "filename": receipt_filename})
+
+
+@app.route("/employees/expenses/<exp_id>/edit", methods=["POST"])
+@role_required("employees")
+def employee_expense_edit(exp_id):
+    uid = session.get("user_uid", "")
+    exp_data = fb_get(f"/expenses/{exp_id}") or {}
+    # Only the submitter can edit, and only while Pending
+    if exp_data.get("submitted_by_uid") != uid:
+        flash("You can only edit your own expenses.", "danger")
+        return redirect(url_for("employees") + "#expenses")
+    if exp_data.get("status", "Pending") != "Pending":
+        flash("Only pending expenses can be edited.", "danger")
+        return redirect(url_for("employees") + "#expenses")
+
+    updates = {
+        "expense_type":   request.form.get("expense_type", ""),
+        "expense_name":   request.form.get("expense_name", "").strip(),
+        "description":    request.form.get("expense_name", "").strip(),
+        "amount":         request.form.get("amount", "0"),
+        "date":           request.form.get("date", ""),
+        "vendor":         request.form.get("vendor", "").strip(),
+        "project_number": request.form.get("project_number", ""),
+        "notes":          request.form.get("notes", "").strip(),
+        "updated_at":     datetime.now(timezone.utc).isoformat(),
+    }
+    # Replace receipt only if a new file was provided
+    if 'receipt' in request.files and request.files['receipt'].filename:
+        receipt_file = request.files['receipt']
+        try:
+            updates["receipt_base64"]   = base64.b64encode(receipt_file.read()).decode('utf-8')
+            updates["receipt_filename"] = receipt_file.filename
+            updates["receipt_type"]     = receipt_file.content_type
+        except Exception as e:
+            app.logger.error(f"Expense receipt update error: {e}")
+            flash("Receipt upload failed. Other changes were not saved.", "danger")
+            return redirect(url_for("employees") + "#expenses")
+
+    fb_update(f"/expenses/{exp_id}", updates)
+    flash("Expense updated successfully.", "success")
+    return redirect(url_for("employees") + "#expenses")
+
+
+@app.route("/employees/expenses/<exp_id>/delete", methods=["POST"])
+@role_required("employees")
+def employee_expense_delete(exp_id):
+    uid = session.get("user_uid", "")
+    role = normalize_role(session.get("user_role", ""))
+    exp_data = fb_get(f"/expenses/{exp_id}") or {}
+    # Submitter can delete their own Pending; admin can delete anything
+    if role != "admin" and exp_data.get("submitted_by_uid") != uid:
+        flash("You can only delete your own expenses.", "danger")
+        return redirect(url_for("employees") + "#expenses")
+    if role != "admin" and exp_data.get("status", "Pending") != "Pending":
+        flash("Only pending expenses can be deleted.", "danger")
+        return redirect(url_for("employees") + "#expenses")
+
+    fb_delete(f"/expenses/{exp_id}")
+    flash("Expense deleted.", "success")
+    return redirect(url_for("employees") + "#expenses")
+
 
 @app.route("/employees/clock-in", methods=["POST"])
 @role_required("employees")

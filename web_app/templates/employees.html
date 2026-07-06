@@ -143,6 +143,14 @@
     </a>
   </li>
   <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-emp-expenses">
+      <i class="bi bi-receipt me-1"></i>Expenses
+      {% if user_role == 'admin' and pending_expenses %}
+      <span class="badge bg-danger ms-1">{{ pending_expenses|length }}</span>
+      {% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-medical">
       <i class="bi bi-heart-pulse me-1"></i>Medical Allowance
       {% if my_medical_claims | selectattr('status','equalto','Pending') | list | length %}
@@ -1254,9 +1262,404 @@
 </div><!-- /tab-directory -->
 {% endif %}
 
-</div><!-- /tab-content -->
-{% endblock %}
+<!-- ══════════════════════════════════════════════════════════════════════════
+     EMPLOYEE EXPENSES
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade" id="tab-emp-expenses">
 
+  <div class="row g-3">
+    <!-- Left: Submit Form -->
+    <div class="col-lg-5">
+      <div class="card-panel">
+        <h6 class="panel-title mb-3">
+          <i class="bi bi-plus-circle me-1" style="color:#0D9488;"></i>Submit Expense
+        </h6>
+        <form method="post" action="{{ url_for('employee_expense_submit') }}"
+              enctype="multipart/form-data" id="empExpenseForm">
+
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Expense Type <span class="text-danger">*</span></label>
+              <select name="expense_type" id="empExpType" class="form-select form-select-sm" required
+                      onchange="empUpdateCategories(this.value,'empExpCategory','empExpName')">
+                <option value="">Select type...</option>
+                {% for t in emp_expense_types %}
+                <option value="{{ t }}">{{ t }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Amount ($) <span class="text-danger">*</span></label>
+              <input type="number" name="amount" class="form-control form-control-sm"
+                     step="0.01" min="0.01" placeholder="0.00" required>
+            </div>
+          </div>
+
+          <!-- Category: dropdown for O&M / Capital, free text for Other -->
+          <div class="mb-2" id="empCatSelectWrap">
+            <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
+            <select name="category" id="empExpCategory" class="form-select form-select-sm"
+                    onchange="empUpdateNames(this.value,'empExpName')">
+              <option value="">— Select type first —</option>
+            </select>
+          </div>
+          <div class="mb-2" id="empCatTextWrap" style="display:none;">
+            <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
+            <input type="text" name="category" id="empExpCategoryText" class="form-control form-control-sm"
+                   placeholder="e.g. Meals, Parking, Supplies...">
+          </div>
+
+          <!-- Expense Name: dropdown for O&M / Capital, free text for Other -->
+          <div class="mb-2" id="empNameSelectWrap">
+            <label class="form-label small fw-semibold">Expense Name <span class="text-danger">*</span></label>
+            <select name="expense_name" id="empExpName" class="form-select form-select-sm">
+              <option value="">— Select category first —</option>
+            </select>
+          </div>
+          <div class="mb-2" id="empNameTextWrap" style="display:none;">
+            <label class="form-label small fw-semibold">Expense Name <span class="text-danger">*</span></label>
+            <input type="text" name="expense_name" id="empExpNameText" class="form-control form-control-sm"
+                   placeholder="Describe the expense...">
+          </div>
+
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Date <span class="text-danger">*</span></label>
+              <input type="date" name="date" class="form-control form-control-sm"
+                     value="{{ today_str }}" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Vendor <span class="text-danger">*</span></label>
+              <input type="text" name="vendor" class="form-control form-control-sm"
+                     placeholder="Vendor / supplier name" required>
+            </div>
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Link to Project <span class="text-muted fw-normal">(optional)</span></label>
+            <select name="project_number" class="form-select form-select-sm">
+              <option value="">— Optional —</option>
+              {% for p in active_projects %}
+              <option value="{{ p.project_number }}">{{ p.project_number }}{% if p.project_name %} — {{ p.project_name[:35] }}{% endif %}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Notes <span class="text-muted fw-normal">(optional)</span></label>
+            <textarea name="notes" class="form-control form-control-sm" rows="2"
+                      placeholder="Any additional details..."></textarea>
+          </div>
+
+          <!-- Receipt — REQUIRED -->
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">
+              Receipt <span class="text-danger">*</span>
+              <span class="text-muted fw-normal ms-1">(PDF, JPG, PNG)</span>
+            </label>
+            <input type="file" name="receipt" id="empReceiptInput"
+                   class="form-control form-control-sm"
+                   accept=".pdf,.jpg,.jpeg,.png,.gif" required
+                   onchange="onEmpReceiptChange(this)">
+            <div id="empReceiptPreview" class="mt-1" style="display:none;">
+              <span class="badge bg-success"><i class="bi bi-paperclip me-1"></i><span id="empReceiptName"></span></span>
+            </div>
+            <div class="form-text text-danger fw-semibold" style="font-size:11px;">
+              <i class="bi bi-info-circle me-1"></i>Receipt is required — expenses without a receipt will not be accepted.
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-teal btn-sm w-100" id="empExpenseSubmitBtn">
+            <i class="bi bi-send me-1"></i>Submit for Approval
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Right: My Submissions -->
+    <div class="col-lg-7">
+      <div class="card-panel">
+        <h6 class="panel-title mb-3">
+          <i class="bi bi-clock-history me-1" style="color:#0D9488;"></i>My Submissions
+        </h6>
+        {% if my_expenses %}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0 align-middle">
+            <thead>
+              <tr>
+                <th>Date</th><th>Name</th><th class="text-end">Amount</th>
+                <th>Project</th><th>Status</th><th class="text-center">Receipt</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for e in my_expenses %}
+            <tr>
+              <td class="text-muted small">{{ e.get('date','—') | format_date }}</td>
+              <td>
+                <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','—') }}</div>
+                <div class="text-muted" style="font-size:11px;">{{ e.get('expense_type','') }}</div>
+              </td>
+              <td class="text-end fw-semibold">${{ "{:,.2f}".format(e.get('amount',0)|float) }}</td>
+              <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
+              <td>
+                {% set st = e.get('status','Pending') %}
+                {% if st == 'Approved' %}
+                  <span class="badge bg-success">Approved</span>
+                {% elif st == 'Rejected' %}
+                  <span class="badge bg-danger" title="{{ e.get('review_note','') }}">Rejected</span>
+                  {% if e.get('review_note') %}
+                  <div style="font-size:10px;color:#dc2626;">{{ e.review_note[:40] }}</div>
+                  {% endif %}
+                {% else %}
+                  <span class="badge bg-warning text-dark">Pending</span>
+                {% endif %}
+              </td>
+              <td class="text-center">
+                {% if e.get('receipt_filename') %}
+                <i class="bi bi-paperclip text-teal" title="{{ e.receipt_filename }}"></i>
+                {% else %}—{% endif %}
+              </td>
+              <td>
+                {% if e.get('status','Pending') == 'Pending' %}
+                <div class="d-flex gap-1">
+                  <button class="btn btn-xs btn-outline-secondary"
+                          onclick="openEmpExpenseEdit({{ e|tojson }})"
+                          title="Edit">
+                    <i class="bi bi-pencil"></i>
+                  </button>
+                  <form method="post" action="{{ url_for('employee_expense_delete', exp_id=e.firebase_id) }}"
+                        onsubmit="return confirm('Delete this pending expense?');" style="display:inline;">
+                    <button type="submit" class="btn btn-xs btn-outline-danger" title="Delete">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </form>
+                </div>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-5">
+          <i class="bi bi-receipt" style="font-size:2rem;opacity:.3;display:block;margin-bottom:8px;"></i>
+          No expense submissions yet. Use the form to submit your first expense.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if user_role == 'admin' %}
+  <!-- Admin: Pending Expense Approvals -->
+  <div class="card-panel mt-4">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <h6 class="panel-title mb-0">
+        <i class="bi bi-person-check me-1" style="color:#D97706;"></i>Pending Expense Approvals
+      </h6>
+      {% if pending_expenses %}
+      <span class="badge bg-danger">{{ pending_expenses|length }} pending</span>
+      {% endif %}
+    </div>
+    {% if pending_expenses %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead>
+          <tr>
+            <th>Employee</th><th>Date</th><th>Type</th><th>Name</th>
+            <th>Vendor</th><th class="text-end">Amount</th>
+            <th class="text-center">Receipt</th><th class="text-end">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for e in pending_expenses %}
+        <tr>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <span class="emp-avatar" style="width:28px;height:28px;font-size:11px;">{{ (e.submitted_by_name or 'U')[0]|upper }}</span>
+              <span class="fw-500 small">{{ e.submitted_by_name or '—' }}</span>
+            </div>
+          </td>
+          <td class="text-muted small">{{ e.get('date','—') | format_date }}</td>
+          <td class="text-muted small">{{ e.get('expense_type','—') }}</td>
+          <td>
+            <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','—') }}</div>
+            {% if e.get('project_number') %}
+            <div class="text-muted" style="font-size:11px;">{{ e.project_number }}</div>
+            {% endif %}
+          </td>
+          <td class="text-muted small">{{ e.get('vendor','—') }}</td>
+          <td class="text-end fw-bold text-success">${{ "{:,.2f}".format(e.get('amount',0)|float) }}</td>
+          <td class="text-center">
+            {% if e.get('receipt_filename') %}
+            <button class="btn btn-xs btn-outline-primary"
+                    onclick="viewEmpReceipt('{{ e.firebase_id }}')"
+                    title="{{ e.receipt_filename }}">
+              <i class="bi bi-paperclip"></i>
+            </button>
+            {% else %}
+            <span class="text-muted small">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <div class="d-flex gap-1 justify-content-end">
+              <form method="post" action="{{ url_for('employee_expense_review', exp_id=e.firebase_id) }}" class="d-inline">
+                <input type="hidden" name="action" value="approve">
+                <button type="submit" class="btn btn-xs btn-outline-success">
+                  <i class="bi bi-check-lg"></i> Approve
+                </button>
+              </form>
+              <button class="btn btn-xs btn-outline-danger"
+                      onclick="openEmpExpenseReject('{{ e.firebase_id }}', '{{ e.submitted_by_name|replace("'","") }}')">
+                <i class="bi bi-x-lg"></i> Reject
+              </button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-3">
+      <i class="bi bi-check-circle" style="font-size:28px;opacity:.3;"></i>
+      <div class="mt-2 small">No pending expense approvals.</div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div><!-- /tab-emp-expenses -->
+
+<!-- Edit My Expense Modal -->
+<div class="modal fade" id="empExpenseEditModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold"><i class="bi bi-pencil me-2"></i>Edit Pending Expense</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" id="empExpenseEditForm" enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Expense Type <span class="text-danger">*</span></label>
+              <select name="expense_type" id="editExpType" class="form-select form-select-sm" required
+                      onchange="empUpdateCategories(this.value,'editExpCategory','editExpName')">
+                <option value="">Select type...</option>
+                {% for t in emp_expense_types %}
+                <option value="{{ t }}">{{ t }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Amount ($) <span class="text-danger">*</span></label>
+              <input type="number" name="amount" id="editExpAmount" class="form-control form-control-sm"
+                     step="0.01" min="0.01" required>
+            </div>
+          </div>
+          <div class="mb-2" id="editCatSelectWrap">
+            <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
+            <select name="category" id="editExpCategory" class="form-select form-select-sm"
+                    onchange="empUpdateNames(this.value,'editExpName')">
+              <option value="">— Select type first —</option>
+            </select>
+          </div>
+          <div class="mb-2" id="editCatTextWrap" style="display:none;">
+            <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
+            <input type="text" name="category" id="editExpCategoryText" class="form-control form-control-sm"
+                   placeholder="e.g. Meals, Parking, Supplies...">
+          </div>
+          <div class="mb-2" id="editNameSelectWrap">
+            <label class="form-label small fw-semibold">Expense Name <span class="text-danger">*</span></label>
+            <select name="expense_name" id="editExpName" class="form-select form-select-sm">
+              <option value="">— Select category first —</option>
+            </select>
+          </div>
+          <div class="mb-2" id="editNameTextWrap" style="display:none;">
+            <label class="form-label small fw-semibold">Expense Name <span class="text-danger">*</span></label>
+            <input type="text" name="expense_name" id="editExpNameText" class="form-control form-control-sm"
+                   placeholder="Describe the expense...">
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Date <span class="text-danger">*</span></label>
+              <input type="date" name="date" id="editExpDate" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Vendor <span class="text-danger">*</span></label>
+              <input type="text" name="vendor" id="editExpVendor" class="form-control form-control-sm" required>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Link to Project <span class="text-muted fw-normal">(optional)</span></label>
+            <select name="project_number" id="editExpProject" class="form-select form-select-sm">
+              <option value="">— Optional —</option>
+              {% for p in active_projects %}
+              <option value="{{ p.project_number }}">{{ p.project_number }}{% if p.project_name %} — {{ p.project_name[:35] }}{% endif %}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Notes <span class="text-muted fw-normal">(optional)</span></label>
+            <textarea name="notes" id="editExpNotes" class="form-control form-control-sm" rows="2"></textarea>
+          </div>
+          <div class="mb-1">
+            <label class="form-label small fw-semibold">Replace Receipt <span class="text-muted fw-normal">(leave blank to keep existing)</span></label>
+            <input type="file" name="receipt" class="form-control form-control-sm"
+                   accept=".pdf,.jpg,.jpeg,.png,.gif">
+            <div id="editExpCurrentReceipt" class="mt-1" style="font-size:11px;color:#0D9488;"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-teal"><i class="bi bi-check-lg me-1"></i>Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Reject Expense Modal -->
+<div class="modal fade" id="empExpenseRejectModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold text-danger"><i class="bi bi-x-circle me-2"></i>Reject Expense</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" id="empExpenseRejectForm">
+        <div class="modal-body">
+          <p class="text-muted small mb-3">Rejecting expense from <strong id="empRejectEmpName"></strong>. Please provide a reason.</p>
+          <input type="hidden" name="action" value="reject">
+          <label class="form-label small fw-semibold">Reason for Rejection <span class="text-danger">*</span></label>
+          <textarea name="review_note" class="form-control" rows="3" required
+                    placeholder="Explain why this expense is being rejected..."></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-danger"><i class="bi bi-x-lg me-1"></i>Reject Expense</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- View Receipt Modal -->
+<div class="modal fade" id="empReceiptViewModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold"><i class="bi bi-paperclip me-2"></i>Receipt</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center" id="empReceiptViewBody">
+        <div class="text-muted">Loading...</div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
      MEDICAL ALLOWANCE
@@ -1453,6 +1856,9 @@
 </div>
 {% endif %}
 
+</div><!-- /tab-content -->
+{% endblock %}
+
 {% block scripts %}
 <script>
 // Live elapsed timer
@@ -1472,7 +1878,7 @@
 
 // Tab persistence via URL hash
 (function () {
-  const map = { clock:'#tab-clock', 'time-off':'#tab-time-off', profile:'#tab-profile', team:'#tab-team', directory:'#tab-directory', medical:'#tab-medical' };
+  const map = { clock:'#tab-clock', 'time-off':'#tab-time-off', profile:'#tab-profile', team:'#tab-team', directory:'#tab-directory', medical:'#tab-medical', expenses:'#tab-emp-expenses' };
   const hash = (window.location.hash || '').replace('#','');
   const target = map[hash];
   if (target) {
@@ -1641,6 +2047,188 @@ document.addEventListener('DOMContentLoaded', function() {
   var hpdEl  = document.getElementById('hoursPerDay');
   if (typeEl) typeEl.addEventListener('change', calcRequestedDays);
   if (hpdEl)  hpdEl.addEventListener('input',  calcRequestedDays);
+});
+
+// Employee Expenses — cascading dropdowns
+const empCatsByType = {{ emp_categories_by_type|safe }};
+const empNamesByCat = {{ emp_names_by_cat|safe }};
+
+// Fallback expense names matching the Financial tab
+const empNamesFallback = {
+  "Facilities & Utilities": ["Office rent or co-working space fees","Utilities (electricity, water, gas)","Internet service","Trash & cleaning services","Office repairs & maintenance"],
+  "Office & Admin Overhead": ["Office supplies","Postage & shipping","Software: Microsoft 365 / Google Workspace","Software: PDF tools","Cloud storage"],
+  "Engineering Software & IT": ["Engineering software licenses","CAD/BIM tools (AutoCAD, Revit)","IT support services","Computer maintenance & repairs","Antivirus / backup services"],
+  "Professional Services": ["Accounting & bookkeeping fees","Legal services","Business consulting"],
+  "Insurance & Compliance": ["Professional liability / E&O insurance","License renewals (PE, SE)","Business license renewals","Memberships"],
+  "Travel, Site Visits & Vehicles": ["Mileage (personal vehicle for business)","Fuel costs","Parking fees & tolls","Vehicle maintenance","Airfare / hotels for site visits","Rental cars or rideshare","Meals while traveling for business"],
+  "Marketing & Business Development": ["Website hosting and domain","Graphic design","Online ads","Business cards / brochures","Client entertainment"],
+  "Training, Licensure & Development": ["Continuing education (PDH hours)","Training courses","Books, codes, and standards","Exam fees for additional licenses"],
+  "Safety & Field Supplies": ["PPE (hard hats, vests, glasses)","Field tools for inspections","First-aid kits","Calibration of field instruments"],
+  "Miscellaneous O & M": ["Subscriptions: LinkedIn Premium","Project management tools","Document management / e-signature","Industry journals"],
+  "Computer & Office Equipment": ["Laptop","Desktop","Monitor","Printer/Scanner","Networking Equipment"],
+  "Field & Inspection Equipment": ["Survey Equipment","Testing Equipment","Measurement Tools","Inspection Devices"],
+  "Furniture & Fixtures": ["Office Desk","Chair","Filing Cabinet","Conference Room Furniture"],
+  "Vehicles": ["Company Car","Truck","Van","Vehicle Accessories"],
+  "Software (Capitalized)": ["Engineering Software License","ERP System","CRM System","Custom Software Development"],
+  "Leasehold Improvements": ["Office Renovations","Electrical Work","HVAC Installation","Security Systems"]
+};
+
+function empToggleOther(isOther, prefix) {
+  // prefix is 'emp' (submit form) or 'edit' (edit modal)
+  var catSelWrap  = document.getElementById(prefix + 'CatSelectWrap');
+  var catTxtWrap  = document.getElementById(prefix + 'CatTextWrap');
+  var nameSelWrap = document.getElementById(prefix + 'NameSelectWrap');
+  var nameTxtWrap = document.getElementById(prefix + 'NameTextWrap');
+  if (!catSelWrap) return;
+  // Toggle required attributes to avoid hidden-field validation issues
+  var catSel = catSelWrap.querySelector('select');
+  var catTxt = catTxtWrap ? catTxtWrap.querySelector('input') : null;
+  var nameSel = nameSelWrap ? nameSelWrap.querySelector('select') : null;
+  var nameTxt = nameTxtWrap ? nameTxtWrap.querySelector('input') : null;
+  if (isOther) {
+    catSelWrap.style.display  = 'none';
+    catTxtWrap.style.display  = '';
+    nameSelWrap.style.display = 'none';
+    nameTxtWrap.style.display = '';
+    if (catSel)  { catSel.removeAttribute('required');  catSel.value = ''; }
+    if (catTxt)  catTxt.setAttribute('required', '');
+    if (nameSel) { nameSel.removeAttribute('required'); nameSel.value = ''; }
+    if (nameTxt) nameTxt.setAttribute('required', '');
+  } else {
+    catSelWrap.style.display  = '';
+    catTxtWrap.style.display  = 'none';
+    nameSelWrap.style.display = '';
+    nameTxtWrap.style.display = 'none';
+    if (catSel)  catSel.setAttribute('required', '');
+    if (catTxt)  { catTxt.removeAttribute('required'); catTxt.value = ''; }
+    if (nameSel) nameSel.setAttribute('required', '');
+    if (nameTxt) { nameTxt.removeAttribute('required'); nameTxt.value = ''; }
+  }
+}
+
+window.empUpdateCategories = function(typeVal, catId, nameId) {
+  var prefix = catId.startsWith('edit') ? 'edit' : 'emp';
+  var isOther = (typeVal === 'Other Expenses');
+  empToggleOther(isOther, prefix);
+  if (isOther) return;
+  var catSel  = document.getElementById(catId);
+  var nameSel = document.getElementById(nameId);
+  if (!catSel) return;
+  catSel.innerHTML = '<option value="">— Select category —</option>';
+  if (nameSel) nameSel.innerHTML = '<option value="">— Select category first —</option>';
+  var cats = empCatsByType[typeVal] || [];
+  cats.forEach(function(c) {
+    var o = document.createElement('option');
+    o.value = c; o.textContent = c;
+    catSel.appendChild(o);
+  });
+};
+
+window.empUpdateNames = function(catVal, nameId) {
+  var nameSel = document.getElementById(nameId);
+  if (!nameSel) return;
+  nameSel.innerHTML = '<option value="">— Select expense name —</option>';
+  var names = (empNamesByCat[catVal] && empNamesByCat[catVal].length)
+    ? empNamesByCat[catVal] : (empNamesFallback[catVal] || []);
+  names.forEach(function(n) {
+    var o = document.createElement('option');
+    o.value = n; o.textContent = n;
+    nameSel.appendChild(o);
+  });
+};
+
+window.onEmpReceiptChange = function(input) {
+  var preview = document.getElementById('empReceiptPreview');
+  var nameEl  = document.getElementById('empReceiptName');
+  if (input.files && input.files[0]) {
+    nameEl.textContent = input.files[0].name;
+    preview.style.display = 'block';
+  } else {
+    preview.style.display = 'none';
+  }
+};
+
+window.openEmpExpenseEdit = function(exp) {
+  var form = document.getElementById('empExpenseEditForm');
+  if (!form) return;
+  form.action = '/employees/expenses/' + exp.firebase_id + '/edit';
+
+  // Populate type, then cascade category/name
+  var typeEl = document.getElementById('editExpType');
+  typeEl.value = exp.expense_type || '';
+  empUpdateCategories(typeEl.value, 'editExpCategory', 'editExpName');
+
+  var isOther = (typeEl.value === 'Other Expenses');
+  if (isOther) {
+    var catTxt  = document.getElementById('editExpCategoryText');
+    var nameTxt = document.getElementById('editExpNameText');
+    if (catTxt)  catTxt.value  = exp.category || '';
+    if (nameTxt) nameTxt.value = exp.expense_name || exp.description || '';
+  } else {
+    var catEl = document.getElementById('editExpCategory');
+    catEl.value = exp.category || '';
+    empUpdateNames(catEl.value, 'editExpName');
+    var nameEl = document.getElementById('editExpName');
+    var savedName = exp.expense_name || exp.description || '';
+    if (savedName && !Array.from(nameEl.options).find(o => o.value === savedName)) {
+      var extra = document.createElement('option');
+      extra.value = savedName; extra.textContent = savedName;
+      nameEl.appendChild(extra);
+    }
+    nameEl.value = savedName;
+  }
+
+  document.getElementById('editExpAmount').value  = exp.amount || '';
+  document.getElementById('editExpDate').value    = exp.date || '';
+  document.getElementById('editExpVendor').value  = exp.vendor || '';
+  document.getElementById('editExpProject').value = exp.project_number || '';
+  document.getElementById('editExpNotes').value   = exp.notes || '';
+  var recEl = document.getElementById('editExpCurrentReceipt');
+  if (recEl) recEl.textContent = exp.receipt_filename ? ('Current: ' + exp.receipt_filename) : 'No receipt attached';
+  new bootstrap.Modal(document.getElementById('empExpenseEditModal')).show();
+};
+
+window.openEmpExpenseReject = function(expId, empName) {
+  var form = document.getElementById('empExpenseRejectForm');
+  if (!form) return;
+  form.action = '/employees/expenses/' + expId + '/review';
+  document.getElementById('empRejectEmpName').textContent = empName;
+  new bootstrap.Modal(document.getElementById('empExpenseRejectModal')).show();
+};
+
+window.viewEmpReceipt = function(expId) {
+  var body = document.getElementById('empReceiptViewBody');
+  body.innerHTML = '<div class="text-muted">Loading…</div>';
+  new bootstrap.Modal(document.getElementById('empReceiptViewModal')).show();
+  fetch('/employees/expenses/' + expId + '/receipt')
+    .then(r => r.json())
+    .then(data => {
+      if (data.url) {
+        var ext = (data.filename || '').split('.').pop().toLowerCase();
+        if (['jpg','jpeg','png','gif'].includes(ext)) {
+          body.innerHTML = '<img src="' + data.url + '" class="img-fluid rounded" style="max-height:70vh;">';
+        } else {
+          body.innerHTML = '<a href="' + data.url + '" target="_blank" class="btn btn-outline-primary"><i class="bi bi-box-arrow-up-right me-2"></i>Open Receipt in new tab</a>';
+        }
+      } else { body.innerHTML = '<div class="text-danger">Receipt not found.</div>'; }
+    })
+    .catch(() => { body.innerHTML = '<div class="text-danger">Failed to load receipt.</div>'; });
+};
+
+// Client-side guard: block submit if no receipt selected
+document.addEventListener('DOMContentLoaded', function() {
+  var form = document.getElementById('empExpenseForm');
+  if (form) {
+    form.addEventListener('submit', function(e) {
+      var receipt = document.getElementById('empReceiptInput');
+      if (!receipt || !receipt.files || !receipt.files[0]) {
+        e.preventDefault();
+        receipt.classList.add('is-invalid');
+        receipt.focus();
+        alert('A receipt is required. Please attach your receipt before submitting.');
+      }
+    });
+  }
 });
 
 // Medical Allowance review modal

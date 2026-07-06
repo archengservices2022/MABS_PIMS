@@ -790,6 +790,7 @@ a[href*="filter_expense"]:hover {
             <th style="color:#fff;font-weight:700;">Vendor</th>
             <th style="color:#fff;font-weight:700;">Project</th>
             <th style="color:#fff;font-weight:700;" class="text-end">Amount</th>
+            <th style="color:#fff;font-weight:700;">Submitted By</th>
             <th style="color:#fff;font-weight:700;"></th>
           </tr>
         </thead>
@@ -807,6 +808,7 @@ a[href*="filter_expense"]:hover {
             <td class="fw-medium">{{ exp.get('vendor','—') }}</td>
             <td class="text-muted small">{{ exp.get('project_number','—') or '—' }}</td>
             <td class="text-end fw-semibold">${{ "{:,.2f}".format(exp.get('amount',0)|float) }}</td>
+            <td class="small text-muted">{{ exp.get('submitted_by_name','') or exp.get('created_by','') or '—' }}</td>
             <td>
               {% if exp.get('firebase_id') %}
               <div class="d-flex gap-1">
@@ -1441,7 +1443,7 @@ function setExpenseDateRange(range) {
 
 function exportExpenseCSV() {
   const rows = getVisibleExpenseRows();
-  const headers = ['Date','Expense Type','Expense Name','Category','Vendor','Project','Amount'];
+  const headers = ['Date','Expense Type','Expense Name','Category','Vendor','Project','Amount','Submitted By'];
   const lines = [headers.map(h => '"'+h+'"').join(',')];
   rows.forEach(function(row) {
     const cells = row.querySelectorAll('td');
@@ -1457,7 +1459,8 @@ function exportExpenseCSV() {
       '"'+cellText(3)+'"',
       '"'+cellText(4)+'"',
       '"'+cellText(5)+'"',
-      parseFloat(amtRaw||0).toFixed(2)
+      parseFloat(amtRaw||0).toFixed(2),
+      '"'+cellText(7)+'"'
     ].join(','));
   });
   const csv  = lines.join('\r\n');
