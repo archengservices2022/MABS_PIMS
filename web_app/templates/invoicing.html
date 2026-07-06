@@ -165,10 +165,10 @@
               <th></th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="invoiceTableBody">
             {% for inv in invoices %}
             {% set meta = inv.get('meta', {}) %}
-            <tr onclick="location.href='{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}'"
+            <tr class="inv-row" onclick="location.href='{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}'"
                 style="cursor:pointer;">
               <td style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
                 <span class="fw-bold text-teal" style="text-decoration:none;white-space:nowrap;">{{ meta.get('invoice_number','—') }}</span>
@@ -242,6 +242,7 @@
           </tfoot>
         </table>
       </div>
+      <div id="invoicePager_pager"></div>
     </div>
   </div>
 
@@ -435,6 +436,13 @@ document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
     url.searchParams.set('tab', id);
     window.history.replaceState({}, '', url);
   });
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+  if (document.getElementById('invoiceTableBody')) {
+    new TablePager('invoicePager', '#invoiceTableBody', 'tr.inv-row', 15);
+    _PAGERS['invoicePager'].refresh();
+  }
 });
 </script>
 {% endblock %}
