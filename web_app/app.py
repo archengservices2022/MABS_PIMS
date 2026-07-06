@@ -757,9 +757,21 @@ def dashboard():
     clocked_in_now   = [e for e in all_time_entries if e.get("status") == "open"]
     pending_time_off = [r for r in all_time_off if r.get("status") == "Pending"]
 
+    # Pending employee expense approvals (admin only)
+    pending_expenses_dash = []
+    if normalize_role(session.get("user_role", "")) == "admin":
+        raw_dash_exp = fb_get("/expenses") or {}
+        if isinstance(raw_dash_exp, dict):
+            for eid, edata in raw_dash_exp.items():
+                if isinstance(edata, dict) and edata.get("status") == "Pending":
+                    edata["firebase_id"] = eid
+                    pending_expenses_dash.append(edata)
+        pending_expenses_dash.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+
     return render_template("dashboard.html",
         clocked_in_now=clocked_in_now,
         pending_time_off=pending_time_off,
+        pending_expenses_dash=pending_expenses_dash,
         total_invoiced=total_invoiced,
         total_paid=total_paid,
         total_outstanding=total_outstanding,
@@ -5627,6 +5639,7 @@ def financial():
         if r["status"] in ["Paid", "Partial"]:
             updated_rev_list.append(r)
     rev_list = updated_rev_list
+    rev_list.sort(key=lambda x: x.get("invoice_date", "") or x.get("date", ""), reverse=True)
 
     # Helper to extract year from date string
     def _extract_year_from_date(date_str):
@@ -6355,6 +6368,9 @@ def financial():
 
     today_date = datetime.now().strftime("%Y-%m-%d")
     active_tab = request.args.get("tab", "overview")
+    _valid_fin_tabs = {'overview', 'income', 'expenses', 'by-project', 'balance-sheet', 'aging'}
+    if active_tab not in _valid_fin_tabs:
+        active_tab = 'overview'
     return render_template("financial.html",
         total_invoiced=total_invoiced,
         total_paid=total_paid,

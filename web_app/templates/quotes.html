@@ -172,7 +172,7 @@
               <th></th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="quotesTableBody">
             {% for q in quotes %}
             <tr class="quote-row"
                 data-date="{{ q.get('date','') }}"
@@ -225,6 +225,7 @@
             {% endfor %}
           </tbody>
         </table>
+      <div id="quotesPager_pager"></div>
       </div>
     </div>
   </div><!-- /tab-all -->
@@ -1130,5 +1131,13 @@ function updateQuoteSummaryCards() {
 
 // Filter form now submits via GET to handle server-side filtering
 // Cards are recalculated by backend based on filtered quotes
+
+// ── Quotes table pager ────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  if (document.getElementById('quotesTableBody')) {
+    new TablePager('quotesPager', '#quotesTableBody', 'tr.quote-row', 15);
+    _PAGERS['quotesPager'].refresh();
+  }
+});
 </script>
 {% endblock %}

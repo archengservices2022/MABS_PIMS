@@ -195,7 +195,7 @@
               <th></th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="projectsTableBody">
             {% for p in projects %}
             <tr class="project-row" data-project-id="{{ p.firebase_id }}" data-project="{{ p | tojson }}"
                 onmousedown="startDragSelect(event, '{{ p.firebase_id }}')"
@@ -248,7 +248,7 @@
             {% endfor %}
           </tbody>
         </table>
-
+      <div id="projectsPager_pager"></div>
       </div>
     </div>
   </div>
@@ -675,6 +675,14 @@ document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
     url.searchParams.set('tab', id);
     window.history.replaceState({}, '', url);
   });
+});
+
+// ── Projects table pager ──────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  if (document.getElementById('projectsTableBody')) {
+    new TablePager('projectsPager', '#projectsTableBody', 'tr.project-row', 15);
+    _PAGERS['projectsPager'].refresh();
+  }
 });
 </script>
 

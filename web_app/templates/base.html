@@ -179,6 +179,84 @@
 
 <!-- Bootstrap 5 JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- ── Generic Table Paginator (available on every page) ─────────────────── -->
+<script>
+var _PAGERS = {};
+function _pagerGo(id, page) { if (_PAGERS[id]) _PAGERS[id].go(page); }
+
+function TablePager(id, tbodySelector, rowSelector, pageSize) {
+  this.id = id;
+  this.tbodySelector = tbodySelector;
+  this.rowSelector = rowSelector || 'tr';
+  this.pageSize = pageSize || 15;
+  this.page = 1;
+  _PAGERS[id] = this;
+}
+
+TablePager.prototype._allRows = function() {
+  var self = this;
+  var tbodies = typeof self.tbodySelector === 'string'
+    ? Array.from(document.querySelectorAll(self.tbodySelector))
+    : [self.tbodySelector];
+  var rows = [];
+  tbodies.forEach(function(tb) {
+    if (tb) Array.from(tb.querySelectorAll(self.rowSelector)).forEach(function(r) { rows.push(r); });
+  });
+  return rows;
+};
+
+TablePager.prototype._paginate = function() {
+  var self = this;
+  var vis = self._vis || [];
+  var totalPages = Math.max(1, Math.ceil(vis.length / self.pageSize));
+  if (self.page > totalPages) self.page = 1;
+  self._allRows().forEach(function(r) { r.style.display = 'none'; });
+  var start = (self.page - 1) * self.pageSize;
+  vis.slice(start, start + self.pageSize).forEach(function(r) { r.style.display = ''; });
+  self._render(totalPages, vis.length);
+};
+
+// refresh() — called after a filter runs; re-reads DOM display state to build visible list
+TablePager.prototype.refresh = function() {
+  var self = this;
+  var all = self._allRows();
+  // Filter-visible = rows the filter left showing (style.display !== 'none')
+  self._vis = all.filter(function(r) { return r.style.display !== 'none'; });
+  self._paginate();
+};
+
+// go() — called by page-button clicks; reuses saved _vis so pager-hidden rows aren't lost
+TablePager.prototype.go = function(p) { this.page = p; this._paginate(); };
+
+TablePager.prototype._render = function(totalPages, total) {
+  var self = this;
+  var el = document.getElementById(self.id + '_pager');
+  if (!el) return;
+  if (totalPages <= 1 && total <= self.pageSize) { el.innerHTML = ''; return; }
+  var prevDis = self.page === 1;
+  var nextDis = self.page === totalPages;
+  var btnBase = 'display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:14px;color:#374151;text-decoration:none;';
+  var btnDis  = btnBase + 'opacity:0.4;cursor:default;pointer-events:none;';
+  var html = '<div class="d-flex align-items-center justify-content-center gap-2 mt-3 pt-3" style="border-top:1px solid #e2e8f0;">';
+  html += '<a href="#" onclick="event.preventDefault();' + (prevDis ? '' : '_pagerGo(\'' + self.id + '\',' + (self.page - 1) + ')') + '" style="' + (prevDis ? btnDis : btnBase) + '">&#8249;</a>';
+  html += '<span style="font-size:14px;color:#374151;font-weight:500;border:1px solid #d1d5db;border-radius:6px;padding:4px 14px;background:#fff;white-space:nowrap;">Page ' + self.page + ' of ' + totalPages + '</span>';
+  html += '<a href="#" onclick="event.preventDefault();' + (nextDis ? '' : '_pagerGo(\'' + self.id + '\',' + (self.page + 1) + ')') + '" style="' + (nextDis ? btnDis : btnBase) + '">&#8250;</a>';
+  html += '</div>';
+  el.innerHTML = html;
+};
+
+// Helper: mark rows as filter-hidden then call pager.refresh()
+// Usage: pagerMarkAndRefresh(pager, allRows, visibleRows)
+function pagerMarkAndRefresh(pager, allRows, visSet) {
+  allRows.forEach(function(r) {
+    r.setAttribute('data-filter-hidden', visSet.has(r) ? '0' : '1');
+  });
+  pager.page = 1;
+  pager.refresh();
+}
+</script>
+
 {% block scripts %}{% endblock %}
 
 <script>

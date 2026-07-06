@@ -652,6 +652,7 @@ a[href*="filter_expense"]:hover {
         </tfoot>
       </table>
     </div>
+    <div id="incomePager_pager"></div>
     <div id="incomeNoResults" class="text-center text-muted py-4" style="display:none;">
       <i class="bi bi-search fs-4 d-block mb-2"></i>No entries match the current filter.
     </div>
@@ -669,7 +670,7 @@ a[href*="filter_expense"]:hover {
 <!-- ════════════════════════════════════════════════════════════════
      EXPENSES TAB
 ═════════════════════════════════════════════════════════════════ -->
-<div class="tab-pane {{ 'active' if active_tab == 'expenses' else '' }}" id="tab-expenses">
+<div class="tab-pane fade {{ 'show active' if active_tab == 'expenses' else '' }}" id="tab-expenses">
 
   <!-- Stat Cards -->
   {% set exp_this_month = namespace(total=0) %}
@@ -808,7 +809,8 @@ a[href*="filter_expense"]:hover {
             <td class="fw-medium">{{ exp.get('vendor','—') }}</td>
             <td class="text-muted small">{{ exp.get('project_number','—') or '—' }}</td>
             <td class="text-end fw-semibold">${{ "{:,.2f}".format(exp.get('amount',0)|float) }}</td>
-            <td class="small text-muted">{{ exp.get('submitted_by_name','') or exp.get('created_by','') or '—' }}</td>
+            {% set _sub = exp.get('submitted_by_name','') or exp.get('created_by','') or '' %}
+            <td class="small text-muted">{{ _sub.split('@')[0].replace('.',' ').title() if '@' in _sub else (_sub or '—') }}</td>
             <td>
               {% if exp.get('firebase_id') %}
               <div class="d-flex gap-1">
@@ -843,24 +845,18 @@ a[href*="filter_expense"]:hover {
     {% endif %}
 
     <!-- Pagination Controls - Bottom -->
-    <div class="d-flex justify-content-between align-items-center mt-auto pt-3 border-top" style="margin-top:auto;padding-top:16px;">
-      <div class="text-muted small" id="expenseCountInfo">0 / 0 expenses</div>
-      <div class="d-flex align-items-center gap-2">
-        <button type="button" class="btn btn-sm btn-outline-secondary" id="expensePrevBtn" onclick="prevExpensePage()" style="width:36px;height:36px;padding:0;display:flex;align-items:center;justify-content:center;">
-          <i class="bi bi-chevron-left"></i>
-        </button>
-        <span class="text-muted small" id="expensePageInfo">Page 1 of 1</span>
-        <button type="button" class="btn btn-sm btn-outline-secondary" id="expenseNextBtn" onclick="nextExpensePage()" style="width:36px;height:36px;padding:0;display:flex;align-items:center;justify-content:center;">
-          <i class="bi bi-chevron-right"></i>
-        </button>
-      </div>
+    <div class="d-flex align-items-center justify-content-center gap-2 mt-3 pt-3 border-top" id="expensePagerWrap">
+      <button type="button" id="expensePrevBtn" onclick="prevExpensePage()" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;color:#374151;">&#8249;</button>
+      <span id="expensePageInfo" style="font-size:14px;color:#374151;font-weight:500;border:1px solid #d1d5db;border-radius:6px;padding:4px 14px;background:#fff;white-space:nowrap;">Page 1 of 1</span>
+      <button type="button" id="expenseNextBtn" onclick="nextExpensePage()" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;color:#374151;">&#8250;</button>
+      <span id="expenseCountInfo" style="display:none;"></span>
     </div>
   </div>
 </div><!-- /tab-expenses -->
 
 
 <!-- NEW EXPENSE TAB ════════════════════════════════════════════════ -->
-<div class="tab-pane {{ 'active' if active_tab == 'new-expense' else '' }}" id="tab-new-expense">
+<div class="tab-pane fade {{ 'show active' if active_tab == 'new-expense' else '' }}" id="tab-new-expense">
   <div class="card card-body">
     <h5 class="card-title mb-4">
       <i class="bi bi-plus-square me-2"></i>Add New Expense
@@ -1321,10 +1317,19 @@ function renderExpenseTable() {
     }
   }
 
-  document.getElementById('expensePageInfo').textContent = `Page ${expenseCurrentPage} of ${totalPages || 1}`;
+  const tp = totalPages || 1;
+  document.getElementById('expensePageInfo').textContent = `Page ${expenseCurrentPage} of ${tp}`;
   document.getElementById('expenseCountInfo').textContent = `${currentPageRows.length} / ${expenseFilteredRows.length} expenses`;
-  document.getElementById('expensePrevBtn').disabled = expenseCurrentPage <= 1;
-  document.getElementById('expenseNextBtn').disabled = expenseCurrentPage >= totalPages;
+  const prevBtn = document.getElementById('expensePrevBtn');
+  const nextBtn = document.getElementById('expenseNextBtn');
+  const wrap    = document.getElementById('expensePagerWrap');
+  prevBtn.disabled = expenseCurrentPage <= 1;
+  nextBtn.disabled = expenseCurrentPage >= tp;
+  prevBtn.style.opacity = expenseCurrentPage <= 1 ? '0.4' : '1';
+  prevBtn.style.cursor  = expenseCurrentPage <= 1 ? 'default' : 'pointer';
+  nextBtn.style.opacity = expenseCurrentPage >= tp ? '0.4' : '1';
+  nextBtn.style.cursor  = expenseCurrentPage >= tp ? 'default' : 'pointer';
+  if (wrap) wrap.style.display = (tp <= 1 && expenseFilteredRows.length <= expensePerPage) ? 'none' : 'flex';
 
   // Update summary cards when filters are applied
   updateExpenseSummaryCards();
@@ -2144,10 +2149,10 @@ function viewReceipt(expId) {
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Margin</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="byProjectTableBody">
           {% for row in project_pnl|sort(attribute='project_number') %}
           {% set margin = [[100.0, ((row.paid / row.contract_value * 100) if row.contract_value > 0 else 0)] | min, 0] | max %}
-          <tr onclick="location.href='{{ url_for('project_detail', project_id=row.firebase_id) }}'" style="cursor:pointer;">
+          <tr class="bp-row" onclick="location.href='{{ url_for('project_detail', project_id=row.firebase_id) }}'" style="cursor:pointer;">
             <td><span class="fw-bold text-teal">{{ row.project_number }}</span></td>
             <td class="fw-medium">{{ row.project_name }}</td>
             <td class="text-muted small">{{ row.client_name }}</td>
@@ -2204,6 +2209,7 @@ function viewReceipt(expId) {
       </table>
     </div>
   </div>
+  <div id="byProjectPager_pager"></div>
   {% else %}
   <div class="card-panel">
     <div class="empty-state py-5">
@@ -3137,6 +3143,20 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
       const url = new URL(window.location);
       url.searchParams.set('tab', key);
       history.replaceState(null, '', url);
+      // Deferred cleanup: remove show/active from any pane that isn't the current active one.
+      // Handles cases where Bootstrap's transitionend cleanup is delayed by a busy event loop.
+      setTimeout(function() {
+        var activeLink = document.querySelector('#finTabs .nav-link.active');
+        var currentPaneId = activeLink ? (activeLink.getAttribute('href') || '').slice(1) : null;
+        if (!currentPaneId) {
+          var el = document.querySelector('.tab-content > .tab-pane.show.active');
+          if (el) currentPaneId = el.id;
+        }
+        if (!currentPaneId) return;
+        document.querySelectorAll('.tab-content > .tab-pane').forEach(function(pane) {
+          if (pane.id !== currentPaneId) { pane.classList.remove('active', 'show'); }
+        });
+      }, 300);
       if (key === 'overview') {
         Object.values(Chart.instances).forEach(c => c.resize());
       }
@@ -3197,6 +3217,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     var kt = document.getElementById('incKpiTax');       if (kt) kt.textContent = fmtAmt(filteredTax);
     var ki = document.getElementById('incKpiTotal');     if (ki) ki.textContent = fmtAmt(filteredInvTotal);
     var kp = document.getElementById('incKpiPaid');      if (kp) kp.textContent = fmtAmt(filteredTotal);
+    if (_PAGERS['incomePager']) _PAGERS['incomePager'].page = 1, _PAGERS['incomePager'].refresh();
   }
 
   window.onIncomeYearChange = function() {
@@ -3472,5 +3493,17 @@ function exportBalanceSheet() {
   const year = new URLSearchParams(window.location.search).get('year') || new Date().getFullYear();
   window.location.href = `/export/balance-sheet?year=${year}`;
 }
+
+// ── Table Pager Inits ────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  if (document.getElementById('incomeTableBody')) {
+    new TablePager('incomePager', '#incomeTableBody', 'tr.inc-row', 15);
+    _PAGERS['incomePager'].refresh();
+  }
+  if (document.getElementById('byProjectTableBody')) {
+    new TablePager('byProjectPager', '#byProjectTableBody', 'tr.bp-row', 15);
+    _PAGERS['byProjectPager'].refresh();
+  }
+});
 </script>
 {% endblock %}
