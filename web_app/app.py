@@ -5753,7 +5753,7 @@ def financial():
     rev_list = [r for r in rev_list if _extract_year_from_date(invoices.get(r.get("invoice_id"), {}).get("meta", {}).get("invoice_date", "")) in [stat_card_year, prev_year]]
 
     # Sort by date ascending (oldest to newest)
-    rev_list = sorted(rev_list, key=lambda r: r.get('date', ''))
+    rev_list = sorted(rev_list, key=lambda r: r.get('invoice_date', '') or r.get('date', ''), reverse=True)
 
     # Recalculate statuses based on actual payments
     for inv in inv_list:
