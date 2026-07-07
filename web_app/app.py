@@ -5146,7 +5146,7 @@ def financial_income_export(fmt):
     import csv, io as _io
     cur_year  = datetime.now().year
     prev_year = cur_year - 1
-    revenue      = fb_get("/revenue") or {}
+    revenue      = fb_get("/balance_sheet_revenue") or {}
     invoices_raw = fb_get("/invoices") or {}
     invoices     = invoices_raw if isinstance(invoices_raw, dict) else {}
 
