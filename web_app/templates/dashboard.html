@@ -602,18 +602,38 @@
 <!-- ── Status Donut Charts ───────────────────────────────────────────────────── -->
 <div class="row g-3 mb-3">
   <div class="col-lg-6">
-    <div class="card-panel" style="height:100%;">
-      <h6 class="panel-title mb-3">Invoice Status Breakdown</h6>
-      <div style="max-width:280px;margin:0 auto;">
-        <canvas id="invStatusChart"></canvas>
+    <div class="card-panel" style="height:100%;padding:20px 24px;">
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <h6 class="panel-title mb-0"><i class="bi bi-pie-chart me-1" style="color:#0D9488;"></i>Invoice Status Breakdown</h6>
+        <span class="badge" style="background:#f0fdf4;color:#0D9488;font-size:11px;font-weight:600;border-radius:8px;padding:4px 10px;" id="invTotalBadge"></span>
+      </div>
+      <div class="d-flex align-items-center gap-4">
+        <div style="position:relative;width:150px;height:150px;flex-shrink:0;">
+          <canvas id="invStatusChart"></canvas>
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;">
+            <div id="invCenterCount" style="font-size:22px;font-weight:800;color:#1e293b;line-height:1;"></div>
+            <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Total</div>
+          </div>
+        </div>
+        <div id="invStatusLegend" style="flex:1;"></div>
       </div>
     </div>
   </div>
   <div class="col-lg-6">
-    <div class="card-panel" style="height:100%;">
-      <h6 class="panel-title mb-3">Project Status Breakdown</h6>
-      <div style="max-width:280px;margin:0 auto;">
-        <canvas id="projStatusChart"></canvas>
+    <div class="card-panel" style="height:100%;padding:20px 24px;">
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <h6 class="panel-title mb-0"><i class="bi bi-kanban me-1" style="color:#7C3AED;"></i>Project Status Breakdown</h6>
+        <span class="badge" style="background:#faf5ff;color:#7C3AED;font-size:11px;font-weight:600;border-radius:8px;padding:4px 10px;" id="projTotalBadge"></span>
+      </div>
+      <div class="d-flex align-items-center gap-4">
+        <div style="position:relative;width:150px;height:150px;flex-shrink:0;">
+          <canvas id="projStatusChart"></canvas>
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;">
+            <div id="projCenterCount" style="font-size:22px;font-weight:800;color:#1e293b;line-height:1;"></div>
+            <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Total</div>
+          </div>
+        </div>
+        <div id="projStatusLegend" style="flex:1;"></div>
       </div>
     </div>
   </div>
@@ -824,35 +844,67 @@ const CHART_PALETTE = ['#2563EB','#16A34A','#F59E0B','#DC2626','#7C3AED','#0EA5E
 function statusColors(labels) {
   return labels.map((l, i) => STATUS_COLORS[l] || CHART_PALETTE[i % CHART_PALETTE.length]);
 }
-const donutOpts = (title) => ({
-  responsive: true,
+function buildDonutLegend(containerId, labels, data, colors) {
+  const total = data.reduce((a, b) => a + b, 0);
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = labels.map((lbl, i) => {
+    const pct = total > 0 ? Math.round(data[i] / total * 100) : 0;
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <div style="width:10px;height:10px;border-radius:3px;background:${colors[i]};flex-shrink:0;"></div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${lbl}">${lbl}</div>
+        <div style="font-size:11px;color:#64748b;">${data[i]} <span style="font-weight:700;color:${colors[i]};">(${pct}%)</span></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+const donutOpts = () => ({
+  responsive: true, maintainAspectRatio: false, cutout: '68%',
   plugins: {
-    legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 12 } },
+    legend: { display: false },
     tooltip: {
-      callbacks: { label: c => ` ${c.label}: ${c.parsed}` }
+      backgroundColor: '#1e293b', padding: 10, cornerRadius: 8,
+      callbacks: {
+        label: c => {
+          const total = c.dataset.data.reduce((a, b) => a + b, 0);
+          const pct = total > 0 ? Math.round(c.parsed / total * 100) : 0;
+          return `  ${c.label}: ${c.parsed}  (${pct}%)`;
+        }
+      }
     }
-  },
-  cutout: '60%',
+  }
 });
 
 const invLabels = {{ inv_status_labels|safe }};
 const invData   = {{ inv_status_data|safe }};
 if (invLabels.length) {
+  const invColors = statusColors(invLabels);
+  const invTotal  = invData.reduce((a, b) => a + b, 0);
+  document.getElementById('invCenterCount').textContent = invTotal;
+  document.getElementById('invTotalBadge').textContent  = invTotal + ' invoices';
   new Chart(document.getElementById('invStatusChart'), {
     type: 'doughnut',
-    data: { labels: invLabels, datasets: [{ data: invData, backgroundColor: statusColors(invLabels), borderWidth: 2 }] },
-    options: donutOpts('Invoice Status'),
+    data: { labels: invLabels, datasets: [{ data: invData, backgroundColor: invColors, borderWidth: 3, borderColor: '#fff', hoverOffset: 6 }] },
+    options: donutOpts(),
   });
+  buildDonutLegend('invStatusLegend', invLabels, invData, invColors);
 }
 
 const projLabels = {{ proj_status_labels|safe }};
 const projData   = {{ proj_status_data|safe }};
 if (projLabels.length) {
+  const projColors = statusColors(projLabels);
+  const projTotal  = projData.reduce((a, b) => a + b, 0);
+  document.getElementById('projCenterCount').textContent = projTotal;
+  document.getElementById('projTotalBadge').textContent  = projTotal + ' projects';
   new Chart(document.getElementById('projStatusChart'), {
     type: 'doughnut',
-    data: { labels: projLabels, datasets: [{ data: projData, backgroundColor: statusColors(projLabels), borderWidth: 2 }] },
-    options: donutOpts('Project Status'),
+    data: { labels: projLabels, datasets: [{ data: projData, backgroundColor: projColors, borderWidth: 3, borderColor: '#fff', hoverOffset: 6 }] },
+    options: donutOpts(),
   });
+  buildDonutLegend('projStatusLegend', projLabels, projData, projColors);
 }
 </script>
 {% endblock %}
