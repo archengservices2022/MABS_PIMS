@@ -5208,6 +5208,12 @@ def financial_income_export(fmt):
 @login_required
 def financial_expenses_export(fmt):
     import csv, io as _io
+    search_f  = (request.args.get("search",    "") or "").strip().lower()
+    type_f    = (request.args.get("type",      "") or "").strip().lower()
+    vendor_f  = (request.args.get("vendor",    "") or "").strip().lower()
+    date_from = (request.args.get("date_from", "") or "").strip()
+    date_to   = (request.args.get("date_to",   "") or "").strip()
+
     raw = fb_get("/balance_sheet_expenses") or {}
     expenses = []
     if isinstance(raw, dict):
@@ -5216,25 +5222,49 @@ def financial_expenses_export(fmt):
                 edata["firebase_id"] = eid
                 expenses.append(edata)
     expenses.sort(key=lambda e: e.get("date", ""))
+
+    filtered = []
+    for e in expenses:
+        edate   = e.get("date", "") or ""
+        etype   = (e.get("expense_type", "") or "").lower()
+        evend   = (e.get("vendor", "") or "").lower()
+        ename   = (e.get("expense_name", "") or e.get("description", "") or "").lower()
+        ecat    = (e.get("category", "") or "").lower()
+        eproj   = (e.get("project_number", "") or "").lower()
+        eby     = (e.get("submitted_by_name", "") or e.get("created_by", "") or "").lower()
+        if type_f   and etype != type_f:  continue
+        if vendor_f and evend != vendor_f: continue
+        if date_from and edate < date_from: continue
+        if date_to   and edate > date_to:   continue
+        if search_f  and not any(search_f in s for s in [ename, evend, etype, ecat, eproj, eby]): continue
+        filtered.append(e)
+
     headers = ["Date", "Expense Type", "Expense Name", "Category", "Vendor", "Project", "Amount", "Submitted By"]
     rows = [[_fmt_date_export(e.get("date","")),
              e.get("expense_type",""), e.get("expense_name","") or e.get("description",""),
              e.get("category",""), e.get("vendor",""), e.get("project_number",""),
              _safe_float(e.get("amount",0)),
-             e.get("submitted_by_name","") or e.get("created_by","")] for e in expenses]
+             e.get("submitted_by_name","") or e.get("created_by","")] for e in filtered]
+
+    label = "expenses"
+    if type_f:    label += f"_{type_f}"
+    if vendor_f:  label += f"_{vendor_f}"
+    if date_from: label += f"_from{date_from}"
+    if date_to:   label += f"_to{date_to}"
+
     if fmt == "excel":
         buf = _make_excel("Expenses", headers, rows, [12,16,22,14,18,12,12,16], num_cols=[7])
-        return _export_response(buf, "excel", "expenses")
+        return _export_response(buf, "excel", label)
     if fmt == "pdf":
         fmt_rows = [[r[0],r[1],r[2],r[3],r[4],r[5],f"${r[6]:,.2f}",r[7]] for r in rows]
         buf = _make_pdf("Expenses Report", headers, fmt_rows, [1.0,1.1,1.6,1.0,1.3,0.9,0.9,1.2])
         if not buf: return redirect(url_for("financial"))
-        return _export_response(buf, "pdf", "expenses")
+        return _export_response(buf, "pdf", label)
     out = _io.StringIO(); w = csv.writer(out)
     w.writerow([f"{company_info().get('name','')} – Expenses Report"]); w.writerow([])
     w.writerow(headers)
     for r in rows: w.writerow([r[0],r[1],r[2],r[3],r[4],r[5],f"{r[6]:.2f}",r[7]])
-    return _export_response(out, "csv", "expenses")
+    return _export_response(out, "csv", label)
 
 # ── By Project exports ────────────────────────────────────────────────────────
 @app.route("/financial/by-project/export/<fmt>")

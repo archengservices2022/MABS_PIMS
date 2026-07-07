@@ -760,8 +760,8 @@ a[href*="filter_expense"]:hover {
         <button class="btn btn-xs btn-outline-teal dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-download me-1"></i>Export</button>
         <ul class="dropdown-menu dropdown-menu-end shadow-sm">
           <li><h6 class="dropdown-header" style="font-size:10px;">EXPORT OPTIONS</h6></li>
-          <li><a class="dropdown-item" href="{{ url_for('financial_expenses_export', fmt='pdf') }}"><i class="bi bi-file-earmark-pdf text-danger me-2"></i>PDF Report</a></li>
-          <li><a class="dropdown-item" href="{{ url_for('financial_expenses_export', fmt='excel') }}"><i class="bi bi-file-earmark-excel text-success me-2"></i>Excel (.xlsx)</a></li>
+          <li><a class="dropdown-item" href="#" onclick="exportExpenseFile('pdf');return false;"><i class="bi bi-file-earmark-pdf text-danger me-2"></i>PDF Report</a></li>
+          <li><a class="dropdown-item" href="#" onclick="exportExpenseFile('excel');return false;"><i class="bi bi-file-earmark-excel text-success me-2"></i>Excel (.xlsx)</a></li>
           <li><hr class="dropdown-divider my-1"></li>
           <li><a class="dropdown-item" href="#" onclick="exportExpenseCSV();return false;"><i class="bi bi-filetype-csv me-2" style="color:#0F766E;"></i>CSV (current filter)</a></li>
         </ul>
@@ -1444,6 +1444,22 @@ function setExpenseDateRange(range) {
   if (fromEl) fromEl.value = from;
   if (toEl)   toEl.value   = to;
   applyExpenseFilters();
+}
+
+function exportExpenseFile(fmt) {
+  const search  = document.getElementById('expenseSearch')?.value || '';
+  const type    = document.getElementById('expenseTypeFilter')?.value || '';
+  const vendor  = document.getElementById('expenseVendorFilter')?.value || '';
+  const from    = document.getElementById('expenseDateFrom')?.value || '';
+  const to      = document.getElementById('expenseDateTo')?.value || '';
+  const params  = new URLSearchParams();
+  if (search) params.set('search', search);
+  if (type)   params.set('type', type);
+  if (vendor) params.set('vendor', vendor);
+  if (from)   params.set('date_from', from);
+  if (to)     params.set('date_to', to);
+  const qs = params.toString();
+  window.location.href = `/financial/expenses/export/${fmt}${qs ? '?' + qs : ''}`;
 }
 
 function exportExpenseCSV() {
