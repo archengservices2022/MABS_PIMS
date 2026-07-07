@@ -7278,11 +7278,16 @@ def employee_expense_submit():
         "status":            "Pending",
         "created_at":        datetime.now(timezone.utc).isoformat(),
         "updated_at":        datetime.now(timezone.utc).isoformat(),
-        "receipt_base64":    receipt_base64,
         "receipt_filename":  receipt_filename,
-        "receipt_type":      receipt_type,
     }
-    fb_push("/expenses", data)
+    exp_id = fb_push("/expenses", data)
+    # Store receipt binary in a separate path so /expenses stays lightweight
+    if exp_id:
+        fb_update(f"/expense_receipts/{exp_id}", {
+            "receipt_base64":   receipt_base64,
+            "receipt_filename": receipt_filename,
+            "receipt_type":     receipt_type,
+        })
     flash("Expense submitted and pending admin approval.", "success")
     return redirect(url_for("employees") + "#expenses")
 
@@ -7333,9 +7338,11 @@ def employee_expense_receipt(exp_id):
     # Only admin or the submitter can view
     if role != "admin" and exp_data.get("submitted_by_uid") != uid:
         return jsonify({"error": "Not authorized"}), 403
-    receipt_b64 = exp_data.get("receipt_base64", "")
-    receipt_filename = exp_data.get("receipt_filename", "receipt")
-    receipt_type = exp_data.get("receipt_type", "application/octet-stream")
+    # Check separate receipt store first (new), fall back to inline field (legacy)
+    receipt_rec = fb_get(f"/expense_receipts/{exp_id}") or {}
+    receipt_b64      = receipt_rec.get("receipt_base64")      or exp_data.get("receipt_base64", "")
+    receipt_filename = receipt_rec.get("receipt_filename")     or exp_data.get("receipt_filename", "receipt")
+    receipt_type     = receipt_rec.get("receipt_type")         or exp_data.get("receipt_type", "application/octet-stream")
     if not receipt_b64:
         return jsonify({"error": "No receipt found"}), 404
     data_url = f"data:{receipt_type};base64,{receipt_b64}"
@@ -7370,9 +7377,13 @@ def employee_expense_edit(exp_id):
     if 'receipt' in request.files and request.files['receipt'].filename:
         receipt_file = request.files['receipt']
         try:
-            updates["receipt_base64"]   = base64.b64encode(receipt_file.read()).decode('utf-8')
+            new_b64 = base64.b64encode(receipt_file.read()).decode('utf-8')
             updates["receipt_filename"] = receipt_file.filename
-            updates["receipt_type"]     = receipt_file.content_type
+            fb_update(f"/expense_receipts/{exp_id}", {
+                "receipt_base64":   new_b64,
+                "receipt_filename": receipt_file.filename,
+                "receipt_type":     receipt_file.content_type,
+            })
         except Exception as e:
             app.logger.error(f"Expense receipt update error: {e}")
             flash("Receipt upload failed. Other changes were not saved.", "danger")
