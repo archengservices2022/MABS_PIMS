@@ -98,7 +98,7 @@
           </div>
           <div class="col-12">
             <label class="form-label">Service Types <span class="text-muted small fw-normal">— select all that apply</span></label>
-            {% set all_services = ['Mechanical','Electrical','Civil','Structural','Plumbing','HVAC','Fire Protection','Geotechnical','Environmental','Other'] %}
+            {% set all_services = ['Structural','Electrical','Civil','Mechanical','Plumbing','HVAC','Fire Protection','Geotechnical','Environmental','Other'] %}
             {% set selected_svcs = (project.get('service_types') or []) if project else [] %}
             {% set ns = namespace(other_val='', other_checked=false) %}
             {% for svc in selected_svcs %}
