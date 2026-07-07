@@ -1740,8 +1740,9 @@
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-end fw-semibold">${{ '%.2f'|format(c.amount_claimed|float) }}</td>
               <td class="text-end text-success fw-semibold">
-                {% if c.amount_approved is not none and c.amount_approved != '' %}
-                  ${{ '%.2f'|format(c.amount_approved|float) }}
+                {% set _amt_appr = c.get('amount_approved') %}
+                {% if _amt_appr is not none and _amt_appr != '' %}
+                  ${{ '%.2f'|format(_amt_appr|float) }}
                 {% else %}—{% endif %}
               </td>
               <td>
