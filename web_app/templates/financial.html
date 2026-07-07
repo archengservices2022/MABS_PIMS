@@ -1234,8 +1234,10 @@ function updateExpenseSummaryCards() {
     filteredTotal += amount;
     filteredCount++;
 
-    // Check if expense is in current month
-    if (dateCell.startsWith(currentMonth)) {
+    // dateCell is MM-DD-YYYY; convert to YYYY-MM for comparison
+    const dcParts = dateCell.split('-');
+    const cellYearMonth = dcParts.length === 3 ? `${dcParts[2]}-${dcParts[0]}` : '';
+    if (cellYearMonth === currentMonth) {
       thisMonthTotal += amount;
     }
 
