@@ -1952,11 +1952,14 @@ def project_detail(project_id):
     change_orders = data.get("change_orders") or []
     if not isinstance(change_orders, list):
         change_orders = list(change_orders.values()) if isinstance(change_orders, dict) else []
-    # Derive co_approved_total from contract_value - base_contract_value so the
-    # equation always balances even when CO stage amounts are manually edited.
+    # Actual sum of approved CO amounts — used in the CO table and KPI card.
+    co_approved_total = sum(_safe_float(co.get("amount", 0)) for co in change_orders if co.get("status") == "Approved")
+    # Base contract value stored when first CO was created (or derived).
     base_contract = _safe_float(data.get("base_contract_value")) if data.get("base_contract_value") else \
-                    _safe_float(data.get("contract_value", 0))
-    co_approved_total = max(0.0, _safe_float(data.get("contract_value", 0)) - base_contract)
+                    _safe_float(data.get("contract_value", 0)) - co_approved_total
+    # Actual contract increase from base — used in Financial Summary bar so
+    # Base + co_contract_increase always equals contract_value exactly.
+    co_contract_increase = max(0.0, _safe_float(data.get("contract_value", 0)) - base_contract)
 
     return render_template("project_detail.html", project=data,
                            project_invoices=project_invoices,
@@ -1974,6 +1977,7 @@ def project_detail(project_id):
                            next_stage_amount=next_stage_amount,
                            change_orders=change_orders,
                            co_approved_total=co_approved_total,
+                           co_contract_increase=co_contract_increase,
                            base_contract=base_contract)
 
 # ── Change Order Routes ───────────────────────────────────────────────────────
