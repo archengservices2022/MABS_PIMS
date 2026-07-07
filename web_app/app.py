@@ -1508,14 +1508,23 @@ def projects():
             _cv    = _safe_float(pdata.get("contract_value", 0))
             _st    = pdata.get("status") or "Not Started"
             _AUTO_DONE = {"invoiced_Paid", "Cancelled"}
+            _AUTO_SKIP  = {"invoiced_Paid", "invoiced_Not paid yet", "invoiced_Partially paid",
+                           "Cancelled", "On Hold", "Ready to Sent", "Sent out_Invoiced", "Sent out_Not Invoiced"}
             if _st not in _AUTO_DONE:
                 if _cv > 0 and _amt >= _cv - 0.01:
                     # Fully paid — also migrates legacy "Completed" → "invoiced_Paid"
                     pdata["status"] = "invoiced_Paid"
                     fb_update(f"/projects/{pid}", {"status": "invoiced_Paid", "updated_at": _now_iso})
-                elif _cv > 0 and 0 < _amt < _cv - 0.01 and _st in ("In Progress", "Active", "Completed"):
-                    pdata["status"] = "invoiced_Not paid yet"
-                    fb_update(f"/projects/{pid}", {"status": "invoiced_Not paid yet", "updated_at": _now_iso})
+                elif _cv > 0 and 0 < _amt < _cv - 0.01 and _st not in _AUTO_SKIP:
+                    # Partial payment received
+                    pdata["status"] = "invoiced_Partially paid"
+                    fb_update(f"/projects/{pid}", {"status": "invoiced_Partially paid", "updated_at": _now_iso})
+                elif _amt == 0 and _st in ("In Progress", "Active") and _st not in _AUTO_SKIP:
+                    # Check if any stage has been invoiced (invoice created, $0 collected)
+                    _stages = pdata.get("payment_stages") or []
+                    if any(isinstance(s, dict) and s.get("status") == "Invoiced" for s in _stages):
+                        pdata["status"] = "invoiced_Not paid yet"
+                        fb_update(f"/projects/{pid}", {"status": "invoiced_Not paid yet", "updated_at": _now_iso})
                 elif _amt > 0 and _st == "Not Started":
                     pdata["status"] = "In Progress"
                     fb_update(f"/projects/{pid}", {"status": "In Progress", "updated_at": _now_iso})
@@ -1564,7 +1573,7 @@ def projects():
 
     statuses = ["Not Started", "Active", "In Progress", "On Hold", "Completed", "Cancelled",
                 "Ready to Sent", "Sent out_Invoiced", "Sent out_Not Invoiced",
-                "invoiced_Not paid yet", "invoiced_Paid"]
+                "invoiced_Not paid yet", "invoiced_Partially paid", "invoiced_Paid"]
     clients = _load_clients()
     next_project_num = _next_project_number()
     active_tab = request.args.get("tab", "all-projects")
@@ -8451,8 +8460,17 @@ def _mark_project_stage(project_number: str, stage_index: int, status: str, invo
         stages[stage_index].pop("invoice_id", None)
         stages[stage_index].pop("invoice_number", None)
     print(f"[MARK_STAGE] Updated stage: {stages[stage_index]}", flush=True)
-    fb_update(f"/projects/{pid}", {"payment_stages": stages,
-                                   "updated_at": datetime.now(timezone.utc).isoformat()})
+
+    proj_updates = {"payment_stages": stages, "updated_at": datetime.now(timezone.utc).isoformat()}
+
+    # Auto-update project status when a stage first gets invoiced and $0 collected
+    if status == "Invoiced":
+        proj_status = pdata.get("status", "Not Started")
+        proj_paid   = _safe_float(pdata.get("amount_paid", 0))
+        if proj_paid == 0 and proj_status in ("In Progress", "Active", "Not Started"):
+            proj_updates["status"] = "invoiced_Not paid yet"
+
+    fb_update(f"/projects/{pid}", proj_updates)
 
 def _calculate_invoice_status(inv_data: dict) -> str:
     """Calculate invoice status based on payments vs total (including tax).
@@ -9075,8 +9093,9 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
             if contract_val > 0 and allocated >= contract_val - 0.01:
                 updates["status"] = "invoiced_Paid"
             elif contract_val > 0 and 0 < allocated < contract_val - 0.01 and \
-                    current_status in ("Not Started", "In Progress", "Active", "Completed"):
-                updates["status"] = "invoiced_Not paid yet"
+                    current_status not in ("On Hold", "invoiced_Paid", "Cancelled",
+                                          "Ready to Sent", "Sent out_Invoiced", "Sent out_Not Invoiced"):
+                updates["status"] = "invoiced_Partially paid"
             elif allocated > 0 and current_status == "Not Started":
                 updates["status"] = "In Progress"
 
@@ -9149,10 +9168,10 @@ def _sync_project_payment(project_number: str) -> None:
         if contract_val > 0 and total_paid >= contract_val - 0.01:
             updates["status"] = "invoiced_Paid"
         elif contract_val > 0 and 0 < total_paid < contract_val - 0.01:
-            if current_status not in ("In Progress", "On Hold", "invoiced_Not paid yet", "invoiced_Paid",
+            if current_status not in ("On Hold", "invoiced_Paid", "Cancelled",
                                       "Ready to Sent", "Sent out_Invoiced", "Sent out_Not Invoiced"):
-                updates["status"] = "invoiced_Not paid yet"
-        # Do NOT downgrade invoiced_Paid when total_paid == 0 — payment_log may be incomplete
+                updates["status"] = "invoiced_Partially paid"
+        # Do NOT downgrade invoiced_Paid/invoiced_Not paid yet when total_paid == 0 — payment_log may be incomplete
 
     fb_update(f"/projects/{pid}", updates)
 

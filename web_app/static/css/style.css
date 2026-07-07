@@ -446,11 +446,12 @@ body {
 .status-inactive    { background:var(--slate-100); color:var(--slate-600); }
 .status-open        { background:#FEF9C3; color:#A16207; }
 .status-closed      { background:var(--slate-100); color:var(--slate-600); }
-.status-ready-to-sent          { background:#FEF3C7; color:#B45309; }
-.status-sent-out_invoiced      { background:#DCFCE7; color:#15803D; }
-.status-sent-out_not-invoiced  { background:#DBEAFE; color:#1D4ED8; }
-.status-invoiced_not-paid-yet  { background:#FEF9C3; color:#A16207; }
-.status-invoiced_paid          { background:#DCFCE7; color:#15803D; }
+.status-ready-to-sent           { background:#FEF3C7; color:#B45309; }
+.status-sent-out_invoiced       { background:#DCFCE7; color:#15803D; }
+.status-sent-out_not-invoiced   { background:#DBEAFE; color:#1D4ED8; }
+.status-invoiced_not-paid-yet   { background:#FEF9C3; color:#A16207; }
+.status-invoiced_partially-paid { background:#FED7AA; color:#9A3412; }
+.status-invoiced_paid           { background:#DCFCE7; color:#15803D; }
 
 .badge-role-admin    { background:#FEE2E2; color:#B91C1C; }
 .badge-role-projects { background:var(--violet-l); color:#1D4ED8; }
