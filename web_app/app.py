@@ -965,7 +965,8 @@ def quotes():
     follow_ups.sort(key=lambda x: x.get("follow_up_date", ""))
     upcoming_followups.sort(key=lambda x: x.get("follow_up_date", ""))
 
-    statuses   = ["Not Started", "In Progress", "Completed", "Invoiced", "Cancelled", "Expired"]
+    statuses   = ["Not Started", "Draft", "Sent", "In Review", "Approved", "On Hold",
+                  "In Progress", "Completed", "Converted", "Invoiced", "Rejected", "Expired", "Cancelled"]
     active_tab = request.args.get("tab", "all")
     today_date = datetime.now().strftime("%Y-%m-%d")
 
