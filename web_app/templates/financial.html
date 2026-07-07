@@ -2178,7 +2178,7 @@ function viewReceipt(expId) {
           </tr>
         </thead>
         <tbody id="byProjectTableBody">
-          {% for row in project_pnl|sort(attribute='project_number') %}
+          {% for row in project_pnl|sort(attribute='project_number', reverse=True) %}
           {% set margin = [[100.0, ((row.paid / row.contract_value * 100) if row.contract_value > 0 else 0)] | min, 0] | max %}
           <tr class="bp-row" onclick="location.href='{{ url_for('project_detail', project_id=row.firebase_id) }}'" style="cursor:pointer;">
             <td><span class="fw-bold text-teal">{{ row.project_number }}</span></td>
