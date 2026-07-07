@@ -1499,12 +1499,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function addExpense(event) {
   event.preventDefault();
+  const submitBtn = document.querySelector('#expenseForm button[type="submit"]');
+  if (submitBtn && submitBtn.disabled) return;
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving…'; }
+
   const expenseType = document.getElementById('expenseType').value;
   const amount      = document.getElementById('expenseAmount').value;
   const vendor      = document.getElementById('expenseVendor').value;
 
   if (!expenseType || !amount || !vendor) {
     alert('Please fill in all required fields');
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = window.editingExpenseId ? '💾 Update Expense' : '➕ Add Expense';
+    }
     return;
   }
 
@@ -1553,10 +1561,12 @@ function addExpense(event) {
         expensesTab.show();
         setTimeout(() => location.reload(), 300);
       } else {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = isUpdate ? '💾 Update Expense' : '➕ Add Expense'; }
         alert('Error: ' + (res.error || 'Unknown error'));
       }
     })
     .catch(err => {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = isUpdate ? '💾 Update Expense' : '➕ Add Expense'; }
       console.error('Expense operation error:', err);
       alert('Failed to ' + (isUpdate ? 'update' : 'add') + ' expense: ' + err.message);
     });
@@ -2277,7 +2287,7 @@ function viewReceipt(expId) {
     <div class="col-6 col-xl">
       <div class="kpi-card kpi-green">
         <div class="kpi-top"><span class="kpi-label">Total Revenue</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
-        <div class="kpi-value text-success" id="bsKpiRevenue">${{ "{:,.2f}".format(total_revenue | default(0)) }}</div>
+        <div class="kpi-value text-success" id="bsKpiRevenue">${{ "{:,.2f}".format(bs_total_revenue | default(0)) }}</div>
         <div class="kpi-sub">from paid invoices</div>
       </div>
     </div>
@@ -2294,19 +2304,19 @@ function viewReceipt(expId) {
     <div class="col-6 col-xl">
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
-        <div class="kpi-value text-danger" id="bsKpiExpenses">${{ "{:,.2f}".format(total_expenses | default(0)) }}</div>
+        <div class="kpi-value text-danger" id="bsKpiExpenses">${{ "{:,.2f}".format(bs_total_expenses | default(0)) }}</div>
         <div class="kpi-sub">{{ expenses_filtered | length }} entries</div>
       </div>
     </div>
     <div class="col-6 col-xl">
       <div class="kpi-card kpi-blue">
         <div class="kpi-top"><span class="kpi-label">Total Salaries</span><i class="bi bi-people kpi-icon-sm"></i></div>
-        <div class="kpi-value" id="bsKpiSalaries" style="color:#3b82f6;">${{ "{:,.2f}".format(total_salaries | default(0)) }}</div>
+        <div class="kpi-value" id="bsKpiSalaries" style="color:#3b82f6;">${{ "{:,.2f}".format(bs_total_salaries | default(0)) }}</div>
         <div class="kpi-sub">{{ (salaries_domestic | length) + (salaries_international | length) }} employees</div>
       </div>
     </div>
     <div class="col-6 col-xl">
-      {% set bs_net = (total_revenue | default(0)) - (total_expenses | default(0)) - (total_salaries | default(0)) %}
+      {% set bs_net = (bs_total_revenue | default(0)) - (bs_total_expenses | default(0)) - (bs_total_salaries | default(0)) %}
       <div class="kpi-card {{ 'kpi-green' if bs_net >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit/Loss</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
         <div id="bsKpiNet" class="kpi-value {{ 'text-success' if bs_net >= 0 else 'text-danger' }}">${{ "{:,.2f}".format(bs_net) }}</div>

@@ -5257,7 +5257,7 @@ def financial_byproject_export(fmt):
             if pnum not in _invoice_linked_projects(inv_data): continue
             inv_meta = inv_data.get("meta", {}) or {}
             inv_date = inv_meta.get("invoice_date", "")
-            if _extract_year_from_date(inv_date) != year: continue
+            if not inv_date or inv_date[:4] != str(year): continue
             line_items = inv_data.get("line_items", []) or []
             proj_line = sum(_safe_float(li.get("amount", 0)) for li in line_items
                             if isinstance(li, dict) and str(li.get("project_number","")).strip() == pnum)
@@ -6078,6 +6078,11 @@ def financial():
                 else:
                     salaries_domestic_raw.append(sdata)
 
+    # Balance Sheet: salary totals filtered by selected year (current_year)
+    bs_sal_dom_raw = filter_by_year(list(salaries_domestic_raw), current_year)
+    bs_sal_int_raw = filter_by_year(list(salaries_international_raw), current_year)
+    bs_total_salaries = sum(_safe_float(s.get("amount", 0)) for s in bs_sal_dom_raw + bs_sal_int_raw)
+
     # Filter salaries by present running year for KPI cards (stat_card_year is always current year)
     salaries_domestic_raw = filter_by_year(salaries_domestic_raw, stat_card_year)
     salaries_international_raw = filter_by_year(salaries_international_raw, stat_card_year)
@@ -6123,24 +6128,25 @@ def financial():
     salaries_domestic, salary_entries_domestic = group_by_name(salaries_domestic_raw, salary_entries_domestic)
     salaries_international, salary_entries_international = group_by_name(salaries_international_raw, salary_entries_international)
 
-    # ── Monthly salary details for drill-down (needs salaries_domestic/international) ──
+    # ── Monthly salary details for drill-down (use BS-filtered salaries for selected year) ──
     monthly_salary_details = {str(i): [] for i in range(1, 13)}
-    for _sal in list(salaries_domestic) + list(salaries_international):
+    for _sal in bs_sal_dom_raw + bs_sal_int_raw:
         _ds = (_sal.get("date") or "")[:10]
         try:
             _d = datetime.fromisoformat(_ds)
-            if _d.year == current_year:
-                monthly_salary_details[str(_d.month)].append({
-                    "name":   _sal.get("name") or "—",
-                    "region": "Inside America" if _sal in salaries_domestic else "Outside America",
-                    "amount": _safe_float(_sal.get("amount", 0)),
-                    "date":   _ds,
-                })
+            monthly_salary_details[str(_d.month)].append({
+                "name":   _sal.get("employee_name") or _sal.get("name") or "—",
+                "region": "Inside America" if _sal in bs_sal_dom_raw else "Outside America",
+                "amount": _safe_float(_sal.get("amount", 0)),
+                "date":   _ds,
+            })
         except Exception:
             pass
 
-    # Calculate totals for Balance Sheet
-    total_revenue = total_paid
+    # Calculate totals for Balance Sheet (use selected year data, not stat_card_year)
+    bs_total_revenue = sum(annual_revenue.values())
+    bs_total_expenses = sum(annual_expenses.values())
+    total_revenue = total_paid  # kept for legacy/overview usage
 
     # Load custom expense categories from Firebase
     custom_categories = fb_get("/custom_categories") or {}
@@ -6409,6 +6415,9 @@ def financial():
         prev_year_total_expenses=prev_year_total_expenses,
         exp_list_year_filtered_count=exp_list_year_filtered_count,
         total_revenue=total_revenue,
+        bs_total_revenue=bs_total_revenue,
+        bs_total_expenses=bs_total_expenses,
+        bs_total_salaries=bs_total_salaries,
         total_salaries=total_salaries,
         employee_count=employee_count,
         net_profit=net_profit,
@@ -7156,14 +7165,16 @@ def employees():
     context["emp_categories_by_type"] = json.dumps(EMP_CATS_BY_TYPE)
     context["emp_names_by_cat"]       = json.dumps(_names_by_cat)
 
-    # Employee expense submissions
+    # Employee expense submissions — strip receipt_base64 (large binary) to keep page fast
+    _LARGE_FIELDS = {"receipt_base64", "receipt_content"}
     raw_emp_exp = fb_get("/expenses") or {}
     all_emp_expenses = []
     if isinstance(raw_emp_exp, dict):
         for eid, edata in raw_emp_exp.items():
             if isinstance(edata, dict):
-                edata["firebase_id"] = eid
-                all_emp_expenses.append(edata)
+                slim = {k: v for k, v in edata.items() if k not in _LARGE_FIELDS}
+                slim["firebase_id"] = eid
+                all_emp_expenses.append(slim)
     all_emp_expenses.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     context["my_expenses"] = [e for e in all_emp_expenses if e.get("submitted_by_uid") == uid]
     if is_admin:
