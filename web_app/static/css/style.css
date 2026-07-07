@@ -451,7 +451,7 @@ body {
 .status-sent-out_not-invoiced   { background:#DBEAFE; color:#1D4ED8; }
 .status-invoiced_not-paid-yet   { background:#FEF9C3; color:#A16207; }
 .status-invoiced_partially-paid { background:#FED7AA; color:#9A3412; }
-.status-invoiced_paid           { background:#DCFCE7; color:#15803D; }
+.status-invoiced_fully-paid     { background:#DCFCE7; color:#15803D; }
 
 .badge-role-admin    { background:#FEE2E2; color:#B91C1C; }
 .badge-role-projects { background:var(--violet-l); color:#1D4ED8; }

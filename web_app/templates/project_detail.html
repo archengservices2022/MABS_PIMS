@@ -327,7 +327,7 @@
           <h6 class="section-heading">Update Status</h6>
           <form method="POST" action="{{ url_for('project_status', project_id=project.firebase_id) }}">
             <select name="status" class="form-select form-select-sm mb-2">
-              {% for s in ['Not Started','Active','In Progress','On Hold','Completed','Cancelled','Ready to Sent','Sent out_Invoiced','Sent out_Not Invoiced','invoiced_Not paid yet','invoiced_Partially paid','invoiced_Paid'] %}
+              {% for s in ['Not Started','Active','In Progress','On Hold','Completed','Cancelled','Ready to Sent','Sent out_Invoiced','Sent out_Not Invoiced','invoiced_Not paid yet','invoiced_Partially paid','invoiced_Fully paid'] %}
               <option value="{{ s }}" {{ 'selected' if project.get('status') == s }}>{{ s }}</option>
               {% endfor %}
             </select>
