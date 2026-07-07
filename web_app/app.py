@@ -1952,10 +1952,11 @@ def project_detail(project_id):
     change_orders = data.get("change_orders") or []
     if not isinstance(change_orders, list):
         change_orders = list(change_orders.values()) if isinstance(change_orders, dict) else []
-    co_approved_total = sum(_safe_float(co.get("amount", 0)) for co in change_orders if co.get("status") == "Approved")
-    # Use stored base_contract_value; if absent, derive it so Base + COs always equals contract_value.
+    # Derive co_approved_total from contract_value - base_contract_value so the
+    # equation always balances even when CO stage amounts are manually edited.
     base_contract = _safe_float(data.get("base_contract_value")) if data.get("base_contract_value") else \
-                    _safe_float(data.get("contract_value", 0)) - co_approved_total
+                    _safe_float(data.get("contract_value", 0))
+    co_approved_total = max(0.0, _safe_float(data.get("contract_value", 0)) - base_contract)
 
     return render_template("project_detail.html", project=data,
                            project_invoices=project_invoices,
