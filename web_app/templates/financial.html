@@ -463,18 +463,42 @@ a[href*="filter_expense"]:hover {
   <!-- ── Row 3 — Invoice status + Expense categories ─────────────── -->
   <div class="row g-3">
     <div class="col-md-6">
-      <div class="card-panel">
-        <h6 class="panel-title mb-3"><i class="bi bi-pie-chart me-1" style="color:#0D9488;"></i>Invoice Status Breakdown</h6>
-        <div style="height:320px;position:relative;">
-          <canvas id="invStatusChart"></canvas>
+      <div class="card-panel" style="padding:20px 24px;">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <h6 class="panel-title mb-0"><i class="bi bi-pie-chart me-1" style="color:#0D9488;"></i>Invoice Status Breakdown</h6>
+          <span class="badge" style="background:#f0fdf4;color:#0D9488;font-size:11px;font-weight:600;border-radius:8px;padding:4px 10px;">
+            {{ inv_status_data | sum if inv_status_data else 0 }} invoices
+          </span>
+        </div>
+        <div class="d-flex align-items-center gap-4">
+          <div style="position:relative;width:160px;height:160px;flex-shrink:0;">
+            <canvas id="invStatusChart"></canvas>
+            <div id="invStatusCenter" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;">
+              <div style="font-size:22px;font-weight:800;color:#1e293b;line-height:1;">{{ inv_status_data | sum if inv_status_data else 0 }}</div>
+              <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Total</div>
+            </div>
+          </div>
+          <div id="invStatusLegend" style="flex:1;"></div>
         </div>
       </div>
     </div>
     <div class="col-md-6">
-      <div class="card-panel">
-        <h6 class="panel-title mb-3"><i class="bi bi-grid-3x3-gap me-1" style="color:#7C3AED;"></i>Expense by Category</h6>
-        <div style="height:320px;position:relative;">
-          <canvas id="expCatChart"></canvas>
+      <div class="card-panel" style="padding:20px 24px;">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <h6 class="panel-title mb-0"><i class="bi bi-grid-3x3-gap me-1" style="color:#7C3AED;"></i>Expense by Category</h6>
+          <span class="badge" style="background:#faf5ff;color:#7C3AED;font-size:11px;font-weight:600;border-radius:8px;padding:4px 10px;">
+            {{ exp_cat_labels | length if exp_cat_labels else 0 }} categories
+          </span>
+        </div>
+        <div class="d-flex align-items-center gap-4">
+          <div style="position:relative;width:160px;height:160px;flex-shrink:0;">
+            <canvas id="expCatChart"></canvas>
+            <div id="expCatCenter" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;">
+              <div style="font-size:18px;font-weight:800;color:#1e293b;line-height:1;" id="expCatTotal">—</div>
+              <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Total</div>
+            </div>
+          </div>
+          <div id="expCatLegend" style="flex:1;"></div>
         </div>
       </div>
     </div>
@@ -3095,30 +3119,71 @@ if (chartEl) {
   });
 }
 
+// ── Shared donut helpers ─────────────────────────────────────────────────────
+function buildDonutLegend(containerId, labels, data, colors, isCurrency) {
+  const total = data.reduce((a, b) => a + b, 0);
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = labels.map((lbl, i) => {
+    const pct = total > 0 ? Math.round(data[i] / total * 100) : 0;
+    const val = isCurrency ? '$' + data[i].toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0}) : data[i];
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <div style="width:10px;height:10px;border-radius:3px;background:${colors[i]};flex-shrink:0;"></div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${lbl}">${lbl}</div>
+        <div style="font-size:11px;color:#64748b;">${val} · <span style="font-weight:700;color:${colors[i]};">${pct}%</span></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function donutChartOptions(isCurrency) {
+  return {
+    responsive: true, maintainAspectRatio: false, cutout: '68%',
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#1e293b', padding: 10, cornerRadius: 8,
+        callbacks: {
+          label: c => {
+            const total = c.dataset.data.reduce((a, b) => a + b, 0);
+            const pct = total > 0 ? Math.round(c.parsed / total * 100) : 0;
+            const val = isCurrency ? ' $' + c.parsed.toLocaleString('en-US') : ' ' + c.parsed;
+            return `  ${c.label}:${val}  (${pct}%)`;
+          }
+        }
+      }
+    }
+  };
+}
+
 // ── Invoice Status donut ─────────────────────────────────────────────────────
 const invSL = {{ inv_status_labels|safe }};
 const invSD = {{ inv_status_data|safe }};
 if (invSL.length) {
+  const invColors = statusColors(invSL);
   new Chart(document.getElementById('invStatusChart'), {
     type: 'doughnut',
-    data: { labels: invSL, datasets: [{ data: invSD, backgroundColor: statusColors(invSL), borderWidth: 2, hoverOffset: 8 }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: '58%',
-      plugins: { legend: { position: 'right', labels: { font: { size: 12 }, boxWidth: 14, padding: 14 } },
-                 tooltip: { callbacks: { label: c => ` ${c.label}: ${c.parsed}` } } } }
+    data: { labels: invSL, datasets: [{ data: invSD, backgroundColor: invColors, borderWidth: 3, borderColor: '#fff', hoverOffset: 6 }] },
+    options: donutChartOptions(false)
   });
+  buildDonutLegend('invStatusLegend', invSL, invSD, invColors, false);
 }
 
 // ── Expense category donut ───────────────────────────────────────────────────
 const expCL = {{ exp_cat_labels|safe }};
 const expCD = {{ exp_cat_data|safe }};
 if (expCL.length) {
+  const expColors = EXP_PALETTE.slice(0, expCL.length);
+  const expTotal = expCD.reduce((a, b) => a + b, 0);
+  const expTotalEl = document.getElementById('expCatTotal');
+  if (expTotalEl) expTotalEl.textContent = '$' + expTotal.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0});
   new Chart(document.getElementById('expCatChart'), {
     type: 'doughnut',
-    data: { labels: expCL, datasets: [{ data: expCD, backgroundColor: EXP_PALETTE.slice(0, expCL.length), borderWidth: 2, hoverOffset: 8 }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: '58%',
-      plugins: { legend: { position: 'right', labels: { font: { size: 12 }, boxWidth: 14, padding: 14 } },
-                 tooltip: { callbacks: { label: c => ` ${c.label}: $${c.parsed.toLocaleString()}` } } } }
+    data: { labels: expCL, datasets: [{ data: expCD, backgroundColor: expColors, borderWidth: 3, borderColor: '#fff', hoverOffset: 6 }] },
+    options: donutChartOptions(true)
   });
+  buildDonutLegend('expCatLegend', expCL, expCD, expColors, true);
 }
 
 // ── AI PDF Extractor ─────────────────────────────────────────────────────────
