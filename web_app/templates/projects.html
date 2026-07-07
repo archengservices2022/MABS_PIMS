@@ -75,12 +75,17 @@
   <!-- ── Tab 1: All Projects ─────────────────────────────────────────────── -->
   <div class="tab-pane fade" id="tab-all-projects">
     {% set status_styles = {
-      'Not Started': ('bi-hourglass-split',  'bg-slate'),
-      'Active':      ('bi-lightning-charge', 'bg-blue'),
-      'In Progress': ('bi-arrow-repeat',     'bg-blue'),
-      'On Hold':     ('bi-pause-circle',     'bg-amber'),
-      'Completed':   ('bi-check-circle-fill','bg-green'),
-      'Cancelled':   ('bi-x-circle',         'bg-red'),
+      'Not Started':           ('bi-hourglass-split',     'bg-slate'),
+      'Active':                ('bi-lightning-charge',    'bg-blue'),
+      'In Progress':           ('bi-arrow-repeat',        'bg-blue'),
+      'On Hold':               ('bi-pause-circle',        'bg-amber'),
+      'Completed':             ('bi-check-circle-fill',   'bg-green'),
+      'Cancelled':             ('bi-x-circle',            'bg-red'),
+      'Ready to Sent':         ('bi-send',                'bg-amber'),
+      'Sent out_Invoiced':     ('bi-receipt-cutoff',      'bg-green'),
+      'Sent out_Not Invoiced': ('bi-envelope-check',      'bg-blue'),
+      'invoiced_Not paid yet': ('bi-hourglass-split',     'bg-amber'),
+      'invoiced_Paid':         ('bi-check-circle-fill',   'bg-green'),
     } %}
     {% if status_counts %}
     <div class="row g-2 mb-3">

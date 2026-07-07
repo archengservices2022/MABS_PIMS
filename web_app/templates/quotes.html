@@ -10,7 +10,7 @@
     <div class="kpi-card" style="border-left:4px solid #7C3AED;">
       <div class="kpi-top"><span class="kpi-label">Total Quotes</span><i class="bi bi-file-earmark-text kpi-icon-sm" style="color:#7C3AED;"></i></div>
       <div class="kpi-value" style="color:#7C3AED;" id="card-total-quotes">{{ q_total }}</div>
-      <div class="kpi-sub">{{ 'all time' if not (search or status_filter or date_from or date_to) else 'filtered' }}</div>
+      <div class="kpi-sub">{{ 'all time' if not (search or status_filter or year_filter or month_filter or date_from or date_to) else 'filtered' }}</div>
     </div>
   </div>
   <div class="col-6 col-xl">

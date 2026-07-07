@@ -970,19 +970,19 @@ def quotes():
     active_tab = request.args.get("tab", "all")
     today_date = datetime.now().strftime("%Y-%m-%d")
 
-    # KPI stats computed from all quotes (unfiltered)
+    # KPI stats computed from filtered items (matches table rows)
     _OPEN_STATUSES      = {"Not Started", "In Progress"}
     _APPROVED_STATUSES  = {"Approved", "Completed"}
     _CONVERTED_STATUSES = {"Converted", "Invoiced"}
-    q_total     = len(all_items_raw)
-    q_open      = sum(1 for q in all_items_raw if q.get("status", "Not Started") in _OPEN_STATUSES)
-    q_approved  = sum(1 for q in all_items_raw if q.get("status", "") in _APPROVED_STATUSES)
+    q_total     = len(items)
+    q_open      = sum(1 for q in items if q.get("status", "Not Started") in _OPEN_STATUSES)
+    q_approved  = sum(1 for q in items if q.get("status", "") in _APPROVED_STATUSES)
     # Count as converted if: status is Converted/Invoiced OR has linked_project_id (was converted)
-    q_converted = sum(1 for q in all_items_raw if q.get("status", "") in _CONVERTED_STATUSES or q.get("linked_project_id"))
+    q_converted = sum(1 for q in items if q.get("status", "") in _CONVERTED_STATUSES or q.get("linked_project_id"))
     q_conv_rate = round(q_converted / q_total * 100) if q_total else 0
-    q_pipeline  = sum(_safe_float(q.get("total", 0)) for q in all_items_raw if q.get("status", "Not Started") in _OPEN_STATUSES | _APPROVED_STATUSES)
+    q_pipeline  = sum(_safe_float(q.get("total", 0)) for q in items if q.get("status", "Not Started") in _OPEN_STATUSES | _APPROVED_STATUSES)
     # Count won value if: status is Converted/Invoiced OR has linked_project_id (was converted)
-    q_won_val   = sum(_safe_float(q.get("total", 0)) for q in all_items_raw if q.get("status", "") in _CONVERTED_STATUSES or q.get("linked_project_id"))
+    q_won_val   = sum(_safe_float(q.get("total", 0)) for q in items if q.get("status", "") in _CONVERTED_STATUSES or q.get("linked_project_id"))
 
     return render_template("quotes.html", quotes=items, statuses=statuses,
                            search=search, status_filter=status_filter,
@@ -1557,7 +1557,9 @@ def projects():
         status_counts[st] = status_counts.get(st, 0) + 1
     overdue_count = sum(1 for i in items if i.get("_has_overdue"))
 
-    statuses = ["Not Started", "Active", "In Progress", "On Hold", "Completed", "Cancelled"]
+    statuses = ["Not Started", "Active", "In Progress", "On Hold", "Completed", "Cancelled",
+                "Ready to Sent", "Sent out_Invoiced", "Sent out_Not Invoiced",
+                "invoiced_Not paid yet", "invoiced_Paid"]
     clients = _load_clients()
     next_project_num = _next_project_number()
     active_tab = request.args.get("tab", "all-projects")
