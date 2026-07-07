@@ -7030,6 +7030,14 @@ def export_balance_sheet():
 @app.route("/employees")
 @role_required("employees")
 def employees():
+    import traceback as _tb
+    try:
+        return _employees_inner()
+    except Exception as _e:
+        app.logger.error("EMPLOYEES_ERROR: %s\n%s", _e, _tb.format_exc())
+        return f"<pre style='padding:20px'>Error: {type(_e).__name__}: {_e}\n\n{_tb.format_exc()}</pre>", 500
+
+def _employees_inner():
     uid        = session.get("user_uid", "")
     _role      = normalize_role(session.get("user_role", ""))
     is_admin   = _role == "admin"
