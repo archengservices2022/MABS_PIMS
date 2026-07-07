@@ -1519,7 +1519,7 @@ def projects():
                     # Partial payment — upgrades from any status including "invoiced_Not paid yet"
                     pdata["status"] = "invoiced_Partially paid"
                     fb_update(f"/projects/{pid}", {"status": "invoiced_Partially paid", "updated_at": _now_iso})
-                elif _amt == 0 and _st in ("In Progress", "Active"):
+                elif _amt == 0 and _st in ("Not Started", "In Progress", "Active"):
                     # Invoice created but $0 collected yet
                     _stages = pdata.get("payment_stages") or []
                     if any(isinstance(s, dict) and s.get("status") == "Invoiced" for s in _stages):
