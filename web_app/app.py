@@ -303,7 +303,7 @@ def inject_globals():
             "my_open_entry":         next((e for e in my_entries if e.get("status") == "open"), None),
             "last_project_number":   my_entries[0].get("project_number", "") if my_entries else "",
             "clock_active_projects": [p for p in _load_projects_list()
-                                       if isinstance(p, dict) and p.get("status", "") not in ("Completed", "Cancelled")],
+                                       if isinstance(p, dict) and p.get("status", "") not in ("Completed", "invoiced_Paid", "Cancelled")],
             "today_str":             datetime.now().strftime("%Y-%m-%d"),
         }
 
@@ -562,7 +562,7 @@ def dashboard():
     total_outstanding = total_invoiced - total_paid
 
     active_projects = sum(1 for p in proj_list
-                          if isinstance(p, dict) and p.get("status", "") not in ("Completed", "Cancelled"))
+                          if isinstance(p, dict) and p.get("status", "") not in ("Completed", "invoiced_Paid", "Cancelled"))
     open_quotes     = sum(1 for q in quot_list
                           if isinstance(q, dict) and q.get("status", "Not Started") not in ("Completed", "Cancelled", "Invoiced"))
 
@@ -685,7 +685,7 @@ def dashboard():
     for p in proj_list:
         if not isinstance(p, dict):
             continue
-        if p.get("status", "") in ("Completed", "Cancelled"):
+        if p.get("status", "") in ("Completed", "invoiced_Paid", "Cancelled"):
             continue
         stages = p.get("payment_stages", []) or []
         pending_stages = [s for s in stages if isinstance(s, dict) and s.get("status", "") == "Pending Invoice"]
@@ -742,9 +742,9 @@ def dashboard():
     proj_contract_total  = sum(_safe_float(p.get("contract_value", 0)) for p in proj_list if isinstance(p, dict))
     proj_contract_active = sum(
         _safe_float(p.get("contract_value", 0)) for p in proj_list
-        if isinstance(p, dict) and p.get("status", "") not in ("Completed", "Cancelled")
+        if isinstance(p, dict) and p.get("status", "") not in ("Completed", "invoiced_Paid", "Cancelled")
     )
-    proj_completed_count = sum(1 for p in proj_list if isinstance(p, dict) and p.get("status", "") == "Completed")
+    proj_completed_count = sum(1 for p in proj_list if isinstance(p, dict) and p.get("status", "") in ("Completed", "invoiced_Paid"))
 
     inv_overdue_amt = sum(
         _safe_float(i.get("meta", {}).get("total", 0)) - _safe_float(i.get("meta", {}).get("amount_paid", 0))
@@ -1507,10 +1507,15 @@ def projects():
             _amt   = _safe_float(pdata.get("amount_paid", 0))
             _cv    = _safe_float(pdata.get("contract_value", 0))
             _st    = pdata.get("status") or "Not Started"
-            if _st != "Cancelled":
-                if _cv > 0 and _amt >= _cv - 0.01 and _st != "Completed":
-                    pdata["status"] = "Completed"
-                    fb_update(f"/projects/{pid}", {"status": "Completed", "updated_at": _now_iso})
+            _AUTO_DONE = {"invoiced_Paid", "Cancelled"}
+            if _st not in _AUTO_DONE:
+                if _cv > 0 and _amt >= _cv - 0.01:
+                    # Fully paid — also migrates legacy "Completed" → "invoiced_Paid"
+                    pdata["status"] = "invoiced_Paid"
+                    fb_update(f"/projects/{pid}", {"status": "invoiced_Paid", "updated_at": _now_iso})
+                elif _cv > 0 and 0 < _amt < _cv - 0.01 and _st in ("In Progress", "Active", "Completed"):
+                    pdata["status"] = "invoiced_Not paid yet"
+                    fb_update(f"/projects/{pid}", {"status": "invoiced_Not paid yet", "updated_at": _now_iso})
                 elif _amt > 0 and _st == "Not Started":
                     pdata["status"] = "In Progress"
                     fb_update(f"/projects/{pid}", {"status": "In Progress", "updated_at": _now_iso})
@@ -2037,8 +2042,8 @@ def co_status(project_id, co_idx):
             "contract_value": new_value,
             "payment_stages": stages,
         }
-        # Auto-update project status to "In Progress" if project is Completed and new CO payment is unpaid
-        if project.get("status") == "Completed" and co_amount > 0:
+        # Auto-update project status to "In Progress" if project was fully paid and new CO payment is unpaid
+        if project.get("status") in ("Completed", "invoiced_Paid") and co_amount > 0:
             update_data["status"] = "In Progress"
             update_data["updated_at"] = now_str
         fb_update(f"/projects/{project_id}", update_data)
@@ -4139,7 +4144,7 @@ def invoice_delete(invoice_id):
                 current_status = pdata.get("status", "Not Started")
 
                 # If still has payments, change to In Progress
-                if amount_paid > 0 and current_status == "Completed":
+                if amount_paid > 0 and current_status in ("Completed", "invoiced_Paid"):
                     fb_update(f"/projects/{proj_id}", {
                         "status": "In Progress",
                         "updated_at": datetime.now(timezone.utc).isoformat()
@@ -7016,7 +7021,7 @@ def employees():
     all_entries = _load_time_entries()
     all_time_off = _load_time_off_requests()
     active_projects = [p for p in _load_projects_list()
-                       if p.get("status", "") not in ("Completed", "Cancelled")]
+                       if p.get("status", "") not in ("Completed", "invoiced_Paid", "Cancelled")]
 
     now = datetime.now()
     today_str = now.strftime("%Y-%m-%d")
@@ -9052,8 +9057,8 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
         current_status = proj_data.get("status", "Not Started")
         existing_paid = _safe_float(proj_data.get("amount_paid", 0))
 
-        # Skip writing amount_paid=0 for a Completed project — it would corrupt the record
-        if current_status == "Completed" and allocated <= 0.01 and existing_paid > 0:
+        # Skip writing amount_paid=0 for a done project — it would corrupt the record
+        if current_status in ("Completed", "invoiced_Paid") and allocated <= 0.01 and existing_paid > 0:
             updates = {
                 "payment_stages": stages,
                 "updated_at": datetime.now(timezone.utc).isoformat()
@@ -9065,10 +9070,13 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
 
-        # Update project status if needed (never downgrade Completed/Cancelled)
-        if current_status not in ("Completed", "Cancelled"):
+        # Update project status if needed (never downgrade invoiced_Paid/Cancelled)
+        if current_status not in ("invoiced_Paid", "Cancelled"):
             if contract_val > 0 and allocated >= contract_val - 0.01:
-                updates["status"] = "Completed"
+                updates["status"] = "invoiced_Paid"
+            elif contract_val > 0 and 0 < allocated < contract_val - 0.01 and \
+                    current_status in ("Not Started", "In Progress", "Active", "Completed"):
+                updates["status"] = "invoiced_Not paid yet"
             elif allocated > 0 and current_status == "Not Started":
                 updates["status"] = "In Progress"
 
@@ -9139,11 +9147,12 @@ def _sync_project_payment(project_number: str) -> None:
     # Never downgrade a cancelled project; always correct everything else.
     if current_status != "Cancelled":
         if contract_val > 0 and total_paid >= contract_val - 0.01:
-            updates["status"] = "Completed"
-        elif total_paid > 0:
-            if current_status not in ("In Progress", "On Hold", "Completed"):
-                updates["status"] = "In Progress"
-        # Do NOT downgrade Completed when total_paid == 0 — payment_log may be incomplete
+            updates["status"] = "invoiced_Paid"
+        elif contract_val > 0 and 0 < total_paid < contract_val - 0.01:
+            if current_status not in ("In Progress", "On Hold", "invoiced_Not paid yet", "invoiced_Paid",
+                                      "Ready to Sent", "Sent out_Invoiced", "Sent out_Not Invoiced"):
+                updates["status"] = "invoiced_Not paid yet"
+        # Do NOT downgrade invoiced_Paid when total_paid == 0 — payment_log may be incomplete
 
     fb_update(f"/projects/{pid}", updates)
 
@@ -9235,12 +9244,12 @@ def _auto_complete_project_if_paid(project_number: str) -> None:
     raw_proj = fb_get("/projects") or {}
     for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
         if isinstance(pdata, dict) and pdata.get("project_number", "") == project_number:
-            if pdata.get("status", "") not in ("Completed", "Cancelled"):
+            if pdata.get("status", "") not in ("invoiced_Paid", "Completed", "Cancelled"):
                 contract_val = _safe_float(pdata.get("contract_value", 0))
                 total_paid   = _safe_float(pdata.get("amount_paid", 0))
                 if contract_val > 0 and total_paid >= contract_val - 0.01:
                     fb_update(f"/projects/{pid}", {
-                        "status": "Completed",
+                        "status": "invoiced_Paid",
                         "updated_at": datetime.now(timezone.utc).isoformat()
                     })
                     if not pdata.get("completion_email_sent"):
@@ -11554,7 +11563,7 @@ def payment_delete(invoice_id, idx):
             amount_paid = _safe_float(pdata.get("amount_paid", 0))
             current_status = pdata.get("status", "Not Started")
             # If still has payments, change to In Progress
-            if amount_paid > 0 and current_status == "Completed":
+            if amount_paid > 0 and current_status in ("Completed", "invoiced_Paid"):
                 fb_update(f"/projects/{proj_id}", {
                     "status": "In Progress",
                     "updated_at": datetime.now(timezone.utc).isoformat()
@@ -11600,7 +11609,7 @@ def tax_payment_delete(invoice_id, idx):
             amount_paid = _safe_float(pdata.get("amount_paid", 0))
             current_status = pdata.get("status", "Not Started")
             # If still has payments, change to In Progress
-            if amount_paid > 0 and current_status == "Completed":
+            if amount_paid > 0 and current_status in ("Completed", "invoiced_Paid"):
                 fb_update(f"/projects/{proj_id}", {
                     "status": "In Progress",
                     "updated_at": datetime.now(timezone.utc).isoformat()
