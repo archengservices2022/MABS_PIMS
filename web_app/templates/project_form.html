@@ -222,9 +222,13 @@
           <div class="col-md-4">
             <label class="form-label">Status</label>
             <select name="status" class="form-select">
-              {% for s in ['Not Started','In Progress','On Hold','Completed','Cancelled'] %}
-              <option value="{{ s }}"
-                {{ 'selected' if project and project.get('status') == s }}>{{ s }}</option>
+              {% set _status_opts = ['Sent out_Invoiced','Sent out_Not Invoiced','invoiced_Not paid yet','invoiced_Partially paid','invoiced_Fully paid'] %}
+              {% set _cur_status = project.get('status','') if project else '' %}
+              {% if _cur_status and _cur_status not in _status_opts %}
+              <option value="{{ _cur_status }}" selected>{{ _cur_status }}</option>
+              {% endif %}
+              {% for s in _status_opts %}
+              <option value="{{ s }}" {{ 'selected' if _cur_status == s }}>{{ s }}</option>
               {% endfor %}
             </select>
           </div>
