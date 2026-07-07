@@ -1727,7 +1727,7 @@
           <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
             <thead style="background:#f8fafc;">
               <tr>
-                <th>Date</th><th>Type</th><th>Provider</th>
+                <th>Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
                 <th class="text-end">Claimed</th><th class="text-end">Approved</th>
                 <th>Status</th><th>Notes</th>
               </tr>
@@ -1738,6 +1738,8 @@
               <td>{{ c.claim_date or '—' }}</td>
               <td>{{ c.expense_type or '—' }}</td>
               <td class="text-muted">{{ c.provider or '—' }}</td>
+              <td class="text-muted small">{{ c.get('description') or '—' }}</td>
+              <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
               <td class="text-end fw-semibold">${{ '%.2f'|format(c.amount_claimed|float) }}</td>
               <td class="text-end text-success fw-semibold">
                 {% set _amt_appr = c.get('amount_approved') %}
@@ -1777,7 +1779,7 @@
           <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
             <thead style="background:#f8fafc;">
               <tr>
-                <th>Employee</th><th>Date</th><th>Type</th><th>Provider</th>
+                <th>Employee</th><th>Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
                 <th class="text-end">Claimed</th><th>Status</th><th>Actions</th>
               </tr>
             </thead>
@@ -1788,6 +1790,8 @@
               <td>{{ c.claim_date or '—' }}</td>
               <td>{{ c.expense_type or '—' }}</td>
               <td class="text-muted">{{ c.provider or '—' }}</td>
+              <td class="text-muted small">{{ c.get('description') or '—' }}</td>
+              <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
               <td class="text-end fw-semibold">${{ '%.2f'|format(c.amount_claimed|float) }}</td>
               <td>
                 {% set cs = c.status or 'Pending' %}
