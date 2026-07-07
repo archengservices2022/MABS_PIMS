@@ -7316,13 +7316,11 @@ def employee_expense_review(exp_id):
     })
 
     if new_status == "Approved":
-        # Copy into balance_sheet_expenses so it appears in Financial tab
+        # Mirror into balance_sheet_expenses so it appears in Financial tab
         exp_data = fb_get(f"/expenses/{exp_id}") or {}
         if isinstance(exp_data, dict):
             exp_data["firebase_id"] = exp_id
             exp_data["created_by"] = exp_data.get("submitted_by_email", "")
-            fb_push("/balance_sheet_expenses", exp_data)
-            # Also mirror to /balance_sheet_expenses keyed by same id
             fb_update(f"/balance_sheet_expenses/{exp_id}", exp_data)
 
     flash(f"Expense {new_status.lower()}.", "success")
