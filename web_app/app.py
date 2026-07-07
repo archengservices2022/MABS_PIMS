@@ -1937,7 +1937,9 @@ def project_detail(project_id):
     if not isinstance(change_orders, list):
         change_orders = list(change_orders.values()) if isinstance(change_orders, dict) else []
     co_approved_total = sum(_safe_float(co.get("amount", 0)) for co in change_orders if co.get("status") == "Approved")
-    base_contract = _safe_float(data.get("base_contract_value") or data.get("contract_value", 0))
+    # Use stored base_contract_value; if absent, derive it so Base + COs always equals contract_value.
+    base_contract = _safe_float(data.get("base_contract_value")) if data.get("base_contract_value") else \
+                    _safe_float(data.get("contract_value", 0)) - co_approved_total
 
     return render_template("project_detail.html", project=data,
                            project_invoices=project_invoices,
@@ -2143,6 +2145,15 @@ def project_edit(project_id):
                     _safe_float(updated["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
 
         updated["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        # Keep base_contract_value in sync with the edited contract_value so the
+        # CO breakdown (Base + COs = Total) stays mathematically correct.
+        existing_cos = data.get("change_orders") or []
+        if not isinstance(existing_cos, list):
+            existing_cos = list(existing_cos.values()) if isinstance(existing_cos, dict) else []
+        co_approved_sum = sum(_safe_float(co.get("amount", 0)) for co in existing_cos if co.get("status") == "Approved")
+        if co_approved_sum > 0:
+            updated["base_contract_value"] = _safe_float(updated.get("contract_value", 0)) - co_approved_sum
 
         # Guard: if the project already has payments, don't let a form submission silently
         # downgrade its status to "Not Started". Preserve any manually-set status above "Not Started"
