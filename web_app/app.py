@@ -5144,10 +5144,11 @@ def _make_pdf(title, headers, data_rows, col_widths_inch):
 @login_required
 def financial_income_export(fmt):
     import csv, io as _io
-    year = request.args.get("year", str(datetime.now().year))
-    revenue = fb_get("/revenue") or {}
+    cur_year  = datetime.now().year
+    prev_year = cur_year - 1
+    revenue      = fb_get("/revenue") or {}
     invoices_raw = fb_get("/invoices") or {}
-    invoices = invoices_raw if isinstance(invoices_raw, dict) else {}
+    invoices     = invoices_raw if isinstance(invoices_raw, dict) else {}
 
     rows = []
     if isinstance(revenue, dict):
@@ -5156,17 +5157,33 @@ def financial_income_export(fmt):
             inv_id = rdata.get("invoice_id")
             if not inv_id or inv_id not in invoices: continue
             inv_data = invoices[inv_id]
+            if not isinstance(inv_data, dict): continue
             inv_meta = inv_data.get("meta", {}) or {}
             inv_date = inv_meta.get("invoice_date", "") or rdata.get("date", "")
-            if not inv_date or inv_date[:4] != str(year): continue
-            status = rdata.get("status", "")
-            if status not in ("Paid", "Partial"): continue
-            pay_log = inv_data.get("payment_log", []) or []
+            # Match financial() — include current and previous year
+            try:
+                inv_year = int(inv_date[:4])
+            except (ValueError, TypeError):
+                continue
+            if inv_year not in (cur_year, prev_year): continue
+            # Recalculate status from actual payment data (same as financial())
+            pay_log  = inv_data.get("payment_log", []) or []
             amt_paid = sum(_safe_float(p.get("amount", 0)) for p in pay_log)
             tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in (inv_data.get("tax_payments", []) or []))
-            inv_total = _safe_float(inv_meta.get("subtotal", 0)) + _safe_float(inv_meta.get("tax_amount", 0))
-            coll_date = max(pay_log, key=lambda p: p.get("date", "")).get("date", rdata.get("date", "")) if pay_log else rdata.get("date", "")
-            method = (max(pay_log, key=lambda p: p.get("date", "")).get("method", "") if pay_log else "") or inv_meta.get("payment_method", "")
+            inv_total = _safe_float(inv_meta.get("total", 0)) or (
+                _safe_float(inv_meta.get("subtotal", 0)) + _safe_float(inv_meta.get("tax_amount", 0)))
+            total_paid = amt_paid + tax_paid
+            if total_paid >= (inv_total - 0.01) and inv_total > 0:
+                status = "Paid"
+            elif total_paid > 0:
+                status = "Partial"
+            else:
+                status = "Unpaid"
+            if status not in ("Paid", "Partial"): continue
+            coll_date = (max(pay_log, key=lambda p: p.get("date", "")).get("date", rdata.get("date", ""))
+                         if pay_log else rdata.get("date", ""))
+            method    = ((max(pay_log, key=lambda p: p.get("date", "")).get("method", "") if pay_log else "")
+                         or inv_meta.get("payment_method", ""))
             rows.append([
                 _fmt_date_export(inv_date),
                 _fmt_date_export(coll_date),
@@ -5178,30 +5195,31 @@ def financial_income_export(fmt):
                 _safe_float(inv_meta.get("subtotal", 0)),
                 _safe_float(inv_meta.get("tax_amount", 0)),
                 inv_total,
-                amt_paid + tax_paid,
+                total_paid,
             ])
     rows.sort(key=lambda r: r[0])
+    label   = f"income_{cur_year}_{prev_year}"
+    title   = f"Income Report {prev_year}–{cur_year}"
     headers = ["Invoice Date", "Collection Date", "Invoice #", "Client", "Project",
                "Status", "Payment Method", "Subtotal", "Tax", "Invoice Total", "Amount Paid"]
     if fmt == "excel":
-        buf = _make_excel(f"Income {year}", headers, rows,
+        buf = _make_excel(title, headers, rows,
                           [13,13,14,20,16,10,13,12,10,13,13], num_cols=[8,9,10,11])
-        return _export_response(buf, "excel", f"income_{year}")
+        return _export_response(buf, "excel", label)
     if fmt == "pdf":
         fmt_rows = [[r[0],r[1],r[2],r[3],r[4],r[5],r[6],
                      f"${r[7]:,.2f}",f"${r[8]:,.2f}",f"${r[9]:,.2f}",f"${r[10]:,.2f}"] for r in rows]
-        buf = _make_pdf(f"Income Report {year}", headers, fmt_rows,
+        buf = _make_pdf(title, headers, fmt_rows,
                         [1.1,1.1,1.2,1.6,1.3,0.7,0.9,0.9,0.7,1.0,1.0])
         if not buf: return redirect(url_for("financial"))
-        return _export_response(buf, "pdf", f"income_{year}")
-    # CSV
+        return _export_response(buf, "pdf", label)
     out = _io.StringIO(); w = csv.writer(out)
-    w.writerow([f"{company_info().get('name','')} – Income Report {year}"]); w.writerow([])
+    w.writerow([f"{company_info().get('name','')} – {title}"]); w.writerow([])
     w.writerow(headers)
     for r in rows:
         w.writerow([r[0],r[1],r[2],r[3],r[4],r[5],r[6],
                     f"{r[7]:.2f}",f"{r[8]:.2f}",f"{r[9]:.2f}",f"{r[10]:.2f}"])
-    return _export_response(out, "csv", f"income_{year}")
+    return _export_response(out, "csv", label)
 
 # ── Expenses exports ──────────────────────────────────────────────────────────
 @app.route("/financial/expenses/export/<fmt>")
