@@ -2384,7 +2384,7 @@ function viewReceipt(expId) {
               {% for m in range(1, 13) %}
               <td>${{ (annual_expenses.get(m, 0) | float) | round(2) }}</td>
               {% endfor %}
-              <td id="bsExpTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ (total_expenses | default(0)) | round(2) }}</td>
+              <td id="bsExpTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ (bs_total_expenses | default(0)) | round(2) }}</td>
             </tr>
             <tr>
               <th style="text-align: left; background: #f8fafc; color: #27ae60; font-weight: 700; padding: 8px;">◑ NET P/L</th>
@@ -2392,7 +2392,7 @@ function viewReceipt(expId) {
               {% set netval = (annual_netpl.get(m, 0) | float) %}
               <td style="{{ 'color:#16a34a;' if netval >= 0 else 'color:#dc2626;' }}">${{ netval | round(2) }}</td>
               {% endfor %}
-              <td id="bsNetTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ ((annual_revenue.values() | sum) - (total_expenses | default(0))) | round(2) }}</td>
+              <td id="bsNetTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">${{ ((annual_revenue.values() | sum) - (bs_total_expenses | default(0))) | round(2) }}</td>
             </tr>
           </tbody>
         </table>
