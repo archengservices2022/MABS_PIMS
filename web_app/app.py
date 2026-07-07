@@ -5328,7 +5328,8 @@ def financial_byproject_export(fmt):
         p_cos = p.get("change_orders") or []
         if not isinstance(p_cos, list): p_cos = list(p_cos.values()) if isinstance(p_cos, dict) else []
         co_total = sum(_safe_float(co.get("amount", 0)) for co in p_cos if co.get("status") == "Approved")
-        p_contract = _safe_float(p.get("base_contract_value") or p.get("contract_value", 0)) + co_total
+        p_base = _safe_float(p.get("base_contract_value") or p.get("contract_value", 0))
+        p_contract = _safe_float(p.get("contract_value", 0)) or (p_base + co_total)
         p_expenses = sum(_safe_float(e.get("amount", 0)) for e in exp_list if e.get("project_number", "") == pnum)
         p_gp = p_collected - p_expenses
         outstanding = max(0.0, p_contract - p_collected)
@@ -5955,13 +5956,13 @@ def financial():
                 p_invoiced += project_line_total + project_tax
                 p_collected += project_payments + project_tax_paid
 
-        # Contract = base contract + approved change orders
+        # Contract = stored contract_value (already reflects any CO approvals and stage edits)
         p_cos = p.get("change_orders") or []
         if not isinstance(p_cos, list):
             p_cos = list(p_cos.values()) if isinstance(p_cos, dict) else []
         p_co_total = sum(_safe_float(co.get("amount", 0)) for co in p_cos if co.get("status") == "Approved")
         p_base_contract = _safe_float(p.get("base_contract_value") or p.get("contract_value", 0))
-        p_contract = p_base_contract + p_co_total
+        p_contract = _safe_float(p.get("contract_value", 0)) or (p_base_contract + p_co_total)
         p_not_invoiced = p_contract - p_invoiced
         p_outstanding = max(0.0, p_contract - p_collected)
         p_expenses = sum(_safe_float(e.get("amount",0))                     for e in exp_list if e.get("project_number","") == pnum)
