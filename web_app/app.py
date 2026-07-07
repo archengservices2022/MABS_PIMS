@@ -5158,7 +5158,7 @@ def financial_income_export(fmt):
             inv_data = invoices[inv_id]
             inv_meta = inv_data.get("meta", {}) or {}
             inv_date = inv_meta.get("invoice_date", "") or rdata.get("date", "")
-            if _extract_year_from_date(inv_date) != int(year): continue
+            if not inv_date or inv_date[:4] != str(year): continue
             status = rdata.get("status", "")
             if status not in ("Paid", "Partial"): continue
             pay_log = inv_data.get("payment_log", []) or []
