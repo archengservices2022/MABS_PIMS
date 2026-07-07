@@ -1507,20 +1507,20 @@ def projects():
             _amt   = _safe_float(pdata.get("amount_paid", 0))
             _cv    = _safe_float(pdata.get("contract_value", 0))
             _st    = pdata.get("status") or "Not Started"
-            _AUTO_DONE = {"invoiced_Fully paid", "Cancelled"}
-            _AUTO_SKIP  = {"invoiced_Fully paid", "invoiced_Not paid yet", "invoiced_Partially paid",
-                           "Cancelled", "On Hold", "Ready to Sent", "Sent out_Invoiced", "Sent out_Not Invoiced"}
-            if _st not in _AUTO_DONE:
+            _DONE_ST   = {"invoiced_Fully paid", "Cancelled"}
+            _MANUAL_ST = {"Cancelled", "On Hold", "Ready to Sent",
+                          "Sent out_Invoiced", "Sent out_Not Invoiced"}
+            if _st not in _DONE_ST:
                 if _cv > 0 and _amt >= _cv - 0.01:
                     # Fully paid — also migrates legacy "Completed" → "invoiced_Fully paid"
                     pdata["status"] = "invoiced_Fully paid"
                     fb_update(f"/projects/{pid}", {"status": "invoiced_Fully paid", "updated_at": _now_iso})
-                elif _cv > 0 and 0 < _amt < _cv - 0.01 and _st not in _AUTO_SKIP:
-                    # Partial payment received
+                elif _cv > 0 and 0 < _amt < _cv - 0.01 and _st not in (_MANUAL_ST | {"invoiced_Partially paid"}):
+                    # Partial payment — upgrades from any status including "invoiced_Not paid yet"
                     pdata["status"] = "invoiced_Partially paid"
                     fb_update(f"/projects/{pid}", {"status": "invoiced_Partially paid", "updated_at": _now_iso})
-                elif _amt == 0 and _st in ("In Progress", "Active") and _st not in _AUTO_SKIP:
-                    # Check if any stage has been invoiced (invoice created, $0 collected)
+                elif _amt == 0 and _st in ("In Progress", "Active"):
+                    # Invoice created but $0 collected yet
                     _stages = pdata.get("payment_stages") or []
                     if any(isinstance(s, dict) and s.get("status") == "Invoiced" for s in _stages):
                         pdata["status"] = "invoiced_Not paid yet"
