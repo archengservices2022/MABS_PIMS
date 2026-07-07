@@ -1571,7 +1571,7 @@ def projects():
         status_counts[st] = status_counts.get(st, 0) + 1
     overdue_count = sum(1 for i in items if i.get("_has_overdue"))
 
-    statuses = ["Not Started", "Active", "In Progress", "On Hold", "Completed", "Cancelled",
+    statuses = ["Active", "Completed",
                 "Ready to Sent", "Sent out_Invoiced", "Sent out_Not Invoiced",
                 "invoiced_Not paid yet", "invoiced_Partially paid", "invoiced_Fully paid"]
     clients = _load_clients()
