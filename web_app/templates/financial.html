@@ -220,7 +220,8 @@ a[href*="filter_expense"]:hover {
   cursor: pointer; transition: all .18s; user-select: none;
 }
 .bucket-pill:hover { border-color: #6b7280; color: #374151; }
-.bucket-pill.bp-active { color: #fff; background: #475569; border-color: #475569; }
+.bucket-pill.bp-active { color: #fff !important; }
+.bucket-pill[data-bucket="all"].bp-active    { background: #0D9488; border-color: #0D9488; }
 .bucket-pill[data-bucket="current"].bp-active { background: #16a34a; border-color: #16a34a; }
 .bucket-pill[data-bucket="1_30"].bp-active   { background: #ca8a04; border-color: #ca8a04; }
 .bucket-pill[data-bucket="31_60"].bp-active  { background: #ea580c; border-color: #ea580c; }
