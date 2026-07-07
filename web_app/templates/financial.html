@@ -466,15 +466,13 @@ a[href*="filter_expense"]:hover {
       <div class="card-panel" style="padding:20px 24px;">
         <div class="d-flex align-items-center justify-content-between mb-3">
           <h6 class="panel-title mb-0"><i class="bi bi-pie-chart me-1" style="color:#0D9488;"></i>Invoice Status Breakdown</h6>
-          <span class="badge" style="background:#f0fdf4;color:#0D9488;font-size:11px;font-weight:600;border-radius:8px;padding:4px 10px;">
-            {{ inv_status_data | sum if inv_status_data else 0 }} invoices
-          </span>
+          <span class="badge" style="background:#f0fdf4;color:#0D9488;font-size:11px;font-weight:600;border-radius:8px;padding:4px 10px;" id="invStatusBadge">—</span>
         </div>
         <div class="d-flex align-items-center gap-4">
           <div style="position:relative;width:160px;height:160px;flex-shrink:0;">
             <canvas id="invStatusChart"></canvas>
             <div id="invStatusCenter" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;">
-              <div style="font-size:22px;font-weight:800;color:#1e293b;line-height:1;">{{ inv_status_data | sum if inv_status_data else 0 }}</div>
+              <div style="font-size:22px;font-weight:800;color:#1e293b;line-height:1;" id="invStatusCenter">—</div>
               <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Total</div>
             </div>
           </div>
@@ -486,9 +484,7 @@ a[href*="filter_expense"]:hover {
       <div class="card-panel" style="padding:20px 24px;">
         <div class="d-flex align-items-center justify-content-between mb-3">
           <h6 class="panel-title mb-0"><i class="bi bi-grid-3x3-gap me-1" style="color:#7C3AED;"></i>Expense by Category</h6>
-          <span class="badge" style="background:#faf5ff;color:#7C3AED;font-size:11px;font-weight:600;border-radius:8px;padding:4px 10px;">
-            {{ exp_cat_labels | length if exp_cat_labels else 0 }} categories
-          </span>
+          <span class="badge" style="background:#faf5ff;color:#7C3AED;font-size:11px;font-weight:600;border-radius:8px;padding:4px 10px;" id="expCatBadge">—</span>
         </div>
         <div class="d-flex align-items-center gap-4">
           <div style="position:relative;width:160px;height:160px;flex-shrink:0;">
@@ -3162,6 +3158,11 @@ const invSL = {{ inv_status_labels|safe }};
 const invSD = {{ inv_status_data|safe }};
 if (invSL.length) {
   const invColors = statusColors(invSL);
+  const invTotal  = invSD.reduce((a, b) => a + b, 0);
+  const invCenter = document.getElementById('invStatusCenter');
+  if (invCenter) invCenter.textContent = invTotal;
+  const invBadge  = document.getElementById('invStatusBadge');
+  if (invBadge)  invBadge.textContent  = invTotal + ' invoices';
   new Chart(document.getElementById('invStatusChart'), {
     type: 'doughnut',
     data: { labels: invSL, datasets: [{ data: invSD, backgroundColor: invColors, borderWidth: 3, borderColor: '#fff', hoverOffset: 6 }] },
@@ -3175,9 +3176,11 @@ const expCL = {{ exp_cat_labels|safe }};
 const expCD = {{ exp_cat_data|safe }};
 if (expCL.length) {
   const expColors = EXP_PALETTE.slice(0, expCL.length);
-  const expTotal = expCD.reduce((a, b) => a + b, 0);
+  const expTotal  = expCD.reduce((a, b) => a + b, 0);
   const expTotalEl = document.getElementById('expCatTotal');
   if (expTotalEl) expTotalEl.textContent = '$' + expTotal.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0});
+  const expBadge = document.getElementById('expCatBadge');
+  if (expBadge) expBadge.textContent = expCL.length + ' categories';
   new Chart(document.getElementById('expCatChart'), {
     type: 'doughnut',
     data: { labels: expCL, datasets: [{ data: expCD, backgroundColor: expColors, borderWidth: 3, borderColor: '#fff', hoverOffset: 6 }] },
