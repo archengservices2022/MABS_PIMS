@@ -170,35 +170,34 @@
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h6 class="mb-0 fw-bold" style="color:#0D9488;font-size:14px;">
           <i class="bi bi-kanban me-1"></i>Projects
-          <span class="text-muted fw-normal" style="font-size:11px;margin-left:4px;">{{ pipeline.values()|map('length')|sum + proj_completed_count }} total</span>
+          <span class="text-muted fw-normal" style="font-size:11px;margin-left:4px;">{{ proj_status_counts.values()|sum }} total</span>
         </h6>
         <a href="{{ url_for('projects') }}" class="btn btn-xs" style="background:#F0FDFA;color:#0D9488;border:none;font-size:11px;padding:3px 10px;border-radius:4px;">View All →</a>
       </div>
+      {% set _st_styles = {
+        'Not Started':             ('#EFF6FF', '#3B82F6'),
+        'In Progress':             ('#F0FDFA', '#0D9488'),
+        'Active':                  ('#F0FDFA', '#0D9488'),
+        'On Hold':                 ('#FFFBEB', '#F59E0B'),
+        'Completed':               ('#F0FDF4', '#16a34a'),
+        'Sent out_Invoiced':       ('#F0FDFA', '#0D9488'),
+        'Sent out_Not Invoiced':   ('#EFF6FF', '#6366F1'),
+        'invoiced_Not paid yet':   ('#FFF7ED', '#F97316'),
+        'invoiced_Partially paid': ('#FFFBEB', '#F59E0B'),
+        'invoiced_Fully paid':     ('#F0FDF4', '#16a34a'),
+        'Ready to Sent':           ('#F5F3FF', '#8B5CF6'),
+        'Cancelled':               ('#FFF1F2', '#F43F5E'),
+      } %}
       <div class="row g-2 mb-3">
-        <div class="col-6">
-          <div style="background:#F0FDFA;border-radius:8px;padding:10px 12px;">
-            <div style="font-size:10px;color:#0D9488;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">In Progress</div>
-            <div style="font-size:1.6rem;font-weight:800;color:#0D9488;line-height:1.1;">{{ pipeline.get('In Progress', [])|length }}</div>
+        {% for st, cnt in proj_status_counts.items() %}
+        {% set _bg, _ac = _st_styles.get(st, ('#F8FAFC', '#64748B')) %}
+        <div class="col-4">
+          <div style="background:{{ _bg }};border-radius:8px;padding:8px 10px;">
+            <div style="font-size:9px;color:{{ _ac }};font-weight:700;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{{ st }}">{{ st }}</div>
+            <div style="font-size:1.35rem;font-weight:800;color:{{ _ac }};line-height:1.1;">{{ cnt }}</div>
           </div>
         </div>
-        <div class="col-6">
-          <div style="background:#EFF6FF;border-radius:8px;padding:10px 12px;">
-            <div style="font-size:10px;color:#3B82F6;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Not Started</div>
-            <div style="font-size:1.6rem;font-weight:800;color:#3B82F6;line-height:1.1;">{{ pipeline.get('Not Started', [])|length }}</div>
-          </div>
-        </div>
-        <div class="col-6">
-          <div style="background:#FFFBEB;border-radius:8px;padding:10px 12px;">
-            <div style="font-size:10px;color:#F59E0B;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">On Hold</div>
-            <div style="font-size:1.6rem;font-weight:800;color:#F59E0B;line-height:1.1;">{{ pipeline.get('On Hold', [])|length }}</div>
-          </div>
-        </div>
-        <div class="col-6">
-          <div style="background:#F0FDF4;border-radius:8px;padding:10px 12px;">
-            <div style="font-size:10px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Completed</div>
-            <div style="font-size:1.6rem;font-weight:800;color:#16a34a;line-height:1.1;">{{ proj_completed_count }}</div>
-          </div>
-        </div>
+        {% endfor %}
       </div>
       <div style="border-top:1px solid #f1f5f9;padding-top:10px;display:flex;justify-content:space-between;align-items:flex-end;">
         <div>

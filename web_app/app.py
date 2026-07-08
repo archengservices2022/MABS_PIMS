@@ -547,19 +547,33 @@ def dashboard():
                  if isinstance(v, dict)] if isinstance(projects, dict) else []
     quot_list = list(quotes.values())   if isinstance(quotes, dict)   else []
 
-    # Dashboard totals include tax in both invoiced and paid amounts
-    total_invoiced = sum(
-        _safe_float(i.get("meta", {}).get("total", 0))
+    # Dashboard totals — current year only
+    cur_year = str(datetime.now().year)
+
+    cur_year_invs = [i for i in inv_list if isinstance(i, dict)
+                     and (i.get("meta", {}).get("invoice_date", "") or "").startswith(cur_year)]
+
+    total_invoiced = sum(_safe_float(i.get("meta", {}).get("total", 0)) for i in cur_year_invs)
+
+    # Collected = payments received this year by payment date (across all invoices)
+    total_paid = 0.0
+    for _i in inv_list:
+        if not isinstance(_i, dict): continue
+        for _pay in (_i.get("payment_log", []) or []):
+            if (_pay.get("date", "") or "").startswith(cur_year):
+                total_paid += _safe_float(_pay.get("amount", 0))
+        for _tp in (_i.get("tax_payments", []) or []):
+            if (_tp.get("date", "") or "").startswith(cur_year):
+                total_paid += _safe_float(_tp.get("amount", 0))
+
+    # Outstanding = unpaid balance across ALL years (money still owed)
+    total_outstanding = sum(
+        max(0.0, _safe_float(i.get("meta", {}).get("total", 0))
+            - _safe_float(i.get("meta", {}).get("amount_paid", 0))
+            - sum(_safe_float(tp.get("amount", 0)) for tp in (i.get("tax_payments", []) or [])))
         for i in inv_list if isinstance(i, dict)
+        and (i.get("meta", {}).get("status", "") not in ("Cancelled",))
     )
-    total_paid = sum(
-        _safe_float(i.get("meta", {}).get("amount_paid", 0))
-        for i in inv_list if isinstance(i, dict)
-    )
-    total_paid += sum(
-        _safe_float(p.get("amount", 0)) for i in inv_list for p in i.get("tax_payments", [])
-    )
-    total_outstanding = total_invoiced - total_paid
 
     active_projects = sum(1 for p in proj_list
                           if isinstance(p, dict) and p.get("status", "") not in ("Completed", "invoiced_Fully paid", "Cancelled"))
@@ -653,9 +667,26 @@ def dashboard():
     )[:6]
 
     # Active projects by status for pipeline view
-    pipeline_statuses = ["Not Started", "In Progress", "On Hold"]
-    pipeline = {st: [p for p in proj_list if isinstance(p, dict) and p.get("status", "Not Started") == st]
-                for st in pipeline_statuses}
+    # Map all status variants to display buckets
+    _IN_PROGRESS = {"In Progress", "Active", "invoiced_Not paid yet",
+                    "invoiced_Partially paid", "Invoiced", "Sent",
+                    "Sent out_Invoiced"}
+    _NOT_STARTED = {"Not Started"}
+    _ON_HOLD     = {"On Hold"}
+
+    def _pipeline_bucket(status):
+        s = (status or "Not Started").strip()
+        if s in _IN_PROGRESS:  return "In Progress"
+        if s in _ON_HOLD:      return "On Hold"
+        if s in _NOT_STARTED:  return "Not Started"
+        return None  # Completed / Cancelled / invoiced_Fully paid — excluded
+
+    pipeline = {"Not Started": [], "In Progress": [], "On Hold": []}
+    for _p in proj_list:
+        if not isinstance(_p, dict): continue
+        _bucket = _pipeline_bucket(_p.get("status", "Not Started"))
+        if _bucket:
+            pipeline[_bucket].append(_p)
 
     # ── Urgent alerts (overdue + due within 3 days only) ─────────────────────
     three_day_str = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
@@ -802,6 +833,7 @@ def dashboard():
         this_month_collected=this_month_collected,
         last_month_collected=last_month_collected,
         inv_status_counts=inv_status_counts,
+        proj_status_counts=proj_status_counts,
         quot_status_counts=quot_status_counts,
         quotes_approved_count=sum(quot_status_counts.get(s, 0) for s in ('Approved', 'Converted', 'Invoiced', 'Completed')),
         quotes_pipeline_value=quotes_pipeline_value,
