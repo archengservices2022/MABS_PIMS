@@ -9845,6 +9845,10 @@ def _parse_project_form(form) -> dict:
         "down_payment_percent": form.get("down_payment_percent", "0"),
         "installment_count":    form.get("installment_count", "1"),
         "custom_installment_amounts": [a for a in form.getlist("custom_installment_amount[]") if str(a).strip()],
+        # ── budgets ──────────────────────────────────────────────────────────
+        "budget_labor":         _safe_float(form.get("budget_labor", 0)),
+        "budget_expenses":      _safe_float(form.get("budget_expenses", 0)),
+        "budget_subcontractor": _safe_float(form.get("budget_subcontractor", 0)),
     }
 
 def _parse_invoice_form(form) -> dict:

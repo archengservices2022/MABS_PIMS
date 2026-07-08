@@ -399,6 +399,114 @@
       </div>
     </div>
 
+    <!-- Budget vs Actual (only shown if any budget was set) -->
+    {% set b_labor = project.get('budget_labor', 0)|float %}
+    {% set b_exp   = project.get('budget_expenses', 0)|float %}
+    {% set b_sub   = project.get('budget_subcontractor', 0)|float %}
+    {% set b_total = b_labor + b_exp + b_sub %}
+    {% if b_total > 0 %}
+    {% set a_total = labor_total_cost + exp_total %}
+    <div class="card-panel mb-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="panel-title mb-0"><i class="bi bi-bar-chart-line me-1"></i>Budget vs Actual</h6>
+        {% set overall_pct = [a_total / b_total * 100, 100]|min if b_total > 0 else 0 %}
+        <span class="badge {{ 'bg-danger' if a_total > b_total else ('bg-warning text-dark' if a_total > b_total * 0.8 else 'bg-success') }}">
+          {{ "%.0f"|format(a_total / b_total * 100 if b_total > 0 else 0) }}% of budget used
+        </span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle">
+          <thead class="table-dark">
+            <tr>
+              <th>Category</th>
+              <th class="text-end">Budget</th>
+              <th class="text-end">Actual</th>
+              <th class="text-end">Remaining</th>
+              <th style="min-width:140px;">Usage</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Labor row -->
+            {% if b_labor > 0 %}
+            {% set l_pct = [labor_total_cost / b_labor * 100, 100]|min if b_labor > 0 else 0 %}
+            {% set l_over = labor_total_cost > b_labor %}
+            <tr>
+              <td><i class="bi bi-person-badge me-1 text-muted"></i>Labor</td>
+              <td class="text-end">${{ "{:,.0f}".format(b_labor) }}</td>
+              <td class="text-end {{ 'text-danger fw-bold' if l_over else 'text-success' }}">${{ "{:,.0f}".format(labor_total_cost) }}</td>
+              <td class="text-end {{ 'text-danger' if l_over else '' }}">
+                {{ ('−$' + "{:,.0f}".format(labor_total_cost - b_labor)) if l_over else ('$' + "{:,.0f}".format(b_labor - labor_total_cost)) }}
+              </td>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="flex-grow-1 rounded" style="height:8px;background:#e2e8f0;">
+                    <div class="rounded" style="height:8px;width:{{ l_pct }}%;background:{{ '#ef4444' if l_over else ('#f59e0b' if l_pct > 80 else '#10b981') }};transition:width .3s;"></div>
+                  </div>
+                  <span class="small text-muted" style="white-space:nowrap;">{{ "%.0f"|format(l_pct) }}%</span>
+                </div>
+              </td>
+            </tr>
+            {% endif %}
+            <!-- Expenses row -->
+            {% if b_exp > 0 %}
+            {% set e_pct = [exp_total / b_exp * 100, 100]|min if b_exp > 0 else 0 %}
+            {% set e_over = exp_total > b_exp %}
+            <tr>
+              <td><i class="bi bi-receipt me-1 text-muted"></i>Expenses</td>
+              <td class="text-end">${{ "{:,.0f}".format(b_exp) }}</td>
+              <td class="text-end {{ 'text-danger fw-bold' if e_over else 'text-success' }}">${{ "{:,.0f}".format(exp_total) }}</td>
+              <td class="text-end {{ 'text-danger' if e_over else '' }}">
+                {{ ('−$' + "{:,.0f}".format(exp_total - b_exp)) if e_over else ('$' + "{:,.0f}".format(b_exp - exp_total)) }}
+              </td>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="flex-grow-1 rounded" style="height:8px;background:#e2e8f0;">
+                    <div class="rounded" style="height:8px;width:{{ e_pct }}%;background:{{ '#ef4444' if e_over else ('#f59e0b' if e_pct > 80 else '#10b981') }};transition:width .3s;"></div>
+                  </div>
+                  <span class="small text-muted" style="white-space:nowrap;">{{ "%.0f"|format(e_pct) }}%</span>
+                </div>
+              </td>
+            </tr>
+            {% endif %}
+            <!-- Subcontractor row (budget only — no tracking yet) -->
+            {% if b_sub > 0 %}
+            <tr>
+              <td><i class="bi bi-people me-1 text-muted"></i>Subcontractor</td>
+              <td class="text-end">${{ "{:,.0f}".format(b_sub) }}</td>
+              <td class="text-end text-muted">—</td>
+              <td class="text-end text-muted">—</td>
+              <td><span class="small text-muted">Not tracked yet</span></td>
+            </tr>
+            {% endif %}
+          </tbody>
+          <tfoot class="table-light fw-bold">
+            <tr>
+              <td>Total</td>
+              <td class="text-end">${{ "{:,.0f}".format(b_total) }}</td>
+              <td class="text-end {{ 'text-danger' if a_total > b_total else 'text-success' }}">${{ "{:,.0f}".format(a_total) }}</td>
+              <td class="text-end {{ 'text-danger' if a_total > b_total else '' }}">
+                {% if a_total > b_total %}
+                  <span class="text-danger">−${{ "{:,.0f}".format(a_total - b_total) }} over</span>
+                {% else %}
+                  ${{ "{:,.0f}".format(b_total - a_total) }} left
+                {% endif %}
+              </td>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="flex-grow-1 rounded" style="height:8px;background:#e2e8f0;">
+                    {% set t_pct = [a_total / b_total * 100, 100]|min if b_total > 0 else 0 %}
+                    <div class="rounded" style="height:8px;width:{{ t_pct }}%;background:{{ '#ef4444' if a_total > b_total else ('#f59e0b' if t_pct > 80 else '#10b981') }};transition:width .3s;"></div>
+                  </div>
+                  <span class="small text-muted" style="white-space:nowrap;">{{ "%.0f"|format(t_pct) }}%</span>
+                </div>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="row g-3">
       <!-- Invoices for this project -->
       <div class="col-lg-7">

@@ -328,6 +328,39 @@
         </div>
       </div>
 
+      <!-- Budget Section -->
+      <div class="card-panel mb-3">
+        <h6 class="section-heading">Project Budget <span class="text-muted fw-normal small">(optional)</span></h6>
+        <p class="text-muted small mb-3">Set budgets to track actual vs planned costs on the P&amp;L tab.</p>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Labor Budget ($)</label>
+            <input type="number" name="budget_labor" id="budgetLabor" class="form-control budget-input"
+                   value="{{ '%.2f'|format(project.get('budget_labor',0)|float) if project and project.get('budget_labor') else '' }}"
+                   min="0" step="0.01" placeholder="0.00" oninput="updateBudgetTotal()">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Expenses Budget ($)</label>
+            <input type="number" name="budget_expenses" id="budgetExpenses" class="form-control budget-input"
+                   value="{{ '%.2f'|format(project.get('budget_expenses',0)|float) if project and project.get('budget_expenses') else '' }}"
+                   min="0" step="0.01" placeholder="0.00" oninput="updateBudgetTotal()">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Subcontractor Budget ($)</label>
+            <input type="number" name="budget_subcontractor" id="budgetSubcontractor" class="form-control budget-input"
+                   value="{{ '%.2f'|format(project.get('budget_subcontractor',0)|float) if project and project.get('budget_subcontractor') else '' }}"
+                   min="0" step="0.01" placeholder="0.00" oninput="updateBudgetTotal()">
+          </div>
+          <div class="col-12">
+            <div class="d-flex align-items-center gap-2 p-2 rounded" style="background:#f0fdf4;border:1px solid #bbf7d0;">
+              <i class="bi bi-calculator text-success"></i>
+              <span class="small text-muted">Total Budget:</span>
+              <span class="fw-bold text-teal" id="budgetTotalDisplay">$0.00</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="d-grid gap-2">
         <button type="submit" class="btn btn-teal" onclick="return validatePaymentPlanBeforeSubmit()">
           <i class="bi bi-check-lg me-1"></i>
@@ -441,6 +474,17 @@ if (document.readyState === 'loading') {
   initializeDurationCalculation();
 }
 setTimeout(initializeDurationCalculation, 100);
+
+// ── Budget total live calculation ────────────────────────────────────────────
+function updateBudgetTotal() {
+  var labor  = parseFloat(document.getElementById('budgetLabor')?.value) || 0;
+  var exp    = parseFloat(document.getElementById('budgetExpenses')?.value) || 0;
+  var sub    = parseFloat(document.getElementById('budgetSubcontractor')?.value) || 0;
+  var total  = labor + exp + sub;
+  var el     = document.getElementById('budgetTotalDisplay');
+  if (el) el.textContent = '$' + total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+document.addEventListener('DOMContentLoaded', updateBudgetTotal);
 
 // ── Payment Plan live preview ────────────────────────────────────────────────
 let previewStagesData = [];
