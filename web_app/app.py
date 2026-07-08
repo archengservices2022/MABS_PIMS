@@ -11259,16 +11259,26 @@ Best regards,
 @app.route("/invoicing/<invoice_id>/send", methods=["POST"])
 @role_required("invoicing")
 def invoice_send(invoice_id):
-    ok, msg = _send_invoice_email(invoice_id)
-    if ok:
-        fb_update(f"/invoices/{invoice_id}", {
-            "meta/status": "Sent",
-            "meta/updated_at": datetime.now(timezone.utc).isoformat(),
-        })
-        inv_data = fb_get(f"/invoices/{invoice_id}") or {}
-        for proj_num in _invoice_linked_projects(inv_data):
-            _advance_project_to_in_progress(proj_num)
-    flash(msg, "success" if ok else "danger")
+    try:
+        ok, msg = _send_invoice_email(invoice_id)
+        if ok:
+            inv_data = fb_get(f"/invoices/{invoice_id}") or {}
+            current_status = (inv_data.get("meta", {}) or {}).get("status", "")
+            # Only move to Sent if not already in a terminal state (Paid, Cancelled)
+            if current_status not in ("Paid", "Cancelled"):
+                fb_update(f"/invoices/{invoice_id}", {
+                    "meta/status": "Sent",
+                    "meta/updated_at": datetime.now(timezone.utc).isoformat(),
+                })
+            for proj_num in _invoice_linked_projects(inv_data):
+                try:
+                    _advance_project_to_in_progress(proj_num)
+                except Exception as e:
+                    log.warning("_advance_project_to_in_progress error for %s: %s", proj_num, e)
+        flash(msg, "success" if ok else "danger")
+    except Exception as exc:
+        log.error("invoice_send error for %s: %s", invoice_id, exc)
+        flash(f"Failed to send: {exc}", "danger")
     return redirect(url_for("invoice_detail", invoice_id=invoice_id))
 
 @app.route("/quotes/<quote_id>/send", methods=["POST"])
