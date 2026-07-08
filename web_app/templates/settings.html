@@ -378,6 +378,8 @@
                     <div class="d-flex gap-1 flex-wrap">
                       <button class="btn btn-xs btn-outline-primary edit-user-btn"
                               data-uid="{{ u.firebase_uid }}"
+                              data-username="{{ u.get('username','') | e }}"
+                              data-email="{{ u.get('email','') | e }}"
                               data-title="{{ u.get('title','') | e }}"
                               data-region="{{ u.get('region','') | e }}"
                               data-rate="{{ u.get('hourly_rate', 0) }}"
@@ -492,33 +494,47 @@
 
 <!-- ── Edit Employee Details Modal ──────────────────────────────────────────── -->
 <div class="modal fade" id="editUserModal" tabindex="-1">
-  <div class="modal-dialog modal-sm">
+  <div class="modal-dialog modal-md">
     <div class="modal-content">
       <div class="modal-header py-2">
-        <h6 class="modal-title"><i class="bi bi-person-gear me-1"></i>Edit Employee Details</h6>
+        <h6 class="modal-title"><i class="bi bi-person-gear me-1"></i>Edit User Details</h6>
         <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body pb-2">
         <input type="hidden" id="editUid">
-        <div class="mb-2">
-          <label class="form-label fw-semibold" style="font-size:12px;">Job Title</label>
-          <input type="text" id="editTitle" class="form-control form-control-sm" placeholder="e.g. Senior Engineer">
+        <div class="row g-2 mb-2">
+          <div class="col-6">
+            <label class="form-label fw-semibold" style="font-size:12px;">Display Name</label>
+            <input type="text" id="editUsername" class="form-control form-control-sm" placeholder="Full name">
+          </div>
+          <div class="col-6">
+            <label class="form-label fw-semibold" style="font-size:12px;">Email</label>
+            <input type="email" id="editEmail" class="form-control form-control-sm bg-light" readonly>
+          </div>
         </div>
-        <div class="mb-2">
-          <label class="form-label fw-semibold" style="font-size:12px;">Region</label>
-          <select id="editRegion" class="form-select form-select-sm">
-            <option value="">— None —</option>
-            <option value="Inside America">Inside America</option>
-            <option value="Outside America">Outside America</option>
-          </select>
+        <div class="row g-2 mb-2">
+          <div class="col-6">
+            <label class="form-label fw-semibold" style="font-size:12px;">Job Title</label>
+            <input type="text" id="editTitle" class="form-control form-control-sm" placeholder="e.g. Senior Engineer">
+          </div>
+          <div class="col-6">
+            <label class="form-label fw-semibold" style="font-size:12px;">Region</label>
+            <select id="editRegion" class="form-select form-select-sm">
+              <option value="">— None —</option>
+              <option value="Inside America">Inside America</option>
+              <option value="Outside America">Outside America</option>
+            </select>
+          </div>
         </div>
-        <div class="mb-2">
-          <label class="form-label fw-semibold" style="font-size:12px;">Hourly Rate ($)</label>
-          <input type="number" id="editHourlyRate" class="form-control form-control-sm" placeholder="0.00" min="0" step="0.01">
-        </div>
-        <div class="mb-3">
-          <label class="form-label fw-semibold" style="font-size:12px;">Monthly Salary ($)</label>
-          <input type="number" id="editMonthlySalary" class="form-control form-control-sm" placeholder="0.00 (blank if hourly)" min="0" step="0.01">
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <label class="form-label fw-semibold" style="font-size:12px;">Hourly Rate ($)</label>
+            <input type="number" id="editHourlyRate" class="form-control form-control-sm" placeholder="0.00" min="0" step="0.01">
+          </div>
+          <div class="col-6">
+            <label class="form-label fw-semibold" style="font-size:12px;">Monthly Salary ($)</label>
+            <input type="number" id="editMonthlySalary" class="form-control form-control-sm" placeholder="0.00 (blank if hourly)" min="0" step="0.01">
+          </div>
         </div>
         <div id="editUserMsg" style="font-size:12px;"></div>
       </div>
@@ -541,12 +557,14 @@ document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.edit-user-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var d = btn.dataset;
-      document.getElementById('editUid').value          = d.uid || '';
-      document.getElementById('editTitle').value        = d.title || '';
-      document.getElementById('editRegion').value       = d.region || '';
-      document.getElementById('editHourlyRate').value   = parseFloat(d.rate) > 0 ? parseFloat(d.rate) : '';
-      document.getElementById('editMonthlySalary').value= parseFloat(d.salary) > 0 ? parseFloat(d.salary) : '';
-      document.getElementById('editUserMsg').innerHTML  = '';
+      document.getElementById('editUid').value           = d.uid || '';
+      document.getElementById('editUsername').value      = d.username || '';
+      document.getElementById('editEmail').value         = d.email || '';
+      document.getElementById('editTitle').value         = d.title || '';
+      document.getElementById('editRegion').value        = d.region || '';
+      document.getElementById('editHourlyRate').value    = parseFloat(d.rate) > 0 ? parseFloat(d.rate) : '';
+      document.getElementById('editMonthlySalary').value = parseFloat(d.salary) > 0 ? parseFloat(d.salary) : '';
+      document.getElementById('editUserMsg').innerHTML   = '';
       new bootstrap.Modal(document.getElementById('editUserModal')).show();
     });
   });
@@ -576,6 +594,7 @@ async function saveUserDetails() {
   var uid    = document.getElementById('editUid').value;
   var msg    = document.getElementById('editUserMsg');
   var body   = {
+    username:       document.getElementById('editUsername').value.trim(),
     title:          document.getElementById('editTitle').value.trim(),
     region:         document.getElementById('editRegion').value,
     hourly_rate:    parseFloat(document.getElementById('editHourlyRate').value)    || 0,

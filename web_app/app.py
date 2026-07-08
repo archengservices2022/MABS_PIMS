@@ -7887,7 +7887,7 @@ def user_details_update(uid):
         return jsonify({"error": "Admin access required"}), 403
     data = request.get_json() or {}
     updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
-    for field in ("title", "region"):
+    for field in ("username", "title", "region"):
         if field in data:
             updates[field] = str(data[field]).strip()
     for field in ("hourly_rate", "monthly_salary"):
