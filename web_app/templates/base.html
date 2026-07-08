@@ -144,6 +144,9 @@
   </div>
 </aside>
 
+<!-- Mobile sidebar overlay -->
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
+
 <!-- ══ MAIN ══════════════════════════════════════════════════════════════════ -->
 <div class="main-wrapper">
 
@@ -260,10 +263,47 @@ function pagerMarkAndRefresh(pager, allRows, visSet) {
 {% block scripts %}{% endblock %}
 
 <script>
-// Sidebar toggle
+// Sidebar toggle — drawer on mobile, collapse on desktop
+var _sidebar  = document.getElementById('sidebar');
+var _overlay  = document.getElementById('sidebarOverlay');
+var _main     = document.querySelector('.main-wrapper');
+
+function _isMobile() { return window.innerWidth <= 768; }
+
+function _closeMobileSidebar() {
+  _sidebar.classList.remove('mobile-open');
+  _overlay.classList.remove('active');
+  document.body.style.overflow = '';
+}
+
 document.getElementById('sidebarToggle').addEventListener('click', function() {
-  document.getElementById('sidebar').classList.toggle('collapsed');
-  document.querySelector('.main-wrapper').classList.toggle('sidebar-collapsed');
+  if (_isMobile()) {
+    var opening = !_sidebar.classList.contains('mobile-open');
+    _sidebar.classList.toggle('mobile-open');
+    _overlay.classList.toggle('active');
+    document.body.style.overflow = opening ? 'hidden' : '';
+  } else {
+    _sidebar.classList.toggle('collapsed');
+    _main.classList.toggle('sidebar-collapsed');
+  }
+});
+
+// Close drawer when overlay is clicked
+_overlay.addEventListener('click', _closeMobileSidebar);
+
+// Close drawer when a nav link is tapped on mobile
+document.querySelectorAll('.sidebar .nav-item').forEach(function(link) {
+  link.addEventListener('click', function() {
+    if (_isMobile()) _closeMobileSidebar();
+  });
+});
+
+// On resize: clean up mobile state if switching to desktop
+window.addEventListener('resize', function() {
+  if (!_isMobile()) {
+    _closeMobileSidebar();
+    document.body.style.overflow = '';
+  }
 });
 
 // Auto-dismiss alerts after 4 s

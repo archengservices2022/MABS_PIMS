@@ -558,22 +558,107 @@ body {
 .bg-teal  { background: #0F766E !important; }
 
 /* ══ RESPONSIVE ═════════════════════════════════════════════════════════════ */
-@media (max-width: 768px) {
-  :root { --sb-w: 200px; }
-  .content { padding: 16px; }
+
+/* Mobile overlay (behind drawer sidebar) */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 998;
+}
+.sidebar-overlay.active { display: block; }
+
+/* ── Tablet (≤992px) ── */
+@media (max-width: 992px) {
+  .content { padding: 16px 14px; }
+  .kpi-value { font-size: 20px; }
   .stat-value { font-size: 18px; }
 }
-@media (max-width: 576px) {
-  .sidebar { width: 56px; }
+
+/* ── Mobile (≤768px) — sidebar becomes a drawer ── */
+@media (max-width: 768px) {
+  /* Sidebar off-screen by default */
+  .sidebar {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    width: 240px !important;
+    z-index: 999;
+    transform: translateX(-100%);
+    transition: transform .25s cubic-bezier(.4,0,.2,1);
+    box-shadow: none;
+  }
+  /* Show all labels when drawer is open */
   .sidebar .brand-text,
   .sidebar .nav-label,
   .sidebar .user-details,
-  .sidebar .sb-section-label { display: none; }
-  .sidebar .nav-item { justify-content: center; }
-  .sidebar .nav-item.nav-sub { display: none; }
-  .sidebar .nav-icon { width: 100%; justify-content: center; }
-  .sidebar .sidebar-brand { padding: 18px 9px; justify-content: center; }
-  .main-wrapper { margin-left: 56px; }
+  .sidebar .sb-section-label { display: block !important; }
+  .sidebar .nav-item { justify-content: flex-start !important; }
+  .sidebar .nav-item.nav-sub { display: flex !important; }
+  .sidebar .nav-icon { width: auto !important; justify-content: flex-start !important; }
+  .sidebar .sidebar-brand { padding: 18px 14px !important; justify-content: flex-start !important; }
+
+  /* Open state */
+  .sidebar.mobile-open {
+    transform: translateX(0);
+    box-shadow: 4px 0 24px rgba(0,0,0,.25);
+  }
+
+  /* Main always full width on mobile */
+  .main-wrapper {
+    margin-left: 0 !important;
+  }
+  .main-wrapper.sidebar-collapsed { margin-left: 0 !important; }
+
+  .content { padding: 12px 10px; }
+
+  /* Topbar */
+  .topbar-date { display: none; }
+
+  /* KPI cards — 2 per row on mobile */
+  .kpi-card { padding: 12px 14px; }
+  .kpi-value { font-size: 18px; }
+  .kpi-label { font-size: 10px; }
+
+  /* Tables — horizontal scroll */
+  .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table { min-width: 500px; }
+
+  /* Card panels */
+  .card-panel { padding: 14px 12px; }
+
+  /* Action button bars — wrap tightly */
+  .d-flex.gap-2.flex-wrap { gap: 6px !important; }
+  .btn-sm { font-size: 11px; padding: 4px 8px; }
+
+  /* Tab navigation — scrollable */
+  .nav-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .nav-tabs .nav-link { white-space: nowrap; }
+
+  /* Row stacking — force single column on xs */
+  .row.g-3 > [class*="col-"] { padding-bottom: 0; }
+
+  /* Stat cards always 2-col on mobile */
+  .col-6 { flex: 0 0 50%; max-width: 50%; }
+
+  /* Hide less important table columns */
+  .hide-mobile { display: none !important; }
+
+  /* Flash alerts */
+  .flash-container { padding: 8px 10px 0; }
+  .alert-toast { font-size: 12px; padding: 8px 12px; }
+
+  /* Page header action bars */
+  .d-flex.justify-content-between { flex-wrap: wrap; gap: 8px; }
+}
+
+/* ── Small mobile (≤480px) — single column ── */
+@media (max-width: 480px) {
+  .col-6 { flex: 0 0 100% !important; max-width: 100% !important; }
+  .kpi-value { font-size: 16px; }
+  .fs-4 { font-size: 1rem !important; }
+  .btn-sm { font-size: 11px; }
+  .content { padding: 8px; }
 }
 
 /* ══ EXPORT CARDS ═══════════════════════════════════════════════════════════ */
