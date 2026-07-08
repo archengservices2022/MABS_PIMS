@@ -3768,8 +3768,11 @@ def invoice_send_reminder(invoice_id):
         client_email = ""
         raw_clients  = fb_get("/clients") or {}
         if isinstance(raw_clients, dict):
-            for cd in raw_clients.values():
-                if isinstance(cd, dict) and cd.get("name", "").strip() == client_name:
+            for ckey, cd in raw_clients.items():
+                if not isinstance(cd, dict):
+                    continue
+                # Client name is the Firebase key; company is a separate field
+                if ckey.strip() == client_name or cd.get("company", "").strip() == client_name:
                     client_email = cd.get("email", "").strip()
                     break
         if not client_email:
@@ -9504,8 +9507,8 @@ def _send_project_completion_email(project_number: str, project_data: dict) -> N
         raw_clients  = fb_get("/clients") or {}
         client_email = ""
         if isinstance(raw_clients, dict):
-            for cd in raw_clients.values():
-                if isinstance(cd, dict) and cd.get("name", "") == client_name:
+            for ckey, cd in raw_clients.items():
+                if isinstance(cd, dict) and (ckey.strip() == client_name or cd.get("company", "").strip() == client_name):
                     client_email = cd.get("email", "")
                     break
         if not client_email:
@@ -12128,8 +12131,8 @@ def _send_overdue_reminder_email(invoice_id: str, invoice: dict):
     raw_clients = fb_get("/clients") or {}
     client_email = ""
     if isinstance(raw_clients, dict):
-        for cd in raw_clients.values():
-            if isinstance(cd, dict) and cd.get("name", "") == client_name:
+        for ckey, cd in raw_clients.items():
+            if isinstance(cd, dict) and (ckey.strip() == client_name or cd.get("company", "").strip() == client_name):
                 client_email = cd.get("email", "")
                 break
     if not client_email:
