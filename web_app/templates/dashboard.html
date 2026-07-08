@@ -494,7 +494,7 @@
   <!-- In Progress projects mini-list -->
   {% if pipeline.get('In Progress') %}
   <div class="d-flex flex-wrap gap-2">
-    {% for p in pipeline['In Progress'][:6] %}
+    {% for p in (pipeline['In Progress'] | selectattr('project_number') | selectattr('project_name') | list)[:6] %}
     <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}"
        class="text-decoration-none d-flex align-items-center gap-2 px-3 py-2 rounded border bg-white"
        style="font-size:0.82rem; min-width:0; flex:1 1 220px; max-width:340px;">

@@ -544,7 +544,7 @@ def dashboard():
     inv_list  = [dict(v, firebase_id=k) for k, v in invoices.items()
                  if isinstance(v, dict)] if isinstance(invoices, dict) else []
     proj_list = [dict(v, firebase_id=k) for k, v in projects.items()
-                 if isinstance(v, dict)] if isinstance(projects, dict) else []
+                 if isinstance(v, dict) and v.get("project_number")] if isinstance(projects, dict) else []
     quot_list = list(quotes.values())   if isinstance(quotes, dict)   else []
 
     # Dashboard totals — current year only
