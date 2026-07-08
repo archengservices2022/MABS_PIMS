@@ -5889,19 +5889,17 @@ def financial():
     except (ValueError, TypeError):
         selected_year = datetime.now().year
 
-    # Total collected = amount_paid + tax_paid (matches Invoicing tab display)
+    # Total collected = sum of payment_log entries by PAYMENT DATE in current year
     total_collected = 0.0
-    for r in rev_list:
-        if _extract_year_from_date(r.get("date", "")) == stat_card_year and r.get("invoice_id") in invoices:
-            total_collected += _safe_float(r.get("amount_paid", 0))
-            inv_id = r.get("invoice_id")
-            if inv_id and inv_id in invoices:
-                inv_data_r = invoices[inv_id]
-                if isinstance(inv_data_r, dict):
-                    tax_collected = sum(_safe_float(tp.get("amount", 0))
-                                       for tp in (inv_data_r.get("tax_payments", []) or [])
-                                       if _extract_year_from_date(tp.get("date", "")) == stat_card_year)
-                    total_collected += tax_collected
+    for inv_id, inv_data_r in invoices.items():
+        if not isinstance(inv_data_r, dict):
+            continue
+        for pay in (inv_data_r.get("payment_log", []) or []):
+            if _extract_year_from_date(pay.get("date", "")) == stat_card_year:
+                total_collected += _safe_float(pay.get("amount", 0))
+        for tp in (inv_data_r.get("tax_payments", []) or []):
+            if _extract_year_from_date(tp.get("date", "")) == stat_card_year:
+                total_collected += _safe_float(tp.get("amount", 0))
 
     # Filter Income tab: include payment records where EITHER the payment date OR the invoice date
     # falls in current/prev year. This ensures a 2026 invoice paid in 2028 still appears in 2028.
@@ -6162,8 +6160,12 @@ def financial():
         })
     project_pnl.sort(key=lambda x: x["project_number"], reverse=True)
 
-    # Filter project_pnl to show only projects with activity in current running year
-    project_pnl = [p for p in project_pnl if _safe_float(p.get("invoiced", 0)) > 0 or _safe_float(p.get("paid", 0)) > 0 or _safe_float(p.get("expenses", 0)) > 0]
+    # Show projects that have a contract value OR any financial activity this year
+    project_pnl = [p for p in project_pnl if
+                   _safe_float(p.get("contract_value", 0)) > 0
+                   or _safe_float(p.get("invoiced", 0)) > 0
+                   or _safe_float(p.get("paid", 0)) > 0
+                   or _safe_float(p.get("expenses", 0)) > 0]
 
     # ── Monthly payment drill-down for Balance Sheet ──────────────────────────
     _proj_num_to_id = {p.get("project_number", ""): p.get("firebase_id", "") for p in projects_list}
