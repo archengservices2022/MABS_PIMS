@@ -3843,7 +3843,7 @@ def invoice_send_reminder(invoice_id):
         msg["Reply-To"] = em["smtp_user"]
         msg.attach(MIMEText(html_body, "html"))
 
-        with smtplib.SMTP(em.get("smtp_host", "smtp.gmail.com"), int(em.get("smtp_port", 587))) as srv:
+        with smtplib.SMTP(em.get("smtp_host", "smtp.gmail.com"), int(em.get("smtp_port", 587)), timeout=15) as srv:
             srv.ehlo(); srv.starttls()
             srv.login(em["smtp_user"], em.get("smtp_password", ""))
             srv.sendmail(em["smtp_user"], [client_email], msg.as_string())
@@ -9539,8 +9539,7 @@ def _send_project_completion_email(project_number: str, project_data: dict) -> N
         msg["From"]    = f"{em.get('from_name', co.get('name',''))} <{em.get('smtp_user','')}>"
         msg["To"]      = client_email
         msg.attach(MIMEText(html_body, "html"))
-        with smtplib.SMTP(em.get("smtp_host", "smtp.gmail.com"),
-                          int(em.get("smtp_port", 587))) as srv:
+        with smtplib.SMTP(em.get("smtp_host", "smtp.gmail.com"), int(em.get("smtp_port", 587)), timeout=15) as srv:
             srv.ehlo(); srv.starttls()
             srv.login(em.get("smtp_user", ""), em.get("smtp_password", ""))
             srv.sendmail(em.get("smtp_user", ""), [client_email], msg.as_string())
@@ -10691,8 +10690,7 @@ Best regards,
         except Exception as pdf_err:
             log.warning("Could not attach PDF to invoice email: %s", pdf_err)
 
-        with smtplib.SMTP(em.get("smtp_host", "smtp.gmail.com"),
-                          int(em.get("smtp_port", 587))) as srv:
+        with smtplib.SMTP(em.get("smtp_host", "smtp.gmail.com"), int(em.get("smtp_port", 587)), timeout=15) as srv:
             srv.ehlo()
             srv.starttls()
             srv.login(em.get("smtp_user", ""), em.get("smtp_password", ""))
@@ -11244,8 +11242,7 @@ Best regards,
         except Exception as pdf_err:
             log.warning("Could not attach PDF to quote email: %s", pdf_err)
 
-        with smtplib.SMTP(em.get("smtp_host", "smtp.gmail.com"),
-                          int(em.get("smtp_port", 587))) as srv:
+        with smtplib.SMTP(em.get("smtp_host", "smtp.gmail.com"), int(em.get("smtp_port", 587)), timeout=15) as srv:
             srv.ehlo()
             srv.starttls()
             srv.login(em.get("smtp_user", ""), em.get("smtp_password", ""))
@@ -12178,8 +12175,7 @@ def _send_overdue_reminder_email(invoice_id: str, invoice: dict):
         msg["From"]    = f"{em.get('from_name', co.get('name',''))} <{em.get('smtp_user','')}>"
         msg["To"]      = client_email
         msg.attach(MIMEText(html_body, "html"))
-        with smtplib.SMTP(em.get("smtp_host", "smtp.gmail.com"),
-                          int(em.get("smtp_port", 587))) as srv:
+        with smtplib.SMTP(em.get("smtp_host", "smtp.gmail.com"), int(em.get("smtp_port", 587)), timeout=15) as srv:
             srv.ehlo(); srv.starttls()
             srv.login(em.get("smtp_user", ""), em.get("smtp_password", ""))
             srv.sendmail(em.get("smtp_user", ""), [client_email], msg.as_string())
