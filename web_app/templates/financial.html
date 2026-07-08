@@ -685,6 +685,56 @@ a[href*="filter_expense"]:hover {
     </div>
     {% endif %}
   </div>
+
+  {% if prior_outstanding_invs %}
+  <div class="card-panel mt-3" style="border-left:4px solid #f59e0b;">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h6 class="panel-title mb-0">
+        <i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>
+        Prior Year Outstanding Invoices
+      </h6>
+      <span class="text-muted small">{{ prior_outstanding_invs|length }} invoice{{ 's' if prior_outstanding_invs|length != 1 }} with unpaid balance</span>
+    </div>
+    <p class="text-muted small mb-2">These invoices are older than {{ prev_year }} and still have an outstanding balance. Open the project to record a payment.</p>
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0 align-middle">
+        <thead class="table-dark">
+          <tr>
+            <th>Invoice #</th>
+            <th>Invoice Date</th>
+            <th>Client</th>
+            <th>Project #</th>
+            <th>Status</th>
+            <th class="text-end">Total</th>
+            <th class="text-end">Paid</th>
+            <th class="text-end" style="color:#f87171;">Outstanding</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for inv in prior_outstanding_invs %}
+          <tr>
+            <td><span class="fw-600 text-teal">{{ inv.invoice_number or '—' }}</span></td>
+            <td class="text-muted small" style="white-space:nowrap;">{{ inv.invoice_date | format_date }}</td>
+            <td class="text-muted small">{{ inv.client or '—' }}</td>
+            <td class="text-muted small">{{ inv.project_number or '—' }}</td>
+            <td>
+              {% if inv.status == 'Partial' %}
+                <span class="badge" style="background:#f59e0b;color:#fff;">Partial</span>
+              {% else %}
+                <span class="badge" style="background:#ef4444;color:#fff;">Unpaid</span>
+              {% endif %}
+            </td>
+            <td class="text-end">${{ "{:,.2f}".format(inv.total) }}</td>
+            <td class="text-end text-success">${{ "{:,.2f}".format(inv.amount_paid) }}</td>
+            <td class="text-end fw-600" style="color:#ef4444;">${{ "{:,.2f}".format(inv.outstanding) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
 </div><!-- /tab-income -->
 
 

@@ -5755,8 +5755,11 @@ def financial():
                                        if _extract_year_from_date(tp.get("date", "")) == stat_card_year)
                     total_collected += tax_collected
 
-    # Filter Income tab to show invoices from present running year and previous year
-    rev_list = [r for r in rev_list if _extract_year_from_date(invoices.get(r.get("invoice_id"), {}).get("meta", {}).get("invoice_date", "")) in [stat_card_year, prev_year]]
+    # Filter Income tab: include payment records where EITHER the payment date OR the invoice date
+    # falls in current/prev year. This ensures a 2026 invoice paid in 2028 still appears in 2028.
+    rev_list = [r for r in rev_list if
+        _extract_year_from_date(r.get("date", "")) in [stat_card_year, prev_year]
+        or _extract_year_from_date(invoices.get(r.get("invoice_id"), {}).get("meta", {}).get("invoice_date", "")) in [stat_card_year, prev_year]]
 
     # Sort by date ascending (oldest to newest)
     rev_list = sorted(rev_list, key=lambda r: r.get('invoice_date', '') or r.get('date', ''), reverse=True)
@@ -5764,6 +5767,30 @@ def financial():
     # Recalculate statuses based on actual payments
     for inv in inv_list:
         inv["meta"]["status"] = _calculate_invoice_status(inv)
+
+    # Build prior-year outstanding invoices list: invoices older than prev_year that still have a balance.
+    # These show as a separate section in the Income tab so users can record late payments.
+    prior_outstanding_invs = []
+    for inv in inv_list:
+        meta = inv.get("meta", {}) or {}
+        inv_year = _extract_year_from_date(meta.get("invoice_date", ""))
+        if inv_year is None or inv_year >= prev_year:
+            continue
+        inv_total  = _safe_float(meta.get("total", 0))
+        inv_paid   = _safe_float(meta.get("amount_paid", 0))
+        inv_tax_pd = sum(_safe_float(tp.get("amount", 0)) for tp in (inv.get("tax_payments", []) or []))
+        if inv_total > 0 and (inv_paid + inv_tax_pd) < (inv_total - 0.01):
+            prior_outstanding_invs.append({
+                "invoice_number": meta.get("invoice_number", ""),
+                "invoice_date":   meta.get("invoice_date", ""),
+                "client":         meta.get("client_name", ""),
+                "project_number": meta.get("project_number", ""),
+                "total":          inv_total,
+                "amount_paid":    inv_paid + inv_tax_pd,
+                "outstanding":    inv_total - inv_paid - inv_tax_pd,
+                "status":         meta.get("status", "Unpaid"),
+                "firebase_id":    inv.get("firebase_id", ""),
+            })
 
     # Filter invoices by present running year for stat cards (Overview tab)
     inv_list_filtered = [i for i in inv_list
@@ -6490,6 +6517,7 @@ def financial():
         filter_expense=filter_expense,
         selected_year=selected_year,
         rev_list=rev_list,
+        prior_outstanding_invs=prior_outstanding_invs,
         total_collected=total_collected,
         projects=projects_list,
         project_pnl=project_pnl,
