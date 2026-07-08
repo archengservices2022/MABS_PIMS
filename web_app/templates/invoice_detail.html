@@ -38,10 +38,28 @@
             onclick="openDeleteModal()">
       <i class="bi bi-trash me-1"></i>Delete
     </button>
+    {% if meta.get('status') not in ('Paid', 'Cancelled', 'Draft') %}
+      {% set is_overdue_inv = meta.get('due_date') and meta.get('due_date') < today_date %}
+      <button type="button"
+              class="btn btn-sm {{ 'btn-danger' if is_overdue_inv else 'btn-teal' }}"
+              id="sendReminderBtn"
+              data-invoice-id="{{ invoice.firebase_id }}">
+        <i class="bi bi-envelope-exclamation me-1"></i>
+        {{ 'Send Overdue Notice' if is_overdue_inv else 'Send Reminder' }}
+      </button>
+      {% if meta.get('last_reminder_sent') %}
+      <span class="text-muted small ms-1" id="lastReminderInfo">
+        <i class="bi bi-check-circle text-success me-1"></i>Last sent: {{ meta.get('last_reminder_sent') | format_date }}
+        ({{ meta.get('last_reminder_type', 'Reminder') }})
+      </span>
+      {% else %}
+      <span class="text-muted small ms-1" id="lastReminderInfo"></span>
+      {% endif %}
+    {% endif %}
     {% if meta.get('status') in ('Overdue', 'Sent', 'Viewed', 'Partial') %}
-    <button type="button" class="btn btn-sm btn-outline-warning" id="reminderBtn"
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="reminderBtn"
             data-invoice-id="{{ invoice.firebase_id }}">
-      <i class="bi bi-robot me-1"></i>Draft Reminder
+      <i class="bi bi-robot me-1"></i>AI Draft
     </button>
     {% endif %}
   </div>
@@ -85,6 +103,9 @@
       <div class="modal-footer">
         <button class="btn btn-sm btn-outline-secondary" onclick="copyReminder()">
           <i class="bi bi-clipboard me-1"></i>Copy
+        </button>
+        <button type="button" class="btn btn-sm btn-teal" id="sendAiReminderBtn">
+          <i class="bi bi-send me-1"></i>Send via SMTP
         </button>
         <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
       </div>
@@ -978,6 +999,64 @@ function copyReminder() {
   const subj = document.getElementById('reminderSubject').value;
   const body = document.getElementById('reminderBody').value;
   navigator.clipboard.writeText('Subject: ' + subj + '\n\n' + body);
+}
+
+// Direct Send Reminder button
+const sendReminderBtn = document.getElementById('sendReminderBtn');
+if (sendReminderBtn) {
+  sendReminderBtn.addEventListener('click', async () => {
+    const invoiceId = sendReminderBtn.dataset.invoiceId;
+    const origHtml  = sendReminderBtn.innerHTML;
+    sendReminderBtn.disabled = true;
+    sendReminderBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending…';
+    try {
+      const res  = await fetch(`/invoicing/${invoiceId}/send-reminder`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        sendReminderBtn.className = 'btn btn-sm btn-success';
+        sendReminderBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Sent to ' + data.sent_to;
+        const info = document.getElementById('lastReminderInfo');
+        const today = new Date().toLocaleDateString('en-US', {month:'2-digit',day:'2-digit',year:'numeric'});
+        if (info) info.innerHTML = '<i class="bi bi-check-circle text-success me-1"></i>Last sent: ' + today;
+      } else {
+        alert('Could not send: ' + data.error);
+        sendReminderBtn.disabled = false;
+        sendReminderBtn.innerHTML = origHtml;
+      }
+    } catch(e) {
+      alert('Request failed: ' + e);
+      sendReminderBtn.disabled = false;
+      sendReminderBtn.innerHTML = origHtml;
+    }
+  });
+}
+
+// Send AI-drafted reminder via SMTP
+const sendAiReminderBtn = document.getElementById('sendAiReminderBtn');
+if (sendAiReminderBtn) {
+  sendAiReminderBtn.addEventListener('click', async () => {
+    const invoiceId = document.getElementById('reminderBtn')?.dataset.invoiceId;
+    if (!invoiceId) return;
+    const origHtml = sendAiReminderBtn.innerHTML;
+    sendAiReminderBtn.disabled = true;
+    sendAiReminderBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending…';
+    try {
+      const res  = await fetch(`/invoicing/${invoiceId}/send-reminder`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        sendAiReminderBtn.className = 'btn btn-sm btn-success';
+        sendAiReminderBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Sent!';
+      } else {
+        alert('Could not send: ' + data.error);
+        sendAiReminderBtn.disabled = false;
+        sendAiReminderBtn.innerHTML = origHtml;
+      }
+    } catch(e) {
+      alert('Request failed: ' + e);
+      sendAiReminderBtn.disabled = false;
+      sendAiReminderBtn.innerHTML = origHtml;
+    }
+  });
 }
 
 function showPaidPaymentForm() {

@@ -3744,6 +3744,119 @@ def invoice_edit(invoice_id):
                          is_new=False,
                          invoice_id=invoice_id)
 
+@app.route("/invoicing/<invoice_id>/send-reminder", methods=["POST"])
+@role_required("invoicing")
+def invoice_send_reminder(invoice_id):
+    """Send a payment reminder email directly to the client."""
+    try:
+        inv = fb_get(f"/invoices/{invoice_id}")
+        if not inv:
+            return jsonify({"ok": False, "error": "Invoice not found"}), 404
+
+        meta         = inv.get("meta", {}) or {}
+        status       = meta.get("status", "")
+        if status in ("Paid", "Cancelled", "Draft"):
+            return jsonify({"ok": False, "error": "No reminder needed for this status"}), 400
+
+        settings     = fb_get("/settings") or {}
+        em           = settings.get("email", {}) or {}
+        co           = settings.get("company", {}) or {}
+        if not em.get("enabled") or not em.get("smtp_user"):
+            return jsonify({"ok": False, "error": "Email sending is not configured in Settings"}), 400
+
+        client_name  = (meta.get("client_name") or "").strip()
+        client_email = ""
+        raw_clients  = fb_get("/clients") or {}
+        if isinstance(raw_clients, dict):
+            for cd in raw_clients.values():
+                if isinstance(cd, dict) and cd.get("name", "").strip() == client_name:
+                    client_email = cd.get("email", "").strip()
+                    break
+        if not client_email:
+            return jsonify({"ok": False, "error": f"No email address found for client '{client_name}'. Please add it in the Clients section."}), 400
+
+        inv_num      = meta.get("invoice_number", invoice_id)
+        inv_date     = meta.get("invoice_date", "")
+        due_date     = meta.get("due_date", "")
+        total        = _safe_float(meta.get("total", 0))
+        amt_paid     = _safe_float(meta.get("amount_paid", 0))
+        tax_paid     = _safe_float(meta.get("tax_paid", 0))
+        outstanding  = max(0.0, total - amt_paid - tax_paid)
+        proj_num     = meta.get("project_number", "")
+        proj_name    = meta.get("project_name", proj_num)
+        today_str    = datetime.now().strftime("%Y-%m-%d")
+        is_overdue   = bool(due_date and due_date < today_str)
+        company_name = co.get("name", "Our Company")
+        from_name    = em.get("from_name", company_name)
+
+        if is_overdue:
+            subject = f"OVERDUE: Invoice {inv_num} — ${outstanding:,.2f} Outstanding"
+            tone_line = f'<p style="color:#dc2626;font-weight:bold;">This invoice is <u>past due</u>. Immediate payment is appreciated.</p>'
+            header_color = "#dc2626"
+            header_label = "OVERDUE NOTICE"
+        else:
+            subject = f"Payment Reminder: Invoice {inv_num} — ${outstanding:,.2f} Outstanding"
+            tone_line = "<p>We hope this message finds you well. This is a friendly reminder that the invoice below is due for payment.</p>"
+            header_color = "#0D9488"
+            header_label = "PAYMENT REMINDER"
+
+        html_body = f"""<html><body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,sans-serif;color:#1a1a1a;">
+<div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+  <div style="background:{header_color};padding:28px 32px;">
+    <div style="font-size:1.4rem;font-weight:800;color:#fff;">{company_name}</div>
+    <div style="font-size:0.95rem;color:rgba(255,255,255,.85);margin-top:4px;">{header_label}</div>
+  </div>
+  <div style="padding:28px 32px;">
+    <p>Dear {client_name},</p>
+    {tone_line}
+    <table style="width:100%;border-collapse:collapse;margin:20px 0;font-size:0.9rem;">
+      <tr style="background:#f8fafc;"><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;">Invoice #</td>
+          <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-weight:700;">{inv_num}</td></tr>
+      <tr><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;">Invoice Date</td>
+          <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;">{inv_date}</td></tr>
+      <tr style="background:#f8fafc;"><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;">Due Date</td>
+          <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;{'color:#dc2626;font-weight:bold;' if is_overdue else ''}">{due_date or '—'}</td></tr>
+      {'<tr><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;">Project</td><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;">' + proj_name + '</td></tr>' if proj_name else ''}
+      <tr style="background:#f8fafc;"><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;">Invoice Total</td>
+          <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;">${total:,.2f}</td></tr>
+      {'<tr><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;">Amount Paid</td><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#10b981;">${:,.2f}</td></tr>'.format(amt_paid + tax_paid) if (amt_paid + tax_paid) > 0 else ''}
+      <tr><td style="padding:12px 14px;font-weight:700;font-size:1rem;">Outstanding Balance</td>
+          <td style="padding:12px 14px;font-weight:700;font-size:1.1rem;color:{header_color};">${outstanding:,.2f}</td></tr>
+    </table>
+    <p>Please arrange payment at your earliest convenience. If you have already made this payment, please disregard this message.</p>
+    <p>If you have any questions, please reply to this email and we will be happy to assist.</p>
+    <p style="margin-top:28px;">Warm regards,<br><strong>{from_name}</strong><br>
+       <span style="color:#64748b;font-size:0.85rem;">{co.get('phone','')}{'&nbsp;&nbsp;·&nbsp;&nbsp;' + co.get('email','') if co.get('email') else ''}</span></p>
+  </div>
+  <div style="background:#f8fafc;padding:14px 32px;font-size:0.75rem;color:#94a3b8;text-align:center;">
+    This is an automated reminder from {company_name}'s billing system.
+  </div>
+</div></body></html>"""
+
+        msg            = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = f"{from_name} <{em['smtp_user']}>"
+        msg["To"]      = client_email
+        msg["Reply-To"] = em["smtp_user"]
+        msg.attach(MIMEText(html_body, "html"))
+
+        with smtplib.SMTP(em.get("smtp_host", "smtp.gmail.com"), int(em.get("smtp_port", 587))) as srv:
+            srv.ehlo(); srv.starttls()
+            srv.login(em["smtp_user"], em.get("smtp_password", ""))
+            srv.sendmail(em["smtp_user"], [client_email], msg.as_string())
+
+        fb_update(f"/invoices/{invoice_id}", {
+            "meta/last_reminder_sent": today_str,
+            "meta/last_reminder_type": "Overdue Notice" if is_overdue else "Payment Reminder",
+        })
+
+        return jsonify({"ok": True, "sent_to": client_email, "type": "overdue" if is_overdue else "reminder"})
+
+    except Exception as exc:
+        log.error("invoice_send_reminder %s: %s", invoice_id, exc)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @app.route("/invoicing/<invoice_id>/status", methods=["POST"])
 @role_required("invoicing")
 def invoice_status(invoice_id):
