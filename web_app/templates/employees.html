@@ -1416,14 +1416,18 @@
               </td>
               <td class="text-center">
                 {% if e.get('receipt_filename') %}
-                <i class="bi bi-paperclip text-teal" title="{{ e.receipt_filename }}"></i>
+                <button class="btn btn-xs btn-outline-teal emp-view-receipt-btn"
+                        data-exp-id="{{ e.firebase_id }}"
+                        title="View: {{ e.receipt_filename }}">
+                  <i class="bi bi-paperclip"></i>
+                </button>
                 {% else %}—{% endif %}
               </td>
               <td>
                 {% if e.get('status','Pending') == 'Pending' %}
                 <div class="d-flex gap-1">
-                  <button class="btn btn-xs btn-outline-secondary"
-                          onclick="openEmpExpenseEdit({{ e|tojson }})"
+                  <button class="btn btn-xs btn-outline-secondary emp-expense-edit-btn"
+                          data-expense="{{ e|tojson|e }}"
                           title="Edit">
                     <i class="bi bi-pencil"></i>
                   </button>
@@ -2152,6 +2156,34 @@ window.onEmpReceiptChange = function(input) {
     preview.style.display = 'none';
   }
 };
+
+// Wire up edit buttons via event listeners (avoids inline JSON quoting issues)
+document.querySelectorAll('.emp-expense-edit-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    try { openEmpExpenseEdit(JSON.parse(btn.dataset.expense)); }
+    catch(err) { console.error('Expense parse error', err); }
+  });
+});
+
+// Wire up receipt view buttons
+document.querySelectorAll('.emp-view-receipt-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var expId = btn.dataset.expId;
+    fetch('/employees/expenses/' + expId + '/receipt')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.error) { alert('Receipt not available: ' + d.error); return; }
+        var a = document.createElement('a');
+        a.href = d.url;
+        a.download = d.filename || 'receipt';
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      })
+      .catch(function() { alert('Could not load receipt.'); });
+  });
+});
 
 window.openEmpExpenseEdit = function(exp) {
   var form = document.getElementById('empExpenseEditForm');

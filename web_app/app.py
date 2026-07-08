@@ -6791,6 +6791,13 @@ def expense_edit(exp_id):
                 except Exception as e:
                     app.logger.error(f"Receipt upload error: {e}")
         fb_update(f"/balance_sheet_expenses/{exp_id}", data)
+        # If this expense originated as an employee submission, keep it in sync
+        emp_rec = fb_get(f"/expenses/{exp_id}")
+        if isinstance(emp_rec, dict):
+            sync_fields = {k: v for k, v in data.items()
+                           if k in ("expense_type","expense_name","description","amount",
+                                    "category","date","vendor","project_number","notes","updated_at")}
+            fb_update(f"/expenses/{exp_id}", sync_fields)
         return jsonify({"success": True, "expense_id": exp_id})
     except Exception as e:
         app.logger.error(f"Expense edit error: {e}", exc_info=True)
