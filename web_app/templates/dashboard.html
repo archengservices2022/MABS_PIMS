@@ -465,36 +465,57 @@
 {% endif %}
 
 <!-- ── Project Pipeline ───────────────────────────────────────────────────────── -->
-{% if 'projects' in allowed_pages %}
-{% set ns_pipe = namespace(has_items=false) %}
-{% for st, items in pipeline.items() %}{% if items %}{% set ns_pipe.has_items = true %}{% endif %}{% endfor %}
-{% if ns_pipe.has_items %}
+{% if 'projects' in allowed_pages and proj_status_counts %}
 <div class="card-panel mb-3">
   <div class="panel-header d-flex justify-content-between align-items-center mb-3">
-    <h6 class="panel-title mb-0"><i class="bi bi-kanban me-1"></i>Project Pipeline</h6>
+    <h6 class="panel-title mb-0"><i class="bi bi-kanban me-1"></i>Project Pipeline
+      <span class="text-muted fw-normal" style="font-size:11px;margin-left:4px;">{{ proj_status_counts.values()|sum }} total</span>
+    </h6>
     <a href="{{ url_for('projects') }}" class="text-teal small">View all →</a>
   </div>
 
-  <!-- Status counters row -->
+  <!-- Actual status counters (matches Projects tab statuses) -->
+  {% set _pipe_styles = {
+    'Not Started':             ('#EFF6FF', '#3B82F6'),
+    'In Progress':             ('#F0FDFA', '#0D9488'),
+    'Active':                  ('#F0FDFA', '#0D9488'),
+    'On Hold':                 ('#FFFBEB', '#F59E0B'),
+    'Invoiced':                ('#FFF7ED', '#EA580C'),
+    'Sent':                    ('#FFF7ED', '#EA580C'),
+    'invoiced_Not paid yet':   ('#FFF7ED', '#EA580C'),
+    'invoiced_Partially paid': ('#FEF9C3', '#CA8A04'),
+    'invoiced_Fully paid':     ('#F0FDF4', '#16a34a'),
+    'Sent out_Invoiced':       ('#FFF7ED', '#EA580C'),
+    'Sent out_Not Invoiced':   ('#F5F3FF', '#8B5CF6'),
+    'Ready to Sent':           ('#F5F3FF', '#8B5CF6'),
+    'Completed':               ('#F0FDF4', '#16a34a'),
+    'Cancelled':               ('#FFF1F2', '#F43F5E'),
+  } %}
   <div class="row g-2 mb-3">
-    {% set pipe_colors = {'Not Started': ('#EFF6FF','#3B82F6'), 'In Progress': ('#F0FDFA','#0D9488'), 'On Hold': ('#FFFBEB','#F59E0B')} %}
-    {% for st, items in pipeline.items() %}
-    {% set bg, accent = pipe_colors.get(st, ('#F8FAFC','#64748B')) %}
-    <div class="col-4">
+    {% for st, cnt in proj_status_counts.items() %}
+    {% set _bg, _ac = _pipe_styles.get(st, ('#F8FAFC', '#64748B')) %}
+    <div class="col-4 col-md-3 col-lg-2">
       <a href="{{ url_for('projects') }}" class="text-decoration-none">
-        <div class="rounded p-3 text-center" style="background:{{ bg }}; border:1px solid {{ accent }}22;">
-          <div style="font-size:1.6rem; font-weight:700; color:{{ accent }};">{{ items|length }}</div>
-          <div class="small fw-500" style="color:{{ accent }};">{{ st }}</div>
+        <div class="rounded p-2 text-center" style="background:{{ _bg }};border:1px solid {{ _ac }}22;">
+          <div style="font-size:1.4rem;font-weight:700;color:{{ _ac }};line-height:1.1;">{{ cnt }}</div>
+          <div style="font-size:9px;color:{{ _ac }};font-weight:600;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{{ st }}">{{ st }}</div>
         </div>
       </a>
     </div>
     {% endfor %}
   </div>
 
-  <!-- In Progress projects mini-list -->
-  {% if pipeline.get('In Progress') %}
+  <!-- Active projects mini-list (excluding Not Started / Cancelled / Completed) -->
+  {% set _active_proj = proj_list
+      | selectattr('project_number')
+      | selectattr('project_name')
+      | rejectattr('status', 'equalto', 'Not Started')
+      | rejectattr('status', 'equalto', 'Cancelled')
+      | rejectattr('status', 'equalto', 'Completed')
+      | list %}
+  {% if _active_proj %}
   <div class="d-flex flex-wrap gap-2">
-    {% for p in (pipeline['In Progress'] | selectattr('project_number') | selectattr('project_name') | list)[:6] %}
+    {% for p in _active_proj[:6] %}
     <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}"
        class="text-decoration-none d-flex align-items-center gap-2 px-3 py-2 rounded border bg-white"
        style="font-size:0.82rem; min-width:0; flex:1 1 220px; max-width:340px;">
@@ -508,7 +529,6 @@
   </div>
   {% endif %}
 </div>
-{% endif %}
 {% endif %}
 
 <!-- ── Revenue Trend Strip ─────────────────────────────────────────────────── -->

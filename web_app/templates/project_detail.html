@@ -431,7 +431,12 @@
             {% set l_pct = [labor_total_cost / b_labor * 100, 100]|min if b_labor > 0 else 0 %}
             {% set l_over = labor_total_cost > b_labor %}
             <tr>
-              <td><i class="bi bi-person-badge me-1 text-muted"></i>Labor</td>
+              <td>
+                <i class="bi bi-person-badge me-1 text-muted"></i>Labor
+                {% if manual_labor_cost > 0 and labor_total_minutes == 0 %}
+                <span class="badge bg-light text-secondary border ms-1" title="Manually entered — no time entries logged">manual</span>
+                {% endif %}
+              </td>
               <td class="text-end">${{ "{:,.0f}".format(b_labor) }}</td>
               <td class="text-end {{ 'text-danger fw-bold' if l_over else 'text-success' }}">${{ "{:,.0f}".format(labor_total_cost) }}</td>
               <td class="text-end {{ 'text-danger' if l_over else '' }}">
