@@ -37,14 +37,14 @@
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-blue">
       <div class="kpi-top"><span class="kpi-label">Total Billed</span><i class="bi bi-currency-dollar kpi-icon-sm"></i></div>
-      <div class="kpi-value">${{ "{:,.0f}".format(i_total_val) }}</div>
+      <div class="kpi-value">${{ "{:,.2f}".format(i_total_val) }}</div>
       <div class="kpi-sub">across all invoices</div>
     </div>
   </div>
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-green">
       <div class="kpi-top"><span class="kpi-label">Collected</span><i class="bi bi-check-circle-fill kpi-icon-sm"></i></div>
-      <div class="kpi-value">${{ "{:,.0f}".format(i_total_paid) }}</div>
+      <div class="kpi-value">${{ "{:,.2f}".format(i_total_paid) }}</div>
       <div class="kpi-sub">{{ i_coll_rate }}% collection rate</div>
       <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ i_coll_rate }}%"></div></div>
     </div>
@@ -52,14 +52,14 @@
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-amber">
       <div class="kpi-top"><span class="kpi-label">Outstanding</span><i class="bi bi-hourglass-split kpi-icon-sm"></i></div>
-      <div class="kpi-value">${{ "{:,.0f}".format(i_outstanding) }}</div>
+      <div class="kpi-value">${{ "{:,.2f}".format(i_outstanding) }}</div>
       <div class="kpi-sub">{{ i_paid_count }} paid · {{ i_sent_count }} pending</div>
     </div>
   </div>
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-red">
       <div class="kpi-top"><span class="kpi-label">Overdue</span><i class="bi bi-exclamation-triangle-fill kpi-icon-sm"></i></div>
-      <div class="kpi-value">${{ "{:,.0f}".format(i_overdue_amt) }}</div>
+      <div class="kpi-value">${{ "{:,.2f}".format(i_overdue_amt) }}</div>
       <div class="kpi-sub">{{ i_over_count }} overdue invoice{{ 's' if i_over_count != 1 }}</div>
     </div>
   </div>
@@ -233,7 +233,7 @@
             {% set total_paid_with_tax = paid_all + ns.tax_paid_all %}
             {% if invoices %}
             <tr style="font-weight:700; border-top:2px solid #E2E8F0;">
-              <td colspan="5">Totals</td>
+              <td colspan="6">Totals</td>
               <td class="text-end">${{ "{:,.2f}".format(total_all) }}</td>
               <td class="text-end text-success">${{ "{:,.2f}".format(total_paid_with_tax) }}</td>
               <td colspan="2"></td>
