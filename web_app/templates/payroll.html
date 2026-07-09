@@ -252,7 +252,7 @@
               {% set sal_period_label = sal.date[:4] + '-' + sal.date[5:7] if sal.date and sal.date|length >= 7 else '—' %}
               <tr data-salary="1" data-employee="{{ (sal.employee_name or sal.get('employee','')) | lower }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}" data-amount="{{ sal.amount | float }}">
                 <td><strong>{{ sal.employee_name or sal.get('employee','—') }}</strong></td>
-                <td>{{ sal.date or '—' }}</td>
+                <td>{{ sal.date[5:7] + '-' + sal.date[8:10] + '-' + sal.date[0:4] if sal.date and sal.date|length >= 10 else '—' }}</td>
                 <td style="color:#475569;font-size:.82rem;">{{ sal.date[:7] if sal.date and sal.date|length >= 7 else '—' }}</td>
                 <td>${{ "{:,.2f}".format(sal.amount | float) }}</td>
                 <td>
