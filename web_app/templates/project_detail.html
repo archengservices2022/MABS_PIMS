@@ -1091,11 +1091,20 @@ const contractValue = {{ project.get('contract_value', 0)|float }};
 let currentStages = {{ project.get('payment_stages', [])|tojson }};
 
 // Auto-open tab from URL hash (e.g. #tab-notes after adding a note)
+// But prefer sessionStorage if we just saved payment plan edits
 document.addEventListener('DOMContentLoaded', function () {
-  const hash = window.location.hash;
-  if (hash) {
-    const link = document.querySelector(`.nav-link[href="${hash}"]`);
+  // Check if we have a saved tab from payment plan edit
+  const savedTab = sessionStorage.getItem('lastActiveTab');
+  if (savedTab) {
+    // Use saved tab and clear hash to prevent override
+    const link = document.querySelector(`.nav-link[href="${savedTab}"]`);
     if (link) new bootstrap.Tab(link).show();
+    // Clear hash from URL
+    window.history.replaceState({}, '', window.location.pathname + window.location.search);
+    sessionStorage.removeItem('lastActiveTab');
+  } else {
+    // Clear hash - don't auto-navigate to tabs on normal page loads
+    window.history.replaceState({}, '', window.location.pathname + window.location.search);
   }
 
   // Set up edit payment plan modal
@@ -1123,6 +1132,28 @@ document.addEventListener('DOMContentLoaded', function () {
         })
         .catch(e => console.log('Could not refresh invoice status:', e));
     }
+  }
+
+  // Restore last active tab from sessionStorage (after payment plan edit)
+  // This runs after Bootstrap initializes, ensuring it takes precedence
+  const lastTab = sessionStorage.getItem('lastActiveTab');
+  if (lastTab) {
+    setTimeout(() => {
+      const tabLink = document.querySelector(`.nav-link[href="${lastTab}"]`);
+      if (tabLink) {
+        // Deactivate all tabs first
+        document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+        document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('show', 'active'));
+
+        // Activate the saved tab
+        tabLink.classList.add('active');
+        const targetPane = document.querySelector(lastTab);
+        if (targetPane) {
+          targetPane.classList.add('show', 'active');
+        }
+      }
+      sessionStorage.removeItem('lastActiveTab');
+    }, 100);
   }
 });
 
@@ -1324,8 +1355,19 @@ function saveEditedPaymentPlan() {
       const modal = bootstrap.Modal.getInstance(document.getElementById('editPaymentPlanModal'));
       if (modal) modal.hide();
 
-      // Update page display immediately
+      // Update page display immediately - preserve current tab
       setTimeout(() => {
+        // Store current active tab before reload
+        const activeTab = document.querySelector('.nav-tabs .nav-link.active');
+        if (activeTab) {
+          const tabHref = activeTab.getAttribute('href');
+          sessionStorage.setItem('lastActiveTab', tabHref);
+          // Remove hash and tab parameter from URL before reload to prevent override
+          const url = new URL(window.location);
+          url.hash = '';
+          url.searchParams.delete('tab');
+          window.history.replaceState({}, '', url);
+        }
         location.reload();
       }, 300);
     } else {
@@ -1410,6 +1452,14 @@ function updateStagedPayment() {
     if (data.success) {
       alert('✅ Payment updated successfully');
       bootstrap.Modal.getInstance(document.getElementById('updateStageModal')).hide();
+      // Preserve current tab before reload
+      const activeTab = document.querySelector('.nav-tabs .nav-link.active');
+      if (activeTab) {
+        sessionStorage.setItem('lastActiveTab', activeTab.getAttribute('href'));
+        const url = new URL(window.location);
+        url.hash = '';
+        window.history.replaceState({}, '', url);
+      }
       location.reload();
     } else {
       alert('❌ Error: ' + (data.error || 'Could not update'));
@@ -1730,7 +1780,17 @@ function saveAmountChangeWithPermission(idx, contractValue, originalAmount, edit
       input.dataset.originalAmount = newAmount;
       displaySpan.style.display = 'inline-flex';
       editSpan.style.display = 'none';
-      setTimeout(() => location.reload(), 300);
+      setTimeout(() => {
+        // Preserve current tab before reload
+        const activeTab = document.querySelector('.nav-tabs .nav-link.active');
+        if (activeTab) {
+          sessionStorage.setItem('lastActiveTab', activeTab.getAttribute('href'));
+          const url = new URL(window.location);
+          url.hash = '';
+          window.history.replaceState({}, '', url);
+        }
+        location.reload();
+      }, 300);
     } else if (data.needs_permission) {
       // Show permission modal
       showContractValuePermission(
@@ -1755,7 +1815,17 @@ function saveAmountChangeWithPermission(idx, contractValue, originalAmount, edit
               input.dataset.originalAmount = newAmount;
               displaySpan.style.display = 'inline-flex';
               editSpan.style.display = 'none';
-              setTimeout(() => location.reload(), 300);
+              setTimeout(() => {
+                // Preserve current tab before reload
+                const activeTab = document.querySelector('.nav-tabs .nav-link.active');
+                if (activeTab) {
+                  sessionStorage.setItem('lastActiveTab', activeTab.getAttribute('href'));
+                  const url = new URL(window.location);
+                  url.hash = '';
+                  window.history.replaceState({}, '', url);
+                }
+                location.reload();
+              }, 300);
             } else {
               alert('❌ Error: ' + (data.error || 'Could not update'));
               displaySpan.style.display = 'inline-flex';

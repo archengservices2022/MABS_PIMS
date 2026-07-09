@@ -1165,19 +1165,41 @@ def quotes_export_excel():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    for ri, q in enumerate(items, header_row + 1):
-        row = [q.get("job_number",""), q.get("client_name",""), q.get("project_name",""),
-               q.get("salesperson",""), fmt_date(q.get("date","")), fmt_date(q.get("valid_until","")),
-               q.get("status",""), _safe_float(q.get("subtotal",0)),
-               _safe_float(q.get("tax_amount",0)), _safe_float(q.get("total",0)),
-               q.get("notes","")]
-        for ci, val in enumerate(row, 1):
-            cell = ws.cell(row=ri, column=ci, value=val)
-            if ri % 2 == 0:
-                cell.fill = alt_fill
-            if ci in (8, 9, 10):
-                cell.number_format = '"$"#,##0.00'
-            cell.alignment = ctr
+    from collections import defaultdict
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    for q in items:
+        date_str = q.get("date", "")
+        if date_str:
+            year = date_str[:4]
+            month = date_str[5:7]
+            day = date_str[8:10]
+            grouped[year][month][day].append(q)
+
+    # Sort by created_at within each day (first created at top)
+    for year in grouped:
+        for month in grouped[year]:
+            for day in grouped[year][month]:
+                grouped[year][month][day].sort(key=lambda q: q.get("created_at", ""))
+
+    ri = header_row + 1
+
+    for year in sorted(grouped.keys()):
+        for month in sorted(grouped[year].keys()):
+            for day in sorted(grouped[year][month].keys()):
+                for q in grouped[year][month][day]:
+                    row = [q.get("job_number",""), q.get("client_name",""), q.get("project_name",""),
+                           q.get("salesperson",""), fmt_date(q.get("date","")), fmt_date(q.get("valid_until","")),
+                           q.get("status",""), _safe_float(q.get("subtotal",0)),
+                           _safe_float(q.get("tax_amount",0)), _safe_float(q.get("total",0)),
+                           q.get("notes","")]
+                    for ci, val in enumerate(row, 1):
+                        cell = ws.cell(row=ri, column=ci, value=val)
+                        if ri % 2 == 0:
+                            cell.fill = alt_fill
+                        if ci in (8, 9, 10):
+                            cell.number_format = '"$"#,##0.00'
+                        cell.alignment = ctr
+                    ri += 1
 
     # Increase column widths
     col_widths = [18, 25, 35, 20, 14, 14, 14, 16, 14, 16, 30]
@@ -1254,22 +1276,43 @@ def quotes_export_pdf():
     hdrs = ["Quote Number","Client","Project / Scope","Salesperson","Date","Status","Total"]
     data = [hdrs]
     cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
+    group_style = ParagraphStyle("group", parent=styles["Normal"], fontSize=9, fontName="Helvetica-Bold", alignment=1, leading=10, textColor=colors.HexColor("#0F172A"))
+
+    from collections import defaultdict
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     for q in items:
-        date_str = q.get("date","—")
-        if date_str and date_str != "—" and len(str(date_str)) >= 10:
-            parts = str(date_str)[:10].split("-")
-            if len(parts) == 3:
-                date_str = f"{parts[1]}-{parts[2]}-{parts[0]}"
-        total = _safe_float(q.get('total',0))
-        data.append([
-            Paragraph(q.get("job_number","—"), cell_style),
-            Paragraph(q.get("client_name","—"), cell_style),
-            Paragraph(q.get("project_name") or "—", cell_style),
-            Paragraph(q.get("salesperson","—"), cell_style),
-            Paragraph(date_str, cell_style),
-            Paragraph(q.get("status","—"), cell_style),
-            Paragraph(f"${total:,.2f}", cell_style),
-        ])
+        date_str = q.get("date", "")
+        if date_str:
+            year = date_str[:4]
+            month = date_str[5:7]
+            day = date_str[8:10]
+            grouped[year][month][day].append(q)
+
+    # Sort by created_at within each day (first created at top)
+    for year in grouped:
+        for month in grouped[year]:
+            for day in grouped[year][month]:
+                grouped[year][month][day].sort(key=lambda q: q.get("created_at", ""))
+
+    for year in sorted(grouped.keys()):
+        for month in sorted(grouped[year].keys()):
+            for day in sorted(grouped[year][month].keys()):
+                for q in grouped[year][month][day]:
+                    date_str = q.get("date","—")
+                    if date_str and date_str != "—" and len(str(date_str)) >= 10:
+                        parts = str(date_str)[:10].split("-")
+                        if len(parts) == 3:
+                            date_str = f"{parts[1]}-{parts[2]}-{parts[0]}"
+                    total = _safe_float(q.get('total',0))
+                    data.append([
+                        Paragraph(q.get("job_number","—"), cell_style),
+                        Paragraph(q.get("client_name","—"), cell_style),
+                        Paragraph(q.get("project_name") or "—", cell_style),
+                        Paragraph(q.get("salesperson","—"), cell_style),
+                        Paragraph(date_str, cell_style),
+                        Paragraph(q.get("status","—"), cell_style),
+                        Paragraph(f"${total:,.2f}", cell_style),
+                    ])
 
     cw = [1.2*inch, 2.0*inch, 3.0*inch, 1.8*inch, 1.1*inch, 1.2*inch, 1.1*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
@@ -1985,10 +2028,12 @@ def project_detail(project_id):
     if not isinstance(change_orders, list):
         change_orders = list(change_orders.values()) if isinstance(change_orders, dict) else []
     # Actual sum of approved CO amounts — used in the CO table and KPI card.
-    co_approved_total = sum(_safe_float(co.get("amount", 0)) for co in change_orders if co.get("status") == "Approved")
-    # Base contract value stored when first CO was created (or derived).
-    base_contract = _safe_float(data.get("base_contract_value")) if data.get("base_contract_value") else \
-                    _safe_float(data.get("contract_value", 0)) - co_approved_total
+    # Include Approved, Invoiced, and Paid statuses (all active/completed COs)
+    co_approved_total = sum(_safe_float(co.get("amount", 0)) for co in change_orders
+                            if co.get("status") in ("Approved", "Invoiced", "Paid"))
+    # Base contract value = Contract Value - Sum(Approved Change Orders)
+    # Always recalculate to ensure consistency with current CO amounts
+    base_contract = _safe_float(data.get("contract_value", 0)) - co_approved_total
     # Actual contract increase from base — used in Financial Summary bar so
     # Base + co_contract_increase always equals contract_value exactly.
     co_contract_increase = max(0.0, _safe_float(data.get("contract_value", 0)) - base_contract)
@@ -2146,6 +2191,11 @@ def project_edit(project_id):
             except (json.JSONDecodeError, ValueError):
                 flash("Error processing updated payment amounts.", "warning")
 
+        # Check if down payment or installment count changed
+        old_down_pct = _safe_float(data.get("down_payment_percent", 0))
+        old_installments = _safe_float(data.get("installment_count", 1))
+        payment_plan_changed = (down_pct != old_down_pct) or (installments != old_installments)
+
         # Handle custom stage amounts from frontend (for new customizations or preview stages)
         if not amounts_updated:
             custom_stage_amounts_json = request.form.get("custom_stage_amounts", "")
@@ -2169,12 +2219,23 @@ def project_edit(project_id):
                                 enriched_stages.append(enriched)
                             updated["payment_stages"] = enriched_stages
                         else:
-                            # Update payment stages with custom amounts
+                            # If payment plan changed, recalculate stages first, then apply custom amounts
                             existing_stages = data.get("payment_stages") or []
-                            for i, amount_data in enumerate(custom_stage_amounts):
-                                if i < len(existing_stages) and isinstance(existing_stages[i], dict):
-                                    existing_stages[i]["amount"] = _safe_float(amount_data.get("amount", 0))
-                            updated["payment_stages"] = existing_stages
+                            if payment_plan_changed:
+                                # Recalculate stages based on new installment count
+                                new_stages = _compute_payment_stages(
+                                    _safe_float(updated["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
+                                # Then apply custom amounts to the new stages
+                                for i, amount_data in enumerate(custom_stage_amounts):
+                                    if i < len(new_stages) and isinstance(new_stages[i], dict):
+                                        new_stages[i]["amount"] = _safe_float(amount_data.get("amount", 0))
+                                updated["payment_stages"] = new_stages
+                            else:
+                                # Payment plan didn't change, just update existing stage amounts
+                                for i, amount_data in enumerate(custom_stage_amounts):
+                                    if i < len(existing_stages) and isinstance(existing_stages[i], dict):
+                                        existing_stages[i]["amount"] = _safe_float(amount_data.get("amount", 0))
+                                updated["payment_stages"] = existing_stages
                         amounts_updated = True
                 except (json.JSONDecodeError, ValueError):
                     flash("Error processing custom payment amounts. Using default distribution.", "warning")
@@ -2184,11 +2245,6 @@ def project_edit(project_id):
             existing_stages = data.get("payment_stages") or []
             plan_in_progress = any(s.get("status") != "Pending Invoice" for s in existing_stages if isinstance(s, dict))
 
-            # Check if down payment or installment count changed
-            old_down_pct = _safe_float(data.get("down_payment_percent", 0))
-            old_installments = _safe_float(data.get("installment_count", 1))
-            payment_plan_changed = (down_pct != old_down_pct) or (installments != old_installments)
-
             if plan_in_progress:
                 # Stages already have invoices/payments against them — keep the plan intact
                 flash("Payment plan kept as-is because one or more stages are already invoiced.", "info")
@@ -2197,16 +2253,43 @@ def project_edit(project_id):
                 updated["payment_stages"] = _compute_payment_stages(
                     _safe_float(updated["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
 
+        # Sync payment stages with change order amounts
+        # If a payment stage is linked to a CO (stage name contains "CO-"), update that CO's amount
+        updated_stages = updated.get("payment_stages") or []
+        change_orders_to_sync = data.get("change_orders") or []
+        if not isinstance(change_orders_to_sync, list):
+            change_orders_to_sync = list(change_orders_to_sync.values()) if isinstance(change_orders_to_sync, dict) else []
+
+        for stage in updated_stages:
+            if isinstance(stage, dict):
+                stage_name = stage.get("name", "")
+                if "CO-" in stage_name:
+                    # Extract CO number from stage name
+                    co_num = stage_name.split(" ")[0] if " " in stage_name else stage_name
+                    stage_amount = _safe_float(stage.get("amount", 0))
+                    # Find and update matching change order
+                    for co in change_orders_to_sync:
+                        if isinstance(co, dict) and co.get("co_number", "") == co_num:
+                            co["amount"] = str(stage_amount)
+                            break
+
+        if change_orders_to_sync:
+            updated["change_orders"] = change_orders_to_sync
+
         updated["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-        # Keep base_contract_value in sync with the edited contract_value so the
-        # CO breakdown (Base + COs = Total) stays mathematically correct.
-        existing_cos = data.get("change_orders") or []
-        if not isinstance(existing_cos, list):
-            existing_cos = list(existing_cos.values()) if isinstance(existing_cos, dict) else []
-        co_approved_sum = sum(_safe_float(co.get("amount", 0)) for co in existing_cos if co.get("status") == "Approved")
-        if co_approved_sum > 0:
-            updated["base_contract_value"] = _safe_float(updated.get("contract_value", 0)) - co_approved_sum
+        # Keep base_contract_value in sync with the edited contract_value and change orders
+        # Formula: base_contract_value = contract_value - sum(approved change order amounts)
+        # This ensures Financial Summary shows correct Base + COs = Total breakdown
+        # Use the synced change_orders (which now have updated amounts from payment stages)
+        cos_for_calculation = change_orders_to_sync if change_orders_to_sync else (data.get("change_orders") or [])
+        if not isinstance(cos_for_calculation, list):
+            cos_for_calculation = list(cos_for_calculation.values()) if isinstance(cos_for_calculation, dict) else []
+        # Sum ALL approved change orders (status = "Approved" or any status indicating approved/active)
+        co_approved_sum = sum(_safe_float(co.get("amount", 0)) for co in cos_for_calculation
+                             if co.get("status") in ("Approved", "Invoiced", "Paid"))
+        # Always update base_contract_value to maintain correct breakdown
+        updated["base_contract_value"] = _safe_float(updated.get("contract_value", 0)) - co_approved_sum
 
         # Guard: if the project already has payments, don't let a form submission silently
         # downgrade its status to "Not Started". Preserve any manually-set status above "Not Started"
@@ -2482,7 +2565,7 @@ def projects_export_csv():
 
     def fmt_csv_date(d):
         if not d or d == "—":
-            return "—"
+            return ""
         d = str(d)[:10]
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
@@ -2491,24 +2574,44 @@ def projects_export_csv():
     w.writerow([f"{co.get('name','')} - Projects Report"])
     w.writerow([])
 
-    headers = ["Project Number", "Name", "Client", "Start Date", "End Date", "Contract Value", "Amount Paid", "Outstanding", "Status"]
+    headers = ["Project Number", "Project Name", "Client", "Start Date", "End Date", "Contract Value", "Amount Paid", "Outstanding", "Status"]
     w.writerow(headers)
 
+    from collections import defaultdict
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+
     for p in items:
-        cv = _safe_float(p.get("contract_value", 0))
-        paid = _safe_float(p.get("amount_paid", 0))
-        row = [
-            p.get("project_number",""),
-            p.get("project_name",""),
-            p.get("client_name",""),
-            fmt_csv_date(p.get("start_date","")),
-            fmt_csv_date(p.get("end_date","")),
-            f"{cv:.2f}",
-            f"{paid:.2f}",
-            f"{cv-paid:.2f}",
-            p.get("status","")
-        ]
-        w.writerow(row)
+        date_str = p.get("start_date", "")
+        if date_str:
+            year = date_str[:4]
+            month = date_str[5:7]
+            day = date_str[8:10]
+            grouped[year][month][day].append(p)
+
+    # Sort by created_at within each day (first created at top)
+    for year in grouped:
+        for month in grouped[year]:
+            for day in grouped[year][month]:
+                grouped[year][month][day].sort(key=lambda p: p.get("created_at", ""))
+
+    for year in sorted(grouped.keys()):
+        for month in sorted(grouped[year].keys()):
+            for day in sorted(grouped[year][month].keys()):
+                for p in grouped[year][month][day]:
+                    cv = _safe_float(p.get("contract_value", 0))
+                    paid = _safe_float(p.get("amount_paid", 0))
+                    row = [
+                        p.get("project_number",""),
+                        p.get("project_name",""),
+                        p.get("client_name",""),
+                        fmt_csv_date(p.get("start_date","")),
+                        fmt_csv_date(p.get("end_date","")),
+                        f"{cv:.2f}",
+                        f"{paid:.2f}",
+                        f"{cv-paid:.2f}",
+                        p.get("status","")
+                    ]
+                    w.writerow(row)
 
     output.seek(0)
     from flask import Response
@@ -2548,7 +2651,7 @@ def projects_export_excel():
     ws.row_dimensions[1].height = 20
 
     # Add headers
-    headers = ["Project Number","Name","Client","Start Date","End Date",
+    headers = ["Project Number","Project Name","Client","Start Date","End Date",
                "Contract Value ($)","Amount Paid ($)","Outstanding ($)","Status"]
     header_row = 2
     for col, h in enumerate(headers, 1):
@@ -2557,24 +2660,46 @@ def projects_export_excel():
 
     def fmt_proj_date(d):
         if not d or d == "—":
-            return "—"
+            return ""
         d = str(d)[:10]
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    for ri, p in enumerate(items, header_row + 1):
-        cv   = _safe_float(p.get("contract_value", 0))
-        paid = _safe_float(p.get("amount_paid", 0))
-        row = [p.get("project_number",""), p.get("project_name",""),
-               p.get("client_name",""), fmt_proj_date(p.get("start_date","")), fmt_proj_date(p.get("end_date","")),
-               cv, paid, cv - paid, p.get("status","")]
-        for ci, val in enumerate(row, 1):
-            cell = ws.cell(row=ri, column=ci, value=val)
-            if ri % 2 == 0:
-                cell.fill = alt_fill
-            if ci in (6, 7, 8):
-                cell.number_format = '"$"#,##0.00'
-            cell.alignment = ctr
+    from collections import defaultdict
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    for p in items:
+        date_str = p.get("start_date", "")
+        if date_str:
+            year = date_str[:4]
+            month = date_str[5:7]
+            day = date_str[8:10]
+            grouped[year][month][day].append(p)
+
+    # Sort by created_at within each day (first created at top)
+    for year in grouped:
+        for month in grouped[year]:
+            for day in grouped[year][month]:
+                grouped[year][month][day].sort(key=lambda p: p.get("created_at", ""))
+
+    ri = header_row + 1
+
+    for year in sorted(grouped.keys()):
+        for month in sorted(grouped[year].keys()):
+            for day in sorted(grouped[year][month].keys()):
+                for p in grouped[year][month][day]:
+                    cv   = _safe_float(p.get("contract_value", 0))
+                    paid = _safe_float(p.get("amount_paid", 0))
+                    row = [p.get("project_number",""), p.get("project_name",""),
+                           p.get("client_name",""), fmt_proj_date(p.get("start_date","")), fmt_proj_date(p.get("end_date","")),
+                           cv, paid, cv - paid, p.get("status","")]
+                    for ci, val in enumerate(row, 1):
+                        cell = ws.cell(row=ri, column=ci, value=val)
+                        if ri % 2 == 0:
+                            cell.fill = alt_fill
+                        if ci in (6, 7, 8):
+                            cell.number_format = '"$"#,##0.00'
+                        cell.alignment = ctr
+                    ri += 1
 
     # Increase column widths
     col_widths = [22, 28, 26, 16, 16, 18, 18, 18, 16]
@@ -2622,32 +2747,52 @@ def projects_export_pdf():
                               alignment=1)  # CENTER
     elems.append(Paragraph(f"{co.get('name','')} — Projects Report", title_s))
     elems.append(Spacer(1, 0.2*inch))
-    hdrs = ["Project Number", "Name", "Client", "Start Date", "End Date", "Contract Value", "Paid", "Outstanding", "Status"]
+    hdrs = ["Project Number", "Project Name", "Client", "Start Date", "End Date", "Contract Value", "Paid", "Outstanding", "Status"]
     data = [hdrs]
     def fmt_date_pdf(d):
         if not d or d == "—":
-            return "—"
+            return ""
         d = str(d)[:10]
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
     styles = getSampleStyleSheet()
     cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
+    group_style = ParagraphStyle("group", parent=styles["Normal"], fontSize=9, fontName="Helvetica-Bold", alignment=1, leading=10, textColor=colors.HexColor("#0F172A"))
 
+    from collections import defaultdict
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     for p in items:
-        cv   = _safe_float(p.get("contract_value", 0))
-        paid = _safe_float(p.get("amount_paid", 0))
-        data.append([
-            Paragraph(p.get("project_number","—"), cell_style),
-            Paragraph(p.get("project_name","—") or "—", cell_style),
-            Paragraph(p.get("client_name","—") or "—", cell_style),
-            Paragraph(fmt_date_pdf(p.get("start_date","")), cell_style),
-            Paragraph(fmt_date_pdf(p.get("end_date","")), cell_style),
-            Paragraph(f"${cv:,.0f}", cell_style),
-            Paragraph(f"${paid:,.0f}", cell_style),
-            Paragraph(f"${cv-paid:,.0f}", cell_style),
-            Paragraph(p.get("status","—"), cell_style),
-        ])
+        date_str = p.get("start_date", "")
+        if date_str:
+            year = date_str[:4]
+            month = date_str[5:7]
+            day = date_str[8:10]
+            grouped[year][month][day].append(p)
+
+    # Sort by created_at within each day (first created at top)
+    for year in grouped:
+        for month in grouped[year]:
+            for day in grouped[year][month]:
+                grouped[year][month][day].sort(key=lambda p: p.get("created_at", ""))
+
+    for year in sorted(grouped.keys()):
+        for month in sorted(grouped[year].keys()):
+            for day in sorted(grouped[year][month].keys()):
+                for p in grouped[year][month][day]:
+                    cv   = _safe_float(p.get("contract_value", 0))
+                    paid = _safe_float(p.get("amount_paid", 0))
+                    data.append([
+                        Paragraph(p.get("project_number","—"), cell_style),
+                        Paragraph(p.get("project_name","—") or "—", cell_style),
+                        Paragraph(p.get("client_name","—") or "—", cell_style),
+                        Paragraph(fmt_date_pdf(p.get("start_date","")), cell_style),
+                        Paragraph(fmt_date_pdf(p.get("end_date","")), cell_style),
+                        Paragraph(f"${cv:,.0f}", cell_style),
+                        Paragraph(f"${paid:,.0f}", cell_style),
+                        Paragraph(f"${cv-paid:,.0f}", cell_style),
+                        Paragraph(p.get("status","—"), cell_style),
+                    ])
     cw = [1.5*inch, 2.0*inch, 1.6*inch, 1.0*inch, 1.0*inch, 1.0*inch, 1.0*inch, 1.0*inch, 1.0*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
@@ -4403,7 +4548,7 @@ def invoicing_export_csv():
 
     def fmt_csv_date(d):
         if not d or d == "—":
-            return "—"
+            return ""
         d = str(d)[:10]
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
@@ -4415,28 +4560,52 @@ def invoicing_export_csv():
     headers = ["Invoice Number", "Client", "Project", "Date", "Due Date", "Status", "Subtotal", "Tax", "Total", "Amount Paid", "Outstanding"]
     w.writerow(headers)
 
+    from collections import defaultdict
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+
     for inv in items:
         m = inv.get("meta", {})
-        total = _safe_float(m.get("total", 0))
-        paid = _safe_float(m.get("amount_paid", 0))
-        subtotal = _safe_float(m.get("subtotal", 0))
-        tax = _safe_float(m.get("tax_amount", 0))
-        linked_projects = _invoice_linked_projects(inv)
-        projects_str = ", ".join(sorted(linked_projects)) if linked_projects else ""
-        row = [
-            m.get("invoice_number",""),
-            m.get("client_name",""),
-            projects_str,
-            fmt_csv_date(m.get("invoice_date","")),
-            fmt_csv_date(m.get("due_date","")),
-            m.get("status",""),
-            f"{subtotal:.2f}",
-            f"{tax:.2f}",
-            f"{total:.2f}",
-            f"{paid:.2f}",
-            f"{total-paid:.2f}"
-        ]
-        w.writerow(row)
+        date_str = m.get("invoice_date", "")
+        if date_str:
+            year = date_str[:4]
+            month = date_str[5:7]
+            day = date_str[8:10]
+            grouped[year][month][day].append((inv, m))
+
+    # Sort by created_at within each day (first created at top)
+    for year in grouped:
+        for month in grouped[year]:
+            for day in grouped[year][month]:
+                grouped[year][month][day].sort(key=lambda x: x[1].get("created_at", ""))
+
+    for year in sorted(grouped.keys()):
+        for month in sorted(grouped[year].keys()):
+            for day in sorted(grouped[year][month].keys()):
+                for inv, m in grouped[year][month][day]:
+                    total = _safe_float(m.get("total", 0))
+                    paid = _safe_float(m.get("amount_paid", 0))
+                    tax_paid = _safe_float(m.get("tax_paid", 0))
+                    total_paid = paid + tax_paid
+                    subtotal = _safe_float(m.get("subtotal", 0))
+                    tax = _safe_float(m.get("tax_amount", 0))
+                    linked_projects = _invoice_linked_projects(inv)
+                    projects_str = ", ".join(sorted(linked_projects)) if linked_projects else ""
+                    row = [
+                        m.get("invoice_number",""),
+                        m.get("client_name",""),
+                        projects_str,
+                        fmt_csv_date(m.get("invoice_date","")),
+                        fmt_csv_date(m.get("due_date","")),
+                        m.get("status",""),
+                        f"{subtotal:.2f}",
+                        f"{tax:.2f}",
+                        f"{total:.2f}",
+                        f"{total_paid:.2f}",
+                        f"{total-total_paid:.2f}"
+                    ]
+                    # Clean any "—" placeholders (replace with empty string)
+                    row = ["" if str(cell).strip() == "—" else cell for cell in row]
+                    w.writerow(row)
 
     output.seek(0)
     from flask import Response
@@ -4475,8 +4644,8 @@ def invoicing_export_excel():
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 20
 
-    headers = ["Invoice Number","Client","Project","Date","Due Date","Status",
-               "Subtotal ($)","Tax ($)","Total ($)","Paid ($)","Outstanding ($)"]
+    headers = ["Invoice Number","Client","Project","Date","Due Date",
+               "Subtotal ($)","Tax ($)","Total ($)","Paid ($)","Outstanding ($)","Status"]
     header_row = 2
     for col, h in enumerate(headers, 1):
         cell = ws.cell(row=header_row, column=col, value=h)
@@ -4484,31 +4653,59 @@ def invoicing_export_excel():
 
     def fmt_inv_excel_date(d):
         if not d or d == "—":
-            return "—"
+            return ""
         d = str(d)[:10]
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    for ri, inv in enumerate(items, header_row + 1):
+    from collections import defaultdict
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    for inv in items:
         m = inv.get("meta", {})
-        total = _safe_float(m.get("total", 0))
-        paid  = _safe_float(m.get("amount_paid", 0))
-        linked_projects = _invoice_linked_projects(inv)
-        projects_str = ", ".join(sorted(linked_projects)) if linked_projects else "—"
-        row = [m.get("invoice_number",""), m.get("client_name",""),
-               projects_str, fmt_inv_excel_date(m.get("invoice_date","")), fmt_inv_excel_date(m.get("due_date","")),
-               m.get("status",""), _safe_float(m.get("subtotal",0)),
-               _safe_float(m.get("tax_amount",0)), total, paid, total - paid]
-        for ci, val in enumerate(row, 1):
-            cell = ws.cell(row=ri, column=ci, value=val)
-            if ri % 2 == 0:
-                cell.fill = alt_fill
-            if ci in (7, 8, 9, 10, 11):
-                cell.number_format = '"$"#,##0.00'
-            cell.alignment = ctr
+        date_str = m.get("invoice_date", "")
+        if date_str:
+            year = date_str[:4]
+            month = date_str[5:7]
+            day = date_str[8:10]
+            grouped[year][month][day].append(inv)
+
+    # Sort by created_at within each day (first created at top)
+    for year in grouped:
+        for month in grouped[year]:
+            for day in grouped[year][month]:
+                grouped[year][month][day].sort(key=lambda x: x.get("meta", {}).get("created_at", ""))
+
+    ri = header_row + 1
+
+    for year in sorted(grouped.keys()):
+        for month in sorted(grouped[year].keys()):
+            for day in sorted(grouped[year][month].keys()):
+                for inv in grouped[year][month][day]:
+                    m = inv.get("meta", {})
+                    total = _safe_float(m.get("total", 0))
+                    paid  = _safe_float(m.get("amount_paid", 0))
+                    tax_paid = _safe_float(m.get("tax_paid", 0))
+                    total_paid = paid + tax_paid
+                    subtotal = _safe_float(m.get("subtotal", 0))
+                    tax = _safe_float(m.get("tax_amount", 0))
+                    linked_projects = _invoice_linked_projects(inv)
+                    projects_str = ", ".join(sorted(linked_projects)) if linked_projects else ""
+                    row = [m.get("invoice_number",""), m.get("client_name",""),
+                           projects_str, fmt_inv_excel_date(m.get("invoice_date","")), fmt_inv_excel_date(m.get("due_date","")),
+                           subtotal, tax, total, total_paid, total - total_paid, m.get("status","")]
+                    # Clean any "—" placeholders (replace with empty string)
+                    row = ["" if str(cell).strip() == "—" else cell for cell in row]
+                    for ci, val in enumerate(row, 1):
+                        cell = ws.cell(row=ri, column=ci, value=val)
+                        if ri % 2 == 0:
+                            cell.fill = alt_fill
+                        if ci in (7, 8, 9, 10, 11):
+                            cell.number_format = '"$"#,##0.00'
+                        cell.alignment = ctr
+                    ri += 1
 
     # Increase column widths
-    col_widths = [22, 25, 44, 14, 14, 14, 16, 14, 16, 14, 14]
+    col_widths = [22, 25, 44, 14, 14, 14, 16, 14, 16, 14, 12]
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
     ws.freeze_panes = f"A{header_row + 1}"
@@ -4561,33 +4758,57 @@ def invoicing_export_pdf():
     data = [hdrs]
     def fmt_inv_date(d):
         if not d or d == "—":
-            return "—"
+            return ""
         d = str(d)[:10]
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
     cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
+    group_style = ParagraphStyle("group", parent=styles["Normal"], fontSize=9, fontName="Helvetica-Bold", alignment=1, leading=10, textColor=colors.HexColor("#0F172A"))
+
+    from collections import defaultdict
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     for inv in items:
         m = inv.get("meta", {})
-        total = _safe_float(m.get("total", 0))
-        paid  = _safe_float(m.get("amount_paid", 0))
-        subtotal = _safe_float(m.get("subtotal", 0))
-        tax = _safe_float(m.get("tax_amount", 0))
-        linked_projects = _invoice_linked_projects(inv)
-        projects_str = "\n".join(sorted(linked_projects)) if linked_projects else "—"
-        data.append([
-            Paragraph(m.get("invoice_number","—"), cell_style),
-            Paragraph(m.get("client_name","—") or "—", cell_style),
-            Paragraph(projects_str, cell_style),
-            Paragraph(fmt_inv_date(m.get("invoice_date","")), cell_style),
-            Paragraph(fmt_inv_date(m.get("due_date","")), cell_style),
-            Paragraph(f"${subtotal:,.0f}", cell_style),
-            Paragraph(f"${tax:,.0f}", cell_style),
-            Paragraph(f"${total:,.0f}", cell_style),
-            Paragraph(f"${paid:,.0f}", cell_style),
-            Paragraph(f"${total-paid:,.0f}", cell_style),
-            Paragraph(m.get("status","—"), cell_style),
-        ])
+        date_str = m.get("invoice_date", "")
+        if date_str:
+            year = date_str[:4]
+            month = date_str[5:7]
+            day = date_str[8:10]
+            grouped[year][month][day].append(inv)
+
+    # Sort by created_at within each day (first created at top)
+    for year in grouped:
+        for month in grouped[year]:
+            for day in grouped[year][month]:
+                grouped[year][month][day].sort(key=lambda x: x.get("meta", {}).get("created_at", ""))
+
+    for year in sorted(grouped.keys()):
+        for month in sorted(grouped[year].keys()):
+            for day in sorted(grouped[year][month].keys()):
+                for inv in grouped[year][month][day]:
+                    m = inv.get("meta", {})
+                    total = _safe_float(m.get("total", 0))
+                    paid  = _safe_float(m.get("amount_paid", 0))
+                    tax_paid = _safe_float(m.get("tax_paid", 0))
+                    total_paid = paid + tax_paid
+                    subtotal = _safe_float(m.get("subtotal", 0))
+                    tax = _safe_float(m.get("tax_amount", 0))
+                    linked_projects = _invoice_linked_projects(inv)
+                    projects_str = "\n".join(sorted(linked_projects)) if linked_projects else "—"
+                    data.append([
+                        Paragraph(m.get("invoice_number","—"), cell_style),
+                        Paragraph(m.get("client_name","—") or "—", cell_style),
+                        Paragraph(projects_str, cell_style),
+                        Paragraph(fmt_inv_date(m.get("invoice_date","")), cell_style),
+                        Paragraph(fmt_inv_date(m.get("due_date","")), cell_style),
+                        Paragraph(f"${subtotal:,.0f}", cell_style),
+                        Paragraph(f"${tax:,.0f}", cell_style),
+                        Paragraph(f"${total:,.0f}", cell_style),
+                        Paragraph(f"${total_paid:,.0f}", cell_style),
+                        Paragraph(f"${total-total_paid:,.0f}", cell_style),
+                        Paragraph(m.get("status","—"), cell_style),
+                    ])
     cw = [1.3*inch, 1.5*inch, 1.7*inch, 0.8*inch, 0.8*inch, 0.7*inch, 0.65*inch, 0.7*inch, 0.7*inch, 0.95*inch, 0.8*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
@@ -4992,17 +5213,38 @@ def payroll_export_csv():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    headers = ["Employee", "Date", "Amount", "Region", "Notes"]
+    headers = ["Employee", "Date", "Amount", "Region", "Notes", "Status"]
     w.writerow(headers)
 
+    from collections import defaultdict
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+
     for sal in salaries:
-        w.writerow([
-            sal.get("employee_name", ""),
-            fmt_date(sal.get("date", "")),
-            f"{_safe_float(sal.get('amount', 0)):.2f}",
-            sal.get("region", ""),
-            sal.get("notes", "")
-        ])
+        date_str = sal.get("date", "")
+        if date_str:
+            year = date_str[:4]
+            month = date_str[5:7]
+            day = date_str[8:10]
+            grouped[year][month][day].append(sal)
+
+    # Sort by created_at within each day (first created at top)
+    for year in grouped:
+        for month in grouped[year]:
+            for day in grouped[year][month]:
+                grouped[year][month][day].sort(key=lambda s: s.get("created_at", ""))
+
+    for year in sorted(grouped.keys()):
+        for month in sorted(grouped[year].keys()):
+            for day in sorted(grouped[year][month].keys()):
+                for sal in grouped[year][month][day]:
+                    w.writerow([
+                        sal.get("employee_name", ""),
+                        fmt_date(sal.get("date", "")),
+                        f"{_safe_float(sal.get('amount', 0)):.2f}",
+                        sal.get("region", ""),
+                        sal.get("notes", ""),
+                        sal.get("salary_status", "")
+                    ])
 
     from flask import Response
     fname = f"payroll_{datetime.now().strftime('%Y%m%d')}.csv"
@@ -5049,7 +5291,7 @@ def payroll_export_excel():
     ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     co = company_info()
-    ws.merge_cells('A1:E1')
+    ws.merge_cells('A1:F1')
     title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} - Payroll Report")
     title_cell.font = title_font
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -5057,12 +5299,12 @@ def payroll_export_excel():
 
     def fmt_excel_date(d):
         if not d or d == "—":
-            return "—"
+            return ""
         d = str(d)[:10]
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    headers = ["Employee", "Date", "Amount", "Region", "Notes"]
+    headers = ["Employee", "Date", "Amount", "Region", "Notes", "Status"]
     header_row = 2
     for col, h in enumerate(headers, 1):
         cell = ws.cell(row=header_row, column=col, value=h)
@@ -5070,18 +5312,40 @@ def payroll_export_excel():
         cell.font = hdr_font
         cell.alignment = ctr
 
-    for ri, sal in enumerate(salaries, header_row + 1):
-        row = [sal.get("employee_name", ""), fmt_excel_date(sal.get("date", "")),
-               _safe_float(sal.get("amount", 0)), sal.get("region", ""), sal.get("notes", "")]
-        for ci, val in enumerate(row, 1):
-            cell = ws.cell(row=ri, column=ci, value=val)
-            if ri % 2 == 0:
-                cell.fill = alt_fill
-            if ci == 3:
-                cell.number_format = '"$"#,##0.00'
-            cell.alignment = ctr
+    from collections import defaultdict
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    for sal in salaries:
+        date_str = sal.get("date", "")
+        if date_str:
+            year = date_str[:4]
+            month = date_str[5:7]
+            day = date_str[8:10]
+            grouped[year][month][day].append(sal)
 
-    col_widths = [25, 14, 14, 18, 30]
+    # Sort by created_at within each day (first created at top)
+    for year in grouped:
+        for month in grouped[year]:
+            for day in grouped[year][month]:
+                grouped[year][month][day].sort(key=lambda s: s.get("created_at", ""))
+
+    ri = header_row + 1
+
+    for year in sorted(grouped.keys()):
+        for month in sorted(grouped[year].keys()):
+            for day in sorted(grouped[year][month].keys()):
+                for sal in grouped[year][month][day]:
+                    row = [sal.get("employee_name", ""), fmt_excel_date(sal.get("date", "")),
+                           _safe_float(sal.get("amount", 0)), sal.get("region", ""), sal.get("notes", ""), sal.get("salary_status", "")]
+                    for ci, val in enumerate(row, 1):
+                        cell = ws.cell(row=ri, column=ci, value=val)
+                        if ri % 2 == 0:
+                            cell.fill = alt_fill
+                        if ci == 3:
+                            cell.number_format = '"$"#,##0.00'
+                        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                    ri += 1
+
+    col_widths = [25, 14, 14, 18, 30, 14]
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
 
@@ -5148,25 +5412,47 @@ def payroll_export_pdf():
 
     def fmt_pdf_date(d):
         if not d or d == "—":
-            return "—"
+            return ""
         d = str(d)[:10]
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    hdrs = ["Employee", "Date", "Amount", "Region", "Notes"]
+    hdrs = ["Employee", "Date", "Amount", "Region", "Notes", "Status"]
     data = [hdrs]
 
     cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
-    for sal in salaries:
-        data.append([
-            Paragraph(sal.get("employee_name", "—"), cell_style),
-            Paragraph(fmt_pdf_date(sal.get("date", "")), cell_style),
-            Paragraph(f"${_safe_float(sal.get('amount', 0)):,.2f}", cell_style),
-            Paragraph(sal.get("region", "—"), cell_style),
-            Paragraph(sal.get("notes", "—"), cell_style),
-        ])
+    group_style = ParagraphStyle("group", parent=styles["Normal"], fontSize=9, fontName="Helvetica-Bold", alignment=1, leading=10, textColor=colors.HexColor("#0F172A"))
 
-    cw = [2.0*inch, 1.2*inch, 1.2*inch, 1.3*inch, 1.8*inch]
+    from collections import defaultdict
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    for sal in salaries:
+        date_str = sal.get("date", "")
+        if date_str:
+            year = date_str[:4]
+            month = date_str[5:7]
+            day = date_str[8:10]
+            grouped[year][month][day].append(sal)
+
+    # Sort by created_at within each day (first created at top)
+    for year in grouped:
+        for month in grouped[year]:
+            for day in grouped[year][month]:
+                grouped[year][month][day].sort(key=lambda s: s.get("created_at", ""))
+
+    for year in sorted(grouped.keys()):
+        for month in sorted(grouped[year].keys()):
+            for day in sorted(grouped[year][month].keys()):
+                for sal in grouped[year][month][day]:
+                    data.append([
+                        Paragraph(sal.get("employee_name", "—"), cell_style),
+                        Paragraph(fmt_pdf_date(sal.get("date", "")), cell_style),
+                        Paragraph(f"${_safe_float(sal.get('amount', 0)):,.2f}", cell_style),
+                        Paragraph(sal.get("region", "—"), cell_style),
+                        Paragraph(sal.get("notes", "—"), cell_style),
+                        Paragraph(sal.get("salary_status", "—"), cell_style),
+                    ])
+
+    cw = [1.8*inch, 1.0*inch, 1.0*inch, 1.2*inch, 1.5*inch, 1.0*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
@@ -5203,6 +5489,19 @@ def _fmt_date_export(d):
     d = str(d)[:10]
     parts = d.split("-")
     return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+def _sanitize_for_export(cell):
+    """Remove any "—" or similar placeholder characters from cell values"""
+    if cell is None or cell == "":
+        return ""
+    cell_str = str(cell).strip()
+    # Remove en-dash, em-dash, and other dash-like characters
+    if cell_str in ("—", "–", "-", "―", ""):
+        return ""
+    # Also handle if the entire string is just dashes
+    if all(c in "—–-―" for c in cell_str):
+        return ""
+    return cell
 
 def _export_response(buf_or_str, fmt, name_prefix):
     from flask import Response
@@ -5337,27 +5636,51 @@ def financial_income_export(fmt):
                          if pay_log else rdata.get("date", ""))
             method    = ((max(pay_log, key=lambda p: p.get("date", "")).get("method", "") if pay_log else "")
                          or inv_meta.get("payment_method", ""))
+            # Convert "—" placeholder to empty string
+            if method == "—":
+                method = ""
+            # Get all project numbers for multi-project invoices
+            linked_projects = inv_meta.get("linked_projects", [])
+            if isinstance(linked_projects, list) and len(linked_projects) > 0:
+                project_nums = []
+                for lp in linked_projects:
+                    if isinstance(lp, dict):
+                        proj_num = lp.get("project_number", "")
+                    elif isinstance(lp, str):
+                        proj_num = lp
+                    else:
+                        proj_num = ""
+                    if proj_num:
+                        project_nums.append(proj_num)
+                project_str = ", ".join(project_nums) if project_nums else rdata.get("project_number", "")
+            else:
+                project_str = rdata.get("project_number", "")
+            # Clean method and project_str of any "—" characters
+            clean_method = "" if (method == "—" or str(method).strip() == "—") else method
+            clean_project = "" if (project_str == "—" or str(project_str).strip() == "—") else project_str
             rows.append([
                 _fmt_date_export(inv_date),
                 _fmt_date_export(coll_date),
                 inv_meta.get("invoice_number", rdata.get("invoice_number", "")),
                 rdata.get("client_name", ""),
-                rdata.get("project_number", ""),
+                clean_project,
                 status,
-                method,
+                clean_method,
                 _safe_float(inv_meta.get("subtotal", 0)),
                 _safe_float(inv_meta.get("tax_amount", 0)),
                 inv_total,
                 total_paid,
             ])
     rows.sort(key=lambda r: r[0])
+    # Clean any "—" placeholders from rows (replace with empty string) using robust sanitization
+    rows = [[_sanitize_for_export(cell) for cell in row] for row in rows]
     label   = f"income_{cur_year}_{prev_year}"
     title   = f"Income Report {prev_year}–{cur_year}"
     headers = ["Invoice Date", "Collection Date", "Invoice #", "Client", "Project",
                "Status", "Payment Method", "Subtotal", "Tax", "Invoice Total", "Amount Paid"]
     if fmt == "excel":
         buf = _make_excel(title, headers, rows,
-                          [13,13,14,20,16,10,13,12,10,13,13], num_cols=[8,9,10,11])
+                          [18,18,18,26,20,10,16,12,10,13,13], num_cols=[8,9,10,11])
         return _export_response(buf, "excel", label)
     if fmt == "pdf":
         fmt_rows = [[r[0],r[1],r[2],r[3],r[4],r[5],r[6],
@@ -5366,12 +5689,21 @@ def financial_income_export(fmt):
                         [1.1,1.1,1.2,1.6,1.3,0.7,0.9,0.9,0.7,1.0,1.0])
         if not buf: return redirect(url_for("financial"))
         return _export_response(buf, "pdf", label)
-    out = _io.StringIO(); w = csv.writer(out)
-    w.writerow([f"{company_info().get('name','')} – {title}"]); w.writerow([])
-    w.writerow(headers)
+    out = _io.StringIO()
+    out.write(f"{company_info().get('name','')} – {title}\n\n")
+    col_widths = [20, 20, 25, 40, 30, 15, 25, 18, 15, 20, 20]
+    header_line = "  ".join(h.ljust(w) for h, w in zip(headers, col_widths))
+    out.write(header_line + "\n")
     for r in rows:
-        w.writerow([r[0],r[1],r[2],r[3],r[4],r[5],r[6],
-                    f"{r[7]:.2f}",f"{r[8]:.2f}",f"{r[9]:.2f}",f"{r[10]:.2f}"])
+        row_data = [
+            _sanitize_for_export(r[0]).ljust(13), _sanitize_for_export(r[1]).ljust(13),
+            _sanitize_for_export(r[2]).ljust(18), _sanitize_for_export(r[3]).ljust(26),
+            _sanitize_for_export(r[4]).ljust(20), _sanitize_for_export(r[5]).ljust(10),
+            _sanitize_for_export(r[6]).ljust(16),
+            f"{_safe_float(r[7]):.2f}".ljust(12), f"{_safe_float(r[8]):.2f}".ljust(10),
+            f"{_safe_float(r[9]):.2f}".ljust(13), f"{_safe_float(r[10]):.2f}".ljust(13)
+        ]
+        out.write("  ".join(row_data) + "\n")
     return _export_response(out, "csv", label)
 
 # ── Expenses exports ──────────────────────────────────────────────────────────
@@ -5411,11 +5743,20 @@ def financial_expenses_export(fmt):
         filtered.append(e)
 
     headers = ["Date", "Expense Type", "Expense Name", "Category", "Vendor", "Project", "Amount", "Submitted By"]
-    rows = [[_fmt_date_export(e.get("date","")),
-             e.get("expense_type",""), e.get("expense_name","") or e.get("description",""),
-             e.get("category",""), e.get("vendor",""), e.get("project_number",""),
-             _safe_float(e.get("amount",0)),
-             e.get("submitted_by_name","") or e.get("created_by","")] for e in filtered]
+    rows = []
+    for e in filtered:
+        row = [_fmt_date_export(e.get("date","")),
+               _sanitize_for_export(e.get("expense_type","")),
+               _sanitize_for_export(e.get("expense_name","") or e.get("description","")),
+               _sanitize_for_export(e.get("category","")),
+               _sanitize_for_export(e.get("vendor","")),
+               _sanitize_for_export(e.get("project_number","")),
+               _safe_float(e.get("amount",0)),
+               _sanitize_for_export(e.get("submitted_by_name","") or e.get("created_by",""))]
+        rows.append(row)
+
+    # Clean any remaining "—" placeholders from rows (replace with empty string) using robust sanitization
+    rows = [[_sanitize_for_export(cell) for cell in row] for row in rows]
 
     label = "expenses"
     if type_f:    label += f"_{type_f}"
@@ -5424,17 +5765,72 @@ def financial_expenses_export(fmt):
     if date_to:   label += f"_to{date_to}"
 
     if fmt == "excel":
-        buf = _make_excel("Expenses", headers, rows, [12,16,22,14,18,12,12,16], num_cols=[7])
+        buf = _make_excel("Expenses", headers, rows, [18,38,55,35,42,28,12,32], num_cols=[7])
         return _export_response(buf, "excel", label)
     if fmt == "pdf":
         fmt_rows = [[r[0],r[1],r[2],r[3],r[4],r[5],f"${r[6]:,.2f}",r[7]] for r in rows]
-        buf = _make_pdf("Expenses Report", headers, fmt_rows, [1.0,1.1,1.6,1.0,1.3,0.9,0.9,1.2])
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+        import io as _io_pdf
+        buf = _io_pdf.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
+                                leftMargin=0.3*inch, rightMargin=0.3*inch,
+                                topMargin=0.5*inch, bottomMargin=0.5*inch)
+        styles = getSampleStyleSheet()
+        co = company_info()
+        elems = []
+        title_s = ParagraphStyle("T", parent=styles["Normal"], fontSize=15,
+                                  fontName="Helvetica-Bold",
+                                  textColor=colors.HexColor("#0F766E"), spaceAfter=3,
+                                  alignment=1)
+        elems.append(Paragraph(f"{co.get('name','')} — Expenses Report", title_s))
+        from reportlab.platypus import Spacer
+        elems.append(Spacer(1, 0.2*inch))
+        data = [headers]
+        cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
+        for fmt_row in fmt_rows:
+            data.append([Paragraph(str(cell), cell_style) for cell in fmt_row])
+        cw = [1.0*inch, 1.2*inch, 1.8*inch, 1.0*inch, 1.6*inch, 1.2*inch, 0.9*inch, 1.6*inch]
+        tbl = Table(data, colWidths=cw, repeatRows=1)
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
+            ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+            ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE",      (0,0), (-1,0), 9),
+            ("ALIGN",         (0,0), (-1,0), "CENTER"),
+            ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
+            ("TOPPADDING",    (0,0), (-1,0), 8),
+            ("BOTTOMPADDING", (0,0), (-1,0), 8),
+            ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
+            ("FONTSIZE",      (0,1), (-1,-1), 8),
+            ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")]),
+            ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
+            ("TOPPADDING",    (0,1), (-1,-1), 5),
+            ("BOTTOMPADDING", (0,1), (-1,-1), 5),
+            ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+            ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
+        ]))
+        elems.append(tbl)
+        doc.build(elems)
+        buf.seek(0)
         if not buf: return redirect(url_for("financial"))
         return _export_response(buf, "pdf", label)
-    out = _io.StringIO(); w = csv.writer(out)
-    w.writerow([f"{company_info().get('name','')} – Expenses Report"]); w.writerow([])
-    w.writerow(headers)
-    for r in rows: w.writerow([r[0],r[1],r[2],r[3],r[4],r[5],f"{r[6]:.2f}",r[7]])
+    out = _io.StringIO()
+    out.write(f"{company_info().get('name','')} – Expenses Report\n\n")
+    col_widths = [18, 25, 40, 25, 40, 25, 18, 30]
+    header_line = "  ".join(h.ljust(w) for h, w in zip(headers, col_widths))
+    out.write(header_line + "\n")
+    for r in rows:
+        row_data = [
+            _sanitize_for_export(r[0]).ljust(12), _sanitize_for_export(r[1]).ljust(18),
+            _sanitize_for_export(r[2]).ljust(26), _sanitize_for_export(r[3]).ljust(16),
+            _sanitize_for_export(r[4]).ljust(28), _sanitize_for_export(r[5]).ljust(18),
+            f"{_safe_float(r[6]):.2f}".ljust(12), _sanitize_for_export(r[7]).ljust(22)
+        ]
+        out.write("  ".join(row_data) + "\n")
     return _export_response(out, "csv", label)
 
 # ── By Project exports ────────────────────────────────────────────────────────
@@ -5475,9 +5871,7 @@ def financial_byproject_export(fmt):
             p_collected += proj_paid + proj_tax_paid
         p_cos = p.get("change_orders") or []
         if not isinstance(p_cos, list): p_cos = list(p_cos.values()) if isinstance(p_cos, dict) else []
-        p_base = _safe_float(p.get("base_contract_value") or p.get("contract_value", 0))
-        co_total = max(0.0, _safe_float(p.get("contract_value", 0)) - p_base)
-        p_contract = _safe_float(p.get("contract_value", 0)) or (p_base + co_total)
+        p_contract = _safe_float(p.get("contract_value", 0))
         p_expenses = sum(_safe_float(e.get("amount", 0)) for e in exp_list if e.get("project_number", "") == pnum)
         p_gp = p_collected - p_expenses
         outstanding = max(0.0, p_contract - p_collected)
@@ -5486,11 +5880,13 @@ def financial_byproject_export(fmt):
         rows.append([pnum, p.get("project_name",""), p.get("client_name",""), p.get("status",""),
                      p_contract, p_invoiced, p_collected, outstanding, p_expenses, p_gp, f"{margin:.0f}%"])
     rows.sort(key=lambda r: r[0], reverse=True)
+    # Clean any "—" placeholders from rows (replace with empty string) using robust sanitization
+    rows = [[_sanitize_for_export(cell) for cell in row] for row in rows]
     headers = ["Project #","Project Name","Client","Status","Contract","Invoiced","Collected","Outstanding","Expenses","Gross Profit","Margin"]
     if fmt == "excel":
         num_rows = [[r[0],r[1],r[2],r[3],r[4],r[5],r[6],r[7],r[8],r[9],r[10]] for r in rows]
         buf = _make_excel(f"By Project {year}", headers, num_rows,
-                          [12,22,18,12,13,13,13,13,13,13,9], num_cols=[5,6,7,8,9,10])
+                          [20,40,36,20,13,13,13,13,13,13,9], num_cols=[5,6,7,8,9,10])
         return _export_response(buf, "excel", f"by_project_{year}")
     if fmt == "pdf":
         fmt_rows = [[r[0],r[1],r[2],r[3],f"${r[4]:,.2f}",f"${r[5]:,.2f}",
@@ -5499,11 +5895,18 @@ def financial_byproject_export(fmt):
                         [0.8,1.6,1.4,0.85,1.0,1.0,1.0,1.0,1.0,1.0,0.7])
         if not buf: return redirect(url_for("financial"))
         return _export_response(buf, "pdf", f"by_project_{year}")
-    out = _io.StringIO(); w = csv.writer(out)
-    w.writerow([f"{company_info().get('name','')} – By Project {year}"]); w.writerow([])
-    w.writerow(headers)
-    for r in rows: w.writerow([r[0],r[1],r[2],r[3],f"{r[4]:.2f}",f"{r[5]:.2f}",
-                                f"{r[6]:.2f}",f"{r[7]:.2f}",f"{r[8]:.2f}",f"{r[9]:.2f}",r[10]])
+    out = _io.StringIO()
+    out.write(f"{company_info().get('name','')} – By Project {year}\n\n")
+    col_widths = [20, 40, 35, 20, 18, 18, 18, 18, 18, 18, 14]
+    header_line = "  ".join(h.ljust(w) for h, w in zip(headers, col_widths))
+    out.write(header_line + "\n")
+    for r in rows:
+        row_data = [
+            str(r[0]).ljust(14), str(r[1]).ljust(26), str(r[2]).ljust(22), str(r[3]).ljust(14),
+            f"{r[4]:.2f}".ljust(13), f"{r[5]:.2f}".ljust(13), f"{r[6]:.2f}".ljust(13),
+            f"{r[7]:.2f}".ljust(13), f"{r[8]:.2f}".ljust(13), f"{r[9]:.2f}".ljust(13), str(r[10]).ljust(9)
+        ]
+        out.write("  ".join(row_data) + "\n")
     return _export_response(out, "csv", f"by_project_{year}")
 
 # ── A/R Aging exports ─────────────────────────────────────────────────────────
@@ -5547,22 +5950,33 @@ def financial_aging_export(fmt):
     for key in ["current","1_30","31_60","61_90","90plus"]:
         for e in sorted(buckets[key], key=lambda x: x["days_overdue"], reverse=True):
             days_label = f"Due in {-e['days_overdue']} days" if e["days_overdue"] <= 0 else f"{e['days_overdue']} days"
+            net_terms_val = e.get("net_terms", 0)
+            net_terms_str = f"Net {net_terms_val}" if net_terms_val and net_terms_val != "—" else ""
             all_rows.append([BUCKET_LABELS[key], e["invoice_number"], e["client_name"],
                              _fmt_date_export(e["invoice_date"]), _fmt_date_export(e["due_date"]),
-                             f"Net {e['net_terms']}", days_label, e["balance"]])
+                             net_terms_str, days_label, e["balance"]])
+    # Clean any "—" placeholders from rows (replace with empty string) using robust sanitization
+    all_rows = [[_sanitize_for_export(cell) for cell in row] for row in all_rows]
     headers = ["Bucket","Invoice","Client","Invoice Date","Due Date","Net Terms","Days Overdue","Balance Due"]
     if fmt == "excel":
-        buf = _make_excel("A/R Aging", headers, all_rows, [12,14,20,12,12,10,12,13], num_cols=[8])
+        buf = _make_excel("AR Aging", headers, all_rows, [14,14,32,16,16,10,12,13], num_cols=[7])
         return _export_response(buf, "excel", "ar_aging")
     if fmt == "pdf":
         fmt_rows = [[r[0],r[1],r[2],r[3],r[4],r[5],r[6],f"${r[7]:,.2f}"] for r in all_rows]
-        buf = _make_pdf("A/R Aging Report", headers, fmt_rows, [1.0,1.1,1.6,1.0,1.0,0.8,1.0,1.0])
+        buf = _make_pdf("A/R Aging Report", headers, fmt_rows, [1.0,1.1,2.2,1.0,1.0,0.8,1.0,1.0])
         if not buf: return redirect(url_for("financial"))
         return _export_response(buf, "pdf", "ar_aging")
-    out = _io.StringIO(); w = csv.writer(out)
-    w.writerow([f"{company_info().get('name','')} – A/R Aging Report"]); w.writerow([])
-    w.writerow(headers)
-    for r in all_rows: w.writerow([r[0],r[1],r[2],r[3],r[4],r[5],r[6],f"{r[7]:.2f}"])
+    out = _io.StringIO()
+    out.write(f"{company_info().get('name','')} – A/R Aging Report\n\n")
+    col_widths = [18, 20, 45, 18, 18, 15, 18, 20]
+    header_line = "  ".join(h.ljust(w) for h, w in zip(headers, col_widths))
+    out.write(header_line + "\n")
+    for r in all_rows:
+        row_data = [
+            str(r[0]).ljust(12), str(r[1]).ljust(14), str(r[2]).ljust(32), str(r[3]).ljust(12),
+            str(r[4]).ljust(12), str(r[5]).ljust(10), str(r[6]).ljust(12), f"{r[7]:.2f}".ljust(13)
+        ]
+        out.write("  ".join(row_data) + "\n")
     return _export_response(out, "csv", "ar_aging")
 
 # ── Employee Profile API ──────────────────────────────────────────────────────
@@ -5735,8 +6149,8 @@ def financial():
                 grouped[exp_name] = {
                     "expense_name": exp_name,
                     "description": exp_name,
-                    "expense_type": item.get("expense_type", "—"),
-                    "category": item.get("category", "—"),
+                    "expense_type": item.get("expense_type", ""),
+                    "category": item.get("category", ""),
                     "amount": 0,
                     "firebase_id": item.get("firebase_id", ""),
                     "date": item.get("date", ""),
@@ -6085,8 +6499,6 @@ def financial():
                 inv_year = _extract_year_from_date(inv_date_str)
                 if inv_year != stat_card_year:
                     continue
-                inv_subtotal = _safe_float(inv_meta.get("subtotal", 0))
-                inv_tax = _safe_float(inv_meta.get("tax_amount", 0))
 
                 # Calculate project's portion from actual line items
                 line_items = inv_data.get("line_items", []) or []
@@ -6101,41 +6513,21 @@ def financial():
                 payment_log = inv_data.get("payment_log", []) or []
                 project_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log if p.get("project_number", "") == pnum)
 
-                # Calculate share based on line items (for invoiced amount calculation only)
-                if inv_subtotal > 0 and project_line_total > 0:
-                    share = project_line_total / inv_subtotal
-                else:
-                    # Fallback: use linked_projects metadata for invoiced tax allocation
-                    linked = _invoice_linked_projects(inv_data)
-                    if len(linked) > 1:
-                        share = 1.0 / len(linked)
-                    else:
-                        share = 1.0
-
-                # Project's tax allocation (proportional to share, for invoiced amount)
-                project_tax = share * inv_tax
-
-                # Get project's tax payments - allocate proportionally if not per-project
-                tax_payments = inv_data.get("tax_payments", []) or []
-                total_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments)
-
-                # If tax_payments have project_number, filter by it; otherwise use share
-                project_tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in tax_payments if tp.get("project_number") == pnum)
-                if project_tax_paid == 0 and total_tax_paid > 0:
-                    # Tax payments don't have project_number, allocate by share
-                    project_tax_paid = share * total_tax_paid
-
-                # Add to P&L: invoiced = line items + tax, collected = actual payments + actual tax paid
-                p_invoiced += project_line_total + project_tax
-                p_collected += project_payments + project_tax_paid
+                # Add to P&L: invoiced = line items only (exclude tax), collected = actual payments only (exclude tax)
+                p_invoiced += project_line_total
+                p_collected += project_payments
 
         # Contract = stored contract_value (already reflects any CO approvals and stage edits)
+        # Recalculate base from formula: Base = Total - Sum(Approved COs)
         p_cos = p.get("change_orders") or []
         if not isinstance(p_cos, list):
             p_cos = list(p_cos.values()) if isinstance(p_cos, dict) else []
-        p_base_contract = _safe_float(p.get("base_contract_value") or p.get("contract_value", 0))
-        p_co_total = max(0.0, _safe_float(p.get("contract_value", 0)) - p_base_contract)
-        p_contract = _safe_float(p.get("contract_value", 0)) or (p_base_contract + p_co_total)
+        p_contract = _safe_float(p.get("contract_value", 0))
+        # Calculate approved CO total (include Approved, Invoiced, Paid statuses)
+        p_co_total = sum(_safe_float(co.get("amount", 0)) for co in p_cos
+                        if co.get("status") in ("Approved", "Invoiced", "Paid"))
+        # Base = Total - Sum(Approved COs)
+        p_base_contract = max(0.0, p_contract - p_co_total)
         p_not_invoiced = p_contract - p_invoiced
         p_outstanding = max(0.0, p_contract - p_collected)
         p_expenses = sum(_safe_float(e.get("amount",0))                     for e in exp_list if e.get("project_number","") == pnum)
@@ -6146,6 +6538,7 @@ def financial():
             "project_name":   p.get("project_name",""),
             "client_name":    p.get("client_name",""),
             "status":         p.get("status",""),
+            "base_contract":  p_base_contract,
             "contract_value": p_contract,
             "co_total":       p_co_total,
             "invoiced":       p_invoiced,
@@ -6599,8 +6992,8 @@ def financial():
             _d = datetime.fromisoformat(_ds)
             if _d.year == current_year:
                 monthly_expense_details[str(_d.month)].append({
-                    "name":     _exp.get("expense_name") or _exp.get("description") or "—",
-                    "category": _exp.get("category") or _exp.get("expense_type") or "—",
+                    "name":     _exp.get("expense_name") or _exp.get("description") or "",
+                    "category": _exp.get("category") or _exp.get("expense_type") or "",
                     "amount":   _safe_float(_exp.get("amount", 0)),
                     "date":     _ds,
                 })
@@ -9144,7 +9537,8 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
         stage["amount_paid"] = str(project_paid) if project_paid > 0 else "0"
 
         # If we have an invoice_id but amount_paid is still 0, try to use the invoice's recorded amount_paid
-        if project_paid == 0 and linked_invoice_id:
+        # BUT NOT FOR MULTI-PROJECT INVOICES (sequential allocation may have correctly set this to 0)
+        if project_paid == 0 and linked_invoice_id and not is_multi_project:
             current_invoice = fb_get(f"/invoices/{linked_invoice_id}") or {}
             inv_amount_paid = _safe_float(current_invoice.get("meta", {}).get("amount_paid", 0))
             if inv_amount_paid > 0:
@@ -10440,6 +10834,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
 
     center_bold_style = ParagraphStyle("center_bold10", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.black, alignment=1)
     center_style = ParagraphStyle("center10", parent=styles["Normal"], fontSize=10, fontName="Helvetica", textColor=colors.black, alignment=1)
+    left_style = ParagraphStyle("left10", parent=styles["Normal"], fontSize=10, fontName="Helvetica", textColor=colors.black, alignment=0)
     item_data = [[Paragraph(h, center_bold_style) for h in ["Project Number", "Description (PO & Road Name)", "Plant", "Qty", "Unit Price", "Total Due"]]]
 
     linked_projects = meta.get("linked_projects", [])
@@ -10473,7 +10868,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                         if not project_name:
                             project_name = pdata.get("project_name", "")
                         plant = pdata.get("plant", "")
-                        po_wo = pdata.get("po_number", "")
+                        po_wo = pdata.get("po_wo_number", "")
                         site_address = pdata.get("site_address", "")
                         payment_stages = pdata.get("payment_stages", [])
                         payment_stage_index = None
@@ -10499,16 +10894,28 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
 
         project_cell = Paragraph(project_number, center_style)
         if description and "co-" in description.lower():
-            parts = description.split("–")
-            co_part = parts[0].strip()
-            title_part = parts[1].strip() if len(parts) > 1 else ""
+            # Format: "Project Name — CO-002 – Title" or "CO-001 – Title"
+            if "—" in description:
+                # Split by em-dash first to get the CO part
+                parts = description.split("—")
+                co_section = parts[1].strip() if len(parts) > 1 else ""
+                # Now extract CO number and title from co_section
+                co_parts = co_section.split("–")
+                co_part = co_parts[0].strip()
+                title_part = co_parts[1].strip() if len(co_parts) > 1 else ""
+            else:
+                # Fallback: split by en-dash
+                co_parts = description.split("–")
+                co_part = co_parts[0].strip()
+                title_part = co_parts[1].strip() if len(co_parts) > 1 else ""
+
             if co_part.upper().startswith("CO"):
                 co_display = f"{co_part}_{title_part}" if title_part else co_part
                 project_number_display = f"{project_number}<br/><font size=8>{co_display}</font>"
-                project_cell = Paragraph(project_number_display, center_style)
+                project_cell = Paragraph(project_number_display, left_style)
         elif payment_stage and "change order" in payment_stage.lower():
             project_number_display = f"{project_number}<br/><font size=8>{payment_stage}</font>"
-            project_cell = Paragraph(project_number_display, center_style)
+            project_cell = Paragraph(project_number_display, left_style)
 
         description_display = ""
         if po_wo or site_address:
@@ -12386,13 +12793,31 @@ def update_project_payment_plan(project_id):
             if needs_permission or non_invoiced_count > 0 or invoiced_count > 0:
                 project["contract_value"] = str(total)
 
-        # Update all stages with new amounts
+        # Update all stages with new amounts and sync with change orders
+        change_orders = project.get("change_orders") or []
+        if not isinstance(change_orders, list):
+            change_orders = list(change_orders.values()) if isinstance(change_orders, dict) else []
+
         for amount_data in amounts:
             idx = amount_data.get("index", 0)
             if idx < len(stages):
-                stages[idx]["amount"] = _safe_float(amount_data.get("amount", 0))
+                stage = stages[idx]
+                new_amount = _safe_float(amount_data.get("amount", 0))
+                stage["amount"] = new_amount
+
+                # If this stage is for a change order (name contains "CO-"), update the CO record
+                stage_name = stage.get("name", "")
+                if "CO-" in stage_name:
+                    # Extract CO number from stage name (e.g., "CO-001 - CO1" -> "CO-001")
+                    co_num = stage_name.split(" ")[0] if " " in stage_name else stage_name
+                    # Find and update the matching change order
+                    for co in change_orders:
+                        if isinstance(co, dict) and co.get("co_number", "") == co_num:
+                            co["amount"] = str(new_amount)
+                            break
 
         project["payment_stages"] = stages
+        project["change_orders"] = change_orders
         project["updated_at"] = datetime.now(timezone.utc).isoformat()
         fb_update(f"/projects/{project_id}", project)
 
@@ -12988,13 +13413,17 @@ def api_timesheets_export():
     if normalize_role(session.get("user_role", "")) != "admin":
         flash("Admin access required.", "danger")
         return redirect(url_for("timesheets"))
+
     week_of = request.args.get("week", _week_monday())
-    sheets  = _load_timesheets(week_of=week_of)
-    output  = _io.StringIO()
-    writer  = csv.writer(output)
-    writer.writerow(["Week Of", "Employee", "Status", "Date", "Day", "Project",
-                     "Project #", "Start", "Lunch Mins", "End",
-                     "Regular Hrs", "OT Hrs", "Total Hrs", "Notes"])
+    fmt = request.args.get("fmt", "csv")
+    sheets = _load_timesheets(week_of=week_of)
+    co = company_info()
+
+    headers = ["Week Of", "Employee", "Status", "Date", "Day", "Project",
+               "Project #", "Start", "Lunch Mins", "End",
+               "Regular Hrs", "OT Hrs", "Total Hrs", "Notes"]
+    rows = []
+
     for sheet in sheets:
         for entry in (sheet.get("entries") or []):
             dt = entry.get("date", "")
@@ -13002,7 +13431,7 @@ def api_timesheets_export():
                 day_name = datetime.strptime(dt, "%Y-%m-%d").strftime("%A")
             except Exception:
                 day_name = ""
-            writer.writerow([
+            rows.append([
                 sheet.get("week_of", ""), sheet.get("employee_name", ""),
                 sheet.get("status", ""), dt, day_name,
                 entry.get("project_name", ""), entry.get("project_number", ""),
@@ -13011,13 +13440,125 @@ def api_timesheets_export():
                 entry.get("regular_hours", 0), entry.get("overtime_hours", 0),
                 entry.get("total_hours", 0), entry.get("notes", ""),
             ])
-    csv_bytes = output.getvalue().encode("utf-8-sig")
-    return send_file(
-        _io.BytesIO(csv_bytes),
-        mimetype="text/csv",
-        as_attachment=True,
-        download_name=f"timesheets_{week_of}.csv",
-    )
+
+    if fmt == "excel":
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.utils import get_column_letter
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Timesheets"
+
+        hdr_fill = PatternFill(start_color="FF0F172A", end_color="FF0F172A", fill_type="solid")
+        hdr_font = Font(color="FFFFFFFF", bold=True, size=11)
+        title_font = Font(bold=True, size=13, color="FF0F766E")
+        alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
+        ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+        co = company_info()
+        ws.merge_cells('A1:N1')
+        title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} - Timesheets Report (Week of {week_of})")
+        title_cell.font = title_font
+        title_cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 20
+
+        header_row = 2
+        for col, h in enumerate(headers, 1):
+            cell = ws.cell(row=header_row, column=col, value=h)
+            cell.fill = hdr_fill; cell.font = hdr_font; cell.alignment = ctr
+
+        for ri, row in enumerate(rows, header_row + 1):
+            for ci, val in enumerate(row, 1):
+                cell = ws.cell(row=ri, column=ci, value=val)
+                if ri % 2 == 0:
+                    cell.fill = alt_fill
+                cell.alignment = ctr
+
+        col_widths = [12, 18, 12, 12, 12, 20, 14, 10, 12, 10, 12, 10, 12, 20]
+        for ci, w in enumerate(col_widths, 1):
+            ws.column_dimensions[get_column_letter(ci)].width = w
+
+        buf = _io.BytesIO()
+        wb.save(buf); buf.seek(0)
+        return send_file(buf, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        as_attachment=True, download_name=f"timesheets_{week_of}.xlsx")
+
+    elif fmt == "pdf":
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+
+        buf = _io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
+                                leftMargin=0.5*inch, rightMargin=0.5*inch,
+                                topMargin=0.5*inch, bottomMargin=0.5*inch)
+        styles = getSampleStyleSheet()
+        co = company_info()
+        elems = []
+
+        title_s = ParagraphStyle("T", parent=styles["Normal"], fontSize=14,
+                                  fontName="Helvetica-Bold",
+                                  textColor=colors.HexColor("#0F766E"), spaceAfter=3,
+                                  alignment=1)
+        elems.append(Paragraph(f"{co.get('name','')} — Timesheets Report", title_s))
+        elems.append(Spacer(1, 0.15*inch))
+        sub_s = ParagraphStyle("S", parent=styles["Normal"], fontSize=10,
+                               textColor=colors.HexColor("#64748B"), spaceAfter=10,
+                               alignment=0)
+        elems.append(Paragraph(f"Week of {week_of}", sub_s))
+        elems.append(Spacer(1, 0.15*inch))
+
+        data = [headers]
+        cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=9, wordWrap='CJK')
+
+        for row in rows:
+            data.append([Paragraph(str(cell), cell_style) for cell in row])
+
+        cw = [1.0*inch, 1.3*inch, 0.9*inch, 0.9*inch, 0.9*inch, 1.4*inch, 0.9*inch, 0.7*inch, 0.9*inch, 0.7*inch, 0.9*inch, 0.7*inch, 0.9*inch, 1.2*inch]
+        tbl = Table(data, colWidths=cw, repeatRows=1)
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
+            ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+            ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE",      (0,0), (-1,0), 8),
+            ("ALIGN",         (0,0), (-1,0), "CENTER"),
+            ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
+            ("TOPPADDING",    (0,0), (-1,0), 6),
+            ("BOTTOMPADDING", (0,0), (-1,0), 6),
+            ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
+            ("FONTSIZE",      (0,1), (-1,-1), 7),
+            ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")]),
+            ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
+            ("TOPPADDING",    (0,1), (-1,-1), 3),
+            ("BOTTOMPADDING", (0,1), (-1,-1), 3),
+            ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+            ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
+        ]))
+        elems.append(tbl)
+        doc.build(elems)
+        buf.seek(0)
+
+        return send_file(buf, mimetype="application/pdf",
+                        as_attachment=True, download_name=f"timesheets_{week_of}.pdf")
+
+    else:  # CSV
+        import csv
+        output = _io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        for row in rows:
+            writer.writerow(row)
+
+        csv_bytes = output.getvalue().encode("utf-8-sig")
+        return send_file(
+            _io.BytesIO(csv_bytes),
+            mimetype="text/csv",
+            as_attachment=True,
+            download_name=f"timesheets_{week_of}.csv",
+        )
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":

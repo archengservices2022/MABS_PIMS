@@ -2257,9 +2257,9 @@ function viewReceipt(expId) {
             <td class="text-muted small">{{ row.client_name }}</td>
             <td>{{ status_badge(row.status, 'Not Started') }}</td>
             <td class="text-end">
-              ${{ "{:,.2f}".format(row.contract_value) }}
+              ${{ "{:,.2f}".format(row.base_contract or row.contract_value) }}
               {% if row.co_total and row.co_total > 0 %}
-              <div class="text-muted" style="font-size:10px;">+${{ "{:,.2f}".format(row.co_total) }} CO</div>
+              <div class="text-muted" style="font-size:11px;">+${{ "{:,.0f}".format(row.co_total) }} CO</div>
               {% endif %}
             </td>
             <td class="text-end text-teal fw-semibold">${{ "{:,.2f}".format(row.invoiced) }}</td>
