@@ -834,6 +834,7 @@ def dashboard():
         last_month_collected=last_month_collected,
         inv_status_counts=inv_status_counts,
         proj_status_counts=proj_status_counts,
+        proj_list=proj_list,
         quot_status_counts=quot_status_counts,
         quotes_approved_count=sum(quot_status_counts.get(s, 0) for s in ('Approved', 'Converted', 'Invoiced', 'Completed')),
         quotes_pipeline_value=quotes_pipeline_value,
@@ -1962,7 +1963,10 @@ def project_detail(project_id):
         bucket["cost"]    += (minutes / 60.0) * rate
         labor_total_minutes += minutes
         labor_total_cost    += (minutes / 60.0) * rate
-    net_profit = gross_profit - labor_total_cost
+    # Allow manual actual_labor_cost override when no time entries are tracked
+    manual_labor_cost = _safe_float(data.get("actual_labor_cost", 0))
+    display_labor_cost = labor_total_cost if labor_total_cost > 0 else manual_labor_cost
+    net_profit = gross_profit - display_labor_cost
 
     # Source quote that generated this project
     source_quote = None
@@ -2000,7 +2004,8 @@ def project_detail(project_id):
                            exp_total=exp_total, gross_profit=gross_profit,
                            labor_by_employee=labor_by_employee,
                            labor_total_minutes=labor_total_minutes,
-                           labor_total_cost=labor_total_cost,
+                           labor_total_cost=display_labor_cost,
+                           manual_labor_cost=manual_labor_cost,
                            net_profit=net_profit,
                            source_quote=source_quote,
                            has_pending_stage=has_pending_stage,
@@ -2759,15 +2764,26 @@ def invoicing():
     statuses = ["Draft", "Sent", "Viewed", "Paid", "Partial", "Overdue", "Cancelled"]
     active_tab = request.args.get("tab", "all-invoices")
 
-    # KPI stats from filtered invoices — status already calculated above
+    # KPI stats — Collected uses payment_log dates, not invoice creation date
     _kpi_rows = []
     for inv in items:
         m  = inv.get("meta", {}) or {}
         st = m.get("status", "Draft")
         total_val = _safe_float(m.get("total", 0))
-        amount_paid = _safe_float(m.get("amount_paid", 0))
-        tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in inv.get("tax_payments", []))
-        total_paid = amount_paid + tax_paid
+        # Filter payments by payment date when a date range is active
+        def _in_range(d):
+            return (not date_from or (d or "") >= date_from) and \
+                   (not date_to   or (d or "") <= date_to)
+        total_paid = sum(
+            _safe_float(p.get("amount", 0))
+            for p in (inv.get("payment_log", []) or [])
+            if _in_range(p.get("date", ""))
+        )
+        total_paid += sum(
+            _safe_float(tp.get("amount", 0))
+            for tp in (inv.get("tax_payments", []) or [])
+            if _in_range(tp.get("date", ""))
+        )
         _kpi_rows.append((st, total_val, total_paid))
 
     i_total       = len(_kpi_rows)
@@ -4304,16 +4320,21 @@ def invoice_delete(invoice_id):
                 amount_paid = _safe_float(pdata.get("amount_paid", 0))
                 current_status = pdata.get("status", "Not Started")
 
+                # Invoice-driven statuses that should revert when the invoice is removed
+                _invoice_statuses = {
+                    "Invoiced", "invoiced_Not paid yet", "invoiced_Partially paid",
+                    "invoiced_Fully paid", "Sent", "Sent out_Invoiced",
+                }
                 # If still has payments, change to In Progress
                 if amount_paid > 0 and current_status in ("Completed", "invoiced_Fully paid"):
                     fb_update(f"/projects/{proj_id}", {
                         "status": "In Progress",
                         "updated_at": datetime.now(timezone.utc).isoformat()
                     })
-                # If no payments left, change to Not Started
-                elif amount_paid == 0 and current_status != "Not Started":
+                # If no payments left AND status was invoice-driven, revert to In Progress
+                elif amount_paid == 0 and current_status in _invoice_statuses:
                     fb_update(f"/projects/{proj_id}", {
-                        "status": "Not Started",
+                        "status": "In Progress",
                         "updated_at": datetime.now(timezone.utc).isoformat()
                     })
 
@@ -7415,7 +7436,10 @@ def employees():
                 slim["firebase_id"] = eid
                 all_emp_expenses.append(slim)
     all_emp_expenses.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-    context["my_expenses"] = [e for e in all_emp_expenses if e.get("submitted_by_uid") == uid]
+    if is_admin:
+        context["my_expenses"] = all_emp_expenses
+    else:
+        context["my_expenses"] = [e for e in all_emp_expenses if e.get("submitted_by_uid") == uid]
     if is_admin:
         context["pending_expenses"] = [e for e in all_emp_expenses if e.get("status") == "Pending"]
     else:
@@ -7590,13 +7614,11 @@ def employee_expense_receipt(exp_id):
 @role_required("employees")
 def employee_expense_edit(exp_id):
     uid = session.get("user_uid", "")
+    role = normalize_role(session.get("user_role", ""))
     exp_data = fb_get(f"/expenses/{exp_id}") or {}
-    # Only the submitter can edit, and only while Pending
-    if exp_data.get("submitted_by_uid") != uid:
-        flash("You can only edit your own expenses.", "danger")
-        return redirect(url_for("employees") + "#expenses")
-    if exp_data.get("status", "Pending") != "Pending":
-        flash("Only pending expenses can be edited.", "danger")
+    # Only admins can edit expenses
+    if role != "admin":
+        flash("Only admins can edit expenses.", "danger")
         return redirect(url_for("employees") + "#expenses")
 
     updates = {
@@ -9271,38 +9293,54 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
     projects_data.sort(key=lambda x: int(x[0][-3:]) if x[0][-3:].isdigit() else x[0])
     log.info(f"[SEQ_ALLOC] Sorted projects: {[p[0] for p in projects_data]}")
 
-    # Allocate sequentially
-    remaining = total_paid
+    # Determine allocation strategy: use per-project payment_log sums when entries
+    # are tagged with project_number (modern data); fall back to sequential distribution
+    # for legacy invoices whose payment_log entries have no project_number.
+    payment_log_entries = invoice.get("payment_log", []) or []
+    has_tagged_payments = any(
+        isinstance(p, dict) and p.get("project_number")
+        for p in payment_log_entries
+    )
+
     allocations = {}  # proj_num -> amount
 
-    for proj_num, stage_idx, proj_id, proj_data in projects_data:
-        stages = proj_data.get("payment_stages") or []
-        if not (0 <= stage_idx < len(stages)):
-            log.warning(f"[SEQ_ALLOC] Invalid stage_idx {stage_idx} for {proj_num}")
-            continue
+    if has_tagged_payments:
+        # Modern path: each payment_log entry knows which project it belongs to
+        log.info("[SEQ_ALLOC] Using per-project payment_log sums (tagged payments)")
+        for proj_num, stage_idx, proj_id, proj_data in projects_data:
+            proj_paid = sum(
+                _safe_float(p.get("amount", 0))
+                for p in payment_log_entries
+                if isinstance(p, dict) and p.get("project_number") == proj_num
+            )
+            allocations[proj_num] = proj_paid
+            log.info(f"[SEQ_ALLOC] {proj_num}: payment_log sum=${proj_paid}")
+    else:
+        # Legacy path: no project_number tags — distribute total sequentially
+        log.info("[SEQ_ALLOC] No tagged payments — using sequential allocation")
+        remaining = total_paid
+        for proj_num, stage_idx, proj_id, proj_data in projects_data:
+            stages = proj_data.get("payment_stages") or []
+            if not (0 <= stage_idx < len(stages)):
+                log.warning(f"[SEQ_ALLOC] Invalid stage_idx {stage_idx} for {proj_num}")
+                continue
 
-        # RESET this project's stage to $0 in-memory
-        stage = stages[stage_idx]
-        stage["amount_paid"] = "0"
-        log.info(f"[SEQ_ALLOC] Reset {proj_num} stage {stage_idx} amount_paid to 0")
+            stage = stages[stage_idx]
+            stage_amount = _safe_float(stage.get("amount", 0))
 
-        stage_amount = _safe_float(stage.get("amount", 0))
+            if remaining <= 0.01:
+                allocations[proj_num] = 0
+                log.info(f"[SEQ_ALLOC] No remaining amount for {proj_num}")
+                continue
 
-        if remaining <= 0.01:
-            # No more payment to allocate, but still need to save reset
-            allocations[proj_num] = 0
-            log.info(f"[SEQ_ALLOC] No remaining amount for {proj_num}")
-            continue
+            if stage_amount <= 0:
+                log.info(f"[SEQ_ALLOC] Skipping {proj_num} - stage amount is 0")
+                continue
 
-        if stage_amount <= 0:
-            log.info(f"[SEQ_ALLOC] Skipping {proj_num} - stage amount is 0")
-            continue
-
-        # Since we reset all amounts to 0 above, just allocate based on stage_amount
-        allocated = min(remaining, stage_amount)
-        allocations[proj_num] = allocated
-        remaining -= allocated
-        log.info(f"[SEQ_ALLOC] {proj_num}: stage_amount=${stage_amount}, allocated=${allocated}, remaining=${remaining}")
+            allocated = min(remaining, stage_amount)
+            allocations[proj_num] = allocated
+            remaining -= allocated
+            log.info(f"[SEQ_ALLOC] {proj_num}: stage_amount=${stage_amount}, allocated=${allocated}, remaining=${remaining}")
 
     # Update each project with its allocated amount
     for proj_num, stage_idx, proj_id, proj_data in projects_data:
@@ -10005,6 +10043,7 @@ def _parse_project_form(form) -> dict:
         "budget_labor":         _safe_float(form.get("budget_labor", 0)),
         "budget_expenses":      _safe_float(form.get("budget_expenses", 0)),
         "budget_subcontractor": _safe_float(form.get("budget_subcontractor", 0)),
+        "actual_labor_cost":    _safe_float(form.get("actual_labor_cost", 0)),
     }
 
 def _parse_invoice_form(form) -> dict:
@@ -12313,13 +12352,21 @@ def update_project_payment_plan(project_id):
             if needs_permission or non_invoiced_count > 0 or invoiced_count > 0:
                 project["contract_value"] = str(total)
 
-        # Update all stages with new amounts
+        # Update all stages with new amounts; sync back to linked change orders
+        change_orders = project.get("change_orders") or []
         for amount_data in amounts:
             idx = amount_data.get("index", 0)
             if idx < len(stages):
-                stages[idx]["amount"] = _safe_float(amount_data.get("amount", 0))
+                new_stage_amt = _safe_float(amount_data.get("amount", 0))
+                stages[idx]["amount"] = new_stage_amt
+                # Keep change order amount in sync when its payment stage is edited
+                co_idx = stages[idx].get("co_index")
+                if co_idx is not None and isinstance(co_idx, int) and co_idx < len(change_orders):
+                    change_orders[co_idx]["amount"] = new_stage_amt
 
         project["payment_stages"] = stages
+        if change_orders:
+            project["change_orders"] = change_orders
         project["updated_at"] = datetime.now(timezone.utc).isoformat()
         fb_update(f"/projects/{project_id}", project)
 

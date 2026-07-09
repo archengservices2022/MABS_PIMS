@@ -1380,7 +1380,7 @@
     <div class="col-lg-7">
       <div class="card-panel">
         <h6 class="panel-title mb-3">
-          <i class="bi bi-clock-history me-1" style="color:#0D9488;"></i>My Submissions
+          <i class="bi bi-clock-history me-1" style="color:#0D9488;"></i>{% if user_role == 'admin' %}All Submissions{% else %}My Submissions{% endif %}
         </h6>
         {% if my_expenses %}
         <div class="table-responsive">
@@ -1388,7 +1388,7 @@
             <thead>
               <tr>
                 <th>Date</th><th>Name</th><th class="text-end">Amount</th>
-                <th>Project</th><th>Status</th><th class="text-center">Receipt</th><th></th>
+                <th>Project</th>{% if user_role == 'admin' %}<th>Submitted By</th>{% endif %}<th>Status</th><th class="text-center">Receipt</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -1401,6 +1401,9 @@
               </td>
               <td class="text-end fw-semibold">${{ "{:,.2f}".format(e.get('amount',0)|float) }}</td>
               <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
+              {% if user_role == 'admin' %}
+              <td class="text-muted small">{{ e.get('submitted_by_name', e.get('created_by','—')) or '—' }}</td>
+              {% endif %}
               <td>
                 {% set st = e.get('status','Pending') %}
                 {% if st == 'Approved' %}
@@ -1424,19 +1427,21 @@
                 {% else %}—{% endif %}
               </td>
               <td>
-                {% if e.get('status','Pending') == 'Pending' %}
+                {% if user_role == 'admin' %}
                 <div class="d-flex gap-1">
                   <button class="btn btn-xs btn-outline-secondary emp-expense-edit-btn"
                           data-expense="{{ e|tojson|e }}"
                           title="Edit">
                     <i class="bi bi-pencil"></i>
                   </button>
+                  {% if e.get('status','Pending') == 'Pending' %}
                   <form method="post" action="{{ url_for('employee_expense_delete', exp_id=e.firebase_id) }}"
-                        onsubmit="return confirm('Delete this pending expense?');" style="display:inline;">
+                        onsubmit="return confirm('Delete this expense?');" style="display:inline;">
                     <button type="submit" class="btn btn-xs btn-outline-danger" title="Delete">
                       <i class="bi bi-trash"></i>
                     </button>
                   </form>
+                  {% endif %}
                 </div>
                 {% endif %}
               </td>
@@ -1448,7 +1453,7 @@
         {% else %}
         <div class="text-center text-muted py-5">
           <i class="bi bi-receipt" style="font-size:2rem;opacity:.3;display:block;margin-bottom:8px;"></i>
-          No expense submissions yet. Use the form to submit your first expense.
+          {% if user_role == 'admin' %}No expense submissions found.{% else %}No expense submissions yet. Use the form to submit your first expense.{% endif %}
         </div>
         {% endif %}
       </div>
@@ -1541,7 +1546,7 @@
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h6 class="modal-title fw-bold"><i class="bi bi-pencil me-2"></i>Edit Pending Expense</h6>
+        <h6 class="modal-title fw-bold"><i class="bi bi-pencil me-2"></i>Edit Expense</h6>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="post" id="empExpenseEditForm" enctype="multipart/form-data">
