@@ -9428,9 +9428,7 @@ def _sync_project_payment(project_number: str) -> None:
             if isinstance(payment_log, list):
                 for p in payment_log:
                     if isinstance(p, dict):
-                        if p.get("project_number", project_number) == project_number:
-                            total_paid += _safe_float(p.get("amount", 0))
-                        elif not p.get("project_number"):
+                        if p.get("project_number") == project_number:
                             total_paid += _safe_float(p.get("amount", 0))
 
     updates = {
