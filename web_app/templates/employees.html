@@ -1376,7 +1376,7 @@
       </div>
     </div>
 
-    <!-- Right: My Submissions -->
+    <!-- Right: All / My Submissions -->
     <div class="col-lg-7">
       <div class="card-panel">
         <h6 class="panel-title mb-3">
@@ -1384,14 +1384,14 @@
         </h6>
         {% if my_expenses %}
         <div class="table-responsive">
-          <table class="table table-sm table-hover mb-0 align-middle">
+          <table class="table table-sm table-hover mb-0 align-middle" id="allSubmissionsTable">
             <thead>
               <tr>
                 <th>Date</th><th>Name</th><th class="text-end">Amount</th>
                 <th>Project</th>{% if user_role == 'admin' %}<th>Submitted By</th>{% endif %}<th>Status</th><th class="text-center">Receipt</th><th></th>
               </tr>
             </thead>
-            <tbody>
+            <tbody id="allSubmissionsTbody">
             {% for e in my_expenses %}
             <tr>
               <td class="text-muted small">{{ e.get('date','—') | format_date }}</td>
@@ -1449,6 +1449,16 @@
             {% endfor %}
             </tbody>
           </table>
+        </div>
+        <!-- Pagination controls -->
+        <div class="d-flex align-items-center justify-content-between mt-2" id="submissionsPagination" style="display:none!important;">
+          <button class="btn btn-xs btn-outline-secondary" id="submissionsPrev" onclick="submissionsGoPage(-1)">
+            <i class="bi bi-chevron-left"></i> Prev
+          </button>
+          <span class="text-muted small" id="submissionsPageInfo"></span>
+          <button class="btn btn-xs btn-outline-secondary" id="submissionsNext" onclick="submissionsGoPage(1)">
+            Next <i class="bi bi-chevron-right"></i>
+          </button>
         </div>
         {% else %}
         <div class="text-center text-muted py-5">
@@ -2162,13 +2172,45 @@ window.onEmpReceiptChange = function(input) {
   }
 };
 
-// Wire up edit buttons via event listeners (avoids inline JSON quoting issues)
-document.querySelectorAll('.emp-expense-edit-btn').forEach(function(btn) {
-  btn.addEventListener('click', function() {
-    try { openEmpExpenseEdit(JSON.parse(btn.dataset.expense)); }
-    catch(err) { console.error('Expense parse error', err); }
-  });
+// Edit button — event delegation so it works with pagination and any dynamic rows
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('.emp-expense-edit-btn');
+  if (!btn) return;
+  try { openEmpExpenseEdit(JSON.parse(btn.dataset.expense)); }
+  catch(err) { console.error('Expense parse error', err); alert('Could not load expense data. Please refresh and try again.'); }
 });
+
+// ── All Submissions pagination ────────────────────────────────────────────────
+(function() {
+  var PAGE_SIZE = 7;
+  var currentPage = 1;
+  var tbody = document.getElementById('allSubmissionsTbody');
+  var pagination = document.getElementById('submissionsPagination');
+  var pageInfo = document.getElementById('submissionsPageInfo');
+  var prevBtn = document.getElementById('submissionsPrev');
+  var nextBtn = document.getElementById('submissionsNext');
+  if (!tbody) return;
+
+  var rows = Array.from(tbody.querySelectorAll('tr'));
+  var totalPages = Math.ceil(rows.length / PAGE_SIZE);
+
+  function renderPage(page) {
+    currentPage = page;
+    rows.forEach(function(row, i) {
+      row.style.display = (i >= (page - 1) * PAGE_SIZE && i < page * PAGE_SIZE) ? '' : 'none';
+    });
+    if (pageInfo) pageInfo.textContent = 'Page ' + page + ' of ' + totalPages;
+    if (prevBtn) prevBtn.disabled = page <= 1;
+    if (nextBtn) nextBtn.disabled = page >= totalPages;
+  }
+
+  window.submissionsGoPage = function(delta) { renderPage(currentPage + delta); };
+
+  if (rows.length > PAGE_SIZE) {
+    pagination.style.removeProperty('display');
+    renderPage(1);
+  }
+})();
 
 // Wire up receipt view buttons
 document.querySelectorAll('.emp-view-receipt-btn').forEach(function(btn) {
