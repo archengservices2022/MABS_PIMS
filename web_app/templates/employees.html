@@ -168,13 +168,6 @@
     </a>
   </li>
   {% endif %}
-  {% if user_role == 'admin' %}
-  <li class="nav-item">
-    <a class="nav-link" data-bs-toggle="tab" href="#tab-directory">
-      <i class="bi bi-person-vcard me-1"></i>Directory
-    </a>
-  </li>
-  {% endif %}
 </ul>
 
 <div class="tab-content">
@@ -976,8 +969,8 @@
       <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
         <thead style="background:#f8fafc;">
           <tr>
-            <th>Employee</th><th>Role</th><th>Status</th>
-            <th>Department</th><th>Hire Date</th><th>Currently On</th>
+            <th>Employee</th><th>Title</th><th>Region</th><th>Role</th><th>Status</th>
+            <th>Department</th><th>Hire Date</th><th class="text-end">Rate / Salary</th><th>Currently On</th>
             <th class="text-end">Action</th>
           </tr>
         </thead>
@@ -994,6 +987,12 @@
               </div>
             </div>
           </td>
+          <td class="text-muted small">{{ u.title or '—' }}</td>
+          <td>
+            {% if u.region %}
+            <span class="badge" style="background:{{ '#0D9488' if u.region == 'Inside America' else '#7C3AED' }};color:#fff;font-size:11px;">{{ u.region }}</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
           <td><span class="badge badge-role-{{ u.role or 'admin' }}">{{ (u.role or 'admin')|capitalize }}</span></td>
           <td>
             <span class="badge status-{{ (u.get('employee_status','Active'))|lower }}">
@@ -1002,6 +1001,11 @@
           </td>
           <td class="text-muted">{{ u.get('department') or '—' }}</td>
           <td class="text-muted">{{ (u.get('hire_date') or '—') | format_date }}</td>
+          <td class="text-end" style="font-size:12px;">
+            {% if u.get('hourly_rate') %}<div class="fw-500">${{ '%.2f'|format(u.hourly_rate|float) }}/hr</div>{% endif %}
+            {% if u.get('monthly_salary') %}<div class="text-success">${{ '{:,.0f}'.format(u.monthly_salary|float) }}/mo</div>{% endif %}
+            {% if not u.get('hourly_rate') and not u.get('monthly_salary') %}<span class="text-muted">—</span>{% endif %}
+          </td>
           <td>
             {% if open_entry %}
             <span class="badge-working">
@@ -1142,11 +1146,8 @@
 {% endif %}{# /admin #}
 
 
-{% if user_role in ('admin', 'finance') %}
-<!-- ══════════════════════════════════════════════════════════════════════════
-     DIRECTORY  (admin + finance)
-══════════════════════════════════════════════════════════════════════════ -->
-<div class="tab-pane fade" id="tab-directory">
+{% if False %}
+<div class="tab-pane fade" id="tab-directory-removed">
   <div class="card-panel">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <h6 class="panel-title mb-0">
@@ -1259,7 +1260,7 @@
     </div>
   </div>
   {% endif %}
-</div><!-- /tab-directory -->
+</div><!-- /tab-directory-removed -->
 {% endif %}
 
 <!-- ══════════════════════════════════════════════════════════════════════════
