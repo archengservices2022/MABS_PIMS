@@ -9144,11 +9144,12 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
         stage["amount_paid"] = str(project_paid) if project_paid > 0 else "0"
 
         # If we have an invoice_id but amount_paid is still 0, try to use the invoice's recorded amount_paid
-        if project_paid == 0 and linked_invoice_id:
+        # BUT: Don't use this fallback for multi-project invoices (would incorrectly apply total to single project)
+        if project_paid == 0 and linked_invoice_id and not is_multi_project:
             current_invoice = fb_get(f"/invoices/{linked_invoice_id}") or {}
             inv_amount_paid = _safe_float(current_invoice.get("meta", {}).get("amount_paid", 0))
             if inv_amount_paid > 0:
-                # Use the invoice's amount_paid if we calculated 0
+                # Use the invoice's amount_paid if we calculated 0 (single-project only)
                 stage["amount_paid"] = str(inv_amount_paid)
                 project_paid = inv_amount_paid
                 log.info(f"[FALLBACK] Using invoice amount_paid: {inv_amount_paid}")
