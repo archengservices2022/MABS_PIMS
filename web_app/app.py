@@ -9271,38 +9271,54 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
     projects_data.sort(key=lambda x: int(x[0][-3:]) if x[0][-3:].isdigit() else x[0])
     log.info(f"[SEQ_ALLOC] Sorted projects: {[p[0] for p in projects_data]}")
 
-    # Allocate sequentially
-    remaining = total_paid
+    # For multi-project invoices with explicit project assignments, use payment_log
+    # For single-project or sequential distribution, use sequential allocation
     allocations = {}  # proj_num -> amount
+    payment_log = invoice.get("payment_log", []) or []
+    has_project_assignments = any(p.get("project_number") for p in payment_log if isinstance(p, dict))
 
-    for proj_num, stage_idx, proj_id, proj_data in projects_data:
-        stages = proj_data.get("payment_stages") or []
-        if not (0 <= stage_idx < len(stages)):
-            log.warning(f"[SEQ_ALLOC] Invalid stage_idx {stage_idx} for {proj_num}")
-            continue
+    if len(projects_data) > 1 and has_project_assignments:
+        # Multi-project invoice with explicit project assignments - use payment_log
+        log.info(f"[SEQ_ALLOC] Using payment_log for project-specific allocation (has_project_assignments=True)")
+        for proj_num, stage_idx, proj_id, proj_data in projects_data:
+            # Calculate payments for THIS project from payment_log
+            proj_paid = sum(_safe_float(p.get("amount", 0))
+                          for p in payment_log
+                          if isinstance(p, dict) and p.get("project_number") == proj_num)
+            allocations[proj_num] = proj_paid
+            log.info(f"[SEQ_ALLOC] Project {proj_num}: {proj_paid} from payment_log")
+    else:
+        # Single-project invoice or no explicit assignments - use sequential allocation
+        log.info(f"[SEQ_ALLOC] Using sequential allocation (multi={len(projects_data) > 1}, has_assignments={has_project_assignments})")
+        remaining = total_paid
+        for proj_num, stage_idx, proj_id, proj_data in projects_data:
+            stages = proj_data.get("payment_stages") or []
+            if not (0 <= stage_idx < len(stages)):
+                log.warning(f"[SEQ_ALLOC] Invalid stage_idx {stage_idx} for {proj_num}")
+                continue
 
-        # RESET this project's stage to $0 in-memory
-        stage = stages[stage_idx]
-        stage["amount_paid"] = "0"
-        log.info(f"[SEQ_ALLOC] Reset {proj_num} stage {stage_idx} amount_paid to 0")
+            # RESET this project's stage to $0 in-memory
+            stage = stages[stage_idx]
+            stage["amount_paid"] = "0"
+            log.info(f"[SEQ_ALLOC] Reset {proj_num} stage {stage_idx} amount_paid to 0")
 
-        stage_amount = _safe_float(stage.get("amount", 0))
+            stage_amount = _safe_float(stage.get("amount", 0))
 
-        if remaining <= 0.01:
-            # No more payment to allocate, but still need to save reset
-            allocations[proj_num] = 0
-            log.info(f"[SEQ_ALLOC] No remaining amount for {proj_num}")
-            continue
+            if remaining <= 0.01:
+                # No more payment to allocate, but still need to save reset
+                allocations[proj_num] = 0
+                log.info(f"[SEQ_ALLOC] No remaining amount for {proj_num}")
+                continue
 
-        if stage_amount <= 0:
-            log.info(f"[SEQ_ALLOC] Skipping {proj_num} - stage amount is 0")
-            continue
+            if stage_amount <= 0:
+                log.info(f"[SEQ_ALLOC] Skipping {proj_num} - stage amount is 0")
+                continue
 
-        # Since we reset all amounts to 0 above, just allocate based on stage_amount
-        allocated = min(remaining, stage_amount)
-        allocations[proj_num] = allocated
-        remaining -= allocated
-        log.info(f"[SEQ_ALLOC] {proj_num}: stage_amount=${stage_amount}, allocated=${allocated}, remaining=${remaining}")
+            # Since we reset all amounts to 0 above, just allocate based on stage_amount
+            allocated = min(remaining, stage_amount)
+            allocations[proj_num] = allocated
+            remaining -= allocated
+            log.info(f"[SEQ_ALLOC] {proj_num}: stage_amount=${stage_amount}, allocated=${allocated}, remaining=${remaining}")
 
     # Update each project with its allocated amount
     for proj_num, stage_idx, proj_id, proj_data in projects_data:
