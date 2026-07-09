@@ -9271,14 +9271,6 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
     projects_data.sort(key=lambda x: int(x[0][-3:]) if x[0][-3:].isdigit() else x[0])
     log.info(f"[SEQ_ALLOC] Sorted projects: {[p[0] for p in projects_data]}")
 
-    # Reset ALL stages to $0 first (regardless of allocation method)
-    for proj_num, stage_idx, proj_id, proj_data in projects_data:
-        stages = proj_data.get("payment_stages") or []
-        if 0 <= stage_idx < len(stages):
-            stage = stages[stage_idx]
-            stage["amount_paid"] = "0"
-            log.info(f"[SEQ_ALLOC] Reset {proj_num} stage {stage_idx} amount_paid to 0")
-
     # For multi-project invoices with explicit project assignments, use payment_log
     # For single-project or sequential distribution, use sequential allocation
     allocations = {}  # proj_num -> amount
@@ -9305,7 +9297,11 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
                 log.warning(f"[SEQ_ALLOC] Invalid stage_idx {stage_idx} for {proj_num}")
                 continue
 
+            # RESET this project's stage to $0 in-memory
             stage = stages[stage_idx]
+            stage["amount_paid"] = "0"
+            log.info(f"[SEQ_ALLOC] Reset {proj_num} stage {stage_idx} amount_paid to 0")
+
             stage_amount = _safe_float(stage.get("amount", 0))
 
             if remaining <= 0.01:
