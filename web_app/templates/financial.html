@@ -569,7 +569,7 @@ a[href*="filter_expense"]:hover {
       <select id="incomeMonthFilter" class="form-select form-select-sm ms-1" style="width:130px; display:none;" onchange="reFilterIncome()">
         <option value="">All Months</option>
       </select>
-      <button class="btn btn-xs btn-outline-secondary ms-auto" onclick="clearIncomeFilter()">
+      <button class="btn btn-xs btn-outline-danger ms-auto" onclick="clearIncomeFilter()">
         <i class="bi bi-x me-1"></i>Clear
       </button>
       <div class="dropdown">
@@ -826,7 +826,7 @@ a[href*="filter_expense"]:hover {
       <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setExpenseDateRange('month')">This Month</button>
       <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setExpenseDateRange('year')">This Year</button>
       <button type="button" class="btn btn-xs btn-outline-secondary" onclick="setExpenseDateRange('last30')">Last 30 Days</button>
-      <button type="button" class="btn btn-xs btn-outline-secondary" onclick="clearExpenseFilters()"><i class="bi bi-x me-1"></i>Clear</button>
+      <button type="button" class="btn btn-xs btn-outline-danger" onclick="clearExpenseFilters()"><i class="bi bi-x me-1"></i>Clear</button>
       <div class="dropdown">
         <button class="btn btn-xs btn-outline-teal dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-download me-1"></i>Export</button>
         <ul class="dropdown-menu dropdown-menu-end shadow-sm">
@@ -2978,7 +2978,7 @@ function viewReceipt(expId) {
       <div class="d-flex gap-2 align-items-center">
         <input type="text" id="agingSearch" placeholder="Client or invoice #..."
                class="form-control form-control-sm" style="width:200px;" oninput="filterAging()">
-        <button onclick="clearAgingFilter()" class="btn btn-xs btn-outline-secondary">
+        <button onclick="clearAgingFilter()" class="btn btn-xs btn-outline-danger">
           <i class="bi bi-x me-1"></i>Clear
         </button>
         <div class="dropdown">
