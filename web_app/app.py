@@ -3220,7 +3220,7 @@ def invoice_new():
                 proj_amount = sum(_safe_float(item.get("amount", 0))
                                 for item in line_items
                                 if isinstance(item, dict) and
-                                (item.get("project_number") == proj_num or not item.get("project_number")))
+                                item.get("project_number") == proj_num)
 
                 # Calculate already received
                 proj_received = sum(_safe_float(p.get("amount", 0))
@@ -3640,7 +3640,7 @@ def invoice_edit(invoice_id):
                 proj_amount = sum(_safe_float(item.get("amount", 0))
                                 for item in line_items
                                 if isinstance(item, dict) and
-                                (item.get("project_number") == proj_num or not item.get("project_number")))
+                                item.get("project_number") == proj_num)
 
                 # Calculate already received
                 proj_received = sum(_safe_float(p.get("amount", 0))
@@ -8895,7 +8895,7 @@ def _update_single_project_stage_payment_status(invoice_id: str, project_number:
                     inv_payments = sum(
                         _safe_float(p.get("amount", 0))
                         for p in inv_payment_log
-                        if p.get("project_number") == project_number or not p.get("project_number")
+                        if p.get("project_number") == project_number
                     )
                     project_paid += inv_payments
                     # Track the invoice if it has payments or is the current one
@@ -9118,7 +9118,7 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
                             inv_payments = sum(
                                 _safe_float(p.get("amount", 0))
                                 for p in inv_payment_log
-                                if p.get("project_number") == project_number or not p.get("project_number")
+                                if p.get("project_number") == project_number
                             )
                             project_paid += inv_payments
                             # Track invoice_id and invoice_number if this invoice has actual payments
