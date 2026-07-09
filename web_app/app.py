@@ -10372,6 +10372,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
     styles.add(ParagraphStyle(name='Right10', alignment=2, fontName='Helvetica', fontSize=10, leading=12))
     styles.add(ParagraphStyle(name='RightBold10', alignment=2, fontName='Helvetica-Bold', fontSize=10, leading=12))
     styles.add(ParagraphStyle(name='Left9', alignment=0, fontName='Helvetica', fontSize=9, leading=11))
+    styles.add(ParagraphStyle(name='center8', alignment=1, fontName='Helvetica', fontSize=8, leading=10))
 
     logo_path = _get_company_logo_path()
     logo_img = None
@@ -10439,7 +10440,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
 
     center_bold_style = ParagraphStyle("center_bold10", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.black, alignment=1)
     center_style = ParagraphStyle("center10", parent=styles["Normal"], fontSize=10, fontName="Helvetica", textColor=colors.black, alignment=1)
-    item_data = [[Paragraph(h, center_bold_style) for h in ["Project", "Project Name", "Plant", "Qty", "Unit Price", "Payment Stage", "Payment Due"]]]
+    item_data = [[Paragraph(h, center_bold_style) for h in ["Project Number", "Description (PO & Road Name)", "Plant", "Qty", "Unit Price", "Total Due"]]]
 
     linked_projects = meta.get("linked_projects", [])
     if isinstance(linked_projects, str):
@@ -10455,66 +10456,138 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         project_number = ""
         project_name = ""
         plant = ""
+        payment_stage = ""
         if idx < len(linked_projects) and isinstance(linked_projects[idx], dict):
             project_number = linked_projects[idx].get("project_number", "")
             project_name = linked_projects[idx].get("project_name", "")
         if not project_number:
             project_number = meta.get("project_number", "")
-        if not project_name and project_number:
+
+        po_wo = ""
+        site_address = ""
+        if project_number:
             try:
                 raw_proj = fb_get("/projects") or {}
                 for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
                     if isinstance(pdata, dict) and pdata.get("project_number") == project_number:
-                        project_name = pdata.get("project_name", "")
+                        if not project_name:
+                            project_name = pdata.get("project_name", "")
                         plant = pdata.get("plant", "")
+                        po_wo = pdata.get("po_number", "")
+                        site_address = pdata.get("site_address", "")
+                        payment_stages = pdata.get("payment_stages", [])
+                        payment_stage_index = None
+                        if idx < len(linked_projects) and isinstance(linked_projects[idx], dict):
+                            payment_stage_index = linked_projects[idx].get("payment_stage_index")
+                        if payment_stage_index is None:
+                            payment_stage_index = meta.get("payment_stage_index")
+                        if payment_stage_index is not None and isinstance(payment_stages, list) and int(payment_stage_index) < len(payment_stages):
+                            stage_data = payment_stages[int(payment_stage_index)]
+                            if isinstance(stage_data, dict):
+                                payment_stage = stage_data.get("name", "")
                         break
             except Exception:
                 pass
+
         if not plant:
             plant = meta.get("plant", "")
         if not project_name:
             description = item.get("description", "")
             project_name = description.split("—")[0].strip() if "—" in description else description
 
-        payment_stage = ""
-        if idx < len(linked_projects) and isinstance(linked_projects[idx], dict):
-            payment_stage_index = linked_projects[idx].get("payment_stage_index")
-            if payment_stage_index is not None and project_number:
-                try:
-                    raw_proj = fb_get("/projects") or {}
-                    for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
-                        if isinstance(pdata, dict) and pdata.get("project_number") == project_number:
-                            payment_stages = pdata.get("payment_stages", [])
-                            if isinstance(payment_stages, list) and int(payment_stage_index) < len(payment_stages):
-                                stage_data = payment_stages[int(payment_stage_index)]
-                                if isinstance(stage_data, dict):
-                                    payment_stage = stage_data.get("name", "")
-                            break
-                except Exception:
-                    pass
-        if not payment_stage:
-            payment_stage = meta.get("payment_stage", "")
-        if payment_stage and " of " in payment_stage:
-            payment_stage = payment_stage.split(" of ")[0].strip()
-        if not payment_stage:
-            payment_stage = "Final Payment"
+        description = item.get("description", "")
 
-        payment_due_val = qty_val * unit_price_val
-        payment_due = f"${payment_due_val:,.2f}"
+        project_cell = Paragraph(project_number, center_style)
+        if description and "co-" in description.lower():
+            parts = description.split("–")
+            co_part = parts[0].strip()
+            title_part = parts[1].strip() if len(parts) > 1 else ""
+            if co_part.upper().startswith("CO"):
+                co_display = f"{co_part}_{title_part}" if title_part else co_part
+                project_number_display = f"{project_number}<br/><font size=8>{co_display}</font>"
+                project_cell = Paragraph(project_number_display, center_style)
+        elif payment_stage and "change order" in payment_stage.lower():
+            project_number_display = f"{project_number}<br/><font size=8>{payment_stage}</font>"
+            project_cell = Paragraph(project_number_display, center_style)
+
+        description_display = ""
+        if po_wo or site_address:
+            if site_address:
+                import re
+                us_states_abbr = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"]
+
+                state_idx = -1
+                closest_state_idx = float('inf')
+                site_upper = site_address.upper()
+
+                for state in us_states_abbr:
+                    idx = site_upper.find(f" {state} ")
+                    if idx != -1:
+                        next_char_idx = idx + len(state) + 2
+                        if next_char_idx < len(site_upper):
+                            next_char = site_upper[next_char_idx]
+                            if next_char.isdigit() and idx < closest_state_idx:
+                                state_idx = idx
+                                closest_state_idx = idx
+
+                    if state_idx == -1:
+                        idx = site_upper.find(f" {state}")
+                        if idx != -1:
+                            next_char_idx = idx + len(state) + 1
+                            if next_char_idx < len(site_upper):
+                                next_char = site_upper[next_char_idx]
+                                if next_char.isdigit() and idx < closest_state_idx:
+                                    state_idx = idx
+                                    closest_state_idx = idx
+
+                if state_idx != -1:
+                    site_address = site_address[:state_idx].strip()
+                    if site_address.endswith(" -"):
+                        site_address = site_address[:-2].strip()
+                    if site_address.endswith("–"):
+                        site_address = site_address[:-1].strip()
+                elif plant and plant.strip():
+                    plant_upper = plant.strip().upper()
+                    site_upper = site_address.upper()
+                    plant_idx = site_upper.find(f" {plant_upper} ")
+                    if plant_idx == -1:
+                        plant_idx = site_upper.find(f" {plant_upper}")
+                    if plant_idx == -1:
+                        plant_idx = site_upper.find(plant_upper)
+
+                    if plant_idx != -1:
+                        site_address = site_address[:plant_idx].strip()
+                        if site_address.endswith(" -"):
+                            site_address = site_address[:-2].strip()
+                        if site_address.endswith("–"):
+                            site_address = site_address[:-1].strip()
+
+                if po_wo and site_address:
+                    description_display = f"{po_wo} - {site_address}"
+                elif site_address:
+                    description_display = site_address
+                else:
+                    description_display = po_wo
+            else:
+                description_display = po_wo
+        else:
+            description_display = ""
+
+        total_due_val = qty_val * unit_price_val
+        total_due = f"${total_due_val:,.2f}"
         item_data.append([
-            Paragraph(project_number, center_style),
-            Paragraph(project_name, center_style),
+            project_cell,
+            Paragraph(description_display, center_style),
             Paragraph(plant or "", center_style),
             Paragraph(qty, center_style),
             Paragraph(unit_price, center_style),
-            Paragraph(payment_stage, center_style),
-            Paragraph(payment_due, center_style)
+            Paragraph(total_due, center_style)
         ])
 
     if len(item_data) == 1:
-        item_data.append([Paragraph("", center_style) for _ in range(7)])
+        item_data.append([Paragraph("", center_style) for _ in range(6)])
 
-    item_table = Table(item_data, colWidths=[doc.width * 0.18, doc.width * 0.21, doc.width * 0.11, doc.width * 0.08, doc.width * 0.12, doc.width * 0.15, doc.width * 0.15])
+    item_table = Table(item_data, colWidths=[doc.width * 0.17, doc.width * 0.37, doc.width * 0.09, doc.width * 0.07, doc.width * 0.12, doc.width * 0.18])
     item_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
         ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#CCCCCC")),
