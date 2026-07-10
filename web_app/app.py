@@ -921,6 +921,14 @@ def quotes():
         if fdata and isinstance(fdata, dict):
             fdata["firebase_id"] = fid
             fdata.setdefault("status", "Not Started")
+            # Auto-sync: quote with a linked project should be Converted
+            if (fdata.get("linked_project_id")
+                    and fdata["status"] not in {"Converted", "Invoiced", "Rejected", "Cancelled"}):
+                fb_update(f"/job_forms/{fid}", {
+                    "status":     "Converted",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                })
+                fdata["status"] = "Converted"
             # Auto-expire quotes past valid_until date
             valid_until = fdata.get("valid_until", "")
             if (valid_until and valid_until < today_str
@@ -1018,6 +1026,63 @@ def quotes():
     # Count won value if: status is Converted/Invoiced OR has linked_project_id (was converted)
     q_won_val   = sum(_safe_float(q.get("total", 0)) for q in items if q.get("status", "") in _CONVERTED_STATUSES or q.get("linked_project_id"))
 
+    # ── Commission calculation (Sales People tab) ─────────────────────────────
+    # Build commission_rate lookup keyed by username (sales users only)
+    _comm_by_name: Dict[str, dict] = {}
+    for _u in _load_all_users():
+        if normalize_role(_u.get("role", "")) == "sales":
+            _uname = (_u.get("username") or "").strip()
+            if _uname:
+                _comm_by_name[_uname] = {
+                    "employee_type":   _u.get("employee_type", ""),
+                    "commission_rate": _safe_float(_u.get("commission_rate", 0)),
+                    "email":           _u.get("email", ""),
+                }
+
+    # Load project statuses to detect cancelled linked projects
+    _proj_raw = fb_get("/projects") or {}
+    _proj_status: Dict[str, str] = {}
+    if isinstance(_proj_raw, dict):
+        for _pid, _pd in _proj_raw.items():
+            if _pd and isinstance(_pd, dict):
+                _proj_status[_pid] = _pd.get("status", "")
+
+    # Aggregate per-salesperson stats from ALL quotes (unfiltered)
+    _sp_stats: Dict[str, dict] = {}
+    _CONV_ST = {"Converted", "Invoiced"}
+    for _q in all_items_raw:
+        _sp = (_q.get("salesperson") or "").strip()
+        if not _sp:
+            continue
+        if _sp not in _sp_stats:
+            _ci = _comm_by_name.get(_sp, {})
+            _sp_stats[_sp] = {
+                "name":              _sp,
+                "email":             _ci.get("email", ""),
+                "employee_type":     _ci.get("employee_type", ""),
+                "commission_rate":   _ci.get("commission_rate", 0.0),
+                "quotes_total":      0,
+                "quotes_converted":  0,
+                "revenue_generated": 0.0,
+                "commission_earned": 0.0,
+            }
+        _sp_stats[_sp]["quotes_total"] += 1
+        _linked = _q.get("linked_project_id", "")
+        _is_conv = _q.get("status", "") in _CONV_ST or bool(_linked)
+        if _is_conv:
+            _proj_cancelled = _linked and _proj_status.get(_linked, "") == "Cancelled"
+            if not _proj_cancelled:
+                _sp_stats[_sp]["quotes_converted"] += 1
+                _sp_stats[_sp]["revenue_generated"] += _safe_float(_q.get("total", 0))
+                _rate = _sp_stats[_sp]["commission_rate"]
+                _sp_stats[_sp]["commission_earned"] += _safe_float(_q.get("total", 0)) * _rate / 100
+
+    for _s in _sp_stats.values():
+        _t = _s["quotes_total"]
+        _s["win_rate"] = round(_s["quotes_converted"] / _t * 100) if _t else 0
+
+    salesperson_stats = sorted(_sp_stats.values(), key=lambda x: x["commission_earned"], reverse=True)
+
     return render_template("quotes.html", quotes=items, statuses=statuses,
                            search=search, status_filter=status_filter,
                            year_filter=year_filter, month_filter=month_filter,
@@ -1030,7 +1095,8 @@ def quotes():
                            next_num=_next_quote_number(),
                            q_total=q_total, q_open=q_open, q_approved=q_approved,
                            q_converted=q_converted, q_conv_rate=q_conv_rate,
-                           q_pipeline=q_pipeline, q_won_val=q_won_val)
+                           q_pipeline=q_pipeline, q_won_val=q_won_val,
+                           salesperson_stats=salesperson_stats)
 
 @app.route("/quotes/export")
 @role_required("quotes")
@@ -8312,10 +8378,10 @@ def user_details_update(uid):
         return jsonify({"error": "Admin access required"}), 403
     data = request.get_json() or {}
     updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
-    for field in ("username", "title", "region"):
+    for field in ("username", "title", "region", "employee_type"):
         if field in data:
             updates[field] = str(data[field]).strip()
-    for field in ("hourly_rate", "monthly_salary"):
+    for field in ("hourly_rate", "monthly_salary", "commission_rate"):
         if field in data:
             updates[field] = _safe_float(data[field])
     fb_update(f"/users/{uid}", updates)
@@ -8782,10 +8848,12 @@ def user_new():
             "role":           role,
             "active":         True,
             "firebase_uid":   user.uid,
-            "title":          request.form.get("title", "").strip(),
-            "region":         request.form.get("region", "").strip(),
-            "hourly_rate":    _safe_float(request.form.get("hourly_rate", 0)),
-            "monthly_salary": _safe_float(request.form.get("monthly_salary", 0)),
+            "title":           request.form.get("title", "").strip(),
+            "region":          request.form.get("region", "").strip(),
+            "hourly_rate":     _safe_float(request.form.get("hourly_rate", 0)),
+            "monthly_salary":  _safe_float(request.form.get("monthly_salary", 0)),
+            "employee_type":   request.form.get("employee_type", "").strip(),
+            "commission_rate": _safe_float(request.form.get("commission_rate", 0)),
             "created_at":     datetime.now(timezone.utc).isoformat(),
             "updated_at":     datetime.now(timezone.utc).isoformat(),
         }

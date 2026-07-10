@@ -476,39 +476,75 @@
         Add or remove people there to update this list.
       </div>
 
-      {% if sales_people %}
+      {% set _viewer_role = session.get('user_role','') %}
+      {% set _viewer_name = session.get('user_name','') %}
+      {% set _viewer_is_admin = _viewer_role in ('admin','finance') %}
+
+      {% if salesperson_stats %}
       <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
           <thead>
             <tr>
               <th>Name</th>
-              <th>Title</th>
-              <th>Email</th>
-              <th>Source</th>
+              <th>Type</th>
+              <th class="text-center">Quotes</th>
+              <th class="text-center">Converted</th>
+              <th class="text-center">Win Rate</th>
+              <th class="text-end">Revenue Generated</th>
+              <th class="text-center">Commission %</th>
+              <th class="text-end">Commission Earned</th>
             </tr>
           </thead>
           <tbody>
-            {% for sp in sales_people %}
+            {% for sp in salesperson_stats %}
+            {% if _viewer_is_admin or sp.name == _viewer_name %}
             <tr>
-              <td class="fw-semibold">{{ sp.get('name','—') }}</td>
-              <td class="text-muted">{{ sp.get('title','—') }}</td>
-              <td class="text-muted small">{{ sp.get('email','—') }}</td>
+              <td class="fw-semibold">{{ sp.name }}</td>
               <td>
-                {% if sp.get('from_users') %}
-                <span class="badge" style="background:#0D9488;color:#fff;font-size:11px;">Settings</span>
+                {% if sp.employee_type == 'full_time' %}
+                <span class="badge" style="background:#0D9488;color:#fff;font-size:11px;">Full Time</span>
+                {% elif sp.employee_type == 'contractor' %}
+                <span class="badge" style="background:#7C3AED;color:#fff;font-size:11px;">Contractor</span>
                 {% else %}
-                <span class="badge bg-secondary" style="font-size:11px;">Legacy</span>
+                <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+              <td class="text-center">{{ sp.quotes_total }}</td>
+              <td class="text-center text-success fw-semibold">{{ sp.quotes_converted }}</td>
+              <td class="text-center">
+                <span class="badge {{ 'bg-success' if sp.win_rate >= 50 else 'bg-secondary' }}">{{ sp.win_rate }}%</span>
+              </td>
+              <td class="text-end fw-semibold">${{ "{:,.2f}".format(sp.revenue_generated) }}</td>
+              <td class="text-center text-muted">
+                {% if sp.commission_rate > 0 %}{{ sp.commission_rate }}%{% else %}—{% endif %}
+              </td>
+              <td class="text-end fw-bold" style="color:#7C3AED;">
+                {% if sp.commission_rate > 0 %}
+                ${{ "{:,.2f}".format(sp.commission_earned) }}
+                {% else %}
+                <span class="text-muted small">Rate not set</span>
                 {% endif %}
               </td>
             </tr>
+            {% endif %}
             {% endfor %}
           </tbody>
+          {% if _viewer_is_admin and salesperson_stats %}
+          <tfoot>
+            <tr class="fw-bold table-light" style="border-top:2px solid #dee2e6;">
+              <td colspan="5" class="text-end text-muted small">Totals</td>
+              <td class="text-end">${{ "{:,.2f}".format(salesperson_stats|sum(attribute='revenue_generated')) }}</td>
+              <td></td>
+              <td class="text-end" style="color:#7C3AED;">${{ "{:,.2f}".format(salesperson_stats|sum(attribute='commission_earned')) }}</td>
+            </tr>
+          </tfoot>
+          {% endif %}
         </table>
       </div>
       {% else %}
       <div class="text-center text-muted py-5">
         <i class="bi bi-people" style="font-size:40px;opacity:.3;"></i>
-        <div class="mt-2">No sales people found.
+        <div class="mt-2">No sales activity found.
           {% if 'settings' in allowed_pages %}
           <a href="{{ url_for('settings') }}?tab=users">Add employees in Settings →</a>
           {% endif %}
