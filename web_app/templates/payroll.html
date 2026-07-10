@@ -269,7 +269,7 @@
               {% set sal_comm = commission_by_period.get(sal_emp, {}).get(sal_period, 0) | float %}
               {% set sal_total = sal.amount | float + sal_comm %}
               {% set _sal_emp_lc = sal_emp | lower %}
-              {% set comm_paid = (_sal_emp_lc, sal_period) | string in comm_paid_set | map('string') | list %}
+              {% set comm_paid = (_sal_emp_lc + '|' + sal_period) in comm_paid_set %}
               <tr data-salary="1" data-employee="{{ sal_emp | lower }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}" data-amount="{{ sal.amount | float }}">
                 <td><strong>{{ sal_emp or '—' }}</strong></td>
                 <td>{{ sal.date[5:7] + '-' + sal.date[8:10] + '-' + sal.date[0:4] if sal.date and sal.date|length >= 10 else '—' }}</td>

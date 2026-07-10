@@ -736,7 +736,10 @@ document.addEventListener('DOMContentLoaded', function() {
       var name  = btn.dataset.name;
       var role  = btn.dataset.role;
       var saved;
-      try { saved = JSON.parse(btn.dataset.custompages || '[]'); } catch(e) { saved = []; }
+      try {
+        var _raw = JSON.parse(btn.dataset.custompages || '[]');
+        saved = Array.isArray(_raw) ? _raw : Object.values(_raw);
+      } catch(e) { saved = []; }
       document.getElementById('pagesUid').value       = uid;
       document.getElementById('pagesRole').value      = role;
       document.getElementById('pagesUserName').textContent = name;
