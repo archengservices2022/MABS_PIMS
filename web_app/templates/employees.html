@@ -2409,12 +2409,15 @@ document.addEventListener('DOMContentLoaded', function() {
   var form = document.getElementById('empExpenseForm');
   if (form) {
     form.addEventListener('submit', function(e) {
+      var isEditing = document.getElementById('empEditingExpenseId').value.length > 0;
       var receipt = document.getElementById('empReceiptInput');
-      if (!receipt || !receipt.files || !receipt.files[0]) {
+
+      // Receipt is REQUIRED for new submissions, OPTIONAL for edits (can keep existing)
+      if (!isEditing && (!receipt || !receipt.files || !receipt.files[0])) {
         e.preventDefault();
         receipt.classList.add('is-invalid');
         receipt.focus();
-        alert('A receipt is required. Please attach your receipt before submitting.');
+        alert('A receipt is required to submit a new expense.');
       } else {
         // Log form data for debugging
         var formData = new FormData(form);
