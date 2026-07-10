@@ -2409,12 +2409,6 @@ document.addEventListener('DOMContentLoaded', function() {
   var form = document.getElementById('empExpenseForm');
   if (form) {
     form.addEventListener('submit', function(e) {
-      // Check if form is valid
-      if (!form.checkValidity() === false) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-
       var receipt = document.getElementById('empReceiptInput');
       if (!receipt || !receipt.files || !receipt.files[0]) {
         e.preventDefault();
