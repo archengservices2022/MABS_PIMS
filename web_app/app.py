@@ -285,6 +285,11 @@ def load_user_profile(uid: str) -> Optional[dict]:
     data = fb_get(f"/users/{uid}")
     if data and isinstance(data, dict):
         data["firebase_uid"] = uid
+        cp = data.get("custom_pages")
+        if isinstance(cp, dict):
+            data["custom_pages"] = [cp[k] for k in sorted(cp.keys(), key=lambda x: int(x) if str(x).isdigit() else 0)]
+        elif not isinstance(cp, list):
+            data["custom_pages"] = None
         return data
     return None
 
@@ -10570,6 +10575,11 @@ def _load_all_users() -> List[dict]:
         for uid, udata in raw.items():
             if udata and isinstance(udata, dict):
                 udata["firebase_uid"] = uid
+                cp = udata.get("custom_pages")
+                if isinstance(cp, dict):
+                    udata["custom_pages"] = [cp[k] for k in sorted(cp.keys(), key=lambda x: int(x) if str(x).isdigit() else 0)]
+                elif not isinstance(cp, list):
+                    udata["custom_pages"] = None
                 users.append(udata)
         return sorted(users, key=lambda x: x.get("username", "").lower())
     return []
