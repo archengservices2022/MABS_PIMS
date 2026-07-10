@@ -1415,10 +1415,10 @@
                 {% set edit_st = e.get('edit_status', '') %}
                 {% if edit_st == 'pending' %}
                   <span class="badge bg-info text-white">Pending Edit</span>
-                  <div style="font-size:10px;color:#0284c7;margin-top:2px;">{{ e.get('edited_at','')[:10] }}</div>
+                  <div style="font-size:10px;color:#0284c7;margin-top:2px;">{{ e.get('edited_at','')[5:7] }}-{{ e.get('edited_at','')[8:10] }}-{{ e.get('edited_at','')[:4] }}</div>
                 {% elif edit_st == 'approved' %}
                   <span class="badge bg-success">Edit Approved</span>
-                  <div style="font-size:10px;color:#059669;margin-top:2px;">{{ e.get('edit_approved_at','')[:10] }}</div>
+                  <div style="font-size:10px;color:#059669;margin-top:2px;">{{ e.get('edit_approved_at','')[5:7] }}-{{ e.get('edit_approved_at','')[8:10] }}-{{ e.get('edit_approved_at','')[:4] }}</div>
                 {% elif st == 'Approved' %}
                   <span class="badge bg-success">Approved</span>
                 {% elif st == 'Rejected' %}
@@ -1515,7 +1515,7 @@
                 {% if e.get('edit_status') == 'pending' %}
                 <div style="font-size:10px;color:#0284c7;margin-top:2px;">
                   <span class="badge bg-info text-white" style="font-size:9px;padding:2px 5px;">Edited</span>
-                  {{ e.get('edited_at','')[:10] }}
+                  {{ e.get('edited_at','')[5:7] }}-{{ e.get('edited_at','')[8:10] }}-{{ e.get('edited_at','')[:4] }}
                 </div>
                 {% endif %}
               </div>
