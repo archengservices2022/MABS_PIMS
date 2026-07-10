@@ -2276,6 +2276,8 @@ document.querySelectorAll('.emp-view-receipt-btn').forEach(function(btn) {
 
 window.openEmpExpenseEdit = function(exp) {
   var form = document.getElementById('empExpenseForm');
+  // Scroll slightly to keep form in view (minimal scroll)
+  form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
   // Fill basic fields first (use form-specific selectors to avoid matching modal fields)
   form.querySelector('input[name="amount"]').value = exp.amount || '';
