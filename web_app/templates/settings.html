@@ -477,7 +477,7 @@
                               data-uid="{{ u.firebase_uid }}"
                               data-name="{{ u.get('username','') | e }}"
                               data-role="{{ _role }}"
-                              data-custompages="{{ (u.get('custom_pages') or []) | tojson | e }}"
+                              data-custompages="{{ (u.get('custom_pages') or []) | join(',') }}"
                               title="Customize Pages">
                         <i class="bi bi-layout-sidebar"></i>
                       </button>
@@ -736,10 +736,8 @@ document.addEventListener('DOMContentLoaded', function() {
       var name  = btn.dataset.name;
       var role  = btn.dataset.role;
       var saved;
-      try {
-        var _raw = JSON.parse(btn.dataset.custompages || '[]');
-        saved = Array.isArray(_raw) ? _raw : Object.values(_raw);
-      } catch(e) { saved = []; }
+      var _cp = btn.dataset.custompages || '';
+      saved = _cp ? _cp.split(',') : [];
       document.getElementById('pagesUid').value       = uid;
       document.getElementById('pagesRole').value      = role;
       document.getElementById('pagesUserName').textContent = name;
