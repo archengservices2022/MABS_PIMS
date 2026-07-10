@@ -1417,9 +1417,8 @@
                 {% set st = e.get('status','Pending') %}
                 {% set edit_st = e.get('edit_status', '') %}
                 {% if edit_st == 'pending' %}
-                  <span class="badge bg-warning text-dark">Pending</span>
-                  <span class="badge bg-info text-white ms-1">Pending Edit</span>
-                  <div style="font-size:10px;color:#0284c7;margin-top:2px;">Edited {{ e.get('edited_at','')[:10] }}</div>
+                  <span class="badge bg-info text-white">Pending Edit</span>
+                  <div style="font-size:10px;color:#0284c7;margin-top:2px;">{{ e.get('edited_at','')[:10] }}</div>
                 {% elif edit_st == 'approved' %}
                   <span class="badge bg-success me-1">Approved</span><span class="badge bg-teal text-white">✓ Edited</span>
                 {% elif st == 'Approved' %}
@@ -1580,7 +1579,7 @@
         <thead>
           <tr>
             <th>Employee</th><th>Date</th><th>Name</th><th>Amount</th>
-            <th>Edited By</th><th>Edited Date</th><th class="text-end">Action</th>
+            <th>Type</th><th class="text-end">Action</th>
           </tr>
         </thead>
         <tbody>
@@ -1598,8 +1597,10 @@
             <div class="text-muted small" style="font-size:11px;">{{ e.get('category','') }}</div>
           </td>
           <td class="text-end fw-bold text-info">${{ "{:,.2f}".format(e.get('amount',0)|float) }}</td>
-          <td class="text-muted small">{{ e.get('edited_by_name','—') }}</td>
-          <td class="text-muted small">{{ e.get('edited_at','')[:10] }}</td>
+          <td>
+            <span class="badge bg-info text-white">Pending Edit</span>
+            <div class="text-muted small" style="font-size:10px;margin-top:2px;">{{ e.get('edited_at','')[:10] }}</div>
+          </td>
           <td class="text-end">
             <div class="d-flex gap-1 justify-content-end">
               <button class="btn btn-xs btn-success"
