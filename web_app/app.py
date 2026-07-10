@@ -8329,11 +8329,8 @@ def employees():
     if is_admin:
         # Pending expenses for approval include both new submissions AND pending edits
         context["pending_expenses"] = [e for e in all_emp_expenses if e.get("status") == "Pending"]
-        # Pending edits (for the edit approval section)
-        context["pending_edit_expenses"] = [e for e in all_emp_expenses if e.get("edit_status") == "pending"]
     else:
         context["pending_expenses"] = []
-        context["pending_edit_expenses"] = []
 
     return render_template("employees.html", **context)
 
