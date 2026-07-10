@@ -87,40 +87,6 @@
   </li>
 </ul>
 
-<!-- ── Export Filters (shown only when Export tab is active) ────────────────── -->
-<div id="exportFiltersWrapper" class="card-panel mb-3" style="display:none;">
-  <h6 class="section-heading mb-3">Export Filters <span class="text-muted fw-normal small">(optional)</span></h6>
-  <div class="row g-3 align-items-end">
-    <div class="col-sm-6 col-md-3">
-      <label class="form-label form-label-sm">Status</label>
-      <select id="exportStatus" class="form-select form-select-sm">
-        <option value="">All Statuses</option>
-        {% for s in statuses %}
-        <option value="{{ s }}">{{ s }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-sm-6 col-md-3">
-      <label class="form-label form-label-sm">From Date</label>
-      <input type="date" id="exportFrom" class="form-control form-control-sm">
-    </div>
-    <div class="col-sm-6 col-md-3">
-      <label class="form-label form-label-sm">To Date</label>
-      <input type="date" id="exportTo" class="form-control form-control-sm">
-    </div>
-    <div class="col-sm-6 col-md-3">
-      <div class="d-flex gap-2 flex-wrap">
-        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setQuickRange('month')">This Month</button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setQuickRange('year')">This Year</button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearExportFilters()"><i class="bi bi-x-lg"></i> Clear</button>
-      </div>
-    </div>
-  </div>
-  <div class="mt-2 text-muted small" id="exportFilterSummary">
-    Leave blank to export all records.
-  </div>
-</div>
-
 <div class="tab-content">
 
   <!-- ══ TAB 1 — ALL QUOTES ══════════════════════════════════════════════════ -->
@@ -856,6 +822,40 @@
   <!-- ══ TAB 5 — EXPORT ══════════════════════════════════════════════════════ -->
   <div class="tab-pane fade" id="tab-export">
 
+    <!-- Filter row -->
+    <div class="card-panel mb-3 mt-0">
+      <h6 class="section-heading mb-3">Export Filters <span class="text-muted fw-normal small">(optional)</span></h6>
+      <div class="row g-3 align-items-end">
+        <div class="col-sm-6 col-md-3">
+          <label class="form-label form-label-sm">Status</label>
+          <select id="exportStatus" class="form-select form-select-sm">
+            <option value="">All Statuses</option>
+            {% for s in statuses %}
+            <option value="{{ s }}">{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-sm-6 col-md-3">
+          <label class="form-label form-label-sm">From Date</label>
+          <input type="date" id="exportFrom" class="form-control form-control-sm">
+        </div>
+        <div class="col-sm-6 col-md-3">
+          <label class="form-label form-label-sm">To Date</label>
+          <input type="date" id="exportTo" class="form-control form-control-sm">
+        </div>
+        <div class="col-sm-6 col-md-3">
+          <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setQuickRange('month')">This Month</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setQuickRange('year')">This Year</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearExportFilters()"><i class="bi bi-x-lg"></i> Clear</button>
+          </div>
+        </div>
+      </div>
+      <div class="mt-2 text-muted small" id="exportFilterSummary">
+        Leave blank to export all records.
+      </div>
+    </div>
+
     <!-- Export format cards -->
     <div class="row g-3">
 
@@ -940,29 +940,6 @@ document.getElementById('nav-new').addEventListener('click', function(e) {
   e.preventDefault();
   window.location.assign('{{ url_for("quotes_new") }}');
 });
-
-// ── Show/hide export filters based on active tab ────────────────────────────
-const exportFiltersWrapper = document.getElementById('exportFiltersWrapper');
-const exportTab = document.getElementById('tab-export');
-
-function toggleExportFilters() {
-  if (exportTab && exportTab.classList.contains('show', 'active')) {
-    exportFiltersWrapper.style.display = '';
-  } else {
-    exportFiltersWrapper.style.display = 'none';
-  }
-}
-
-// Listen for tab changes
-document.querySelectorAll('#quoteTabs .nav-link').forEach(link => {
-  link.addEventListener('shown.bs.tab', toggleExportFilters);
-});
-
-// Initial state based on URL param
-const exportKey = new URLSearchParams(location.search).get('tab');
-if (exportKey === 'export') {
-  exportFiltersWrapper.style.display = '';
-}
 
 // ── Local date helper — avoids UTC offset shifting the date ──────────────────
 function localDate(d) {
