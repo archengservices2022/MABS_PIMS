@@ -2589,15 +2589,37 @@ function viewReceipt(expId) {
         </table>
       </div>
     </div>
+
+    <!-- Commission Section -->
+    <div id="monthCommissionSection" style="display:none; margin-top:12px;">
+      <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#7C3AED; padding:6px 0; border-bottom:2px solid #DDD6FE; margin-bottom:8px;">
+        <i class="bi bi-cash-coin me-1"></i>Commission Paid
+      </div>
+      <div class="table-responsive">
+        <table class="table mb-0" style="font-size:12px;">
+          <thead style="background:#5B21B6; color:#fff;">
+            <tr>
+              <th style="padding:8px 12px; color:#fff;">Paid On</th>
+              <th style="padding:8px 12px; color:#fff;">Salesperson</th>
+              <th style="padding:8px 12px; color:#fff;">For Period</th>
+              <th style="padding:8px 12px; color:#fff; text-align:right;">Amount</th>
+            </tr>
+          </thead>
+          <tbody id="monthCommissionTbody"></tbody>
+          <tfoot id="monthCommissionTfoot" style="background:#F5F3FF; border-top:2px solid #DDD6FE;"></tfoot>
+        </table>
+      </div>
+    </div>
   </div>
 
   <script>
   (function() {
     var monthlyPaymentDetails    = {{ monthly_payment_details | safe }};
     var monthlyExpenseDetails    = {{ monthly_expense_details | safe }};
-    var monthlySalaryDetails     = {{ monthly_salary_details | safe }};
-    var monthlyOutstandingDetails= {{ monthly_outstanding_details | safe }};
-    var monthlyDueDetails        = {{ monthly_due_details | safe }};
+    var monthlySalaryDetails      = {{ monthly_salary_details | safe }};
+    var monthlyCommissionDetails  = {{ monthly_commission_details | safe }};
+    var monthlyOutstandingDetails = {{ monthly_outstanding_details | safe }};
+    var monthlyDueDetails         = {{ monthly_due_details | safe }};
     var monthNames = {1:'January',2:'February',3:'March',4:'April',5:'May',6:'June',7:'July',8:'August',9:'September',10:'October',11:'November',12:'December'};
     var activeMonth = null;
     var fmt = function(n){ return '$' + parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); };
@@ -2741,6 +2763,27 @@ function viewReceipt(expId) {
           +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#1D4ED8;font-size:13px;">'+fmt(totalSal)+'</td></tr>';
       } else {
         salSec.style.display = 'none';
+      }
+
+      /* ── 6. Commission Paid ── */
+      var commissions = monthlyCommissionDetails[mkey] || [];
+      var commSec = document.getElementById('monthCommissionSection');
+      if (commissions.length > 0) {
+        commSec.style.display = '';
+        var cRows = commissions.map(function(c, idx) {
+          var bg = idx%2===0?'#fff':'#f5f3ff';
+          return '<tr style="background:'+bg+';border-bottom:1px solid #ddd6fe;">'
+            +'<td style="padding:8px 12px;color:#6b7280;">'+(c.paid_at||'—')+'</td>'
+            +'<td style="padding:8px 12px;font-weight:500;">'+(c.salesperson||'—')+'</td>'
+            +'<td style="padding:8px 12px;color:#6b7280;">'+(c.period||'—')+'</td>'
+            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#7C3AED;">'+fmt(c.amount)+'</td></tr>';
+        });
+        document.getElementById('monthCommissionTbody').innerHTML = cRows.join('');
+        var totalComm = commissions.reduce(function(s,c){return s+parseFloat(c.amount||0);},0);
+        document.getElementById('monthCommissionTfoot').innerHTML = '<tr><td colspan="3" style="padding:8px 12px;font-weight:700;">Total Commission</td>'
+          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#7C3AED;font-size:13px;">'+fmt(totalComm)+'</td></tr>';
+      } else {
+        commSec.style.display = 'none';
       }
 
       panel.style.display = 'block';

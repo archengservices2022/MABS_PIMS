@@ -7038,18 +7038,27 @@ def financial():
     _cp_bs_raw = fb_get("/commission_payments") or {}
     bs_total_commission = 0.0
     total_commission_paid = 0.0
+    monthly_commission_details: Dict[str, list] = {str(m): [] for m in range(1, 13)}
     if isinstance(_cp_bs_raw, dict):
         for _cpid, _cp in _cp_bs_raw.items():
             if not _cp or not isinstance(_cp, dict):
                 continue
-            _amt  = _safe_float(_cp.get("amount", 0))
-            _paid_at = (_cp.get("paid_at") or "")[:4]
+            _amt     = _safe_float(_cp.get("amount", 0))
+            _paid_at = (_cp.get("paid_at") or "")
             try:
-                _yr = int(_paid_at)
-            except ValueError:
-                _yr = 0
+                _dt  = datetime.fromisoformat(_paid_at[:19])
+                _yr  = _dt.year
+                _mon = str(_dt.month)
+            except Exception:
+                _yr, _mon = 0, "0"
             if _yr == current_year:
                 bs_total_commission += _amt
+                monthly_commission_details[_mon].append({
+                    "salesperson": _cp.get("salesperson", ""),
+                    "period":      _cp.get("period", ""),
+                    "amount":      _amt,
+                    "paid_at":     _paid_at[:10],
+                })
             if _yr == stat_card_year:
                 total_commission_paid += _amt
 
@@ -7522,6 +7531,7 @@ def financial():
         commission_total_outstanding=commission_total_outstanding,
         bs_total_commission=bs_total_commission,
         total_commission_paid=total_commission_paid,
+        monthly_commission_details=json.dumps(monthly_commission_details),
     )
 
 @app.route("/financial/expense/new", methods=["POST"])
