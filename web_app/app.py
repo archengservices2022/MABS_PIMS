@@ -7684,7 +7684,18 @@ def expense_edit(exp_id):
 @app.route("/api/expense/<exp_id>/receipt", methods=["GET"])
 @role_required("financial")
 def get_expense_receipt(exp_id):
-    """Retrieve receipt from Firebase"""
+    """Retrieve receipt from Firebase - stored separately in /expense_receipts"""
+    # First try /expense_receipts (primary storage location for all receipts)
+    receipt_data = fb_get(f"/expense_receipts/{exp_id}") or {}
+    if isinstance(receipt_data, dict) and receipt_data.get('receipt_base64'):
+        return jsonify({
+            "success": True,
+            "receipt": receipt_data.get('receipt_base64'),
+            "fileType": receipt_data.get('receipt_type', 'image/jpeg'),
+            "filename": receipt_data.get('receipt_filename', 'receipt')
+        })
+
+    # Fallback: check if receipt is stored in expense data (legacy entries)
     expenses = fb_get("/balance_sheet_expenses") or {}
     if isinstance(expenses, dict) and exp_id in expenses:
         exp = expenses[exp_id]
