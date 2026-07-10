@@ -190,6 +190,13 @@
       <!-- Summary Cards (server-rendered) -->
       {% set usa_total  = salaries | selectattr('region','equalto','Inside America')  | sum(attribute='amount') %}
       {% set intl_total = salaries | selectattr('region','equalto','Outside America') | sum(attribute='amount') %}
+      {% set total_comm_all = commission_by_period.values() | map('sum') | sum if commission_by_period else 0 %}
+      {% set _comm_all_flat = namespace(v=0.0) %}
+      {% for sp_periods in commission_by_period.values() %}
+        {% for earned in sp_periods.values() %}
+          {% set _comm_all_flat.v = _comm_all_flat.v + earned %}
+        {% endfor %}
+      {% endfor %}
       <div class="summary-cards" id="salaryCards">
         <div class="summary-card usa">
           <div class="summary-card-label">Inside America</div>
@@ -200,8 +207,16 @@
           <div class="summary-card-value" id="cardIntl">${{ "{:,.2f}".format(intl_total | float) }}</div>
         </div>
         <div class="summary-card">
-          <div class="summary-card-label">Total</div>
+          <div class="summary-card-label">Total Salary</div>
           <div class="summary-card-value" id="cardTotal">${{ "{:,.2f}".format((usa_total + intl_total) | float) }}</div>
+        </div>
+        <div class="summary-card" style="border-top:3px solid #7C3AED;">
+          <div class="summary-card-label" style="color:#7C3AED;">Commission</div>
+          <div class="summary-card-value" style="color:#7C3AED;">${{ "{:,.2f}".format(_comm_all_flat.v) }}</div>
+        </div>
+        <div class="summary-card" style="border-top:3px solid #0369a1;">
+          <div class="summary-card-label" style="color:#0369a1;">Total Compensation</div>
+          <div class="summary-card-value" style="color:#0369a1;">${{ "{:,.2f}".format((usa_total + intl_total) | float + _comm_all_flat.v) }}</div>
         </div>
       </div>
 
@@ -238,7 +253,9 @@
               <th>Employee</th>
               <th>Date</th>
               <th>Period</th>
-              <th>Amount</th>
+              <th>Salary</th>
+              <th>Commission</th>
+              <th>Total</th>
               <th>Status</th>
               <th>Region</th>
               <th>Notes</th>
@@ -248,13 +265,27 @@
           <tbody id="salaryTableBody">
             {% if salaries %}
               {% for sal in salaries %}
-              {% set sal_period = (sal.date[:7] | default('')) %}
-              {% set sal_period_label = sal.date[:4] + '-' + sal.date[5:7] if sal.date and sal.date|length >= 7 else '—' %}
-              <tr data-salary="1" data-employee="{{ (sal.employee_name or sal.get('employee','')) | lower }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}" data-amount="{{ sal.amount | float }}">
-                <td><strong>{{ sal.employee_name or sal.get('employee','—') }}</strong></td>
+              {% set sal_emp  = sal.employee_name or sal.get('employee','') %}
+              {% set sal_period = sal.date[:7] if sal.date and sal.date|length >= 7 else '' %}
+              {% set sal_comm = commission_by_period.get(sal_emp, {}).get(sal_period, 0) | float %}
+              {% set sal_total = sal.amount | float + sal_comm %}
+              {% set comm_paid = (sal_emp, sal_period) | string in comm_paid_set | map('string') | list %}
+              <tr data-salary="1" data-employee="{{ sal_emp | lower }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}" data-amount="{{ sal.amount | float }}">
+                <td><strong>{{ sal_emp or '—' }}</strong></td>
                 <td>{{ sal.date[5:7] + '-' + sal.date[8:10] + '-' + sal.date[0:4] if sal.date and sal.date|length >= 10 else '—' }}</td>
-                <td style="color:#475569;font-size:.82rem;">{{ sal.date[:7] if sal.date and sal.date|length >= 7 else '—' }}</td>
+                <td style="color:#475569;font-size:.82rem;">{{ sal_period or '—' }}</td>
                 <td>${{ "{:,.2f}".format(sal.amount | float) }}</td>
+                <td>
+                  {% if sal_comm > 0 %}
+                  <div style="color:#7C3AED;font-weight:700;">${{ "{:,.2f}".format(sal_comm) }}</div>
+                  <div style="font-size:10px;color:#94a3b8;">
+                    {% if (sal_emp, sal_period) in comm_paid_set %}<span style="color:#16a34a;">✓ Paid</span>{% else %}Pending{% endif %}
+                  </div>
+                  {% else %}
+                  <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td style="font-weight:700;color:#0369a1;">${{ "{:,.2f}".format(sal_total) }}</td>
                 <td>
                   {% set ss = sal.get('salary_status','Paid') %}
                   <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;
@@ -266,7 +297,7 @@
                 <td>{{ sal.notes or '—' }}</td>
                 <td>
                   <div class="action-buttons">
-                    <button onclick="editSalary('{{ sal.firebase_id }}','{{ (sal.employee_name or '') | replace("'","&#39;") }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace("'","&#39;") }}','{{ sal.get('salary_status','Paid') }}')" class="btn-sm" title="Edit" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
+                    <button onclick="editSalary('{{ sal.firebase_id }}','{{ sal_emp | replace("'","&#39;") }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace("'","&#39;") }}','{{ sal.get('salary_status','Paid') }}')" class="btn-sm" title="Edit" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
                       <i class="bi bi-pencil"></i>
                     </button>
                     <button onclick="deleteSalary('{{ sal.firebase_id }}')" class="btn-sm" title="Delete" style="background:#DC2626;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
@@ -278,7 +309,7 @@
               {% endfor %}
             {% else %}
             <tr>
-              <td colspan="6" class="empty-state">
+              <td colspan="10" class="empty-state">
                 <div class="empty-state-icon">💰</div>
                 <div class="empty-state-title">No Salary Entries</div>
                 <p style="margin:0;">Click "Add Salary" tab to create entries.</p>

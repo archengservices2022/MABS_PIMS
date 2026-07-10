@@ -5433,12 +5433,65 @@ def payroll():
         for u in raw_users
         if u.get("active", True)
     ]
+
+    # ── Commission per salesperson per period ─────────────────────────────────
+    _sales_comm_map: Dict[str, float] = {}
+    for _u in raw_users:
+        if normalize_role(_u.get("role", "")) == "sales":
+            _uname = (_u.get("username") or "").strip()
+            if _uname:
+                _sales_comm_map[_uname] = _safe_float(_u.get("commission_rate", 0))
+
+    _qraw_pay = fb_get("/job_forms") or {}
+    _praw_pay = fb_get("/projects") or {}
+    _pst_pay: Dict[str, str] = {}
+    if isinstance(_praw_pay, dict):
+        for _pid, _pd in _praw_pay.items():
+            if _pd and isinstance(_pd, dict):
+                _pst_pay[_pid] = _pd.get("status", "")
+
+    # commission_by_period[sp_name][YYYY-MM] = earned amount
+    commission_by_period: Dict[str, Dict[str, float]] = {}
+    _CONV_PAY = {"Converted", "Invoiced"}
+    if isinstance(_qraw_pay, dict):
+        for _fid, _fdata in _qraw_pay.items():
+            if not _fdata or not isinstance(_fdata, dict):
+                continue
+            _sp = (_fdata.get("salesperson") or "").strip()
+            _rate = _sales_comm_map.get(_sp, 0)
+            if not _sp or not _rate:
+                continue
+            _linked = _fdata.get("linked_project_id", "")
+            _is_conv = _fdata.get("status", "") in _CONV_PAY or bool(_linked)
+            if not _is_conv:
+                continue
+            if _linked and _pst_pay.get(_linked) == "Cancelled":
+                continue
+            _period = (_fdata.get("date") or "")[:7]
+            if not _period:
+                continue
+            _earned = _safe_float(_fdata.get("total", 0)) * _rate / 100
+            if _sp not in commission_by_period:
+                commission_by_period[_sp] = {}
+            commission_by_period[_sp][_period] = \
+                commission_by_period[_sp].get(_period, 0.0) + _earned
+
+    # Load which periods are marked paid
+    _cpay_raw = fb_get("/commission_payments") or {}
+    comm_paid_set: set = set()
+    if isinstance(_cpay_raw, dict):
+        for _cpid, _cp in _cpay_raw.items():
+            if _cp and isinstance(_cp, dict):
+                comm_paid_set.add((_cp.get("salesperson", ""), _cp.get("period", "")))
+
     return render_template("payroll.html",
         employee_filter=employee_filter,
         year_filter=year_filter,
         region_filter=region_filter,
         employee_profiles=employee_profiles,
-        salaries=salaries)
+        salaries=salaries,
+        commission_by_period=commission_by_period,
+        comm_paid_set=list(comm_paid_set))
 
 # ── Payroll Export Routes ─────────────────────────────────────────────────────
 @app.route("/payroll/export/csv")
