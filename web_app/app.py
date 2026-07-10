@@ -7620,18 +7620,25 @@ def expense_delete(exp_id):
 @role_required("financial")
 def remove_expense_receipt(exp_id):
     try:
-        exp_data = fb_get(f"/balance_sheet_expenses/{exp_id}") or {}
-        if isinstance(exp_data, dict):
-            exp_data.pop("receipt_base64", None)
-            exp_data.pop("receipt_filename", None)
-            exp_data.pop("receipt_type", None)
-            fb_update(f"/balance_sheet_expenses/{exp_id}", {
+        # Remove from /balance_sheet_expenses
+        fb_update(f"/balance_sheet_expenses/{exp_id}", {
+            "receipt_base64": "",
+            "receipt_filename": "",
+            "receipt_type": ""
+        })
+
+        # Remove from /expense_receipts (primary storage location)
+        fb_delete(f"/expense_receipts/{exp_id}")
+
+        # Sync removal to /expenses if it's an employee expense
+        if fb_get(f"/expenses/{exp_id}"):
+            fb_update(f"/expenses/{exp_id}", {
                 "receipt_base64": "",
                 "receipt_filename": "",
                 "receipt_type": ""
             })
-            return jsonify({"success": True})
-        return jsonify({"success": False}), 400
+
+        return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -8420,21 +8427,25 @@ def employee_expense_submit():
     if editing_expense_id:
         # Editing existing expense
         data.pop("expense_type", None)  # Can't change type after submission
-        # Don't overwrite receipt_filename if no new receipt was uploaded
-        if not receipt_filename:
-            data.pop("receipt_filename", None)
 
-        fb_update(f"/expenses/{editing_expense_id}", data)
-
-        # Update receipt ONLY if new one provided
+        # Handle receipt updates
         if receipt_base64:
+            # New receipt provided - update both expense records and receipt storage
+            data["receipt_filename"] = receipt_filename
             fb_update(f"/expense_receipts/{editing_expense_id}", {
                 "receipt_base64":   receipt_base64,
                 "receipt_filename": receipt_filename,
                 "receipt_type":     receipt_type,
             })
+        else:
+            # No new receipt - keep existing receipt_filename in expense data
+            # (don't pop it from data - preserve it)
+            pass
 
-        # Sync to balance_sheet_expenses if it exists
+        # Update employee expense record
+        fb_update(f"/expenses/{editing_expense_id}", data)
+
+        # Sync to balance_sheet_expenses if it exists (Finance tab for approved expenses)
         if fb_get(f"/balance_sheet_expenses/{editing_expense_id}"):
             fb_update(f"/balance_sheet_expenses/{editing_expense_id}", data)
 
