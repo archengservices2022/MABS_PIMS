@@ -115,36 +115,39 @@
   {% if 'quotes' in allowed_pages %}
   <div class="col-12 col-lg-4">
     <div class="card-panel h-100" style="border-top:3px solid #7C3AED;">
+      {% set _q_open = (quot_status_counts.get('Not Started', 0) + quot_status_counts.get('In Progress', 0)) %}
+      {% set _q_approved = quot_status_counts.get('Approved', 0) %}
+      {% set _q_widget_total = _q_open + _q_approved + quotes_converted %}
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h6 class="mb-0 fw-bold" style="color:#7C3AED;font-size:14px;">
           <i class="bi bi-file-earmark-text me-1"></i>Quotes
-          <span class="text-muted fw-normal" style="font-size:11px;margin-left:4px;">{{ quot_status_counts.values()|sum }} total</span>
+          <span class="text-muted fw-normal" style="font-size:11px;margin-left:4px;">{{ _q_widget_total }} total</span>
         </h6>
         <a href="{{ url_for('quotes') }}" class="btn btn-xs" style="background:#EDE9FE;color:#5B21B6;border:none;font-size:11px;padding:3px 10px;border-radius:4px;">View All →</a>
       </div>
       <div class="row g-2 mb-3">
         <div class="col-6">
-          <div style="background:#F5F3FF;border-radius:8px;padding:10px 12px;">
-            <div style="font-size:10px;color:#7C3AED;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Open</div>
-            <div style="font-size:1.6rem;font-weight:800;color:#7C3AED;line-height:1.1;">{{ open_quotes }}</div>
+          <div style="background:#EFF6FF;border-radius:8px;padding:10px 12px;">
+            <div style="font-size:10px;color:#1D4ED8;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Open</div>
+            <div style="font-size:1.6rem;font-weight:800;color:#1D4ED8;line-height:1.1;">{{ _q_open }}</div>
           </div>
         </div>
         <div class="col-6">
           <div style="background:#F0FDF4;border-radius:8px;padding:10px 12px;">
             <div style="font-size:10px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Approved</div>
-            <div style="font-size:1.6rem;font-weight:800;color:#16a34a;line-height:1.1;">{{ quotes_approved_count }}</div>
-          </div>
-        </div>
-        <div class="col-6">
-          <div style="background:#FFFBEB;border-radius:8px;padding:10px 12px;">
-            <div style="font-size:10px;color:#D97706;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Expiring Soon</div>
-            <div style="font-size:1.6rem;font-weight:800;color:#D97706;line-height:1.1;">{{ expiring_count }}</div>
+            <div style="font-size:1.6rem;font-weight:800;color:#16a34a;line-height:1.1;">{{ _q_approved }}</div>
           </div>
         </div>
         <div class="col-6">
           <div style="background:#F0FDFA;border-radius:8px;padding:10px 12px;">
             <div style="font-size:10px;color:#0D9488;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Converted</div>
-            <div style="font-size:1.6rem;font-weight:800;color:#0D9488;line-height:1.1;">{{ quotes_conversion_rate }}%</div>
+            <div style="font-size:1.6rem;font-weight:800;color:#0D9488;line-height:1.1;">{{ quotes_converted }}</div>
+          </div>
+        </div>
+        <div class="col-6">
+          <div style="background:#FFFBEB;border-radius:8px;padding:10px 12px;">
+            <div style="font-size:10px;color:#D97706;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Win Rate</div>
+            <div style="font-size:1.6rem;font-weight:800;color:#D97706;line-height:1.1;">{{ quotes_conversion_rate }}%</div>
           </div>
         </div>
       </div>

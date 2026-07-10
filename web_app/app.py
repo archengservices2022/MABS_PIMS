@@ -759,7 +759,7 @@ def dashboard():
     quotes_pipeline_value = 0.0
     quotes_converted = 0
     for _q in quot_list:
-        if not isinstance(_q, dict): continue
+        if not _q or not isinstance(_q, dict): continue
         _st = _q.get("status", "Not Started")
         quot_status_counts[_st] = quot_status_counts.get(_st, 0) + 1
         if _st not in {"Rejected", "Cancelled", "Expired"}:
@@ -839,6 +839,7 @@ def dashboard():
         quotes_approved_count=sum(quot_status_counts.get(s, 0) for s in ('Approved', 'Converted', 'Invoiced', 'Completed')),
         quotes_pipeline_value=quotes_pipeline_value,
         quotes_conversion_rate=quotes_conversion_rate,
+        quotes_converted=quotes_converted,
         proj_contract_total=proj_contract_total,
         proj_contract_active=proj_contract_active,
         proj_completed_count=proj_completed_count,
@@ -1654,10 +1655,10 @@ def projects():
     active_tab = request.args.get("tab", "all-projects")
 
     # KPI stats from filtered projects
-    _ACTIVE_STATUSES = {"Active", "In Progress"}
+    _EXCLUDED_STATUSES = {"invoiced_Fully paid", "Cancelled"}
     p_total_count = len(items)
     p_total_cv    = sum(_safe_float(p.get("contract_value", 0)) for p in items)
-    p_active_cv   = sum(_safe_float(p.get("contract_value", 0)) for p in items if p.get("status", "") in _ACTIVE_STATUSES)
+    p_active_cv   = sum(_safe_float(p.get("contract_value", 0)) for p in items if p.get("status", "") not in _EXCLUDED_STATUSES)
 
     # Calculate collected amount from projects' amount_paid (already synced from invoices)
     # Using project.amount_paid avoids double-counting in multi-project invoices
