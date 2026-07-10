@@ -8309,12 +8309,20 @@ def employees():
                 slim["firebase_id"] = eid
                 all_emp_expenses.append(slim)
     all_emp_expenses.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+
+    # Separate pending edits from regular submissions
+    pending_edit_expenses = [e for e in all_emp_expenses if e.get("edit_status") == "pending"]
+    regular_expenses = [e for e in all_emp_expenses if e.get("edit_status") != "pending"]
+
     if is_admin:
-        context["my_expenses"] = all_emp_expenses
+        context["my_expenses"] = regular_expenses
+        context["pending_edit_expenses"] = pending_edit_expenses
     else:
-        context["my_expenses"] = [e for e in all_emp_expenses if e.get("submitted_by_uid") == uid]
+        context["my_expenses"] = [e for e in regular_expenses if e.get("submitted_by_uid") == uid]
+        context["pending_edit_expenses"] = []
+
     if is_admin:
-        context["pending_expenses"] = [e for e in all_emp_expenses if e.get("status") == "Pending"]
+        context["pending_expenses"] = [e for e in regular_expenses if e.get("status") == "Pending"]
     else:
         context["pending_expenses"] = []
 
