@@ -1510,18 +1510,21 @@
           <td>
             <div class="d-flex align-items-center gap-2">
               <span class="emp-avatar" style="width:28px;height:28px;font-size:11px;">{{ (e.submitted_by_name or 'U')[0]|upper }}</span>
-              <span class="fw-500 small">{{ e.submitted_by_name or '—' }}</span>
+              <div>
+                <div class="fw-500 small">{{ e.submitted_by_name or '—' }}</div>
+                {% if e.get('edit_status') == 'pending' %}
+                <div style="font-size:10px;color:#0284c7;margin-top:2px;">
+                  <span class="badge bg-info text-white" style="font-size:9px;padding:2px 5px;">Edited</span>
+                  {{ e.get('edited_at','')[:10] }}
+                </div>
+                {% endif %}
+              </div>
             </div>
           </td>
           <td class="text-muted small">{{ e.get('date','—') | format_date }}</td>
           <td class="text-muted small">{{ e.get('expense_type','—') }}</td>
           <td>
-            <div class="d-flex align-items-center gap-2">
-              <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','—') }}</div>
-              {% if e.get('edit_status') == 'pending' %}
-              <span class="badge bg-info text-white" style="font-size:10px;padding:3px 6px;">Edited</span>
-              {% endif %}
-            </div>
+            <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','—') }}</div>
             {% if e.get('project_number') %}
             <div class="text-muted" style="font-size:11px;">{{ e.project_number }}</div>
             {% endif %}
