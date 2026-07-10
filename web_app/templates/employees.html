@@ -1416,6 +1416,9 @@
                 {% if edit_st == 'pending' %}
                   <span class="badge bg-info text-white">Pending Edit</span>
                   <div style="font-size:10px;color:#0284c7;margin-top:2px;">{{ e.get('edited_at','')[:10] }}</div>
+                {% elif edit_st == 'approved' %}
+                  <span class="badge bg-success">Edit Approved</span>
+                  <div style="font-size:10px;color:#059669;margin-top:2px;">{{ e.get('edit_approved_at','')[:10] }}</div>
                 {% elif st == 'Approved' %}
                   <span class="badge bg-success">Approved</span>
                 {% elif st == 'Rejected' %}
