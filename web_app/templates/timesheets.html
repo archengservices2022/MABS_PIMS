@@ -4,376 +4,645 @@
 
 {% block head %}
 <style>
-/* ── Page header ─────────────────────────────────────────────── */
-.ts-page-header {
-  background:linear-gradient(135deg,#0D9488 0%,#0891B2 100%);
-  border-radius:16px; padding:20px 24px; margin-bottom:20px;
-  display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;
+/* ── Global crisp rendering ──────────────────────────────────── */
+.ts-root * {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  box-sizing: border-box;
 }
-.ts-page-header h4 { color:#fff; font-weight:800; margin:0; font-size:1.1rem; }
-.ts-page-header .sub { color:rgba(255,255,255,.75); font-size:.78rem; margin-top:3px; }
+
+/* ── Page header ─────────────────────────────────────────────── */
+.ts-hero {
+  background: linear-gradient(120deg, #0D9488 0%, #0369a1 100%);
+  border-radius: 14px;
+  padding: 22px 28px;
+  margin-bottom: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.ts-hero-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  letter-spacing: -.2px;
+}
+.ts-hero-sub {
+  font-size: 12px;
+  color: rgba(255,255,255,.72);
+  margin-top: 3px;
+  font-weight: 400;
+}
+.ts-hero-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all .15s;
+  cursor: pointer;
+  border: none;
+}
+.ts-hero-btn.primary {
+  background: #fff;
+  color: #0D9488;
+}
+.ts-hero-btn.primary:hover { background: #f0fdfa; color: #0D9488; }
+.ts-hero-btn.ghost {
+  background: rgba(255,255,255,.12);
+  color: rgba(255,255,255,.9);
+  border: 1px solid rgba(255,255,255,.25);
+}
+.ts-hero-btn.ghost:hover { background: rgba(255,255,255,.22); color: #fff; }
 
 /* ── KPI cards ───────────────────────────────────────────────── */
-.ts-kpi-row { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
-.ts-kpi {
-  flex:1; min-width:130px; background:#fff; border-radius:14px;
-  padding:16px 18px 14px; box-shadow:0 2px 8px rgba(0,0,0,.06);
-  border-top:3px solid #e2e8f0; position:relative; overflow:hidden;
+.kpi-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+.kpi-card {
+  flex: 1;
+  min-width: 140px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 18px 20px 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.04);
+  border-left: 4px solid #e2e8f0;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
 }
-.ts-kpi::after { content:''; position:absolute; right:-10px; top:-10px; width:60px; height:60px; border-radius:50%; opacity:.04; background:#0f172a; }
-.ts-kpi.kpi-teal  { border-top-color:#0D9488; }
-.ts-kpi.kpi-blue  { border-top-color:#1d4ed8; }
-.ts-kpi.kpi-amber { border-top-color:#d97706; }
-.ts-kpi.kpi-green { border-top-color:#15803d; }
-.ts-kpi.kpi-slate { border-top-color:#475569; }
-.ts-kpi-icon { font-size:1.1rem; margin-bottom:6px; }
-.ts-kpi-label { font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#94a3b8; }
-.ts-kpi-value { font-size:1.7rem; font-weight:800; color:#0f172a; line-height:1.1; margin:2px 0; }
-.ts-kpi-sub { font-size:.7rem; color:#cbd5e1; }
+.kpi-card.c-teal  { border-left-color: #0D9488; }
+.kpi-card.c-blue  { border-left-color: #2563eb; }
+.kpi-card.c-green { border-left-color: #16a34a; }
+.kpi-card.c-amber { border-left-color: #d97706; }
+.kpi-card.c-slate { border-left-color: #64748b; }
+.kpi-icon {
+  width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+}
+.c-teal  .kpi-icon { background: #f0fdfa; color: #0D9488; }
+.c-blue  .kpi-icon { background: #eff6ff; color: #2563eb; }
+.c-green .kpi-icon { background: #f0fdf4; color: #16a34a; }
+.c-amber .kpi-icon { background: #fffbeb; color: #d97706; }
+.c-slate .kpi-icon { background: #f8fafc; color: #64748b; }
+.kpi-body { flex: 1; min-width: 0; }
+.kpi-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+.kpi-value {
+  font-size: 26px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1;
+  letter-spacing: -.5px;
+}
+.kpi-sub { font-size: 11px; color: #cbd5e1; margin-top: 3px; font-weight: 400; }
 
 /* ── Week navigation ─────────────────────────────────────────── */
-.week-nav-bar {
-  background:#fff; border-radius:12px; padding:10px 16px;
-  display:flex; align-items:center; gap:10px; margin-bottom:16px;
-  box-shadow:0 1px 4px rgba(0,0,0,.06); flex-wrap:wrap;
+.week-nav {
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  flex-wrap: wrap;
 }
-.week-nav-label { font-size:.92rem; font-weight:700; color:#0f172a; min-width:220px; text-align:center; }
-.week-nav-btn {
-  background:#f8fafc; border:1px solid #e2e8f0; color:#475569;
-  width:32px; height:32px; display:flex; align-items:center; justify-content:center;
-  border-radius:8px; text-decoration:none; font-size:.85rem; transition:all .15s; flex-shrink:0;
+.wn-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  min-width: 210px;
+  text-align: center;
+  letter-spacing: -.1px;
 }
-.week-nav-btn:hover { background:#0D9488; border-color:#0D9488; color:#fff; }
-.week-cur-btn {
-  font-size:.72rem; padding:4px 12px; border-radius:7px;
-  border:1px solid #e2e8f0; background:#f8fafc; color:#475569;
-  text-decoration:none; white-space:nowrap; transition:all .15s;
+.wn-btn {
+  width: 30px; height: 30px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+  border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  text-decoration: none;
+  font-size: 13px;
+  transition: all .15s;
+  flex-shrink: 0;
 }
-.week-cur-btn:hover { background:#0D9488; border-color:#0D9488; color:#fff; }
+.wn-btn:hover { background: #0D9488; border-color: #0D9488; color: #fff; }
+.wn-cur {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  text-decoration: none;
+  transition: all .15s;
+}
+.wn-cur:hover { background: #0D9488; border-color: #0D9488; color: #fff; }
 
-/* ── Main grid table ─────────────────────────────────────────── */
-.ts-table { width:100%; border-collapse:separate; border-spacing:0; background:#fff; border-radius:16px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,.07); }
-.ts-table th {
-  background:#f8fafc; color:#64748b; font-size:.66rem; font-weight:700;
-  text-transform:uppercase; letter-spacing:.5px; padding:12px 8px;
-  border-bottom:2px solid #e2e8f0; white-space:nowrap; text-align:center;
+/* ── Grid table ──────────────────────────────────────────────── */
+.ts-grid-wrap {
+  background: #fff;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.05);
 }
-.ts-table th.emp-th { text-align:left; padding-left:18px; min-width:170px; }
-.ts-table td { padding:7px 5px; border-bottom:1px solid #f1f5f9; vertical-align:middle; text-align:center; }
-.ts-table tbody tr:last-child td { border-bottom:none; }
-.ts-table tbody tr:hover td { background:#fafbfc; }
-.ts-table td.emp-td { text-align:left; padding:10px 8px 10px 18px; white-space:nowrap; }
+.ts-grid {
+  width: 100%;
+  border-collapse: collapse;
+}
+.ts-grid thead th {
+  background: #f8fafc;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: #64748b;
+  padding: 12px 6px;
+  border-bottom: 2px solid #e2e8f0;
+  text-align: center;
+  white-space: nowrap;
+}
+.ts-grid thead th.emp-col { text-align: left; padding-left: 20px; min-width: 180px; }
+.ts-grid tbody td {
+  padding: 6px 5px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+  text-align: center;
+}
+.ts-grid tbody tr:last-child td { border-bottom: none; }
+.ts-grid tbody tr:hover td { background: #fafbfc; }
+.ts-grid tbody td.emp-col { text-align: left; padding: 10px 8px 10px 20px; }
+
+/* ── Day header in th ────────────────────────────────────────── */
+.day-abbr { font-size: 11px; font-weight: 700; display: block; }
+.day-date { font-size: 10px; font-weight: 500; color: #b0bec5; margin-top: 1px; display: block; }
 
 /* ── Day cells ───────────────────────────────────────────────── */
-.ts-cell {
-  display:inline-flex; flex-direction:column; align-items:center; justify-content:center;
-  padding:6px 8px; border-radius:9px; cursor:pointer; transition:all .15s;
-  min-width:86px; min-height:52px; gap:1px; width:100%;
+.dc {
+  border-radius: 8px;
+  min-height: 56px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 4px;
+  cursor: pointer;
+  transition: box-shadow .15s, transform .15s;
+  text-decoration: none;
 }
-.ts-cell:hover { transform:translateY(-1px); box-shadow:0 3px 8px rgba(0,0,0,.12); }
-.ts-cell .c-time { font-weight:500; font-size:.6rem; }
-.ts-cell .c-proj { font-size:.58rem; opacity:.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:84px; }
-.ts-cell .c-hrs  { font-weight:800; font-size:.75rem; }
-.ts-approved { background:linear-gradient(135deg,#dcfce7,#bbf7d0); color:#15803d; border:1px solid #86efac; }
-.ts-submitted { background:linear-gradient(135deg,#dbeafe,#bfdbfe); color:#1d4ed8; border:1px solid #93c5fd; }
-.ts-draft     { background:linear-gradient(135deg,#ede9fe,#ddd6fe); color:#7c3aed; border:1px solid #c4b5fd; }
-.ts-rejected  { background:linear-gradient(135deg,#fee2e2,#fecaca); color:#b91c1c; border:1px solid #fca5a5; }
-.ts-empty {
-  background:#fafafa; border:1.5px dashed #e8ecf0; color:#d1d5db;
-  font-size:.7rem; min-width:86px; min-height:52px; width:100%;
-  display:flex; align-items:center; justify-content:center; border-radius:9px;
+.dc:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,.13); }
+.dc-time {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+.dc-proj {
+  font-size: 10px;
+  font-weight: 500;
+  opacity: .8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90px;
+  line-height: 1.2;
+}
+.dc-hrs {
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  margin-top: 1px;
+}
+/* Status-based cell colours */
+.dc-approved { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.dc-submitted { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+.dc-draft     { background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; }
+.dc-rejected  { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+/* Empty cell */
+.dc-empty {
+  border-radius: 8px;
+  min-height: 56px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8fafc;
+  border: 1.5px dashed #e2e8f0;
+  color: #d1d5db;
+  font-size: 12px;
 }
 
-/* ── Status badges ───────────────────────────────────────────── */
-.sbadge { display:inline-flex; align-items:center; padding:3px 10px; border-radius:20px; font-size:.64rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; white-space:nowrap; }
-.sb-approved { background:#dcfce7; color:#15803d; }
-.sb-submitted { background:#dbeafe; color:#1d4ed8; }
-.sb-draft     { background:#ede9fe; color:#7c3aed; }
-.sb-rejected  { background:#fee2e2; color:#b91c1c; }
+/* ── Status badge ────────────────────────────────────────────── */
+.sbadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  white-space: nowrap;
+}
+.sb-approved { background: #dcfce7; color: #15803d; }
+.sb-submitted { background: #dbeafe; color: #1e40af; }
+.sb-draft     { background: #ede9fe; color: #6d28d9; }
+.sb-rejected  { background: #fee2e2; color: #b91c1c; }
+.sb-none { color: #cbd5e1; font-size: 12px; font-weight: 500; }
+
+/* ── Total hours col ─────────────────────────────────────────── */
+.total-col {
+  font-size: 14px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -.2px;
+}
+
+/* ── Employee cell ───────────────────────────────────────────── */
+.emp-row { display: flex; align-items: center; gap: 10px; }
+.emp-av {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(135deg, #0D9488, #0369a1);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700;
+}
+.emp-nm { font-size: 13px; font-weight: 600; color: #1e293b; }
 
 /* ── Action buttons ──────────────────────────────────────────── */
-.action-btn {
-  width:28px; height:28px; border-radius:7px; border:1px solid #e2e8f0;
-  background:#f8fafc; display:inline-flex; align-items:center; justify-content:center;
-  cursor:pointer; font-size:.72rem; transition:all .15s; text-decoration:none; color:#475569;
+.act-btns { display: flex; gap: 4px; justify-content: center; align-items: center; }
+.act-btn {
+  width: 28px; height: 28px; border-radius: 7px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all .15s;
 }
-.action-btn:hover { color:#fff; }
-.action-btn.approve:hover { background:#15803d; border-color:#15803d; }
-.action-btn.reject:hover  { background:#dc2626; border-color:#dc2626; }
-.action-btn.view:hover    { background:#0D9488; border-color:#0D9488; }
-.action-btn.delete:hover  { background:#dc2626; border-color:#dc2626; }
+.act-btn:hover { transform: translateY(-1px); }
+.act-btn.approve:hover { background: #16a34a; border-color: #16a34a; color: #fff; }
+.act-btn.reject:hover  { background: #dc2626; border-color: #dc2626; color: #fff; }
+.act-btn.view:hover    { background: #0D9488; border-color: #0D9488; color: #fff; }
+.act-btn.del:hover     { background: #dc2626; border-color: #dc2626; color: #fff; }
 
-/* ── Employee name cell ──────────────────────────────────────── */
-.emp-avatar {
-  width:32px; height:32px; border-radius:50%; flex-shrink:0;
-  background:linear-gradient(135deg,#0D9488,#0891B2); color:#fff;
-  display:flex; align-items:center; justify-content:center;
-  font-size:.75rem; font-weight:800;
+/* ── My Timesheets — personal grid card ─────────────────────── */
+.my-week-card {
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.05);
+  overflow: hidden;
+  margin-bottom: 20px;
 }
-.emp-name { font-weight:600; color:#1e293b; font-size:.84rem; }
+.my-week-header {
+  padding: 16px 22px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+}
+.my-week-user { font-size: 15px; font-weight: 700; color: #0f172a; }
+.my-week-sub  { font-size: 11px; color: #94a3b8; margin-top: 1px; }
 
-/* total / status cols */
-.total-col { font-weight:800; color:#0f172a; font-size:.88rem; }
-.status-col, .action-col { white-space:nowrap; }
-
-/* ── My timesheets list ──────────────────────────────────────── */
-.my-ts-table { width:100%; border-collapse:separate; border-spacing:0; background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.06); }
-.my-ts-table th { background:#f8fafc; color:#64748b; font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:11px 16px; border-bottom:2px solid #e2e8f0; }
-.my-ts-table td { padding:13px 16px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
-.my-ts-table tbody tr:last-child td { border-bottom:none; }
-.my-ts-table tbody tr:hover td { background:#fafbfc; }
+/* ── History table ───────────────────────────────────────────── */
+.hist-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+.hist-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.05);
+}
+.hist-table th {
+  background: #f8fafc;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: #64748b;
+  padding: 12px 16px;
+  border-bottom: 2px solid #e2e8f0;
+  white-space: nowrap;
+}
+.hist-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 13px;
+  color: #334155;
+  vertical-align: middle;
+}
+.hist-table tbody tr:last-child td { border-bottom: none; }
+.hist-table tbody tr:hover td { background: #fafbfc; }
 
 /* ── Empty state ─────────────────────────────────────────────── */
-.empty-state { text-align:center; padding:52px 16px; color:#94a3b8; }
-.empty-state-icon { font-size:2.5rem; margin-bottom:10px; }
-.empty-state-title { font-size:1rem; font-weight:600; color:#64748b; margin-bottom:6px; }
-.ot-val { color:#b91c1c; font-weight:700; }
+.ts-empty-state {
+  padding: 52px 20px;
+  text-align: center;
+}
+.ts-empty-state i { font-size: 36px; color: #cbd5e1; display: block; margin-bottom: 12px; }
+.ts-empty-state p { font-size: 13px; color: #94a3b8; margin: 0; }
+
+.ot-val { color: #dc2626; font-weight: 700; }
+
+/* ── Small link btn ──────────────────────────────────────────── */
+.link-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 12px; border-radius: 7px; font-size: 12px; font-weight: 600;
+  text-decoration: none; transition: all .15s; border: 1px solid transparent; cursor: pointer;
+}
+.link-btn.outline {
+  border-color: #e2e8f0; color: #475569; background: #f8fafc;
+}
+.link-btn.outline:hover { border-color: #0D9488; color: #0D9488; background: #f0fdfa; }
+.link-btn.teal { background: #0D9488; color: #fff; }
+.link-btn.teal:hover { background: #0b8075; }
+.link-btn.amber { background: #f59e0b; color: #fff; }
+.link-btn.amber:hover { background: #d97706; }
+.link-btn.green { background: #16a34a; color: #fff; }
+.link-btn.green:hover { background: #15803d; }
 </style>
 {% endblock %}
 
 {% block content %}
 {% set is_admin = user_role == 'admin' %}
+<div class="ts-root">
 
-<div class="ts-page-header">
+<!-- ── Hero Header ───────────────────────────────────────────── -->
+<div class="ts-hero">
   <div>
-    <h4><i class="bi bi-calendar-week me-2"></i>{% if view == 'admin' %}Team Weekly Schedule{% else %}My Timesheets{% endif %}</h4>
-    <div class="sub">{% if view == 'admin' %}Track and approve your team's time entries{% else %}Your personal time log and history{% endif %}</div>
+    <div class="ts-hero-title">
+      <i class="bi bi-calendar-week me-2"></i>{% if view == 'admin' %}Team Weekly Schedule{% else %}My Timesheets{% endif %}
+    </div>
+    <div class="ts-hero-sub">{% if view == 'admin' %}Review and approve your team's weekly time entries{% else %}Track your hours and submission history{% endif %}</div>
   </div>
-  <div class="d-flex gap-2 align-items-center flex-wrap">
-    <a href="{{ url_for('timesheets_submit') }}"
-       style="background:rgba(255,255,255,.2);color:#fff;border:1.5px solid rgba(255,255,255,.4);padding:7px 16px;border-radius:9px;font-weight:600;font-size:.82rem;text-decoration:none;transition:all .15s;"
-       onmouseover="this.style.background='rgba(255,255,255,.35)'" onmouseout="this.style.background='rgba(255,255,255,.2)'">
-      <i class="bi bi-plus-lg me-1"></i>Submit Timesheet
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{{ url_for('timesheets_submit') }}" class="ts-hero-btn primary">
+      <i class="bi bi-plus-lg"></i> Submit Timesheet
     </a>
     {% if is_admin %}
-    <a href="{{ url_for('api_timesheets_export', week=week_of) }}"
-       style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.25);padding:7px 14px;border-radius:9px;font-size:.78rem;text-decoration:none;">
-      <i class="bi bi-download me-1"></i>Export CSV
+    <a href="{{ url_for('api_timesheets_export', week=week_of) }}" class="ts-hero-btn ghost">
+      <i class="bi bi-download"></i> Export CSV
     </a>
     {% endif %}
   </div>
 </div>
 
 {% if view == 'admin' %}
-<!-- ── KPI Cards ───────────────────────────────────────────────── -->
-<div class="ts-kpi-row">
-  <div class="ts-kpi kpi-teal">
-    <div class="ts-kpi-icon">👥</div>
-    <div class="ts-kpi-label">Team Size</div>
-    <div class="ts-kpi-value">{{ kpi_employees }}</div>
-    <div class="ts-kpi-sub">employees</div>
+<!-- ── KPI Row ────────────────────────────────────────────────── -->
+<div class="kpi-row">
+  <div class="kpi-card c-teal">
+    <div class="kpi-icon"><i class="bi bi-people-fill"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-label">Team Size</div>
+      <div class="kpi-value">{{ kpi_employees }}</div>
+      <div class="kpi-sub">employees</div>
+    </div>
   </div>
-  <div class="ts-kpi kpi-slate">
-    <div class="ts-kpi-icon">📤</div>
-    <div class="ts-kpi-label">Submitted</div>
-    <div class="ts-kpi-value">{{ kpi_submitted }}</div>
-    <div class="ts-kpi-sub">this week</div>
+  <div class="kpi-card c-slate">
+    <div class="kpi-icon"><i class="bi bi-send-fill"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-label">Submitted</div>
+      <div class="kpi-value">{{ kpi_submitted }}</div>
+      <div class="kpi-sub">this week</div>
+    </div>
   </div>
-  <div class="ts-kpi kpi-blue">
-    <div class="ts-kpi-icon">⏳</div>
-    <div class="ts-kpi-label">Pending</div>
-    <div class="ts-kpi-value" style="color:#1d4ed8;">{{ kpi_pending }}</div>
-    <div class="ts-kpi-sub">awaiting review</div>
+  <div class="kpi-card c-blue">
+    <div class="kpi-icon"><i class="bi bi-hourglass-split"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-label">Pending Review</div>
+      <div class="kpi-value" style="color:#2563eb;">{{ kpi_pending }}</div>
+      <div class="kpi-sub">awaiting approval</div>
+    </div>
   </div>
-  <div class="ts-kpi kpi-green">
-    <div class="ts-kpi-icon">✅</div>
-    <div class="ts-kpi-label">Approved</div>
-    <div class="ts-kpi-value" style="color:#15803d;">{{ kpi_approved }}</div>
-    <div class="ts-kpi-sub">this week</div>
+  <div class="kpi-card c-green">
+    <div class="kpi-icon"><i class="bi bi-check-circle-fill"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-label">Approved</div>
+      <div class="kpi-value" style="color:#16a34a;">{{ kpi_approved }}</div>
+      <div class="kpi-sub">this week</div>
+    </div>
   </div>
-  <div class="ts-kpi kpi-amber">
-    <div class="ts-kpi-icon">⏱</div>
-    <div class="ts-kpi-label">Total Hours</div>
-    <div class="ts-kpi-value">{{ "%.1f"|format(kpi_hours) }}</div>
-    <div class="ts-kpi-sub">all employees</div>
+  <div class="kpi-card c-amber">
+    <div class="kpi-icon"><i class="bi bi-clock-fill"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-label">Total Hours</div>
+      <div class="kpi-value">{{ "%.1f"|format(kpi_hours) }}</div>
+      <div class="kpi-sub">all employees</div>
+    </div>
   </div>
 </div>
 
-<!-- ── Week Navigation ────────────────────────────────────────── -->
-<div class="week-nav-bar">
-  <a href="{{ url_for('timesheets', week=prev_week) }}" class="week-nav-btn"><i class="bi bi-chevron-left"></i></a>
-  <div class="week-nav-label">Week of {{ week_label }}</div>
-  <a href="{{ url_for('timesheets', week=next_week) }}" class="week-nav-btn"><i class="bi bi-chevron-right"></i></a>
-  <a href="{{ url_for('timesheets') }}" class="week-cur-btn ms-1">Current Week</a>
+<!-- ── Week Nav ──────────────────────────────────────────────── -->
+<div class="week-nav">
+  <a href="{{ url_for('timesheets', week=prev_week) }}" class="wn-btn"><i class="bi bi-chevron-left"></i></a>
+  <div class="wn-label">Week of {{ week_label }}</div>
+  <a href="{{ url_for('timesheets', week=next_week) }}" class="wn-btn"><i class="bi bi-chevron-right"></i></a>
+  <a href="{{ url_for('timesheets') }}" class="wn-cur ms-1">Current Week</a>
 </div>
 
-<!-- ── Grid Table ─────────────────────────────────────────────── -->
-<div class="table-responsive">
-  <table class="ts-table">
-    <thead>
-      <tr>
-        <th class="emp-th">Employee</th>
-        {% for dl in day_labels %}
-        <th>
-          {{ dl.abbr }}<br>
-          <span style="font-weight:500;font-size:.62rem;color:#94a3b8;">{{ dl.display }}</span>
-        </th>
-        {% endfor %}
-        <th>Total Hrs</th>
-        <th>Status</th>
-        {% if is_admin %}<th>Action</th>{% endif %}
-      </tr>
-    </thead>
-    <tbody>
-      {% if grid_rows %}
-        {% for row in grid_rows %}
+<!-- ── Grid ──────────────────────────────────────────────────── -->
+<div class="ts-grid-wrap">
+  <div class="table-responsive">
+    <table class="ts-grid">
+      <thead>
         <tr>
-          <td class="emp-td">
-            <div class="d-flex align-items-center gap-2">
-              <div class="emp-avatar">{{ row.name[0].upper() if row.name else '?' }}</div>
-              <span class="emp-name">{{ row.name }}</span>
-            </div>
-          </td>
+          <th class="emp-col">Employee</th>
           {% for dl in day_labels %}
-            {% set cell = row.cells.get(dl.date) %}
+          <th>
+            <span class="day-abbr">{{ dl.abbr }}</span>
+            <span class="day-date">{{ dl.display }}</span>
+          </th>
+          {% endfor %}
+          <th>Total Hrs</th>
+          <th>Status</th>
+          {% if is_admin %}<th>Actions</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% if grid_rows %}
+          {% for row in grid_rows %}
+          <tr>
+            <td class="emp-col">
+              <div class="emp-row">
+                <div class="emp-av">{{ row.name[0].upper() if row.name else '?' }}</div>
+                <span class="emp-nm">{{ row.name }}</span>
+              </div>
+            </td>
+            {% for dl in day_labels %}
+              {% set cell = row.cells.get(dl.date) %}
+              <td style="min-width:96px;">
+                {% if cell %}
+                  <div class="dc dc-{{ cell.status | lower }}"
+                       title="{{ cell.projects | join(', ') or 'No project' }} — {{ cell.time_range }} — {{ '%.1f'|format(cell.hours) }}h"
+                       {% if cell.sheet_id %}onclick="window.location='{{ url_for('timesheet_detail', sheet_id=cell.sheet_id) }}'"{% endif %}>
+                    {% if cell.time_range %}<div class="dc-time">{{ cell.time_range }}</div>{% endif %}
+                    {% if cell.projects %}<div class="dc-proj">{{ cell.projects[0] }}{% if cell.projects|length > 1 %} +{{ cell.projects|length - 1 }}{% endif %}</div>{% endif %}
+                    <div class="dc-hrs">{{ "%.1f"|format(cell.hours) }}h</div>
+                  </div>
+                {% else %}
+                  <div class="dc-empty">—</div>
+                {% endif %}
+              </td>
+            {% endfor %}
+            <td class="total-col">
+              {% if row.total_hours > 0 %}{{ "%.1f"|format(row.total_hours) }}{% else %}<span style="color:#d1d5db;">—</span>{% endif %}
+            </td>
             <td>
-              {% if cell %}
-                <div class="ts-cell ts-{{ cell.status | lower }}"
-                     title="{{ cell.projects | join(', ') or 'No project' }} | {{ cell.time_range }} | {{ '%.1f'|format(cell.hours) }}h"
-                     {% if cell.sheet_id %}onclick="window.location='{{ url_for('timesheet_detail', sheet_id=cell.sheet_id) }}'"{% endif %}>
-                  {% if cell.time_range %}<div class="c-time">{{ cell.time_range }}</div>{% endif %}
-                  {% if cell.projects %}<div class="c-proj">{{ cell.projects[0] }}{% if cell.projects|length > 1 %} +{{ cell.projects|length - 1 }}{% endif %}</div>{% endif %}
-                  <div class="c-hrs">{{ "%.1f"|format(cell.hours) }}h</div>
-                </div>
+              {% if row.sheet %}
+                <span class="sbadge sb-{{ row.sheet.status | lower }}">{{ row.sheet.status }}</span>
               {% else %}
-                <div class="ts-empty">—</div>
+                <span class="sb-none">No Entry</span>
               {% endif %}
             </td>
-          {% endfor %}
-          <td class="total-col">
-            {% if row.total_hours > 0 %}{{ "%.1f"|format(row.total_hours) }}{% else %}—{% endif %}
-          </td>
-          <td class="status-col">
-            {% if row.sheet %}
-              <span class="sbadge sb-{{ row.sheet.status | lower }}">{{ row.sheet.status }}</span>
-            {% else %}
-              <span style="color:#cbd5e1;font-size:.72rem;">No Entry</span>
-            {% endif %}
-          </td>
-          {% if is_admin %}
-          <td class="action-col">
-            {% if row.sheet %}
-            <div class="d-flex gap-1 justify-content-center">
-              {% if row.sheet.status == 'Submitted' %}
-                <button onclick="approveSheet('{{ row.sheet.firebase_id }}','approve')"
-                        class="action-btn approve" title="Approve">
-                  <i class="bi bi-check2"></i>
+            {% if is_admin %}
+            <td>
+              {% if row.sheet %}
+              <div class="act-btns">
+                {% if row.sheet.status == 'Submitted' %}
+                  <button class="act-btn approve" onclick="approveSheet('{{ row.sheet.firebase_id }}','approve')" title="Approve">
+                    <i class="bi bi-check2"></i>
+                  </button>
+                  <button class="act-btn reject" onclick="approveSheet('{{ row.sheet.firebase_id }}','reject')" title="Reject">
+                    <i class="bi bi-x-lg"></i>
+                  </button>
+                {% endif %}
+                <a class="act-btn view" href="{{ url_for('timesheet_detail', sheet_id=row.sheet.firebase_id) }}" title="View">
+                  <i class="bi bi-eye"></i>
+                </a>
+                <button class="act-btn del" onclick="deleteSheet('{{ row.sheet.firebase_id }}')" title="Delete">
+                  <i class="bi bi-trash3"></i>
                 </button>
-                <button onclick="approveSheet('{{ row.sheet.firebase_id }}','reject')"
-                        class="action-btn reject" title="Reject">
-                  <i class="bi bi-x-lg"></i>
-                </button>
+              </div>
               {% endif %}
-              <a href="{{ url_for('timesheet_detail', sheet_id=row.sheet.firebase_id) }}"
-                 class="action-btn view" title="View Details">
-                <i class="bi bi-eye"></i>
-              </a>
-              <button onclick="deleteSheet('{{ row.sheet.firebase_id }}')"
-                      class="action-btn delete" title="Delete">
-                <i class="bi bi-trash3"></i>
-              </button>
-            </div>
+            </td>
             {% endif %}
+          </tr>
+          {% endfor %}
+        {% else %}
+        <tr>
+          <td colspan="{{ 7 + (3 if is_admin else 2) + 1 }}">
+            <div class="ts-empty-state">
+              <i class="bi bi-people"></i>
+              <p>No employees found. Add employees in <strong>Settings → Users</strong>.</p>
+            </div>
           </td>
-          {% endif %}
         </tr>
-        {% endfor %}
-      {% else %}
-      <tr>
-        <td colspan="{{ 7 + (3 if is_admin else 2) + 1 }}" class="empty-state">
-          <div class="empty-state-icon">📅</div>
-          <div class="empty-state-title">No Employees Found</div>
-          <p style="margin:0;font-size:.8rem;">Add employees in the Settings → Users tab.</p>
-        </td>
-      </tr>
-      {% endif %}
-    </tbody>
-  </table>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
 </div>
 
 {% else %}
 <!-- ── Employee: My Timesheets ────────────────────────────────── -->
 
-<!-- Monthly Quick Stats -->
-<div class="ts-kpi-row">
-  <div class="ts-kpi kpi-teal">
-    <div class="ts-kpi-icon">📅</div>
-    <div class="ts-kpi-label">This Month</div>
-    <div class="ts-kpi-value">{{ "%.1f"|format(stat_month_hours) }}</div>
-    <div class="ts-kpi-sub">total hours</div>
-  </div>
-  <div class="ts-kpi {% if stat_month_ot > 0 %}kpi-amber{% endif %}">
-    <div class="ts-kpi-icon">⚡</div>
-    <div class="ts-kpi-label">Overtime (Month)</div>
-    <div class="ts-kpi-value" style="color:{% if stat_month_ot > 0 %}#b91c1c{% else %}#0f172a{% endif %};">
-      {{ "%.1f"|format(stat_month_ot) }}
+<!-- KPI Row -->
+<div class="kpi-row">
+  <div class="kpi-card c-teal">
+    <div class="kpi-icon"><i class="bi bi-calendar-check"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-label">This Month</div>
+      <div class="kpi-value">{{ "%.1f"|format(stat_month_hours) }}</div>
+      <div class="kpi-sub">total hours</div>
     </div>
-    <div class="ts-kpi-sub">OT hours</div>
   </div>
-  <div class="ts-kpi kpi-green">
-    <div class="ts-kpi-icon">✅</div>
-    <div class="ts-kpi-label">Approved</div>
-    <div class="ts-kpi-value" style="color:#15803d;">{{ stat_approved }}</div>
-    <div class="ts-kpi-sub">weeks approved</div>
+  <div class="kpi-card {% if stat_month_ot > 0 %}c-amber{% endif %}">
+    <div class="kpi-icon"><i class="bi bi-lightning-charge-fill"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-label">Overtime</div>
+      <div class="kpi-value" style="color:{% if stat_month_ot > 0 %}#dc2626{% else %}#0f172a{% endif %};">{{ "%.1f"|format(stat_month_ot) }}</div>
+      <div class="kpi-sub">OT hours this month</div>
+    </div>
   </div>
-  <div class="ts-kpi kpi-blue">
-    <div class="ts-kpi-icon">⏳</div>
-    <div class="ts-kpi-label">Pending Review</div>
-    <div class="ts-kpi-value" style="color:#1d4ed8;">{{ stat_pending }}</div>
-    <div class="ts-kpi-sub">awaiting approval</div>
+  <div class="kpi-card c-green">
+    <div class="kpi-icon"><i class="bi bi-check-circle-fill"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-label">Approved</div>
+      <div class="kpi-value" style="color:#16a34a;">{{ stat_approved }}</div>
+      <div class="kpi-sub">weeks approved</div>
+    </div>
   </div>
-  <div class="ts-kpi kpi-slate">
-    <div class="ts-kpi-icon">⏱</div>
-    <div class="ts-kpi-label">This Week</div>
-    <div class="ts-kpi-value">{{ "%.1f"|format(week_total) }}</div>
-    <div class="ts-kpi-sub">hours logged</div>
+  <div class="kpi-card c-blue">
+    <div class="kpi-icon"><i class="bi bi-hourglass-split"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-label">Pending Review</div>
+      <div class="kpi-value" style="color:#2563eb;">{{ stat_pending }}</div>
+      <div class="kpi-sub">awaiting approval</div>
+    </div>
+  </div>
+  <div class="kpi-card c-slate">
+    <div class="kpi-icon"><i class="bi bi-clock-fill"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-label">This Week</div>
+      <div class="kpi-value">{{ "%.1f"|format(week_total) }}</div>
+      <div class="kpi-sub">hours logged</div>
+    </div>
   </div>
 </div>
 
-<!-- Week Navigation -->
-<div class="week-nav-bar">
-  <a href="{{ url_for('timesheets', week=prev_week) }}" class="week-nav-btn"><i class="bi bi-chevron-left"></i></a>
-  <div class="week-nav-label">Week of {{ week_label }}</div>
-  <a href="{{ url_for('timesheets', week=next_week) }}" class="week-nav-btn"><i class="bi bi-chevron-right"></i></a>
-  <a href="{{ url_for('timesheets') }}" class="week-cur-btn ms-1">Current Week</a>
+<!-- Week Nav -->
+<div class="week-nav">
+  <a href="{{ url_for('timesheets', week=prev_week) }}" class="wn-btn"><i class="bi bi-chevron-left"></i></a>
+  <div class="wn-label">Week of {{ week_label }}</div>
+  <a href="{{ url_for('timesheets', week=next_week) }}" class="wn-btn"><i class="bi bi-chevron-right"></i></a>
+  <a href="{{ url_for('timesheets') }}" class="wn-cur ms-1">Current Week</a>
 </div>
 
-<!-- Personal Weekly Grid -->
-<div class="ts-detail-card mb-4" style="background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.08);overflow:hidden;">
-  <div style="padding:14px 20px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+<!-- Personal weekly card -->
+<div class="my-week-card">
+  <div class="my-week-header">
     <div class="d-flex align-items-center gap-3">
-      <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#0D9488,#0891B2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1rem;font-weight:800;">
-        {{ user_name[0].upper() if user_name else '?' }}
-      </div>
+      <div class="emp-av" style="width:40px;height:40px;font-size:15px;">{{ user_name[0].upper() if user_name else '?' }}</div>
       <div>
-        <div style="font-weight:700;color:#0f172a;font-size:.95rem;">{{ user_name }}</div>
-        <div style="font-size:.72rem;color:#94a3b8;">My weekly hours</div>
+        <div class="my-week-user">{{ user_name }}</div>
+        <div class="my-week-sub">Personal weekly summary</div>
       </div>
     </div>
-    <div class="d-flex align-items-center gap-2">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
       {% if week_sheet %}
         <span class="sbadge sb-{{ week_sheet.status | lower }}">{{ week_sheet.status }}</span>
         {% if week_sheet.status in ('Draft', 'Rejected') %}
-        <a href="{{ url_for('timesheets_submit', week=week_of) }}"
-           class="btn btn-sm" style="background:#f59e0b;color:#fff;font-size:.72rem;padding:4px 12px;border:none;border-radius:7px;font-weight:600;">
-          <i class="bi bi-pencil me-1"></i>Edit & Resubmit
-        </a>
+          <a href="{{ url_for('timesheets_submit', week=week_of) }}" class="link-btn amber">
+            <i class="bi bi-pencil"></i> Edit & Resubmit
+          </a>
         {% elif week_sheet.status == 'Submitted' %}
-        <a href="{{ url_for('timesheet_detail', sheet_id=week_sheet.firebase_id) }}"
-           class="btn btn-sm btn-outline-secondary" style="font-size:.72rem;padding:4px 12px;">
-          View Details
-        </a>
+          <a href="{{ url_for('timesheet_detail', sheet_id=week_sheet.firebase_id) }}" class="link-btn outline">
+            <i class="bi bi-eye"></i> View Details
+          </a>
         {% elif week_sheet.status == 'Approved' %}
-        <a href="{{ url_for('timesheet_detail', sheet_id=week_sheet.firebase_id) }}"
-           class="btn btn-sm" style="background:#15803d;color:#fff;font-size:.72rem;padding:4px 12px;border:none;border-radius:7px;">
-          <i class="bi bi-check2-circle me-1"></i>Approved
-        </a>
+          <a href="{{ url_for('timesheet_detail', sheet_id=week_sheet.firebase_id) }}" class="link-btn green">
+            <i class="bi bi-check2-circle"></i> Approved
+          </a>
         {% endif %}
       {% else %}
-        <span style="font-size:.75rem;color:#94a3b8;">No entry for this week</span>
-        <a href="{{ url_for('timesheets_submit', week=week_of) }}"
-           class="btn btn-sm" style="background:#0D9488;color:#fff;font-size:.75rem;padding:5px 14px;border:none;border-radius:7px;font-weight:600;">
-          <i class="bi bi-plus-lg me-1"></i>Submit Timesheet
+        <span style="font-size:12px;color:#94a3b8;">No entry for this week</span>
+        <a href="{{ url_for('timesheets_submit', week=week_of) }}" class="link-btn teal">
+          <i class="bi bi-plus-lg"></i> Submit Timesheet
         </a>
       {% endif %}
     </div>
@@ -381,38 +650,38 @@
 
   <!-- 7-day personal grid -->
   <div class="table-responsive">
-    <table class="ts-table" style="border-radius:0;">
+    <table class="ts-grid" style="border-radius:0;">
       <thead>
         <tr>
           {% for dl in day_labels %}
           <th>
-            {{ dl.abbr }}<br>
-            <span style="font-weight:500;font-size:.62rem;color:#94a3b8;">{{ dl.display }}</span>
+            <span class="day-abbr">{{ dl.abbr }}</span>
+            <span class="day-date">{{ dl.display }}</span>
           </th>
           {% endfor %}
-          <th style="min-width:70px;">Total</th>
+          <th style="min-width:72px;">Total</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           {% for dl in day_labels %}
             {% set cell = emp_cells.get(dl.date) %}
-            <td>
+            <td style="min-width:96px;">
               {% if cell %}
-                <div class="ts-cell ts-{{ cell.status | lower }}"
-                     title="{{ cell.projects | join(', ') or 'General' }} | {{ cell.time_range }} | {{ '%.1f'|format(cell.hours) }}h"
+                <div class="dc dc-{{ cell.status | lower }}"
+                     title="{{ cell.projects | join(', ') or 'General' }} — {{ cell.time_range }} — {{ '%.1f'|format(cell.hours) }}h"
                      {% if cell.sheet_id %}onclick="window.location='{{ url_for('timesheet_detail', sheet_id=cell.sheet_id) }}'"{% endif %}>
-                  {% if cell.time_range %}<div class="c-time">{{ cell.time_range }}</div>{% endif %}
-                  {% if cell.projects %}<div class="c-proj">{{ cell.projects[0] }}{% if cell.projects|length > 1 %} +{{ cell.projects|length - 1 }}{% endif %}</div>{% endif %}
-                  <div class="c-hrs">{{ "%.1f"|format(cell.hours) }}h</div>
+                  {% if cell.time_range %}<div class="dc-time">{{ cell.time_range }}</div>{% endif %}
+                  {% if cell.projects %}<div class="dc-proj">{{ cell.projects[0] }}{% if cell.projects|length > 1 %} +{{ cell.projects|length - 1 }}{% endif %}</div>{% endif %}
+                  <div class="dc-hrs">{{ "%.1f"|format(cell.hours) }}h</div>
                 </div>
               {% else %}
-                <div class="ts-empty">—</div>
+                <div class="dc-empty">—</div>
               {% endif %}
             </td>
           {% endfor %}
           <td class="total-col">
-            {% if week_total > 0 %}{{ "%.1f"|format(week_total) }}h{% else %}—{% endif %}
+            {% if week_total > 0 %}{{ "%.1f"|format(week_total) }}h{% else %}<span style="color:#d1d5db;">—</span>{% endif %}
           </td>
         </tr>
       </tbody>
@@ -420,18 +689,16 @@
   </div>
 
   {% if week_sheet and week_sheet.status == 'Rejected' and week_sheet.rejection_notes %}
-  <div style="background:#fff1f2;border-top:1px solid #fecdd3;padding:10px 20px;font-size:.8rem;color:#b91c1c;">
+  <div style="background:#fff1f2;border-top:1px solid #fecdd3;padding:12px 22px;font-size:13px;color:#b91c1c;">
     <i class="bi bi-exclamation-circle-fill me-1"></i>
-    Rejected: {{ week_sheet.rejection_notes }}
+    <strong>Rejected:</strong> {{ week_sheet.rejection_notes }}
   </div>
   {% endif %}
 </div>
 
-<!-- History Table -->
-<div style="font-weight:700;color:#475569;font-size:.8rem;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">
-  Submission History
-</div>
-<table class="my-ts-table">
+<!-- Submission History -->
+<div class="hist-section-label">Submission History</div>
+<table class="hist-table">
   <thead>
     <tr>
       <th>Week Of</th>
@@ -450,7 +717,7 @@
         <td>
           <strong>{{ sheet.week_of }}</strong>
           {% if sheet.week_of == current_week %}
-          <span style="background:#fef3c7;color:#b45309;font-size:.6rem;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:4px;">CURRENT</span>
+          <span style="background:#fef3c7;color:#b45309;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:6px;vertical-align:middle;">CURRENT</span>
           {% endif %}
         </td>
         <td><strong>{{ "%.1f"|format(sheet.total_hours | float) }}h</strong></td>
@@ -459,19 +726,17 @@
           {{ "%.1f"|format(sheet.total_overtime_hours | float) }}h
         </td>
         <td><span class="sbadge sb-{{ sheet.status | lower }}">{{ sheet.status }}</span></td>
-        <td style="color:#94a3b8;font-size:.78rem;">
+        <td style="color:#94a3b8;font-size:12px;">
           {{ (sheet.submitted_at[:10] | format_date) if sheet.submitted_at else '—' }}
         </td>
         <td>
           <div class="d-flex gap-2">
-            <a href="{{ url_for('timesheet_detail', sheet_id=sheet.firebase_id) }}"
-               class="btn btn-sm btn-outline-secondary" style="font-size:.72rem;padding:3px 10px;">
-              View
+            <a href="{{ url_for('timesheet_detail', sheet_id=sheet.firebase_id) }}" class="link-btn outline">
+              <i class="bi bi-eye"></i> View
             </a>
             {% if sheet.status in ('Draft', 'Rejected') %}
-            <a href="{{ url_for('timesheets_submit', week=sheet.week_of) }}"
-               class="btn btn-sm" style="background:#0D9488;color:#fff;font-size:.72rem;padding:3px 10px;border:none;border-radius:6px;">
-              Edit
+            <a href="{{ url_for('timesheets_submit', week=sheet.week_of) }}" class="link-btn teal">
+              <i class="bi bi-pencil"></i> Edit
             </a>
             {% endif %}
           </div>
@@ -480,20 +745,19 @@
       {% endfor %}
     {% else %}
     <tr>
-      <td colspan="7" class="empty-state">
-        <div class="empty-state-icon">📋</div>
-        <div class="empty-state-title">No Timesheets Yet</div>
-        <p style="margin:0;font-size:.8rem;">
-          <a href="{{ url_for('timesheets_submit') }}" style="color:#0D9488;font-weight:600;">
-            Submit your first timesheet →
-          </a>
-        </p>
+      <td colspan="7">
+        <div class="ts-empty-state">
+          <i class="bi bi-clipboard-x"></i>
+          <p>No timesheets yet. <a href="{{ url_for('timesheets_submit') }}" style="color:#0D9488;font-weight:600;">Submit your first timesheet →</a></p>
+        </div>
       </td>
     </tr>
     {% endif %}
   </tbody>
 </table>
 {% endif %}
+
+</div><!-- /ts-root -->
 {% endblock %}
 
 {% block scripts %}
