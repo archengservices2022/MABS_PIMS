@@ -8310,21 +8310,30 @@ def employees():
                 all_emp_expenses.append(slim)
     all_emp_expenses.sort(key=lambda x: x.get("created_at", ""), reverse=True)
 
-    # Separate pending edits from regular submissions
-    pending_edit_expenses = [e for e in all_emp_expenses if e.get("edit_status") == "pending"]
-    regular_expenses = [e for e in all_emp_expenses if e.get("edit_status") != "pending"]
+    # For display, merge pending edit data into the main record
+    # This shows the edited data while awaiting approval
+    for e in all_emp_expenses:
+        if e.get("edit_status") == "pending" and "pending_edit" in e:
+            # Merge edited data for display
+            pending_edit_data = e.get("pending_edit", {})
+            for key, value in pending_edit_data.items():
+                e[key] = value
+            # Set status to Pending while awaiting edit approval
+            e["status"] = "Pending"
 
     if is_admin:
-        context["my_expenses"] = regular_expenses
-        context["pending_edit_expenses"] = pending_edit_expenses
+        context["my_expenses"] = all_emp_expenses
     else:
-        context["my_expenses"] = [e for e in regular_expenses if e.get("submitted_by_uid") == uid]
-        context["pending_edit_expenses"] = []
+        context["my_expenses"] = [e for e in all_emp_expenses if e.get("submitted_by_uid") == uid]
 
     if is_admin:
-        context["pending_expenses"] = [e for e in regular_expenses if e.get("status") == "Pending"]
+        # Pending expenses for approval include both new submissions AND pending edits
+        context["pending_expenses"] = [e for e in all_emp_expenses if e.get("status") == "Pending"]
+        # Pending edits (for the edit approval section)
+        context["pending_edit_expenses"] = [e for e in all_emp_expenses if e.get("edit_status") == "pending"]
     else:
         context["pending_expenses"] = []
+        context["pending_edit_expenses"] = []
 
     return render_template("employees.html", **context)
 
@@ -8517,12 +8526,14 @@ def employee_expense_edit_review(exp_id):
             # Merge edited data back into main record
             for key, value in edited_data.items():
                 exp_data[key] = value
-            # Clear pending edit status
+            # Clear pending edit status and set to approved
             exp_data.pop("pending_edit", None)
+            exp_data["status"] = "Approved"  # Set status to Approved
             exp_data["edit_status"] = "approved"
             exp_data["edit_approved_by"] = session.get("user_name", "")
             exp_data["edit_approved_at"] = now_str
             exp_data["edit_review_note"] = review_note
+            exp_data["updated_at"] = now_str
 
             # Update /expenses with merged data
             fb_update(f"/expenses/{exp_id}", exp_data)

@@ -1416,7 +1416,11 @@
               <td>
                 {% set st = e.get('status','Pending') %}
                 {% set edit_st = e.get('edit_status', '') %}
-                {% if edit_st == 'approved' %}
+                {% if edit_st == 'pending' %}
+                  <span class="badge bg-warning text-dark">Pending</span>
+                  <span class="badge bg-info text-white ms-1">Pending Edit</span>
+                  <div style="font-size:10px;color:#0284c7;margin-top:2px;">Edited {{ e.get('edited_at','')[:10] }}</div>
+                {% elif edit_st == 'approved' %}
                   <span class="badge bg-success me-1">Approved</span><span class="badge bg-teal text-white">✓ Edited</span>
                 {% elif st == 'Approved' %}
                   <span class="badge bg-success">Approved</span>
