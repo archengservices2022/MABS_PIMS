@@ -199,11 +199,7 @@ const EXISTING  = {{ (existing_sheet.entries if existing_sheet else []) | tojson
 const IS_APPROVED = {{ 'true' if (existing_sheet and existing_sheet.status == 'Approved') else 'false' }};
 const TODAY_ISO = new Date().toISOString().slice(0, 10);
 
-// Weekdays only (Mon–Fri)
-const WEEKDAYS = WEEK_DAYS.filter(d => {
-  const day = new Date(d.date + 'T00:00:00').getDay();
-  return day !== 0 && day !== 6; // 0=Sun, 6=Sat
-});
+const WEEKDAYS = WEEK_DAYS; // All 7 days allowed
 
 const ENTRY_TYPES = [
   { value: 'work',    label: 'Work' },
@@ -415,7 +411,6 @@ function addProjectForDay(date) {
 
 function addNewDay() {
   const used = new Set(dayOrder);
-  // Only weekdays available
   const available = WEEKDAYS.filter(d => !used.has(d.date));
   if (available.length === 0) {
     if (dayOrder.length > 0) addProjectForDay(dayOrder[dayOrder.length - 1]);
