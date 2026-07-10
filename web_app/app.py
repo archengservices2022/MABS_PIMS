@@ -7034,8 +7034,27 @@ def financial():
     salaries_international_raw = filter_by_year(salaries_international_raw, stat_card_year)
     total_salaries = sum(_safe_float(s.get("amount", 0)) for s in salaries_domestic_raw + salaries_international_raw)
 
-    # Recalculate net profit now that total_salaries is known
-    net_profit             = total_paid - total_expenses - total_salaries
+    # ── Commission paid — treated as a cost on the balance sheet ────────────
+    _cp_bs_raw = fb_get("/commission_payments") or {}
+    bs_total_commission = 0.0
+    total_commission_paid = 0.0
+    if isinstance(_cp_bs_raw, dict):
+        for _cpid, _cp in _cp_bs_raw.items():
+            if not _cp or not isinstance(_cp, dict):
+                continue
+            _amt  = _safe_float(_cp.get("amount", 0))
+            _paid_at = (_cp.get("paid_at") or "")[:4]
+            try:
+                _yr = int(_paid_at)
+            except ValueError:
+                _yr = 0
+            if _yr == current_year:
+                bs_total_commission += _amt
+            if _yr == stat_card_year:
+                total_commission_paid += _amt
+
+    # Recalculate net profit now that total_salaries and commissions are known
+    net_profit             = total_paid - total_expenses - total_salaries - total_commission_paid
     net_profit_after_labor = net_profit - total_labor_cost
 
     # Count unique employees with salary entries in present running year
@@ -7501,6 +7520,8 @@ def financial():
         commission_total_earned=commission_total_earned,
         commission_total_paid=commission_total_paid,
         commission_total_outstanding=commission_total_outstanding,
+        bs_total_commission=bs_total_commission,
+        total_commission_paid=total_commission_paid,
     )
 
 @app.route("/financial/expense/new", methods=["POST"])

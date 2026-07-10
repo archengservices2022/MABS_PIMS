@@ -2412,12 +2412,21 @@ function viewReceipt(expId) {
         <div class="kpi-sub">{{ (salaries_domestic | length) + (salaries_international | length) }} employees</div>
       </div>
     </div>
+    {% if bs_total_commission > 0 %}
     <div class="col-6 col-xl">
-      {% set bs_net = (bs_total_revenue | default(0)) - (bs_total_expenses | default(0)) - (bs_total_salaries | default(0)) %}
+      <div class="kpi-card" style="border-top:3px solid #7C3AED;">
+        <div class="kpi-top"><span class="kpi-label" style="color:#7C3AED;">Commission Paid</span><i class="bi bi-cash-coin kpi-icon-sm" style="color:#7C3AED;"></i></div>
+        <div class="kpi-value" style="color:#7C3AED;">${{ "{:,.2f}".format(bs_total_commission) }}</div>
+        <div class="kpi-sub">paid this year</div>
+      </div>
+    </div>
+    {% endif %}
+    <div class="col-6 col-xl">
+      {% set bs_net = (bs_total_revenue | default(0)) - (bs_total_expenses | default(0)) - (bs_total_salaries | default(0)) - (bs_total_commission | default(0)) %}
       <div class="kpi-card {{ 'kpi-green' if bs_net >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit/Loss</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
         <div id="bsKpiNet" class="kpi-value {{ 'text-success' if bs_net >= 0 else 'text-danger' }}">${{ "{:,.2f}".format(bs_net) }}</div>
-        <div class="kpi-sub">collected − expenses − salaries</div>
+        <div class="kpi-sub">collected − expenses − salaries − commission</div>
       </div>
     </div>
   </div>
