@@ -8454,26 +8454,14 @@ def employee_expense_submit():
             # (don't pop it from data - preserve it)
             pass
 
-        # Check if expense is already approved (exists in balance_sheet_expenses)
-        is_approved = fb_get(f"/balance_sheet_expenses/{editing_expense_id}") is not None
+        # Update employee expense record directly (no approval needed for edits)
+        fb_update(f"/expenses/{editing_expense_id}", data)
 
-        if is_approved:
-            # Expense is already approved - store edit as pending for admin re-approval
-            # Keep original data, store edited data as "pending_edit"
-            update_data = {
-                "pending_edit": data,
-                "edit_status": "pending",
-                "edited_by_email": session.get("user_email", ""),
-                "edited_by_name": session.get("user_name", ""),
-                "edited_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
-            fb_update(f"/expenses/{editing_expense_id}", update_data)
-            flash("Expense edit submitted for approval. Admin will review your changes.", "info")
-        else:
-            # Expense not yet approved - update directly
-            fb_update(f"/expenses/{editing_expense_id}", data)
-            flash("Expense updated successfully.", "success")
+        # Also update /balance_sheet_expenses (Finance tab) if it exists (for approved expenses)
+        if fb_get(f"/balance_sheet_expenses/{editing_expense_id}"):
+            fb_update(f"/balance_sheet_expenses/{editing_expense_id}", data)
+
+        flash("Expense updated successfully.", "success")
     else:
         # Creating new expense
         data.update({
