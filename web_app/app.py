@@ -5482,7 +5482,7 @@ def payroll():
     if isinstance(_cpay_raw, dict):
         for _cpid, _cp in _cpay_raw.items():
             if _cp and isinstance(_cp, dict):
-                comm_paid_set.add((_cp.get("salesperson", ""), _cp.get("period", "")))
+                comm_paid_set.add((_cp.get("salesperson", "").strip().lower(), _cp.get("period", "")))
 
     return render_template("payroll.html",
         employee_filter=employee_filter,

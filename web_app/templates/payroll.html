@@ -268,7 +268,8 @@
               {% set sal_period = sal.date[:7] if sal.date and sal.date|length >= 7 else '' %}
               {% set sal_comm = commission_by_period.get(sal_emp, {}).get(sal_period, 0) | float %}
               {% set sal_total = sal.amount | float + sal_comm %}
-              {% set comm_paid = (sal_emp, sal_period) | string in comm_paid_set | map('string') | list %}
+              {% set _sal_emp_lc = sal_emp | lower %}
+              {% set comm_paid = (_sal_emp_lc, sal_period) | string in comm_paid_set | map('string') | list %}
               <tr data-salary="1" data-employee="{{ sal_emp | lower }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}" data-amount="{{ sal.amount | float }}">
                 <td><strong>{{ sal_emp or '—' }}</strong></td>
                 <td>{{ sal.date[5:7] + '-' + sal.date[8:10] + '-' + sal.date[0:4] if sal.date and sal.date|length >= 10 else '—' }}</td>
@@ -278,7 +279,7 @@
                   {% if sal_comm > 0 %}
                   <div style="color:#7C3AED;font-weight:700;">${{ "{:,.2f}".format(sal_comm) }}</div>
                   <div style="font-size:10px;color:#94a3b8;">
-                    {% if (sal_emp, sal_period) in comm_paid_set %}<span style="color:#16a34a;">✓ Paid</span>{% else %}Pending{% endif %}
+                    {% if comm_paid %}<span style="font-size:10px;font-weight:700;color:#16a34a;">✓ Paid</span>{% else %}<span style="font-size:10px;color:#94a3b8;">Pending</span>{% endif %}
                   </div>
                   {% else %}
                   <span class="text-muted">—</span>
