@@ -96,8 +96,8 @@ ROLE_PAGES = {
     "engineer": ["employees", "timesheets"],
 }
 
-ALL_PAGES = ["dashboard", "quotes", "projects", "invoicing", "payroll",
-             "financial", "settings", "employees", "sales_dashboard", "timesheets"]
+ALL_PAGES = ["dashboard", "sales_dashboard", "quotes", "projects", "invoicing", "payroll",
+             "financial", "settings", "employees", "timesheets"]
 
 PAGE_LABELS = {
     "dashboard":      "Dashboard",
@@ -6466,6 +6466,8 @@ def financial():
         for eid, edata in expenses.items():
             if isinstance(edata, dict):
                 edata["firebase_id"] = eid
+                # Ensure amount is always a float (some old entries might be strings)
+                edata["amount"] = _safe_float(edata.get("amount", 0))
                 exp_list_raw.append(edata)
 
     # Group expenses by name and sum amounts
@@ -7558,7 +7560,7 @@ def expense_new():
         "expense_type":      request.form.get("expense_type", ""),
         "expense_name":      request.form.get("expense_name", ""),
         "description":       request.form.get("description", "") or request.form.get("expense_name", ""),
-        "amount":            request.form.get("amount", "0"),
+        "amount":            _safe_float(request.form.get("amount", 0)),
         "category":          request.form.get("category", ""),
         "date":              request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
         "vendor":            request.form.get("vendor", ""),
@@ -7572,26 +7574,45 @@ def expense_new():
         "updated_at":        datetime.now(timezone.utc).isoformat(),
     }
     # Handle receipt upload (base64 encoding)
+    receipt_base64 = None
+    receipt_filename = None
+    receipt_type = None
     if 'receipt' in request.files:
         file = request.files['receipt']
         if file and file.filename:
             try:
                 file_content = file.read()
-                base64_content = base64.b64encode(file_content).decode('utf-8')
-                data['receipt_base64'] = base64_content
-                data['receipt_filename'] = file.filename
-                data['receipt_type'] = file.content_type
+                receipt_base64 = base64.b64encode(file_content).decode('utf-8')
+                receipt_filename = file.filename
+                receipt_type = file.content_type
+                data['receipt_filename'] = receipt_filename
             except Exception as e:
                 app.logger.error(f"Receipt upload error: {e}")
-    # Save to both locations: main /expenses and /balance_sheet_expenses for backwards compatibility
-    exp_id = fb_push("/expenses", data)
-    fb_push("/balance_sheet_expenses", {**data, "firebase_id": exp_id})
+    # Finance expenses save ONLY to /balance_sheet_expenses (not to /expenses)
+    # /expenses is for employee submissions only
+    exp_id = fb_push("/balance_sheet_expenses", data)
+    # Store receipt separately in /expense_receipts for fast loading
+    if receipt_base64:
+        fb_update(f"/expense_receipts/{exp_id}", {
+            "receipt_base64":   receipt_base64,
+            "receipt_filename": receipt_filename,
+            "receipt_type":     receipt_type,
+        })
     return jsonify({"success": True, "expense_id": exp_id})
 
 @app.route("/financial/expense/<exp_id>/delete", methods=["POST"])
 @role_required("financial")
 def expense_delete(exp_id):
+    # Check if this is an employee expense (in /expenses) or finance-only (just in /balance_sheet_expenses)
+    is_emp_expense = fb_get(f"/expenses/{exp_id}") is not None
+
+    # Always delete from balance_sheet_expenses
     fb_delete(f"/balance_sheet_expenses/{exp_id}")
+
+    # Only delete from /expenses if it's an employee expense
+    if is_emp_expense:
+        fb_delete(f"/expenses/{exp_id}")
+
     flash("Expense deleted.", "success")
     return redirect(url_for("financial", tab="expenses"))
 
@@ -7646,8 +7667,15 @@ def expense_edit(exp_id):
         if isinstance(emp_rec, dict):
             sync_fields = {k: v for k, v in data.items()
                            if k in ("expense_type","expense_name","description","amount",
-                                    "category","date","vendor","project_number","notes","updated_at")}
+                                    "category","date","vendor","project_number","notes","receipt_base64",
+                                    "receipt_filename","receipt_type","updated_at")}
             fb_update(f"/expenses/{exp_id}", sync_fields)
+            # Also sync receipt to separate receipt store if provided
+            if any(k in data for k in ("receipt_base64","receipt_filename","receipt_type")):
+                receipt_sync = {k: v for k, v in data.items()
+                               if k in ("receipt_base64","receipt_filename","receipt_type")}
+                if receipt_sync.get("receipt_base64"):
+                    fb_update(f"/expense_receipts/{exp_id}", receipt_sync)
         return jsonify({"success": True, "expense_id": exp_id})
     except Exception as e:
         app.logger.error(f"Expense edit error: {e}", exc_info=True)
@@ -8336,49 +8364,90 @@ def medical_claim_review(claim_id):
 @app.route("/employees/expenses/submit", methods=["POST"])
 @role_required("employees")
 def employee_expense_submit():
-    # Receipt is mandatory
-    if 'receipt' not in request.files or not request.files['receipt'].filename:
+    app.logger.info(f"Employee expense submit - request.form keys: {list(request.form.keys())}")
+    app.logger.info(f"Employee expense submit - request.form: {dict(request.form)}")
+
+    editing_expense_id = request.form.get("editing_expense_id", "").strip()
+
+    # If editing, receipt is optional (can keep existing receipt)
+    # If creating new, receipt is mandatory
+    has_receipt = 'receipt' in request.files and request.files['receipt'].filename
+    if not editing_expense_id and not has_receipt:
         flash("A receipt is required to submit an expense.", "danger")
         return redirect(url_for("employees") + "#expenses")
 
-    receipt_file = request.files['receipt']
-    try:
-        file_content = receipt_file.read()
-        receipt_base64 = base64.b64encode(file_content).decode('utf-8')
-        receipt_filename = receipt_file.filename
-        receipt_type = receipt_file.content_type
-    except Exception as e:
-        app.logger.error(f"Expense receipt upload error: {e}")
-        flash("Receipt upload failed. Please try again.", "danger")
-        return redirect(url_for("employees") + "#expenses")
+    receipt_base64 = None
+    receipt_filename = None
+    receipt_type = None
+
+    if has_receipt:
+        receipt_file = request.files['receipt']
+        try:
+            file_content = receipt_file.read()
+            receipt_base64 = base64.b64encode(file_content).decode('utf-8')
+            receipt_filename = receipt_file.filename
+            receipt_type = receipt_file.content_type
+        except Exception as e:
+            app.logger.error(f"Expense receipt upload error: {e}")
+            flash("Receipt upload failed. Please try again.", "danger")
+            return redirect(url_for("employees") + "#expenses")
 
     data = {
         "expense_type":      request.form.get("expense_type", ""),
         "expense_name":      request.form.get("expense_name", ""),
         "description":       request.form.get("expense_name", ""),
-        "amount":            request.form.get("amount", "0"),
+        "amount":            _safe_float(request.form.get("amount", 0)),
         "category":          request.form.get("category", ""),
         "date":              request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
         "vendor":            request.form.get("vendor", "").strip(),
         "project_number":    request.form.get("project_number", ""),
         "notes":             request.form.get("notes", "").strip(),
-        "submitted_by_name": session.get("user_name", ""),
-        "submitted_by_uid":  session.get("user_uid", ""),
-        "submitted_by_email":session.get("user_email", ""),
-        "status":            "Pending",
-        "created_at":        datetime.now(timezone.utc).isoformat(),
         "updated_at":        datetime.now(timezone.utc).isoformat(),
-        "receipt_filename":  receipt_filename,
     }
-    exp_id = fb_push("/expenses", data)
-    # Store receipt binary in a separate path so /expenses stays lightweight
-    if exp_id:
-        fb_update(f"/expense_receipts/{exp_id}", {
-            "receipt_base64":   receipt_base64,
-            "receipt_filename": receipt_filename,
-            "receipt_type":     receipt_type,
+    app.logger.info(f"Employee expense submit - expense_name={repr(request.form.get('expense_name'))}, category={repr(request.form.get('category'))}, project_number={repr(request.form.get('project_number'))}, notes={repr(request.form.get('notes'))}")
+
+    if editing_expense_id:
+        # Editing existing expense
+        data.pop("expense_type", None)  # Can't change type after submission
+        # Don't overwrite receipt_filename if no new receipt was uploaded
+        if not receipt_filename:
+            data.pop("receipt_filename", None)
+
+        fb_update(f"/expenses/{editing_expense_id}", data)
+
+        # Update receipt ONLY if new one provided
+        if receipt_base64:
+            fb_update(f"/expense_receipts/{editing_expense_id}", {
+                "receipt_base64":   receipt_base64,
+                "receipt_filename": receipt_filename,
+                "receipt_type":     receipt_type,
+            })
+
+        # Sync to balance_sheet_expenses if it exists
+        if fb_get(f"/balance_sheet_expenses/{editing_expense_id}"):
+            fb_update(f"/balance_sheet_expenses/{editing_expense_id}", data)
+
+        flash("Expense updated successfully.", "success")
+    else:
+        # Creating new expense
+        data.update({
+            "submitted_by_name": session.get("user_name", ""),
+            "submitted_by_uid":  session.get("user_uid", ""),
+            "submitted_by_email":session.get("user_email", ""),
+            "status":            "Pending",
+            "created_at":        datetime.now(timezone.utc).isoformat(),
+            "receipt_filename":  receipt_filename,
         })
-    flash("Expense submitted and pending admin approval.", "success")
+        exp_id = fb_push("/expenses", data)
+        # Store receipt binary in a separate path so /expenses stays lightweight
+        if exp_id and receipt_base64:
+            fb_update(f"/expense_receipts/{exp_id}", {
+                "receipt_base64":   receipt_base64,
+                "receipt_filename": receipt_filename,
+                "receipt_type":     receipt_type,
+            })
+        flash("Expense submitted and pending admin approval.", "success")
+
     return redirect(url_for("employees") + "#expenses")
 
 
@@ -8451,8 +8520,8 @@ def employee_expense_edit(exp_id):
     updates = {
         "expense_type":   request.form.get("expense_type", ""),
         "expense_name":   request.form.get("expense_name", "").strip(),
-        "description":    request.form.get("expense_name", "").strip(),
-        "amount":         request.form.get("amount", "0"),
+        "description":    request.form.get("description", "").strip() or request.form.get("expense_name", "").strip(),
+        "amount":         _safe_float(request.form.get("amount", 0)),
         "date":           request.form.get("date", ""),
         "vendor":         request.form.get("vendor", "").strip(),
         "project_number": request.form.get("project_number", ""),
@@ -8465,6 +8534,8 @@ def employee_expense_edit(exp_id):
         try:
             new_b64 = base64.b64encode(receipt_file.read()).decode('utf-8')
             updates["receipt_filename"] = receipt_file.filename
+            updates["receipt_base64"] = new_b64
+            updates["receipt_type"] = receipt_file.content_type
             fb_update(f"/expense_receipts/{exp_id}", {
                 "receipt_base64":   new_b64,
                 "receipt_filename": receipt_file.filename,
@@ -8475,7 +8546,11 @@ def employee_expense_edit(exp_id):
             flash("Receipt upload failed. Other changes were not saved.", "danger")
             return redirect(url_for("employees") + "#expenses")
 
+    # Update in employee expenses
     fb_update(f"/expenses/{exp_id}", updates)
+    # Also sync to balance_sheet_expenses if it exists there
+    if fb_get(f"/balance_sheet_expenses/{exp_id}"):
+        fb_update(f"/balance_sheet_expenses/{exp_id}", updates)
     flash("Expense updated successfully.", "success")
     return redirect(url_for("employees") + "#expenses")
 
@@ -8756,6 +8831,8 @@ def user_details_update(uid):
         r = str(data["role"]).strip().lower()
         if r in allowed_roles:
             updates["role"] = r
+            # Auto-reset custom_pages to role default when role changes
+            updates["custom_pages"] = None
     fb_update(f"/users/{uid}", updates)
     return jsonify({"ok": True})
 
