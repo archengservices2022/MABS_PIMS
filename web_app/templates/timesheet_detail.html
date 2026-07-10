@@ -4,114 +4,278 @@
 
 {% block head %}
 <style>
-.ts-detail-card { background:#fff; border-radius:14px; box-shadow:0 1px 6px rgba(0,0,0,.08); overflow:hidden; margin-bottom:20px; }
-.ts-detail-header { padding:20px 24px; border-bottom:1px solid #f1f5f9; display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:12px; }
-.ts-avatar { width:48px; height:48px; border-radius:50%; background:linear-gradient(135deg,#0D9488,#0891B2); color:#fff; display:flex; align-items:center; justify-content:center; font-size:1.2rem; font-weight:800; flex-shrink:0; }
-.ts-emp-name { font-size:1.1rem; font-weight:700; color:#0f172a; margin:0; }
-.ts-emp-week { font-size:.8rem; color:#64748b; margin-top:2px; }
+/* ── Global ──────────────────────────────────────────────────── */
+.tsd * {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  box-sizing: border-box;
+}
 
-.sbadge { display:inline-block; padding:3px 12px; border-radius:20px; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; }
-.sb-approved  { background:#dcfce7; color:#15803d; }
-.sb-submitted { background:#dbeafe; color:#1d4ed8; }
-.sb-draft     { background:#ede9fe; color:#7c3aed; }
-.sb-rejected  { background:#fee2e2; color:#b91c1c; }
+/* ── Hero header ─────────────────────────────────────────────── */
+.tsd-hero {
+  background: linear-gradient(120deg, #0D9488 0%, #0369a1 100%);
+  border-radius: 14px;
+  padding: 22px 28px;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.tsd-avatar {
+  width: 48px; height: 48px; border-radius: 50%;
+  background: rgba(255,255,255,.25);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 800; flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,.4);
+}
+.tsd-emp-name { font-size: 18px; font-weight: 700; color: #fff; margin: 0; letter-spacing: -.2px; }
+.tsd-emp-week { font-size: 13px; color: rgba(255,255,255,.75); margin-top: 2px; font-weight: 400; }
 
-.stat-boxes { display:flex; gap:12px; flex-wrap:wrap; padding:16px 24px; background:#f8fafc; border-bottom:1px solid #f1f5f9; }
-.stat-box { text-align:center; min-width:90px; }
-.stat-val { font-size:1.4rem; font-weight:800; color:#0f172a; }
-.stat-lbl { font-size:.65rem; text-transform:uppercase; letter-spacing:.4px; color:#94a3b8; font-weight:600; margin-top:2px; }
+/* ── Status badge ────────────────────────────────────────────── */
+.sbadge {
+  display: inline-flex; align-items: center;
+  padding: 4px 14px; border-radius: 20px;
+  font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .5px; white-space: nowrap;
+}
+.sb-approved  { background: #dcfce7; color: #15803d; }
+.sb-submitted { background: #dbeafe; color: #1e40af; }
+.sb-draft     { background: #ede9fe; color: #6d28d9; }
+.sb-rejected  { background: #fee2e2; color: #b91c1c; }
 
-.entries-table { width:100%; border-collapse:collapse; }
-.entries-table th { background:#f8fafc; color:#64748b; font-size:.67rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; padding:10px 14px; border-bottom:2px solid #e2e8f0; }
-.entries-table td { padding:11px 14px; border-bottom:1px solid #f1f5f9; font-size:.85rem; }
-.entries-table tbody tr:last-child td { border-bottom:none; }
-.entries-table tbody tr:hover { background:#fafafa; }
+/* ── KPI strip ───────────────────────────────────────────────── */
+.tsd-kpi-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.tsd-kpi {
+  flex: 1; min-width: 120px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px 18px 14px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.04);
+  border-left: 4px solid #e2e8f0;
+}
+.tsd-kpi.c-teal  { border-left-color: #0D9488; }
+.tsd-kpi.c-green { border-left-color: #16a34a; }
+.tsd-kpi.c-red   { border-left-color: #dc2626; }
+.tsd-kpi.c-blue  { border-left-color: #2563eb; }
+.tsd-kpi.c-slate { border-left-color: #64748b; }
+.tsd-kpi-val {
+  font-size: 24px; font-weight: 800;
+  color: #0f172a; letter-spacing: -.5px; line-height: 1;
+}
+.tsd-kpi-val.ot-color { color: #dc2626; }
+.tsd-kpi-val.muted    { color: #94a3b8; }
+.tsd-kpi-lbl {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .5px;
+  color: #94a3b8; margin-top: 5px;
+}
 
-.day-group-header td { background:#f1f5f9; font-weight:700; font-size:.8rem; color:#475569; padding:7px 14px; border-top:1px solid #e2e8f0; }
+/* ── Main card ───────────────────────────────────────────────── */
+.tsd-card {
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.05);
+  overflow: hidden;
+}
 
-.ot-val { color:#b91c1c; font-weight:600; }
-.approved-banner { background:#f0fdf4; border-top:1px solid #bbf7d0; padding:12px 24px; font-size:.82rem; color:#15803d; }
-.rejected-banner { background:#fff1f2; border-top:1px solid #fecdd3; padding:12px 24px; font-size:.82rem; color:#b91c1c; }
+/* ── Table ───────────────────────────────────────────────────── */
+.tsd-table { width: 100%; border-collapse: collapse; }
+.tsd-table thead th {
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  padding: 12px 14px;
+  border-bottom: 2px solid #e2e8f0;
+  white-space: nowrap;
+}
+.tsd-table tbody td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 13px;
+  color: #334155;
+  vertical-align: middle;
+}
+.tsd-table tbody tr:last-child td { border-bottom: none; }
+.tsd-table tbody tr:hover td { background: #fafbfc; }
 
-.approve-bar { padding:16px 24px; border-top:1px solid #f1f5f9; display:flex; gap:10px; justify-content:flex-end; align-items:center; flex-wrap:wrap; }
+/* ── Day group header ────────────────────────────────────────── */
+.day-grp td {
+  background: #f1f5f9;
+  padding: 8px 14px;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+.day-grp-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.day-grp-badge {
+  background: #0D9488;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 9px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.day-grp-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+  letter-spacing: -.1px;
+}
+
+/* ── Entry type badge ────────────────────────────────────────── */
+.etype {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 10px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px;
+}
+.etype-work    { background: #f0fdfa; color: #0D9488; }
+.etype-holiday { background: #ede9fe; color: #6d28d9; }
+.etype-sick    { background: #fee2e2; color: #b91c1c; }
+.etype-pto     { background: #fff7ed; color: #c2410c; }
+
+/* ── Hour values ─────────────────────────────────────────────── */
+.val-reg  { color: #0D9488; font-weight: 700; }
+.val-ot   { color: #dc2626; font-weight: 700; }
+.val-tot  { color: #1d4ed8; font-weight: 800; }
+.val-mute { color: #cbd5e1; }
+
+/* ── Totals row ──────────────────────────────────────────────── */
+.tsd-totals td {
+  background: #f8fafc;
+  border-top: 2px solid #e2e8f0;
+  padding: 12px 14px;
+  font-size: 13px;
+}
+
+/* ── Status banners ──────────────────────────────────────────── */
+.tsd-banner {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 22px;
+  font-size: 13px; font-weight: 500;
+  border-top: 1px solid;
+}
+.tsd-banner-approved { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+.tsd-banner-rejected { background: #fff1f2; border-color: #fecdd3; color: #b91c1c; }
+
+/* ── Admin action bar ────────────────────────────────────────── */
+.tsd-action-bar {
+  padding: 16px 22px;
+  border-top: 2px solid #f1f5f9;
+  display: flex; align-items: center; gap: 10px;
+  justify-content: flex-end; flex-wrap: wrap;
+  background: #fafbfc;
+}
+.tsd-action-label { font-size: 13px; color: #64748b; margin-right: 4px; }
+.tsd-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 20px; border-radius: 9px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  border: 1px solid transparent; transition: all .15s;
+  text-decoration: none;
+}
+.tsd-btn.approve { background: #16a34a; color: #fff; }
+.tsd-btn.approve:hover { background: #15803d; }
+.tsd-btn.reject  { background: #fff; color: #dc2626; border-color: #fca5a5; }
+.tsd-btn.reject:hover  { background: #fee2e2; }
+.tsd-btn.edit    { background: #0D9488; color: #fff; }
+.tsd-btn.edit:hover    { background: #0b8075; }
 </style>
 {% endblock %}
 
 {% block content %}
+<div class="tsd">
+
+<!-- Back link -->
 <div class="mb-3">
-  <a href="{{ url_for('timesheets') }}" class="text-decoration-none text-muted" style="font-size:.8rem;">
-    <i class="bi bi-arrow-left me-1"></i>Back to Timesheets
+  <a href="{{ url_for('timesheets') }}" style="font-size:13px;font-weight:500;color:#64748b;text-decoration:none;display:inline-flex;align-items:center;gap:5px;">
+    <i class="bi bi-arrow-left"></i> Back to Timesheets
   </a>
 </div>
 
-<div class="ts-detail-card">
-  <!-- Header -->
-  <div class="ts-detail-header">
-    <div class="d-flex align-items-center gap-3">
-      <div class="ts-avatar">{{ sheet.employee_name[0].upper() if sheet.employee_name else '?' }}</div>
-      <div>
-        <p class="ts-emp-name">{{ sheet.employee_name or 'Unknown Employee' }}</p>
-        <p class="ts-emp-week">Week of {{ sheet.week_of }}</p>
-      </div>
-    </div>
-    <div class="d-flex align-items-center gap-3">
-      <span class="sbadge sb-{{ sheet.status | lower }}">{{ sheet.status }}</span>
-      {% if sheet.status in ('Draft', 'Rejected') and (sheet.employee_uid == user_uid or is_admin) %}
-      <a href="{{ url_for('timesheets_submit', week=sheet.week_of) }}"
-         class="btn btn-sm" style="background:#0D9488;color:#fff;font-size:.78rem;padding:5px 14px;">
-        <i class="bi bi-pencil me-1"></i>Edit
-      </a>
-      {% endif %}
+<!-- Hero Header -->
+<div class="tsd-hero">
+  <div class="d-flex align-items-center gap-3">
+    <div class="tsd-avatar">{{ sheet.employee_name[0].upper() if sheet.employee_name else '?' }}</div>
+    <div>
+      <div class="tsd-emp-name">{{ sheet.employee_name or 'Unknown Employee' }}</div>
+      <div class="tsd-emp-week">Week of {{ sheet.week_of }}</div>
     </div>
   </div>
-
-  <!-- Stats -->
-  <div class="stat-boxes">
-    <div class="stat-box">
-      <div class="stat-val">{{ "%.1f"|format(sheet.total_hours | float) }}</div>
-      <div class="stat-lbl">Total Hrs</div>
-    </div>
-    <div class="stat-box">
-      <div class="stat-val">{{ "%.1f"|format(sheet.total_regular_hours | float) }}</div>
-      <div class="stat-lbl">Regular</div>
-    </div>
-    <div class="stat-box">
-      <div class="stat-val" style="color:{% if sheet.total_overtime_hours | float > 0 %}#b91c1c{% else %}#94a3b8{% endif %};">
-        {{ "%.1f"|format(sheet.total_overtime_hours | float) }}
-      </div>
-      <div class="stat-lbl">Overtime</div>
-    </div>
-    <div class="stat-box">
-      <div class="stat-val">{{ by_date | length }}</div>
-      <div class="stat-lbl">Days Worked</div>
-    </div>
-    {% if sheet.submitted_at %}
-    <div class="stat-box">
-      <div class="stat-val" style="font-size:.85rem;padding-top:4px;">{{ sheet.submitted_at[:10] | format_date }}</div>
-      <div class="stat-lbl">Submitted</div>
-    </div>
-    {% endif %}
-    {% if sheet.approved_at %}
-    <div class="stat-box">
-      <div class="stat-val" style="font-size:.85rem;padding-top:4px;">{{ sheet.approved_at[:10] | format_date }}</div>
-      <div class="stat-lbl">Reviewed</div>
-    </div>
+  <div class="d-flex align-items-center gap-3 flex-wrap">
+    <span class="sbadge sb-{{ sheet.status | lower }}">{{ sheet.status }}</span>
+    {% if sheet.status in ('Draft', 'Rejected') and (sheet.employee_uid == user_uid or is_admin) %}
+    <a href="{{ url_for('timesheets_submit', week=sheet.week_of) }}" class="tsd-btn edit">
+      <i class="bi bi-pencil"></i> Edit
+    </a>
     {% endif %}
   </div>
+</div>
 
-  <!-- Entries Table -->
+<!-- KPI Strip -->
+<div class="tsd-kpi-row">
+  <div class="tsd-kpi c-teal">
+    <div class="tsd-kpi-val">{{ "%.1f"|format(sheet.total_hours | float) }}</div>
+    <div class="tsd-kpi-lbl">Total Hours</div>
+  </div>
+  <div class="tsd-kpi c-green">
+    <div class="tsd-kpi-val">{{ "%.1f"|format(sheet.total_regular_hours | float) }}</div>
+    <div class="tsd-kpi-lbl">Regular</div>
+  </div>
+  <div class="tsd-kpi {% if sheet.total_overtime_hours | float > 0 %}c-red{% else %}c-slate{% endif %}">
+    <div class="tsd-kpi-val {% if sheet.total_overtime_hours | float > 0 %}ot-color{% else %}muted{% endif %}">
+      {{ "%.1f"|format(sheet.total_overtime_hours | float) }}
+    </div>
+    <div class="tsd-kpi-lbl">Overtime</div>
+  </div>
+  <div class="tsd-kpi c-blue">
+    <div class="tsd-kpi-val">{{ by_date | length }}</div>
+    <div class="tsd-kpi-lbl">Days Worked</div>
+  </div>
+  {% if sheet.submitted_at %}
+  <div class="tsd-kpi c-slate">
+    <div class="tsd-kpi-val" style="font-size:14px;font-weight:700;letter-spacing:0;padding-top:4px;">{{ sheet.submitted_at[:10] | format_date }}</div>
+    <div class="tsd-kpi-lbl">Submitted</div>
+  </div>
+  {% endif %}
+  {% if sheet.approved_at %}
+  <div class="tsd-kpi c-slate">
+    <div class="tsd-kpi-val" style="font-size:14px;font-weight:700;letter-spacing:0;padding-top:4px;">{{ sheet.approved_at[:10] | format_date }}</div>
+    <div class="tsd-kpi-lbl">Reviewed</div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Entries Table Card -->
+<div class="tsd-card">
   <div class="table-responsive">
-    <table class="entries-table">
+    <table class="tsd-table">
       <thead>
         <tr>
           <th>Date</th>
+          <th>Type</th>
           <th>Project</th>
           <th>Start</th>
-          <th>Lunch (min)</th>
           <th>End</th>
-          <th>Reg Hrs</th>
-          <th>OT Hrs</th>
-          <th>Total</th>
+          <th style="text-align:right;">Reg Hrs</th>
+          <th style="text-align:right;">OT Hrs</th>
+          <th style="text-align:right;">Total</th>
           <th>Notes</th>
         </tr>
       </thead>
@@ -119,48 +283,92 @@
         {% if sheet.entries %}
           {% set ns = namespace(prev_date='') %}
           {% for entry in sheet.entries %}
+
+          {# ── Day group header ── #}
           {% if entry.date != ns.prev_date %}
-          <tr class="day-group-header">
+          {% set _dow = entry.date | format_date if entry.date else '' %}
+          <tr class="day-grp">
             <td colspan="9">
-              <i class="bi bi-calendar3 me-2"></i>{{ entry.date | format_date if entry.date else 'No date' }}
+              <div class="day-grp-inner">
+                <span class="day-grp-badge">
+                  {% if entry.date %}{{ entry.date[5:] | replace('-','/') }}{% endif %}
+                </span>
+                <span class="day-grp-label">{{ entry.date | format_date if entry.date else 'No date' }}</span>
+              </div>
             </td>
           </tr>
           {% set ns.prev_date = entry.date %}
           {% endif %}
+
+          {# ── Entry row ── #}
+          {% set etype = entry.entry_type | default('work') | lower %}
           <tr>
-            <td style="color:#94a3b8;font-size:.78rem;">{{ entry.date | format_date if entry.date else '—' }}</td>
+            <td style="color:#94a3b8;font-size:12px;white-space:nowrap;">{{ entry.date | format_date if entry.date else '—' }}</td>
+            <td>
+              {% if etype == 'holiday' %}
+                <span class="etype etype-holiday"><i class="bi bi-umbrella-fill"></i> Holiday</span>
+              {% elif etype == 'sick' %}
+                <span class="etype etype-sick"><i class="bi bi-heart-pulse-fill"></i> Sick</span>
+              {% elif etype == 'pto' %}
+                <span class="etype etype-pto"><i class="bi bi-calendar-heart-fill"></i> PTO</span>
+              {% else %}
+                <span class="etype etype-work"><i class="bi bi-briefcase-fill"></i> Work</span>
+              {% endif %}
+            </td>
             <td>
               {% if entry.project_name %}
-              <strong>{{ entry.project_name }}</strong>
-              {% if entry.project_number %}
-              <span style="color:#94a3b8;font-size:.75rem;"> · {{ entry.project_number }}</span>
-              {% endif %}
+                <span style="font-weight:600;color:#1e293b;">{{ entry.project_name }}</span>
+                {% if entry.project_number %}
+                  <span style="color:#94a3b8;font-size:11px;margin-left:4px;">{{ entry.project_number }}</span>
+                {% endif %}
               {% else %}
-              <span style="color:#94a3b8;">General / Admin</span>
+                <span style="color:#94a3b8;">General / Admin</span>
               {% endif %}
             </td>
-            <td>{{ entry.start_time or '—' }}</td>
-            <td style="text-align:center;color:#64748b;">{{ entry.lunch_break_mins or 0 }}</td>
-            <td>{{ entry.end_time or '—' }}</td>
-            <td>{{ "%.2f"|format(entry.regular_hours | float) }}</td>
-            <td class="{% if entry.overtime_hours | float > 0 %}ot-val{% endif %}">
-              {{ "%.2f"|format(entry.overtime_hours | float) }}
+            <td style="font-variant-numeric:tabular-nums;white-space:nowrap;">
+              {% if entry.start_time %}
+                <span style="background:#f0fdfa;color:#0D9488;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:600;">{{ entry.start_time }}</span>
+              {% else %}<span class="val-mute">—</span>{% endif %}
             </td>
-            <td><strong>{{ "%.2f"|format(entry.total_hours | float) }}</strong></td>
-            <td style="color:#64748b;font-size:.8rem;">{{ entry.notes or '—' }}</td>
+            <td style="font-variant-numeric:tabular-nums;white-space:nowrap;">
+              {% if entry.end_time %}
+                <span style="background:#eff6ff;color:#1d4ed8;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:600;">{{ entry.end_time }}</span>
+              {% else %}<span class="val-mute">—</span>{% endif %}
+            </td>
+            <td style="text-align:right;">
+              {% if entry.regular_hours | float > 0 %}
+                <span class="val-reg">{{ "%.2f"|format(entry.regular_hours | float) }}</span>
+              {% else %}<span class="val-mute">0.00</span>{% endif %}
+            </td>
+            <td style="text-align:right;">
+              {% if entry.overtime_hours | float > 0 %}
+                <span class="val-ot">{{ "%.2f"|format(entry.overtime_hours | float) }}</span>
+              {% else %}<span class="val-mute">—</span>{% endif %}
+            </td>
+            <td style="text-align:right;">
+              <span class="val-tot">{{ "%.2f"|format(entry.total_hours | float) }}</span>
+            </td>
+            <td style="color:#64748b;font-size:12px;max-width:180px;">{{ entry.notes or '—' }}</td>
           </tr>
           {% endfor %}
-          <tr style="background:#f8fafc;border-top:2px solid #e2e8f0;">
-            <td colspan="5" style="text-align:right;font-weight:700;color:#475569;padding:10px 14px;">Totals</td>
-            <td style="font-weight:700;">{{ "%.2f"|format(sheet.total_regular_hours | float) }}</td>
-            <td class="ot-val" style="font-weight:700;">{{ "%.2f"|format(sheet.total_overtime_hours | float) }}</td>
-            <td style="font-weight:800;">{{ "%.2f"|format(sheet.total_hours | float) }}</td>
+
+          {# ── Totals row ── #}
+          <tr class="tsd-totals">
+            <td colspan="5" style="text-align:right;font-weight:700;color:#475569;font-size:12px;letter-spacing:.3px;text-transform:uppercase;">Totals</td>
+            <td style="text-align:right;"><span class="val-reg">{{ "%.2f"|format(sheet.total_regular_hours | float) }}</span></td>
+            <td style="text-align:right;">
+              {% if sheet.total_overtime_hours | float > 0 %}
+                <span class="val-ot">{{ "%.2f"|format(sheet.total_overtime_hours | float) }}</span>
+              {% else %}<span class="val-mute">0.00</span>{% endif %}
+            </td>
+            <td style="text-align:right;"><span class="val-tot" style="font-size:14px;">{{ "%.2f"|format(sheet.total_hours | float) }}</span></td>
             <td></td>
           </tr>
         {% else %}
         <tr>
-          <td colspan="9" style="text-align:center;padding:40px;color:#94a3b8;">
-            No entries recorded.
+          <td colspan="9" style="text-align:center;padding:52px 20px;color:#94a3b8;">
+            <i class="bi bi-clipboard-x" style="font-size:2rem;display:block;margin-bottom:10px;"></i>
+            No entries recorded for this timesheet.
           </td>
         </tr>
         {% endif %}
@@ -168,37 +376,34 @@
     </table>
   </div>
 
-  <!-- Approval Banner / Notes -->
+  <!-- Approved / Rejected banner -->
   {% if sheet.status == 'Approved' %}
-  <div class="approved-banner">
-    <i class="bi bi-check-circle-fill me-2"></i>
-    Approved by <strong>{{ sheet.approved_by or 'manager' }}</strong>
-    {% if sheet.approved_at %}on {{ sheet.approved_at[:10] | format_date }}{% endif %}
+  <div class="tsd-banner tsd-banner-approved">
+    <i class="bi bi-check-circle-fill"></i>
+    <span>Approved by <strong>{{ sheet.approved_by or 'manager' }}</strong>{% if sheet.approved_at %} · {{ sheet.approved_at[:10] | format_date }}{% endif %}</span>
   </div>
   {% elif sheet.status == 'Rejected' %}
-  <div class="rejected-banner">
-    <i class="bi bi-x-circle-fill me-2"></i>
-    Rejected by <strong>{{ sheet.approved_by or 'manager' }}</strong>
-    {% if sheet.approved_at %}on {{ sheet.approved_at[:10] | format_date }}{% endif %}
-    {% if sheet.rejection_notes %} — {{ sheet.rejection_notes }}{% endif %}
+  <div class="tsd-banner tsd-banner-rejected">
+    <i class="bi bi-x-circle-fill"></i>
+    <span>Rejected by <strong>{{ sheet.approved_by or 'manager' }}</strong>{% if sheet.approved_at %} · {{ sheet.approved_at[:10] | format_date }}{% endif %}{% if sheet.rejection_notes %} — {{ sheet.rejection_notes }}{% endif %}</span>
   </div>
   {% endif %}
 
-  <!-- Admin Approve/Reject Bar -->
-  {% if is_admin and sheet.status == 'Submitted' and sheet.employee_uid != user_uid %}
-  <div class="approve-bar">
-    <span style="color:#64748b;font-size:.82rem;">Awaiting your review:</span>
-    <button onclick="approveSheet('{{ sheet.firebase_id }}','approve')"
-            class="btn" style="background:#15803d;color:#fff;font-weight:600;padding:6px 18px;border:none;border-radius:8px;">
-      <i class="bi bi-check2-circle me-1"></i>Approve
+  <!-- Admin action bar -->
+  {% if is_admin and sheet.status == 'Submitted' %}
+  <div class="tsd-action-bar">
+    <span class="tsd-action-label"><i class="bi bi-hourglass-split me-1"></i>Awaiting your review:</span>
+    <button onclick="approveSheet('{{ sheet.firebase_id }}','approve')" class="tsd-btn approve">
+      <i class="bi bi-check2-circle"></i> Approve
     </button>
-    <button onclick="approveSheet('{{ sheet.firebase_id }}','reject')"
-            class="btn btn-outline-danger" style="font-weight:600;padding:6px 18px;border-radius:8px;">
-      <i class="bi bi-x-circle me-1"></i>Reject
+    <button onclick="approveSheet('{{ sheet.firebase_id }}','reject')" class="tsd-btn reject">
+      <i class="bi bi-x-circle"></i> Reject
     </button>
   </div>
   {% endif %}
 </div>
+
+</div><!-- /tsd -->
 {% endblock %}
 
 {% block scripts %}
