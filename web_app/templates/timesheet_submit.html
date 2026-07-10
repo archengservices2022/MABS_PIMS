@@ -4,121 +4,173 @@
 
 {% block head %}
 <style>
-.ts-form-card { background:#fff; border-radius:14px; box-shadow:0 1px 6px rgba(0,0,0,.08); overflow:hidden; }
-.ts-form-header { background:linear-gradient(135deg,#0D9488,#0891B2); color:#fff; padding:20px 24px; }
-.ts-form-header h5 { margin:0; font-weight:700; font-size:1rem; }
-.ts-form-header .sub { font-size:.8rem; opacity:.85; margin-top:3px; }
+/* ── Card & Header ───────────────────────────────────────────── */
+.ts-card { background:#fff; border-radius:16px; box-shadow:0 2px 12px rgba(0,0,0,.08); overflow:hidden; }
+.ts-header { background:linear-gradient(135deg,#0D9488 0%,#0891B2 100%); color:#fff; padding:22px 28px; }
+.ts-header h5 { margin:0; font-weight:800; font-size:1.05rem; }
+.ts-header .sub { font-size:.82rem; opacity:.85; margin-top:4px; }
 
-.ts-entry-table { width:100%; border-collapse:collapse; }
-.ts-entry-table th { background:#f8fafc; color:#64748b; font-size:.67rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; padding:9px 10px; border-bottom:2px solid #e2e8f0; white-space:nowrap; text-align:center; }
-.ts-entry-table th.left { text-align:left; }
-.ts-entry-table td { padding:7px 6px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
-.ts-entry-table td input, .ts-entry-table td select { border:1px solid #e2e8f0; border-radius:6px; padding:5px 8px; font-size:.78rem; width:100%; background:#fff; }
-.ts-entry-table td input:focus, .ts-entry-table td select:focus { border-color:#0D9488; outline:none; box-shadow:0 0 0 2px rgba(13,148,136,.12); }
-.ts-entry-table td .hrs-display { font-size:.8rem; font-weight:700; color:#0f172a; text-align:center; min-width:44px; }
-.ts-entry-table td .ot-display { color:#b91c1c; }
+/* ── Summary bar ─────────────────────────────────────────────── */
+.ts-summary { display:flex; gap:0; border-bottom:2px solid #f1f5f9; background:#fafbfc; }
+.ts-summary-item { flex:1; text-align:center; padding:14px 8px; border-right:1px solid #f1f5f9; }
+.ts-summary-item:last-child { border-right:none; }
+.ts-summary-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; }
+.ts-summary-val { font-size:1.4rem; font-weight:800; margin-top:2px; }
+.ts-summary-val.reg  { color:#0D9488; }
+.ts-summary-val.ot   { color:#D97706; }
+.ts-summary-val.tot  { color:#0369a1; }
+.ts-summary-val.days { color:#7C3AED; }
 
-.add-row-btn { background:none; border:1.5px dashed #cbd5e1; color:#94a3b8; font-size:.75rem; padding:6px 16px; border-radius:8px; cursor:pointer; transition:all .15s; width:100%; }
-.add-row-btn:hover { border-color:#0D9488; color:#0D9488; background:#f0fdfa; }
-.del-row-btn { background:none; border:none; color:#cbd5e1; cursor:pointer; padding:4px 6px; border-radius:4px; font-size:.9rem; }
-.del-row-btn:hover { color:#dc2626; background:#fee2e2; }
-.ts-day-header td { background:#f1f5f9; font-weight:700; font-size:.78rem; color:#475569; padding:7px 10px; border-top:2px solid #e2e8f0; }
-.ts-day-header:first-child td { border-top:none; }
-.add-day-proj-btn { background:none; border:1px dashed #cbd5e1; color:#94a3b8; font-size:.7rem; padding:3px 14px; border-radius:6px; cursor:pointer; transition:all .15s; }
-.add-day-proj-btn:hover { border-color:#0D9488; color:#0D9488; background:#f0fdfa; }
+/* ── Day group ───────────────────────────────────────────────── */
+.ts-day-block { margin-bottom:6px; border-radius:12px; overflow:hidden; border:1px solid #e2e8f0; }
+.ts-day-block-header {
+  display:flex; align-items:center; gap:10px;
+  padding:10px 14px; background:#f8fafc;
+  border-bottom:1px solid #e2e8f0;
+}
+.ts-day-badge {
+  background:#0D9488; color:#fff; border-radius:6px;
+  font-size:10px; font-weight:800; padding:3px 8px;
+  text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;
+}
+.ts-day-badge.weekend { background:#94a3b8; }
+.ts-day-badge.holiday-day { background:#7C3AED; }
+.ts-day-date { font-size:.82rem; font-weight:600; color:#475569; }
+.ts-day-lock { font-size:.75rem; color:#94a3b8; display:flex; align-items:center; gap:4px; margin-left:auto; }
 
-.totals-row { background:#f8fafc; }
-.totals-row td { padding:10px; font-weight:700; font-size:.82rem; border-top:2px solid #e2e8f0; }
-.total-label { color:#475569; text-align:right; }
-.total-val { color:#0f172a; text-align:center; }
-.total-ot { color:#b91c1c; text-align:center; }
+/* ── Entry table ─────────────────────────────────────────────── */
+.ts-table { width:100%; border-collapse:collapse; }
+.ts-table th {
+  background:#f1f5f9; color:#64748b; font-size:.67rem; font-weight:700;
+  text-transform:uppercase; letter-spacing:.4px; padding:8px 10px;
+  border-bottom:1px solid #e2e8f0; white-space:nowrap; text-align:center;
+}
+.ts-table th.left { text-align:left; }
+.ts-table td { padding:7px 8px; border-bottom:1px solid #f8fafc; vertical-align:middle; }
+.ts-table td input, .ts-table td select {
+  border:1px solid #e2e8f0; border-radius:8px; padding:5px 8px;
+  font-size:.78rem; width:100%; background:#fff; transition:border-color .15s;
+}
+.ts-table td input:focus, .ts-table td select:focus {
+  border-color:#0D9488; outline:none; box-shadow:0 0 0 3px rgba(13,148,136,.1);
+}
+.ts-table td .hrs { font-size:.82rem; font-weight:700; text-align:center; }
+.ts-table td .hrs.reg-val  { color:#0D9488; }
+.ts-table td .hrs.ot-val   { color:#D97706; }
+.ts-table td .hrs.tot-val  { color:#0369a1; }
+.ts-table td .hrs.muted    { color:#cbd5e1; }
+
+/* ── Type badge on non-work rows ─────────────────────────────── */
+.type-badge {
+  display:inline-flex; align-items:center; gap:5px;
+  padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700;
+}
+.type-holiday { background:#EDE9FE; color:#5B21B6; }
+.type-sick    { background:#FEF2F2; color:#DC2626; }
+.type-pto     { background:#FFF7ED; color:#C2410C; }
+
+/* ── Add buttons ─────────────────────────────────────────────── */
+.add-proj-btn {
+  background:none; border:1px dashed #cbd5e1; color:#94a3b8;
+  font-size:.72rem; padding:5px 14px; border-radius:8px; cursor:pointer;
+  transition:all .15s; margin:6px 10px 8px;
+}
+.add-proj-btn:hover { border-color:#0D9488; color:#0D9488; background:#f0fdfa; }
+.add-day-btn {
+  background:none; border:1.5px dashed #cbd5e1; color:#94a3b8;
+  font-size:.78rem; padding:9px 20px; border-radius:10px; cursor:pointer;
+  transition:all .15s; width:100%;
+}
+.add-day-btn:hover { border-color:#0D9488; color:#0D9488; background:#f0fdfa; }
+.del-btn { background:none; border:none; color:#cbd5e1; cursor:pointer; padding:4px 6px; border-radius:6px; font-size:.9rem; }
+.del-btn:hover { color:#dc2626; background:#fee2e2; }
+
+/* ── Totals footer ───────────────────────────────────────────── */
+.ts-footer { background:#f8fafc; border-top:2px solid #e2e8f0; padding:12px 20px; display:flex; align-items:center; justify-content:flex-end; gap:28px; }
+.ts-footer-item { text-align:center; }
+.ts-footer-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#94a3b8; }
+.ts-footer-val { font-size:1.1rem; font-weight:800; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <div>
-    <a href="{{ url_for('timesheets') }}" class="text-decoration-none text-muted" style="font-size:.8rem;">
-      <i class="bi bi-arrow-left me-1"></i>Back to Timesheets
-    </a>
-  </div>
+<div class="mb-3">
+  <a href="{{ url_for('timesheets') }}" class="text-decoration-none text-muted" style="font-size:.82rem;">
+    <i class="bi bi-arrow-left me-1"></i>Back to Timesheets
+  </a>
 </div>
 
-<div class="ts-form-card">
-  <div class="ts-form-header">
-    <h5><i class="bi bi-calendar-week me-2"></i>
-      {% if existing_sheet %}Edit{% else %}New{% endif %} Timesheet
-    </h5>
-    <div class="sub">Week of {{ week_label }}</div>
+<div class="ts-card">
+
+  <!-- Header -->
+  <div class="ts-header">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+      <div>
+        <h5><i class="bi bi-calendar-week me-2"></i>{% if existing_sheet %}Edit{% else %}New{% endif %} Timesheet</h5>
+        <div class="sub">{{ week_label }}</div>
+      </div>
+      <!-- Week Picker -->
+      <div class="d-flex align-items-center gap-2">
+        <label style="font-size:.78rem;opacity:.85;white-space:nowrap;">Select Week:</label>
+        <input type="week" id="weekPicker" onchange="changeWeek(this.value)"
+               style="border:none;border-radius:8px;padding:5px 10px;font-size:.82rem;color:#0f172a;cursor:pointer;">
+      </div>
+    </div>
   </div>
 
-  <div class="p-4">
+  <!-- Summary bar -->
+  <div class="ts-summary">
+    <div class="ts-summary-item">
+      <div class="ts-summary-label">Regular Hrs</div>
+      <div class="ts-summary-val reg" id="sumReg">0.00</div>
+    </div>
+    <div class="ts-summary-item">
+      <div class="ts-summary-label">Overtime Hrs</div>
+      <div class="ts-summary-val ot" id="sumOT">0.00</div>
+    </div>
+    <div class="ts-summary-item">
+      <div class="ts-summary-label">Total Hrs</div>
+      <div class="ts-summary-val tot" id="sumTotal">0.00</div>
+    </div>
+    <div class="ts-summary-item">
+      <div class="ts-summary-label">Days Logged</div>
+      <div class="ts-summary-val days" id="sumDays">0</div>
+    </div>
+  </div>
+
+  <div class="p-3 p-md-4">
+
     {% if existing_sheet and existing_sheet.status == 'Submitted' %}
-    <div class="alert alert-info mb-4" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:10px;font-size:.85rem;">
-      <i class="bi bi-info-circle-fill me-2"></i>
-      This timesheet was already submitted. You can re-submit to overwrite it.
+    <div class="alert mb-3" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:10px;font-size:.84rem;">
+      <i class="bi bi-info-circle-fill me-2"></i>Already submitted — re-submit to overwrite.
     </div>
     {% elif existing_sheet and existing_sheet.status == 'Approved' %}
-    <div class="alert alert-success mb-4" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;border-radius:10px;font-size:.85rem;">
-      <i class="bi bi-check-circle-fill me-2"></i>
-      This timesheet was approved. Contact your manager to make changes.
+    <div class="alert mb-3" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;border-radius:10px;font-size:.84rem;">
+      <i class="bi bi-check-circle-fill me-2"></i>Approved. Contact your manager to make changes.
     </div>
     {% elif existing_sheet and existing_sheet.status == 'Rejected' %}
-    <div class="alert mb-4" style="background:#fff1f2;border:1px solid #fecdd3;color:#b91c1c;border-radius:10px;font-size:.85rem;">
-      <i class="bi bi-exclamation-circle-fill me-2"></i>
-      Rejected. Please update and resubmit.
+    <div class="alert mb-3" style="background:#fff1f2;border:1px solid #fecdd3;color:#b91c1c;border-radius:10px;font-size:.84rem;">
+      <i class="bi bi-exclamation-circle-fill me-2"></i>Rejected — please update and resubmit.
     </div>
     {% endif %}
 
-    <!-- Week Picker -->
-    <div class="mb-4 d-flex align-items-center gap-3">
-      <label style="font-size:.8rem;font-weight:600;color:#475569;white-space:nowrap;">Select Week:</label>
-      <input type="week" id="weekPicker" class="form-control form-control-sm" style="max-width:200px;"
-             onchange="changeWeek(this.value)">
-      <span class="text-muted" style="font-size:.78rem;">{{ week_label }}</span>
-    </div>
-
-    <!-- Previous week carry-forward banner (shown by JS if applicable) -->
-    <div id="prevWeekBanner" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 16px;margin-bottom:14px;font-size:.83rem;color:#1e40af;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-      <span><i class="bi bi-arrow-counterclockwise me-1"></i>Previous week had entries. <strong id="prevWeekLabel"></strong></span>
-      <div class="d-flex gap-2">
-        <button type="button" class="btn btn-sm" onclick="copyPrevWeek()" style="background:#1d4ed8;color:#fff;font-size:.75rem;padding:3px 12px;border:none;border-radius:6px;">Copy Projects</button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('prevWeekBanner').style.display='none';" style="font-size:.75rem;padding:3px 10px;">Dismiss</button>
+    <!-- Prev-week carry-forward banner -->
+    <div id="prevWeekBanner" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 16px;margin-bottom:14px;font-size:.83rem;color:#1e40af;">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <span><i class="bi bi-arrow-counterclockwise me-1"></i>Previous week had entries. <strong id="prevWeekLabel"></strong></span>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-sm" onclick="copyPrevWeek()" style="background:#1d4ed8;color:#fff;font-size:.75rem;padding:3px 12px;border:none;border-radius:6px;">Copy Projects</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('prevWeekBanner').style.display='none';" style="font-size:.75rem;padding:3px 10px;">Dismiss</button>
+        </div>
       </div>
     </div>
 
-    <!-- Entry Table -->
-    <div class="table-responsive mb-3">
-      <table class="ts-entry-table" id="entryTable">
-        <thead>
-          <tr>
-            <th style="min-width:180px;">Project</th>
-            <th style="min-width:80px;">Start</th>
-            <th style="min-width:80px;">End</th>
-            <th style="min-width:60px;">Reg Hrs</th>
-            <th style="min-width:55px;">OT Hrs</th>
-            <th style="min-width:60px;">Total</th>
-            <th style="min-width:120px;">Notes</th>
-            <th style="width:36px;"></th>
-          </tr>
-        </thead>
-        <tbody id="entryBody">
-          <!-- JS populates rows grouped by day -->
-        </tbody>
-        <tfoot>
-          <tr class="totals-row">
-            <td colspan="3" class="total-label">Totals</td>
-            <td class="total-val" id="footReg">0.00</td>
-            <td class="total-ot"  id="footOT">0.00</td>
-            <td class="total-val" id="footTotal">0.00</td>
-            <td colspan="2"></td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
+    <!-- Day blocks container -->
+    <div id="dayBlocksContainer"></div>
 
-    <button type="button" class="add-row-btn mb-4" onclick="addNewDay()">
-      <i class="bi bi-calendar-plus me-1"></i> Add Day
+    <!-- Add Day button (weekdays only) -->
+    <button type="button" class="add-day-btn mb-4" onclick="addNewDay()" id="addDayBtn">
+      <i class="bi bi-calendar-plus me-1"></i>Add Day
     </button>
 
     <!-- Action Buttons -->
@@ -129,7 +181,7 @@
         <i class="bi bi-floppy me-1"></i>Save Draft
       </button>
       <button type="button" onclick="saveSheet('submit')" class="btn"
-              style="background:#0D9488;color:#fff;border:none;font-weight:600;padding:8px 20px;border-radius:8px;">
+              style="background:#0D9488;color:#fff;border:none;font-weight:600;padding:8px 22px;border-radius:8px;">
         <i class="bi bi-send me-1"></i>Submit Timesheet
       </button>
       {% endif %}
@@ -140,45 +192,54 @@
 
 {% block scripts %}
 <script>
-const WEEK_OF     = {{ week_of | tojson }};
-const WEEK_DAYS   = {{ week_days | tojson }};
-const PROJECTS    = {{ active_projects | tojson }};
-const EXISTING    = {{ (existing_sheet.entries if existing_sheet else []) | tojson }};
+const WEEK_OF   = {{ week_of | tojson }};
+const WEEK_DAYS = {{ week_days | tojson }};
+const PROJECTS  = {{ active_projects | tojson }};
+const EXISTING  = {{ (existing_sheet.entries if existing_sheet else []) | tojson }};
 const IS_APPROVED = {{ 'true' if (existing_sheet and existing_sheet.status == 'Approved') else 'false' }};
-const TODAY_ISO   = new Date().toISOString().slice(0, 10);
+const TODAY_ISO = new Date().toISOString().slice(0, 10);
+
+// Weekdays only (Mon–Fri)
+const WEEKDAYS = WEEK_DAYS.filter(d => {
+  const day = new Date(d.date + 'T00:00:00').getDay();
+  return day !== 0 && day !== 6; // 0=Sun, 6=Sat
+});
+
+const ENTRY_TYPES = [
+  { value: 'work',    label: 'Work' },
+  { value: 'holiday', label: 'Holiday' },
+  { value: 'sick',    label: 'Sick Leave' },
+  { value: 'pto',     label: 'PTO' },
+];
 
 function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// Parse "9:00 AM", "9:00", "09:00", "9AM", "17:00" → {h, min} or null
 function parseTime(val) {
   if (!val) return null;
   val = val.trim().toUpperCase().replace(/\./g, ':');
   let m = val.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/);
   if (m) {
-    let h = parseInt(m[1]), min = parseInt(m[2] || '0');
-    if (m[3] === 'AM' && h === 12) h = 0;
-    if (m[3] === 'PM' && h !== 12) h += 12;
-    return { h, min };
+    let h = parseInt(m[1]), min = parseInt(m[2]||'0');
+    if (m[3]==='AM' && h===12) h=0;
+    if (m[3]==='PM' && h!==12) h+=12;
+    return {h, min};
   }
   m = val.match(/^(\d{1,2}):(\d{2})$/);
-  if (m) return { h: parseInt(m[1]), min: parseInt(m[2]) };
+  if (m) return {h:parseInt(m[1]), min:parseInt(m[2])};
   m = val.match(/^(\d{1,2})$/);
-  if (m) return { h: parseInt(m[1]), min: 0 };
+  if (m) return {h:parseInt(m[1]), min:0};
   return null;
 }
 
-// Format stored "HH:MM" 24h → "9:00 AM" for display
 function formatTimeDisplay(s) {
   if (!s) return '';
   const parts = s.split(':');
-  const h = parseInt(parts[0]), m = parseInt(parts[1] || '0');
-  const period = h >= 12 ? 'PM' : 'AM';
-  return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${period}`;
+  const h = parseInt(parts[0]), mn = parseInt(parts[1]||'0');
+  return `${h%12||12}:${String(mn).padStart(2,'0')} ${h>=12?'PM':'AM'}`;
 }
 
-// Convert display value → stored "HH:MM" 24h
 function timeToStorage(val) {
   const t = parseTime(val);
   if (!t) return '';
@@ -186,185 +247,288 @@ function timeToStorage(val) {
 }
 
 let rowId = 0;
-const dayOrder = [];
+const dayOrder = []; // dates currently rendered
 
 function getDayInfo(date) {
   return WEEK_DAYS.find(d => d.date === date) || null;
 }
 
-function createProjectRow(id, date, entry, locked) {
+function isWeekend(date) {
+  const day = new Date(date + 'T00:00:00').getDay();
+  return day === 0 || day === 6;
+}
+
+// ── Build one entry row ───────────────────────────────────────────────────────
+function buildEntryRow(id, date, entry, locked) {
   entry = entry || {};
+  const entryType = entry.entry_type || 'work';
+  const isWork = entryType === 'work';
+  const dis = (locked || !isWork) ? 'disabled' : '';
+  const disDirect = locked ? 'disabled' : '';
+
+  const typeOpts = ENTRY_TYPES.map(t =>
+    `<option value="${t.value}"${entryType===t.value?' selected':''}>${t.label}</option>`
+  ).join('');
+
+  const projOpts = PROJECTS.map(p => {
+    const val = `${escHtml(p.project_number||'')}|${escHtml(p.project_name||'')}|${escHtml(p.firebase_id||'')}`;
+    const lbl = p.project_number ? `${p.project_number} — ${p.project_name||''}` : (p.project_name||'Unnamed');
+    const sel = (entry.project_id && entry.project_id===p.firebase_id) ||
+                (entry.project_number && entry.project_number===p.project_number) ? 'selected':'';
+    return `<option value="${val}" ${sel}>${escHtml(lbl)}</option>`;
+  }).join('');
+
   const tr = document.createElement('tr');
   tr.id = `row-${id}`;
   tr.dataset.rowId = id;
   tr.dataset.date = date;
-  if (locked) tr.style.opacity = '0.55';
 
-  const dis = locked ? 'disabled' : '';
   tr.innerHTML = `
-    <td>
-      <select class="entry-proj" onchange="calcRow(${id})" ${dis}>
-        <option value="">— General / Admin —</option>
-        ${PROJECTS.map(p => {
-          const val = `${escHtml(p.project_number||'')}|${escHtml(p.project_name||'')}|${escHtml(p.firebase_id||'')}`;
-          const lbl = p.project_number ? `${p.project_number} — ${p.project_name||''}` : (p.project_name||'Unnamed');
-          const sel = (entry.project_id && entry.project_id === p.firebase_id) ||
-                      (entry.project_number && entry.project_number === p.project_number) ? 'selected' : '';
-          return `<option value="${val}" ${sel}>${escHtml(lbl)}</option>`;
-        }).join('')}
+    <td style="min-width:100px;">
+      <select class="entry-type" onchange="onTypeChange(${id})" ${disDirect}>
+        ${typeOpts}
       </select>
     </td>
-    <td><input type="text" class="entry-start" value="${escHtml(entry.start_time ? formatTimeDisplay(entry.start_time) : '')}" oninput="calcRow(${id})" placeholder="9:00 AM" style="text-align:center;min-width:80px;" ${dis}></td>
-    <td><input type="text" class="entry-end"   value="${escHtml(entry.end_time   ? formatTimeDisplay(entry.end_time)   : '')}" oninput="calcRow(${id})" placeholder="5:00 PM" style="text-align:center;min-width:80px;" ${dis}></td>
-    <td><div class="hrs-display" id="reg-${id}">—</div></td>
-    <td><div class="hrs-display ot-display" id="ot-${id}">—</div></td>
-    <td><div class="hrs-display" id="tot-${id}">—</div></td>
-    <td><input type="text" class="entry-notes" value="${escHtml(entry.notes||'')}" placeholder="Notes" ${dis}></td>
-    <td>${locked ? '' : `<button type="button" class="del-row-btn" onclick="delRow(${id},'${date}')" title="Remove"><i class="bi bi-trash3"></i></button>`}</td>
+    <td style="min-width:180px;">
+      <select class="entry-proj" ${dis}>
+        <option value="">— General / Admin —</option>
+        ${projOpts}
+      </select>
+    </td>
+    <td style="min-width:88px;">
+      <input type="text" class="entry-start"
+        value="${escHtml(entry.start_time ? formatTimeDisplay(entry.start_time) : (isWork?'9:00 AM':''))}"
+        oninput="calcRow(${id})" placeholder="9:00 AM"
+        style="text-align:center;" ${dis}>
+    </td>
+    <td style="min-width:88px;">
+      <input type="text" class="entry-end"
+        value="${escHtml(entry.end_time ? formatTimeDisplay(entry.end_time) : (isWork?'5:00 PM':''))}"
+        oninput="calcRow(${id})" placeholder="5:00 PM"
+        style="text-align:center;" ${dis}>
+    </td>
+    <td><div class="hrs reg-val" id="reg-${id}">—</div></td>
+    <td><div class="hrs ot-val"  id="ot-${id}">—</div></td>
+    <td><div class="hrs tot-val" id="tot-${id}">—</div></td>
+    <td style="min-width:130px;">
+      <input type="text" class="entry-notes"
+        value="${escHtml(entry.notes||'')}" placeholder="Notes" ${disDirect}>
+    </td>
+    <td>${locked ? '' : `<button type="button" class="del-btn" onclick="delRow(${id},'${date}')" title="Remove"><i class="bi bi-trash3"></i></button>`}</td>
   `;
   return tr;
 }
 
-function renderDayGroup(date, entries) {
-  const body   = document.getElementById('entryBody');
+// ── Type changed — toggle time/project fields ────────────────────────────────
+function onTypeChange(id) {
+  const tr = document.getElementById(`row-${id}`);
+  if (!tr) return;
+  const type = tr.querySelector('.entry-type').value;
+  const isWork = type === 'work';
+  tr.querySelectorAll('.entry-proj, .entry-start, .entry-end').forEach(el => {
+    el.disabled = !isWork;
+    el.style.background = isWork ? '' : '#f8fafc';
+    el.style.color = isWork ? '' : '#94a3b8';
+  });
+  if (!isWork) {
+    tr.querySelector('.entry-start').value = '';
+    tr.querySelector('.entry-end').value = '';
+    ['reg','ot','tot'].forEach(k => {
+      const el = document.getElementById(`${k}-${id}`);
+      if (el) { el.textContent = '0.00'; }
+    });
+    updateSummary();
+  } else {
+    tr.querySelector('.entry-start').value = '9:00 AM';
+    tr.querySelector('.entry-end').value = '5:00 PM';
+    calcRow(id);
+  }
+}
+
+// ── Day block ────────────────────────────────────────────────────────────────
+function renderDayBlock(date, entries) {
+  const container = document.getElementById('dayBlocksContainer');
   const locked = date > TODAY_ISO;
+  const info = getDayInfo(date);
+  const dayName = info ? info.name : date;
+  const dayAbbr = info ? info.abbr : date.slice(5);
+  const dateLabel = date.slice(5).replace('-', '/');
+
   dayOrder.push(date);
 
-  const info     = getDayInfo(date);
-  const dayLabel = info ? `${info.name} — ${date.slice(5).replace('-','/')}` : date;
-  const dayAbbr  = info ? `${info.abbr} ${date.slice(5).replace('-','/')}` : date;
+  const block = document.createElement('div');
+  block.className = 'ts-day-block mb-3';
+  block.id = `day-block-${date}`;
+  block.dataset.dayBlock = date;
 
-  const headerTr = document.createElement('tr');
-  headerTr.className = 'ts-day-header';
-  headerTr.dataset.dayHeader = date;
-  const lockIcon = locked ? ' <i class="bi bi-lock-fill text-muted ms-1" title="Future date — not editable" style="font-size:11px;"></i>' : '';
-  headerTr.innerHTML = `<td colspan="8"><i class="bi bi-calendar3 me-2"></i>${escHtml(dayLabel)}${lockIcon}</td>`;
-  body.appendChild(headerTr);
+  const lockHtml = locked
+    ? `<span class="ts-day-lock"><i class="bi bi-lock-fill"></i> Future</span>`
+    : '';
 
+  block.innerHTML = `
+    <div class="ts-day-block-header">
+      <span class="ts-day-badge">${escHtml(dayAbbr)}</span>
+      <span class="ts-day-date">${escHtml(dayName)} — ${dateLabel}</span>
+      ${lockHtml}
+    </div>
+    <div class="table-responsive">
+      <table class="ts-table">
+        <thead>
+          <tr>
+            <th class="left" style="min-width:100px;">Type</th>
+            <th class="left" style="min-width:180px;">Project</th>
+            <th style="min-width:88px;">Start</th>
+            <th style="min-width:88px;">End</th>
+            <th style="min-width:60px;">Reg Hrs</th>
+            <th style="min-width:55px;">OT Hrs</th>
+            <th style="min-width:60px;">Total</th>
+            <th class="left" style="min-width:130px;">Notes</th>
+            <th style="width:36px;"></th>
+          </tr>
+        </thead>
+        <tbody id="tbody-${date}"></tbody>
+      </table>
+    </div>
+    ${locked ? '' : `<button type="button" class="add-proj-btn" onclick="addProjectForDay('${date}')">
+      <i class="bi bi-plus-circle me-1"></i>Add row for ${escHtml(dayAbbr)} ${dateLabel}
+    </button>`}
+  `;
+
+  container.appendChild(block);
+
+  const tbody = document.getElementById(`tbody-${date}`);
   (entries && entries.length ? entries : [{}]).forEach(e => {
     const id = ++rowId;
-    const tr = createProjectRow(id, date, e, locked);
-    body.appendChild(tr);
+    tbody.appendChild(buildEntryRow(id, date, e, locked));
     calcRow(id);
   });
-
-  const addTr = document.createElement('tr');
-  addTr.className = 'add-project-row';
-  addTr.dataset.addForDay = date;
-  addTr.innerHTML = locked
-    ? `<td colspan="8"></td>`
-    : `<td colspan="8" style="padding:4px 8px 8px;">
-        <button type="button" class="add-day-proj-btn" onclick="addProjectForDay('${date}')">
-          <i class="bi bi-plus-circle me-1"></i>Add project for ${escHtml(dayAbbr)}
-        </button>
-      </td>`;
-  body.appendChild(addTr);
 }
 
 function addProjectForDay(date) {
   if (date > TODAY_ISO) return;
-  const addTr = document.querySelector(`[data-add-for-day="${date}"]`);
-  if (!addTr) return;
+  const tbody = document.getElementById(`tbody-${date}`);
+  if (!tbody) return;
   const id = ++rowId;
-  const tr = createProjectRow(id, date, {});
-  addTr.parentNode.insertBefore(tr, addTr);
+  tbody.appendChild(buildEntryRow(id, date, {}, false));
   calcRow(id);
 }
 
 function addNewDay() {
   const used = new Set(dayOrder);
-  const available = WEEK_DAYS.filter(d => !used.has(d.date));
+  // Only weekdays available
+  const available = WEEKDAYS.filter(d => !used.has(d.date));
   if (available.length === 0) {
     if (dayOrder.length > 0) addProjectForDay(dayOrder[dayOrder.length - 1]);
     return;
   }
-  renderDayGroup(available[0].date, [{}]);
+  renderDayBlock(available[0].date, [{}]);
+  updateAddDayBtn();
+}
+
+function updateAddDayBtn() {
+  const used = new Set(dayOrder);
+  const remaining = WEEKDAYS.filter(d => !used.has(d.date));
+  const btn = document.getElementById('addDayBtn');
+  if (btn) btn.style.display = remaining.length === 0 ? 'none' : '';
 }
 
 function delRow(id, date) {
   const tr = document.getElementById(`row-${id}`);
-  if (!tr) return;
-  tr.remove();
-  updateFooter();
-  if (document.querySelectorAll(`#entryBody tr[data-date="${date}"]`).length === 0) {
-    const header = document.querySelector(`[data-day-header="${date}"]`);
-    const addBtn = document.querySelector(`[data-add-for-day="${date}"]`);
-    if (header) header.remove();
-    if (addBtn) addBtn.remove();
+  if (tr) tr.remove();
+  updateSummary();
+  const tbody = document.getElementById(`tbody-${date}`);
+  if (tbody && tbody.querySelectorAll('tr').length === 0) {
+    const block = document.getElementById(`day-block-${date}`);
+    if (block) block.remove();
     const idx = dayOrder.indexOf(date);
     if (idx > -1) dayOrder.splice(idx, 1);
+    updateAddDayBtn();
   }
 }
 
+// ── Hour calculation ─────────────────────────────────────────────────────────
 function calcRow(id) {
   const tr = document.getElementById(`row-${id}`);
   if (!tr) return;
-  let startTime = parseTime(tr.querySelector('.entry-start').value);
-  let endTime   = parseTime(tr.querySelector('.entry-end').value);
 
-  // Smart PM: if end ≤ start and user didn't type AM/PM, assume end is PM
-  if (startTime && endTime && endTime.h < 12) {
-    const endRaw    = tr.querySelector('.entry-end').value.trim().toUpperCase();
-    const hasAmPm   = /AM|PM/.test(endRaw);
-    const startMins = startTime.h * 60 + startTime.min;
-    const endMins   = endTime.h * 60 + endTime.min;
-    if (!hasAmPm && endMins <= startMins) {
-      endTime = { h: endTime.h + 12, min: endTime.min };
-    }
-  }
-
-  if (!startTime || !endTime) {
-    ['reg','ot','tot'].forEach(k => { const el = document.getElementById(`${k}-${id}`); if (el) el.textContent = '—'; });
-    updateFooter();
+  const type = tr.querySelector('.entry-type') ? tr.querySelector('.entry-type').value : 'work';
+  if (type !== 'work') {
+    ['reg','ot','tot'].forEach(k => {
+      const el = document.getElementById(`${k}-${id}`);
+      if (el) el.textContent = '0.00';
+    });
+    updateSummary();
     return;
   }
 
-  let workedMins = (endTime.h * 60 + endTime.min) - (startTime.h * 60 + startTime.min);
-  if (workedMins < 0) workedMins = 0;
+  let s = parseTime(tr.querySelector('.entry-start').value);
+  let e = parseTime(tr.querySelector('.entry-end').value);
 
-  const worked = workedMins / 60;
-  const reg    = Math.min(8, worked);
-  const ot     = Math.max(0, worked - 8);
+  if (s && e && e.h < 12) {
+    const raw = tr.querySelector('.entry-end').value.trim().toUpperCase();
+    if (!/AM|PM/.test(raw) && (e.h*60+e.min) <= (s.h*60+s.min)) {
+      e = {h: e.h+12, min: e.min};
+    }
+  }
+
+  if (!s || !e) {
+    ['reg','ot','tot'].forEach(k => {
+      const el = document.getElementById(`${k}-${id}`);
+      if (el) el.textContent = '—';
+    });
+    updateSummary();
+    return;
+  }
+
+  let mins = (e.h*60+e.min) - (s.h*60+s.min);
+  if (mins < 0) mins = 0;
+  const worked = mins / 60;
+  const reg = Math.min(8, worked);
+  const ot  = Math.max(0, worked - 8);
 
   document.getElementById(`reg-${id}`).textContent = reg.toFixed(2);
   document.getElementById(`ot-${id}`).textContent  = ot > 0 ? ot.toFixed(2) : '—';
   document.getElementById(`tot-${id}`).textContent = worked.toFixed(2);
-  updateFooter();
+  updateSummary();
 }
 
-function updateFooter() {
+function updateSummary() {
   let totalReg = 0, totalOT = 0;
-  document.querySelectorAll('#entryBody tr[data-row-id]').forEach(tr => {
+  const activeDays = new Set();
+  document.querySelectorAll('[data-row-id]').forEach(tr => {
     const id = tr.dataset.rowId;
     const regEl = document.getElementById(`reg-${id}`);
     const otEl  = document.getElementById(`ot-${id}`);
-    if (regEl && regEl.textContent !== '—') totalReg += parseFloat(regEl.textContent) || 0;
-    if (otEl  && otEl.textContent  !== '—') totalOT  += parseFloat(otEl.textContent)  || 0;
+    if (regEl && regEl.textContent !== '—') totalReg += parseFloat(regEl.textContent)||0;
+    if (otEl  && otEl.textContent  !== '—') totalOT  += parseFloat(otEl.textContent)||0;
+    if (tr.dataset.date) activeDays.add(tr.dataset.date);
   });
-  document.getElementById('footReg').textContent   = totalReg.toFixed(2);
-  document.getElementById('footOT').textContent    = totalOT.toFixed(2);
-  document.getElementById('footTotal').textContent = (totalReg + totalOT).toFixed(2);
+  document.getElementById('sumReg').textContent   = totalReg.toFixed(2);
+  document.getElementById('sumOT').textContent    = totalOT.toFixed(2);
+  document.getElementById('sumTotal').textContent = (totalReg+totalOT).toFixed(2);
+  document.getElementById('sumDays').textContent  = activeDays.size;
 }
 
+// ── Collect & save ────────────────────────────────────────────────────────────
 function collectEntries() {
   const entries = [];
-  document.querySelectorAll('#entryBody tr[data-row-id]').forEach(tr => {
-    const id    = tr.dataset.rowId;
-    const date  = tr.dataset.date;
+  document.querySelectorAll('[data-row-id]').forEach(tr => {
+    const id   = tr.dataset.rowId;
+    const date = tr.dataset.date;
     if (!date) return;
+    const type  = tr.querySelector('.entry-type') ? tr.querySelector('.entry-type').value : 'work';
     const proj  = tr.querySelector('.entry-proj').value || '';
-    const start = timeToStorage(tr.querySelector('.entry-start').value);
-    const end   = timeToStorage(tr.querySelector('.entry-end').value);
+    const start = type==='work' ? timeToStorage(tr.querySelector('.entry-start').value) : '';
+    const end   = type==='work' ? timeToStorage(tr.querySelector('.entry-end').value)   : '';
     const notes = tr.querySelector('.entry-notes').value.trim();
-
-    const reg = parseFloat(document.getElementById(`reg-${id}`)?.textContent) || 0;
-    const ot  = parseFloat(document.getElementById(`ot-${id}`)?.textContent)  || 0;
-    const tot = parseFloat(document.getElementById(`tot-${id}`)?.textContent) || 0;
-
+    const reg   = type==='work' ? (parseFloat(document.getElementById(`reg-${id}`)?.textContent)||0) : 0;
+    const ot    = type==='work' ? (parseFloat(document.getElementById(`ot-${id}`)?.textContent)||0)  : 0;
+    const tot   = type==='work' ? (parseFloat(document.getElementById(`tot-${id}`)?.textContent)||0) : 0;
     const [projNum, projName, projId] = proj.split('|');
     entries.push({
-      date, project_number: projNum, project_name: projName, project_id: projId,
-      start_time: start, lunch_break_mins: 0, end_time: end,
+      date, entry_type: type,
+      project_number: projNum||'', project_name: projName||'', project_id: projId||'',
+      start_time: start, end_time: end,
       regular_hours: reg, overtime_hours: ot, total_hours: tot,
       notes,
     });
@@ -374,41 +538,41 @@ function collectEntries() {
 
 function saveSheet(action) {
   const entries = collectEntries();
-  if (action === 'submit' && entries.length === 0) {
+  if (action==='submit' && entries.length===0) {
     alert('Please add at least one entry before submitting.');
     return;
   }
-  if (action === 'submit') {
-    const totalHours = parseFloat(document.getElementById('footTotal').textContent) || 0;
-    if (totalHours === 0) {
-      alert('Total hours are 0.00. Please enter valid start and end times before submitting.');
+  if (action==='submit') {
+    const tot = parseFloat(document.getElementById('sumTotal').textContent)||0;
+    const nonWorkEntries = entries.filter(e => e.entry_type !== 'work');
+    const workEntries    = entries.filter(e => e.entry_type === 'work');
+    if (workEntries.length > 0 && tot === 0) {
+      alert('Total hours are 0.00. Please enter valid start and end times.');
       return;
     }
   }
-
   const btn = event.target;
   btn.disabled = true;
-  btn.textContent = action === 'submit' ? 'Submitting…' : 'Saving…';
-
+  btn.innerHTML = action==='submit' ? '<i class="bi bi-send me-1"></i>Submitting…' : '<i class="bi bi-floppy me-1"></i>Saving…';
   fetch('/api/timesheets', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
     body: JSON.stringify({week_of: WEEK_OF, action, entries})
   })
   .then(r => r.json())
   .then(d => {
     if (d.success) {
-      window.location = action === 'submit' ? '/timesheets' : `/timesheets/${d.sheet_id}`;
+      window.location = action==='submit' ? '/timesheets' : `/timesheets/${d.sheet_id}`;
     } else {
-      alert('Error: ' + (d.error || 'Unknown error'));
+      alert('Error: '+(d.error||'Unknown error'));
       btn.disabled = false;
-      btn.textContent = action === 'submit' ? 'Submit Timesheet' : 'Save Draft';
+      btn.innerHTML = action==='submit' ? '<i class="bi bi-send me-1"></i>Submit Timesheet' : '<i class="bi bi-floppy me-1"></i>Save Draft';
     }
   })
   .catch(() => {
     alert('Network error. Please try again.');
     btn.disabled = false;
-    btn.textContent = action === 'submit' ? 'Submit Timesheet' : 'Save Draft';
+    btn.innerHTML = action==='submit' ? '<i class="bi bi-send me-1"></i>Submit Timesheet' : '<i class="bi bi-floppy me-1"></i>Save Draft';
   });
 }
 
@@ -417,86 +581,73 @@ function changeWeek(val) {
   const [yr, wk] = val.split('-W').map(Number);
   const jan4 = new Date(yr, 0, 4);
   const week1Mon = new Date(jan4);
-  week1Mon.setDate(jan4.getDate() - ((jan4.getDay() || 7) - 1));
-  const mon = new Date(week1Mon.getTime() + (wk - 1) * 7 * 86400000);
-  window.location = `/timesheets/submit?week=${mon.toISOString().slice(0, 10)}`;
+  week1Mon.setDate(jan4.getDate() - ((jan4.getDay()||7)-1));
+  const mon = new Date(week1Mon.getTime() + (wk-1)*7*86400000);
+  window.location = `/timesheets/submit?week=${mon.toISOString().slice(0,10)}`;
 }
 
 (function setWeekPicker() {
   const d = new Date(WEEK_OF);
   const jan4 = new Date(d.getFullYear(), 0, 4);
-  const startOfWeek1 = new Date(jan4.getTime() - ((jan4.getDay() || 7) - 1) * 86400000);
-  const wkNum = Math.round((d - startOfWeek1) / (7 * 86400000)) + 1;
-  document.getElementById('weekPicker').value =
-    `${d.getFullYear()}-W${String(wkNum).padStart(2, '0')}`;
+  const startOfWeek1 = new Date(jan4.getTime() - ((jan4.getDay()||7)-1)*86400000);
+  const wkNum = Math.round((d-startOfWeek1)/(7*86400000))+1;
+  document.getElementById('weekPicker').value = `${d.getFullYear()}-W${String(wkNum).padStart(2,'0')}`;
 })();
 
 let _prevWeekEntries = [];
-
 function copyPrevWeek() {
   if (!_prevWeekEntries.length) return;
-  document.getElementById('prevWeekBanner').style.display = 'none';
-  // Clear current rows
-  document.querySelectorAll('#entryBody tr').forEach(tr => tr.remove());
-  dayOrder.length = 0;
-  rowId = 0;
-  // Render Mon-Fri with prev week's projects pre-selected (no times)
+  document.getElementById('prevWeekBanner').style.display='none';
+  document.getElementById('dayBlocksContainer').innerHTML='';
+  dayOrder.length=0; rowId=0;
   const byDate = {};
   _prevWeekEntries.forEach(e => {
-    const origDate = e.date;
-    // Map to corresponding weekday in current week
     const origDay = WEEK_DAYS.find(d => {
-      const od = new Date(origDate + 'T00:00:00');
-      const nd = new Date(d.date + 'T00:00:00');
-      return od.getDay() === nd.getDay();
+      const od = new Date(e.date+'T00:00:00');
+      const nd = new Date(d.date+'T00:00:00');
+      return od.getDay()===nd.getDay();
     });
-    const targetDate = origDay ? origDay.date : null;
-    if (!targetDate) return;
-    if (!byDate[targetDate]) byDate[targetDate] = [];
-    byDate[targetDate].push({ project_number: e.project_number, project_name: e.project_name, project_id: e.project_id });
+    const target = origDay ? origDay.date : null;
+    if (!target || isWeekend(target)) return;
+    if (!byDate[target]) byDate[target]=[];
+    byDate[target].push({project_number:e.project_number, project_name:e.project_name, project_id:e.project_id, entry_type:e.entry_type||'work'});
   });
-  WEEK_DAYS.slice(0, 5).forEach(d => {
-    renderDayGroup(d.date, byDate[d.date] && byDate[d.date].length ? byDate[d.date] : [{}]);
-  });
+  WEEKDAYS.forEach(d => renderDayBlock(d.date, byDate[d.date]||[{}]));
+  updateAddDayBtn();
 }
 
 document.addEventListener('DOMContentLoaded', function() {
   if (EXISTING && EXISTING.length > 0) {
-    const byDate = {}, dateOrder = [];
-    EXISTING.filter(e => e.date).forEach(e => {
-      if (!byDate[e.date]) { byDate[e.date] = []; dateOrder.push(e.date); }
+    const byDate={}, dateOrder=[];
+    EXISTING.filter(e=>e.date).forEach(e=>{
+      if (!byDate[e.date]){byDate[e.date]=[];dateOrder.push(e.date);}
       byDate[e.date].push(e);
     });
-    if (dateOrder.length > 0) {
-      dateOrder.forEach(date => renderDayGroup(date, byDate[date]));
+    if (dateOrder.length>0) {
+      dateOrder.forEach(date => renderDayBlock(date, byDate[date]));
     } else {
-      WEEK_DAYS.slice(0, 5).forEach(d => renderDayGroup(d.date, [{}]));
+      WEEKDAYS.forEach(d => renderDayBlock(d.date,[{}]));
     }
   } else {
-    // Default: show Mon–Fri for the whole week
-    WEEK_DAYS.slice(0, 5).forEach(d => renderDayGroup(d.date, [{}]));
-    // Check if previous week has entries to carry forward
+    WEEKDAYS.forEach(d => renderDayBlock(d.date,[{}]));
     if (!IS_APPROVED) {
-      fetch('/api/timesheets/previous?week=' + encodeURIComponent(WEEK_OF))
-        .then(r => r.json())
-        .then(data => {
-          if (data.entries && data.entries.length > 0) {
+      fetch('/api/timesheets/previous?week='+encodeURIComponent(WEEK_OF))
+        .then(r=>r.json())
+        .then(data=>{
+          if (data.entries && data.entries.length>0) {
             _prevWeekEntries = data.entries;
-            const banner = document.getElementById('prevWeekBanner');
-            document.getElementById('prevWeekLabel').textContent = 'Week of ' + (data.week_of || '');
-            banner.style.display = 'flex';
+            document.getElementById('prevWeekLabel').textContent = 'Week of '+(data.week_of||'');
+            document.getElementById('prevWeekBanner').style.display='block';
           }
         })
-        .catch(() => {});
+        .catch(()=>{});
     }
   }
-
+  updateAddDayBtn();
   if (IS_APPROVED) {
-    document.querySelectorAll('#entryBody input, #entryBody select').forEach(el => el.disabled = true);
-    document.querySelectorAll('#entryBody button').forEach(el => el.disabled = true);
-    document.querySelectorAll('.add-project-row').forEach(el => el.style.display = 'none');
-    const addDayBtn = document.querySelector('.add-row-btn');
-    if (addDayBtn) addDayBtn.style.display = 'none';
+    document.querySelectorAll('[data-row-id] input,[data-row-id] select').forEach(el=>el.disabled=true);
+    document.querySelectorAll('[data-row-id] button,.add-proj-btn').forEach(el=>el.disabled=true);
+    document.getElementById('addDayBtn').style.display='none';
   }
 });
 </script>

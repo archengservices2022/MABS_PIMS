@@ -190,7 +190,6 @@
       <!-- Summary Cards (server-rendered) -->
       {% set usa_total  = salaries | selectattr('region','equalto','Inside America')  | sum(attribute='amount') %}
       {% set intl_total = salaries | selectattr('region','equalto','Outside America') | sum(attribute='amount') %}
-      {% set total_comm_all = commission_by_period.values() | map('sum') | sum if commission_by_period else 0 %}
       {% set _comm_all_flat = namespace(v=0.0) %}
       {% for sp_periods in commission_by_period.values() %}
         {% for earned in sp_periods.values() %}
