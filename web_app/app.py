@@ -8442,14 +8442,26 @@ def employee_expense_submit():
             # (don't pop it from data - preserve it)
             pass
 
-        # Update employee expense record
-        fb_update(f"/expenses/{editing_expense_id}", data)
+        # Check if expense is already approved (exists in balance_sheet_expenses)
+        is_approved = fb_get(f"/balance_sheet_expenses/{editing_expense_id}") is not None
 
-        # Sync to balance_sheet_expenses if it exists (Finance tab for approved expenses)
-        if fb_get(f"/balance_sheet_expenses/{editing_expense_id}"):
-            fb_update(f"/balance_sheet_expenses/{editing_expense_id}", data)
-
-        flash("Expense updated successfully.", "success")
+        if is_approved:
+            # Expense is already approved - store edit as pending for admin re-approval
+            # Keep original data, store edited data as "pending_edit"
+            update_data = {
+                "pending_edit": data,
+                "edit_status": "pending",
+                "edited_by_email": session.get("user_email", ""),
+                "edited_by_name": session.get("user_name", ""),
+                "edited_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            fb_update(f"/expenses/{editing_expense_id}", update_data)
+            flash("Expense edit submitted for approval. Admin will review your changes.", "info")
+        else:
+            # Expense not yet approved - update directly
+            fb_update(f"/expenses/{editing_expense_id}", data)
+            flash("Expense updated successfully.", "success")
     else:
         # Creating new expense
         data.update({
@@ -8469,6 +8481,62 @@ def employee_expense_submit():
                 "receipt_type":     receipt_type,
             })
         flash("Expense submitted and pending admin approval.", "success")
+
+    return redirect(url_for("employees") + "#expenses")
+
+
+@app.route("/employees/expenses/<exp_id>/edit/review", methods=["POST"])
+@role_required("employees")
+def employee_expense_edit_review(exp_id):
+    """Admin approve/reject pending edits to an expense"""
+    if normalize_role(session.get("user_role", "")) != "admin":
+        flash("Admin access required.", "danger")
+        return redirect(url_for("employees") + "#expenses")
+
+    action = request.form.get("action", "")
+    review_note = request.form.get("review_note", "").strip()
+    if action not in ("approve", "reject"):
+        flash("Invalid action.", "danger")
+        return redirect(url_for("employees") + "#expenses")
+
+    now_str = datetime.now(timezone.utc).isoformat()
+    exp_data = fb_get(f"/expenses/{exp_id}") or {}
+
+    if action == "approve":
+        # Apply the pending edit
+        if isinstance(exp_data, dict) and "pending_edit" in exp_data:
+            edited_data = exp_data.get("pending_edit", {})
+            # Merge edited data back into main record
+            for key, value in edited_data.items():
+                exp_data[key] = value
+            # Clear pending edit status
+            exp_data.pop("pending_edit", None)
+            exp_data["edit_status"] = "approved"
+            exp_data["edit_approved_by"] = session.get("user_name", "")
+            exp_data["edit_approved_at"] = now_str
+            exp_data["edit_review_note"] = review_note
+
+            # Update /expenses with merged data
+            fb_update(f"/expenses/{exp_id}", exp_data)
+
+            # Also update /balance_sheet_expenses (Finance tab) if it exists
+            if fb_get(f"/balance_sheet_expenses/{exp_id}"):
+                fb_update(f"/balance_sheet_expenses/{exp_id}", exp_data)
+
+            flash("Edit approved and expense updated.", "success")
+        else:
+            flash("No pending edits found.", "warning")
+    else:
+        # Reject the edit - remove pending data
+        exp_data.pop("pending_edit", None)
+        exp_data["edit_status"] = "rejected"
+        exp_data["edit_rejected_by"] = session.get("user_name", "")
+        exp_data["edit_rejected_at"] = now_str
+        exp_data["edit_review_note"] = review_note
+        exp_data["updated_at"] = now_str
+
+        fb_update(f"/expenses/{exp_id}", exp_data)
+        flash("Edit rejected. Original expense data kept.", "success")
 
     return redirect(url_for("employees") + "#expenses")
 
