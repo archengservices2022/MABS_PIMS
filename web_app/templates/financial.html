@@ -287,6 +287,14 @@ a[href*="filter_expense"]:hover {
       {% if aging_count %}<span class="badge bg-danger ms-1">{{ aging_count }}</span>{% endif %}
     </a>
   </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'commission' else '' }}" data-bs-toggle="tab" href="#tab-commission">
+      <i class="bi bi-cash-coin me-1"></i>Commission
+      {% if commission_total_outstanding > 0 %}
+      <span class="badge ms-1" style="background:#7C3AED;color:#fff;">{{ commission_summary|selectattr('outstanding','greaterthan',0)|list|length }}</span>
+      {% endif %}
+    </a>
+  </li>
 </ul>
 
 <div class="tab-content">
@@ -3107,6 +3115,144 @@ function viewReceipt(expId) {
 
 </div><!-- /tab-aging -->
 
+<!-- ════════════════════════════════════════════════════════════════
+     COMMISSION TAB
+═════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane fade {{ 'show active' if active_tab == 'commission' else '' }}" id="tab-commission">
+
+  <!-- KPI strip -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-4">
+      <div class="card-panel text-center">
+        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Earned</div>
+        <div style="font-size:1.6rem;font-weight:800;color:#7C3AED;">${{ "{:,.2f}".format(commission_total_earned) }}</div>
+        <div class="text-muted" style="font-size:11px;">all time, all salespeople</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-4">
+      <div class="card-panel text-center">
+        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Paid</div>
+        <div style="font-size:1.6rem;font-weight:800;color:#16a34a;">${{ "{:,.2f}".format(commission_total_paid) }}</div>
+        <div class="text-muted" style="font-size:11px;">recorded payments</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-4">
+      <div class="card-panel text-center">
+        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Outstanding</div>
+        <div style="font-size:1.6rem;font-weight:800;color:{{ '#DC2626' if commission_total_outstanding > 0 else '#16a34a' }};">${{ "{:,.2f}".format(commission_total_outstanding) }}</div>
+        <div class="text-muted" style="font-size:11px;">still owed</div>
+      </div>
+    </div>
+  </div>
+
+  {% if commission_summary %}
+  <div class="card-panel">
+    <h6 class="section-heading mb-3"><i class="bi bi-people me-1"></i>By Salesperson</h6>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" style="font-size:13px;">
+        <thead>
+          <tr>
+            <th>Salesperson</th>
+            <th>Type</th>
+            <th class="text-center">Rate</th>
+            <th class="text-end">Revenue Generated</th>
+            <th class="text-end">Total Earned</th>
+            <th class="text-end text-success">Paid</th>
+            <th class="text-end" style="color:#DC2626;">Outstanding</th>
+            <th class="text-center">Periods</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for sp in commission_summary %}
+          <tr>
+            <td>
+              <div class="fw-semibold">{{ sp.name }}</div>
+              <div class="text-muted" style="font-size:11px;">{{ sp.email }}</div>
+            </td>
+            <td>
+              {% if sp.employee_type == 'full_time' %}
+              <span class="badge" style="background:#0D9488;color:#fff;font-size:10px;">Full Time</span>
+              {% elif sp.employee_type == 'contractor' %}
+              <span class="badge" style="background:#7C3AED;color:#fff;font-size:10px;">Contractor</span>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td class="text-center text-muted">{{ sp.commission_rate }}%</td>
+            <td class="text-end">${{ "{:,.2f}".format(sp.total_revenue) }}</td>
+            <td class="text-end fw-semibold" style="color:#7C3AED;">${{ "{:,.2f}".format(sp.total_earned) }}</td>
+            <td class="text-end text-success fw-semibold">${{ "{:,.2f}".format(sp.total_paid) }}</td>
+            <td class="text-end fw-bold {{ 'text-danger' if sp.outstanding > 0 else 'text-muted' }}">
+              ${{ "{:,.2f}".format(sp.outstanding) }}
+            </td>
+            <td class="text-center">
+              <!-- Period breakdown popover trigger -->
+              <button class="btn btn-xs btn-outline-secondary"
+                      type="button"
+                      data-bs-toggle="collapse"
+                      data-bs-target="#periods-{{ loop.index }}"
+                      style="font-size:11px;">
+                {{ sp.periods|length }} period{{ 's' if sp.periods|length != 1 }}
+              </button>
+            </td>
+          </tr>
+          <!-- Collapsible period breakdown -->
+          <tr class="collapse" id="periods-{{ loop.index }}">
+            <td colspan="8" style="background:#f8fafc;padding:0;">
+              <table class="table table-sm mb-0" style="font-size:12px;">
+                <thead>
+                  <tr style="background:#f1f5f9;">
+                    <th class="ps-4">Period</th>
+                    <th class="text-end">Commission</th>
+                    <th class="text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for period, pdata in sp.periods.items() | sort(reverse=True) %}
+                  <tr>
+                    <td class="ps-4">{{ period }}</td>
+                    <td class="text-end fw-semibold" style="color:#7C3AED;">${{ "{:,.2f}".format(pdata.earned) }}</td>
+                    <td class="text-center">
+                      {% if pdata.paid %}
+                      <span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>
+                      {% else %}
+                      <span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="fw-bold table-light" style="border-top:2px solid #dee2e6;">
+            <td colspan="3" class="text-end text-muted small">Totals</td>
+            <td class="text-end">${{ "{:,.2f}".format(commission_summary|sum(attribute='total_revenue')) }}</td>
+            <td class="text-end" style="color:#7C3AED;">${{ "{:,.2f}".format(commission_total_earned) }}</td>
+            <td class="text-end text-success">${{ "{:,.2f}".format(commission_total_paid) }}</td>
+            <td class="text-end text-danger">${{ "{:,.2f}".format(commission_total_outstanding) }}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  <div class="text-muted small mt-2 ps-1">
+    <i class="bi bi-info-circle me-1"></i>
+    Mark commissions as paid in <a href="{{ url_for('quotes') }}?tab=salespeople">Quotes → Sales People</a>.
+  </div>
+
+  {% else %}
+  <div class="card-panel text-center py-5">
+    <i class="bi bi-cash-coin" style="font-size:40px;color:#e2e8f0;"></i>
+    <div class="text-muted mt-2">No commission data yet. Set commission rates in <a href="{{ url_for('settings') }}?tab=users">Settings → Users</a>.</div>
+  </div>
+  {% endif %}
+
+</div><!-- /tab-commission -->
+
 </div><!-- /tab-content -->
 {% endblock %}
 
@@ -3279,7 +3425,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
 
 // ── Tab persistence ──────────────────────────────────────────────────────────
 (function () {
-  const tabMap = { overview: '#tab-overview', income: '#tab-income', expenses: '#tab-expenses', 'new-expense': '#tab-new-expense', 'by-project': '#tab-by-project', 'balance-sheet': '#tab-balance-sheet', aging: '#tab-aging' };
+  const tabMap = { overview: '#tab-overview', income: '#tab-income', expenses: '#tab-expenses', 'new-expense': '#tab-new-expense', 'by-project': '#tab-by-project', 'balance-sheet': '#tab-balance-sheet', aging: '#tab-aging', commission: '#tab-commission' };
   const initTab = "{{ active_tab or 'overview' }}";
   const target  = tabMap[initTab] || '#tab-overview';
   const el = document.querySelector(`.nav-link[href="${target}"]`);

@@ -788,6 +788,85 @@ def dashboard():
     clocked_in_now   = [e for e in all_time_entries if e.get("status") == "open"]
     pending_time_off = [r for r in all_time_off if r.get("status") == "Pending"]
 
+    # ── Commission widget ──────────────────────────────────────────────────────
+    _dash_role = normalize_role(session.get("user_role", ""))
+    _dash_name = session.get("user_name", "")
+    _cur_month = datetime.now().strftime("%Y-%m")
+    _dash_commission: Dict[str, object] = {}
+
+    # Project status lookup for cancellation check
+    _dash_proj_status: Dict[str, str] = {}
+    if isinstance(projects, dict):
+        for _pid, _pd in projects.items():
+            if _pd and isinstance(_pd, dict):
+                _dash_proj_status[_pid] = _pd.get("status", "")
+
+    _CONV_DASH = {"Converted", "Invoiced"}
+
+    if _dash_role == "sales":
+        # Personal commission for logged-in salesperson
+        _uid = session.get("user_uid", "")
+        _u_data = fb_get(f"/users/{_uid}") or {} if _uid else {}
+        _rate = _safe_float(_u_data.get("commission_rate", 0))
+        _emp_type = _u_data.get("employee_type", "")
+        _my_quotes = [q for q in quot_list if isinstance(q, dict) and
+                      (q.get("salesperson") or "").strip() == _dash_name]
+        _my_total = len(_my_quotes)
+        _my_conv = 0
+        _my_rev = 0.0
+        _my_rev_month = 0.0
+        for _q in _my_quotes:
+            _linked = _q.get("linked_project_id", "")
+            _is_conv = _q.get("status", "") in _CONV_DASH or bool(_linked)
+            if _is_conv and not (_linked and _dash_proj_status.get(_linked) == "Cancelled"):
+                _my_conv += 1
+                _qval = _safe_float(_q.get("total", 0))
+                _my_rev += _qval
+                if (_q.get("date", "") or "").startswith(_cur_month):
+                    _my_rev_month += _qval
+        _dash_commission = {
+            "role":             "sales",
+            "employee_type":    _emp_type,
+            "commission_rate":  _rate,
+            "quotes_total":     _my_total,
+            "quotes_converted": _my_conv,
+            "win_rate":         round(_my_conv / _my_total * 100) if _my_total else 0,
+            "revenue_alltime":  _my_rev,
+            "revenue_month":    _my_rev_month,
+            "earned_alltime":   _my_rev * _rate / 100,
+            "earned_month":     _my_rev_month * _rate / 100,
+            "rate_set":         _rate > 0,
+        }
+
+    elif _dash_role == "admin":
+        # Admin summary: total commissions across all salespeople
+        _all_users = _load_all_users()
+        _comm_map: Dict[str, float] = {}
+        for _u in _all_users:
+            if normalize_role(_u.get("role", "")) == "sales":
+                _uname = (_u.get("username") or "").strip()
+                if _uname:
+                    _comm_map[_uname] = _safe_float(_u.get("commission_rate", 0))
+        _admin_comm_total = 0.0
+        _admin_comm_month = 0.0
+        for _q in quot_list:
+            if not isinstance(_q, dict): continue
+            _sp = (_q.get("salesperson") or "").strip()
+            _rate = _comm_map.get(_sp, 0)
+            if not _rate: continue
+            _linked = _q.get("linked_project_id", "")
+            _is_conv = _q.get("status", "") in _CONV_DASH or bool(_linked)
+            if _is_conv and not (_linked and _dash_proj_status.get(_linked) == "Cancelled"):
+                _qval = _safe_float(_q.get("total", 0))
+                _admin_comm_total += _qval * _rate / 100
+                if (_q.get("date", "") or "").startswith(_cur_month):
+                    _admin_comm_month += _qval * _rate / 100
+        _dash_commission = {
+            "role":        "admin",
+            "total":       _admin_comm_total,
+            "this_month":  _admin_comm_month,
+        }
+
     # Pending employee expense approvals (admin only)
     pending_expenses_dash = []
     if normalize_role(session.get("user_role", "")) == "admin":
@@ -844,6 +923,7 @@ def dashboard():
         proj_contract_active=proj_contract_active,
         proj_completed_count=proj_completed_count,
         inv_overdue_amt=inv_overdue_amt,
+        dash_commission=_dash_commission,
     )
 
 # ── Routes: Sales Dashboard ───────────────────────────────────────────────────
@@ -896,6 +976,42 @@ def sales_dashboard():
         reverse=True
     )[:8]
 
+    # Commission stats
+    _uid = session.get("user_uid", "")
+    _u_data = fb_get(f"/users/{_uid}") or {} if _uid else {}
+    _comm_rate = _safe_float(_u_data.get("commission_rate", 0))
+    _emp_type = _u_data.get("employee_type", "")
+    _cur_month = datetime.now().strftime("%Y-%m")
+    _proj_raw = fb_get("/projects") or {}
+    _proj_status_sd: Dict[str, str] = {}
+    if isinstance(_proj_raw, dict):
+        for _pid, _pd in _proj_raw.items():
+            if _pd and isinstance(_pd, dict):
+                _proj_status_sd[_pid] = _pd.get("status", "")
+    _CONV_SD = {"Converted", "Invoiced"}
+    _comm_rev_alltime = 0.0
+    _comm_rev_month = 0.0
+    _conv_count = 0
+    for _q in my_quotes:
+        _linked = _q.get("linked_project_id", "")
+        _is_conv = _q.get("status", "") in _CONV_SD or bool(_linked)
+        if _is_conv and not (_linked and _proj_status_sd.get(_linked) == "Cancelled"):
+            _qval = _safe_float(_q.get("total", 0))
+            _conv_count += 1
+            _comm_rev_alltime += _qval
+            if (_q.get("date", "") or "").startswith(_cur_month):
+                _comm_rev_month += _qval
+    commission = {
+        "rate":           _comm_rate,
+        "rate_set":       _comm_rate > 0,
+        "employee_type":  _emp_type,
+        "earned_month":   _comm_rev_month * _comm_rate / 100,
+        "earned_alltime": _comm_rev_alltime * _comm_rate / 100,
+        "revenue_month":  _comm_rev_month,
+        "revenue_alltime": _comm_rev_alltime,
+        "conv_count":     _conv_count,
+    }
+
     return render_template("sales_dashboard.html",
         my_quotes=my_quotes,
         open_quotes=open_quotes,
@@ -907,6 +1023,7 @@ def sales_dashboard():
         expiring_soon=expiring_soon,
         recent_quotes=recent_quotes,
         today_str=today_str,
+        commission=commission,
     )
 
 # ── Routes: Quotes ────────────────────────────────────────────────────────────
@@ -921,9 +1038,22 @@ def quotes():
         if fdata and isinstance(fdata, dict):
             fdata["firebase_id"] = fid
             fdata.setdefault("status", "Not Started")
+            # Auto-sync: non-standard statuses → standard equivalents
+            if fdata["status"] in {"Draft", "In Review", "On Hold", "Completed"}:
+                fb_update(f"/job_forms/{fid}", {
+                    "status":     "In Progress",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                })
+                fdata["status"] = "In Progress"
+            if fdata["status"] == "Invoiced":
+                fb_update(f"/job_forms/{fid}", {
+                    "status":     "Converted",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                })
+                fdata["status"] = "Converted"
             # Auto-sync: quote with a linked project should be Converted
             if (fdata.get("linked_project_id")
-                    and fdata["status"] not in {"Converted", "Invoiced", "Rejected", "Cancelled"}):
+                    and fdata["status"] not in {"Converted", "Rejected", "Cancelled"}):
                 fb_update(f"/job_forms/{fid}", {
                     "status":     "Converted",
                     "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -1007,8 +1137,7 @@ def quotes():
     follow_ups.sort(key=lambda x: x.get("follow_up_date", ""))
     upcoming_followups.sort(key=lambda x: x.get("follow_up_date", ""))
 
-    statuses   = ["Not Started", "Draft", "Sent", "In Review", "Approved", "On Hold",
-                  "In Progress", "Completed", "Converted", "Invoiced", "Rejected", "Expired", "Cancelled"]
+    statuses   = ["Not Started", "In Progress", "Sent", "Approved", "Converted", "Rejected", "Expired", "Cancelled"]
     active_tab = request.args.get("tab", "all")
     today_date = datetime.now().strftime("%Y-%m-%d")
 
@@ -1083,6 +1212,56 @@ def quotes():
 
     salesperson_stats = sorted(_sp_stats.values(), key=lambda x: x["commission_earned"], reverse=True)
 
+    # ── Monthly commission breakdown for Payroll tab (admin only) ─────────────
+    _monthly_comm: Dict[str, Dict[str, dict]] = {}  # {YYYY-MM: {sp_name: {earned, revenue}}}
+    for _q in all_items_raw:
+        _sp = (_q.get("salesperson") or "").strip()
+        if not _sp or _sp not in _sp_stats:
+            continue
+        _rate = _sp_stats[_sp]["commission_rate"]
+        if not _rate:
+            continue
+        _linked = _q.get("linked_project_id", "")
+        _is_conv = _q.get("status", "") in _CONV_ST or bool(_linked)
+        if not _is_conv:
+            continue
+        if _linked and _proj_status.get(_linked, "") == "Cancelled":
+            continue
+        _qdate = (_q.get("date") or "")[:7]  # YYYY-MM
+        if not _qdate:
+            continue
+        if _qdate not in _monthly_comm:
+            _monthly_comm[_qdate] = {}
+        if _sp not in _monthly_comm[_qdate]:
+            _monthly_comm[_qdate][_sp] = {"earned": 0.0, "revenue": 0.0}
+        _qval = _safe_float(_q.get("total", 0))
+        _monthly_comm[_qdate][_sp]["earned"]  += _qval * _rate / 100
+        _monthly_comm[_qdate][_sp]["revenue"] += _qval
+
+    # Load existing commission payments
+    _comm_payments_raw = fb_get("/commission_payments") or {}
+    _paid_set: set = set()  # (period, sp_name)
+    _comm_payments_list = []
+    if isinstance(_comm_payments_raw, dict):
+        for _cpid, _cp in _comm_payments_raw.items():
+            if _cp and isinstance(_cp, dict):
+                _paid_set.add((_cp.get("period", ""), _cp.get("salesperson", "")))
+                _comm_payments_list.append({**_cp, "id": _cpid})
+
+    # Build sorted monthly rows for template
+    monthly_payroll = []
+    for _period in sorted(_monthly_comm.keys(), reverse=True):
+        for _sp_name, _vals in sorted(_monthly_comm[_period].items()):
+            monthly_payroll.append({
+                "period":    _period,
+                "sp_name":   _sp_name,
+                "earned":    _vals["earned"],
+                "revenue":   _vals["revenue"],
+                "paid":      (_period, _sp_name) in _paid_set,
+                "rate":      _sp_stats[_sp_name]["commission_rate"],
+                "emp_type":  _sp_stats[_sp_name]["employee_type"],
+            })
+
     return render_template("quotes.html", quotes=items, statuses=statuses,
                            search=search, status_filter=status_filter,
                            year_filter=year_filter, month_filter=month_filter,
@@ -1096,7 +1275,9 @@ def quotes():
                            q_total=q_total, q_open=q_open, q_approved=q_approved,
                            q_converted=q_converted, q_conv_rate=q_conv_rate,
                            q_pipeline=q_pipeline, q_won_val=q_won_val,
-                           salesperson_stats=salesperson_stats)
+                           salesperson_stats=salesperson_stats,
+                           monthly_payroll=monthly_payroll,
+                           comm_payments=_comm_payments_list)
 
 @app.route("/quotes/export")
 @role_required("quotes")
@@ -7113,9 +7294,90 @@ def financial():
 
     today_date = datetime.now().strftime("%Y-%m-%d")
     active_tab = request.args.get("tab", "overview")
-    _valid_fin_tabs = {'overview', 'income', 'expenses', 'by-project', 'balance-sheet', 'aging'}
+    _valid_fin_tabs = {'overview', 'income', 'expenses', 'by-project', 'balance-sheet', 'aging', 'commission'}
     if active_tab not in _valid_fin_tabs:
         active_tab = 'overview'
+
+    # ── Commission Payable summary for Finance tab ────────────────────────────
+    _all_quotes_fin = fb_get("/job_forms") or {}
+    _all_proj_fin   = fb_get("/projects") or {}
+    _proj_st_fin: Dict[str, str] = {}
+    if isinstance(_all_proj_fin, dict):
+        for _pid, _pd in _all_proj_fin.items():
+            if _pd and isinstance(_pd, dict):
+                _proj_st_fin[_pid] = _pd.get("status", "")
+
+    _sales_users_fin: Dict[str, dict] = {}
+    for _u in _load_all_users():
+        if normalize_role(_u.get("role", "")) == "sales":
+            _uname = (_u.get("username") or "").strip()
+            if _uname:
+                _sales_users_fin[_uname] = {
+                    "commission_rate": _safe_float(_u.get("commission_rate", 0)),
+                    "employee_type":   _u.get("employee_type", ""),
+                    "email":           _u.get("email", ""),
+                }
+
+    _CONV_FIN = {"Converted", "Invoiced"}
+    _fin_sp_totals: Dict[str, dict] = {}
+    if isinstance(_all_quotes_fin, dict):
+        for _fid, _fdata in _all_quotes_fin.items():
+            if not _fdata or not isinstance(_fdata, dict):
+                continue
+            _sp = (_fdata.get("salesperson") or "").strip()
+            if not _sp or _sp not in _sales_users_fin:
+                continue
+            _rate = _sales_users_fin[_sp]["commission_rate"]
+            if not _rate:
+                continue
+            _linked = _fdata.get("linked_project_id", "")
+            _is_conv = _fdata.get("status", "") in _CONV_FIN or bool(_linked)
+            if not _is_conv:
+                continue
+            if _linked and _proj_st_fin.get(_linked) == "Cancelled":
+                continue
+            _qval = _safe_float(_fdata.get("total", 0))
+            _period = (_fdata.get("date") or "")[:7]
+            if _sp not in _fin_sp_totals:
+                _fin_sp_totals[_sp] = {
+                    "name":            _sp,
+                    "email":           _sales_users_fin[_sp]["email"],
+                    "employee_type":   _sales_users_fin[_sp]["employee_type"],
+                    "commission_rate": _rate,
+                    "total_revenue":   0.0,
+                    "total_earned":    0.0,
+                    "total_paid":      0.0,
+                    "periods":         {},
+                }
+            _fin_sp_totals[_sp]["total_revenue"] += _qval
+            _fin_sp_totals[_sp]["total_earned"]  += _qval * _rate / 100
+            if _period:
+                if _period not in _fin_sp_totals[_sp]["periods"]:
+                    _fin_sp_totals[_sp]["periods"][_period] = {"earned": 0.0, "paid": False}
+                _fin_sp_totals[_sp]["periods"][_period]["earned"] += _qval * _rate / 100
+
+    # Apply payment records
+    _comm_pay_fin = fb_get("/commission_payments") or {}
+    if isinstance(_comm_pay_fin, dict):
+        for _cpid, _cp in _comm_pay_fin.items():
+            if not _cp or not isinstance(_cp, dict):
+                continue
+            _sp  = _cp.get("salesperson", "")
+            _per = _cp.get("period", "")
+            _amt = _safe_float(_cp.get("amount", 0))
+            if _sp in _fin_sp_totals:
+                _fin_sp_totals[_sp]["total_paid"] += _amt
+                if _per in _fin_sp_totals[_sp]["periods"]:
+                    _fin_sp_totals[_sp]["periods"][_per]["paid"] = True
+
+    for _s in _fin_sp_totals.values():
+        _s["outstanding"] = max(_s["total_earned"] - _s["total_paid"], 0.0)
+
+    commission_summary = sorted(_fin_sp_totals.values(), key=lambda x: x["outstanding"], reverse=True)
+    commission_total_earned    = sum(s["total_earned"]  for s in commission_summary)
+    commission_total_paid      = sum(s["total_paid"]    for s in commission_summary)
+    commission_total_outstanding = sum(s["outstanding"] for s in commission_summary)
+
     return render_template("financial.html",
         total_invoiced=total_invoiced,
         total_paid=total_paid,
@@ -7182,6 +7444,10 @@ def financial():
         bs_aging_buckets=bs_aging_buckets,
         bs_aging_totals=bs_aging_totals,
         bs_aging_total_outstanding=bs_aging_total_outstanding,
+        commission_summary=commission_summary,
+        commission_total_earned=commission_total_earned,
+        commission_total_paid=commission_total_paid,
+        commission_total_outstanding=commission_total_outstanding,
     )
 
 @app.route("/financial/expense/new", methods=["POST"])
@@ -8384,8 +8650,45 @@ def user_details_update(uid):
     for field in ("hourly_rate", "monthly_salary", "commission_rate"):
         if field in data:
             updates[field] = _safe_float(data[field])
+    if "role" in data:
+        allowed_roles = {"sales", "projects", "finance", "engineer", "admin"}
+        r = str(data["role"]).strip().lower()
+        if r in allowed_roles:
+            updates["role"] = r
     fb_update(f"/users/{uid}", updates)
     return jsonify({"ok": True})
+
+@app.route("/api/commission/mark-paid", methods=["POST"])
+@role_required("quotes")
+def commission_mark_paid():
+    if normalize_role(session.get("user_role", "")) != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    data = request.get_json() or {}
+    period     = str(data.get("period", "")).strip()
+    sp_name    = str(data.get("salesperson", "")).strip()
+    amount     = _safe_float(data.get("amount", 0))
+    action     = str(data.get("action", "pay")).strip()   # "pay" or "unpay"
+    if not period or not sp_name:
+        return jsonify({"error": "period and salesperson are required"}), 400
+    if action == "unpay":
+        # Remove the payment record
+        raw = fb_get("/commission_payments") or {}
+        if isinstance(raw, dict):
+            for cpid, cp in raw.items():
+                if cp and cp.get("period") == period and cp.get("salesperson") == sp_name:
+                    fb_delete(f"/commission_payments/{cpid}")
+                    break
+        return jsonify({"ok": True, "action": "unpaid"})
+    # Mark as paid — store record
+    _new_id = f"{period}_{sp_name.replace(' ', '_')}_{int(datetime.now().timestamp())}"
+    fb_update(f"/commission_payments/{_new_id}", {
+        "period":      period,
+        "salesperson": sp_name,
+        "amount":      amount,
+        "paid_at":     datetime.now(timezone.utc).isoformat(),
+        "paid_by":     session.get("user_name", ""),
+    })
+    return jsonify({"ok": True, "action": "paid"})
 
 @app.route("/employees/export-hours")
 @role_required("employees")
@@ -8470,6 +8773,10 @@ def employee_close_entry(entry_id):
 @role_required("settings")
 def settings():
     all_users = _load_all_users()
+    # Normalize role to lowercase so template selectattr filters match reliably
+    for _u in all_users:
+        if isinstance(_u, dict) and _u.get("role"):
+            _u["role"] = normalize_role(_u["role"])
     settings_data = load_settings()
     return render_template("settings.html", users=all_users, settings=settings_data,
                            role_pages=ROLE_PAGES, all_pages=ALL_PAGES, page_labels=PAGE_LABELS)

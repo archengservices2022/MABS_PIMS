@@ -329,69 +329,136 @@
       <!-- Users table -->
       <div class="col-lg-8">
         <div class="card-panel">
-          <h6 class="section-heading">User Management</h6>
+          <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+            <h6 class="section-heading mb-0">User Management</h6>
+            <span class="text-muted small">{{ users|length }} user{{ 's' if users|length != 1 }}</span>
+          </div>
+
+          <!-- Role filter tabs -->
+          {% set _g_admin    = users | selectattr('role','equalto','admin')    | list %}
+          {% set _g_finance  = users | selectattr('role','equalto','finance')  | list %}
+          {% set _g_sales    = users | selectattr('role','equalto','sales')    | list %}
+          {% set _g_engineer = users | selectattr('role','equalto','engineer') | list %}
+          {% set _g_projects = users | selectattr('role','equalto','projects') | list %}
+
+          <ul class="nav nav-pills mb-3 gap-1" id="userRoleTabs" style="flex-wrap:wrap;">
+            <li class="nav-item">
+              <a class="nav-link py-1 px-3 active" data-bs-toggle="pill" href="#urole-all" style="font-size:12px;">
+                <i class="bi bi-people me-1"></i>All
+                <span class="badge ms-1 bg-secondary" style="font-size:10px;">{{ users|length }}</span>
+              </a>
+            </li>
+            {% if _g_admin %}
+            <li class="nav-item">
+              <a class="nav-link py-1 px-3" data-bs-toggle="pill" href="#urole-admin" style="font-size:12px;">
+                <i class="bi bi-shield-lock me-1"></i>Admin
+                <span class="badge ms-1 bg-secondary" style="font-size:10px;">{{ _g_admin|length }}</span>
+              </a>
+            </li>
+            {% endif %}
+            {% if _g_finance %}
+            <li class="nav-item">
+              <a class="nav-link py-1 px-3" data-bs-toggle="pill" href="#urole-finance" style="font-size:12px;">
+                <i class="bi bi-bar-chart-line me-1"></i>Finance
+                <span class="badge ms-1 bg-secondary" style="font-size:10px;">{{ _g_finance|length }}</span>
+              </a>
+            </li>
+            {% endif %}
+            {% if _g_sales %}
+            <li class="nav-item">
+              <a class="nav-link py-1 px-3" data-bs-toggle="pill" href="#urole-sales" style="font-size:12px;">
+                <i class="bi bi-megaphone me-1"></i>Sales
+                <span class="badge ms-1 bg-secondary" style="font-size:10px;">{{ _g_sales|length }}</span>
+              </a>
+            </li>
+            {% endif %}
+            {% if _g_engineer %}
+            <li class="nav-item">
+              <a class="nav-link py-1 px-3" data-bs-toggle="pill" href="#urole-engineer" style="font-size:12px;">
+                <i class="bi bi-wrench me-1"></i>Engineers
+                <span class="badge ms-1 bg-secondary" style="font-size:10px;">{{ _g_engineer|length }}</span>
+              </a>
+            </li>
+            {% endif %}
+            {% if _g_projects %}
+            <li class="nav-item">
+              <a class="nav-link py-1 px-3" data-bs-toggle="pill" href="#urole-projects" style="font-size:12px;">
+                <i class="bi bi-kanban me-1"></i>Projects
+                <span class="badge ms-1 bg-secondary" style="font-size:10px;">{{ _g_projects|length }}</span>
+              </a>
+            </li>
+            {% endif %}
+          </ul>
+
+          {% macro user_table(group, label) %}
           <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table class="table table-hover align-middle mb-0" style="font-size:13px;">
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Title / Region</th>
-                  <th>Role</th>
-                  <th class="text-end">Rate / Salary</th>
-                  <th>Status</th>
-                  <th>Change Role</th>
-                  <th>Actions</th>
+                  <th style="min-width:170px;">Name</th>
+                  <th style="min-width:110px;">Role</th>
+                  <th style="min-width:140px;">Title / Region</th>
+                  <th class="text-end" style="min-width:100px;">Compensation</th>
+                  <th class="text-center" style="min-width:90px;">Status</th>
+                  <th class="text-end" style="min-width:110px;">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {% for u in users %}
+                {% for u in group %}
+                {% set _is_me = u.get('firebase_uid') == session.get('user_uid') %}
+                {% set _active = u.get('active', True) %}
+                {% set _role = u.get('role', 'sales') %}
                 <tr>
+                  <!-- Name -->
                   <td>
-                    <strong>{{ u.get('username','—') }}</strong>
-                    {% if u.get('firebase_uid') == session.get('user_uid') %}
-                    <span class="badge bg-secondary ms-1">You</span>
-                    {% endif %}
+                    <div class="fw-semibold">
+                      {{ u.get('username','—') }}
+                      {% if _is_me %}<span class="badge bg-secondary ms-1" style="font-size:9px;">You</span>{% endif %}
+                    </div>
                     <div class="text-muted" style="font-size:11px;">{{ u.get('email','—') }}</div>
                   </td>
+                  <!-- Role -->
                   <td>
-                    <div style="font-size:13px;">{{ u.get('title') or '—' }}</div>
+                    <span class="badge badge-role-{{ _role }}">{{ _role|capitalize }}</span>
+                    {% if _role == 'sales' %}
+                      {% set _cr = u.get('commission_rate', 0)|float %}
+                      {% set _et = u.get('employee_type', '') %}
+                      <div style="font-size:10px;color:#94a3b8;margin-top:3px;">
+                        {% if _cr > 0 %}{{ _cr }}% commission{% else %}<span style="color:#f59e0b;">rate not set</span>{% endif %}
+                        {% if _et %} · {{ 'FT' if _et == 'full_time' else 'Contractor' }}{% endif %}
+                      </div>
+                    {% endif %}
+                  </td>
+                  <!-- Title / Region -->
+                  <td>
+                    <div>{{ u.get('title') or '—' }}</div>
                     {% if u.get('region') %}
                     <span class="badge" style="font-size:10px;background:{{ '#0D9488' if u.get('region')=='Inside America' else '#7C3AED' }};color:#fff;">{{ u.get('region') }}</span>
                     {% endif %}
                   </td>
-                  <td>
-                    <span class="badge badge-role-{{ u.get('role','sales') }}">
-                      {{ u.get('role','sales')|capitalize }}
-                    </span>
-                  </td>
-                  <td class="text-end" style="font-size:12px;">
+                  <!-- Compensation -->
+                  <td class="text-end">
                     {% if u.get('hourly_rate') %}<div>${{ '%.2f'|format(u.get('hourly_rate',0)|float) }}/hr</div>{% endif %}
                     {% if u.get('monthly_salary') %}<div class="text-success fw-semibold">${{ '%.0f'|format(u.get('monthly_salary',0)|float) }}/mo</div>{% endif %}
                     {% if not u.get('hourly_rate') and not u.get('monthly_salary') %}<span class="text-muted">—</span>{% endif %}
                   </td>
-                  <td>
-                    {% if u.get('active', True) %}
-                    <span class="badge bg-success">Active</span>
-                    {% else %}
-                    <span class="badge bg-secondary">Inactive</span>
-                    {% endif %}
-                  </td>
-                  <td>
-                    <form method="POST"
-                          action="{{ url_for('user_role_update', uid=u.firebase_uid) }}"
-                          class="d-flex gap-1">
-                      <select name="role" class="form-select form-select-sm" style="width:120px;">
-                        {% for r in ['sales','projects','finance','engineer','admin'] %}
-                        <option value="{{ r }}" {{ 'selected' if u.get('role') == r }}>
-                          {{ r|capitalize }}
-                        </option>
-                        {% endfor %}
-                      </select>
-                      <button type="submit" class="btn btn-xs btn-outline-primary">Save</button>
+                  <!-- Status (clickable toggle) -->
+                  <td class="text-center">
+                    <form method="POST" action="{{ url_for('user_toggle', uid=u.firebase_uid) }}" class="d-inline">
+                      <button type="submit" class="btn btn-xs border-0 p-0"
+                              title="{{ 'Deactivate' if _active else 'Activate' }}"
+                              style="background:none;">
+                        {% if _active %}
+                        <span class="badge bg-success" style="font-size:11px;cursor:pointer;">Active</span>
+                        {% else %}
+                        <span class="badge bg-secondary" style="font-size:11px;cursor:pointer;">Inactive</span>
+                        {% endif %}
+                      </button>
                     </form>
                   </td>
-                  <td>
-                    <div class="d-flex gap-1 flex-wrap">
+                  <!-- Actions -->
+                  <td class="text-end">
+                    <div class="d-flex gap-1 justify-content-end">
                       <button class="btn btn-xs btn-outline-primary edit-user-btn"
                               data-uid="{{ u.firebase_uid }}"
                               data-username="{{ u.get('username','') | e }}"
@@ -402,25 +469,24 @@
                               data-salary="{{ u.get('monthly_salary', 0) }}"
                               data-employee-type="{{ u.get('employee_type','') | e }}"
                               data-commission-rate="{{ u.get('commission_rate', 0) }}"
-                              data-role="{{ u.get('role','') | e }}"
-                              title="Edit Details"><i class="bi bi-pencil"></i></button>
+                              data-role="{{ _role | e }}"
+                              title="Edit Details">
+                        <i class="bi bi-pencil"></i> Edit
+                      </button>
                       <button class="btn btn-xs btn-outline-info pages-btn"
                               data-uid="{{ u.firebase_uid }}"
                               data-name="{{ u.get('username','') | e }}"
-                              data-role="{{ u.get('role','sales') }}"
+                              data-role="{{ _role }}"
                               data-custompages="{{ (u.get('custom_pages') or []) | tojson | e }}"
-                              title="Customize Pages"><i class="bi bi-layout-sidebar"></i></button>
-                      <form method="POST" action="{{ url_for('user_toggle', uid=u.firebase_uid) }}">
-                        <button type="submit" class="btn btn-xs btn-outline-secondary"
-                                title="{{ 'Deactivate' if u.get('active', True) else 'Activate' }}">
-                          <i class="bi bi-{{ 'toggle-on' if u.get('active', True) else 'toggle-off' }}"></i>
-                        </button>
-                      </form>
-                      {% if u.get('firebase_uid') != session.get('user_uid') %}
+                              title="Customize Pages">
+                        <i class="bi bi-layout-sidebar"></i>
+                      </button>
+                      {% if not _is_me %}
                       <form method="POST"
                             action="{{ url_for('user_delete', uid=u.firebase_uid) }}"
-                            onsubmit="return confirm('Delete user {{ u.get('username','') }}?');">
-                        <button type="submit" class="btn btn-xs btn-outline-danger">
+                            onsubmit="return confirm('Delete {{ u.get('username','') }}? This cannot be undone.');"
+                            class="d-inline">
+                        <button type="submit" class="btn btn-xs btn-outline-danger" title="Delete">
                           <i class="bi bi-trash"></i>
                         </button>
                       </form>
@@ -430,12 +496,47 @@
                 </tr>
                 {% else %}
                 <tr>
-                  <td colspan="6" class="text-center text-muted py-3">No users found.</td>
+                  <td colspan="6" class="text-center text-muted py-3">
+                    <i class="bi bi-person-x me-1"></i>No {{ label }} users.
+                  </td>
                 </tr>
                 {% endfor %}
               </tbody>
             </table>
           </div>
+          {% endmacro %}
+
+          <div class="tab-content">
+            <div class="tab-pane fade show active" id="urole-all">
+              {{ user_table(users, 'matching') }}
+            </div>
+            {% if _g_admin %}
+            <div class="tab-pane fade" id="urole-admin">
+              {{ user_table(_g_admin, 'admin') }}
+            </div>
+            {% endif %}
+            {% if _g_finance %}
+            <div class="tab-pane fade" id="urole-finance">
+              {{ user_table(_g_finance, 'finance') }}
+            </div>
+            {% endif %}
+            {% if _g_sales %}
+            <div class="tab-pane fade" id="urole-sales">
+              {{ user_table(_g_sales, 'sales') }}
+            </div>
+            {% endif %}
+            {% if _g_engineer %}
+            <div class="tab-pane fade" id="urole-engineer">
+              {{ user_table(_g_engineer, 'engineer') }}
+            </div>
+            {% endif %}
+            {% if _g_projects %}
+            <div class="tab-pane fade" id="urole-projects">
+              {{ user_table(_g_projects, 'projects') }}
+            </div>
+            {% endif %}
+          </div><!-- /tab-content -->
+
         </div>
       </div>
     </div>
@@ -536,6 +637,18 @@
             <label class="form-label fw-semibold" style="font-size:12px;">Job Title</label>
             <input type="text" id="editTitle" class="form-control form-control-sm" placeholder="e.g. Senior Engineer">
           </div>
+        </div>
+        <div class="row g-2 mb-2">
+          <div class="col-6">
+            <label class="form-label fw-semibold" style="font-size:12px;">Role</label>
+            <select id="editRole" class="form-select form-select-sm" onchange="onEditRoleChange()">
+              <option value="sales">Sales</option>
+              <option value="projects">Projects</option>
+              <option value="finance">Finance</option>
+              <option value="engineer">Engineer</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
           <div class="col-6">
             <label class="form-label fw-semibold" style="font-size:12px;">Region</label>
             <select id="editRegion" class="form-select form-select-sm">
@@ -607,6 +720,7 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('editRegion').value           = d.region || '';
       document.getElementById('editHourlyRate').value       = parseFloat(d.rate) > 0 ? parseFloat(d.rate) : '';
       document.getElementById('editMonthlySalary').value    = parseFloat(d.salary) > 0 ? parseFloat(d.salary) : '';
+      document.getElementById('editRole').value             = (d.role || 'sales').toLowerCase();
       document.getElementById('editEmployeeType').value     = d.employeeType || '';
       document.getElementById('editCommissionRate').value   = parseFloat(d.commissionRate) > 0 ? parseFloat(d.commissionRate) : '';
       document.getElementById('editUserMsg').innerHTML      = '';
@@ -637,11 +751,17 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
+function onEditRoleChange() {
+  var isSales = document.getElementById('editRole').value === 'sales';
+  document.getElementById('editCommissionSection').style.display = isSales ? '' : 'none';
+}
+
 async function saveUserDetails() {
   var uid    = document.getElementById('editUid').value;
   var msg    = document.getElementById('editUserMsg');
   var body   = {
     username:        document.getElementById('editUsername').value.trim(),
+    role:            document.getElementById('editRole').value,
     title:           document.getElementById('editTitle').value.trim(),
     region:          document.getElementById('editRegion').value,
     hourly_rate:     parseFloat(document.getElementById('editHourlyRate').value)     || 0,

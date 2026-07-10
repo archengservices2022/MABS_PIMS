@@ -222,7 +222,7 @@
         <div class="mb-3">
           <label class="form-label">Status</label>
           <select name="status" class="form-select">
-            {% for s in ['Not Started','Draft','Sent','In Review','Approved','On Hold','In Progress','Completed','Converted','Invoiced','Rejected','Expired','Cancelled'] %}
+            {% for s in ['Not Started','In Progress','Sent','Approved','Converted','Rejected','Expired','Cancelled'] %}
             <option value="{{ s }}"
               {{ 'selected' if quote and quote.get('status') == s }}>{{ s }}</option>
             {% endfor %}

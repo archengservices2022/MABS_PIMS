@@ -390,7 +390,7 @@
             <div class="mb-3">
               <label class="form-label">Status</label>
               <select name="status" class="form-select">
-                {% for s in ['Not Started','In Progress','Completed','Invoiced','Cancelled'] %}
+                {% for s in ['Not Started','In Progress','Sent','Approved','Converted','Rejected','Expired','Cancelled'] %}
                 <option value="{{ s }}">{{ s }}</option>
                 {% endfor %}
               </select>
@@ -551,6 +551,84 @@
         </div>
       </div>
       {% endif %}
+    </div>
+      <!-- ── Commission Payroll (admin only) ──────────────────────────────── -->
+      {% if _viewer_is_admin and monthly_payroll %}
+      <div class="card-panel mt-3" style="border-top:3px solid #7C3AED;">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="panel-title mb-0">
+            <i class="bi bi-cash-coin me-1" style="color:#7C3AED;"></i>
+            Commission Payroll
+            <span class="text-muted fw-normal" style="font-size:12px;">— mark periods as paid</span>
+          </h6>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0" style="font-size:13px;">
+            <thead>
+              <tr>
+                <th>Period</th>
+                <th>Salesperson</th>
+                <th>Type</th>
+                <th class="text-center">Rate</th>
+                <th class="text-end">Revenue</th>
+                <th class="text-end">Commission Due</th>
+                <th class="text-center">Status</th>
+                <th class="text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody id="payrollTableBody">
+              {% for row in monthly_payroll %}
+              <tr id="payrow-{{ row.period }}-{{ row.sp_name | replace(' ','_') }}">
+                <td class="fw-semibold">{{ row.period }}</td>
+                <td>{{ row.sp_name }}</td>
+                <td>
+                  {% if row.emp_type == 'full_time' %}
+                  <span class="badge" style="background:#0D9488;color:#fff;font-size:10px;">Full Time</span>
+                  {% elif row.emp_type == 'contractor' %}
+                  <span class="badge" style="background:#7C3AED;color:#fff;font-size:10px;">Contractor</span>
+                  {% else %}<span class="text-muted">—</span>{% endif %}
+                </td>
+                <td class="text-center text-muted">{{ row.rate }}%</td>
+                <td class="text-end">${{ "{:,.2f}".format(row.revenue) }}</td>
+                <td class="text-end fw-bold" style="color:#7C3AED;">${{ "{:,.2f}".format(row.earned) }}</td>
+                <td class="text-center">
+                  {% if row.paid %}
+                  <span class="badge bg-success" style="font-size:11px;">
+                    <i class="bi bi-check-circle me-1"></i>Paid
+                  </span>
+                  {% else %}
+                  <span class="badge bg-warning text-dark" style="font-size:11px;">Pending</span>
+                  {% endif %}
+                </td>
+                <td class="text-center">
+                  {% if row.paid %}
+                  <button class="btn btn-xs btn-outline-secondary"
+                          onclick="commissionAction('unpay','{{ row.period }}','{{ row.sp_name }}',{{ row.earned }})">
+                    <i class="bi bi-x-circle me-1"></i>Undo
+                  </button>
+                  {% else %}
+                  <button class="btn btn-xs btn-outline-success"
+                          onclick="commissionAction('pay','{{ row.period }}','{{ row.sp_name }}',{{ row.earned }})">
+                    <i class="bi bi-check-circle me-1"></i>Mark Paid
+                  </button>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              <tr class="fw-bold table-light" style="border-top:2px solid #dee2e6;">
+                <td colspan="4" class="text-end text-muted small">Totals</td>
+                <td class="text-end">${{ "{:,.2f}".format(monthly_payroll | sum(attribute='revenue')) }}</td>
+                <td class="text-end" style="color:#7C3AED;">${{ "{:,.2f}".format(monthly_payroll | sum(attribute='earned')) }}</td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
     </div>
   </div><!-- /tab-salespeople -->
 
@@ -1175,5 +1253,20 @@ document.addEventListener('DOMContentLoaded', function() {
     _PAGERS['quotesPager'].refresh();
   }
 });
+
+async function commissionAction(action, period, spName, amount) {
+  var label = action === 'pay' ? 'Mark as Paid' : 'Undo payment';
+  if (!confirm(label + ' for ' + spName + ' — ' + period + '?')) return;
+  try {
+    var res = await fetch('/api/commission/mark-paid', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action: action, period: period, salesperson: spName, amount: amount})
+    });
+    var data = await res.json();
+    if (!res.ok || data.error) { alert('Error: ' + (data.error || 'Unknown')); return; }
+    location.reload();
+  } catch(e) { alert('Request failed.'); }
+}
 </script>
 {% endblock %}

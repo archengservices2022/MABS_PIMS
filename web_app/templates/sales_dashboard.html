@@ -61,6 +61,54 @@
   </div>
 </div>
 
+<!-- ── Commission Widget ──────────────────────────────────────────────────────── -->
+<div class="card-panel mb-4" style="border-top:3px solid #7C3AED;">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h6 class="mb-0 fw-bold" style="color:#7C3AED;font-size:14px;">
+      <i class="bi bi-cash-coin me-1"></i>My Commission
+    </h6>
+    {% if not commission.rate_set %}
+    <span class="badge" style="background:#FEF3C7;color:#92400E;font-size:11px;">Rate not set — contact admin</span>
+    {% else %}
+    <span class="badge" style="background:#EDE9FE;color:#5B21B6;font-size:11px;">{{ commission.rate }}% · {{ commission.employee_type or 'Not specified' }}</span>
+    {% endif %}
+  </div>
+  <div class="row g-2">
+    <div class="col-6 col-md-3">
+      <div style="background:#ECFDF5;border-radius:8px;padding:12px 14px;">
+        <div style="font-size:10px;color:#059669;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Earned — This Month</div>
+        <div style="font-size:1.5rem;font-weight:800;color:#059669;line-height:1.2;">
+          {% if commission.rate_set %} ${{ "{:,.0f}".format(commission.earned_month) }} {% else %} <span style="color:#94a3b8;font-size:.9rem;">—</span> {% endif %}
+        </div>
+        <div style="font-size:10px;color:#94a3b8;margin-top:2px;">from ${{ "{:,.0f}".format(commission.revenue_month) }} rev</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div style="background:#F0FDF4;border-radius:8px;padding:12px 14px;">
+        <div style="font-size:10px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Earned — All Time</div>
+        <div style="font-size:1.5rem;font-weight:800;color:#16a34a;line-height:1.2;">
+          {% if commission.rate_set %} ${{ "{:,.0f}".format(commission.earned_alltime) }} {% else %} <span style="color:#94a3b8;font-size:.9rem;">—</span> {% endif %}
+        </div>
+        <div style="font-size:10px;color:#94a3b8;margin-top:2px;">from ${{ "{:,.0f}".format(commission.revenue_alltime) }} rev</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div style="background:#F5F3FF;border-radius:8px;padding:12px 14px;">
+        <div style="font-size:10px;color:#7C3AED;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Converted</div>
+        <div style="font-size:1.5rem;font-weight:800;color:#7C3AED;line-height:1.2;">{{ commission.conv_count }}</div>
+        <div style="font-size:10px;color:#94a3b8;margin-top:2px;">projects</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div style="background:#FFFBEB;border-radius:8px;padding:12px 14px;">
+        <div style="font-size:10px;color:#D97706;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Revenue Generated</div>
+        <div style="font-size:1.5rem;font-weight:800;color:#D97706;line-height:1.2;">${{ "{:,.0f}".format(commission.revenue_alltime) }}</div>
+        <div style="font-size:10px;color:#94a3b8;margin-top:2px;">all time</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── Alerts ─────────────────────────────────────────────────────────────────── -->
 {% if followups_due %}
 <div class="alert mb-3 py-2" style="background:#FEF2F2;border:1px solid #FCA5A5;color:#991B1B;">
