@@ -2464,12 +2464,20 @@ document.addEventListener('DOMContentLoaded', function() {
           }
         }
 
-        // Check that required fields have values
+        // Check that required fields have values (skip disabled fields)
         var requiredFields = ['expense_type', 'expense_name', 'category', 'amount', 'date', 'vendor'];
         var missingFields = [];
         requiredFields.forEach(function(fieldName) {
-          var field = form.querySelector('[name="' + fieldName + '"]');
-          if (field && !field.value) {
+          // For fields that have multiple inputs (category, expense_name), find the enabled one
+          var fields = form.querySelectorAll('[name="' + fieldName + '"]');
+          var hasValue = false;
+          fields.forEach(function(field) {
+            // Only check enabled (non-disabled) fields
+            if (field && !field.disabled && field.value) {
+              hasValue = true;
+            }
+          });
+          if (!hasValue) {
             missingFields.push(fieldName);
           }
         });
