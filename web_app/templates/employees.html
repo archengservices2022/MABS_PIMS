@@ -1415,7 +1415,13 @@
               {% endif %}
               <td>
                 {% set st = e.get('status','Pending') %}
-                {% if st == 'Approved' %}
+                {% set edit_st = e.get('edit_status', '') %}
+                {% if edit_st == 'pending' %}
+                  <span class="badge bg-info text-white">Pending Edit</span>
+                  <div style="font-size:10px;color:#0284c7;margin-top:2px;">Edited {{ e.get('edited_at','')[:10] }}</div>
+                {% elif edit_st == 'approved' %}
+                  <span class="badge bg-success me-1">Approved</span><span class="badge bg-teal text-white">✓ Edited</span>
+                {% elif st == 'Approved' %}
                   <span class="badge bg-success">Approved</span>
                 {% elif st == 'Rejected' %}
                   <span class="badge bg-danger" title="{{ e.get('review_note','') }}">Rejected</span>
@@ -1438,18 +1444,33 @@
               <td>
                 {% if user_role == 'admin' %}
                 <div class="d-flex gap-1">
-                  <button class="btn btn-xs btn-outline-secondary"
-                          onclick='openEmpExpenseEdit({{ e|tojson }})'
-                          title="Edit">
-                    <i class="bi bi-pencil"></i>
-                  </button>
-                  {% if e.get('status','Pending') == 'Pending' %}
-                  <form method="post" action="{{ url_for('employee_expense_delete', exp_id=e.firebase_id) }}"
-                        onsubmit="return confirm('Delete this expense?');" style="display:inline;">
-                    <button type="submit" class="btn btn-xs btn-outline-danger" title="Delete">
-                      <i class="bi bi-trash"></i>
+                  {% if e.get('edit_status') == 'pending' %}
+                    <!-- Pending Edit: Show approve/reject buttons -->
+                    <button class="btn btn-xs btn-success"
+                            onclick="if(confirm('Approve this edit?')) { reviewExpenseEdit('{{ e.firebase_id }}', 'approve'); }"
+                            title="Approve edit">
+                      <i class="bi bi-check-circle"></i>
                     </button>
-                  </form>
+                    <button class="btn btn-xs btn-danger"
+                            onclick="if(confirm('Reject this edit?')) { reviewExpenseEdit('{{ e.firebase_id }}', 'reject'); }"
+                            title="Reject edit">
+                      <i class="bi bi-x-circle"></i>
+                    </button>
+                  {% else %}
+                    <!-- Regular edit button -->
+                    <button class="btn btn-xs btn-outline-secondary"
+                            onclick='openEmpExpenseEdit({{ e|tojson }})'
+                            title="Edit">
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    {% if e.get('status','Pending') == 'Pending' %}
+                    <form method="post" action="{{ url_for('employee_expense_delete', exp_id=e.firebase_id) }}"
+                          onsubmit="return confirm('Delete this expense?');" style="display:inline;">
+                      <button type="submit" class="btn btn-xs btn-outline-danger" title="Delete">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </form>
+                    {% endif %}
                   {% endif %}
                 </div>
                 {% endif %}
@@ -2367,6 +2388,21 @@ window.empCancelEdit = function() {
   document.getElementById('empExpName').disabled = false;
   document.getElementById('empExpCategoryText').disabled = true;
   document.getElementById('empExpNameText').disabled = true;
+};
+
+window.reviewExpenseEdit = function(expId, action) {
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/employees/expenses/' + expId + '/edit/review';
+
+  var input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'action';
+  input.value = action;
+
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
 };
 
 window.openEmpExpenseReject = function(expId, empName) {
