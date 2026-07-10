@@ -4,121 +4,316 @@
 
 {% block head %}
 <style>
-/* ── Card & Header ───────────────────────────────────────────── */
-.ts-card { background:#fff; border-radius:16px; box-shadow:0 2px 12px rgba(0,0,0,.08); overflow:hidden; }
-.ts-header { background:linear-gradient(135deg,#0D9488 0%,#0891B2 100%); color:#fff; padding:22px 28px; }
-.ts-header h5 { margin:0; font-weight:800; font-size:1.05rem; }
-.ts-header .sub { font-size:.82rem; opacity:.85; margin-top:4px; }
+/* ── Global crisp rendering ──────────────────────────────────── */
+.tsub * {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  box-sizing: border-box;
+}
+
+/* ── Outer card ──────────────────────────────────────────────── */
+.ts-card {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06), 0 6px 20px rgba(0,0,0,.07);
+  overflow: hidden;
+}
+
+/* ── Hero header ─────────────────────────────────────────────── */
+.ts-header {
+  background: linear-gradient(120deg, #0D9488 0%, #0369a1 100%);
+  color: #fff;
+  padding: 22px 28px;
+}
+.ts-header h5 {
+  margin: 0;
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -.2px;
+}
+.ts-header .sub { font-size: 13px; opacity: .8; margin-top: 4px; font-weight: 400; }
+
+/* ── Week picker inside header ───────────────────────────────── */
+#weekPicker {
+  border: none;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  cursor: pointer;
+  background: rgba(255,255,255,.92);
+}
 
 /* ── Summary bar ─────────────────────────────────────────────── */
-.ts-summary { display:flex; gap:0; border-bottom:2px solid #f1f5f9; background:#fafbfc; }
-.ts-summary-item { flex:1; text-align:center; padding:14px 8px; border-right:1px solid #f1f5f9; }
-.ts-summary-item:last-child { border-right:none; }
-.ts-summary-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; }
-.ts-summary-val { font-size:1.4rem; font-weight:800; margin-top:2px; }
-.ts-summary-val.reg  { color:#0D9488; }
-.ts-summary-val.ot   { color:#D97706; }
-.ts-summary-val.tot  { color:#0369a1; }
-.ts-summary-val.days { color:#7C3AED; }
+.ts-summary {
+  display: flex;
+  background: #f8fafc;
+  border-bottom: 2px solid #e2e8f0;
+}
+.ts-summary-item {
+  flex: 1;
+  text-align: center;
+  padding: 14px 8px 12px;
+  border-right: 1px solid #e2e8f0;
+  position: relative;
+}
+.ts-summary-item:last-child { border-right: none; }
+.ts-summary-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+.ts-summary-val {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -.5px;
+  line-height: 1;
+}
+.ts-summary-val.reg  { color: #0D9488; }
+.ts-summary-val.ot   { color: #D97706; }
+.ts-summary-val.tot  { color: #1d4ed8; }
+.ts-summary-val.days { color: #7C3AED; }
 
-/* ── Day group ───────────────────────────────────────────────── */
-.ts-day-block { margin-bottom:6px; border-radius:12px; overflow:hidden; border:1px solid #e2e8f0; }
+/* ── Day block ───────────────────────────────────────────────── */
+.ts-day-block {
+  margin-bottom: 10px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+}
 .ts-day-block-header {
-  display:flex; align-items:center; gap:10px;
-  padding:10px 14px; background:#f8fafc;
-  border-bottom:1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
 }
 .ts-day-badge {
-  background:#0D9488; color:#fff; border-radius:6px;
-  font-size:10px; font-weight:800; padding:3px 8px;
-  text-transform:uppercase; letter-spacing:.04em; white-space:nowrap;
+  background: #0D9488;
+  color: #fff;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 10px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
-.ts-day-badge.weekend { background:#94a3b8; }
-.ts-day-badge.holiday-day { background:#7C3AED; }
-.ts-day-date { font-size:.82rem; font-weight:600; color:#475569; }
-.ts-day-lock { font-size:.75rem; color:#94a3b8; display:flex; align-items:center; gap:4px; margin-left:auto; }
+.ts-day-badge.weekend { background: #64748b; }
+.ts-day-date {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  letter-spacing: -.1px;
+}
+.ts-day-lock {
+  font-size: 12px;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-weight: 500;
+}
 
 /* ── Entry table ─────────────────────────────────────────────── */
-.ts-table { width:100%; border-collapse:collapse; }
+.ts-table { width: 100%; border-collapse: collapse; }
 .ts-table th {
-  background:#f1f5f9; color:#64748b; font-size:.67rem; font-weight:700;
-  text-transform:uppercase; letter-spacing:.4px; padding:8px 10px;
-  border-bottom:1px solid #e2e8f0; white-space:nowrap; text-align:center;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  padding: 9px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+  text-align: center;
 }
-.ts-table th.left { text-align:left; }
-.ts-table td { padding:7px 8px; border-bottom:1px solid #f8fafc; vertical-align:middle; }
-.ts-table td input, .ts-table td select {
-  border:1px solid #e2e8f0; border-radius:8px; padding:5px 8px;
-  font-size:.78rem; width:100%; background:#fff; transition:border-color .15s;
+.ts-table th.left { text-align: left; }
+.ts-table td {
+  padding: 8px 8px;
+  border-bottom: 1px solid #f8fafc;
+  vertical-align: middle;
 }
-.ts-table td input:focus, .ts-table td select:focus {
-  border-color:#0D9488; outline:none; box-shadow:0 0 0 3px rgba(13,148,136,.1);
-}
-.ts-table td .hrs { font-size:.82rem; font-weight:700; text-align:center; }
-.ts-table td .hrs.reg-val  { color:#0D9488; }
-.ts-table td .hrs.ot-val   { color:#D97706; }
-.ts-table td .hrs.tot-val  { color:#0369a1; }
-.ts-table td .hrs.muted    { color:#cbd5e1; }
+.ts-table tbody tr:last-child td { border-bottom: none; }
 
-/* ── Type badge on non-work rows ─────────────────────────────── */
-.type-badge {
-  display:inline-flex; align-items:center; gap:5px;
-  padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700;
+/* inputs & selects */
+.ts-table td input,
+.ts-table td select {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  width: 100%;
+  background: #fff;
+  color: #1e293b;
+  transition: border-color .15s, box-shadow .15s;
+  height: 36px;
 }
-.type-holiday { background:#EDE9FE; color:#5B21B6; }
-.type-sick    { background:#FEF2F2; color:#DC2626; }
-.type-pto     { background:#FFF7ED; color:#C2410C; }
+.ts-table td input:focus,
+.ts-table td select:focus {
+  border-color: #0D9488;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(13,148,136,.12);
+}
+.ts-table td input:disabled,
+.ts-table td select:disabled {
+  background: #f8fafc;
+  color: #94a3b8;
+  border-color: #f1f5f9;
+  cursor: not-allowed;
+}
 
-/* ── Add buttons ─────────────────────────────────────────────── */
+/* hour cells */
+.ts-table td .hrs {
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+.ts-table td .hrs.reg-val { color: #0D9488; }
+.ts-table td .hrs.ot-val  { color: #D97706; }
+.ts-table td .hrs.tot-val { color: #1d4ed8; font-weight: 800; }
+
+/* ── Add row / Add day buttons ───────────────────────────────── */
 .add-proj-btn {
-  background:none; border:1px dashed #cbd5e1; color:#94a3b8;
-  font-size:.72rem; padding:5px 14px; border-radius:8px; cursor:pointer;
-  transition:all .15s; margin:6px 10px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1.5px dashed #cbd5e1;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all .15s;
+  margin: 7px 12px 10px;
 }
-.add-proj-btn:hover { border-color:#0D9488; color:#0D9488; background:#f0fdfa; }
+.add-proj-btn:hover {
+  border-color: #0D9488;
+  color: #0D9488;
+  background: #f0fdfa;
+}
 .add-day-btn {
-  background:none; border:1.5px dashed #cbd5e1; color:#94a3b8;
-  font-size:.78rem; padding:9px 20px; border-radius:10px; cursor:pointer;
-  transition:all .15s; width:100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: none;
+  border: 2px dashed #cbd5e1;
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 12px 20px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all .15s;
+  width: 100%;
 }
-.add-day-btn:hover { border-color:#0D9488; color:#0D9488; background:#f0fdfa; }
-.del-btn { background:none; border:none; color:#cbd5e1; cursor:pointer; padding:4px 6px; border-radius:6px; font-size:.9rem; }
-.del-btn:hover { color:#dc2626; background:#fee2e2; }
+.add-day-btn:hover {
+  border-color: #0D9488;
+  color: #0D9488;
+  background: #f0fdfa;
+}
 
-/* ── Totals footer ───────────────────────────────────────────── */
-.ts-footer { background:#f8fafc; border-top:2px solid #e2e8f0; padding:12px 20px; display:flex; align-items:center; justify-content:flex-end; gap:28px; }
-.ts-footer-item { text-align:center; }
-.ts-footer-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#94a3b8; }
-.ts-footer-val { font-size:1.1rem; font-weight:800; }
+/* ── Delete row button ───────────────────────────────────────── */
+.del-btn {
+  background: none;
+  border: none;
+  color: #cbd5e1;
+  cursor: pointer;
+  padding: 5px 7px;
+  border-radius: 7px;
+  font-size: 13px;
+  transition: all .15s;
+  line-height: 1;
+}
+.del-btn:hover { color: #dc2626; background: #fee2e2; }
+
+/* ── Status alerts ───────────────────────────────────────────── */
+.ts-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 14px;
+  border: 1px solid;
+}
+.ts-alert-info    { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+.ts-alert-success { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+.ts-alert-danger  { background: #fff1f2; border-color: #fecdd3; color: #b91c1c; }
+.ts-alert-prev    { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+
+/* ── Action buttons ──────────────────────────────────────────── */
+.ts-action-bar {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+.ts-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 20px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all .15s;
+  text-decoration: none;
+}
+.ts-btn.cancel  { background: #f8fafc; border-color: #e2e8f0; color: #64748b; }
+.ts-btn.cancel:hover  { background: #f1f5f9; color: #334155; }
+.ts-btn.draft   { background: #f8fafc; border-color: #e2e8f0; color: #334155; }
+.ts-btn.draft:hover   { background: #f1f5f9; border-color: #cbd5e1; }
+.ts-btn.submit  { background: #0D9488; color: #fff; }
+.ts-btn.submit:hover  { background: #0b8075; }
+.ts-btn:disabled { opacity: .6; cursor: not-allowed; }
 </style>
 {% endblock %}
 
 {% block content %}
+<div class="tsub">
+
 <div class="mb-3">
-  <a href="{{ url_for('timesheets') }}" class="text-decoration-none text-muted" style="font-size:.82rem;">
-    <i class="bi bi-arrow-left me-1"></i>Back to Timesheets
+  <a href="{{ url_for('timesheets') }}" style="font-size:13px;font-weight:500;color:#64748b;text-decoration:none;display:inline-flex;align-items:center;gap:5px;">
+    <i class="bi bi-arrow-left"></i> Back to Timesheets
   </a>
 </div>
 
 <div class="ts-card">
 
-  <!-- Header -->
+  <!-- Hero Header -->
   <div class="ts-header">
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
       <div>
         <h5><i class="bi bi-calendar-week me-2"></i>{% if existing_sheet %}Edit{% else %}New{% endif %} Timesheet</h5>
         <div class="sub">{{ week_label }}</div>
       </div>
-      <!-- Week Picker -->
       <div class="d-flex align-items-center gap-2">
-        <label style="font-size:.78rem;opacity:.85;white-space:nowrap;">Select Week:</label>
-        <input type="week" id="weekPicker" onchange="changeWeek(this.value)"
-               style="border:none;border-radius:8px;padding:5px 10px;font-size:.82rem;color:#0f172a;cursor:pointer;">
+        <label style="font-size:12px;opacity:.8;white-space:nowrap;font-weight:500;">Week:</label>
+        <input type="week" id="weekPicker" onchange="changeWeek(this.value)">
       </div>
     </div>
   </div>
 
-  <!-- Summary bar -->
+  <!-- Summary Bar -->
   <div class="ts-summary">
     <div class="ts-summary-item">
       <div class="ts-summary-label">Regular Hrs</div>
@@ -141,53 +336,59 @@
   <div class="p-3 p-md-4">
 
     {% if existing_sheet and existing_sheet.status == 'Submitted' %}
-    <div class="alert mb-3" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:10px;font-size:.84rem;">
-      <i class="bi bi-info-circle-fill me-2"></i>Already submitted — re-submit to overwrite.
+    <div class="ts-alert ts-alert-info">
+      <i class="bi bi-info-circle-fill"></i> Already submitted — re-submit to overwrite.
     </div>
     {% elif existing_sheet and existing_sheet.status == 'Approved' %}
-    <div class="alert mb-3" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;border-radius:10px;font-size:.84rem;">
-      <i class="bi bi-check-circle-fill me-2"></i>Approved. Contact your manager to make changes.
+    <div class="ts-alert ts-alert-success">
+      <i class="bi bi-check-circle-fill"></i> Approved. Contact your manager to make changes.
     </div>
     {% elif existing_sheet and existing_sheet.status == 'Rejected' %}
-    <div class="alert mb-3" style="background:#fff1f2;border:1px solid #fecdd3;color:#b91c1c;border-radius:10px;font-size:.84rem;">
-      <i class="bi bi-exclamation-circle-fill me-2"></i>Rejected — please update and resubmit.
+    <div class="ts-alert ts-alert-danger">
+      <i class="bi bi-exclamation-circle-fill"></i> Rejected — please update and resubmit.
     </div>
     {% endif %}
 
-    <!-- Prev-week carry-forward banner -->
-    <div id="prevWeekBanner" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 16px;margin-bottom:14px;font-size:.83rem;color:#1e40af;">
-      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-        <span><i class="bi bi-arrow-counterclockwise me-1"></i>Previous week had entries. <strong id="prevWeekLabel"></strong></span>
-        <div class="d-flex gap-2">
-          <button type="button" class="btn btn-sm" onclick="copyPrevWeek()" style="background:#1d4ed8;color:#fff;font-size:.75rem;padding:3px 12px;border:none;border-radius:6px;">Copy Projects</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('prevWeekBanner').style.display='none';" style="font-size:.75rem;padding:3px 10px;">Dismiss</button>
-        </div>
+    <!-- Copy prev-week banner -->
+    <div id="prevWeekBanner" class="ts-alert ts-alert-prev" style="display:none;">
+      <i class="bi bi-arrow-counterclockwise"></i>
+      <span>Previous week had entries — <strong id="prevWeekLabel"></strong></span>
+      <div class="d-flex gap-2 ms-auto">
+        <button type="button" onclick="copyPrevWeek()"
+                style="background:#1d4ed8;color:#fff;border:none;border-radius:7px;padding:4px 14px;font-size:12px;font-weight:600;cursor:pointer;">
+          Copy Projects
+        </button>
+        <button type="button" onclick="document.getElementById('prevWeekBanner').style.display='none';"
+                style="background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:7px;padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;">
+          Dismiss
+        </button>
       </div>
     </div>
 
-    <!-- Day blocks container -->
+    <!-- Day blocks -->
     <div id="dayBlocksContainer"></div>
 
-    <!-- Add Day button (weekdays only) -->
+    <!-- Add Day -->
     <button type="button" class="add-day-btn mb-4" onclick="addNewDay()" id="addDayBtn">
-      <i class="bi bi-calendar-plus me-1"></i>Add Day
+      <i class="bi bi-calendar-plus"></i> Add Day
     </button>
 
-    <!-- Action Buttons -->
-    <div class="d-flex gap-3 justify-content-end">
-      <a href="{{ url_for('timesheets') }}" class="btn btn-outline-secondary">Cancel</a>
+    <!-- Action buttons -->
+    <div class="ts-action-bar">
+      <a href="{{ url_for('timesheets') }}" class="ts-btn cancel">Cancel</a>
       {% if not (existing_sheet and existing_sheet.status == 'Approved') %}
-      <button type="button" onclick="saveSheet('draft')" class="btn btn-outline-secondary">
-        <i class="bi bi-floppy me-1"></i>Save Draft
+      <button type="button" onclick="saveSheet('draft')" class="ts-btn draft">
+        <i class="bi bi-floppy"></i> Save Draft
       </button>
-      <button type="button" onclick="saveSheet('submit')" class="btn"
-              style="background:#0D9488;color:#fff;border:none;font-weight:600;padding:8px 22px;border-radius:8px;">
-        <i class="bi bi-send me-1"></i>Submit Timesheet
+      <button type="button" onclick="saveSheet('submit')" class="ts-btn submit">
+        <i class="bi bi-send"></i> Submit Timesheet
       </button>
       {% endif %}
     </div>
   </div>
 </div>
+
+</div><!-- /tsub -->
 {% endblock %}
 
 {% block scripts %}
