@@ -8321,13 +8321,11 @@ def employees():
             # Set status to Pending while awaiting edit approval
             e["status"] = "Pending"
 
-    if is_admin:
-        context["my_expenses"] = all_emp_expenses
-    else:
-        context["my_expenses"] = [e for e in all_emp_expenses if e.get("submitted_by_uid") == uid]
+    # "My Submissions" always shows only current user's submitted expenses
+    context["my_expenses"] = [e for e in all_emp_expenses if e.get("submitted_by_uid") == uid]
 
     if is_admin:
-        # Pending expenses for approval include both new submissions AND pending edits
+        # Admins see all pending expenses for approval
         context["pending_expenses"] = [e for e in all_emp_expenses if e.get("status") == "Pending"]
     else:
         context["pending_expenses"] = []
