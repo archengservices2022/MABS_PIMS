@@ -2580,6 +2580,7 @@ function viewReceipt(expId) {
             <tr>
               <th style="padding:8px 12px; color:#fff;">Date</th>
               <th style="padding:8px 12px; color:#fff;">Employee</th>
+              <th style="padding:8px 12px; color:#fff;">Role</th>
               <th style="padding:8px 12px; color:#fff;">Region</th>
               <th style="padding:8px 12px; color:#fff; text-align:right;">Amount</th>
             </tr>
@@ -2749,17 +2750,22 @@ function viewReceipt(expId) {
       var salSec = document.getElementById('monthSalariesSection');
       if (salaries.length > 0) {
         salSec.style.display = '';
+        var roleColors = {admin:'#dc2626',finance:'#0D9488',projects:'#7C3AED',engineer:'#0369a1',sales:'#d97706'};
         var sRows = salaries.map(function(s, idx) {
           var bg = idx%2===0?'#fff':'#eff6ff';
+          var roleKey = (s.role||'').toLowerCase();
+          var roleColor = roleColors[roleKey] || '#64748b';
+          var roleBadge = s.role ? '<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;background:'+roleColor+'22;color:'+roleColor+';">'+s.role+'</span>' : '—';
           return '<tr style="background:'+bg+';border-bottom:1px solid #bfdbfe;">'
             +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(s.date)+'</td>'
             +'<td style="padding:8px 12px;font-weight:500;">'+(s.name||'—')+'</td>'
+            +'<td style="padding:8px 12px;">'+roleBadge+'</td>'
             +'<td style="padding:8px 12px;color:#6b7280;">'+(s.region||'—')+'</td>'
             +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#1D4ED8;">'+fmt(s.amount)+'</td></tr>';
         });
         document.getElementById('monthSalariesTbody').innerHTML = sRows.join('');
         var totalSal = salaries.reduce(function(s,e){return s+parseFloat(e.amount||0);},0);
-        document.getElementById('monthSalariesTfoot').innerHTML = '<tr><td colspan="3" style="padding:8px 12px;font-weight:700;">Total Salaries</td>'
+        document.getElementById('monthSalariesTfoot').innerHTML = '<tr><td colspan="4" style="padding:8px 12px;font-weight:700;">Total Salaries</td>'
           +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#1D4ED8;font-size:13px;">'+fmt(totalSal)+'</td></tr>';
       } else {
         salSec.style.display = 'none';

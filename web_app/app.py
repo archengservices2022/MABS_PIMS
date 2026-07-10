@@ -7103,13 +7103,22 @@ def financial():
     salaries_international, salary_entries_international = group_by_name(salaries_international_raw, salary_entries_international)
 
     # ── Monthly salary details for drill-down (use BS-filtered salaries for selected year) ──
+    # Build role lookup by username
+    _role_lookup: Dict[str, str] = {}
+    for _u in _load_all_users():
+        _uname = (_u.get("username") or "").strip()
+        if _uname:
+            _role_lookup[_uname.lower()] = normalize_role(_u.get("role", "")).capitalize()
+
     monthly_salary_details = {str(i): [] for i in range(1, 13)}
     for _sal in bs_sal_dom_raw + bs_sal_int_raw:
         _ds = (_sal.get("date") or "")[:10]
         try:
             _d = datetime.fromisoformat(_ds)
+            _emp_name = _sal.get("employee_name") or _sal.get("name") or "—"
             monthly_salary_details[str(_d.month)].append({
-                "name":   _sal.get("employee_name") or _sal.get("name") or "—",
+                "name":   _emp_name,
+                "role":   _role_lookup.get(_emp_name.lower(), "—"),
                 "region": "Inside America" if _sal in bs_sal_dom_raw else "Outside America",
                 "amount": _safe_float(_sal.get("amount", 0)),
                 "date":   _ds,
