@@ -4,75 +4,150 @@
 
 {% block head %}
 <style>
-.ts-kpi-row { display:flex; gap:14px; margin-bottom:22px; flex-wrap:wrap; }
-.ts-kpi { flex:1; min-width:130px; background:#fff; border-radius:12px; padding:16px 20px; box-shadow:0 1px 4px rgba(0,0,0,.07); }
-.ts-kpi-label { font-size:.68rem; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:#64748b; margin-bottom:4px; }
-.ts-kpi-value { font-size:1.6rem; font-weight:800; color:#0f172a; line-height:1.1; }
-.ts-kpi-sub { font-size:.72rem; color:#94a3b8; margin-top:3px; }
+/* ── Page header ─────────────────────────────────────────────── */
+.ts-page-header {
+  background:linear-gradient(135deg,#0D9488 0%,#0891B2 100%);
+  border-radius:16px; padding:20px 24px; margin-bottom:20px;
+  display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;
+}
+.ts-page-header h4 { color:#fff; font-weight:800; margin:0; font-size:1.1rem; }
+.ts-page-header .sub { color:rgba(255,255,255,.75); font-size:.78rem; margin-top:3px; }
 
-.week-nav { display:flex; align-items:center; gap:10px; margin-bottom:18px; }
-.week-nav-label { font-size:.95rem; font-weight:700; color:#0f172a; min-width:260px; text-align:center; }
-.week-nav-btn { background:#fff; border:1px solid #e2e8f0; color:#475569; width:34px; height:34px; display:flex; align-items:center; justify-content:center; border-radius:8px; text-decoration:none; font-size:.9rem; transition:all .15s; }
-.week-nav-btn:hover { background:#f1f5f9; color:#0f172a; }
+/* ── KPI cards ───────────────────────────────────────────────── */
+.ts-kpi-row { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+.ts-kpi {
+  flex:1; min-width:130px; background:#fff; border-radius:14px;
+  padding:16px 18px 14px; box-shadow:0 2px 8px rgba(0,0,0,.06);
+  border-top:3px solid #e2e8f0; position:relative; overflow:hidden;
+}
+.ts-kpi::after { content:''; position:absolute; right:-10px; top:-10px; width:60px; height:60px; border-radius:50%; opacity:.04; background:#0f172a; }
+.ts-kpi.kpi-teal  { border-top-color:#0D9488; }
+.ts-kpi.kpi-blue  { border-top-color:#1d4ed8; }
+.ts-kpi.kpi-amber { border-top-color:#d97706; }
+.ts-kpi.kpi-green { border-top-color:#15803d; }
+.ts-kpi.kpi-slate { border-top-color:#475569; }
+.ts-kpi-icon { font-size:1.1rem; margin-bottom:6px; }
+.ts-kpi-label { font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#94a3b8; }
+.ts-kpi-value { font-size:1.7rem; font-weight:800; color:#0f172a; line-height:1.1; margin:2px 0; }
+.ts-kpi-sub { font-size:.7rem; color:#cbd5e1; }
 
-.ts-table { width:100%; border-collapse:separate; border-spacing:0; background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 1px 6px rgba(0,0,0,.08); }
-.ts-table th { background:#f8fafc; color:#64748b; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:11px 10px; border-bottom:2px solid #e2e8f0; white-space:nowrap; text-align:center; }
-.ts-table th.emp-th { text-align:left; padding-left:16px; min-width:150px; }
-.ts-table td { padding:8px 6px; border-bottom:1px solid #f1f5f9; vertical-align:middle; text-align:center; }
+/* ── Week navigation ─────────────────────────────────────────── */
+.week-nav-bar {
+  background:#fff; border-radius:12px; padding:10px 16px;
+  display:flex; align-items:center; gap:10px; margin-bottom:16px;
+  box-shadow:0 1px 4px rgba(0,0,0,.06); flex-wrap:wrap;
+}
+.week-nav-label { font-size:.92rem; font-weight:700; color:#0f172a; min-width:220px; text-align:center; }
+.week-nav-btn {
+  background:#f8fafc; border:1px solid #e2e8f0; color:#475569;
+  width:32px; height:32px; display:flex; align-items:center; justify-content:center;
+  border-radius:8px; text-decoration:none; font-size:.85rem; transition:all .15s; flex-shrink:0;
+}
+.week-nav-btn:hover { background:#0D9488; border-color:#0D9488; color:#fff; }
+.week-cur-btn {
+  font-size:.72rem; padding:4px 12px; border-radius:7px;
+  border:1px solid #e2e8f0; background:#f8fafc; color:#475569;
+  text-decoration:none; white-space:nowrap; transition:all .15s;
+}
+.week-cur-btn:hover { background:#0D9488; border-color:#0D9488; color:#fff; }
+
+/* ── Main grid table ─────────────────────────────────────────── */
+.ts-table { width:100%; border-collapse:separate; border-spacing:0; background:#fff; border-radius:16px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,.07); }
+.ts-table th {
+  background:#f8fafc; color:#64748b; font-size:.66rem; font-weight:700;
+  text-transform:uppercase; letter-spacing:.5px; padding:12px 8px;
+  border-bottom:2px solid #e2e8f0; white-space:nowrap; text-align:center;
+}
+.ts-table th.emp-th { text-align:left; padding-left:18px; min-width:170px; }
+.ts-table td { padding:7px 5px; border-bottom:1px solid #f1f5f9; vertical-align:middle; text-align:center; }
 .ts-table tbody tr:last-child td { border-bottom:none; }
-.ts-table td.emp-td { text-align:left; padding:10px 10px 10px 16px; font-weight:600; color:#1e293b; font-size:.85rem; white-space:nowrap; }
+.ts-table tbody tr:hover td { background:#fafbfc; }
+.ts-table td.emp-td { text-align:left; padding:10px 8px 10px 18px; white-space:nowrap; }
 
-.ts-cell { display:inline-flex; flex-direction:column; align-items:center; justify-content:center; padding:5px 8px; border-radius:8px; font-size:.65rem; cursor:pointer; transition:opacity .15s; min-width:88px; min-height:48px; gap:1px; }
-.ts-cell:hover { opacity:.85; }
-.ts-cell .c-time { font-weight:500; font-size:.62rem; color:inherit; }
-.ts-cell .c-proj { font-size:.6rem; opacity:.75; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:86px; }
-.ts-cell .c-hrs  { font-weight:800; font-size:.72rem; }
-.ts-approved { background:#dcfce7; color:#15803d; }
-.ts-submitted { background:#dbeafe; color:#1d4ed8; }
-.ts-draft     { background:#ede9fe; color:#7c3aed; }
-.ts-rejected  { background:#fee2e2; color:#b91c1c; }
-.ts-empty     { background:#f8fafc; border:1.5px dashed #e2e8f0; color:#cbd5e1; font-size:.65rem; min-width:88px; min-height:48px; display:flex; align-items:center; justify-content:center; border-radius:8px; }
+/* ── Day cells ───────────────────────────────────────────────── */
+.ts-cell {
+  display:inline-flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:6px 8px; border-radius:9px; cursor:pointer; transition:all .15s;
+  min-width:86px; min-height:52px; gap:1px; width:100%;
+}
+.ts-cell:hover { transform:translateY(-1px); box-shadow:0 3px 8px rgba(0,0,0,.12); }
+.ts-cell .c-time { font-weight:500; font-size:.6rem; }
+.ts-cell .c-proj { font-size:.58rem; opacity:.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:84px; }
+.ts-cell .c-hrs  { font-weight:800; font-size:.75rem; }
+.ts-approved { background:linear-gradient(135deg,#dcfce7,#bbf7d0); color:#15803d; border:1px solid #86efac; }
+.ts-submitted { background:linear-gradient(135deg,#dbeafe,#bfdbfe); color:#1d4ed8; border:1px solid #93c5fd; }
+.ts-draft     { background:linear-gradient(135deg,#ede9fe,#ddd6fe); color:#7c3aed; border:1px solid #c4b5fd; }
+.ts-rejected  { background:linear-gradient(135deg,#fee2e2,#fecaca); color:#b91c1c; border:1px solid #fca5a5; }
+.ts-empty {
+  background:#fafafa; border:1.5px dashed #e8ecf0; color:#d1d5db;
+  font-size:.7rem; min-width:86px; min-height:52px; width:100%;
+  display:flex; align-items:center; justify-content:center; border-radius:9px;
+}
 
-.total-col { font-weight:700; color:#0f172a; font-size:.875rem; }
-.status-col { white-space:nowrap; }
-.action-col { white-space:nowrap; }
-
-.sbadge { display:inline-block; padding:2px 9px; border-radius:20px; font-size:.64rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; }
+/* ── Status badges ───────────────────────────────────────────── */
+.sbadge { display:inline-flex; align-items:center; padding:3px 10px; border-radius:20px; font-size:.64rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; white-space:nowrap; }
 .sb-approved { background:#dcfce7; color:#15803d; }
 .sb-submitted { background:#dbeafe; color:#1d4ed8; }
 .sb-draft     { background:#ede9fe; color:#7c3aed; }
 .sb-rejected  { background:#fee2e2; color:#b91c1c; }
 
-/* My Timesheets list */
-.my-ts-table { width:100%; border-collapse:separate; border-spacing:0; background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 1px 6px rgba(0,0,0,.08); }
-.my-ts-table th { background:#f8fafc; color:#64748b; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:11px 16px; border-bottom:2px solid #e2e8f0; }
-.my-ts-table td { padding:13px 16px; border-bottom:1px solid #f1f5f9; }
-.my-ts-table tbody tr:last-child td { border-bottom:none; }
-.my-ts-table tbody tr:hover { background:#fafafa; }
+/* ── Action buttons ──────────────────────────────────────────── */
+.action-btn {
+  width:28px; height:28px; border-radius:7px; border:1px solid #e2e8f0;
+  background:#f8fafc; display:inline-flex; align-items:center; justify-content:center;
+  cursor:pointer; font-size:.72rem; transition:all .15s; text-decoration:none; color:#475569;
+}
+.action-btn:hover { color:#fff; }
+.action-btn.approve:hover { background:#15803d; border-color:#15803d; }
+.action-btn.reject:hover  { background:#dc2626; border-color:#dc2626; }
+.action-btn.view:hover    { background:#0D9488; border-color:#0D9488; }
+.action-btn.delete:hover  { background:#dc2626; border-color:#dc2626; }
 
-.empty-state { text-align:center; padding:48px 16px; color:#94a3b8; }
-.ot-val { color:#b91c1c; font-weight:600; }
+/* ── Employee name cell ──────────────────────────────────────── */
+.emp-avatar {
+  width:32px; height:32px; border-radius:50%; flex-shrink:0;
+  background:linear-gradient(135deg,#0D9488,#0891B2); color:#fff;
+  display:flex; align-items:center; justify-content:center;
+  font-size:.75rem; font-weight:800;
+}
+.emp-name { font-weight:600; color:#1e293b; font-size:.84rem; }
+
+/* total / status cols */
+.total-col { font-weight:800; color:#0f172a; font-size:.88rem; }
+.status-col, .action-col { white-space:nowrap; }
+
+/* ── My timesheets list ──────────────────────────────────────── */
+.my-ts-table { width:100%; border-collapse:separate; border-spacing:0; background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.06); }
+.my-ts-table th { background:#f8fafc; color:#64748b; font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:11px 16px; border-bottom:2px solid #e2e8f0; }
+.my-ts-table td { padding:13px 16px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
+.my-ts-table tbody tr:last-child td { border-bottom:none; }
+.my-ts-table tbody tr:hover td { background:#fafbfc; }
+
+/* ── Empty state ─────────────────────────────────────────────── */
+.empty-state { text-align:center; padding:52px 16px; color:#94a3b8; }
 .empty-state-icon { font-size:2.5rem; margin-bottom:10px; }
 .empty-state-title { font-size:1rem; font-weight:600; color:#64748b; margin-bottom:6px; }
+.ot-val { color:#b91c1c; font-weight:700; }
 </style>
 {% endblock %}
 
 {% block content %}
 {% set is_admin = user_role == 'admin' %}
 
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="ts-page-header">
   <div>
-    <h4 class="fw-bold mb-0" style="color:#0f172a;">
-      {% if view == 'admin' %}Team Weekly Schedule{% else %}My Timesheets{% endif %}
-    </h4>
+    <h4><i class="bi bi-calendar-week me-2"></i>{% if view == 'admin' %}Team Weekly Schedule{% else %}My Timesheets{% endif %}</h4>
+    <div class="sub">{% if view == 'admin' %}Track and approve your team's time entries{% else %}Your personal time log and history{% endif %}</div>
   </div>
-  <div class="d-flex gap-2 align-items-center">
-    <a href="{{ url_for('timesheets_submit') }}" class="btn btn-sm"
-       style="background:#0D9488;color:#fff;border:none;padding:6px 14px;border-radius:8px;font-weight:600;">
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <a href="{{ url_for('timesheets_submit') }}"
+       style="background:rgba(255,255,255,.2);color:#fff;border:1.5px solid rgba(255,255,255,.4);padding:7px 16px;border-radius:9px;font-weight:600;font-size:.82rem;text-decoration:none;transition:all .15s;"
+       onmouseover="this.style.background='rgba(255,255,255,.35)'" onmouseout="this.style.background='rgba(255,255,255,.2)'">
       <i class="bi bi-plus-lg me-1"></i>Submit Timesheet
     </a>
     {% if is_admin %}
-    <a href="{{ url_for('api_timesheets_export', week=week_of) }}" class="btn btn-sm btn-outline-secondary">
+    <a href="{{ url_for('api_timesheets_export', week=week_of) }}"
+       style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.25);padding:7px 14px;border-radius:9px;font-size:.78rem;text-decoration:none;">
       <i class="bi bi-download me-1"></i>Export CSV
     </a>
     {% endif %}
@@ -82,27 +157,32 @@
 {% if view == 'admin' %}
 <!-- ── KPI Cards ───────────────────────────────────────────────── -->
 <div class="ts-kpi-row">
-  <div class="ts-kpi">
+  <div class="ts-kpi kpi-teal">
+    <div class="ts-kpi-icon">👥</div>
     <div class="ts-kpi-label">Team Size</div>
     <div class="ts-kpi-value">{{ kpi_employees }}</div>
     <div class="ts-kpi-sub">employees</div>
   </div>
-  <div class="ts-kpi">
+  <div class="ts-kpi kpi-slate">
+    <div class="ts-kpi-icon">📤</div>
     <div class="ts-kpi-label">Submitted</div>
     <div class="ts-kpi-value">{{ kpi_submitted }}</div>
     <div class="ts-kpi-sub">this week</div>
   </div>
-  <div class="ts-kpi">
+  <div class="ts-kpi kpi-blue">
+    <div class="ts-kpi-icon">⏳</div>
     <div class="ts-kpi-label">Pending</div>
     <div class="ts-kpi-value" style="color:#1d4ed8;">{{ kpi_pending }}</div>
     <div class="ts-kpi-sub">awaiting review</div>
   </div>
-  <div class="ts-kpi">
+  <div class="ts-kpi kpi-green">
+    <div class="ts-kpi-icon">✅</div>
     <div class="ts-kpi-label">Approved</div>
     <div class="ts-kpi-value" style="color:#15803d;">{{ kpi_approved }}</div>
     <div class="ts-kpi-sub">this week</div>
   </div>
-  <div class="ts-kpi">
+  <div class="ts-kpi kpi-amber">
+    <div class="ts-kpi-icon">⏱</div>
     <div class="ts-kpi-label">Total Hours</div>
     <div class="ts-kpi-value">{{ "%.1f"|format(kpi_hours) }}</div>
     <div class="ts-kpi-sub">all employees</div>
@@ -110,13 +190,11 @@
 </div>
 
 <!-- ── Week Navigation ────────────────────────────────────────── -->
-<div class="week-nav">
+<div class="week-nav-bar">
   <a href="{{ url_for('timesheets', week=prev_week) }}" class="week-nav-btn"><i class="bi bi-chevron-left"></i></a>
   <div class="week-nav-label">Week of {{ week_label }}</div>
   <a href="{{ url_for('timesheets', week=next_week) }}" class="week-nav-btn"><i class="bi bi-chevron-right"></i></a>
-  <a href="{{ url_for('timesheets') }}" class="btn btn-sm btn-outline-secondary ms-1" style="font-size:.75rem;padding:4px 10px;">
-    Current Week
-  </a>
+  <a href="{{ url_for('timesheets') }}" class="week-cur-btn ms-1">Current Week</a>
 </div>
 
 <!-- ── Grid Table ─────────────────────────────────────────────── -->
@@ -142,10 +220,8 @@
         <tr>
           <td class="emp-td">
             <div class="d-flex align-items-center gap-2">
-              <div style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#0D9488,#0891B2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0;">
-                {{ row.name[0].upper() if row.name else '?' }}
-              </div>
-              {{ row.name }}
+              <div class="emp-avatar">{{ row.name[0].upper() if row.name else '?' }}</div>
+              <span class="emp-name">{{ row.name }}</span>
             </div>
           </td>
           {% for dl in day_labels %}
@@ -177,23 +253,23 @@
           {% if is_admin %}
           <td class="action-col">
             {% if row.sheet %}
-            <div class="d-flex gap-1 justify-content-center flex-wrap">
+            <div class="d-flex gap-1 justify-content-center">
               {% if row.sheet.status == 'Submitted' %}
                 <button onclick="approveSheet('{{ row.sheet.firebase_id }}','approve')"
-                        class="btn btn-sm" title="Approve" style="background:#15803d;color:#fff;font-size:.65rem;padding:3px 8px;border-radius:6px;border:none;">
+                        class="action-btn approve" title="Approve">
                   <i class="bi bi-check2"></i>
                 </button>
                 <button onclick="approveSheet('{{ row.sheet.firebase_id }}','reject')"
-                        class="btn btn-sm btn-outline-danger" title="Reject" style="font-size:.65rem;padding:3px 8px;border-radius:6px;">
-                  <i class="bi bi-x"></i>
+                        class="action-btn reject" title="Reject">
+                  <i class="bi bi-x-lg"></i>
                 </button>
               {% endif %}
               <a href="{{ url_for('timesheet_detail', sheet_id=row.sheet.firebase_id) }}"
-                 class="btn btn-sm btn-outline-secondary" title="View Details" style="font-size:.65rem;padding:3px 8px;border-radius:6px;">
+                 class="action-btn view" title="View Details">
                 <i class="bi bi-eye"></i>
               </a>
               <button onclick="deleteSheet('{{ row.sheet.firebase_id }}')"
-                      class="btn btn-sm btn-outline-danger" title="Delete" style="font-size:.65rem;padding:3px 8px;border-radius:6px;">
+                      class="action-btn delete" title="Delete">
                 <i class="bi bi-trash3"></i>
               </button>
             </div>
@@ -220,29 +296,34 @@
 
 <!-- Monthly Quick Stats -->
 <div class="ts-kpi-row">
-  <div class="ts-kpi">
+  <div class="ts-kpi kpi-teal">
+    <div class="ts-kpi-icon">📅</div>
     <div class="ts-kpi-label">This Month</div>
     <div class="ts-kpi-value">{{ "%.1f"|format(stat_month_hours) }}</div>
     <div class="ts-kpi-sub">total hours</div>
   </div>
-  <div class="ts-kpi">
+  <div class="ts-kpi {% if stat_month_ot > 0 %}kpi-amber{% endif %}">
+    <div class="ts-kpi-icon">⚡</div>
     <div class="ts-kpi-label">Overtime (Month)</div>
     <div class="ts-kpi-value" style="color:{% if stat_month_ot > 0 %}#b91c1c{% else %}#0f172a{% endif %};">
       {{ "%.1f"|format(stat_month_ot) }}
     </div>
     <div class="ts-kpi-sub">OT hours</div>
   </div>
-  <div class="ts-kpi">
+  <div class="ts-kpi kpi-green">
+    <div class="ts-kpi-icon">✅</div>
     <div class="ts-kpi-label">Approved</div>
     <div class="ts-kpi-value" style="color:#15803d;">{{ stat_approved }}</div>
     <div class="ts-kpi-sub">weeks approved</div>
   </div>
-  <div class="ts-kpi">
+  <div class="ts-kpi kpi-blue">
+    <div class="ts-kpi-icon">⏳</div>
     <div class="ts-kpi-label">Pending Review</div>
     <div class="ts-kpi-value" style="color:#1d4ed8;">{{ stat_pending }}</div>
     <div class="ts-kpi-sub">awaiting approval</div>
   </div>
-  <div class="ts-kpi">
+  <div class="ts-kpi kpi-slate">
+    <div class="ts-kpi-icon">⏱</div>
     <div class="ts-kpi-label">This Week</div>
     <div class="ts-kpi-value">{{ "%.1f"|format(week_total) }}</div>
     <div class="ts-kpi-sub">hours logged</div>
@@ -250,13 +331,11 @@
 </div>
 
 <!-- Week Navigation -->
-<div class="week-nav">
+<div class="week-nav-bar">
   <a href="{{ url_for('timesheets', week=prev_week) }}" class="week-nav-btn"><i class="bi bi-chevron-left"></i></a>
   <div class="week-nav-label">Week of {{ week_label }}</div>
   <a href="{{ url_for('timesheets', week=next_week) }}" class="week-nav-btn"><i class="bi bi-chevron-right"></i></a>
-  <a href="{{ url_for('timesheets') }}" class="btn btn-sm btn-outline-secondary ms-1" style="font-size:.75rem;padding:4px 10px;">
-    Current Week
-  </a>
+  <a href="{{ url_for('timesheets') }}" class="week-cur-btn ms-1">Current Week</a>
 </div>
 
 <!-- Personal Weekly Grid -->
