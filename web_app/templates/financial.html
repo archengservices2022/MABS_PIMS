@@ -529,7 +529,6 @@ a[href*="filter_expense"]:hover {
         <div class="kpi-top"><span class="kpi-label">Subtotal</span><i class="bi bi-file-text kpi-icon-sm"></i></div>
         <div class="kpi-value" id="incKpiSubtotal">${{ "{:,.2f}".format(inc.subtotal) }}</div>
         <div class="kpi-sub">before tax</div>
-        <div class="kpi-sub"><small style="color:#94a3b8;">{{ prev_year }} & {{ stat_card_year }}</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
@@ -537,7 +536,6 @@ a[href*="filter_expense"]:hover {
         <div class="kpi-top"><span class="kpi-label">Tax</span><i class="bi bi-percent kpi-icon-sm"></i></div>
         <div class="kpi-value" id="incKpiTax">${{ "{:,.2f}".format(inc.tax) }}</div>
         <div class="kpi-sub">tax collected</div>
-        <div class="kpi-sub"><small style="color:#94a3b8;">{{ prev_year }} & {{ stat_card_year }}</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
@@ -545,7 +543,6 @@ a[href*="filter_expense"]:hover {
         <div class="kpi-top"><span class="kpi-label">Invoice Total</span><i class="bi bi-receipt kpi-icon-sm"></i></div>
         <div class="kpi-value" id="incKpiTotal">${{ "{:,.2f}".format(inc.total) }}</div>
         <div class="kpi-sub">subtotal + tax</div>
-        <div class="kpi-sub"><small style="color:#94a3b8;">{{ prev_year }} & {{ stat_card_year }}</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
@@ -553,7 +550,6 @@ a[href*="filter_expense"]:hover {
         <div class="kpi-top"><span class="kpi-label">Amount Paid</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
         <div class="kpi-value" id="incKpiPaid">${{ "{:,.2f}".format(inc.paid) }}</div>
         <div class="kpi-sub">collected to date</div>
-        <div class="kpi-sub"><small style="color:#94a3b8;">{{ prev_year }} & {{ stat_card_year }}</small></div>
       </div>
     </div>
   </div>
