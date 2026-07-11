@@ -323,15 +323,31 @@
       {% elif dash_commission.role == 'admin' %}
         <div class="row g-2">
           <div class="col-6 col-md-3">
-            <div style="background:#ECFDF5;border-radius:8px;padding:12px 14px;">
-              <div style="font-size:10px;color:#059669;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Payable — This Month</div>
-              <div style="font-size:1.5rem;font-weight:800;color:#059669;line-height:1.2;">${{ "{:,.0f}".format(dash_commission.this_month) }}</div>
+            <div style="background:#F5F3FF;border-radius:8px;padding:12px 14px;">
+              <div style="font-size:10px;color:#7C3AED;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Total Earned</div>
+              <div style="font-size:1.5rem;font-weight:800;color:#7C3AED;line-height:1.2;">${{ "{:,.0f}".format(dash_commission.earned) }}</div>
+              <div style="font-size:10px;color:#94a3b8;margin-top:2px;">all time</div>
             </div>
           </div>
           <div class="col-6 col-md-3">
             <div style="background:#F0FDF4;border-radius:8px;padding:12px 14px;">
-              <div style="font-size:10px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Outstanding Payable</div>
-              <div style="font-size:1.5rem;font-weight:800;color:#16a34a;line-height:1.2;">${{ "{:,.0f}".format(dash_commission.total) }}</div>
+              <div style="font-size:10px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Already Paid</div>
+              <div style="font-size:1.5rem;font-weight:800;color:#16a34a;line-height:1.2;">${{ "{:,.0f}".format(dash_commission.paid) }}</div>
+              <div style="font-size:10px;color:#94a3b8;margin-top:2px;">commission paid out</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div style="background:#FFF7ED;border-radius:8px;padding:12px 14px;">
+              <div style="font-size:10px;color:#EA580C;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Outstanding</div>
+              <div style="font-size:1.5rem;font-weight:800;color:#EA580C;line-height:1.2;">${{ "{:,.0f}".format(dash_commission.total) }}</div>
+              <div style="font-size:10px;color:#94a3b8;margin-top:2px;">still to be paid</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div style="background:#ECFDF5;border-radius:8px;padding:12px 14px;">
+              <div style="font-size:10px;color:#059669;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">This Month</div>
+              <div style="font-size:1.5rem;font-weight:800;color:#059669;line-height:1.2;">${{ "{:,.0f}".format(dash_commission.this_month) }}</div>
+              <div style="font-size:10px;color:#94a3b8;margin-top:2px;">current month</div>
             </div>
           </div>
         </div>

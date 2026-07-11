@@ -881,6 +881,8 @@ def dashboard():
                     _dash_comm_paid += _safe_float(_dcp.get("amount", 0))
         _dash_commission = {
             "role":        "admin",
+            "earned":      _admin_comm_total,
+            "paid":        _dash_comm_paid,
             "total":       max(_admin_comm_total - _dash_comm_paid, 0.0),
             "this_month":  _admin_comm_month,
         }
