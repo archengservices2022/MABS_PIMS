@@ -780,9 +780,12 @@ def dashboard():
     _total_quotes = len(cur_year_quots)
     quotes_conversion_rate = int(quotes_converted / _total_quotes * 100) if _total_quotes > 0 else 0
 
-    # Active Contract Value = sum of all project contract values created in current year
-    proj_contract_active = sum(_safe_float(p.get("contract_value", 0)) for p in cur_year_projs if isinstance(p, dict))
-    proj_contract_total  = proj_contract_active  # Same as active for dashboard purposes
+    # Active Contract Value = sum of contract values for active projects created in current year
+    proj_contract_active = sum(
+        _safe_float(p.get("contract_value", 0)) for p in cur_year_projs
+        if isinstance(p, dict) and p.get("status", "") not in ("Completed", "invoiced_Fully paid", "Cancelled")
+    )
+    proj_contract_total  = sum(_safe_float(p.get("contract_value", 0)) for p in cur_year_projs if isinstance(p, dict))
     proj_completed_count = sum(1 for p in cur_year_projs if isinstance(p, dict) and p.get("status", "") in ("Completed", "invoiced_Fully paid"))
 
     inv_overdue_amt = sum(
