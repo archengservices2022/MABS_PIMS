@@ -316,7 +316,7 @@
             {{ source_quote.get('job_number','') }}
           </a>
           <div class="text-muted small">{{ source_quote.get('project_name','') }}</div>
-          <div class="text-muted small">Client: {{ source_quote.get('client_name','') }}</div>
+          <div class="text-muted small">Client: {{ source_quote.get('company_name') or source_quote.get('client_name','') }}</div>
           {% set _sq_raw = source_quote.get('status','') %}
           {% set _sq_display = 'Won' if _sq_raw in ('Invoiced','Converted') else _sq_raw %}
           {% set _sq_cls = 'paid' if _sq_raw in ('Invoiced','Converted') else _sq_raw|lower|replace(' ','-') %}
@@ -929,7 +929,7 @@
         <div class="p-3 bg-light rounded mb-3">
           <div class="fw-bold text-teal">{{ project.get('project_number','') }}</div>
           <div>{{ project.get('project_name','') }}</div>
-          <div class="text-muted small">Client: {{ project.get('client_name','—') }}</div>
+          <div class="text-muted small">Client: {{ project.get('company_name') or project.get('client_name','—') }}</div>
           <div class="text-muted small">Contract: ${{ "{:,.0f}".format(project.get('contract_value',0)|float) }}</div>
         </div>
         {% if project_invoices %}
