@@ -7141,7 +7141,7 @@ def financial():
     # Calculate totals for Balance Sheet (use selected year data, not stat_card_year)
     bs_total_revenue = sum(annual_revenue.values())
     bs_total_expenses = sum(annual_expenses.values())
-    total_revenue = total_paid  # kept for legacy/overview usage
+    total_revenue = total_collected  # kept for legacy/overview usage - uses payment date
 
     # Load custom expense categories from Firebase
     custom_categories = fb_get("/custom_categories") or {}
