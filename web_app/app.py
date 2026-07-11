@@ -5350,6 +5350,90 @@ def _sync_client_changes_by_name(old_company_name, new_company_name, new_client_
                     proj_data["client_name"] = new_client_name
                     fb_update(f"/projects/{proj_id}", proj_data)
 
+def _sync_user_display_name(old_name, new_name):
+    """Sync display name changes across all records: timesheets, expenses, approvals, invoices, etc."""
+    print(f"[SYNC_USER] Syncing display name: '{old_name}' → '{new_name}'", flush=True)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # Update Timesheets
+    timesheets = fb_get("/timesheets") or {}
+    if isinstance(timesheets, dict):
+        for ts_id, ts_data in timesheets.items():
+            if isinstance(ts_data, dict):
+                if ts_data.get("employee_name", "") == old_name:
+                    ts_data["employee_name"] = new_name
+                    ts_data["updated_at"] = now_iso
+                    fb_update(f"/timesheets/{ts_id}", ts_data)
+                    print(f"[SYNC_USER] Updated timesheet {ts_id}", flush=True)
+
+    # Update Time Off / Vacation requests
+    time_off = fb_get("/time_off") or {}
+    if isinstance(time_off, dict):
+        for to_id, to_data in time_off.items():
+            if isinstance(to_data, dict):
+                if to_data.get("employee_name", "") == old_name:
+                    to_data["employee_name"] = new_name
+                    to_data["updated_at"] = now_iso
+                    fb_update(f"/time_off/{to_id}", to_data)
+                    print(f"[SYNC_USER] Updated time_off {to_id}", flush=True)
+
+    # Update Expenses
+    expenses = fb_get("/expenses") or {}
+    if isinstance(expenses, dict):
+        for exp_id, exp_data in expenses.items():
+            if isinstance(exp_data, dict):
+                if exp_data.get("employee_name", "") == old_name or exp_data.get("created_by", "") == old_name:
+                    if exp_data.get("employee_name", "") == old_name:
+                        exp_data["employee_name"] = new_name
+                    if exp_data.get("created_by", "") == old_name:
+                        exp_data["created_by"] = new_name
+                    exp_data["updated_at"] = now_iso
+                    fb_update(f"/expenses/{exp_id}", exp_data)
+                    print(f"[SYNC_USER] Updated expense {exp_id}", flush=True)
+
+    # Update Pending Approvals
+    approvals = fb_get("/pending_approvals") or {}
+    if isinstance(approvals, dict):
+        for app_id, app_data in approvals.items():
+            if isinstance(app_data, dict):
+                if app_data.get("employee_name", "") == old_name or app_data.get("submitted_by", "") == old_name:
+                    if app_data.get("employee_name", "") == old_name:
+                        app_data["employee_name"] = new_name
+                    if app_data.get("submitted_by", "") == old_name:
+                        app_data["submitted_by"] = new_name
+                    app_data["updated_at"] = now_iso
+                    fb_update(f"/pending_approvals/{app_id}", app_data)
+                    print(f"[SYNC_USER] Updated approval {app_id}", flush=True)
+
+    # Update Invoices (created_by field)
+    invoices = fb_get("/invoices") or {}
+    if isinstance(invoices, dict):
+        for inv_id, inv_data in invoices.items():
+            if isinstance(inv_data, dict):
+                if inv_data.get("created_by", "") == old_name:
+                    inv_data["created_by"] = new_name
+                    meta = inv_data.get("meta", {})
+                    if isinstance(meta, dict):
+                        meta["updated_by"] = new_name
+                        inv_data["meta"] = meta
+                    inv_data["updated_at"] = now_iso
+                    fb_update(f"/invoices/{inv_id}", inv_data)
+                    print(f"[SYNC_USER] Updated invoice {inv_id}", flush=True)
+
+    # Update Payroll records
+    payroll = fb_get("/payroll") or {}
+    if isinstance(payroll, dict):
+        for pay_id, pay_data in payroll.items():
+            if isinstance(pay_data, dict):
+                if pay_data.get("employee_name", "") == old_name:
+                    pay_data["employee_name"] = new_name
+                    pay_data["updated_at"] = now_iso
+                    fb_update(f"/payroll/{pay_id}", pay_data)
+                    print(f"[SYNC_USER] Updated payroll {pay_id}", flush=True)
+
+    print(f"[SYNC_USER] Completed syncing '{old_name}' → '{new_name}'", flush=True)
+
 @app.route("/clients/new", methods=["GET", "POST"])
 @role_required("invoicing")
 def client_new():
@@ -9273,14 +9357,26 @@ def user_pages_update(uid):
 @app.route("/api/users/<uid>/details", methods=["PATCH"])
 @role_required("settings")
 def user_details_update(uid):
-    """Update employee profile fields (title, region, rates) from Settings or Directory."""
+    """Update employee profile fields (title, region, rates, display_name) from Settings or Directory."""
     if normalize_role(session.get("user_role", "")) != "admin":
         return jsonify({"error": "Admin access required"}), 403
     data = request.get_json() or {}
     updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
-    for field in ("username", "title", "region", "employee_type"):
+
+    # Track if display_name changed for syncing
+    old_display_name = None
+    new_display_name = None
+
+    for field in ("username", "title", "region", "employee_type", "display_name"):
         if field in data:
-            updates[field] = str(data[field]).strip()
+            value = str(data[field]).strip()
+            updates[field] = value
+            if field == "display_name":
+                # Get old display name before updating
+                user_data = fb_get(f"/users/{uid}") or {}
+                old_display_name = user_data.get("display_name") or user_data.get("username", "")
+                new_display_name = value
+
     for field in ("hourly_rate", "monthly_salary", "commission_rate"):
         if field in data:
             updates[field] = _safe_float(data[field])
@@ -9291,7 +9387,13 @@ def user_details_update(uid):
             updates["role"] = r
             # Auto-reset custom_pages to role default when role changes
             updates["custom_pages"] = None
+
     fb_update(f"/users/{uid}", updates)
+
+    # Sync display name changes across all records
+    if new_display_name and old_display_name and old_display_name != new_display_name:
+        _sync_user_display_name(old_display_name, new_display_name)
+
     return jsonify({"ok": True})
 
 @app.route("/api/commission/mark-paid", methods=["POST"])
