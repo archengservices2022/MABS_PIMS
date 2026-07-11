@@ -3379,7 +3379,9 @@ def create_bulk_invoices():
 
             proj_num = proj_data.get("project_number", "")
             proj_name = proj_data.get("project_name", "")
-            client_name = proj_data.get("client_name", "") or proj_data.get("company", "")
+            company_name = proj_data.get("company_name") or proj_data.get("client_name", "") or proj_data.get("company", "")
+            client_name = proj_data.get("client_name", "")
+            client_id = proj_data.get("client_id", "")
             stages = proj_data.get("payment_stages", [])
 
             if not isinstance(stages, list) or not stages:
@@ -3415,7 +3417,9 @@ def create_bulk_invoices():
                 "meta": {
                     "invoice_number": _next_invoice_number(),
                     "project_number": proj_num,
+                    "company_name": company_name,
                     "client_name": client_name,
+                    "client_id": client_id,
                     "invoice_date": datetime.now().strftime("%Y-%m-%d"),
                     "due_date": (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
                     "status": "Draft",
@@ -11634,7 +11638,9 @@ def quote_to_invoice(quote_id):
             "invoice_number": inv_num,
             "invoice_date":   datetime.now().strftime("%Y-%m-%d"),
             "due_date":       (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
+            "company_name":   quote.get("company_name", ""),
             "client_name":    quote.get("client_name", ""),
+            "client_id":      quote.get("client_id", ""),
             "project_number": linked_proj_num,
             "status":         "Draft",
             "subtotal":       str(quote.get("subtotal", "0")),
