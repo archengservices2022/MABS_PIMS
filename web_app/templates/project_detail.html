@@ -26,6 +26,13 @@
        title="Create invoice for next payment stage">
       <i class="bi bi-receipt me-1"></i>Create Invoice
     </a>
+    {% elif not project.get('payment_stages') %}
+    <a href="{{ url_for('invoice_new') }}?project={{ project.get('project_number','') }}&client={{ project.get('client_name','') }}"
+       class="btn btn-sm btn-teal"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="Create a manual invoice for this project">
+      <i class="bi bi-receipt me-1"></i>Create Invoice
+    </a>
     {% else %}
     <span class="btn btn-sm btn-teal opacity-50" style="cursor: not-allowed;"
           data-bs-toggle="tooltip" data-bs-placement="bottom"
@@ -325,14 +332,38 @@
         {% endif %}
         <div class="card-panel mb-3">
           <h6 class="section-heading">Update Status</h6>
-          <form method="POST" action="{{ url_for('project_status', project_id=project.firebase_id) }}">
-            <select name="status" class="form-select form-select-sm mb-2">
+          <form id="statusForm" method="POST" action="{{ url_for('project_status', project_id=project.firebase_id) }}">
+            <select id="statusSelect" name="status" class="form-select form-select-sm mb-2">
               {% for s in ['Not Started','In Progress','Sent out_Not Invoiced','Sent out_Invoiced','invoiced_Not paid yet','invoiced_Partially paid','invoiced_Fully paid'] %}
               <option value="{{ s }}" {{ 'selected' if project.get('status') == s }}>{{ s }}</option>
               {% endfor %}
             </select>
-            <button type="submit" class="btn btn-sm btn-teal w-100">Update Status</button>
+            <button type="button" onclick="handleStatusUpdate()" class="btn btn-sm btn-teal w-100">Update Status</button>
           </form>
+        </div>
+
+        <!-- Invoice prompt modal — shown when status set to Sent out_Not Invoiced -->
+        <div class="modal fade" id="invoicePromptModal" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content">
+              <div class="modal-header border-0 pb-1">
+                <h6 class="modal-title fw-bold">Create Invoice?</h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+              </div>
+              <div class="modal-body pt-1 pb-2">
+                <p class="text-muted small mb-0">
+                  You're marking this project as <strong>Sent Out — Not Invoiced</strong>.<br>
+                  Do you want to create the invoice now?
+                </p>
+              </div>
+              <div class="modal-footer border-0 pt-1 gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="submitStatusOnly()">Update Status Only</button>
+                <a id="invoicePromptLink" href="#" class="btn btn-sm btn-teal">
+                  <i class="bi bi-receipt me-1"></i>Create Invoice
+                </a>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="card-panel">
@@ -1863,6 +1894,31 @@ function saveAmountChangeWithPermission(idx, contractValue, originalAmount, edit
     displaySpan.style.display = 'inline-flex';
     editSpan.style.display = 'none';
   });
+}
+
+function handleStatusUpdate() {
+  const status = document.getElementById('statusSelect').value;
+  if (status === 'Sent out_Not Invoiced') {
+    {% if has_pending_stage %}
+    const invoiceUrl = '{{ url_for("invoice_new") }}?project={{ project.get("project_number","") }}&client={{ project.get("client_name","")|urlencode }}&stage_idx={{ next_stage_idx }}&stage_name={{ next_stage_name|urlencode }}&stage_amount={{ next_stage_amount }}';
+    {% elif not project.get('payment_stages') %}
+    const invoiceUrl = '{{ url_for("invoice_new") }}?project={{ project.get("project_number","") }}&client={{ project.get("client_name","")|urlencode }}';
+    {% else %}
+    const invoiceUrl = null;
+    {% endif %}
+    if (invoiceUrl) {
+      document.getElementById('invoicePromptLink').href = invoiceUrl;
+      new bootstrap.Modal(document.getElementById('invoicePromptModal')).show();
+      return;
+    }
+  }
+  document.getElementById('statusForm').submit();
+}
+
+function submitStatusOnly() {
+  const modal = bootstrap.Modal.getInstance(document.getElementById('invoicePromptModal'));
+  if (modal) modal.hide();
+  document.getElementById('statusForm').submit();
 }
 </script>
 {% endblock %}
