@@ -872,9 +872,16 @@ def dashboard():
                 _admin_comm_total += _qval * _rate / 100
                 if (_q.get("date", "") or "").startswith(_cur_month):
                     _admin_comm_month += _qval * _rate / 100
+        # Subtract already-paid commissions so dashboard shows outstanding balance
+        _dash_comm_paid = 0.0
+        _dash_comm_payments = fb_get("/commission_payments") or {}
+        if isinstance(_dash_comm_payments, dict):
+            for _dcp in _dash_comm_payments.values():
+                if _dcp and isinstance(_dcp, dict):
+                    _dash_comm_paid += _safe_float(_dcp.get("amount", 0))
         _dash_commission = {
             "role":        "admin",
-            "total":       _admin_comm_total,
+            "total":       max(_admin_comm_total - _dash_comm_paid, 0.0),
             "this_month":  _admin_comm_month,
         }
 
