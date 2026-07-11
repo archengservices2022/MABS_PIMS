@@ -1277,6 +1277,8 @@
         </h6>
         <form method="post" action="{{ url_for('employee_expense_submit') }}"
               enctype="multipart/form-data" id="empExpenseForm">
+          <!-- Hidden field to track expense being edited -->
+          <input type="hidden" id="empEditingExpenseId" name="editing_expense_id" value="">
 
           <div class="row g-2 mb-2">
             <div class="col-6">
@@ -1299,27 +1301,27 @@
           <!-- Category: dropdown for O&M / Capital, free text for Other -->
           <div class="mb-2" id="empCatSelectWrap">
             <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
-            <select name="category" id="empExpCategory" class="form-select form-select-sm"
+            <select name="category" id="empExpCategory" class="form-select form-select-sm" required
                     onchange="empUpdateNames(this.value,'empExpName')">
               <option value="">— Select type first —</option>
             </select>
           </div>
           <div class="mb-2" id="empCatTextWrap" style="display:none;">
             <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
-            <input type="text" name="category" id="empExpCategoryText" class="form-control form-control-sm"
+            <input type="text" name="category" id="empExpCategoryText" class="form-control form-control-sm" required
                    placeholder="e.g. Meals, Parking, Supplies...">
           </div>
 
           <!-- Expense Name: dropdown for O&M / Capital, free text for Other -->
           <div class="mb-2" id="empNameSelectWrap">
             <label class="form-label small fw-semibold">Expense Name <span class="text-danger">*</span></label>
-            <select name="expense_name" id="empExpName" class="form-select form-select-sm">
+            <select name="expense_name" id="empExpName" class="form-select form-select-sm" required>
               <option value="">— Select category first —</option>
             </select>
           </div>
           <div class="mb-2" id="empNameTextWrap" style="display:none;">
             <label class="form-label small fw-semibold">Expense Name <span class="text-danger">*</span></label>
-            <input type="text" name="expense_name" id="empExpNameText" class="form-control form-control-sm"
+            <input type="text" name="expense_name" id="empExpNameText" class="form-control form-control-sm" required
                    placeholder="Describe the expense...">
           </div>
 
@@ -1370,9 +1372,15 @@
             </div>
           </div>
 
-          <button type="submit" class="btn btn-teal btn-sm w-100" id="empExpenseSubmitBtn">
-            <i class="bi bi-send me-1"></i>Submit for Approval
-          </button>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-teal btn-sm flex-grow-1" id="empExpenseSubmitBtn">
+              <i class="bi bi-send me-1"></i>Submit for Approval
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="empCancelEditBtn" style="display:none;"
+                    onclick="empCancelEdit()">
+              <i class="bi bi-x me-1"></i>Cancel
+            </button>
+          </div>
         </form>
       </div>
     </div>
@@ -1381,15 +1389,15 @@
     <div class="col-lg-7">
       <div class="card-panel">
         <h6 class="panel-title mb-3">
-          <i class="bi bi-clock-history me-1" style="color:#0D9488;"></i>{% if user_role == 'admin' %}All Submissions{% else %}My Submissions{% endif %}
+          <i class="bi bi-clock-history me-1" style="color:#0D9488;"></i>My Submissions
         </h6>
         {% if my_expenses %}
         <div class="table-responsive">
           <table class="table table-sm table-hover mb-0 align-middle" id="allSubmissionsTable">
             <thead>
               <tr>
-                <th>Date</th><th>Name</th><th class="text-end">Amount</th>
-                <th>Project</th>{% if user_role == 'admin' %}<th>Submitted By</th>{% endif %}<th>Status</th><th class="text-center">Receipt</th><th></th>
+                <th style="min-width:100px;">Date</th><th>Name</th><th class="text-end">Amount</th>
+                <th>Project</th><th>Status</th><th class="text-center">Receipt</th><th></th>
               </tr>
             </thead>
             <tbody id="allSubmissionsTbody">
@@ -1402,12 +1410,16 @@
               </td>
               <td class="text-end fw-semibold">${{ "{:,.2f}".format(e.get('amount',0)|float) }}</td>
               <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
-              {% if user_role == 'admin' %}
-              <td class="text-muted small">{{ e.get('submitted_by_name', e.get('created_by','—')) or '—' }}</td>
-              {% endif %}
               <td>
                 {% set st = e.get('status','Pending') %}
-                {% if st == 'Approved' %}
+                {% set edit_st = e.get('edit_status', '') %}
+                {% if edit_st == 'pending' %}
+                  <span class="badge bg-info text-white">Pending Edit</span>
+                  <div style="font-size:10px;color:#0284c7;margin-top:2px;">{{ e.get('edited_at','')[5:7] }}-{{ e.get('edited_at','')[8:10] }}-{{ e.get('edited_at','')[:4] }}</div>
+                {% elif edit_st == 'approved' %}
+                  <span class="badge bg-success">Edit Approved</span>
+                  <div style="font-size:10px;color:#059669;margin-top:2px;">{{ e.get('edit_approved_at','')[5:7] }}-{{ e.get('edit_approved_at','')[8:10] }}-{{ e.get('edit_approved_at','')[:4] }}</div>
+                {% elif st == 'Approved' %}
                   <span class="badge bg-success">Approved</span>
                 {% elif st == 'Rejected' %}
                   <span class="badge bg-danger" title="{{ e.get('review_note','') }}">Rejected</span>
@@ -1430,8 +1442,8 @@
               <td>
                 {% if user_role == 'admin' %}
                 <div class="d-flex gap-1">
-                  <button class="btn btn-xs btn-outline-secondary emp-expense-edit-btn"
-                          data-expense="{{ e|tojson|e }}"
+                  <button class="btn btn-xs btn-outline-secondary"
+                          onclick='openEmpExpenseEdit({{ e|tojson }})'
                           title="Edit">
                     <i class="bi bi-pencil"></i>
                   </button>
@@ -1472,7 +1484,7 @@
   </div>
 
   {% if user_role == 'admin' %}
-  <!-- Admin: Pending Expense Approvals -->
+  <!-- Admin: Pending Expense Approvals (includes new submissions and edits) -->
   <div class="card-panel mt-4">
     <div class="d-flex align-items-center justify-content-between mb-3">
       <h6 class="panel-title mb-0">
@@ -1498,7 +1510,15 @@
           <td>
             <div class="d-flex align-items-center gap-2">
               <span class="emp-avatar" style="width:28px;height:28px;font-size:11px;">{{ (e.submitted_by_name or 'U')[0]|upper }}</span>
-              <span class="fw-500 small">{{ e.submitted_by_name or '—' }}</span>
+              <div>
+                <div class="fw-500 small">{{ e.submitted_by_name or '—' }}</div>
+                {% if e.get('edit_status') == 'pending' %}
+                <div style="font-size:10px;color:#0284c7;margin-top:2px;">
+                  <span class="badge bg-info text-white" style="font-size:9px;padding:2px 5px;">Edited</span>
+                  {{ e.get('edited_at','')[5:7] }}-{{ e.get('edited_at','')[8:10] }}-{{ e.get('edited_at','')[:4] }}
+                </div>
+                {% endif %}
+              </div>
             </div>
           </td>
           <td class="text-muted small">{{ e.get('date','—') | format_date }}</td>
@@ -1524,16 +1544,29 @@
           </td>
           <td class="text-end">
             <div class="d-flex gap-1 justify-content-end">
-              <form method="post" action="{{ url_for('employee_expense_review', exp_id=e.firebase_id) }}" class="d-inline">
-                <input type="hidden" name="action" value="approve">
-                <button type="submit" class="btn btn-xs btn-outline-success">
+              {% if e.get('edit_status') == 'pending' %}
+                <!-- Pending Edit: use reviewExpenseEdit -->
+                <button class="btn btn-xs btn-outline-success"
+                        onclick="if(confirm('Approve this edit?')) { reviewExpenseEdit('{{ e.firebase_id }}', 'approve'); }">
                   <i class="bi bi-check-lg"></i> Approve
                 </button>
-              </form>
-              <button class="btn btn-xs btn-outline-danger"
-                      onclick="openEmpExpenseReject('{{ e.firebase_id }}', '{{ e.submitted_by_name|replace("'","") }}')">
-                <i class="bi bi-x-lg"></i> Reject
-              </button>
+                <button class="btn btn-xs btn-outline-danger"
+                        onclick="if(confirm('Reject this edit?')) { reviewExpenseEdit('{{ e.firebase_id }}', 'reject'); }">
+                  <i class="bi bi-x-lg"></i> Reject
+                </button>
+              {% else %}
+                <!-- New Submission: use regular review -->
+                <form method="post" action="{{ url_for('employee_expense_review', exp_id=e.firebase_id) }}" class="d-inline">
+                  <input type="hidden" name="action" value="approve">
+                  <button type="submit" class="btn btn-xs btn-outline-success">
+                    <i class="bi bi-check-lg"></i> Approve
+                  </button>
+                </form>
+                <button class="btn btn-xs btn-outline-danger"
+                        onclick="openEmpExpenseReject('{{ e.firebase_id }}', '{{ e.submitted_by_name|replace("'","") }}')">
+                  <i class="bi bi-x-lg"></i> Reject
+                </button>
+              {% endif %}
             </div>
           </td>
         </tr>
@@ -2078,6 +2111,28 @@ document.addEventListener('DOMContentLoaded', function() {
 const empCatsByType = {{ emp_categories_by_type|safe }};
 const empNamesByCat = {{ emp_names_by_cat|safe }};
 
+// Initialize disabled states for form inputs
+document.addEventListener('DOMContentLoaded', function() {
+  // Set default disabled state: text inputs disabled, dropdowns enabled
+  // For main form (emp prefix)
+  var empTextInputs = [
+    'empExpCategoryText', 'empExpNameText'
+  ];
+  empTextInputs.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
+
+  // For edit modal (edit prefix) - also disable by default
+  var editTextInputs = [
+    'editExpCategoryText', 'editExpNameText'
+  ];
+  editTextInputs.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
+});
+
 // Fallback expense names matching the Financial tab
 const empNamesFallback = {
   "Facilities & Utilities": ["Office rent or co-working space fees","Utilities (electricity, water, gas)","Internet service","Trash & cleaning services","Office repairs & maintenance"],
@@ -2105,7 +2160,7 @@ function empToggleOther(isOther, prefix) {
   var nameSelWrap = document.getElementById(prefix + 'NameSelectWrap');
   var nameTxtWrap = document.getElementById(prefix + 'NameTextWrap');
   if (!catSelWrap) return;
-  // Toggle required attributes to avoid hidden-field validation issues
+  // Toggle required attributes and disable hidden inputs to avoid submission issues
   var catSel = catSelWrap.querySelector('select');
   var catTxt = catTxtWrap ? catTxtWrap.querySelector('input') : null;
   var nameSel = nameSelWrap ? nameSelWrap.querySelector('select') : null;
@@ -2115,19 +2170,19 @@ function empToggleOther(isOther, prefix) {
     catTxtWrap.style.display  = '';
     nameSelWrap.style.display = 'none';
     nameTxtWrap.style.display = '';
-    if (catSel)  { catSel.removeAttribute('required');  catSel.value = ''; }
-    if (catTxt)  catTxt.setAttribute('required', '');
-    if (nameSel) { nameSel.removeAttribute('required'); nameSel.value = ''; }
-    if (nameTxt) nameTxt.setAttribute('required', '');
+    if (catSel)  { catSel.removeAttribute('required');  catSel.value = ''; catSel.disabled = true; }
+    if (catTxt)  { catTxt.setAttribute('required', ''); catTxt.disabled = false; }
+    if (nameSel) { nameSel.removeAttribute('required'); nameSel.value = ''; nameSel.disabled = true; }
+    if (nameTxt) { nameTxt.setAttribute('required', ''); nameTxt.disabled = false; }
   } else {
     catSelWrap.style.display  = '';
     catTxtWrap.style.display  = 'none';
     nameSelWrap.style.display = '';
     nameTxtWrap.style.display = 'none';
-    if (catSel)  catSel.setAttribute('required', '');
-    if (catTxt)  { catTxt.removeAttribute('required'); catTxt.value = ''; }
-    if (nameSel) nameSel.setAttribute('required', '');
-    if (nameTxt) { nameTxt.removeAttribute('required'); nameTxt.value = ''; }
+    if (catSel)  { catSel.setAttribute('required', ''); catSel.disabled = false; }
+    if (catTxt)  { catTxt.removeAttribute('required'); catTxt.value = ''; catTxt.disabled = true; }
+    if (nameSel) { nameSel.setAttribute('required', ''); nameSel.disabled = false; }
+    if (nameTxt) { nameTxt.removeAttribute('required'); nameTxt.value = ''; nameTxt.disabled = true; }
   }
 }
 
@@ -2172,14 +2227,6 @@ window.onEmpReceiptChange = function(input) {
     preview.style.display = 'none';
   }
 };
-
-// Edit button — event delegation so it works with pagination and any dynamic rows
-document.addEventListener('click', function(e) {
-  var btn = e.target.closest('.emp-expense-edit-btn');
-  if (!btn) return;
-  try { openEmpExpenseEdit(JSON.parse(btn.dataset.expense)); }
-  catch(err) { console.error('Expense parse error', err); alert('Could not load expense data. Please refresh and try again.'); }
-});
 
 // ── All Submissions pagination ────────────────────────────────────────────────
 (function() {
@@ -2234,43 +2281,134 @@ document.querySelectorAll('.emp-view-receipt-btn').forEach(function(btn) {
 });
 
 window.openEmpExpenseEdit = function(exp) {
-  var form = document.getElementById('empExpenseEditForm');
-  if (!form) return;
-  form.action = '/employees/expenses/' + exp.firebase_id + '/edit';
+  var form = document.getElementById('empExpenseForm');
+  // Scroll down a little bit (75px)
+  setTimeout(function() {
+    window.scrollBy({ top: 75, behavior: 'smooth' });
+  }, 100);
 
-  // Populate type, then cascade category/name
-  var typeEl = document.getElementById('editExpType');
+  // Fill basic fields first (use form-specific selectors to avoid matching modal fields)
+  form.querySelector('input[name="amount"]').value = exp.amount || '';
+  form.querySelector('input[name="date"]').value = exp.date || '';
+  form.querySelector('input[name="vendor"]').value = exp.vendor || '';
+  form.querySelector('select[name="project_number"]').value = exp.project_number || '';
+  form.querySelector('textarea[name="notes"]').value = exp.notes || '';
+
+  // Handle type and category/name
+  var typeEl = document.getElementById('empExpType');
+  var isOther = (exp.expense_type === 'Other Expenses');
+
+  // Set type
   typeEl.value = exp.expense_type || '';
-  empUpdateCategories(typeEl.value, 'editExpCategory', 'editExpName');
 
-  var isOther = (typeEl.value === 'Other Expenses');
+  // For "Other Expenses", use text inputs
   if (isOther) {
-    var catTxt  = document.getElementById('editExpCategoryText');
-    var nameTxt = document.getElementById('editExpNameText');
-    if (catTxt)  catTxt.value  = exp.category || '';
-    if (nameTxt) nameTxt.value = exp.expense_name || exp.description || '';
+    document.getElementById('empCatSelectWrap').style.display = 'none';
+    document.getElementById('empCatTextWrap').style.display = 'block';
+    document.getElementById('empNameSelectWrap').style.display = 'none';
+    document.getElementById('empNameTextWrap').style.display = 'block';
+
+    document.getElementById('empExpCategory').disabled = true;
+    document.getElementById('empExpName').disabled = true;
+    document.getElementById('empExpCategoryText').disabled = false;
+    document.getElementById('empExpNameText').disabled = false;
+
+    document.getElementById('empExpCategoryText').value = exp.category || '';
+    document.getElementById('empExpNameText').value = exp.expense_name || exp.description || '';
   } else {
-    var catEl = document.getElementById('editExpCategory');
-    catEl.value = exp.category || '';
-    empUpdateNames(catEl.value, 'editExpName');
-    var nameEl = document.getElementById('editExpName');
-    var savedName = exp.expense_name || exp.description || '';
-    if (savedName && !Array.from(nameEl.options).find(o => o.value === savedName)) {
-      var extra = document.createElement('option');
-      extra.value = savedName; extra.textContent = savedName;
-      nameEl.appendChild(extra);
-    }
-    nameEl.value = savedName;
+    // For other types, populate dropdowns
+    document.getElementById('empCatSelectWrap').style.display = 'block';
+    document.getElementById('empCatTextWrap').style.display = 'none';
+    document.getElementById('empNameSelectWrap').style.display = 'block';
+    document.getElementById('empNameTextWrap').style.display = 'none';
+
+    document.getElementById('empExpCategory').disabled = false;
+    document.getElementById('empExpName').disabled = false;
+    document.getElementById('empExpCategoryText').disabled = true;
+    document.getElementById('empExpNameText').disabled = true;
+
+    // Trigger category update to populate names dropdown
+    empUpdateCategories(typeEl.value, 'empExpCategory', 'empExpName');
+
+    // Set category
+    setTimeout(function() {
+      document.getElementById('empExpCategory').value = exp.category || '';
+
+      // Update names dropdown based on category
+      empUpdateNames(exp.category, 'empExpName');
+
+      // Set expense name with timeout to ensure dropdown is populated
+      setTimeout(function() {
+        var nameEl = document.getElementById('empExpName');
+        var savedName = exp.expense_name || exp.description || '';
+
+        // Add as option if not found
+        if (savedName && !Array.from(nameEl.options).find(o => o.value === savedName)) {
+          var extra = document.createElement('option');
+          extra.value = savedName;
+          extra.textContent = savedName;
+          nameEl.appendChild(extra);
+        }
+        nameEl.value = savedName;
+      }, 100);
+    }, 50);
   }
 
-  document.getElementById('editExpAmount').value  = exp.amount || '';
-  document.getElementById('editExpDate').value    = exp.date || '';
-  document.getElementById('editExpVendor').value  = exp.vendor || '';
-  document.getElementById('editExpProject').value = exp.project_number || '';
-  document.getElementById('editExpNotes').value   = exp.notes || '';
-  var recEl = document.getElementById('editExpCurrentReceipt');
-  if (recEl) recEl.textContent = exp.receipt_filename ? ('Current: ' + exp.receipt_filename) : 'No receipt attached';
-  new bootstrap.Modal(document.getElementById('empExpenseEditModal')).show();
+  // Mark as editing and show cancel button
+  document.getElementById('empEditingExpenseId').value = exp.firebase_id;
+  document.getElementById('empCancelEditBtn').style.display = 'block';
+  document.getElementById('empExpenseSubmitBtn').innerHTML = '<i class="bi bi-pencil me-1"></i>Update Expense';
+
+  // Make receipt optional when editing (user can upload new one or keep existing)
+  var receiptInput = document.getElementById('empReceiptInput');
+  receiptInput.required = false;
+  receiptInput.value = ''; // Clear the file input so user can choose new one
+
+  // Store current receipt info in data attribute for reference
+  receiptInput.dataset.currentReceipt = exp.receipt_filename || '';
+
+  if (exp.receipt_filename) {
+    document.getElementById('empReceiptPreview').innerHTML =
+      '<span class="badge bg-info"><i class="bi bi-paperclip me-1"></i>Current: ' + exp.receipt_filename + '</span>';
+    document.getElementById('empReceiptPreview').style.display = 'block';
+  }
+};
+
+window.empCancelEdit = function() {
+  // Reset form
+  document.getElementById('empExpenseForm').reset();
+  document.getElementById('empEditingExpenseId').value = '';
+  document.getElementById('empCancelEditBtn').style.display = 'none';
+  document.getElementById('empExpenseSubmitBtn').innerHTML = '<i class="bi bi-send me-1"></i>Submit for Approval';
+
+  // Reset receipt requirement
+  document.getElementById('empReceiptInput').required = true;
+  document.getElementById('empReceiptPreview').style.display = 'none';
+
+  // Reset form to default state (dropdowns enabled, text inputs disabled)
+  document.getElementById('empCatSelectWrap').style.display = 'block';
+  document.getElementById('empCatTextWrap').style.display = 'none';
+  document.getElementById('empNameSelectWrap').style.display = 'block';
+  document.getElementById('empNameTextWrap').style.display = 'none';
+  document.getElementById('empExpCategory').disabled = false;
+  document.getElementById('empExpName').disabled = false;
+  document.getElementById('empExpCategoryText').disabled = true;
+  document.getElementById('empExpNameText').disabled = true;
+};
+
+window.reviewExpenseEdit = function(expId, action) {
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/employees/expenses/' + expId + '/edit/review';
+
+  var input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'action';
+  input.value = action;
+
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
 };
 
 window.openEmpExpenseReject = function(expId, empName) {
@@ -2290,14 +2428,22 @@ window.viewEmpReceipt = function(expId) {
     .then(data => {
       if (data.url) {
         var ext = (data.filename || '').split('.').pop().toLowerCase();
-        if (['jpg','jpeg','png','gif'].includes(ext)) {
+        if (['jpg','jpeg','png','gif','webp'].includes(ext)) {
+          // Display image inline
           body.innerHTML = '<img src="' + data.url + '" class="img-fluid rounded" style="max-height:70vh;">';
+        } else if (['pdf'].includes(ext)) {
+          // Display PDF in iframe
+          body.innerHTML = '<iframe src="' + data.url + '" style="width:100%;height:70vh;border:none;border-radius:0.25rem;"></iframe>';
         } else {
-          body.innerHTML = '<a href="' + data.url + '" target="_blank" class="btn btn-outline-primary"><i class="bi bi-box-arrow-up-right me-2"></i>Open Receipt in new tab</a>';
+          // Other files - show button to download/open
+          body.innerHTML = '<div class="text-center py-4"><p class="text-muted mb-3">File: ' + data.filename + '</p><a href="' + data.url + '" download class="btn btn-outline-primary me-2"><i class="bi bi-download me-1"></i>Download</a><a href="' + data.url + '" target="_blank" class="btn btn-primary"><i class="bi bi-box-arrow-up-right me-1"></i>Open in new tab</a></div>';
         }
-      } else { body.innerHTML = '<div class="text-danger">Receipt not found.</div>'; }
+      } else { body.innerHTML = '<div class="text-danger text-center py-4">Receipt not found.</div>'; }
     })
-    .catch(() => { body.innerHTML = '<div class="text-danger">Failed to load receipt.</div>'; });
+    .catch(e => {
+      console.error('Receipt load error:', e);
+      body.innerHTML = '<div class="text-danger text-center py-4">Failed to load receipt. Please try again.</div>';
+    });
 };
 
 // Client-side guard: block submit if no receipt selected
@@ -2305,12 +2451,47 @@ document.addEventListener('DOMContentLoaded', function() {
   var form = document.getElementById('empExpenseForm');
   if (form) {
     form.addEventListener('submit', function(e) {
+      var isEditing = document.getElementById('empEditingExpenseId').value.length > 0;
       var receipt = document.getElementById('empReceiptInput');
-      if (!receipt || !receipt.files || !receipt.files[0]) {
+
+      // Receipt is REQUIRED for new submissions, OPTIONAL for edits (can keep existing)
+      if (!isEditing && (!receipt || !receipt.files || !receipt.files[0])) {
         e.preventDefault();
         receipt.classList.add('is-invalid');
         receipt.focus();
-        alert('A receipt is required. Please attach your receipt before submitting.');
+        alert('A receipt is required to submit a new expense.');
+      } else {
+        // Log form data for debugging
+        var formData = new FormData(form);
+        console.log('Employee expense form submitted with:');
+        for (let [key, value] of formData.entries()) {
+          if (key !== 'receipt') {
+            console.log(`  ${key}: ${value}`);
+          }
+        }
+
+        // Check that required fields have values (skip disabled fields)
+        var requiredFields = ['expense_type', 'expense_name', 'category', 'amount', 'date', 'vendor'];
+        var missingFields = [];
+        requiredFields.forEach(function(fieldName) {
+          // For fields that have multiple inputs (category, expense_name), find the enabled one
+          var fields = form.querySelectorAll('[name="' + fieldName + '"]');
+          var hasValue = false;
+          fields.forEach(function(field) {
+            // Only check enabled (non-disabled) fields
+            if (field && !field.disabled && field.value) {
+              hasValue = true;
+            }
+          });
+          if (!hasValue) {
+            missingFields.push(fieldName);
+          }
+        });
+        if (missingFields.length > 0) {
+          e.preventDefault();
+          alert('Please fill in all required fields: ' + missingFields.join(', '));
+          console.warn('Missing required fields:', missingFields);
+        }
       }
     });
   }
