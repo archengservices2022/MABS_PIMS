@@ -7320,6 +7320,7 @@ def financial():
 
     aging_totals = {k: sum(e["balance"] for e in v) for k, v in aging_buckets.items()}
     aging_total_outstanding = sum(aging_totals.values())
+    outstanding_count = sum(len(v) for v in aging_buckets.values())  # Count of all open invoices
 
     # ── Year-filtered A/R for Balance Sheet (only invoices from selected_year) ──
     bs_aging_buckets = {"current": [], "1_30": [], "31_60": [], "61_90": [], "90plus": []}
@@ -7490,7 +7491,7 @@ def financial():
         total_invoiced=total_invoiced,
         invoiced_count=invoiced_count,
         total_outstanding=total_outstanding,
-        outstanding_count=len([e for e in aging_buckets['current'] + aging_buckets['1_30'] + aging_buckets['31_60'] + aging_buckets['61_90'] + aging_buckets['90plus']]),
+        outstanding_count=outstanding_count,
         total_expenses=total_expenses,
         prev_year_total_invoiced=prev_year_total_invoiced,
         prev_year_total_paid=prev_year_total_paid,
