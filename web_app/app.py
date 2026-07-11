@@ -4880,7 +4880,7 @@ def invoicing_export_csv():
                     projects_str = ", ".join(sorted(linked_projects)) if linked_projects else ""
                     row = [
                         m.get("invoice_number",""),
-                        m.get("client_name",""),
+                        m.get("company_name","") or m.get("client_name",""),
                         projects_str,
                         fmt_csv_date(m.get("invoice_date","")),
                         fmt_csv_date(m.get("due_date","")),
@@ -11234,6 +11234,7 @@ def _parse_invoice_form(form) -> dict:
             "invoice_date":   form.get("invoice_date", datetime.now().strftime("%Y-%m-%d")),
             "due_date":       form.get("due_date", ""),
             "net_terms":      form.get("net_terms", ""),
+            "company_name":   form.get("company_name", ""),
             "client_name":    form.get("client_name", ""),
             "project_number": main_project,
             "linked_projects": linked_projects,
@@ -11596,20 +11597,21 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
 
     story.append(Spacer(1, 2*mm))
 
-    client_name = meta.get('client_name', '')
+    # Get company name (primary identifier), fallback to client_name for backward compatibility
+    company_identifier = meta.get('company_name', '') or meta.get('client_name', '')
     client_email = ""
     client_address = ""
-    if client_name:
+    if company_identifier:
         try:
-            client_data = fb_get(f"/clients/{client_name}") or {}
+            client_data = fb_get(f"/clients/{company_identifier}") or {}
             client_email = client_data.get("email", "")
             client_address = client_data.get("address", "")
         except Exception:
             pass
 
     bill_to_lines = []
-    if client_name:
-        bill_to_lines.append(client_name)
+    if company_identifier:
+        bill_to_lines.append(company_identifier)
     if client_email:
         bill_to_lines.append(client_email)
     if client_address:
