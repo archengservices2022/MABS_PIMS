@@ -6689,9 +6689,10 @@ def financial():
                 "firebase_id":    inv.get("firebase_id", ""),
             })
 
-    # Filter invoices by present running year for stat cards (Overview tab)
+    # Filter invoices by current and previous years for stat cards (Overview tab)
+    prev_year = stat_card_year - 1
     inv_list_filtered = [i for i in inv_list
-                        if _extract_year_from_date(i.get("meta", {}).get("invoice_date", "")) == stat_card_year]
+                        if _extract_year_from_date(i.get("meta", {}).get("invoice_date", "")) in [stat_card_year, prev_year]]
 
     total_invoiced    = sum(_safe_float(i.get("meta", {}).get("total", 0)) for i in inv_list_filtered)
     # For Overview KPI: use total_collected (based on payment date) instead of invoice date filtering
@@ -6706,8 +6707,7 @@ def financial():
     # Net profit based on actual collected payments, not invoice dates
     net_profit        = total_collected - total_expenses
 
-    # Calculate previous year data for year-over-year comparison
-    prev_year = stat_card_year - 1
+    # Calculate previous year data for year-over-year comparison (prev_year already defined above)
     inv_list_prev_year = [i for i in inv_list
                           if _extract_year_from_date(i.get("meta", {}).get("invoice_date", "")) == prev_year]
     prev_year_total_invoiced = sum(_safe_float(i.get("meta", {}).get("total", 0)) for i in inv_list_prev_year)
