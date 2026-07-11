@@ -5272,7 +5272,8 @@ def client_new():
 @role_required("invoicing")
 def client_edit(company_name):
     data = fb_get(f"/clients/{company_name}") or {}
-    original_company_name = company_name
+    # Get the ACTUAL company name from database (in case it's different)
+    original_company_name = data.get("company_name", company_name)
     if request.method == "POST":
         company_name = request.form.get("company_name", "").strip()
         new_client_name = request.form.get("client_name", data.get("client_name", "")).strip()
