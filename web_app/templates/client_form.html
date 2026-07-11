@@ -14,30 +14,33 @@
   <div class="col-lg-6">
     <div class="card-panel">
       <form method="POST">
-        <div class="mb-3">
-          <label class="form-label">Company Name</label>
-          <input type="text" name="company_name" class="form-control"
-                 value="{{ client.get('company_name','') if client else '' }}"
-                 placeholder="e.g., ABC Corporation">
+        <!-- Client Identification Section -->
+        <div style="border-bottom: 2px solid #e5e7eb; padding-bottom: 16px; margin-bottom: 24px;">
+          <div class="mb-3">
+            <label class="form-label">Company Name <span class="text-danger">*</span></label>
+            <input type="text" name="company_name" class="form-control"
+                   value="{{ client.get('company_name','') if client else '' }}"
+                   {{ 'readonly' if not is_new }} required>
+          </div>
+          <div class="mb-0">
+            <label class="form-label">Client Name <span class="text-danger">*</span></label>
+            <input type="text" name="client_name" class="form-control"
+                   value="{{ client.get('client_name','') if client else '' }}"
+                   {{ 'readonly' if not is_new }} required
+                   placeholder="Client Name">
+          </div>
         </div>
-        <div class="mb-3">
-          <label class="form-label">Client Name <span class="text-danger">*</span></label>
-          <input type="text" name="client_name" class="form-control"
-                 value="{{ client.get('client_name','') if client else '' }}"
-                 {{ 'readonly' if not is_new }} required
-                 placeholder="e.g., John Doe">
-        </div>
+
+        <!-- Contact Information Section -->
         <div class="mb-3">
           <label class="form-label">Email</label>
           <input type="email" name="email" class="form-control"
-                 value="{{ client.get('email','') if client else '' }}"
-                 placeholder="e.g., john@example.com">
+                 value="{{ client.get('email','') if client else '' }}">
         </div>
         <div class="mb-3">
           <label class="form-label">Phone</label>
           <input type="text" name="phone" class="form-control"
-                 value="{{ client.get('phone','') if client else '' }}"
-                 placeholder="e.g., (555) 123-4567">
+                 value="{{ client.get('phone','') if client else '' }}">
         </div>
         <div class="mb-3">
           <label class="form-label">Address</label>

@@ -5160,12 +5160,16 @@ def client_new():
         email = request.form.get("email", "").strip()
         phone = request.form.get("phone", "").strip()
 
+        if not company_name:
+            flash("Company name is required.", "danger")
+            return render_template("client_form.html", client=None, is_new=True)
+
         if not client_name:
             flash("Client name is required.", "danger")
             return render_template("client_form.html", client=None, is_new=True)
 
-        # Use company_name as primary identifier if provided, otherwise use client_name
-        primary_id = company_name if company_name else client_name
+        # Use company_name as primary identifier
+        primary_id = company_name
 
         # Check for duplicate email
         if email:
@@ -5211,8 +5215,16 @@ def client_edit(client_name):
         email = request.form.get("email", "").strip()
         phone = request.form.get("phone", "").strip()
 
-        # Use company_name as primary identifier if provided, otherwise use client_name
-        new_primary_id = company_name if company_name else new_client_name
+        if not company_name:
+            flash("Company name is required.", "danger")
+            return render_template("client_form.html", client=data, is_new=False)
+
+        if not new_client_name:
+            flash("Client name is required.", "danger")
+            return render_template("client_form.html", client=data, is_new=False)
+
+        # Use company_name as primary identifier
+        new_primary_id = company_name
 
         # Check for duplicate email (excluding current client)
         if email:
