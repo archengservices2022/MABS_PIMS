@@ -192,11 +192,9 @@
         'Cancelled':               ('#FFF1F2', '#F43F5E'),
       } %}
       <div class="row g-2 mb-3">
-        {% for st, cnt in proj_status_counts.items() %}
+        {% for st, cnt in proj_status_counts.items() if st != 'In Progress' %}
         {% set _bg, _ac = _st_styles.get(st, ('#F8FAFC', '#64748B')) %}
-        {% set _loop_len = proj_status_counts|length %}
-        {% set _is_last_odd = loop.last and (_loop_len % 2 == 1) %}
-        <div class="{{ 'col-12' if _is_last_odd else 'col-6' }}">
+        <div class="col-6">
           <div style="background:{{ _bg }};border-radius:8px;padding:10px 12px;">
             <div style="font-size:10px;color:{{ _ac }};font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{{ st }}">{{ st }}</div>
             <div style="font-size:1.6rem;font-weight:800;color:{{ _ac }};line-height:1.1;">{{ cnt }}</div>
