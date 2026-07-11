@@ -8827,7 +8827,8 @@ def employees():
         custom_start = request.args.get("start", "")
         custom_end = request.args.get("end", "")
         period_start, period_end, period_label = _period_range(period, custom_start, custom_end)
-        period_entries = [e for e in all_entries if period_start <= e.get("date", "") <= period_end]
+
+        all_sheets = _load_timesheets()
 
         stale_open_entries = [e for e in all_entries
                                if e.get("status") == "open" and e.get("date", "") < today_str]
@@ -8836,8 +8837,9 @@ def employees():
 
         _cur_month_str = now.strftime("%Y-%m")
         timesheets_this_month = sum(
-            1 for e in all_entries
-            if (e.get("date") or "")[:7] == _cur_month_str
+            1 for s in all_sheets
+            if (s.get("week_of") or "")[:7] == _cur_month_str
+            and s.get("status") in ("Submitted", "Approved")
         )
 
         _week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
@@ -8857,7 +8859,7 @@ def employees():
                 u["firebase_uid"]: _time_off_balance(all_time_off, u["firebase_uid"], now.year)
                 for u in _load_all_users() if u.get("firebase_uid")
             },
-            "hours_by_project":             _aggregate_hours_by_project(period_entries),
+            "hours_by_project":             _aggregate_hours_from_timesheets(all_sheets, period_start, period_end),
             "stale_open_entries":           stale_open_entries,
             "timesheets_this_month":        timesheets_this_month,
             "approved_time_off_this_week":  approved_time_off_this_week,
@@ -9589,9 +9591,8 @@ def employee_export_hours():
     custom_end = request.args.get("end", "")
     period_start, period_end, period_label = _period_range(period, custom_start, custom_end)
 
-    all_entries = _load_time_entries()
-    period_entries = [e for e in all_entries if period_start <= e.get("date", "") <= period_end]
-    hours_by_project = _aggregate_hours_by_project(period_entries)
+    all_sheets = _load_timesheets()
+    hours_by_project = _aggregate_hours_from_timesheets(all_sheets, period_start, period_end)
 
     output = _io.StringIO()
     writer = csv.writer(output)
@@ -11490,6 +11491,36 @@ def _aggregate_hours_by_project(entries: List[dict]) -> dict:
         bucket = agg.setdefault(proj, {"_total": 0.0})
         bucket["_total"] += minutes
         bucket[emp] = bucket.get(emp, 0.0) + minutes
+    return agg
+
+def _aggregate_hours_from_timesheets(sheets: list, period_start: str = "", period_end: str = "") -> dict:
+    """Build {project_label: {"_total": minutes, employee_name: minutes}} from submitted/approved timesheets."""
+    agg: dict = {}
+    for sheet in sheets:
+        if sheet.get("status") not in ("Submitted", "Approved"):
+            continue
+        emp = sheet.get("employee_name", "Unknown")
+        entries = sheet.get("entries", [])
+        if isinstance(entries, dict):
+            entries = list(entries.values())
+        for e in entries:
+            if not isinstance(e, dict):
+                continue
+            entry_date = e.get("date", "")
+            if period_start and entry_date < period_start:
+                continue
+            if period_end and entry_date > period_end:
+                continue
+            total_h = _safe_float(e.get("total_hours", 0))
+            if total_h <= 0:
+                total_h = _safe_float(e.get("regular_hours", 0)) + _safe_float(e.get("overtime_hours", 0))
+            if total_h <= 0:
+                continue
+            minutes = total_h * 60
+            proj = e.get("project_name") or e.get("project_number") or "General / Admin"
+            bucket = agg.setdefault(proj, {"_total": 0.0})
+            bucket["_total"] += minutes
+            bucket[emp] = bucket.get(emp, 0.0) + minutes
     return agg
 
 def _next_quote_number() -> str:
