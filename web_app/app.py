@@ -3162,14 +3162,15 @@ def invoicing():
 
     # KPI stats — Collected uses payment_log dates, not invoice creation date
     _kpi_rows = []
+    def _in_range(d):
+        return (not date_from or (d or "") >= date_from) and \
+               (not date_to   or (d or "") <= date_to)
+
     for inv in items:
         m  = inv.get("meta", {}) or {}
         st = m.get("status", "Draft")
         total_val = _safe_float(m.get("total", 0))
         # Filter payments by payment date when a date range is active
-        def _in_range(d):
-            return (not date_from or (d or "") >= date_from) and \
-                   (not date_to   or (d or "") <= date_to)
         total_paid = sum(
             _safe_float(p.get("amount", 0))
             for p in (inv.get("payment_log", []) or [])
@@ -3180,7 +3181,9 @@ def invoicing():
             for tp in (inv.get("tax_payments", []) or [])
             if _in_range(tp.get("date", ""))
         )
-        _kpi_rows.append((st, total_val, total_paid))
+        # Only include invoices with activity (payments or drafts) in the date range
+        if total_paid > 0 or not date_from:
+            _kpi_rows.append((st, total_val, total_paid))
 
     i_total       = len(_kpi_rows)
     i_draft_count = sum(1 for st, _, __ in _kpi_rows if st == "Draft")
