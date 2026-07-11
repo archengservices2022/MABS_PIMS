@@ -5827,6 +5827,82 @@ def payroll():
         comm_paid_set=list(comm_paid_set))
 
 # ── Payroll Export Routes ─────────────────────────────────────────────────────
+def _build_commission_payroll_rows():
+    _CONV_ST = {"Converted", "Invoiced"}
+    # Load quotes
+    all_quotes_raw = fb_get("/job_forms") or {}
+    all_quotes = [v for v in all_quotes_raw.values() if v and isinstance(v, dict)] if isinstance(all_quotes_raw, dict) else []
+    # Load sales users with commission rates
+    _comm_by_name = {}
+    for _u in _load_all_users():
+        if normalize_role(_u.get("role", "")) == "sales":
+            _uname = (_u.get("username") or "").strip()
+            if _uname:
+                _comm_by_name[_uname] = {
+                    "commission_rate": _safe_float(_u.get("commission_rate", 0)),
+                    "employee_type":   _u.get("employee_type", ""),
+                }
+    # Load project statuses
+    _proj_raw = fb_get("/projects") or {}
+    _proj_status = {}
+    if isinstance(_proj_raw, dict):
+        for _pid, _pd in _proj_raw.items():
+            if _pd and isinstance(_pd, dict):
+                _proj_status[_pid] = _pd.get("status", "")
+    # Build monthly breakdown
+    _monthly: Dict[str, Dict[str, dict]] = {}
+    for _q in all_quotes:
+        _sp = (_q.get("salesperson") or "").strip()
+        if not _sp or _sp not in _comm_by_name:
+            continue
+        _rate = _comm_by_name[_sp]["commission_rate"]
+        if not _rate:
+            continue
+        _linked = _q.get("linked_project_id", "")
+        _is_conv = _q.get("status", "") in _CONV_ST or bool(_linked)
+        if not _is_conv:
+            continue
+        if _linked and _proj_status.get(_linked, "") == "Cancelled":
+            continue
+        _qdate = (_q.get("date") or "")[:7]
+        if not _qdate:
+            continue
+        if _qdate not in _monthly:
+            _monthly[_qdate] = {}
+        if _sp not in _monthly[_qdate]:
+            _monthly[_qdate][_sp] = {"earned": 0.0, "revenue": 0.0}
+        _qval = _safe_float(_q.get("total", 0))
+        _monthly[_qdate][_sp]["earned"]  += _qval * _rate / 100
+        _monthly[_qdate][_sp]["revenue"] += _qval
+    # Load paid commissions
+    _comm_payments_raw = fb_get("/commission_payments") or {}
+    _paid_set = set()
+    if isinstance(_comm_payments_raw, dict):
+        for _cp in _comm_payments_raw.values():
+            if _cp and isinstance(_cp, dict):
+                _paid_set.add((_cp.get("period", ""), _cp.get("salesperson", "")))
+    # Build sorted rows
+    rows = []
+    total_revenue = 0.0
+    total_commission = 0.0
+    for _period in sorted(_monthly.keys(), reverse=True):
+        for _sp_name, _vals in sorted(_monthly[_period].items()):
+            emp_type = _comm_by_name[_sp_name]["employee_type"]
+            rate = _comm_by_name[_sp_name]["commission_rate"]
+            paid = (_period, _sp_name) in _paid_set
+            rows.append({
+                "period": _period,
+                "salesperson": _sp_name,
+                "emp_type": emp_type,
+                "rate": rate,
+                "revenue": _vals["revenue"],
+                "earned": _vals["earned"],
+                "status": "Paid" if paid else "Pending",
+            })
+            total_revenue += _vals["revenue"]
+            total_commission += _vals["earned"]
+    return rows, total_revenue, total_commission
+
 @app.route("/payroll/export/csv")
 @login_required
 def payroll_export_csv():
@@ -5900,6 +5976,19 @@ def payroll_export_csv():
                         sal.get("notes", ""),
                         sal.get("salary_status", "")
                     ])
+
+    # Commission Payroll section
+    w.writerow([])
+    w.writerow(["Commission Payroll"])
+    w.writerow(["Period", "Salesperson", "Type", "Rate (%)", "Revenue", "Commission Due", "Status"])
+    comm_rows, comm_total_rev, comm_total_earned = _build_commission_payroll_rows()
+    for r in comm_rows:
+        w.writerow([
+            r["period"], r["salesperson"], r["emp_type"],
+            f"{r['rate']:.1f}%", f"{r['revenue']:.2f}",
+            f"{r['earned']:.2f}", r["status"]
+        ])
+    w.writerow(["", "", "", "Totals", f"{comm_total_rev:.2f}", f"{comm_total_earned:.2f}", ""])
 
     from flask import Response
     fname = f"payroll_{datetime.now().strftime('%Y%m%d')}.csv"
@@ -6000,7 +6089,45 @@ def payroll_export_excel():
                         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
                     ri += 1
 
-    col_widths = [25, 14, 14, 18, 30, 14]
+    # Commission Payroll section
+    ri += 1  # blank row
+    comm_title_cell = ws.cell(row=ri, column=1, value="Commission Payroll")
+    comm_title_cell.font = Font(bold=True, size=12, color="FF7C3AED")
+    ri += 1
+
+    comm_hdrs = ["Period", "Salesperson", "Type", "Rate (%)", "Revenue", "Commission Due", "Status"]
+    for ci2, h in enumerate(comm_hdrs, 1):
+        cell = ws.cell(row=ri, column=ci2, value=h)
+        cell.fill = PatternFill(start_color="FF7C3AED", end_color="FF7C3AED", fill_type="solid")
+        cell.font = Font(color="FFFFFFFF", bold=True, size=10)
+        cell.alignment = ctr
+    ri += 1
+
+    comm_rows, comm_total_rev, comm_total_earned = _build_commission_payroll_rows()
+    for r in comm_rows:
+        row_data = [r["period"], r["salesperson"], r["emp_type"],
+                    r["rate"], r["revenue"], r["earned"], r["status"]]
+        for ci2, val in enumerate(row_data, 1):
+            cell = ws.cell(row=ri, column=ci2, value=val)
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            if ci2 == 4:
+                cell.number_format = '0.0"%"'
+            elif ci2 in (5, 6):
+                cell.number_format = '"$"#,##0.00'
+            if ri % 2 == 0:
+                cell.fill = alt_fill
+        ri += 1
+
+    # Totals row
+    totals_row = ["", "", "", "Totals", comm_total_rev, comm_total_earned, ""]
+    for ci2, val in enumerate(totals_row, 1):
+        cell = ws.cell(row=ri, column=ci2, value=val)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        if ci2 in (5, 6):
+            cell.number_format = '"$"#,##0.00'
+
+    col_widths = [14, 20, 14, 12, 16, 16, 12]
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
 
@@ -6128,6 +6255,60 @@ def payroll_export_pdf():
         ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
     ]))
     elems.append(tbl)
+
+    # Commission Payroll section
+    from reportlab.platypus import Spacer
+    elems.append(Spacer(1, 0.3*inch))
+    comm_title_s = ParagraphStyle("CT", parent=styles["Normal"], fontSize=12,
+                                   fontName="Helvetica-Bold",
+                                   textColor=colors.HexColor("#7C3AED"), spaceAfter=6)
+    elems.append(Paragraph("Commission Payroll", comm_title_s))
+
+    comm_rows, comm_total_rev, comm_total_earned = _build_commission_payroll_rows()
+    comm_hdrs = ["Period", "Salesperson", "Type", "Rate (%)", "Revenue", "Commission Due", "Status"]
+    comm_data = [comm_hdrs]
+    for r in comm_rows:
+        comm_data.append([
+            Paragraph(r["period"], cell_style),
+            Paragraph(r["salesperson"], cell_style),
+            Paragraph(r["emp_type"] or "—", cell_style),
+            Paragraph(f"{r['rate']:.1f}%", cell_style),
+            Paragraph(f"${r['revenue']:,.2f}", cell_style),
+            Paragraph(f"${r['earned']:,.2f}", cell_style),
+            Paragraph(r["status"], cell_style),
+        ])
+    # Totals row
+    bold_cell = ParagraphStyle("bold_cell", parent=styles["Normal"], fontSize=8, alignment=1, fontName="Helvetica-Bold")
+    comm_data.append([
+        Paragraph("", bold_cell), Paragraph("", bold_cell), Paragraph("", bold_cell),
+        Paragraph("Totals", bold_cell),
+        Paragraph(f"${comm_total_rev:,.2f}", bold_cell),
+        Paragraph(f"${comm_total_earned:,.2f}", bold_cell),
+        Paragraph("", bold_cell),
+    ])
+    comm_cw = [0.9*inch, 1.2*inch, 0.9*inch, 0.8*inch, 1.1*inch, 1.1*inch, 0.8*inch]
+    comm_tbl = Table(comm_data, colWidths=comm_cw, repeatRows=1)
+    comm_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#7C3AED")),
+        ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+        ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0,0), (-1,0), 9),
+        ("ALIGN",         (0,0), (-1,0), "CENTER"),
+        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+        ("TOPPADDING",    (0,0), (-1,0), 8),
+        ("BOTTOMPADDING", (0,0), (-1,0), 8),
+        ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
+        ("FONTSIZE",      (0,1), (-1,-1), 8),
+        ("ROWBACKGROUNDS",(0,1), (-1,-2), [colors.white, colors.HexColor("#F8FAFC")]),
+        ("BACKGROUND",    (0,-1), (-1,-1), colors.HexColor("#F3F0FF")),
+        ("FONTNAME",      (0,-1), (-1,-1), "Helvetica-Bold"),
+        ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
+        ("TOPPADDING",    (0,1), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,1), (-1,-1), 5),
+        ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+    ]))
+    elems.append(comm_tbl)
+
     doc.build(elems)
     buf.seek(0)
 
