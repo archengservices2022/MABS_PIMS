@@ -7482,7 +7482,6 @@ def financial():
 
     return render_template("financial.html",
         total_invoiced=total_invoiced,
-        total_paid=total_paid,
         total_outstanding=total_outstanding,
         total_expenses=total_expenses,
         prev_year_total_invoiced=prev_year_total_invoiced,
