@@ -1333,28 +1333,45 @@ def quotes_export():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
+    # Build commission rate lookup keyed by salesperson username
+    _qcsv_users = fb_get("/users") or {}
+    _qcsv_rates: dict = {}
+    if isinstance(_qcsv_users, dict):
+        for _u in _qcsv_users.values():
+            if _u and isinstance(_u, dict):
+                _un = (_u.get("username") or "").strip()
+                if _un:
+                    _qcsv_rates[_un] = _safe_float(_u.get("commission_rate", 0))
+    _QCSV_CONV = {"Converted", "Invoiced"}
+
     # Add company header and blank row
     w.writerow([f"{co.get('name','')} - Quotes Report"])
     w.writerow([])
 
-    headers = ["Quote Number", "Client", "Project / Scope", "Salesperson", "Date", "Valid Until", "Status", "Subtotal", "Tax", "Total", "Notes"]
+    headers = ["Quote Number", "Client", "Project / Scope", "Salesperson", "Date", "Valid Until", "Status", "Subtotal", "Tax", "Total", "Commission Rate (%)", "Commission Earned ($)", "Notes"]
     w.writerow(headers)
 
     for q in items:
         total = _safe_float(q.get("total", 0))
         subtotal = _safe_float(q.get("subtotal", 0))
         tax = total - subtotal
+        _qsp = (q.get("salesperson") or "").strip()
+        _qrate = _qcsv_rates.get(_qsp, 0)
+        _qconv = q.get("status","") in _QCSV_CONV or bool(q.get("linked_project_id",""))
+        _qearned = (total * _qrate / 100) if (_qrate and _qconv) else None
         w.writerow([
             q.get("job_number",""),
             q.get("client_name",""),
             q.get("project_name",""),
-            q.get("salesperson",""),
+            _qsp,
             fmt_csv_date(q.get("date","")),
             fmt_csv_date(q.get("valid_until","")),
             q.get("status",""),
             f"{subtotal:.2f}",
             f"{tax:.2f}",
             f"{total:.2f}",
+            f"{_qrate:.1f}" if _qrate else "",
+            f"{_qearned:.2f}" if _qearned is not None else "",
             q.get("notes","")
         ])
 
@@ -1396,8 +1413,19 @@ def quotes_export_excel():
     alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
     ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
+    # Build commission rate lookup
+    _qxl_users = fb_get("/users") or {}
+    _qxl_rates: dict = {}
+    if isinstance(_qxl_users, dict):
+        for _u in _qxl_users.values():
+            if _u and isinstance(_u, dict):
+                _un = (_u.get("username") or "").strip()
+                if _un:
+                    _qxl_rates[_un] = _safe_float(_u.get("commission_rate", 0))
+    _QXL_CONV = {"Converted", "Invoiced"}
+
     # Add title row
-    ws.merge_cells('A1:K1')
+    ws.merge_cells('A1:M1')
     title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} - Quotes Report")
     title_cell.font = title_font
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -1415,13 +1443,13 @@ def quotes_export_excel():
         _date_range = f"Up to {_pdf_to}"
 
     if _date_range:
-        ws.merge_cells('A2:K2')
+        ws.merge_cells('A2:M2')
         date_cell = ws.cell(row=2, column=1, value=_date_range)
         date_cell.alignment = Alignment(horizontal="left", vertical="center")
         ws.row_dimensions[2].height = 16
 
     headers = ["Quote Number","Client","Project / Scope","Salesperson","Date","Valid Until",
-               "Status","Subtotal ($)","Tax ($)","Total ($)","Notes"]
+               "Status","Subtotal ($)","Tax ($)","Total ($)","Commission Rate (%)","Commission Earned ($)","Notes"]
     header_row = 3 if _date_range else 2
     for col, h in enumerate(headers, 1):
         cell = ws.cell(row=header_row, column=col, value=h)
@@ -1456,22 +1484,31 @@ def quotes_export_excel():
         for month in sorted(grouped[year].keys()):
             for day in sorted(grouped[year][month].keys()):
                 for q in grouped[year][month][day]:
+                    _qsp = (q.get("salesperson") or "").strip()
+                    _qrate = _qxl_rates.get(_qsp, 0)
+                    _qtotal = _safe_float(q.get("total", 0))
+                    _qconv = q.get("status","") in _QXL_CONV or bool(q.get("linked_project_id",""))
+                    _qearned = (_qtotal * _qrate / 100) if (_qrate and _qconv) else None
                     row = [q.get("job_number",""), q.get("client_name",""), q.get("project_name",""),
-                           q.get("salesperson",""), fmt_date(q.get("date","")), fmt_date(q.get("valid_until","")),
+                           _qsp, fmt_date(q.get("date","")), fmt_date(q.get("valid_until","")),
                            q.get("status",""), _safe_float(q.get("subtotal",0)),
-                           _safe_float(q.get("tax_amount",0)), _safe_float(q.get("total",0)),
+                           _safe_float(q.get("tax_amount",0)), _qtotal,
+                           _qrate if _qrate else None,
+                           _qearned,
                            q.get("notes","")]
                     for ci, val in enumerate(row, 1):
                         cell = ws.cell(row=ri, column=ci, value=val)
                         if ri % 2 == 0:
                             cell.fill = alt_fill
-                        if ci in (8, 9, 10):
+                        if ci in (8, 9, 10, 12):
                             cell.number_format = '"$"#,##0.00'
+                        if ci == 11 and val is not None:
+                            cell.number_format = '0.0"%"'
                         cell.alignment = ctr
                     ri += 1
 
     # Increase column widths
-    col_widths = [18, 25, 35, 20, 14, 14, 14, 16, 14, 16, 30]
+    col_widths = [18, 25, 35, 20, 14, 14, 14, 16, 14, 16, 18, 20, 30]
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
     ws.freeze_panes = f"A{header_row + 1}"
@@ -1542,7 +1579,18 @@ def quotes_export_pdf():
         elems.append(Paragraph(_date_range, sub_s))
         elems.append(Spacer(1, 0.15*inch))
 
-    hdrs = ["Quote Number","Client","Project / Scope","Salesperson","Date","Status","Total"]
+    # Build commission rate lookup
+    _qpdf_users = fb_get("/users") or {}
+    _qpdf_rates: dict = {}
+    if isinstance(_qpdf_users, dict):
+        for _u in _qpdf_users.values():
+            if _u and isinstance(_u, dict):
+                _un = (_u.get("username") or "").strip()
+                if _un:
+                    _qpdf_rates[_un] = _safe_float(_u.get("commission_rate", 0))
+    _QPDF_CONV = {"Converted", "Invoiced"}
+
+    hdrs = ["Quote Number","Client","Project / Scope","Salesperson","Date","Status","Total","Comm. Rate","Comm. Earned"]
     data = [hdrs]
     cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
     group_style = ParagraphStyle("group", parent=styles["Normal"], fontSize=9, fontName="Helvetica-Bold", alignment=1, leading=10, textColor=colors.HexColor("#0F172A"))
@@ -1573,17 +1621,23 @@ def quotes_export_pdf():
                         if len(parts) == 3:
                             date_str = f"{parts[1]}-{parts[2]}-{parts[0]}"
                     total = _safe_float(q.get('total',0))
+                    _qsp = (q.get("salesperson") or "").strip()
+                    _qrate = _qpdf_rates.get(_qsp, 0)
+                    _qconv = q.get("status","") in _QPDF_CONV or bool(q.get("linked_project_id",""))
+                    _qearned = (total * _qrate / 100) if (_qrate and _qconv) else None
                     data.append([
                         Paragraph(q.get("job_number","—"), cell_style),
                         Paragraph(q.get("client_name","—"), cell_style),
                         Paragraph(q.get("project_name") or "—", cell_style),
-                        Paragraph(q.get("salesperson","—"), cell_style),
+                        Paragraph(_qsp or "—", cell_style),
                         Paragraph(date_str, cell_style),
                         Paragraph(q.get("status","—"), cell_style),
                         Paragraph(f"${total:,.2f}", cell_style),
+                        Paragraph(f"{_qrate:.1f}%" if _qrate else "—", cell_style),
+                        Paragraph(f"${_qearned:,.2f}" if _qearned is not None else "—", cell_style),
                     ])
 
-    cw = [1.2*inch, 2.0*inch, 3.0*inch, 1.8*inch, 1.1*inch, 1.2*inch, 1.1*inch]
+    cw = [1.1*inch, 1.8*inch, 2.6*inch, 1.5*inch, 1.0*inch, 1.1*inch, 1.0*inch, 0.85*inch, 1.0*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
