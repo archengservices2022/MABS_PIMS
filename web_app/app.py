@@ -5631,15 +5631,21 @@ def client_statement(company_name):
     co = company_info()
     client_data = fb_get(f"/clients/{company_name}") or {}
     client_name = client_data.get("client_name", "")
+    client_id = client_data.get("client_id", "")
 
-    # Load all invoices for this client
+    # Load all invoices for this client (by client_id, company_name, or client_name for legacy)
     raw_inv = fb_get("/invoices") or {}
     inv_list = []
     if isinstance(raw_inv, dict):
         for iid, idata in raw_inv.items():
-            if isinstance(idata, dict) and idata.get("meta", {}).get("client_name", "") == client_name:
-                idata["firebase_id"] = iid
-                inv_list.append(idata)
+            if isinstance(idata, dict):
+                meta = idata.get("meta", {})
+                # Match by client_id first (most reliable), then company_name, then client_name (legacy)
+                if (client_id and meta.get("client_id") == client_id) or \
+                   (meta.get("company_name", "") == company_name) or \
+                   (meta.get("client_name", "") == client_name):
+                    idata["firebase_id"] = iid
+                    inv_list.append(idata)
     inv_list.sort(key=lambda x: x.get("meta", {}).get("invoice_date", ""))
 
     total_invoiced = sum(_safe_float(i.get("meta",{}).get("total", 0)) for i in inv_list)
@@ -5680,9 +5686,12 @@ def client_statement(company_name):
 
     # Client info
     elems.append(Paragraph("BILL TO", lbl))
-    elems.append(Paragraph(f"<b>{client_name}</b>", val))
-    if client_data.get("company"):
-        elems.append(Paragraph(client_data["company"], sm))
+    has_explicit_company = client_data.get("has_explicit_company", False)
+    if has_explicit_company and client_data.get("company_name"):
+        elems.append(Paragraph(f"<b>{client_data.get('company_name', '')}</b>", val))
+        elems.append(Paragraph(client_name, sm))
+    else:
+        elems.append(Paragraph(f"<b>{client_name}</b>", val))
     if client_data.get("email"):
         elems.append(Paragraph(client_data["email"], sm))
     if client_data.get("phone"):
