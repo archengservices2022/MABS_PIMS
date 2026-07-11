@@ -138,30 +138,31 @@
         <div class="card-panel">
           <h6 class="section-heading">Client Information</h6>
           <form method="POST" action="{{ url_for('client_new') }}">
-            <div class="mb-3">
-              <label class="form-label">Client Name <span class="text-danger">*</span></label>
-              <input type="text" name="client_name" class="form-control"
-                     placeholder="Full name or company name" required>
+            <!-- Client Identification Section -->
+            <div style="border-bottom: 2px solid #e5e7eb; padding-bottom: 16px; margin-bottom: 24px;">
+              <div class="mb-3">
+                <label class="form-label">Company Name <span class="text-danger">*</span></label>
+                <input type="text" name="company_name" class="form-control" required>
+              </div>
+              <div class="mb-0">
+                <label class="form-label">Client Name <span class="text-danger">*</span></label>
+                <input type="text" name="client_name" class="form-control"
+                       placeholder="Client Name" required>
+              </div>
             </div>
-            <div class="mb-3">
-              <label class="form-label">Company</label>
-              <input type="text" name="company" class="form-control"
-                     placeholder="Company or organisation">
-            </div>
+
+            <!-- Contact Information Section -->
             <div class="mb-3">
               <label class="form-label">Email</label>
-              <input type="email" name="email" class="form-control"
-                     placeholder="email@example.com">
+              <input type="email" name="email" class="form-control">
             </div>
             <div class="mb-3">
               <label class="form-label">Phone</label>
-              <input type="text" name="phone" class="form-control"
-                     placeholder="+1 (555) 000-0000">
+              <input type="text" name="phone" class="form-control">
             </div>
             <div class="mb-3">
               <label class="form-label">Address</label>
-              <textarea name="address" class="form-control" rows="3"
-                        placeholder="Street address, city, state, zip"></textarea>
+              <textarea name="address" class="form-control" rows="3"></textarea>
             </div>
             <div class="mb-3">
               <label class="form-label">Tags</label>
@@ -171,8 +172,7 @@
             </div>
             <div class="mb-3">
               <label class="form-label">Notes</label>
-              <textarea name="notes" class="form-control" rows="2"
-                        placeholder="Internal notes about this client..."></textarea>
+              <textarea name="notes" class="form-control" rows="2"></textarea>
             </div>
             <div class="d-grid">
               <button type="submit" class="btn btn-teal">
