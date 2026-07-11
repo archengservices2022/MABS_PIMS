@@ -222,7 +222,7 @@
           <div class="col-md-4">
             <label class="form-label">Status</label>
             <select name="status" class="form-select">
-              {% set _status_opts = ['Sent out_Invoiced','Sent out_Not Invoiced','invoiced_Not paid yet','invoiced_Partially paid','invoiced_Fully paid'] %}
+              {% set _status_opts = ['Not Started','In Progress','Sent out_Not Invoiced','Sent out_Invoiced','invoiced_Not paid yet','invoiced_Partially paid','invoiced_Fully paid'] %}
               {% set _cur_status = project.get('status','') if project else '' %}
               {% if _cur_status and _cur_status not in _status_opts %}
               <option value="{{ _cur_status }}" selected>{{ _cur_status }}</option>
