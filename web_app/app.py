@@ -11061,6 +11061,7 @@ def _parse_quote_form(form) -> dict:
             })
     return {
         "job_number":           form.get("job_number", ""),
+        "company_name":         form.get("company_name", ""),
         "client_name":          form.get("client_name", ""),
         "project_name":         form.get("project_name", ""),
         "description":          form.get("description", ""),
@@ -11166,6 +11167,7 @@ def _parse_project_form(form) -> dict:
         "po_wo_number":    form.get("po_wo_number", ""),
         # ── project info ─────────────────────────────────────────────────────
         "project_name":    form.get("project_name", ""),
+        "company_name":    form.get("company_name", ""),
         "company":         form.get("client_name", ""),   # desktop key = company
         "client_name":     form.get("client_name", ""),   # keep for web queries
         "site_address":    form.get("site_address", ""),
