@@ -3150,8 +3150,10 @@ def invoicing():
         items = [i for i in items if i.get("meta", {}).get("client_name", "") == client_filter]
     if plant_filter:
         items = [i for i in items if i.get("plant_state", "") == plant_filter]
-    # Don't filter by invoice_date here - let payment date filtering handle date range
-    # This allows invoices from any year to show payments within the selected date range
+    if date_from:
+        items = [i for i in items if (i.get("meta", {}).get("invoice_date") or "") >= date_from]
+    if date_to:
+        items = [i for i in items if (i.get("meta", {}).get("invoice_date") or "") <= date_to]
 
     # Build filter dropdown lists
     inv_clients = _load_clients()
@@ -3160,9 +3162,9 @@ def invoicing():
     statuses = ["Draft", "Sent", "Viewed", "Paid", "Partial", "Overdue", "Cancelled"]
     active_tab = request.args.get("tab", "all-invoices")
 
-    # KPI stats — Collected uses payment_log dates, not invoice creation date
+    # KPI stats — invoices filtered by invoice_date, collected by payment_date
     _kpi_rows = []
-    def _in_range(d):
+    def _pay_in_range(d):
         return (not date_from or (d or "") >= date_from) and \
                (not date_to   or (d or "") <= date_to)
 
@@ -3170,20 +3172,11 @@ def invoicing():
         m  = inv.get("meta", {}) or {}
         st = m.get("status", "Draft")
         total_val = _safe_float(m.get("total", 0))
-        # Filter payments by payment date when a date range is active
-        total_paid = sum(
-            _safe_float(p.get("amount", 0))
-            for p in (inv.get("payment_log", []) or [])
-            if _in_range(p.get("date", ""))
-        )
-        total_paid += sum(
-            _safe_float(tp.get("amount", 0))
-            for tp in (inv.get("tax_payments", []) or [])
-            if _in_range(tp.get("date", ""))
-        )
-        # Only include invoices with activity (payments or drafts) in the date range
-        if total_paid > 0 or not date_from:
-            _kpi_rows.append((st, total_val, total_paid))
+        # Calculate total paid: sum of all payments (not filtered by date)
+        # For Collected card, we'll separately calculate payments within date range
+        total_all_paid = sum(_safe_float(p.get("amount", 0)) for p in (inv.get("payment_log", []) or []))
+        total_all_paid += sum(_safe_float(p.get("amount", 0)) for p in (inv.get("tax_payments", []) or []))
+        _kpi_rows.append((st, total_val, total_all_paid))
 
     i_total       = len(_kpi_rows)
     i_draft_count = sum(1 for st, _, __ in _kpi_rows if st == "Draft")
@@ -3195,6 +3188,16 @@ def invoicing():
     i_outstanding = i_total_val - i_total_paid
     i_coll_rate   = round(i_total_paid / i_total_val * 100) if i_total_val else 0
     i_overdue_amt = sum(total for st, total, __ in _kpi_rows if st == "Overdue")
+
+    # Collected amount: sum of payments made within date range (may include payments on invoices from other years)
+    i_total_paid_in_range = 0.0
+    for inv in all_invoices_raw:
+        for p in (inv.get("payment_log", []) or []):
+            if _pay_in_range(p.get("date", "")):
+                i_total_paid_in_range += _safe_float(p.get("amount", 0))
+        for tp in (inv.get("tax_payments", []) or []):
+            if _pay_in_range(tp.get("date", "")):
+                i_total_paid_in_range += _safe_float(tp.get("amount", 0))
 
     # Ensure all invoices have amount_paid and tax_paid in meta for template compatibility
     for inv in items:
@@ -3223,7 +3226,8 @@ def invoicing():
                            i_total=i_total, i_draft_count=i_draft_count,
                            i_sent_count=i_sent_count, i_paid_count=i_paid_count,
                            i_over_count=i_over_count, i_total_val=i_total_val,
-                           i_total_paid=i_total_paid, i_outstanding=i_outstanding,
+                           i_total_paid=i_total_paid, i_total_paid_in_range=i_total_paid_in_range,
+                           i_outstanding=i_outstanding,
                            i_coll_rate=i_coll_rate, i_overdue_amt=i_overdue_amt,
                            default_tax_rate=default_tax_rate)
 
