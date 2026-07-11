@@ -81,7 +81,7 @@
       <div class="row g-2">
         <div class="col-sm-4">
           <div class="info-label">Client</div>
-          <div class="info-value">{{ quote.get('client_name','—') }}</div>
+          <div class="info-value">{{ quote.get('company_name') or quote.get('client_name','—') }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Salesperson</div>
