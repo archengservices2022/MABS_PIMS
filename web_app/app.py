@@ -3164,9 +3164,6 @@ def invoicing():
 
     # KPI stats — invoices filtered by invoice_date, collected by payment_date
     _kpi_rows = []
-    def _pay_in_range(d):
-        return (not date_from or (d or "") >= date_from) and \
-               (not date_to   or (d or "") <= date_to)
 
     for inv in items:
         m  = inv.get("meta", {}) or {}
@@ -3186,18 +3183,24 @@ def invoicing():
     i_total_val   = sum(total for _, total, __ in _kpi_rows)
     i_total_paid  = sum(paid for _, __, paid in _kpi_rows)
     i_outstanding = i_total_val - i_total_paid
-    i_coll_rate   = round(i_total_paid / i_total_val * 100) if i_total_val else 0
     i_overdue_amt = sum(total for st, total, __ in _kpi_rows if st == "Overdue")
 
-    # Collected amount: sum of payments made within date range (may include payments on invoices from other years)
+    # Collected amount: sum of payments made within date range on filtered invoices only
+    # Only includes payments on invoices that match ALL applied filters (status, client, plant, search, date)
     i_total_paid_in_range = 0.0
-    for inv in all_invoices_raw:
+    def _pay_in_range(d):
+        return (not date_from or (d or "") >= date_from) and \
+               (not date_to   or (d or "") <= date_to)
+    for inv in items:
         for p in (inv.get("payment_log", []) or []):
             if _pay_in_range(p.get("date", "")):
                 i_total_paid_in_range += _safe_float(p.get("amount", 0))
         for tp in (inv.get("tax_payments", []) or []):
             if _pay_in_range(tp.get("date", "")):
                 i_total_paid_in_range += _safe_float(tp.get("amount", 0))
+
+    # Collection rate based on payments in date range vs total invoice amount
+    i_coll_rate   = round(i_total_paid_in_range / i_total_val * 100) if i_total_val else 0
 
     # Ensure all invoices have amount_paid and tax_paid in meta for template compatibility
     for inv in items:
