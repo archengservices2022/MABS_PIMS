@@ -69,8 +69,8 @@
         <table class="table table-hover mb-0 align-middle">
           <thead>
             <tr>
+              <th>Company Name</th>
               <th>Client Name</th>
-              <th>Company</th>
               <th>Email</th>
               <th>Phone</th>
               <th>Tags</th>
@@ -82,11 +82,11 @@
             <tr>
               <td>
                 <div class="d-flex align-items-center gap-2">
-                  <div class="inv-avatar">{{ c.get('client_name','?')[0]|upper }}</div>
-                  <strong>{{ c.get('client_name','—') }}</strong>
+                  <div class="inv-avatar">{{ c.get('company_name','?')[0]|upper }}</div>
+                  <strong>{{ c.get('company_name','—') }}</strong>
                 </div>
               </td>
-              <td>{{ c.get('company','—') }}</td>
+              <td>{{ c.get('client_name','—') }}</td>
               <td>{{ c.get('email','—') }}</td>
               <td>{{ c.get('phone','—') }}</td>
               <td>
@@ -99,16 +99,16 @@
               </td>
               <td>
                 <div class="d-flex gap-1">
-                  <a href="{{ url_for('client_statement', client_name=c.client_name) }}"
+                  <a href="{{ url_for('client_statement', company_name=c.company_name) }}"
                      class="btn btn-xs btn-outline-danger" title="Client Statement PDF">
                     <i class="bi bi-file-earmark-pdf"></i>
                   </a>
-                  <a href="{{ url_for('client_edit', client_name=c.client_name) }}"
+                  <a href="{{ url_for('client_edit', company_name=c.company_name) }}"
                      class="btn btn-xs btn-outline-secondary" title="Edit">
                     <i class="bi bi-pencil"></i>
                   </a>
-                  <form method="POST" action="{{ url_for('delete_client', client_name=c.client_name) }}"
-                        onsubmit="return confirm('Delete client {{ c.client_name }}? This cannot be undone.');"
+                  <form method="POST" action="{{ url_for('delete_client', company_name=c.company_name) }}"
+                        onsubmit="return confirm('Delete client {{ c.company_name }}? This cannot be undone.');"
                         style="display:inline;">
                     <button type="submit" class="btn btn-xs btn-outline-danger" title="Delete Client">
                       <i class="bi bi-trash"></i>
@@ -138,30 +138,28 @@
         <div class="card-panel">
           <h6 class="section-heading">Client Information</h6>
           <form method="POST" action="{{ url_for('client_new') }}">
+            <!-- Client Identification Section -->
             <div class="mb-3">
-              <label class="form-label">Client Name <span class="text-danger">*</span></label>
-              <input type="text" name="client_name" class="form-control"
-                     placeholder="Full name or company name" required>
+              <label class="form-label">Company Name</label>
+              <input type="text" name="company_name" class="form-control">
             </div>
             <div class="mb-3">
-              <label class="form-label">Company</label>
-              <input type="text" name="company" class="form-control"
-                     placeholder="Company or organisation">
+              <label class="form-label">Client Name</label>
+              <input type="text" name="client_name" class="form-control"
+                     placeholder="Client Name">
+              <div class="form-text">At least one of Company Name or Client Name is required.</div>
             </div>
             <div class="mb-3">
               <label class="form-label">Email</label>
-              <input type="email" name="email" class="form-control"
-                     placeholder="email@example.com">
+              <input type="email" name="email" class="form-control">
             </div>
             <div class="mb-3">
               <label class="form-label">Phone</label>
-              <input type="text" name="phone" class="form-control"
-                     placeholder="+1 (555) 000-0000">
+              <input type="text" name="phone" class="form-control">
             </div>
             <div class="mb-3">
               <label class="form-label">Address</label>
-              <textarea name="address" class="form-control" rows="3"
-                        placeholder="Street address, city, state, zip"></textarea>
+              <textarea name="address" class="form-control" rows="3"></textarea>
             </div>
             <div class="mb-3">
               <label class="form-label">Tags</label>
@@ -171,8 +169,7 @@
             </div>
             <div class="mb-3">
               <label class="form-label">Notes</label>
-              <textarea name="notes" class="form-control" rows="2"
-                        placeholder="Internal notes about this client..."></textarea>
+              <textarea name="notes" class="form-control" rows="2"></textarea>
             </div>
             <div class="d-grid">
               <button type="submit" class="btn btn-teal">
@@ -202,6 +199,25 @@ document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
     const url = new URL(window.location);
     url.searchParams.set('tab', id);
     window.history.replaceState({}, '', url);
+  });
+});
+
+// Validate at least one of company_name or client_name is filled
+document.querySelectorAll('form').forEach(form => {
+  form.addEventListener('submit', function(e) {
+    const companyName = form.querySelector('input[name="company_name"]');
+    const clientName = form.querySelector('input[name="client_name"]');
+
+    if (companyName && clientName) {
+      const companyVal = companyName.value.trim();
+      const clientVal = clientName.value.trim();
+
+      if (!companyVal && !clientVal) {
+        e.preventDefault();
+        alert('Please enter either Company Name or Client Name.');
+        return false;
+      }
+    }
   });
 });
 </script>

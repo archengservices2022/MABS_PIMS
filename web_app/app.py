@@ -557,6 +557,10 @@ def dashboard():
 
     cur_year_invs = [i for i in inv_list if isinstance(i, dict)
                      and (i.get("meta", {}).get("invoice_date", "") or "").startswith(cur_year)]
+    cur_year_projs = [p for p in proj_list if isinstance(p, dict)
+                      and (p.get("created_at", "") or "").startswith(cur_year)]
+    cur_year_quots = [q for q in quot_list if isinstance(q, dict)
+                      and (q.get("date", "") or q.get("created_at", "") or "").startswith(cur_year)]
 
     total_invoiced = sum(_safe_float(i.get("meta", {}).get("total", 0)) for i in cur_year_invs)
 
@@ -580,9 +584,10 @@ def dashboard():
         and (i.get("meta", {}).get("status", "") not in ("Cancelled",))
     )
 
-    active_projects = sum(1 for p in proj_list
+    # Current year counts only
+    active_projects = sum(1 for p in cur_year_projs
                           if isinstance(p, dict) and p.get("status", "") not in ("Completed", "invoiced_Fully paid", "Cancelled"))
-    open_quotes     = sum(1 for q in quot_list
+    open_quotes     = sum(1 for q in cur_year_quots
                           if isinstance(q, dict) and q.get("status", "Not Started") not in ("Completed", "Cancelled", "Invoiced"))
 
     # ── Recent invoices ────────────────────────────────────────────────────
@@ -619,20 +624,20 @@ def dashboard():
     chart_labels = [(now - relativedelta(months=i)).strftime("%b %Y") for i in range(5, -1, -1)]
     chart_data   = [monthly.get(m, 0) for m in chart_labels]
 
-    # ── Status distribution for donut charts ──────────────────────────────────
+    # ── Status distribution for donut charts — current year only ──────────────────────────────────
     inv_status_counts = {}
-    for i in inv_list:
+    for i in cur_year_invs:
         if isinstance(i, dict):
             st = i.get("meta", {}).get("status") or "Draft"
             inv_status_counts[st] = inv_status_counts.get(st, 0) + 1
 
     proj_status_counts = {}
-    for p in proj_list:
+    for p in cur_year_projs:
         if isinstance(p, dict):
             st = p.get("status") or "Not Started"
             proj_status_counts[st] = proj_status_counts.get(st, 0) + 1
 
-    # ── Alert counts ──────────────────────────────────────────────────────────
+    # ── Alert counts — show all warnings (not filtered by year) ──────────────────────────────────────
     today_str     = datetime.now().strftime("%Y-%m-%d")
     week_str      = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
     three_day_str = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
@@ -687,7 +692,7 @@ def dashboard():
         return None  # Completed / Cancelled / invoiced_Fully paid — excluded
 
     pipeline = {"Not Started": [], "In Progress": [], "On Hold": []}
-    for _p in proj_list:
+    for _p in cur_year_projs:
         if not isinstance(_p, dict): continue
         _bucket = _pipeline_bucket(_p.get("status", "Not Started"))
         if _bucket:
@@ -696,14 +701,14 @@ def dashboard():
     # ── Urgent alerts (overdue + due within 3 days only) ─────────────────────
     three_day_str = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
 
-    # 1. Overdue invoices
+    # 1. Overdue invoices — ALL years (show all warnings)
     reminder_overdue_invoices = sorted(
         [i for i in inv_list if isinstance(i, dict)
          and i.get("meta", {}).get("status", "") == "Overdue"],
         key=lambda x: x.get("meta", {}).get("due_date", "")
     )[:5]
 
-    # 2. Invoices due within 3 days (not yet overdue)
+    # 2. Invoices due within 3 days (not yet overdue) — ALL years (show all warnings)
     reminder_due_soon = sorted(
         [i for i in inv_list if isinstance(i, dict)
          and i.get("meta", {}).get("status", "") not in ("Paid", "Overdue", "Cancelled")
@@ -716,9 +721,9 @@ def dashboard():
     reminder_stalled  = []
     reminder_total = len(reminder_overdue_invoices) + len(reminder_due_soon)
 
-    # ── Projects ready to invoice (have Pending Invoice stages) ──────────────
+    # ── Projects ready to invoice (have Pending Invoice stages) — current year only ──────────────
     projects_ready_to_invoice = []
-    for p in proj_list:
+    for p in cur_year_projs:
         if not isinstance(p, dict):
             continue
         if p.get("status", "") in ("Completed", "invoiced_Fully paid", "Cancelled"):
@@ -758,12 +763,12 @@ def dashboard():
             elif ds[:7] == last_month_str:
                 last_month_collected += _safe_float(tp.get("amount", 0))
 
-    # ── Module overview stats ─────────────────────────────────────────────────
+    # ── Module overview stats — current year only ─────────────────────────────────────────────────
     _QTERMINAL_ALL = {"Approved", "Converted", "Invoiced", "Rejected", "Cancelled", "Expired"}
     quot_status_counts: Dict[str, int] = {}
     quotes_pipeline_value = 0.0
     quotes_converted = 0
-    for _q in quot_list:
+    for _q in cur_year_quots:
         if not _q or not isinstance(_q, dict): continue
         _st = _q.get("status", "Not Started")
         quot_status_counts[_st] = quot_status_counts.get(_st, 0) + 1
@@ -772,19 +777,20 @@ def dashboard():
         # Count as converted if: status is Converted/Invoiced OR has linked_project_id (was converted)
         if _st in {"Converted", "Invoiced"} or _q.get("linked_project_id"):
             quotes_converted += 1
-    _total_quotes = len(quot_list)
+    _total_quotes = len(cur_year_quots)
     quotes_conversion_rate = int(quotes_converted / _total_quotes * 100) if _total_quotes > 0 else 0
 
-    proj_contract_total  = sum(_safe_float(p.get("contract_value", 0)) for p in proj_list if isinstance(p, dict))
+    # Active Contract Value = sum of contract values for active projects created in current year
     proj_contract_active = sum(
-        _safe_float(p.get("contract_value", 0)) for p in proj_list
+        _safe_float(p.get("contract_value", 0)) for p in cur_year_projs
         if isinstance(p, dict) and p.get("status", "") not in ("Completed", "invoiced_Fully paid", "Cancelled")
     )
-    proj_completed_count = sum(1 for p in proj_list if isinstance(p, dict) and p.get("status", "") in ("Completed", "invoiced_Fully paid"))
+    proj_contract_total  = sum(_safe_float(p.get("contract_value", 0)) for p in cur_year_projs if isinstance(p, dict))
+    proj_completed_count = sum(1 for p in cur_year_projs if isinstance(p, dict) and p.get("status", "") in ("Completed", "invoiced_Fully paid"))
 
     inv_overdue_amt = sum(
         _safe_float(i.get("meta", {}).get("total", 0)) - _safe_float(i.get("meta", {}).get("amount_paid", 0))
-        for i in inv_list if isinstance(i, dict) and i.get("meta", {}).get("status", "") == "Overdue"
+        for i in cur_year_invs if isinstance(i, dict) and i.get("meta", {}).get("status", "") == "Overdue"
     )
 
     # ── Team status (Employees module) ─────────────────────────────────────
@@ -892,7 +898,7 @@ def dashboard():
         total_outstanding=total_outstanding,
         active_projects=active_projects,
         open_quotes=open_quotes,
-        total_invoices=len(inv_list),
+        total_invoices=len(cur_year_invs),
         recent_invoices=recent_invoices,
         recent_projects=recent_projects,
         chart_labels=json.dumps(chart_labels),
@@ -3142,6 +3148,26 @@ def invoicing():
             calculated_status = "Overdue"
         m["status"] = calculated_status
 
+    # IMPORTANT: Create items_for_collected from ALL invoices first
+    # Then apply ONLY status/client/plant/search filters (NO invoice date filter)
+    # This allows invoices from ANY year to contribute payments to collected amount
+    items_for_collected = []
+    for inv in all_invoices_raw:
+        if not inv or not isinstance(inv, dict):
+            continue
+        # Apply only: status, client, plant, search filters
+        if search and search not in str(inv).lower():
+            continue
+        if status_filter and inv.get("meta", {}).get("status", "") != status_filter:
+            continue
+        if client_filter and inv.get("meta", {}).get("client_name", "") != client_filter:
+            continue
+        if plant_filter and inv.get("plant_state", "") != plant_filter:
+            continue
+        # Add to collected list (NO invoice date filter!)
+        items_for_collected.append(inv)
+
+    # Now apply all filters to items for display (including search and invoice date)
     if search:
         items = [i for i in items if search in str(i).lower()]
     if status_filter:
@@ -3150,6 +3176,7 @@ def invoicing():
         items = [i for i in items if i.get("meta", {}).get("client_name", "") == client_filter]
     if plant_filter:
         items = [i for i in items if i.get("plant_state", "") == plant_filter]
+
     if date_from:
         items = [i for i in items if (i.get("meta", {}).get("invoice_date") or "") >= date_from]
     if date_to:
@@ -3162,27 +3189,18 @@ def invoicing():
     statuses = ["Draft", "Sent", "Viewed", "Paid", "Partial", "Overdue", "Cancelled"]
     active_tab = request.args.get("tab", "all-invoices")
 
-    # KPI stats — Collected uses payment_log dates, not invoice creation date
+    # KPI stats — invoices filtered by invoice_date, collected by payment_date
     _kpi_rows = []
+
     for inv in items:
         m  = inv.get("meta", {}) or {}
         st = m.get("status", "Draft")
         total_val = _safe_float(m.get("total", 0))
-        # Filter payments by payment date when a date range is active
-        def _in_range(d):
-            return (not date_from or (d or "") >= date_from) and \
-                   (not date_to   or (d or "") <= date_to)
-        total_paid = sum(
-            _safe_float(p.get("amount", 0))
-            for p in (inv.get("payment_log", []) or [])
-            if _in_range(p.get("date", ""))
-        )
-        total_paid += sum(
-            _safe_float(tp.get("amount", 0))
-            for tp in (inv.get("tax_payments", []) or [])
-            if _in_range(tp.get("date", ""))
-        )
-        _kpi_rows.append((st, total_val, total_paid))
+        # Calculate total paid: sum of all payments (not filtered by date)
+        # For Collected card, we'll separately calculate payments within date range
+        total_all_paid = sum(_safe_float(p.get("amount", 0)) for p in (inv.get("payment_log", []) or []))
+        total_all_paid += sum(_safe_float(p.get("amount", 0)) for p in (inv.get("tax_payments", []) or []))
+        _kpi_rows.append((st, total_val, total_all_paid))
 
     i_total       = len(_kpi_rows)
     i_draft_count = sum(1 for st, _, __ in _kpi_rows if st == "Draft")
@@ -3192,8 +3210,75 @@ def invoicing():
     i_total_val   = sum(total for _, total, __ in _kpi_rows)
     i_total_paid  = sum(paid for _, __, paid in _kpi_rows)
     i_outstanding = i_total_val - i_total_paid
-    i_coll_rate   = round(i_total_paid / i_total_val * 100) if i_total_val else 0
     i_overdue_amt = sum(total for st, total, __ in _kpi_rows if st == "Overdue")
+
+    # Collected amount: ALL payments from filtered invoices
+    # Based ONLY on payment received date from payment history
+    # RESPECTS: status, client, plant, search filters
+    # IGNORES: invoice creation date
+    # Shows ALL payments (past, present, future) from filtered invoices
+    # If date range is provided, filters payments by that range
+    i_total_paid_in_range = 0.0
+
+    def _normalize_date(d):
+        """Convert various date formats to YYYY-MM-DD for comparison"""
+        if not d or not isinstance(d, str):
+            return ""
+        d = d.strip()
+        # Already in YYYY-MM-DD format (e.g., "2027-03-17")
+        if d.count('-') == 2 and len(d) == 10:
+            if d[0:4].isdigit() and d[4] == '-' and d[7] == '-':
+                return d
+        # MM-DD-YYYY format (e.g., "03-17-2027")
+        if len(d) == 10 and d[2] == '-' and d[5] == '-':
+            parts = d.split('-')
+            if len(parts) == 3 and all(p.isdigit() for p in parts):
+                return f"{parts[2]}-{parts[0]}-{parts[1]}"
+        # Try DD-MM-YYYY format (e.g., "17-03-2027")
+        if len(d) == 10 and d[2] == '-' and d[5] == '-':
+            parts = d.split('-')
+            if len(parts) == 3 and all(p.isdigit() for p in parts):
+                day = int(parts[0]) if int(parts[0]) > 12 else int(parts[1])
+                month = int(parts[1]) if int(parts[1]) <= 12 else int(parts[0])
+                year = parts[2]
+                return f"{year}-{month:02d}-{day:02d}"
+        return d
+
+    def _pay_in_date_range(d):
+        """Check if payment date falls within the selected date range"""
+        # If no date filters, include all payments (past, present, future)
+        if not date_from and not date_to:
+            return True
+        norm_d = _normalize_date(d)
+        from_ok = (not date_from or norm_d >= date_from)
+        to_ok = (not date_to or norm_d <= date_to)
+        return from_ok and to_ok
+
+    # Iterate through filtered invoices (respects status/client/plant/search filters)
+    # Count ALL payments from those invoices (past, present, future)
+    # If date range is set, only count payments within that range
+    for inv in items_for_collected:
+        if not inv or not isinstance(inv, dict):
+            continue
+        # Count all payments in payment_log based on payment date
+        for p in (inv.get("payment_log", []) or []):
+            if not p or not isinstance(p, dict):
+                continue
+            pay_date = p.get("date", "")
+            pay_amt = p.get("amount", 0)
+            if _pay_in_date_range(pay_date):
+                i_total_paid_in_range += _safe_float(pay_amt)
+        # Count all tax payments based on payment date
+        for tp in (inv.get("tax_payments", []) or []):
+            if not tp or not isinstance(tp, dict):
+                continue
+            tax_date = tp.get("date", "")
+            tax_amt = tp.get("amount", 0)
+            if _pay_in_date_range(tax_date):
+                i_total_paid_in_range += _safe_float(tax_amt)
+
+    # Collection rate based on payments in date range vs total invoice amount of filtered invoices
+    i_coll_rate   = round(i_total_paid_in_range / i_total_val * 100) if i_total_val else 0
 
     # Ensure all invoices have amount_paid and tax_paid in meta for template compatibility
     for inv in items:
@@ -3222,7 +3307,8 @@ def invoicing():
                            i_total=i_total, i_draft_count=i_draft_count,
                            i_sent_count=i_sent_count, i_paid_count=i_paid_count,
                            i_over_count=i_over_count, i_total_val=i_total_val,
-                           i_total_paid=i_total_paid, i_outstanding=i_outstanding,
+                           i_total_paid=i_total_paid, i_total_paid_in_range=i_total_paid_in_range,
+                           i_outstanding=i_outstanding,
                            i_coll_rate=i_coll_rate, i_overdue_amt=i_overdue_amt,
                            default_tax_rate=default_tax_rate)
 
@@ -4866,7 +4952,7 @@ def invoicing_export_csv():
                     projects_str = ", ".join(sorted(linked_projects)) if linked_projects else ""
                     row = [
                         m.get("invoice_number",""),
-                        m.get("client_name",""),
+                        m.get("company_name","") or m.get("client_name",""),
                         projects_str,
                         fmt_csv_date(m.get("invoice_date","")),
                         fmt_csv_date(m.get("due_date","")),
@@ -5118,9 +5204,10 @@ def clients():
     raw = fb_get("/clients") or {}
     items = []
     if isinstance(raw, dict):
-        for name, cdata in raw.items():
+        for company_name, cdata in raw.items():
             if cdata and isinstance(cdata, dict):
-                cdata["client_name"] = name
+                # Ensure company_name is set from the Firebase key (primary identifier)
+                cdata["company_name"] = company_name
                 items.append(cdata)
     items.sort(key=lambda x: x.get("client_name", "").lower())
     search = request.args.get("q", "").strip().lower()
@@ -5129,7 +5216,7 @@ def clients():
     all_tags = sorted({t for i in items for t in (i.get("tags") or []) if t})
     if search:
         items = [i for i in items if search in (
-            (i.get("client_name","") + " " + i.get("company","") + " " +
+            (i.get("client_name","") + " " + i.get("company_name","") + " " +
              i.get("email","") + " " + i.get("phone",""))).lower()]
     if tag_filter:
         items = [i for i in items if tag_filter in (i.get("tags") or [])]
@@ -5137,66 +5224,294 @@ def clients():
     return render_template("clients.html", clients=items, active_tab=active_tab,
                            search=search, tag_filter=tag_filter, all_tags=all_tags)
 
+def _sync_client_changes(old_company_name, new_company_name, new_client_name):
+    """Sync client changes to all related invoices, quotes, and projects by client_id.
+    Also migrates legacy records (without client_id) to use client_id."""
+    # Get the client_id from the new client record
+    client_data = fb_get(f"/clients/{new_company_name}") or {}
+    client_id = client_data.get("client_id")
+
+    if not client_id:
+        print(f"[SYNC] No client_id found for '{new_company_name}', falling back to name-based sync", flush=True)
+        # Fallback to old method for legacy records without client_id
+        _sync_client_changes_by_name(old_company_name, new_company_name, new_client_name)
+        return
+
+    print(f"[SYNC] Starting sync by client_id: '{client_id}'", flush=True)
+
+    # Update invoices by client_id
+    invoices = fb_get("/invoices") or {}
+    if isinstance(invoices, dict):
+        for inv_id, inv_data in invoices.items():
+            if isinstance(inv_data, dict):
+                meta = inv_data.get("meta", {})
+                if isinstance(meta, dict):
+                    # Match by client_id OR by legacy name matching (and add client_id to legacy records)
+                    if meta.get("client_id") == client_id:
+                        print(f"[SYNC] Updating invoice {inv_id} with client_id={client_id}", flush=True)
+                        meta["company_name"] = new_company_name
+                        meta["client_name"] = new_client_name
+                        inv_data["meta"] = meta
+                        fb_update(f"/invoices/{inv_id}", inv_data)
+                    elif not meta.get("client_id") and (meta.get("company_name", "") == old_company_name or meta.get("client_name", "") == old_company_name):
+                        print(f"[SYNC] Migrating legacy invoice {inv_id}: '{meta.get('company_name') or meta.get('client_name')}' → '{new_company_name}' (adding client_id)", flush=True)
+                        meta["client_id"] = client_id
+                        meta["company_name"] = new_company_name
+                        meta["client_name"] = new_client_name
+                        inv_data["meta"] = meta
+                        fb_update(f"/invoices/{inv_id}", inv_data)
+
+    # Update quotes by client_id (stored in /job_forms)
+    quotes = fb_get("/job_forms") or {}
+    if isinstance(quotes, dict):
+        print(f"[SYNC] Checking {len(quotes)} quotes for client_id={client_id}", flush=True)
+        for quote_id, quote_data in quotes.items():
+            if isinstance(quote_data, dict):
+                quote_cid = quote_data.get("client_id", "")
+                quote_company = quote_data.get("company_name", "")
+                print(f"[SYNC] Quote {quote_id}: client_id='{quote_cid}' company_name='{quote_company}'", flush=True)
+                # Match by client_id OR by legacy name matching (and add client_id to legacy records)
+                if quote_data.get("client_id") == client_id:
+                    print(f"[SYNC] Updating quote {quote_id} with client_id={client_id}: '{quote_data.get('company_name')}' → '{new_company_name}'", flush=True)
+                    quote_data["company_name"] = new_company_name
+                    quote_data["client_name"] = new_client_name
+                    fb_update(f"/job_forms/{quote_id}", quote_data)
+                    print(f"[SYNC] Quote {quote_id} updated: company_name='{new_company_name}' client_name='{new_client_name}'", flush=True)
+                elif not quote_data.get("client_id") and (quote_data.get("company_name", "") == old_company_name or quote_data.get("client_name", "") == old_company_name):
+                    print(f"[SYNC] Migrating legacy quote {quote_id}: '{quote_data.get('company_name') or quote_data.get('client_name')}' → '{new_company_name}' (adding client_id)", flush=True)
+                    quote_data["client_id"] = client_id
+                    quote_data["company_name"] = new_company_name
+                    quote_data["client_name"] = new_client_name
+                    fb_update(f"/job_forms/{quote_id}", quote_data)
+
+    # Update projects by client_id
+    projects = fb_get("/projects") or {}
+    if isinstance(projects, dict):
+        for proj_id, proj_data in projects.items():
+            if isinstance(proj_data, dict):
+                # Match by client_id OR by legacy name matching (and add client_id to legacy records)
+                if proj_data.get("client_id") == client_id:
+                    print(f"[SYNC] Updating project {proj_id} with client_id={client_id}", flush=True)
+                    proj_data["company_name"] = new_company_name
+                    proj_data["client_name"] = new_client_name
+                    fb_update(f"/projects/{proj_id}", proj_data)
+                elif not proj_data.get("client_id") and (proj_data.get("company_name", "") == old_company_name or proj_data.get("client_name", "") == old_company_name):
+                    print(f"[SYNC] Migrating legacy project {proj_id}: '{proj_data.get('company_name') or proj_data.get('client_name')}' → '{new_company_name}' (adding client_id)", flush=True)
+                    proj_data["client_id"] = client_id
+                    proj_data["company_name"] = new_company_name
+                    proj_data["client_name"] = new_client_name
+                    fb_update(f"/projects/{proj_id}", proj_data)
+
+def _sync_client_changes_by_name(old_company_name, new_company_name, new_client_name):
+    """Legacy fallback: Sync client changes by name matching (for records without client_id)."""
+    print(f"[SYNC] Fallback sync by name: old='{old_company_name}' → new='{new_company_name}'", flush=True)
+
+    # Update invoices
+    invoices = fb_get("/invoices") or {}
+    if isinstance(invoices, dict):
+        for inv_id, inv_data in invoices.items():
+            if isinstance(inv_data, dict):
+                meta = inv_data.get("meta", {})
+                if isinstance(meta, dict):
+                    if meta.get("company_name", "") == old_company_name or meta.get("client_name", "") == old_company_name:
+                        meta["company_name"] = new_company_name
+                        meta["client_name"] = new_client_name
+                        inv_data["meta"] = meta
+                        fb_update(f"/invoices/{inv_id}", inv_data)
+
+    # Update quotes (stored in /job_forms)
+    quotes = fb_get("/job_forms") or {}
+    if isinstance(quotes, dict):
+        for quote_id, quote_data in quotes.items():
+            if isinstance(quote_data, dict):
+                if quote_data.get("company_name", "") == old_company_name or quote_data.get("client_name", "") == old_company_name:
+                    quote_data["company_name"] = new_company_name
+                    quote_data["client_name"] = new_client_name
+                    fb_update(f"/job_forms/{quote_id}", quote_data)
+
+    # Update projects
+    projects = fb_get("/projects") or {}
+    if isinstance(projects, dict):
+        for proj_id, proj_data in projects.items():
+            if isinstance(proj_data, dict):
+                if proj_data.get("company_name", "") == old_company_name or proj_data.get("client_name", "") == old_company_name:
+                    proj_data["company_name"] = new_company_name
+                    proj_data["client_name"] = new_client_name
+                    fb_update(f"/projects/{proj_id}", proj_data)
+
 @app.route("/clients/new", methods=["GET", "POST"])
 @role_required("invoicing")
 def client_new():
     if request.method == "POST":
-        name = request.form.get("client_name", "").strip()
-        if not name:
-            flash("Client name is required.", "danger")
+        company_name = request.form.get("company_name", "").strip()
+        client_name = request.form.get("client_name", "").strip()
+        email = request.form.get("email", "").strip()
+        phone = request.form.get("phone", "").strip()
+        address = request.form.get("address", "").strip()
+        notes = request.form.get("notes", "").strip()
+        tags = request.form.get("tags", "").strip()
+
+        # At least one of company_name or client_name must be provided
+        if not company_name and not client_name:
+            flash("Either Company Name or Client Name is required.", "danger")
             return render_template("client_form.html", client=None, is_new=True)
+
+        # If company_name is empty, use client_name as the company_name
+        if not company_name:
+            company_name = client_name
+
+        # Use company_name as primary identifier
+        primary_id = company_name
+
+        # Build form data for re-rendering on error
+        form_data = {
+            "company_name": company_name,
+            "client_name": client_name,
+            "email": email,
+            "phone": phone,
+            "address": address,
+            "notes": notes,
+            "tags": tags,
+        }
+
+        # Check for duplicate email
+        if email:
+            all_clients = fb_get("/clients") or {}
+            for existing_id, existing_data in all_clients.items():
+                if isinstance(existing_data, dict) and existing_data.get("email", "").strip().lower() == email.lower():
+                    flash(f"Email address '{email}' is already in use by another client.", "danger")
+                    form_data["email"] = ""
+                    return render_template("client_form.html", client=form_data, is_new=True)
+
+        # Check for duplicate phone
+        if phone:
+            all_clients = fb_get("/clients") or {}
+            for existing_id, existing_data in all_clients.items():
+                if isinstance(existing_data, dict) and existing_data.get("phone", "").strip() == phone:
+                    flash(f"Phone number '{phone}' is already in use by another client.", "danger")
+                    form_data["phone"] = ""
+                    return render_template("client_form.html", client=form_data, is_new=True)
+
         raw_tags = request.form.get("tags", "")
         tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
+
+        # Generate unique client_id for this client
+        client_id = secrets.token_hex(8)
+
         data = {
-            "company":  request.form.get("company", ""),
-            "email":    request.form.get("email", ""),
-            "phone":    request.form.get("phone", ""),
-            "address":  request.form.get("address", ""),
-            "notes":    request.form.get("notes", ""),
-            "tags":     tags,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "client_id":    client_id,
+            "company_name": company_name,
+            "client_name":  client_name,
+            "email":        email,
+            "phone":        phone,
+            "address":      request.form.get("address", ""),
+            "notes":        request.form.get("notes", ""),
+            "tags":         tags,
+            "updated_at":   datetime.now(timezone.utc).isoformat(),
         }
-        fb_update(f"/clients/{name}", data)
+        fb_update(f"/clients/{primary_id}", data)
         flash("Client saved.", "success")
         return redirect(url_for("clients", tab="all-clients"))
     return render_template("client_form.html", client=None, is_new=True)
 
-@app.route("/clients/<client_name>/edit", methods=["GET", "POST"])
+@app.route("/clients/<company_name>/edit", methods=["GET", "POST"])
 @role_required("invoicing")
-def client_edit(client_name):
-    data = fb_get(f"/clients/{client_name}") or {}
-    data["client_name"] = client_name
+def client_edit(company_name):
+    data = fb_get(f"/clients/{company_name}") or {}
+    # Get the ACTUAL company name from database (in case it's different)
+    original_company_name = data.get("company_name", company_name)
     if request.method == "POST":
-        new_name = request.form.get("client_name", client_name).strip()
+        company_name = request.form.get("company_name", "").strip()
+        new_client_name = request.form.get("client_name", data.get("client_name", "")).strip()
+        email = request.form.get("email", "").strip()
+        phone = request.form.get("phone", "").strip()
+        address = request.form.get("address", "").strip()
+        notes = request.form.get("notes", "").strip()
+        tags = request.form.get("tags", "").strip()
+
+        # At least one of company_name or client_name must be provided
+        if not company_name and not new_client_name:
+            flash("Either Company Name or Client Name is required.", "danger")
+            return render_template("client_form.html", client=data, is_new=False)
+
+        # If company_name is empty, use client_name as the company_name
+        if not company_name:
+            company_name = new_client_name
+
+        # Use company_name as primary identifier
+        new_primary_id = company_name
+
+        # Build form data for re-rendering on error
+        form_data = {
+            "company_name": company_name,
+            "client_name": new_client_name,
+            "email": email,
+            "phone": phone,
+            "address": address,
+            "notes": notes,
+            "tags": tags,
+        }
+
+        # Check for duplicate email (excluding current client)
+        if email:
+            all_clients = fb_get("/clients") or {}
+            for existing_id, existing_data in all_clients.items():
+                if existing_id != original_company_name and isinstance(existing_data, dict):
+                    if existing_data.get("email", "").strip().lower() == email.lower():
+                        flash(f"Email address '{email}' is already in use by another client.", "danger")
+                        form_data["email"] = ""
+                        return render_template("client_form.html", client=form_data, is_new=False)
+
+        # Check for duplicate phone (excluding current client)
+        if phone:
+            all_clients = fb_get("/clients") or {}
+            for existing_id, existing_data in all_clients.items():
+                if existing_id != original_company_name and isinstance(existing_data, dict):
+                    if existing_data.get("phone", "").strip() == phone:
+                        flash(f"Phone number '{phone}' is already in use by another client.", "danger")
+                        form_data["phone"] = ""
+                        return render_template("client_form.html", client=form_data, is_new=False)
+
         raw_tags = request.form.get("tags", "")
         tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
+
+        # Get the client_id from existing data (don't generate a new one)
+        client_id = data.get("client_id", secrets.token_hex(8))
+
         updated = {
-            "company":  request.form.get("company", ""),
-            "email":    request.form.get("email", ""),
-            "phone":    request.form.get("phone", ""),
-            "address":  request.form.get("address", ""),
-            "notes":    request.form.get("notes", ""),
-            "tags":     tags,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "client_id":    client_id,
+            "company_name": company_name,
+            "client_name":  new_client_name,
+            "email":        email,
+            "phone":        phone,
+            "address":      request.form.get("address", ""),
+            "notes":        request.form.get("notes", ""),
+            "tags":         tags,
+            "updated_at":   datetime.now(timezone.utc).isoformat(),
         }
-        if new_name != client_name:
-            fb_delete(f"/clients/{client_name}")
-        fb_update(f"/clients/{new_name}", updated)
+        # If primary ID changed, delete old entry
+        if new_primary_id != original_company_name:
+            fb_delete(f"/clients/{original_company_name}")
+        fb_update(f"/clients/{new_primary_id}", updated)
+
+        # Sync all related invoices, quotes, and projects with new company name
+        _sync_client_changes(original_company_name, new_primary_id, new_client_name)
+
         flash("Client updated.", "success")
         return redirect(url_for("clients"))
     return render_template("client_form.html", client=data, is_new=False)
 
-@app.route("/clients/<client_name>/delete", methods=["POST"])
+@app.route("/clients/<company_name>/delete", methods=["POST"])
 @role_required("invoicing")
-def delete_client(client_name):
-    fb_delete(f"/clients/{client_name}")
-    flash(f"Client '{client_name}' deleted.", "success")
+def delete_client(company_name):
+    fb_delete(f"/clients/{company_name}")
+    flash(f"Client '{company_name}' deleted.", "success")
     return redirect(url_for("clients"))
 
 # ── Client Statement PDF ──────────────────────────────────────────────────────
-@app.route("/clients/<client_name>/statement")
+@app.route("/clients/<company_name>/statement")
 @role_required("invoicing")
-def client_statement(client_name):
+def client_statement(company_name):
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
@@ -5209,7 +5524,8 @@ def client_statement(client_name):
     import io as _io
 
     co = company_info()
-    client_data = fb_get(f"/clients/{client_name}") or {}
+    client_data = fb_get(f"/clients/{company_name}") or {}
+    client_name = client_data.get("client_name", "")
 
     # Load all invoices for this client
     raw_inv = fb_get("/invoices") or {}
@@ -6635,16 +6951,18 @@ def financial():
     except (ValueError, TypeError):
         selected_year = datetime.now().year
 
-    # Total collected = sum of payment_log entries by PAYMENT DATE in current year
+    # Total collected = sum of payment_log entries by PAYMENT DATE in past & present years
     total_collected = 0.0
     for inv_id, inv_data_r in invoices.items():
         if not isinstance(inv_data_r, dict):
             continue
         for pay in (inv_data_r.get("payment_log", []) or []):
-            if _extract_year_from_date(pay.get("date", "")) == stat_card_year:
+            pay_year = _extract_year_from_date(pay.get("date", ""))
+            if pay_year in [stat_card_year, prev_year]:
                 total_collected += _safe_float(pay.get("amount", 0))
         for tp in (inv_data_r.get("tax_payments", []) or []):
-            if _extract_year_from_date(tp.get("date", "")) == stat_card_year:
+            tax_year = _extract_year_from_date(tp.get("date", ""))
+            if tax_year in [stat_card_year, prev_year]:
                 total_collected += _safe_float(tp.get("amount", 0))
 
     # Filter Income tab: include payment records where EITHER the payment date OR the invoice date
@@ -6684,24 +7002,26 @@ def financial():
                 "firebase_id":    inv.get("firebase_id", ""),
             })
 
-    # Filter invoices by present running year for stat cards (Overview tab)
+    # Filter invoices by current and previous years for stat cards (Overview tab)
+    prev_year = stat_card_year - 1
     inv_list_filtered = [i for i in inv_list
-                        if _extract_year_from_date(i.get("meta", {}).get("invoice_date", "")) == stat_card_year]
+                        if _extract_year_from_date(i.get("meta", {}).get("invoice_date", "")) in [stat_card_year, prev_year]]
 
     total_invoiced    = sum(_safe_float(i.get("meta", {}).get("total", 0)) for i in inv_list_filtered)
-    total_paid        = sum(_safe_float(i.get("meta", {}).get("amount_paid", 0)) for i in inv_list_filtered)
-    # Include tax paid in total paid
+    invoiced_count    = len(inv_list_filtered)  # Count of invoices created in current & previous years
+    # For Overview KPI: use total_collected (based on payment date) instead of invoice date filtering
+    # total_paid is only used for Balance Sheet and Income tab calculations below
     total_tax_paid    = sum(_safe_float(p.get("amount", 0)) for inv in inv_list_filtered for p in inv.get("tax_payments", []))
-    total_paid        += total_tax_paid
-    total_outstanding = total_invoiced - total_paid
+    # Overview KPI uses total_collected (filtered by payment date, not invoice date)
+    total_outstanding = total_invoiced - total_collected
     # Use Overview-filtered expenses (filtered by present running year, not selected year)
     exp_list_year_filtered = group_expenses_by_name(exp_list_for_overview)
     total_expenses    = sum(_safe_float(e.get("amount", 0)) for e in exp_list_year_filtered)
     exp_list_year_filtered_count = len(exp_list_year_filtered)
-    net_profit        = total_paid - total_expenses
+    # Net profit based on actual collected payments, not invoice dates
+    net_profit        = total_collected - total_expenses
 
-    # Calculate previous year data for year-over-year comparison
-    prev_year = stat_card_year - 1
+    # Calculate previous year data for year-over-year comparison (prev_year already defined above)
     inv_list_prev_year = [i for i in inv_list
                           if _extract_year_from_date(i.get("meta", {}).get("invoice_date", "")) == prev_year]
     prev_year_total_invoiced = sum(_safe_float(i.get("meta", {}).get("total", 0)) for i in inv_list_prev_year)
@@ -7073,7 +7393,8 @@ def financial():
                 total_commission_paid += _amt
 
     # Recalculate net profit now that total_salaries and commissions are known
-    net_profit             = total_paid - total_expenses - total_salaries - total_commission_paid
+    # Using total_collected (based on payment date) instead of total_paid (invoice date)
+    net_profit             = total_collected - total_expenses - total_salaries - total_commission_paid
     net_profit_after_labor = net_profit - total_labor_cost
 
     # Count unique employees with salary entries in present running year
@@ -7139,7 +7460,7 @@ def financial():
     # Calculate totals for Balance Sheet (use selected year data, not stat_card_year)
     bs_total_revenue = sum(annual_revenue.values())
     bs_total_expenses = sum(annual_expenses.values())
-    total_revenue = total_paid  # kept for legacy/overview usage
+    total_revenue = total_collected  # kept for legacy/overview usage - uses payment date
 
     # Load custom expense categories from Firebase
     custom_categories = fb_get("/custom_categories") or {}
@@ -7310,8 +7631,35 @@ def financial():
         else:
             aging_buckets["90plus"].append(entry)
 
+    # ── ALL YEARS totals (for Outstanding A/R calculation) ──
+    # Total invoiced from ALL years (excluding Draft invoices)
+    total_invoiced_all_years = sum(
+        _safe_float(i.get("meta", {}).get("total", 0))
+        for i in inv_list
+        if i.get("meta", {}).get("status", "Draft") != "Draft"
+    )
+
+    # Total collected from ALL years (all payments, excluding payments on Draft invoices)
+    total_collected_all_years = 0.0
+    for inv_id, inv_data_r in invoices.items():
+        if not isinstance(inv_data_r, dict):
+            continue
+        # Skip Draft invoices
+        inv_status = inv_data_r.get("meta", {}).get("status", "Draft")
+        if inv_status == "Draft":
+            continue
+        # Count ALL payments from ALL years (only non-Draft invoices)
+        for pay in (inv_data_r.get("payment_log", []) or []):
+            total_collected_all_years += _safe_float(pay.get("amount", 0))
+        for tp in (inv_data_r.get("tax_payments", []) or []):
+            total_collected_all_years += _safe_float(tp.get("amount", 0))
+
+    # Outstanding A/R = All Year Invoiced (non-Draft) - All Year Collected (from non-Draft)
+    overview_outstanding = total_invoiced_all_years - total_collected_all_years
+
     aging_totals = {k: sum(e["balance"] for e in v) for k, v in aging_buckets.items()}
     aging_total_outstanding = sum(aging_totals.values())
+    outstanding_count = sum(len(v) for v in aging_buckets.values())  # Count of all open invoices
 
     # ── Year-filtered A/R for Balance Sheet (only invoices from selected_year) ──
     bs_aging_buckets = {"current": [], "1_30": [], "31_60": [], "61_90": [], "90plus": []}
@@ -7478,10 +7826,14 @@ def financial():
     commission_total_paid      = sum(s["total_paid"]    for s in commission_summary)
     commission_total_outstanding = sum(s["outstanding"] for s in commission_summary)
 
+    invoiced_years = f"{prev_year} & {stat_card_year}"
+
     return render_template("financial.html",
         total_invoiced=total_invoiced,
-        total_paid=total_paid,
+        invoiced_count=invoiced_count,
+        invoiced_years=invoiced_years,
         total_outstanding=total_outstanding,
+        outstanding_count=outstanding_count,
         total_expenses=total_expenses,
         prev_year_total_invoiced=prev_year_total_invoiced,
         prev_year_total_paid=prev_year_total_paid,
@@ -7512,6 +7864,7 @@ def financial():
         rev_list=rev_list,
         prior_outstanding_invs=prior_outstanding_invs,
         total_collected=total_collected,
+        overview_outstanding=overview_outstanding,
         projects=projects_list,
         project_pnl=project_pnl,
         salaries_domestic=salaries_domestic,
@@ -10950,9 +11303,22 @@ def _parse_quote_form(form) -> dict:
                 "unit_price":  price,
                 "total":       str(_safe_float(qty) * _safe_float(price)),
             })
+
+    # Get client_id from selected company_name
+    company_name = form.get("client_name", "")  # Form passes company_name as client_name value
+    client_id = ""
+    client_name_from_db = ""
+    if company_name:
+        client_data = fb_get(f"/clients/{company_name}") or {}
+        client_id = client_data.get("client_id", "")
+        client_name_from_db = client_data.get("client_name", "")
+        print(f"[QUOTE_FORM] Quote created for client '{company_name}': client_id='{client_id}'", flush=True)
+
     return {
         "job_number":           form.get("job_number", ""),
-        "client_name":          form.get("client_name", ""),
+        "client_id":            client_id,
+        "company_name":         company_name,
+        "client_name":          client_name_from_db,
         "project_name":         form.get("project_name", ""),
         "description":          form.get("description", ""),
         "status":               form.get("status", "Not Started"),
@@ -11050,6 +11416,14 @@ def _parse_project_form(form) -> dict:
         except (ValueError, TypeError):
             service_costs[svc] = 0.0
 
+    # Get client_id from selected company_name
+    company_name = form.get("client_name", "")  # Form passes company_name as client_name value
+    client_id = ""
+    client_data = {}
+    if company_name:
+        client_data = fb_get(f"/clients/{company_name}") or {}
+        client_id = client_data.get("client_id", "")
+
     return {
         # ── identifiers (match desktop field names exactly) ──────────────────
         "project_number":  form.get("project_number", ""),
@@ -11057,8 +11431,10 @@ def _parse_project_form(form) -> dict:
         "po_wo_number":    form.get("po_wo_number", ""),
         # ── project info ─────────────────────────────────────────────────────
         "project_name":    form.get("project_name", ""),
-        "company":         form.get("client_name", ""),   # desktop key = company
-        "client_name":     form.get("client_name", ""),   # keep for web queries
+        "client_id":       client_id,
+        "company_name":    company_name,
+        "company":         company_name,   # desktop key = company
+        "client_name":     client_data.get("client_name", ""),   # keep for web queries
         "site_address":    form.get("site_address", ""),
         "mail_address":    form.get("mail_address", ""),
         "date_received":   form.get("date_received", ""),
@@ -11119,13 +11495,23 @@ def _parse_invoice_form(form) -> dict:
                               ([main_project] + [li["project_number"] for li in line_items])
                               if p})
 
+    # Get client_id from selected company_name
+    company_name = form.get("company_name", "")  # This comes from the form's company_name field
+    client_id = ""
+    client_data = {}
+    if company_name:
+        client_data = fb_get(f"/clients/{company_name}") or {}
+        client_id = client_data.get("client_id", "")
+
     return {
         "meta": {
             "invoice_number": form.get("invoice_number", ""),
             "invoice_date":   form.get("invoice_date", datetime.now().strftime("%Y-%m-%d")),
             "due_date":       form.get("due_date", ""),
             "net_terms":      form.get("net_terms", ""),
-            "client_name":    form.get("client_name", ""),
+            "client_id":      client_id,
+            "company_name":   company_name,
+            "client_name":    client_data.get("client_name", ""),
             "project_number": main_project,
             "linked_projects": linked_projects,
             "status":         form.get("status", "Draft"),
@@ -11487,20 +11873,21 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
 
     story.append(Spacer(1, 2*mm))
 
-    client_name = meta.get('client_name', '')
+    # Get company name (primary identifier), fallback to client_name for backward compatibility
+    company_identifier = meta.get('company_name', '') or meta.get('client_name', '')
     client_email = ""
     client_address = ""
-    if client_name:
+    if company_identifier:
         try:
-            client_data = fb_get(f"/clients/{client_name}") or {}
+            client_data = fb_get(f"/clients/{company_identifier}") or {}
             client_email = client_data.get("email", "")
             client_address = client_data.get("address", "")
         except Exception:
             pass
 
     bill_to_lines = []
-    if client_name:
-        bill_to_lines.append(client_name)
+    if company_identifier:
+        bill_to_lines.append(company_identifier)
     if client_email:
         bill_to_lines.append(client_email)
     if client_address:

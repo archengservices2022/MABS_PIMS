@@ -154,7 +154,7 @@
             {% for q in followups_due %}
             <tr onclick="location.href='{{ url_for('quote_detail', quote_id=q.firebase_id) }}'" style="cursor:pointer;">
               <td><span class="fw-bold text-teal">{{ q.get('job_number','—') }}</span></td>
-              <td>{{ (q.get('client_name','—') or '—')[:22] }}</td>
+              <td>{{ ((q.get('company_name') or q.get('client_name','—')) or '—')[:22] }}</td>
               <td>
                 <span class="{% if q.get('follow_up_date','') < today_str %}text-danger fw-semibold{% else %}text-muted{% endif %}">
                   {{ q.get('follow_up_date','—') | format_date }}
@@ -203,7 +203,7 @@
             {% for q in expiring_soon %}
             <tr onclick="location.href='{{ url_for('quote_detail', quote_id=q.firebase_id) }}'" style="cursor:pointer;">
               <td><span class="fw-bold text-teal">{{ q.get('job_number','—') }}</span></td>
-              <td>{{ (q.get('client_name','—') or '—')[:22] }}</td>
+              <td>{{ ((q.get('company_name') or q.get('client_name','—')) or '—')[:22] }}</td>
               <td>
                 {% set days_left = ((q.get('valid_until','') | string) | length) %}
                 <span class="fw-semibold" style="color:#D97706;">{{ q.get('valid_until','—') }}</span>
