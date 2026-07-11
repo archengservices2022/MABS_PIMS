@@ -43,7 +43,7 @@
         <div class="mb-3">
           <label class="form-label">Tags</label>
           <input type="text" name="tags" class="form-control"
-                 value="{{ (client.get('tags') or []) | join(', ') if client else '' }}"
+                 value="{% if client %}{% if client.get('tags') is string %}{{ client.get('tags','') }}{% else %}{{ (client.get('tags') or []) | join(', ') }}{% endif %}{% endif %}"
                  placeholder="Comma-separated tags, e.g. VIP, Contractor, Residential">
           <div class="form-text">Separate multiple tags with commas.</div>
         </div>
