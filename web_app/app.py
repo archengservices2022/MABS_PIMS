@@ -5189,8 +5189,8 @@ def _sync_client_changes(old_company_name, new_company_name, new_client_name):
                         inv_data["meta"] = meta
                         fb_update(f"/invoices/{inv_id}", inv_data)
 
-    # Update quotes by client_id
-    quotes = fb_get("/quotes") or {}
+    # Update quotes by client_id (stored in /job_forms)
+    quotes = fb_get("/job_forms") or {}
     if isinstance(quotes, dict):
         print(f"[SYNC] Checking {len(quotes)} quotes for client_id={client_id}", flush=True)
         for quote_id, quote_data in quotes.items():
@@ -5246,8 +5246,8 @@ def _sync_client_changes_by_name(old_company_name, new_company_name, new_client_
                         inv_data["meta"] = meta
                         fb_update(f"/invoices/{inv_id}", inv_data)
 
-    # Update quotes
-    quotes = fb_get("/quotes") or {}
+    # Update quotes (stored in /job_forms)
+    quotes = fb_get("/job_forms") or {}
     if isinstance(quotes, dict):
         for quote_id, quote_data in quotes.items():
             if isinstance(quote_data, dict):
