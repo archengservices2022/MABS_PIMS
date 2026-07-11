@@ -15,16 +15,16 @@
     <div class="card-panel">
       <form method="POST">
         <div class="mb-3">
-          <label class="form-label">Company Name <span class="text-danger">*</span></label>
+          <label class="form-label">Company Name</label>
           <input type="text" name="company_name" class="form-control"
-                 value="{{ client.get('company_name','') if client else '' }}"
-                 required>
+                 value="{{ client.get('company_name','') if client else '' }}">
         </div>
         <div class="mb-3">
           <label class="form-label">Client Name</label>
           <input type="text" name="client_name" class="form-control"
                  value="{{ client.get('client_name','') if client else '' }}"
                  placeholder="Client Name">
+          <div class="form-text">At least one of Company Name or Client Name is required.</div>
         </div>
         <div class="mb-3">
           <label class="form-label">Email</label>

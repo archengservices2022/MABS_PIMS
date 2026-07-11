@@ -5164,9 +5164,14 @@ def client_new():
         notes = request.form.get("notes", "").strip()
         tags = request.form.get("tags", "").strip()
 
-        if not company_name:
-            flash("Company name is required.", "danger")
+        # At least one of company_name or client_name must be provided
+        if not company_name and not client_name:
+            flash("Either Company Name or Client Name is required.", "danger")
             return render_template("client_form.html", client=None, is_new=True)
+
+        # If company_name is empty, use client_name as the company_name
+        if not company_name:
+            company_name = client_name
 
         # Use company_name as primary identifier
         primary_id = company_name
@@ -5231,9 +5236,14 @@ def client_edit(company_name):
         notes = request.form.get("notes", "").strip()
         tags = request.form.get("tags", "").strip()
 
-        if not company_name:
-            flash("Company name is required.", "danger")
+        # At least one of company_name or client_name must be provided
+        if not company_name and not new_client_name:
+            flash("Either Company Name or Client Name is required.", "danger")
             return render_template("client_form.html", client=data, is_new=False)
+
+        # If company_name is empty, use client_name as the company_name
+        if not company_name:
+            company_name = new_client_name
 
         # Use company_name as primary identifier
         new_primary_id = company_name
