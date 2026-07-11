@@ -2622,7 +2622,9 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
     stage      = stages[stage_idx]
     amount     = _safe_float(stage.get("amount", 0))
     proj_num   = project.get("project_number", "")
-    client     = project.get("client_name", "")
+    company_name = project.get("company_name") or project.get("client_name", "")
+    client_name = project.get("client_name", "")
+    client_id = project.get("client_id", "")
     now_str    = datetime.now(timezone.utc).isoformat()
     today      = datetime.now().strftime("%Y-%m-%d")
     due_date   = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
@@ -2635,7 +2637,9 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
             "invoice_number":      inv_num,
             "invoice_date":        today,
             "due_date":            due_date,
-            "client_name":         client,
+            "company_name":        company_name,
+            "client_name":         client_name,
+            "client_id":           client_id,
             "project_number":      proj_num,
             "status":              inv_status,
             "subtotal":            str(amount),
