@@ -557,6 +557,10 @@ def dashboard():
 
     cur_year_invs = [i for i in inv_list if isinstance(i, dict)
                      and (i.get("meta", {}).get("invoice_date", "") or "").startswith(cur_year)]
+    cur_year_projs = [p for p in proj_list if isinstance(p, dict)
+                      and (p.get("created_at", "") or "").startswith(cur_year)]
+    cur_year_quots = [q for q in quot_list if isinstance(q, dict)
+                      and (q.get("date", "") or q.get("created_at", "") or "").startswith(cur_year)]
 
     total_invoiced = sum(_safe_float(i.get("meta", {}).get("total", 0)) for i in cur_year_invs)
 
@@ -580,9 +584,10 @@ def dashboard():
         and (i.get("meta", {}).get("status", "") not in ("Cancelled",))
     )
 
-    active_projects = sum(1 for p in proj_list
+    # Current year counts only
+    active_projects = sum(1 for p in cur_year_projs
                           if isinstance(p, dict) and p.get("status", "") not in ("Completed", "invoiced_Fully paid", "Cancelled"))
-    open_quotes     = sum(1 for q in quot_list
+    open_quotes     = sum(1 for q in cur_year_quots
                           if isinstance(q, dict) and q.get("status", "Not Started") not in ("Completed", "Cancelled", "Invoiced"))
 
     # ── Recent invoices ────────────────────────────────────────────────────
@@ -619,27 +624,27 @@ def dashboard():
     chart_labels = [(now - relativedelta(months=i)).strftime("%b %Y") for i in range(5, -1, -1)]
     chart_data   = [monthly.get(m, 0) for m in chart_labels]
 
-    # ── Status distribution for donut charts ──────────────────────────────────
+    # ── Status distribution for donut charts — current year only ──────────────────────────────────
     inv_status_counts = {}
-    for i in inv_list:
+    for i in cur_year_invs:
         if isinstance(i, dict):
             st = i.get("meta", {}).get("status") or "Draft"
             inv_status_counts[st] = inv_status_counts.get(st, 0) + 1
 
     proj_status_counts = {}
-    for p in proj_list:
+    for p in cur_year_projs:
         if isinstance(p, dict):
             st = p.get("status") or "Not Started"
             proj_status_counts[st] = proj_status_counts.get(st, 0) + 1
 
-    # ── Alert counts ──────────────────────────────────────────────────────────
+    # ── Alert counts — current year only ──────────────────────────────────────
     today_str     = datetime.now().strftime("%Y-%m-%d")
     week_str      = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
     three_day_str = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
-    overdue_count = sum(1 for i in inv_list
+    overdue_count = sum(1 for i in cur_year_invs
                         if isinstance(i, dict) and i.get("meta", {}).get("status", "") == "Overdue")
     _QTERMINAL = {"Approved", "Converted", "Invoiced", "Rejected", "Cancelled", "Expired"}
-    expiring_count = sum(1 for q in quot_list
+    expiring_count = sum(1 for q in cur_year_quots
                          if isinstance(q, dict)
                          and q.get("status", "Not Started") not in _QTERMINAL
                          and q.get("valid_until", "")
@@ -687,7 +692,7 @@ def dashboard():
         return None  # Completed / Cancelled / invoiced_Fully paid — excluded
 
     pipeline = {"Not Started": [], "In Progress": [], "On Hold": []}
-    for _p in proj_list:
+    for _p in cur_year_projs:
         if not isinstance(_p, dict): continue
         _bucket = _pipeline_bucket(_p.get("status", "Not Started"))
         if _bucket:
@@ -696,16 +701,16 @@ def dashboard():
     # ── Urgent alerts (overdue + due within 3 days only) ─────────────────────
     three_day_str = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
 
-    # 1. Overdue invoices
+    # 1. Overdue invoices — current year only
     reminder_overdue_invoices = sorted(
-        [i for i in inv_list if isinstance(i, dict)
+        [i for i in cur_year_invs if isinstance(i, dict)
          and i.get("meta", {}).get("status", "") == "Overdue"],
         key=lambda x: x.get("meta", {}).get("due_date", "")
     )[:5]
 
-    # 2. Invoices due within 3 days (not yet overdue)
+    # 2. Invoices due within 3 days (not yet overdue) — current year only
     reminder_due_soon = sorted(
-        [i for i in inv_list if isinstance(i, dict)
+        [i for i in cur_year_invs if isinstance(i, dict)
          and i.get("meta", {}).get("status", "") not in ("Paid", "Overdue", "Cancelled")
          and i.get("meta", {}).get("due_date", "")
          and today_str <= i.get("meta", {}).get("due_date", "") <= three_day_str],
@@ -716,9 +721,9 @@ def dashboard():
     reminder_stalled  = []
     reminder_total = len(reminder_overdue_invoices) + len(reminder_due_soon)
 
-    # ── Projects ready to invoice (have Pending Invoice stages) ──────────────
+    # ── Projects ready to invoice (have Pending Invoice stages) — current year only ──────────────
     projects_ready_to_invoice = []
-    for p in proj_list:
+    for p in cur_year_projs:
         if not isinstance(p, dict):
             continue
         if p.get("status", "") in ("Completed", "invoiced_Fully paid", "Cancelled"):
@@ -758,12 +763,12 @@ def dashboard():
             elif ds[:7] == last_month_str:
                 last_month_collected += _safe_float(tp.get("amount", 0))
 
-    # ── Module overview stats ─────────────────────────────────────────────────
+    # ── Module overview stats — current year only ─────────────────────────────────────────────────
     _QTERMINAL_ALL = {"Approved", "Converted", "Invoiced", "Rejected", "Cancelled", "Expired"}
     quot_status_counts: Dict[str, int] = {}
     quotes_pipeline_value = 0.0
     quotes_converted = 0
-    for _q in quot_list:
+    for _q in cur_year_quots:
         if not _q or not isinstance(_q, dict): continue
         _st = _q.get("status", "Not Started")
         quot_status_counts[_st] = quot_status_counts.get(_st, 0) + 1
@@ -772,19 +777,19 @@ def dashboard():
         # Count as converted if: status is Converted/Invoiced OR has linked_project_id (was converted)
         if _st in {"Converted", "Invoiced"} or _q.get("linked_project_id"):
             quotes_converted += 1
-    _total_quotes = len(quot_list)
+    _total_quotes = len(cur_year_quots)
     quotes_conversion_rate = int(quotes_converted / _total_quotes * 100) if _total_quotes > 0 else 0
 
-    proj_contract_total  = sum(_safe_float(p.get("contract_value", 0)) for p in proj_list if isinstance(p, dict))
+    proj_contract_total  = sum(_safe_float(p.get("contract_value", 0)) for p in cur_year_projs if isinstance(p, dict))
     proj_contract_active = sum(
-        _safe_float(p.get("contract_value", 0)) for p in proj_list
+        _safe_float(p.get("contract_value", 0)) for p in cur_year_projs
         if isinstance(p, dict) and p.get("status", "") not in ("Completed", "invoiced_Fully paid", "Cancelled")
     )
-    proj_completed_count = sum(1 for p in proj_list if isinstance(p, dict) and p.get("status", "") in ("Completed", "invoiced_Fully paid"))
+    proj_completed_count = sum(1 for p in cur_year_projs if isinstance(p, dict) and p.get("status", "") in ("Completed", "invoiced_Fully paid"))
 
     inv_overdue_amt = sum(
         _safe_float(i.get("meta", {}).get("total", 0)) - _safe_float(i.get("meta", {}).get("amount_paid", 0))
-        for i in inv_list if isinstance(i, dict) and i.get("meta", {}).get("status", "") == "Overdue"
+        for i in cur_year_invs if isinstance(i, dict) and i.get("meta", {}).get("status", "") == "Overdue"
     )
 
     # ── Team status (Employees module) ─────────────────────────────────────
