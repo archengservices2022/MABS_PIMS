@@ -187,6 +187,22 @@
 
 {% block scripts %}
 <script>
+const clientTabParam = "{{ active_tab }}";
+const clientAllTabs  = ["all-clients", "new-client"];
+const clientTarget   = clientAllTabs.includes(clientTabParam) ? clientTabParam : "all-clients";
+const clientEl = document.querySelector('[href="#tab-' + clientTarget + '"]');
+if (clientEl) new bootstrap.Tab(clientEl).show();
+
+document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
+  el.addEventListener('shown.bs.tab', e => {
+    const id = e.target.getAttribute('href').replace('#tab-', '');
+    const url = new URL(window.location);
+    url.searchParams.set('tab', id);
+    window.history.replaceState({}, '', url);
+  });
+});
+
+// Validate at least one of company_name or client_name is filled
 document.querySelectorAll('form').forEach(form => {
   form.addEventListener('submit', function(e) {
     const companyName = form.querySelector('input[name="company_name"]');
@@ -202,25 +218,6 @@ document.querySelectorAll('form').forEach(form => {
         return false;
       }
     }
-  });
-});
-</script>
-{% endblock %}
-
-{% block scripts %}
-<script>
-const clientTabParam = "{{ active_tab }}";
-const clientAllTabs  = ["all-clients", "new-client"];
-const clientTarget   = clientAllTabs.includes(clientTabParam) ? clientTabParam : "all-clients";
-const clientEl = document.querySelector('[href="#tab-' + clientTarget + '"]');
-if (clientEl) new bootstrap.Tab(clientEl).show();
-
-document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
-  el.addEventListener('shown.bs.tab', e => {
-    const id = e.target.getAttribute('href').replace('#tab-', '');
-    const url = new URL(window.location);
-    url.searchParams.set('tab', id);
-    window.history.replaceState({}, '', url);
   });
 });
 </script>
