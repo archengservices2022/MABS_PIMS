@@ -83,7 +83,7 @@
             <select name="client_name" id="clientSelect" class="form-select" onchange="renderClientProjects()">
               <option value="">-- Select Client --</option>
               {% for c in clients %}
-              <option value="{{ c }}" {{ 'selected' if (meta.get('company_name') or meta.get('client_name') or prefill_client|default('')) == c }}>{{ c }}</option>
+              <option value="{{ c }}" {{ 'selected' if (prefill_client or meta.get('company_name') or meta.get('client_name')) == c }}>{{ c }}</option>
               {% endfor %}
             </select>
           </div>
