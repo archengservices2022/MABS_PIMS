@@ -5956,7 +5956,7 @@ def payroll_export_csv():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    headers = ["Employee", "Date", "Salary", "Region", "Commission", "Commission Status", "Total", "Notes", "Status"]
+    headers = ["Employee", "Date", "Amount", "Region", "Commission", "Commission Status", "Notes", "Status"]
     w.writerow(headers)
 
     from collections import defaultdict
@@ -5980,18 +5980,15 @@ def payroll_export_csv():
         for month in sorted(grouped[year].keys()):
             for day in sorted(grouped[year][month].keys()):
                 for sal in grouped[year][month][day]:
-                    salary_amt = _safe_float(sal.get("amount", 0))
                     commission = _safe_float(sal.get("commission_amount", 0))
-                    total = salary_amt + commission
                     commission_str = f"{commission:.2f}" if commission > 0 else ""
                     w.writerow([
                         sal.get("employee_name", ""),
                         fmt_date(sal.get("date", "")),
-                        f"{salary_amt:.2f}",
+                        f"{_safe_float(sal.get('amount', 0)):.2f}",
                         sal.get("region", ""),
                         commission_str,
                         sal.get("commission_status", "") if commission > 0 else "",
-                        f"{total:.2f}",
                         sal.get("notes", ""),
                         sal.get("salary_status", "")
                     ])
@@ -6041,7 +6038,7 @@ def payroll_export_excel():
     ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     co = company_info()
-    ws.merge_cells('A1:I1')
+    ws.merge_cells('A1:H1')
     title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} - Payroll Report")
     title_cell.font = title_font
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -6054,7 +6051,7 @@ def payroll_export_excel():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    headers = ["Employee", "Date", "Salary", "Region", "Commission", "Commission Status", "Total", "Notes", "Status"]
+    headers = ["Employee", "Date", "Amount", "Region", "Commission", "Commission Status", "Notes", "Status"]
     header_row = 2
     for col, h in enumerate(headers, 1):
         cell = ws.cell(row=header_row, column=col, value=h)
@@ -6084,25 +6081,22 @@ def payroll_export_excel():
         for month in sorted(grouped[year].keys()):
             for day in sorted(grouped[year][month].keys()):
                 for sal in grouped[year][month][day]:
-                    salary_amt = _safe_float(sal.get("amount", 0))
                     commission = _safe_float(sal.get("commission_amount", 0))
-                    total = salary_amt + commission
                     row = [sal.get("employee_name", ""), fmt_excel_date(sal.get("date", "")),
-                           salary_amt, sal.get("region", ""),
+                           _safe_float(sal.get("amount", 0)), sal.get("region", ""),
                            commission if commission > 0 else "",
                            sal.get("commission_status", "") if commission > 0 else "",
-                           total,
                            sal.get("notes", ""), sal.get("salary_status", "")]
                     for ci, val in enumerate(row, 1):
                         cell = ws.cell(row=ri, column=ci, value=val)
                         if ri % 2 == 0:
                             cell.fill = alt_fill
-                        if ci in (3, 5, 7):  # Salary, Commission, and Total columns
+                        if ci == 3 or ci == 5:  # Amount and Commission columns
                             cell.number_format = '"$"#,##0.00'
                         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
                     ri += 1
 
-    col_widths = [25, 14, 14, 18, 14, 18, 14, 30, 14]
+    col_widths = [25, 14, 14, 18, 14, 18, 30, 14]
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
 
@@ -6174,7 +6168,7 @@ def payroll_export_pdf():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    hdrs = ["Employee", "Date", "Salary", "Region", "Commission", "Commission Status", "Total", "Notes", "Status"]
+    hdrs = ["Employee", "Date", "Amount", "Region", "Commission", "Commission Status", "Notes", "Status"]
     data = [hdrs]
 
     cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
@@ -6200,22 +6194,19 @@ def payroll_export_pdf():
         for month in sorted(grouped[year].keys()):
             for day in sorted(grouped[year][month].keys()):
                 for sal in grouped[year][month][day]:
-                    salary_amt = _safe_float(sal.get("amount", 0))
                     commission = _safe_float(sal.get("commission_amount", 0))
-                    total = salary_amt + commission
                     data.append([
                         Paragraph(sal.get("employee_name", "—"), cell_style),
                         Paragraph(fmt_pdf_date(sal.get("date", "")), cell_style),
-                        Paragraph(f"${salary_amt:,.2f}", cell_style),
+                        Paragraph(f"${_safe_float(sal.get('amount', 0)):,.2f}", cell_style),
                         Paragraph(sal.get("region", "—"), cell_style),
                         Paragraph(f"${commission:,.2f}" if commission > 0 else "—", cell_style),
                         Paragraph(sal.get("commission_status", "—") if commission > 0 else "—", cell_style),
-                        Paragraph(f"${total:,.2f}", cell_style),
                         Paragraph(sal.get("notes", "—"), cell_style),
                         Paragraph(sal.get("salary_status", "—"), cell_style),
                     ])
 
-    cw = [1.5*inch, 0.85*inch, 0.85*inch, 0.9*inch, 0.9*inch, 1.1*inch, 0.85*inch, 1.2*inch, 0.85*inch]
+    cw = [1.6*inch, 0.9*inch, 0.9*inch, 1.0*inch, 1.0*inch, 1.2*inch, 1.3*inch, 0.9*inch]
     tbl = Table(data, colWidths=cw, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
