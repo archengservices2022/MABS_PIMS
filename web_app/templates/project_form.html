@@ -10,7 +10,7 @@
   <h5 class="mb-0">{{ 'Create New Project' if is_new else 'Edit Project' }}</h5>
 </div>
 
-<form method="POST" id="projectForm" onsubmit="captureServiceCosts(); return captureUpdatedStages(event)">
+<form method="POST" id="projectForm" onsubmit="return validateProjectForm(event)">
   <input type="hidden" name="source_quote_id" value="{{ prefill_quote_id|default('') }}">
   <div class="row g-3">
     <div class="col-lg-8">
@@ -53,11 +53,12 @@
           </div>
           <div class="col-md-6">
             <label class="form-label">Client <span class="text-danger">*</span></label>
+            {% set pqd = prefill_quote_data|default({}, boolean=False) %}
             <select name="client_name" class="form-select">
               <option value="">-- Select Client --</option>
               {% for c in clients %}
               <option value="{{ c }}"
-                {{ 'selected' if project and (project.get('client_name') == c or project.get('company') == c) }}>{{ c }}</option>
+                {{ 'selected' if (project and (project.get('company_name') == c or project.get('client_name') == c or project.get('company') == c)) or (pqd.get('company_name') == c) }}>{{ c }}</option>
               {% endfor %}
             </select>
           </div>
@@ -97,7 +98,7 @@
             </select>
           </div>
           <div class="col-12">
-            <label class="form-label">Service Types <span class="text-muted small fw-normal">— select all that apply</span></label>
+            <label class="form-label">Service Types <span class="text-danger">*</span> <span class="text-muted small fw-normal">— select all that apply</span></label>
             {% set all_services = ['Structural','Electrical','Civil','Mechanical','Plumbing','HVAC','Fire Protection','Geotechnical','Environmental','Other'] %}
             {% set selected_svcs = (project.get('service_types') or []) if project else [] %}
             {% set ns = namespace(other_val='', other_checked=false) %}
@@ -245,7 +246,7 @@
       <div class="card-panel mb-3">
         <h6 class="section-heading">Financials</h6>
         <div class="mb-2">
-          <label class="form-label">Contract Value ($)</label>
+          <label class="form-label">Contract Value ($) <span class="text-danger">*</span></label>
           {% set existing_stages = project.get('payment_stages') if project else None %}
           {% set has_invoiced = existing_stages and (existing_stages|selectattr('status', 'in', ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'])|list|length > 0) %}
           {% set contract_val = project.get('contract_value','0') if project else '0' %}
@@ -253,9 +254,9 @@
           {% if has_invoiced %}<input type="hidden" name="contract_value" value="{{ contract_val }}">{% endif %}
           <input type="number" id="contractValue" name="contract_value" class="form-control"
                  value="{{ contract_val }}"
-                 min="0" step="0.01" oninput="(function() { try { handleContractValueChange(); } catch(e) { console.error('handleContractValueChange error:', e); } updatePlanPreview(); })();"
+                 min="0.01" step="0.01" oninput="(function() { try { handleContractValueChange(); } catch(e) { console.error('handleContractValueChange error:', e); } updatePlanPreview(); })();"
                  data-original-value="{{ contract_val|float }}"
-                 {% if has_invoiced %}disabled title="Cannot edit: payment stages are invoiced"{% endif %}>
+                 {% if has_invoiced %}disabled title="Cannot edit: payment stages are invoiced"{% else %}{% if is_new %}required{% endif %}{% endif %}>
           {% if has_invoiced %}
           <small class="text-muted d-block mt-1"><i class="bi bi-lock me-1"></i>Contract value is locked because payment stages are invoiced.</small>
           {% endif %}
@@ -933,6 +934,34 @@ function toggleServiceType(cb, boxId) {
     removeServiceCostRow(cb.value);
   }
   recalcServiceCosts();
+}
+
+// ── Form Validation ────────────────────────────────────────────────────────────
+function validateProjectForm(event) {
+  // Check if at least one service type is selected
+  const serviceCheckboxes = document.querySelectorAll('input[name="service_types[]"]');
+  const anyChecked = Array.from(serviceCheckboxes).some(cb => cb.checked);
+
+  if (!anyChecked) {
+    event.preventDefault();
+    alert('❌ Please select at least one Service Type');
+    return false;
+  }
+
+  // Check if contract value is greater than 0
+  const contractValueInput = document.getElementById('contractValue');
+  const contractValue = parseFloat(contractValueInput.value);
+
+  if (!contractValueInput.disabled && (contractValue === 0 || isNaN(contractValue))) {
+    event.preventDefault();
+    alert('❌ Contract Value must be greater than $0.00');
+    contractValueInput.focus();
+    return false;
+  }
+
+  // Proceed with normal form submission functions
+  captureServiceCosts();
+  return captureUpdatedStages(event);
 }
 
 // ── Service Cost Breakdown (feeds Contract Value) ────────────────────────────

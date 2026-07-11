@@ -20,7 +20,7 @@
   <div class="d-flex gap-2 flex-wrap">
     {% if 'invoicing' in allowed_pages %}
     {% if has_pending_stage %}
-    <a href="{{ url_for('invoice_new') }}?project={{ project.get('project_number','') }}&client={{ project.get('client_name','') }}&stage_idx={{ next_stage_idx }}&stage_name={{ next_stage_name|urlencode }}&stage_amount={{ next_stage_amount }}"
+    <a href="{{ url_for('invoice_new') }}?project={{ project.get('project_number','') }}&client={{ (project.get('company_name') or project.get('client_name','')) }}&stage_idx={{ next_stage_idx }}&stage_name={{ next_stage_name|urlencode }}&stage_amount={{ next_stage_amount }}"
        class="btn btn-sm btn-teal"
        data-bs-toggle="tooltip" data-bs-placement="bottom"
        title="Create invoice for next payment stage">
@@ -108,7 +108,7 @@
         <div class="card-panel mb-3">
           <h6 class="section-heading">Project Info</h6>
           <div class="row g-2">
-            <div class="col-sm-4"><div class="info-label">Client</div><div class="info-value">{{ project.get('client_name') or project.get('company','—') }}</div></div>
+            <div class="col-sm-4"><div class="info-label">Client</div><div class="info-value">{{ project.get('company_name') or project.get('company') or project.get('client_name','—') }}</div></div>
             <div class="col-sm-4"><div class="info-label">Start Date</div><div class="info-value">{{ project.get('start_date','—') | format_date }}</div></div>
             <div class="col-sm-4"><div class="info-label">End Date</div><div class="info-value">{{ (project.get('end_date','—') | format_date) if project.get('end_date') else '—' }}</div></div>
             <div class="col-sm-4"><div class="info-label">Sales Person</div><div class="info-value">{{ project.get('sales') or project.get('assigned_to','—') or '—' }}</div></div>
@@ -323,7 +323,7 @@
             {{ source_quote.get('job_number','') }}
           </a>
           <div class="text-muted small">{{ source_quote.get('project_name','') }}</div>
-          <div class="text-muted small">Client: {{ source_quote.get('client_name','') }}</div>
+          <div class="text-muted small">Client: {{ source_quote.get('company_name') or source_quote.get('client_name','') }}</div>
           {% set _sq_raw = source_quote.get('status','') %}
           {% set _sq_display = 'Won' if _sq_raw in ('Invoiced','Converted') else _sq_raw %}
           {% set _sq_cls = 'paid' if _sq_raw in ('Invoiced','Converted') else _sq_raw|lower|replace(' ','-') %}
@@ -960,7 +960,7 @@
         <div class="p-3 bg-light rounded mb-3">
           <div class="fw-bold text-teal">{{ project.get('project_number','') }}</div>
           <div>{{ project.get('project_name','') }}</div>
-          <div class="text-muted small">Client: {{ project.get('client_name','—') }}</div>
+          <div class="text-muted small">Client: {{ project.get('company_name') or project.get('client_name','—') }}</div>
           <div class="text-muted small">Contract: ${{ "{:,.0f}".format(project.get('contract_value',0)|float) }}</div>
         </div>
         {% if project_invoices %}

@@ -2102,6 +2102,7 @@ def project_new():
     return render_template("project_form.html", project=None, clients=clients,
                            sales_people=sales_people, prefill_quote=prefill_quote,
                            prefill_quote_id=prefill_quote_id or "",
+                           prefill_quote_data=prefill_quote_data or {},
                            is_new=True, next_proj_num=next_proj_num)
 
 @app.route("/projects/<project_id>", methods=["GET"])
@@ -2684,7 +2685,9 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
     stage      = stages[stage_idx]
     amount     = _safe_float(stage.get("amount", 0))
     proj_num   = project.get("project_number", "")
-    client     = project.get("client_name", "")
+    company_name = project.get("company_name") or project.get("client_name", "")
+    client_name = project.get("client_name", "")
+    client_id = project.get("client_id", "")
     now_str    = datetime.now(timezone.utc).isoformat()
     today      = datetime.now().strftime("%Y-%m-%d")
     due_date   = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
@@ -2697,7 +2700,9 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
             "invoice_number":      inv_num,
             "invoice_date":        today,
             "due_date":            due_date,
-            "client_name":         client,
+            "company_name":        company_name,
+            "client_name":         client_name,
+            "client_id":           client_id,
             "project_number":      proj_num,
             "status":              inv_status,
             "subtotal":            str(amount),
@@ -3437,7 +3442,9 @@ def create_bulk_invoices():
 
             proj_num = proj_data.get("project_number", "")
             proj_name = proj_data.get("project_name", "")
-            client_name = proj_data.get("client_name", "") or proj_data.get("company", "")
+            company_name = proj_data.get("company_name") or proj_data.get("client_name", "") or proj_data.get("company", "")
+            client_name = proj_data.get("client_name", "")
+            client_id = proj_data.get("client_id", "")
             stages = proj_data.get("payment_stages", [])
 
             if not isinstance(stages, list) or not stages:
@@ -3473,7 +3480,9 @@ def create_bulk_invoices():
                 "meta": {
                     "invoice_number": _next_invoice_number(),
                     "project_number": proj_num,
+                    "company_name": company_name,
                     "client_name": client_name,
+                    "client_id": client_id,
                     "invoice_date": datetime.now().strftime("%Y-%m-%d"),
                     "due_date": (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
                     "status": "Draft",
@@ -3899,11 +3908,13 @@ def invoice_new():
         all_projects_data = fb_get("/projects") or {}
         raw_invoices = fb_get("/invoices") or {}
 
-        # Auto-populate Project Number field if only one project selected
-        if len(project_ids) == 1 and project_ids[0] in all_projects_data:
+        # Auto-populate Project Number and Client from first project
+        if len(project_ids) >= 1 and project_ids[0] in all_projects_data:
             single_proj_data = all_projects_data[project_ids[0]]
             if isinstance(single_proj_data, dict):
                 prefill_proj = single_proj_data.get("project_number", "")
+                # Auto-fill client from first project's company_name
+                prefill_client = single_proj_data.get("company_name") or single_proj_data.get("client_name", "")
 
         for proj_id in project_ids:
             if proj_id in all_projects_data:
@@ -5402,6 +5413,90 @@ def _sync_client_changes_by_name(old_company_name, new_company_name, new_client_
                     proj_data["client_name"] = new_client_name
                     fb_update(f"/projects/{proj_id}", proj_data)
 
+def _sync_user_display_name(old_name, new_name):
+    """Sync display name changes across all records: timesheets, expenses, approvals, invoices, etc."""
+    print(f"[SYNC_USER] Syncing display name: '{old_name}' → '{new_name}'", flush=True)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # Update Timesheets
+    timesheets = fb_get("/timesheets") or {}
+    if isinstance(timesheets, dict):
+        for ts_id, ts_data in timesheets.items():
+            if isinstance(ts_data, dict):
+                if ts_data.get("employee_name", "") == old_name:
+                    ts_data["employee_name"] = new_name
+                    ts_data["updated_at"] = now_iso
+                    fb_update(f"/timesheets/{ts_id}", ts_data)
+                    print(f"[SYNC_USER] Updated timesheet {ts_id}", flush=True)
+
+    # Update Time Off / Vacation requests
+    time_off = fb_get("/time_off") or {}
+    if isinstance(time_off, dict):
+        for to_id, to_data in time_off.items():
+            if isinstance(to_data, dict):
+                if to_data.get("employee_name", "") == old_name:
+                    to_data["employee_name"] = new_name
+                    to_data["updated_at"] = now_iso
+                    fb_update(f"/time_off/{to_id}", to_data)
+                    print(f"[SYNC_USER] Updated time_off {to_id}", flush=True)
+
+    # Update Expenses
+    expenses = fb_get("/expenses") or {}
+    if isinstance(expenses, dict):
+        for exp_id, exp_data in expenses.items():
+            if isinstance(exp_data, dict):
+                if exp_data.get("employee_name", "") == old_name or exp_data.get("created_by", "") == old_name:
+                    if exp_data.get("employee_name", "") == old_name:
+                        exp_data["employee_name"] = new_name
+                    if exp_data.get("created_by", "") == old_name:
+                        exp_data["created_by"] = new_name
+                    exp_data["updated_at"] = now_iso
+                    fb_update(f"/expenses/{exp_id}", exp_data)
+                    print(f"[SYNC_USER] Updated expense {exp_id}", flush=True)
+
+    # Update Pending Approvals
+    approvals = fb_get("/pending_approvals") or {}
+    if isinstance(approvals, dict):
+        for app_id, app_data in approvals.items():
+            if isinstance(app_data, dict):
+                if app_data.get("employee_name", "") == old_name or app_data.get("submitted_by", "") == old_name:
+                    if app_data.get("employee_name", "") == old_name:
+                        app_data["employee_name"] = new_name
+                    if app_data.get("submitted_by", "") == old_name:
+                        app_data["submitted_by"] = new_name
+                    app_data["updated_at"] = now_iso
+                    fb_update(f"/pending_approvals/{app_id}", app_data)
+                    print(f"[SYNC_USER] Updated approval {app_id}", flush=True)
+
+    # Update Invoices (created_by field)
+    invoices = fb_get("/invoices") or {}
+    if isinstance(invoices, dict):
+        for inv_id, inv_data in invoices.items():
+            if isinstance(inv_data, dict):
+                if inv_data.get("created_by", "") == old_name:
+                    inv_data["created_by"] = new_name
+                    meta = inv_data.get("meta", {})
+                    if isinstance(meta, dict):
+                        meta["updated_by"] = new_name
+                        inv_data["meta"] = meta
+                    inv_data["updated_at"] = now_iso
+                    fb_update(f"/invoices/{inv_id}", inv_data)
+                    print(f"[SYNC_USER] Updated invoice {inv_id}", flush=True)
+
+    # Update Payroll records
+    payroll = fb_get("/payroll") or {}
+    if isinstance(payroll, dict):
+        for pay_id, pay_data in payroll.items():
+            if isinstance(pay_data, dict):
+                if pay_data.get("employee_name", "") == old_name:
+                    pay_data["employee_name"] = new_name
+                    pay_data["updated_at"] = now_iso
+                    fb_update(f"/payroll/{pay_id}", pay_data)
+                    print(f"[SYNC_USER] Updated payroll {pay_id}", flush=True)
+
+    print(f"[SYNC_USER] Completed syncing '{old_name}' → '{new_name}'", flush=True)
+
 @app.route("/clients/new", methods=["GET", "POST"])
 @role_required("invoicing")
 def client_new():
@@ -5418,6 +5513,9 @@ def client_new():
         if not company_name and not client_name:
             flash("Either Company Name or Client Name is required.", "danger")
             return render_template("client_form.html", client=None, is_new=True)
+
+        # Track if company_name was explicitly provided
+        has_explicit_company = bool(company_name)
 
         # If company_name is empty, use client_name as the company_name
         if not company_name:
@@ -5465,6 +5563,7 @@ def client_new():
             "client_id":    client_id,
             "company_name": company_name,
             "client_name":  client_name,
+            "has_explicit_company": has_explicit_company,
             "email":        email,
             "phone":        phone,
             "address":      request.form.get("address", ""),
@@ -5496,6 +5595,9 @@ def client_edit(company_name):
         if not company_name and not new_client_name:
             flash("Either Company Name or Client Name is required.", "danger")
             return render_template("client_form.html", client=data, is_new=False)
+
+        # Track if company_name was explicitly provided during edit
+        has_explicit_company = bool(company_name)
 
         # If company_name is empty, use client_name as the company_name
         if not company_name:
@@ -5545,6 +5647,7 @@ def client_edit(company_name):
             "client_id":    client_id,
             "company_name": company_name,
             "client_name":  new_client_name,
+            "has_explicit_company": has_explicit_company,
             "email":        email,
             "phone":        phone,
             "address":      request.form.get("address", ""),
@@ -5567,6 +5670,8 @@ def client_edit(company_name):
 @app.route("/clients/<company_name>/delete", methods=["POST"])
 @role_required("invoicing")
 def delete_client(company_name):
+    # Only delete the client record - do NOT cascade delete quotes/projects/invoices
+    # They keep the client information (company_name, client_name, client_id) for historical reference
     fb_delete(f"/clients/{company_name}")
     flash(f"Client '{company_name}' deleted.", "success")
     return redirect(url_for("clients"))
@@ -5589,15 +5694,21 @@ def client_statement(company_name):
     co = company_info()
     client_data = fb_get(f"/clients/{company_name}") or {}
     client_name = client_data.get("client_name", "")
+    client_id = client_data.get("client_id", "")
 
-    # Load all invoices for this client
+    # Load all invoices for this client (by client_id, company_name, or client_name for legacy)
     raw_inv = fb_get("/invoices") or {}
     inv_list = []
     if isinstance(raw_inv, dict):
         for iid, idata in raw_inv.items():
-            if isinstance(idata, dict) and idata.get("meta", {}).get("client_name", "") == client_name:
-                idata["firebase_id"] = iid
-                inv_list.append(idata)
+            if isinstance(idata, dict):
+                meta = idata.get("meta", {})
+                # Match by client_id first (most reliable), then company_name, then client_name (legacy)
+                if (client_id and meta.get("client_id") == client_id) or \
+                   (meta.get("company_name", "") == company_name) or \
+                   (meta.get("client_name", "") == client_name):
+                    idata["firebase_id"] = iid
+                    inv_list.append(idata)
     inv_list.sort(key=lambda x: x.get("meta", {}).get("invoice_date", ""))
 
     total_invoiced = sum(_safe_float(i.get("meta",{}).get("total", 0)) for i in inv_list)
@@ -5638,9 +5749,12 @@ def client_statement(company_name):
 
     # Client info
     elems.append(Paragraph("BILL TO", lbl))
-    elems.append(Paragraph(f"<b>{client_name}</b>", val))
-    if client_data.get("company"):
-        elems.append(Paragraph(client_data["company"], sm))
+    has_explicit_company = client_data.get("has_explicit_company", False)
+    if has_explicit_company and client_data.get("company_name"):
+        elems.append(Paragraph(f"<b>{client_data.get('company_name', '')}</b>", val))
+        elems.append(Paragraph(client_name, sm))
+    else:
+        elems.append(Paragraph(f"<b>{client_name}</b>", val))
     if client_data.get("email"):
         elems.append(Paragraph(client_data["email"], sm))
     if client_data.get("phone"):
@@ -9523,14 +9637,26 @@ def user_pages_update(uid):
 @app.route("/api/users/<uid>/details", methods=["PATCH"])
 @role_required("settings")
 def user_details_update(uid):
-    """Update employee profile fields (title, region, rates) from Settings or Directory."""
+    """Update employee profile fields (title, region, rates, display_name) from Settings or Directory."""
     if normalize_role(session.get("user_role", "")) != "admin":
         return jsonify({"error": "Admin access required"}), 403
     data = request.get_json() or {}
     updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
-    for field in ("username", "title", "region", "employee_type"):
+
+    # Track if display_name changed for syncing
+    old_display_name = None
+    new_display_name = None
+
+    for field in ("username", "title", "region", "employee_type", "display_name"):
         if field in data:
-            updates[field] = str(data[field]).strip()
+            value = str(data[field]).strip()
+            updates[field] = value
+            if field == "display_name":
+                # Get old display name before updating
+                user_data = fb_get(f"/users/{uid}") or {}
+                old_display_name = user_data.get("display_name") or user_data.get("username", "")
+                new_display_name = value
+
     for field in ("hourly_rate", "monthly_salary", "commission_rate"):
         if field in data:
             updates[field] = _safe_float(data[field])
@@ -9541,7 +9667,13 @@ def user_details_update(uid):
             updates["role"] = r
             # Auto-reset custom_pages to role default when role changes
             updates["custom_pages"] = None
+
     fb_update(f"/users/{uid}", updates)
+
+    # Sync display name changes across all records
+    if new_display_name and old_display_name and old_display_name != new_display_name:
+        _sync_user_display_name(old_display_name, new_display_name)
+
     return jsonify({"ok": True})
 
 @app.route("/api/commission/mark-paid", methods=["POST"])
@@ -11788,7 +11920,8 @@ def _parse_invoice_form(form) -> dict:
                               if p})
 
     # Get client_id from selected company_name
-    company_name = form.get("company_name", "")  # This comes from the form's company_name field
+    # The form field is "client_name" but its value is the company_name (client key)
+    company_name = form.get("client_name", "").strip()
     client_id = ""
     client_data = {}
     if company_name:
@@ -11916,7 +12049,9 @@ def quote_to_invoice(quote_id):
             "invoice_number": inv_num,
             "invoice_date":   datetime.now().strftime("%Y-%m-%d"),
             "due_date":       (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
+            "company_name":   quote.get("company_name", ""),
             "client_name":    quote.get("client_name", ""),
+            "client_id":      quote.get("client_id", ""),
             "project_number": linked_proj_num,
             "status":         "Draft",
             "subtotal":       str(quote.get("subtotal", "0")),
@@ -14397,7 +14532,9 @@ def quick_invoice_stage(project_id, stage_idx):
 
         # Get project details
         proj_num = project.get("project_number", "")
+        company_name = project.get("company_name") or project.get("client_name", "")
         client_name = project.get("client_name", "")
+        client_id = project.get("client_id", "")
         stage_name = stage.get("name", f"Stage {stage_idx + 1}")
         stage_amount = _safe_float(stage.get("amount", 0))
 
@@ -14406,7 +14543,9 @@ def quick_invoice_stage(project_id, stage_idx):
             "meta": {
                 "invoice_number": _next_invoice_number(),
                 "project_number": proj_num,
+                "company_name": company_name,
                 "client_name": client_name,
+                "client_id": client_id,
                 "invoice_date": datetime.now().strftime("%Y-%m-%d"),
                 "due_date": (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
                 "created_at": datetime.now(timezone.utc).isoformat(),

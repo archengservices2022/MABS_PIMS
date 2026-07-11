@@ -82,11 +82,13 @@
             <tr>
               <td>
                 <div class="d-flex align-items-center gap-2">
-                  <div class="inv-avatar">{{ c.get('company_name','?')[0]|upper }}</div>
-                  <strong>{{ c.get('company_name','—') }}</strong>
+                  {% set has_separate_company = c.get('company_name') and c.get('company_name') != c.get('client_name') %}
+                  {% set company_display = c.get('company_name') if has_separate_company else '—' %}
+                  <div class="inv-avatar">{{ company_display[0]|upper if company_display != '—' else '?' }}</div>
+                  <strong>{{ company_display }}</strong>
                 </div>
               </td>
-              <td>{{ c.get('client_name','—') }}</td>
+              <td>{{ c.get('client_name') }}</td>
               <td>{{ c.get('email','—') }}</td>
               <td>{{ c.get('phone','—') }}</td>
               <td>
