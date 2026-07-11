@@ -2039,6 +2039,7 @@ def project_new():
     return render_template("project_form.html", project=None, clients=clients,
                            sales_people=sales_people, prefill_quote=prefill_quote,
                            prefill_quote_id=prefill_quote_id or "",
+                           prefill_quote_data=prefill_quote_data or {},
                            is_new=True, next_proj_num=next_proj_num)
 
 @app.route("/projects/<project_id>", methods=["GET"])
