@@ -5132,9 +5132,10 @@ def clients():
     raw = fb_get("/clients") or {}
     items = []
     if isinstance(raw, dict):
-        for name, cdata in raw.items():
+        for company_name, cdata in raw.items():
             if cdata and isinstance(cdata, dict):
-                cdata["client_name"] = name
+                # Ensure company_name is set from the Firebase key (primary identifier)
+                cdata["company_name"] = company_name
                 items.append(cdata)
     items.sort(key=lambda x: x.get("client_name", "").lower())
     search = request.args.get("q", "").strip().lower()
@@ -5143,7 +5144,7 @@ def clients():
     all_tags = sorted({t for i in items for t in (i.get("tags") or []) if t})
     if search:
         items = [i for i in items if search in (
-            (i.get("client_name","") + " " + i.get("company","") + " " +
+            (i.get("client_name","") + " " + i.get("company_name","") + " " +
              i.get("email","") + " " + i.get("phone",""))).lower()]
     if tag_filter:
         items = [i for i in items if tag_filter in (i.get("tags") or [])]
