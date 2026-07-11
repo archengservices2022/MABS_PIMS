@@ -69,8 +69,8 @@
         <table class="table table-hover mb-0 align-middle">
           <thead>
             <tr>
+              <th>Company Name</th>
               <th>Client Name</th>
-              <th>Company</th>
               <th>Email</th>
               <th>Phone</th>
               <th>Tags</th>
@@ -82,11 +82,11 @@
             <tr>
               <td>
                 <div class="d-flex align-items-center gap-2">
-                  <div class="inv-avatar">{{ c.get('client_name','?')[0]|upper }}</div>
-                  <strong>{{ c.get('client_name','—') }}</strong>
+                  <div class="inv-avatar">{{ c.get('company_name','?')[0]|upper }}</div>
+                  <strong>{{ c.get('company_name','—') }}</strong>
                 </div>
               </td>
-              <td>{{ c.get('company','—') }}</td>
+              <td>{{ c.get('client_name','—') }}</td>
               <td>{{ c.get('email','—') }}</td>
               <td>{{ c.get('phone','—') }}</td>
               <td>
