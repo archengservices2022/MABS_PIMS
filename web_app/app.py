@@ -6689,11 +6689,11 @@ def financial():
                         if _extract_year_from_date(i.get("meta", {}).get("invoice_date", "")) == stat_card_year]
 
     total_invoiced    = sum(_safe_float(i.get("meta", {}).get("total", 0)) for i in inv_list_filtered)
-    total_paid        = sum(_safe_float(i.get("meta", {}).get("amount_paid", 0)) for i in inv_list_filtered)
-    # Include tax paid in total paid
+    # For Overview KPI: use total_collected (based on payment date) instead of invoice date filtering
+    # total_paid and total_tax_paid are kept for Balance Sheet and Income tab calculations
     total_tax_paid    = sum(_safe_float(p.get("amount", 0)) for inv in inv_list_filtered for p in inv.get("tax_payments", []))
-    total_paid        += total_tax_paid
-    total_outstanding = total_invoiced - total_paid
+    # Overview KPI uses total_collected (filtered by payment date, not invoice date)
+    total_outstanding = total_invoiced - total_collected
     # Use Overview-filtered expenses (filtered by present running year, not selected year)
     exp_list_year_filtered = group_expenses_by_name(exp_list_for_overview)
     total_expenses    = sum(_safe_float(e.get("amount", 0)) for e in exp_list_year_filtered)
