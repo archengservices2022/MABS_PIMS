@@ -11501,7 +11501,8 @@ def _parse_invoice_form(form) -> dict:
                               if p})
 
     # Get client_id from selected company_name
-    company_name = form.get("company_name", "")  # This comes from the form's company_name field
+    # The form field is "client_name" but its value is the company_name (client key)
+    company_name = form.get("client_name", "").strip()
     client_id = ""
     client_data = {}
     if company_name:
