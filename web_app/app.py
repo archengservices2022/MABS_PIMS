@@ -5164,10 +5164,6 @@ def client_new():
             flash("Company name is required.", "danger")
             return render_template("client_form.html", client=None, is_new=True)
 
-        if not client_name:
-            flash("Client name is required.", "danger")
-            return render_template("client_form.html", client=None, is_new=True)
-
         # Use company_name as primary identifier
         primary_id = company_name
 
@@ -5217,10 +5213,6 @@ def client_edit(client_name):
 
         if not company_name:
             flash("Company name is required.", "danger")
-            return render_template("client_form.html", client=data, is_new=False)
-
-        if not new_client_name:
-            flash("Client name is required.", "danger")
             return render_template("client_form.html", client=data, is_new=False)
 
         # Use company_name as primary identifier

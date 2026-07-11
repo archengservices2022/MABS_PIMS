@@ -139,19 +139,15 @@
           <h6 class="section-heading">Client Information</h6>
           <form method="POST" action="{{ url_for('client_new') }}">
             <!-- Client Identification Section -->
-            <div style="border-bottom: 2px solid #e5e7eb; padding-bottom: 16px; margin-bottom: 24px;">
-              <div class="mb-3">
-                <label class="form-label">Company Name <span class="text-danger">*</span></label>
-                <input type="text" name="company_name" class="form-control" required>
-              </div>
-              <div class="mb-0">
-                <label class="form-label">Client Name <span class="text-danger">*</span></label>
-                <input type="text" name="client_name" class="form-control"
-                       placeholder="Client Name" required>
-              </div>
+            <div class="mb-3">
+              <label class="form-label">Company Name <span class="text-danger">*</span></label>
+              <input type="text" name="company_name" class="form-control" required>
             </div>
-
-            <!-- Contact Information Section -->
+            <div class="mb-3">
+              <label class="form-label">Client Name</label>
+              <input type="text" name="client_name" class="form-control"
+                     placeholder="Client Name">
+            </div>
             <div class="mb-3">
               <label class="form-label">Email</label>
               <input type="email" name="email" class="form-control">
