@@ -7074,7 +7074,8 @@ def financial():
                 total_commission_paid += _amt
 
     # Recalculate net profit now that total_salaries and commissions are known
-    net_profit             = total_paid - total_expenses - total_salaries - total_commission_paid
+    # Using total_collected (based on payment date) instead of total_paid (invoice date)
+    net_profit             = total_collected - total_expenses - total_salaries - total_commission_paid
     net_profit_after_labor = net_profit - total_labor_cost
 
     # Count unique employees with salary entries in present running year
