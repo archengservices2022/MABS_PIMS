@@ -5153,7 +5153,8 @@ def clients():
                            search=search, tag_filter=tag_filter, all_tags=all_tags)
 
 def _sync_client_changes(old_company_name, new_company_name, new_client_name):
-    """Sync client changes to all related invoices, quotes, and projects by client_id."""
+    """Sync client changes to all related invoices, quotes, and projects by client_id.
+    Also migrates legacy records (without client_id) to use client_id."""
     # Get the client_id from the new client record
     client_data = fb_get(f"/clients/{new_company_name}") or {}
     client_id = client_data.get("client_id")
@@ -5172,32 +5173,57 @@ def _sync_client_changes(old_company_name, new_company_name, new_client_name):
         for inv_id, inv_data in invoices.items():
             if isinstance(inv_data, dict):
                 meta = inv_data.get("meta", {})
-                if isinstance(meta, dict) and meta.get("client_id") == client_id:
-                    print(f"[SYNC] Updating invoice {inv_id} with client_id={client_id}", flush=True)
-                    meta["company_name"] = new_company_name
-                    meta["client_name"] = new_client_name
-                    inv_data["meta"] = meta
-                    fb_update(f"/invoices/{inv_id}", inv_data)
+                if isinstance(meta, dict):
+                    # Match by client_id OR by legacy name matching (and add client_id to legacy records)
+                    if meta.get("client_id") == client_id:
+                        print(f"[SYNC] Updating invoice {inv_id} with client_id={client_id}", flush=True)
+                        meta["company_name"] = new_company_name
+                        meta["client_name"] = new_client_name
+                        inv_data["meta"] = meta
+                        fb_update(f"/invoices/{inv_id}", inv_data)
+                    elif not meta.get("client_id") and (meta.get("company_name", "") == old_company_name or meta.get("client_name", "") == old_company_name):
+                        print(f"[SYNC] Migrating legacy invoice {inv_id}: '{meta.get('company_name') or meta.get('client_name')}' → '{new_company_name}' (adding client_id)", flush=True)
+                        meta["client_id"] = client_id
+                        meta["company_name"] = new_company_name
+                        meta["client_name"] = new_client_name
+                        inv_data["meta"] = meta
+                        fb_update(f"/invoices/{inv_id}", inv_data)
 
     # Update quotes by client_id
     quotes = fb_get("/quotes") or {}
     if isinstance(quotes, dict):
         for quote_id, quote_data in quotes.items():
-            if isinstance(quote_data, dict) and quote_data.get("client_id") == client_id:
-                print(f"[SYNC] Updating quote {quote_id} with client_id={client_id}", flush=True)
-                quote_data["company_name"] = new_company_name
-                quote_data["client_name"] = new_client_name
-                fb_update(f"/quotes/{quote_id}", quote_data)
+            if isinstance(quote_data, dict):
+                # Match by client_id OR by legacy name matching (and add client_id to legacy records)
+                if quote_data.get("client_id") == client_id:
+                    print(f"[SYNC] Updating quote {quote_id} with client_id={client_id}", flush=True)
+                    quote_data["company_name"] = new_company_name
+                    quote_data["client_name"] = new_client_name
+                    fb_update(f"/quotes/{quote_id}", quote_data)
+                elif not quote_data.get("client_id") and (quote_data.get("company_name", "") == old_company_name or quote_data.get("client_name", "") == old_company_name):
+                    print(f"[SYNC] Migrating legacy quote {quote_id}: '{quote_data.get('company_name') or quote_data.get('client_name')}' → '{new_company_name}' (adding client_id)", flush=True)
+                    quote_data["client_id"] = client_id
+                    quote_data["company_name"] = new_company_name
+                    quote_data["client_name"] = new_client_name
+                    fb_update(f"/quotes/{quote_id}", quote_data)
 
     # Update projects by client_id
     projects = fb_get("/projects") or {}
     if isinstance(projects, dict):
         for proj_id, proj_data in projects.items():
-            if isinstance(proj_data, dict) and proj_data.get("client_id") == client_id:
-                print(f"[SYNC] Updating project {proj_id} with client_id={client_id}", flush=True)
-                proj_data["company_name"] = new_company_name
-                proj_data["client_name"] = new_client_name
-                fb_update(f"/projects/{proj_id}", proj_data)
+            if isinstance(proj_data, dict):
+                # Match by client_id OR by legacy name matching (and add client_id to legacy records)
+                if proj_data.get("client_id") == client_id:
+                    print(f"[SYNC] Updating project {proj_id} with client_id={client_id}", flush=True)
+                    proj_data["company_name"] = new_company_name
+                    proj_data["client_name"] = new_client_name
+                    fb_update(f"/projects/{proj_id}", proj_data)
+                elif not proj_data.get("client_id") and (proj_data.get("company_name", "") == old_company_name or proj_data.get("client_name", "") == old_company_name):
+                    print(f"[SYNC] Migrating legacy project {proj_id}: '{proj_data.get('company_name') or proj_data.get('client_name')}' → '{new_company_name}' (adding client_id)", flush=True)
+                    proj_data["client_id"] = client_id
+                    proj_data["company_name"] = new_company_name
+                    proj_data["client_name"] = new_client_name
+                    fb_update(f"/projects/{proj_id}", proj_data)
 
 def _sync_client_changes_by_name(old_company_name, new_company_name, new_client_name):
     """Legacy fallback: Sync client changes by name matching (for records without client_id)."""
