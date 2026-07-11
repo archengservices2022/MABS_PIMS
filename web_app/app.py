@@ -5155,22 +5155,47 @@ def clients():
 @role_required("invoicing")
 def client_new():
     if request.method == "POST":
-        name = request.form.get("client_name", "").strip()
-        if not name:
+        company_name = request.form.get("company_name", "").strip()
+        client_name = request.form.get("client_name", "").strip()
+        email = request.form.get("email", "").strip()
+        phone = request.form.get("phone", "").strip()
+
+        if not client_name:
             flash("Client name is required.", "danger")
             return render_template("client_form.html", client=None, is_new=True)
+
+        # Use company_name as primary identifier if provided, otherwise use client_name
+        primary_id = company_name if company_name else client_name
+
+        # Check for duplicate email
+        if email:
+            all_clients = fb_get("/clients") or {}
+            for existing_id, existing_data in all_clients.items():
+                if isinstance(existing_data, dict) and existing_data.get("email", "").strip().lower() == email.lower():
+                    flash(f"Email address '{email}' is already in use by another client.", "danger")
+                    return render_template("client_form.html", client=None, is_new=True)
+
+        # Check for duplicate phone
+        if phone:
+            all_clients = fb_get("/clients") or {}
+            for existing_id, existing_data in all_clients.items():
+                if isinstance(existing_data, dict) and existing_data.get("phone", "").strip() == phone:
+                    flash(f"Phone number '{phone}' is already in use by another client.", "danger")
+                    return render_template("client_form.html", client=None, is_new=True)
+
         raw_tags = request.form.get("tags", "")
         tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
         data = {
-            "company":  request.form.get("company", ""),
-            "email":    request.form.get("email", ""),
-            "phone":    request.form.get("phone", ""),
-            "address":  request.form.get("address", ""),
-            "notes":    request.form.get("notes", ""),
-            "tags":     tags,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "company_name": company_name,
+            "client_name":  client_name,
+            "email":        email,
+            "phone":        phone,
+            "address":      request.form.get("address", ""),
+            "notes":        request.form.get("notes", ""),
+            "tags":         tags,
+            "updated_at":   datetime.now(timezone.utc).isoformat(),
         }
-        fb_update(f"/clients/{name}", data)
+        fb_update(f"/clients/{primary_id}", data)
         flash("Client saved.", "success")
         return redirect(url_for("clients", tab="all-clients"))
     return render_template("client_form.html", client=None, is_new=True)
@@ -5181,21 +5206,50 @@ def client_edit(client_name):
     data = fb_get(f"/clients/{client_name}") or {}
     data["client_name"] = client_name
     if request.method == "POST":
-        new_name = request.form.get("client_name", client_name).strip()
+        company_name = request.form.get("company_name", "").strip()
+        new_client_name = request.form.get("client_name", client_name).strip()
+        email = request.form.get("email", "").strip()
+        phone = request.form.get("phone", "").strip()
+
+        # Use company_name as primary identifier if provided, otherwise use client_name
+        new_primary_id = company_name if company_name else new_client_name
+
+        # Check for duplicate email (excluding current client)
+        if email:
+            all_clients = fb_get("/clients") or {}
+            for existing_id, existing_data in all_clients.items():
+                if existing_id != client_name and isinstance(existing_data, dict):
+                    if existing_data.get("email", "").strip().lower() == email.lower():
+                        flash(f"Email address '{email}' is already in use by another client.", "danger")
+                        data["client_name"] = client_name
+                        return render_template("client_form.html", client=data, is_new=False)
+
+        # Check for duplicate phone (excluding current client)
+        if phone:
+            all_clients = fb_get("/clients") or {}
+            for existing_id, existing_data in all_clients.items():
+                if existing_id != client_name and isinstance(existing_data, dict):
+                    if existing_data.get("phone", "").strip() == phone:
+                        flash(f"Phone number '{phone}' is already in use by another client.", "danger")
+                        data["client_name"] = client_name
+                        return render_template("client_form.html", client=data, is_new=False)
+
         raw_tags = request.form.get("tags", "")
         tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
         updated = {
-            "company":  request.form.get("company", ""),
-            "email":    request.form.get("email", ""),
-            "phone":    request.form.get("phone", ""),
-            "address":  request.form.get("address", ""),
-            "notes":    request.form.get("notes", ""),
-            "tags":     tags,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "company_name": company_name,
+            "client_name":  new_client_name,
+            "email":        email,
+            "phone":        phone,
+            "address":      request.form.get("address", ""),
+            "notes":        request.form.get("notes", ""),
+            "tags":         tags,
+            "updated_at":   datetime.now(timezone.utc).isoformat(),
         }
-        if new_name != client_name:
+        # If primary ID changed, delete old entry
+        if new_primary_id != client_name:
             fb_delete(f"/clients/{client_name}")
-        fb_update(f"/clients/{new_name}", updated)
+        fb_update(f"/clients/{new_primary_id}", updated)
         flash("Client updated.", "success")
         return redirect(url_for("clients"))
     return render_template("client_form.html", client=data, is_new=False)

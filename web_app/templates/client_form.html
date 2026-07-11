@@ -15,25 +15,29 @@
     <div class="card-panel">
       <form method="POST">
         <div class="mb-3">
+          <label class="form-label">Company Name</label>
+          <input type="text" name="company_name" class="form-control"
+                 value="{{ client.get('company_name','') if client else '' }}"
+                 placeholder="e.g., ABC Corporation">
+        </div>
+        <div class="mb-3">
           <label class="form-label">Client Name <span class="text-danger">*</span></label>
           <input type="text" name="client_name" class="form-control"
                  value="{{ client.get('client_name','') if client else '' }}"
-                 {{ 'readonly' if not is_new }} required>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Company</label>
-          <input type="text" name="company" class="form-control"
-                 value="{{ client.get('company','') if client else '' }}">
+                 {{ 'readonly' if not is_new }} required
+                 placeholder="e.g., John Doe">
         </div>
         <div class="mb-3">
           <label class="form-label">Email</label>
           <input type="email" name="email" class="form-control"
-                 value="{{ client.get('email','') if client else '' }}">
+                 value="{{ client.get('email','') if client else '' }}"
+                 placeholder="e.g., john@example.com">
         </div>
         <div class="mb-3">
           <label class="form-label">Phone</label>
           <input type="text" name="phone" class="form-control"
-                 value="{{ client.get('phone','') if client else '' }}">
+                 value="{{ client.get('phone','') if client else '' }}"
+                 placeholder="e.g., (555) 123-4567">
         </div>
         <div class="mb-3">
           <label class="form-label">Address</label>
