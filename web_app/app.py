@@ -5504,6 +5504,8 @@ def client_edit(company_name):
 @app.route("/clients/<company_name>/delete", methods=["POST"])
 @role_required("invoicing")
 def delete_client(company_name):
+    # Only delete the client record - do NOT cascade delete quotes/projects/invoices
+    # They keep the client information (company_name, client_name, client_id) for historical reference
     fb_delete(f"/clients/{company_name}")
     flash(f"Client '{company_name}' deleted.", "success")
     return redirect(url_for("clients"))
