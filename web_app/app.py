@@ -5451,6 +5451,9 @@ def client_new():
             flash("Either Company Name or Client Name is required.", "danger")
             return render_template("client_form.html", client=None, is_new=True)
 
+        # Track if company_name was explicitly provided
+        has_explicit_company = bool(company_name)
+
         # If company_name is empty, use client_name as the company_name
         if not company_name:
             company_name = client_name
@@ -5497,6 +5500,7 @@ def client_new():
             "client_id":    client_id,
             "company_name": company_name,
             "client_name":  client_name,
+            "has_explicit_company": has_explicit_company,
             "email":        email,
             "phone":        phone,
             "address":      request.form.get("address", ""),
@@ -5528,6 +5532,9 @@ def client_edit(company_name):
         if not company_name and not new_client_name:
             flash("Either Company Name or Client Name is required.", "danger")
             return render_template("client_form.html", client=data, is_new=False)
+
+        # Track if company_name was explicitly provided during edit
+        has_explicit_company = bool(company_name)
 
         # If company_name is empty, use client_name as the company_name
         if not company_name:
@@ -5577,6 +5584,7 @@ def client_edit(company_name):
             "client_id":    client_id,
             "company_name": company_name,
             "client_name":  new_client_name,
+            "has_explicit_company": has_explicit_company,
             "email":        email,
             "phone":        phone,
             "address":      request.form.get("address", ""),
