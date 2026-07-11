@@ -5153,8 +5153,55 @@ def clients():
                            search=search, tag_filter=tag_filter, all_tags=all_tags)
 
 def _sync_client_changes(old_company_name, new_company_name, new_client_name):
-    """Sync client changes to all related invoices, quotes, and projects."""
-    print(f"[SYNC] Starting sync: old='{old_company_name}' → new='{new_company_name}'", flush=True)
+    """Sync client changes to all related invoices, quotes, and projects by client_id."""
+    # Get the client_id from the new client record
+    client_data = fb_get(f"/clients/{new_company_name}") or {}
+    client_id = client_data.get("client_id")
+
+    if not client_id:
+        print(f"[SYNC] No client_id found for '{new_company_name}', falling back to name-based sync", flush=True)
+        # Fallback to old method for legacy records without client_id
+        _sync_client_changes_by_name(old_company_name, new_company_name, new_client_name)
+        return
+
+    print(f"[SYNC] Starting sync by client_id: '{client_id}'", flush=True)
+
+    # Update invoices by client_id
+    invoices = fb_get("/invoices") or {}
+    if isinstance(invoices, dict):
+        for inv_id, inv_data in invoices.items():
+            if isinstance(inv_data, dict):
+                meta = inv_data.get("meta", {})
+                if isinstance(meta, dict) and meta.get("client_id") == client_id:
+                    print(f"[SYNC] Updating invoice {inv_id} with client_id={client_id}", flush=True)
+                    meta["company_name"] = new_company_name
+                    meta["client_name"] = new_client_name
+                    inv_data["meta"] = meta
+                    fb_update(f"/invoices/{inv_id}", inv_data)
+
+    # Update quotes by client_id
+    quotes = fb_get("/quotes") or {}
+    if isinstance(quotes, dict):
+        for quote_id, quote_data in quotes.items():
+            if isinstance(quote_data, dict) and quote_data.get("client_id") == client_id:
+                print(f"[SYNC] Updating quote {quote_id} with client_id={client_id}", flush=True)
+                quote_data["company_name"] = new_company_name
+                quote_data["client_name"] = new_client_name
+                fb_update(f"/quotes/{quote_id}", quote_data)
+
+    # Update projects by client_id
+    projects = fb_get("/projects") or {}
+    if isinstance(projects, dict):
+        for proj_id, proj_data in projects.items():
+            if isinstance(proj_data, dict) and proj_data.get("client_id") == client_id:
+                print(f"[SYNC] Updating project {proj_id} with client_id={client_id}", flush=True)
+                proj_data["company_name"] = new_company_name
+                proj_data["client_name"] = new_client_name
+                fb_update(f"/projects/{proj_id}", proj_data)
+
+def _sync_client_changes_by_name(old_company_name, new_company_name, new_client_name):
+    """Legacy fallback: Sync client changes by name matching (for records without client_id)."""
+    print(f"[SYNC] Fallback sync by name: old='{old_company_name}' → new='{new_company_name}'", flush=True)
 
     # Update invoices
     invoices = fb_get("/invoices") or {}
@@ -5163,11 +5210,9 @@ def _sync_client_changes(old_company_name, new_company_name, new_client_name):
             if isinstance(inv_data, dict):
                 meta = inv_data.get("meta", {})
                 if isinstance(meta, dict):
-                    # Match by company_name or old company_name used as client_name
                     if meta.get("company_name", "") == old_company_name or meta.get("client_name", "") == old_company_name:
                         meta["company_name"] = new_company_name
-                        if new_client_name:
-                            meta["client_name"] = new_client_name
+                        meta["client_name"] = new_client_name
                         inv_data["meta"] = meta
                         fb_update(f"/invoices/{inv_id}", inv_data)
 
@@ -5176,14 +5221,9 @@ def _sync_client_changes(old_company_name, new_company_name, new_client_name):
     if isinstance(quotes, dict):
         for quote_id, quote_data in quotes.items():
             if isinstance(quote_data, dict):
-                # Match by company_name or client_name
-                quote_company = quote_data.get("company_name", "")
-                quote_client = quote_data.get("client_name", "")
-                if quote_company == old_company_name or quote_client == old_company_name:
-                    print(f"[SYNC] Updating quote {quote_id}: '{quote_company}' or '{quote_client}' → '{new_company_name}'", flush=True)
+                if quote_data.get("company_name", "") == old_company_name or quote_data.get("client_name", "") == old_company_name:
                     quote_data["company_name"] = new_company_name
-                    if new_client_name:
-                        quote_data["client_name"] = new_client_name
+                    quote_data["client_name"] = new_client_name
                     fb_update(f"/quotes/{quote_id}", quote_data)
 
     # Update projects
@@ -5191,11 +5231,9 @@ def _sync_client_changes(old_company_name, new_company_name, new_client_name):
     if isinstance(projects, dict):
         for proj_id, proj_data in projects.items():
             if isinstance(proj_data, dict):
-                # Match by company_name or client_name
                 if proj_data.get("company_name", "") == old_company_name or proj_data.get("client_name", "") == old_company_name:
                     proj_data["company_name"] = new_company_name
-                    if new_client_name:
-                        proj_data["client_name"] = new_client_name
+                    proj_data["client_name"] = new_client_name
                     fb_update(f"/projects/{proj_id}", proj_data)
 
 @app.route("/clients/new", methods=["GET", "POST"])
@@ -5253,7 +5291,12 @@ def client_new():
 
         raw_tags = request.form.get("tags", "")
         tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
+
+        # Generate unique client_id for this client
+        client_id = secrets.token_hex(8)
+
         data = {
+            "client_id":    client_id,
             "company_name": company_name,
             "client_name":  client_name,
             "email":        email,
@@ -5328,7 +5371,12 @@ def client_edit(company_name):
 
         raw_tags = request.form.get("tags", "")
         tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
+
+        # Get the client_id from existing data (don't generate a new one)
+        client_id = data.get("client_id", secrets.token_hex(8))
+
         updated = {
+            "client_id":    client_id,
             "company_name": company_name,
             "client_name":  new_client_name,
             "email":        email,
@@ -11120,10 +11168,19 @@ def _parse_quote_form(form) -> dict:
                 "unit_price":  price,
                 "total":       str(_safe_float(qty) * _safe_float(price)),
             })
+
+    # Get client_id from selected company_name
+    company_name = form.get("client_name", "")  # Form passes company_name as client_name value
+    client_id = ""
+    if company_name:
+        client_data = fb_get(f"/clients/{company_name}") or {}
+        client_id = client_data.get("client_id", "")
+
     return {
         "job_number":           form.get("job_number", ""),
-        "company_name":         form.get("company_name", ""),
-        "client_name":          form.get("client_name", ""),
+        "client_id":            client_id,
+        "company_name":         company_name,
+        "client_name":          client_data.get("client_name", "") if company_name else "",
         "project_name":         form.get("project_name", ""),
         "description":          form.get("description", ""),
         "status":               form.get("status", "Not Started"),
@@ -11221,6 +11278,14 @@ def _parse_project_form(form) -> dict:
         except (ValueError, TypeError):
             service_costs[svc] = 0.0
 
+    # Get client_id from selected company_name
+    company_name = form.get("client_name", "")  # Form passes company_name as client_name value
+    client_id = ""
+    client_data = {}
+    if company_name:
+        client_data = fb_get(f"/clients/{company_name}") or {}
+        client_id = client_data.get("client_id", "")
+
     return {
         # ── identifiers (match desktop field names exactly) ──────────────────
         "project_number":  form.get("project_number", ""),
@@ -11228,9 +11293,10 @@ def _parse_project_form(form) -> dict:
         "po_wo_number":    form.get("po_wo_number", ""),
         # ── project info ─────────────────────────────────────────────────────
         "project_name":    form.get("project_name", ""),
-        "company_name":    form.get("company_name", ""),
-        "company":         form.get("client_name", ""),   # desktop key = company
-        "client_name":     form.get("client_name", ""),   # keep for web queries
+        "client_id":       client_id,
+        "company_name":    company_name,
+        "company":         company_name,   # desktop key = company
+        "client_name":     client_data.get("client_name", ""),   # keep for web queries
         "site_address":    form.get("site_address", ""),
         "mail_address":    form.get("mail_address", ""),
         "date_received":   form.get("date_received", ""),
@@ -11291,14 +11357,23 @@ def _parse_invoice_form(form) -> dict:
                               ([main_project] + [li["project_number"] for li in line_items])
                               if p})
 
+    # Get client_id from selected company_name
+    company_name = form.get("company_name", "")  # This comes from the form's company_name field
+    client_id = ""
+    client_data = {}
+    if company_name:
+        client_data = fb_get(f"/clients/{company_name}") or {}
+        client_id = client_data.get("client_id", "")
+
     return {
         "meta": {
             "invoice_number": form.get("invoice_number", ""),
             "invoice_date":   form.get("invoice_date", datetime.now().strftime("%Y-%m-%d")),
             "due_date":       form.get("due_date", ""),
             "net_terms":      form.get("net_terms", ""),
-            "company_name":   form.get("company_name", ""),
-            "client_name":    form.get("client_name", ""),
+            "client_id":      client_id,
+            "company_name":   company_name,
+            "client_name":    client_data.get("client_name", ""),
             "project_number": main_project,
             "linked_projects": linked_projects,
             "status":         form.get("status", "Draft"),
