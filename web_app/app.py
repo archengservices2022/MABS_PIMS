@@ -5216,14 +5216,14 @@ def client_new():
         return redirect(url_for("clients", tab="all-clients"))
     return render_template("client_form.html", client=None, is_new=True)
 
-@app.route("/clients/<client_name>/edit", methods=["GET", "POST"])
+@app.route("/clients/<company_name>/edit", methods=["GET", "POST"])
 @role_required("invoicing")
-def client_edit(client_name):
-    data = fb_get(f"/clients/{client_name}") or {}
-    data["client_name"] = client_name
+def client_edit(company_name):
+    data = fb_get(f"/clients/{company_name}") or {}
+    original_company_name = company_name
     if request.method == "POST":
         company_name = request.form.get("company_name", "").strip()
-        new_client_name = request.form.get("client_name", client_name).strip()
+        new_client_name = request.form.get("client_name", data.get("client_name", "")).strip()
         email = request.form.get("email", "").strip()
         phone = request.form.get("phone", "").strip()
         address = request.form.get("address", "").strip()
@@ -5252,7 +5252,7 @@ def client_edit(client_name):
         if email:
             all_clients = fb_get("/clients") or {}
             for existing_id, existing_data in all_clients.items():
-                if existing_id != client_name and isinstance(existing_data, dict):
+                if existing_id != original_company_name and isinstance(existing_data, dict):
                     if existing_data.get("email", "").strip().lower() == email.lower():
                         flash(f"Email address '{email}' is already in use by another client.", "danger")
                         form_data["email"] = ""
@@ -5262,7 +5262,7 @@ def client_edit(client_name):
         if phone:
             all_clients = fb_get("/clients") or {}
             for existing_id, existing_data in all_clients.items():
-                if existing_id != client_name and isinstance(existing_data, dict):
+                if existing_id != original_company_name and isinstance(existing_data, dict):
                     if existing_data.get("phone", "").strip() == phone:
                         flash(f"Phone number '{phone}' is already in use by another client.", "danger")
                         form_data["phone"] = ""
@@ -5281,24 +5281,24 @@ def client_edit(client_name):
             "updated_at":   datetime.now(timezone.utc).isoformat(),
         }
         # If primary ID changed, delete old entry
-        if new_primary_id != client_name:
-            fb_delete(f"/clients/{client_name}")
+        if new_primary_id != original_company_name:
+            fb_delete(f"/clients/{original_company_name}")
         fb_update(f"/clients/{new_primary_id}", updated)
         flash("Client updated.", "success")
         return redirect(url_for("clients"))
     return render_template("client_form.html", client=data, is_new=False)
 
-@app.route("/clients/<client_name>/delete", methods=["POST"])
+@app.route("/clients/<company_name>/delete", methods=["POST"])
 @role_required("invoicing")
-def delete_client(client_name):
-    fb_delete(f"/clients/{client_name}")
-    flash(f"Client '{client_name}' deleted.", "success")
+def delete_client(company_name):
+    fb_delete(f"/clients/{company_name}")
+    flash(f"Client '{company_name}' deleted.", "success")
     return redirect(url_for("clients"))
 
 # ── Client Statement PDF ──────────────────────────────────────────────────────
-@app.route("/clients/<client_name>/statement")
+@app.route("/clients/<company_name>/statement")
 @role_required("invoicing")
-def client_statement(client_name):
+def client_statement(company_name):
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
@@ -5311,7 +5311,8 @@ def client_statement(client_name):
     import io as _io
 
     co = company_info()
-    client_data = fb_get(f"/clients/{client_name}") or {}
+    client_data = fb_get(f"/clients/{company_name}") or {}
+    client_name = client_data.get("client_name", "")
 
     # Load all invoices for this client
     raw_inv = fb_get("/invoices") or {}
