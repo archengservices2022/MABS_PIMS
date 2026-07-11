@@ -5152,6 +5152,43 @@ def clients():
     return render_template("clients.html", clients=items, active_tab=active_tab,
                            search=search, tag_filter=tag_filter, all_tags=all_tags)
 
+def _sync_client_changes(old_company_name, new_company_name, new_client_name):
+    """Sync client changes to all related invoices, quotes, and projects."""
+    # Update invoices
+    invoices = fb_get("/invoices") or {}
+    if isinstance(invoices, dict):
+        for inv_id, inv_data in invoices.items():
+            if isinstance(inv_data, dict):
+                meta = inv_data.get("meta", {})
+                if isinstance(meta, dict) and meta.get("company_name", "") == old_company_name:
+                    meta["company_name"] = new_company_name
+                    if new_client_name:
+                        meta["client_name"] = new_client_name
+                    inv_data["meta"] = meta
+                    fb_update(f"/invoices/{inv_id}", inv_data)
+
+    # Update quotes
+    quotes = fb_get("/quotes") or {}
+    if isinstance(quotes, dict):
+        for quote_id, quote_data in quotes.items():
+            if isinstance(quote_data, dict):
+                if quote_data.get("company_name", "") == old_company_name:
+                    quote_data["company_name"] = new_company_name
+                    if new_client_name:
+                        quote_data["client_name"] = new_client_name
+                    fb_update(f"/quotes/{quote_id}", quote_data)
+
+    # Update projects
+    projects = fb_get("/projects") or {}
+    if isinstance(projects, dict):
+        for proj_id, proj_data in projects.items():
+            if isinstance(proj_data, dict):
+                if proj_data.get("company_name", "") == old_company_name:
+                    proj_data["company_name"] = new_company_name
+                    if new_client_name:
+                        proj_data["client_name"] = new_client_name
+                    fb_update(f"/projects/{proj_id}", proj_data)
+
 @app.route("/clients/new", methods=["GET", "POST"])
 @role_required("invoicing")
 def client_new():
@@ -5295,6 +5332,10 @@ def client_edit(company_name):
         if new_primary_id != original_company_name:
             fb_delete(f"/clients/{original_company_name}")
         fb_update(f"/clients/{new_primary_id}", updated)
+
+        # Sync all related invoices, quotes, and projects with new company name
+        _sync_client_changes(original_company_name, new_primary_id, new_client_name)
+
         flash("Client updated.", "success")
         return redirect(url_for("clients"))
     return render_template("client_form.html", client=data, is_new=False)
