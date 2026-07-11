@@ -3148,6 +3148,26 @@ def invoicing():
             calculated_status = "Overdue"
         m["status"] = calculated_status
 
+    # IMPORTANT: Create items_for_collected from ALL invoices first
+    # Then apply ONLY status/client/plant/search filters (NO invoice date filter)
+    # This allows invoices from ANY year to contribute payments to collected amount
+    items_for_collected = []
+    for inv in all_invoices_raw:
+        if not inv or not isinstance(inv, dict):
+            continue
+        # Apply only: status, client, plant, search filters
+        if search and search not in str(inv).lower():
+            continue
+        if status_filter and inv.get("meta", {}).get("status", "") != status_filter:
+            continue
+        if client_filter and inv.get("meta", {}).get("client_name", "") != client_filter:
+            continue
+        if plant_filter and inv.get("plant_state", "") != plant_filter:
+            continue
+        # Add to collected list (NO invoice date filter!)
+        items_for_collected.append(inv)
+
+    # Now apply all filters to items for display (including search and invoice date)
     if search:
         items = [i for i in items if search in str(i).lower()]
     if status_filter:
@@ -3156,6 +3176,7 @@ def invoicing():
         items = [i for i in items if i.get("meta", {}).get("client_name", "") == client_filter]
     if plant_filter:
         items = [i for i in items if i.get("plant_state", "") == plant_filter]
+
     if date_from:
         items = [i for i in items if (i.get("meta", {}).get("invoice_date") or "") >= date_from]
     if date_to:
@@ -3191,21 +3212,72 @@ def invoicing():
     i_outstanding = i_total_val - i_total_paid
     i_overdue_amt = sum(total for st, total, __ in _kpi_rows if st == "Overdue")
 
-    # Collected amount: sum of payments made within date range on filtered invoices only
-    # Only includes payments on invoices that match ALL applied filters (status, client, plant, search, date)
+    # Collected amount: ALL payments from filtered invoices
+    # Based ONLY on payment received date from payment history
+    # RESPECTS: status, client, plant, search filters
+    # IGNORES: invoice creation date
+    # Shows ALL payments (past, present, future) from filtered invoices
+    # If date range is provided, filters payments by that range
     i_total_paid_in_range = 0.0
-    def _pay_in_range(d):
-        return (not date_from or (d or "") >= date_from) and \
-               (not date_to   or (d or "") <= date_to)
-    for inv in items:
-        for p in (inv.get("payment_log", []) or []):
-            if _pay_in_range(p.get("date", "")):
-                i_total_paid_in_range += _safe_float(p.get("amount", 0))
-        for tp in (inv.get("tax_payments", []) or []):
-            if _pay_in_range(tp.get("date", "")):
-                i_total_paid_in_range += _safe_float(tp.get("amount", 0))
 
-    # Collection rate based on payments in date range vs total invoice amount
+    def _normalize_date(d):
+        """Convert various date formats to YYYY-MM-DD for comparison"""
+        if not d or not isinstance(d, str):
+            return ""
+        d = d.strip()
+        # Already in YYYY-MM-DD format (e.g., "2027-03-17")
+        if d.count('-') == 2 and len(d) == 10:
+            if d[0:4].isdigit() and d[4] == '-' and d[7] == '-':
+                return d
+        # MM-DD-YYYY format (e.g., "03-17-2027")
+        if len(d) == 10 and d[2] == '-' and d[5] == '-':
+            parts = d.split('-')
+            if len(parts) == 3 and all(p.isdigit() for p in parts):
+                return f"{parts[2]}-{parts[0]}-{parts[1]}"
+        # Try DD-MM-YYYY format (e.g., "17-03-2027")
+        if len(d) == 10 and d[2] == '-' and d[5] == '-':
+            parts = d.split('-')
+            if len(parts) == 3 and all(p.isdigit() for p in parts):
+                day = int(parts[0]) if int(parts[0]) > 12 else int(parts[1])
+                month = int(parts[1]) if int(parts[1]) <= 12 else int(parts[0])
+                year = parts[2]
+                return f"{year}-{month:02d}-{day:02d}"
+        return d
+
+    def _pay_in_date_range(d):
+        """Check if payment date falls within the selected date range"""
+        # If no date filters, include all payments (past, present, future)
+        if not date_from and not date_to:
+            return True
+        norm_d = _normalize_date(d)
+        from_ok = (not date_from or norm_d >= date_from)
+        to_ok = (not date_to or norm_d <= date_to)
+        return from_ok and to_ok
+
+    # Iterate through filtered invoices (respects status/client/plant/search filters)
+    # Count ALL payments from those invoices (past, present, future)
+    # If date range is set, only count payments within that range
+    for inv in items_for_collected:
+        if not inv or not isinstance(inv, dict):
+            continue
+        # Count all payments in payment_log based on payment date
+        for p in (inv.get("payment_log", []) or []):
+            if not p or not isinstance(p, dict):
+                continue
+            pay_date = p.get("date", "")
+            pay_amt = p.get("amount", 0)
+            if _pay_in_date_range(pay_date):
+                i_total_paid_in_range += _safe_float(pay_amt)
+        # Count all tax payments based on payment date
+        for tp in (inv.get("tax_payments", []) or []):
+            if not tp or not isinstance(tp, dict):
+                continue
+            tax_date = tp.get("date", "")
+            tax_amt = tp.get("amount", 0)
+            if _pay_in_date_range(tax_date):
+                i_total_paid_in_range += _safe_float(tax_amt)
+
+    # Collection rate based on payments in date range vs total invoice amount of filtered invoices
     i_coll_rate   = round(i_total_paid_in_range / i_total_val * 100) if i_total_val else 0
 
     # Ensure all invoices have amount_paid and tax_paid in meta for template compatibility
@@ -6879,16 +6951,18 @@ def financial():
     except (ValueError, TypeError):
         selected_year = datetime.now().year
 
-    # Total collected = sum of payment_log entries by PAYMENT DATE in current year
+    # Total collected = sum of payment_log entries by PAYMENT DATE in past & present years
     total_collected = 0.0
     for inv_id, inv_data_r in invoices.items():
         if not isinstance(inv_data_r, dict):
             continue
         for pay in (inv_data_r.get("payment_log", []) or []):
-            if _extract_year_from_date(pay.get("date", "")) == stat_card_year:
+            pay_year = _extract_year_from_date(pay.get("date", ""))
+            if pay_year in [stat_card_year, prev_year]:
                 total_collected += _safe_float(pay.get("amount", 0))
         for tp in (inv_data_r.get("tax_payments", []) or []):
-            if _extract_year_from_date(tp.get("date", "")) == stat_card_year:
+            tax_year = _extract_year_from_date(tp.get("date", ""))
+            if tax_year in [stat_card_year, prev_year]:
                 total_collected += _safe_float(tp.get("amount", 0))
 
     # Filter Income tab: include payment records where EITHER the payment date OR the invoice date
@@ -7557,6 +7631,32 @@ def financial():
         else:
             aging_buckets["90plus"].append(entry)
 
+    # ── ALL YEARS totals (for Outstanding A/R calculation) ──
+    # Total invoiced from ALL years (excluding Draft invoices)
+    total_invoiced_all_years = sum(
+        _safe_float(i.get("meta", {}).get("total", 0))
+        for i in inv_list
+        if i.get("meta", {}).get("status", "Draft") != "Draft"
+    )
+
+    # Total collected from ALL years (all payments, excluding payments on Draft invoices)
+    total_collected_all_years = 0.0
+    for inv_id, inv_data_r in invoices.items():
+        if not isinstance(inv_data_r, dict):
+            continue
+        # Skip Draft invoices
+        inv_status = inv_data_r.get("meta", {}).get("status", "Draft")
+        if inv_status == "Draft":
+            continue
+        # Count ALL payments from ALL years (only non-Draft invoices)
+        for pay in (inv_data_r.get("payment_log", []) or []):
+            total_collected_all_years += _safe_float(pay.get("amount", 0))
+        for tp in (inv_data_r.get("tax_payments", []) or []):
+            total_collected_all_years += _safe_float(tp.get("amount", 0))
+
+    # Outstanding A/R = All Year Invoiced (non-Draft) - All Year Collected (from non-Draft)
+    overview_outstanding = total_invoiced_all_years - total_collected_all_years
+
     aging_totals = {k: sum(e["balance"] for e in v) for k, v in aging_buckets.items()}
     aging_total_outstanding = sum(aging_totals.values())
     outstanding_count = sum(len(v) for v in aging_buckets.values())  # Count of all open invoices
@@ -7726,9 +7826,12 @@ def financial():
     commission_total_paid      = sum(s["total_paid"]    for s in commission_summary)
     commission_total_outstanding = sum(s["outstanding"] for s in commission_summary)
 
+    invoiced_years = f"{prev_year} & {stat_card_year}"
+
     return render_template("financial.html",
         total_invoiced=total_invoiced,
         invoiced_count=invoiced_count,
+        invoiced_years=invoiced_years,
         total_outstanding=total_outstanding,
         outstanding_count=outstanding_count,
         total_expenses=total_expenses,
@@ -7761,6 +7864,7 @@ def financial():
         rev_list=rev_list,
         prior_outstanding_invs=prior_outstanding_invs,
         total_collected=total_collected,
+        overview_outstanding=overview_outstanding,
         projects=projects_list,
         project_pnl=project_pnl,
         salaries_domestic=salaries_domestic,
