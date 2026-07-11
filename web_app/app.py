@@ -5159,6 +5159,9 @@ def client_new():
         client_name = request.form.get("client_name", "").strip()
         email = request.form.get("email", "").strip()
         phone = request.form.get("phone", "").strip()
+        address = request.form.get("address", "").strip()
+        notes = request.form.get("notes", "").strip()
+        tags = request.form.get("tags", "").strip()
 
         if not company_name:
             flash("Company name is required.", "danger")
@@ -5167,13 +5170,25 @@ def client_new():
         # Use company_name as primary identifier
         primary_id = company_name
 
+        # Build form data for re-rendering on error
+        form_data = {
+            "company_name": company_name,
+            "client_name": client_name,
+            "email": email,
+            "phone": phone,
+            "address": address,
+            "notes": notes,
+            "tags": tags,
+        }
+
         # Check for duplicate email
         if email:
             all_clients = fb_get("/clients") or {}
             for existing_id, existing_data in all_clients.items():
                 if isinstance(existing_data, dict) and existing_data.get("email", "").strip().lower() == email.lower():
                     flash(f"Email address '{email}' is already in use by another client.", "danger")
-                    return render_template("client_form.html", client=None, is_new=True)
+                    form_data["email"] = ""
+                    return render_template("client_form.html", client=form_data, is_new=True)
 
         # Check for duplicate phone
         if phone:
@@ -5181,7 +5196,8 @@ def client_new():
             for existing_id, existing_data in all_clients.items():
                 if isinstance(existing_data, dict) and existing_data.get("phone", "").strip() == phone:
                     flash(f"Phone number '{phone}' is already in use by another client.", "danger")
-                    return render_template("client_form.html", client=None, is_new=True)
+                    form_data["phone"] = ""
+                    return render_template("client_form.html", client=form_data, is_new=True)
 
         raw_tags = request.form.get("tags", "")
         tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
@@ -5210,6 +5226,9 @@ def client_edit(client_name):
         new_client_name = request.form.get("client_name", client_name).strip()
         email = request.form.get("email", "").strip()
         phone = request.form.get("phone", "").strip()
+        address = request.form.get("address", "").strip()
+        notes = request.form.get("notes", "").strip()
+        tags = request.form.get("tags", "").strip()
 
         if not company_name:
             flash("Company name is required.", "danger")
@@ -5218,6 +5237,17 @@ def client_edit(client_name):
         # Use company_name as primary identifier
         new_primary_id = company_name
 
+        # Build form data for re-rendering on error
+        form_data = {
+            "company_name": company_name,
+            "client_name": new_client_name,
+            "email": email,
+            "phone": phone,
+            "address": address,
+            "notes": notes,
+            "tags": tags,
+        }
+
         # Check for duplicate email (excluding current client)
         if email:
             all_clients = fb_get("/clients") or {}
@@ -5225,8 +5255,8 @@ def client_edit(client_name):
                 if existing_id != client_name and isinstance(existing_data, dict):
                     if existing_data.get("email", "").strip().lower() == email.lower():
                         flash(f"Email address '{email}' is already in use by another client.", "danger")
-                        data["client_name"] = client_name
-                        return render_template("client_form.html", client=data, is_new=False)
+                        form_data["email"] = ""
+                        return render_template("client_form.html", client=form_data, is_new=False)
 
         # Check for duplicate phone (excluding current client)
         if phone:
@@ -5235,8 +5265,8 @@ def client_edit(client_name):
                 if existing_id != client_name and isinstance(existing_data, dict):
                     if existing_data.get("phone", "").strip() == phone:
                         flash(f"Phone number '{phone}' is already in use by another client.", "danger")
-                        data["client_name"] = client_name
-                        return render_template("client_form.html", client=data, is_new=False)
+                        form_data["phone"] = ""
+                        return render_template("client_form.html", client=form_data, is_new=False)
 
         raw_tags = request.form.get("tags", "")
         tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
