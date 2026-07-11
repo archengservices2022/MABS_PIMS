@@ -11198,15 +11198,17 @@ def _parse_quote_form(form) -> dict:
     # Get client_id from selected company_name
     company_name = form.get("client_name", "")  # Form passes company_name as client_name value
     client_id = ""
+    client_name_from_db = ""
     if company_name:
         client_data = fb_get(f"/clients/{company_name}") or {}
         client_id = client_data.get("client_id", "")
+        client_name_from_db = client_data.get("client_name", "")
 
     return {
         "job_number":           form.get("job_number", ""),
         "client_id":            client_id,
         "company_name":         company_name,
-        "client_name":          client_data.get("client_name", "") if company_name else "",
+        "client_name":          client_name_from_db,
         "project_name":         form.get("project_name", ""),
         "description":          form.get("description", ""),
         "status":               form.get("status", "Not Started"),
