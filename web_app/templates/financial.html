@@ -305,7 +305,6 @@ a[href*="filter_expense"]:hover {
 <div class="tab-pane fade {{ 'show active' if active_tab in ('overview', '') else '' }}" id="tab-overview">
 
   {% set collection_pct = ((total_collected / total_invoiced * 100) if total_invoiced > 0 else 0)|round|int %}
-  {% set open_count = aging_buckets['current']|length + aging_buckets['1_30']|length + aging_buckets['31_60']|length + aging_buckets['61_90']|length + aging_buckets['90plus']|length %}
 
   <!-- ── Row 1 — 6 KPI cards ─────────────────────────────────────── -->
   <div class="row g-3 mb-4">
@@ -313,7 +312,7 @@ a[href*="filter_expense"]:hover {
       <div class="kpi-card kpi-teal">
         <div class="kpi-top"><span class="kpi-label">Total Invoiced</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
         <div class="kpi-value">${{ "{:,.2f}".format(total_invoiced) }}</div>
-        <div class="kpi-sub">{{ rev_list|length }} invoice{{ 's' if rev_list|length != 1 }}</div>
+        <div class="kpi-sub">{{ invoiced_count }} invoice{{ 's' if invoiced_count != 1 }}</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">past & present years</small></div>
       </div>
     </div>
@@ -330,7 +329,7 @@ a[href*="filter_expense"]:hover {
       <div class="kpi-card kpi-amber">
         <div class="kpi-top"><span class="kpi-label">Outstanding A/R</span><i class="bi bi-clock-history kpi-icon-sm"></i></div>
         <div class="kpi-value">${{ "{:,.2f}".format(aging_total_outstanding) }}</div>
-        <div class="kpi-sub">{{ open_count }} open invoice{{ 's' if open_count != 1 }}</div>
+        <div class="kpi-sub">{{ outstanding_count }} open invoice{{ 's' if outstanding_count != 1 }}</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">Across All Years</small></div>
       </div>
     </div>

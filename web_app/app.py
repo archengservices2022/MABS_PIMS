@@ -6695,6 +6695,7 @@ def financial():
                         if _extract_year_from_date(i.get("meta", {}).get("invoice_date", "")) in [stat_card_year, prev_year]]
 
     total_invoiced    = sum(_safe_float(i.get("meta", {}).get("total", 0)) for i in inv_list_filtered)
+    invoiced_count    = len(inv_list_filtered)  # Count of invoices created in current & previous years
     # For Overview KPI: use total_collected (based on payment date) instead of invoice date filtering
     # total_paid is only used for Balance Sheet and Income tab calculations below
     total_tax_paid    = sum(_safe_float(p.get("amount", 0)) for inv in inv_list_filtered for p in inv.get("tax_payments", []))
@@ -7487,7 +7488,9 @@ def financial():
 
     return render_template("financial.html",
         total_invoiced=total_invoiced,
+        invoiced_count=invoiced_count,
         total_outstanding=total_outstanding,
+        outstanding_count=len([e for e in aging_buckets['current'] + aging_buckets['1_30'] + aging_buckets['31_60'] + aging_buckets['61_90'] + aging_buckets['90plus']]),
         total_expenses=total_expenses,
         prev_year_total_invoiced=prev_year_total_invoiced,
         prev_year_total_paid=prev_year_total_paid,
