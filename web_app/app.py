@@ -14111,7 +14111,9 @@ def quick_invoice_stage(project_id, stage_idx):
 
         # Get project details
         proj_num = project.get("project_number", "")
+        company_name = project.get("company_name") or project.get("client_name", "")
         client_name = project.get("client_name", "")
+        client_id = project.get("client_id", "")
         stage_name = stage.get("name", f"Stage {stage_idx + 1}")
         stage_amount = _safe_float(stage.get("amount", 0))
 
@@ -14120,7 +14122,9 @@ def quick_invoice_stage(project_id, stage_idx):
             "meta": {
                 "invoice_number": _next_invoice_number(),
                 "project_number": proj_num,
+                "company_name": company_name,
                 "client_name": client_name,
+                "client_id": client_id,
                 "invoice_date": datetime.now().strftime("%Y-%m-%d"),
                 "due_date": (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
                 "created_at": datetime.now(timezone.utc).isoformat(),
