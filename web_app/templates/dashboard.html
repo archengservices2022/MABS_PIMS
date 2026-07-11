@@ -192,15 +192,24 @@
         'Cancelled':               ('#FFF1F2', '#F43F5E'),
       } %}
       <div class="row g-2 mb-3">
-        {% for st, cnt in proj_status_counts.items() %}
-        {% set _bg, _ac = _st_styles.get(st, ('#F8FAFC', '#64748B')) %}
-        <div class="col-6">
-          <div style="background:{{ _bg }};border-radius:8px;padding:10px 12px;">
-            <div style="font-size:10px;color:{{ _ac }};font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{{ st }}">{{ st }}</div>
-            <div style="font-size:1.6rem;font-weight:800;color:{{ _ac }};line-height:1.1;">{{ cnt }}</div>
+        <div class="col-4">
+          <div style="background:#FFF7ED;border-radius:8px;padding:10px 12px;">
+            <div style="font-size:10px;color:#D97706;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Partially Paid</div>
+            <div style="font-size:1.6rem;font-weight:800;color:#D97706;line-height:1.1;">{{ proj_status_counts.get('invoiced_Partially paid', 0) }}</div>
           </div>
         </div>
-        {% endfor %}
+        <div class="col-4">
+          <div style="background:#FEF2F2;border-radius:8px;padding:10px 12px;">
+            <div style="font-size:10px;color:#DC2626;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Not Paid</div>
+            <div style="font-size:1.6rem;font-weight:800;color:#DC2626;line-height:1.1;">{{ proj_status_counts.get('invoiced_Not paid yet', 0) }}</div>
+          </div>
+        </div>
+        <div class="col-4">
+          <div style="background:#F0FDF4;border-radius:8px;padding:10px 12px;">
+            <div style="font-size:10px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Fully Paid</div>
+            <div style="font-size:1.6rem;font-weight:800;color:#16a34a;line-height:1.1;">{{ proj_status_counts.get('invoiced_Fully paid', 0) }}</div>
+          </div>
+        </div>
       </div>
       <div style="border-top:1px solid #f1f5f9;padding-top:10px;display:flex;justify-content:space-between;align-items:flex-end;">
         <div>
