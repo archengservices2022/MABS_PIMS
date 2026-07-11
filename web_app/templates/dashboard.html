@@ -191,9 +191,8 @@
         'Ready to Sent':           ('#F5F3FF', '#8B5CF6'),
         'Cancelled':               ('#FFF1F2', '#F43F5E'),
       } %}
-      {% set _p_skip = ['Not Started', 'In Progress'] %}
       <div class="row g-2 mb-3">
-        {% for st, cnt in proj_status_counts.items() if st not in _p_skip %}
+        {% for st, cnt in proj_status_counts.items() %}
         {% set _bg, _ac = _st_styles.get(st, ('#F8FAFC', '#64748B')) %}
         <div class="col-6">
           <div style="background:{{ _bg }};border-radius:8px;padding:10px 12px;">
