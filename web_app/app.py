@@ -637,14 +637,14 @@ def dashboard():
             st = p.get("status") or "Not Started"
             proj_status_counts[st] = proj_status_counts.get(st, 0) + 1
 
-    # ── Alert counts — current year only ──────────────────────────────────────
+    # ── Alert counts — show all warnings (not filtered by year) ──────────────────────────────────────
     today_str     = datetime.now().strftime("%Y-%m-%d")
     week_str      = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
     three_day_str = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
-    overdue_count = sum(1 for i in cur_year_invs
+    overdue_count = sum(1 for i in inv_list
                         if isinstance(i, dict) and i.get("meta", {}).get("status", "") == "Overdue")
     _QTERMINAL = {"Approved", "Converted", "Invoiced", "Rejected", "Cancelled", "Expired"}
-    expiring_count = sum(1 for q in cur_year_quots
+    expiring_count = sum(1 for q in quot_list
                          if isinstance(q, dict)
                          and q.get("status", "Not Started") not in _QTERMINAL
                          and q.get("valid_until", "")
@@ -701,16 +701,16 @@ def dashboard():
     # ── Urgent alerts (overdue + due within 3 days only) ─────────────────────
     three_day_str = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
 
-    # 1. Overdue invoices — current year only
+    # 1. Overdue invoices — ALL years (show all warnings)
     reminder_overdue_invoices = sorted(
-        [i for i in cur_year_invs if isinstance(i, dict)
+        [i for i in inv_list if isinstance(i, dict)
          and i.get("meta", {}).get("status", "") == "Overdue"],
         key=lambda x: x.get("meta", {}).get("due_date", "")
     )[:5]
 
-    # 2. Invoices due within 3 days (not yet overdue) — current year only
+    # 2. Invoices due within 3 days (not yet overdue) — ALL years (show all warnings)
     reminder_due_soon = sorted(
-        [i for i in cur_year_invs if isinstance(i, dict)
+        [i for i in inv_list if isinstance(i, dict)
          and i.get("meta", {}).get("status", "") not in ("Paid", "Overdue", "Cancelled")
          and i.get("meta", {}).get("due_date", "")
          and today_str <= i.get("meta", {}).get("due_date", "") <= three_day_str],
