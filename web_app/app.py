@@ -5160,19 +5160,22 @@ def _sync_client_changes(old_company_name, new_company_name, new_client_name):
         for inv_id, inv_data in invoices.items():
             if isinstance(inv_data, dict):
                 meta = inv_data.get("meta", {})
-                if isinstance(meta, dict) and meta.get("company_name", "") == old_company_name:
-                    meta["company_name"] = new_company_name
-                    if new_client_name:
-                        meta["client_name"] = new_client_name
-                    inv_data["meta"] = meta
-                    fb_update(f"/invoices/{inv_id}", inv_data)
+                if isinstance(meta, dict):
+                    # Match by company_name or old company_name used as client_name
+                    if meta.get("company_name", "") == old_company_name or meta.get("client_name", "") == old_company_name:
+                        meta["company_name"] = new_company_name
+                        if new_client_name:
+                            meta["client_name"] = new_client_name
+                        inv_data["meta"] = meta
+                        fb_update(f"/invoices/{inv_id}", inv_data)
 
     # Update quotes
     quotes = fb_get("/quotes") or {}
     if isinstance(quotes, dict):
         for quote_id, quote_data in quotes.items():
             if isinstance(quote_data, dict):
-                if quote_data.get("company_name", "") == old_company_name:
+                # Match by company_name or client_name
+                if quote_data.get("company_name", "") == old_company_name or quote_data.get("client_name", "") == old_company_name:
                     quote_data["company_name"] = new_company_name
                     if new_client_name:
                         quote_data["client_name"] = new_client_name
@@ -5183,7 +5186,8 @@ def _sync_client_changes(old_company_name, new_company_name, new_client_name):
     if isinstance(projects, dict):
         for proj_id, proj_data in projects.items():
             if isinstance(proj_data, dict):
-                if proj_data.get("company_name", "") == old_company_name:
+                # Match by company_name or client_name
+                if proj_data.get("company_name", "") == old_company_name or proj_data.get("client_name", "") == old_company_name:
                     proj_data["company_name"] = new_company_name
                     if new_client_name:
                         proj_data["client_name"] = new_client_name
