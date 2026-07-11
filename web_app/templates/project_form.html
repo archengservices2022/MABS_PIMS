@@ -57,7 +57,7 @@
               <option value="">-- Select Client --</option>
               {% for c in clients %}
               <option value="{{ c }}"
-                {{ 'selected' if (project and (project.get('client_name') == c or project.get('company') == c)) or (prefill_quote_data and (prefill_quote_data.get('company_name') == c or prefill_quote_data.get('client_name') == c)) }}>{{ c }}</option>
+                {{ 'selected' if (project and (project.get('client_name') == c or project.get('company') == c)) or (prefill_quote_data.get('company_name') == c) }}>{{ c }}</option>
               {% endfor %}
             </select>
           </div>
