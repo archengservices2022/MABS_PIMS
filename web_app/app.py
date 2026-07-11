@@ -5192,8 +5192,12 @@ def _sync_client_changes(old_company_name, new_company_name, new_client_name):
     # Update quotes by client_id
     quotes = fb_get("/quotes") or {}
     if isinstance(quotes, dict):
+        print(f"[SYNC] Checking {len(quotes)} quotes for client_id={client_id}", flush=True)
         for quote_id, quote_data in quotes.items():
             if isinstance(quote_data, dict):
+                quote_cid = quote_data.get("client_id", "")
+                quote_company = quote_data.get("company_name", "")
+                print(f"[SYNC] Quote {quote_id}: client_id='{quote_cid}' company_name='{quote_company}'", flush=True)
                 # Match by client_id OR by legacy name matching (and add client_id to legacy records)
                 if quote_data.get("client_id") == client_id:
                     print(f"[SYNC] Updating quote {quote_id} with client_id={client_id}", flush=True)
@@ -11203,6 +11207,7 @@ def _parse_quote_form(form) -> dict:
         client_data = fb_get(f"/clients/{company_name}") or {}
         client_id = client_data.get("client_id", "")
         client_name_from_db = client_data.get("client_name", "")
+        print(f"[QUOTE_FORM] Quote created for client '{company_name}': client_id='{client_id}'", flush=True)
 
     return {
         "job_number":           form.get("job_number", ""),
