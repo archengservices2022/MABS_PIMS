@@ -639,7 +639,7 @@ a[href*="filter_expense"]:hover {
               <span class="fw-bold text-teal">{{ r.get('invoice_number','—') }}</span>
               {% endif %}
             </td>
-            <td>{{ r.get('client_name','—') }}</td>
+            <td>{{ r.get('company_name') or r.get('client_name','—') }}</td>
             <td class="text-muted small">
               {% set linked = r.get('linked_projects', [r.get('project_number', '')]) %}
               {% if linked and linked|length > 0 %}

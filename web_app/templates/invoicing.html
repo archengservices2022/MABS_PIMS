@@ -173,7 +173,7 @@
               <td style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
                 <span class="fw-bold text-teal" style="text-decoration:none;white-space:nowrap;">{{ meta.get('invoice_number','—') }}</span>
               </td>
-              <td>{{ meta.get('client_name','—') }}</td>
+              <td>{{ meta.get('company_name') or meta.get('client_name','—') }}</td>
               <td class="text-muted small">
                 {%- set main_proj = meta.get('project_number','') %}
                 {%- if main_proj %}

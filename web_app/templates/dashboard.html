@@ -358,8 +358,8 @@
       {% for q in followup_quotes %}
       <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
         <div>
-          <div class="fw-500 small">{{ q.get('job_number','—') }} — {{ q.get('project_name') or q.get('client_name','—') }}</div>
-          <div class="text-muted" style="font-size:0.75rem;">{{ q.get('client_name','') }}{% if q.get('follow_up_date') %} · Due {{ q.get('follow_up_date') | format_date }}{% endif %}</div>
+          <div class="fw-500 small">{{ q.get('job_number','—') }} — {{ q.get('project_name') or (q.get('company_name') or q.get('client_name','—')) }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ q.get('company_name') or q.get('client_name','') }}{% if q.get('follow_up_date') %} · Due {{ q.get('follow_up_date') | format_date }}{% endif %}</div>
         </div>
         <div class="d-flex gap-1">
           {% if 'quotes' in allowed_pages and q.get('firebase_id') %}
@@ -384,8 +384,8 @@
       {% for q in approved_quotes %}
       <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
         <div>
-          <div class="fw-500 small">{{ q.get('job_number','—') }} — {{ q.get('project_name') or q.get('client_name','—') }}</div>
-          <div class="text-muted" style="font-size:0.75rem;">{{ q.get('client_name','') }}{% if q.get('total') %} · ${{ "{:,.0f}".format(q.get('total',0)|float) }}{% endif %}</div>
+          <div class="fw-500 small">{{ q.get('job_number','—') }} — {{ q.get('project_name') or (q.get('company_name') or q.get('client_name','—')) }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ q.get('company_name') or q.get('client_name','') }}{% if q.get('total') %} · ${{ "{:,.0f}".format(q.get('total',0)|float) }}{% endif %}</div>
         </div>
         <div class="d-flex gap-1">
           {% if 'quotes' in allowed_pages and q.get('firebase_id') %}
@@ -428,7 +428,7 @@
       </div>
       <div class="focus-body">
         <div class="focus-title">
-          <strong>{{ meta.get('invoice_number','—') }}</strong> · {{ meta.get('client_name','—') }}
+          <strong>{{ meta.get('invoice_number','—') }}</strong> · {{ meta.get('company_name') or meta.get('client_name','—') }}
           <span class="badge ms-1" style="background:#FEE2E2;color:#991B1B;font-size:0.68rem;">OVERDUE</span>
         </div>
         <div class="focus-sub">Due {{ meta.get('due_date','—') | format_date }} · ${{ "{:,.0f}".format(meta.get('total',0)|float) }}</div>
