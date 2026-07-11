@@ -5154,6 +5154,8 @@ def clients():
 
 def _sync_client_changes(old_company_name, new_company_name, new_client_name):
     """Sync client changes to all related invoices, quotes, and projects."""
+    print(f"[SYNC] Starting sync: old='{old_company_name}' → new='{new_company_name}'", flush=True)
+
     # Update invoices
     invoices = fb_get("/invoices") or {}
     if isinstance(invoices, dict):
@@ -5175,7 +5177,10 @@ def _sync_client_changes(old_company_name, new_company_name, new_client_name):
         for quote_id, quote_data in quotes.items():
             if isinstance(quote_data, dict):
                 # Match by company_name or client_name
-                if quote_data.get("company_name", "") == old_company_name or quote_data.get("client_name", "") == old_company_name:
+                quote_company = quote_data.get("company_name", "")
+                quote_client = quote_data.get("client_name", "")
+                if quote_company == old_company_name or quote_client == old_company_name:
+                    print(f"[SYNC] Updating quote {quote_id}: '{quote_company}' or '{quote_client}' → '{new_company_name}'", flush=True)
                     quote_data["company_name"] = new_company_name
                     if new_client_name:
                         quote_data["client_name"] = new_client_name
