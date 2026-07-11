@@ -187,6 +187,28 @@
 
 {% block scripts %}
 <script>
+document.querySelectorAll('form').forEach(form => {
+  form.addEventListener('submit', function(e) {
+    const companyName = form.querySelector('input[name="company_name"]');
+    const clientName = form.querySelector('input[name="client_name"]');
+
+    if (companyName && clientName) {
+      const companyVal = companyName.value.trim();
+      const clientVal = clientName.value.trim();
+
+      if (!companyVal && !clientVal) {
+        e.preventDefault();
+        alert('Please enter either Company Name or Client Name.');
+        return false;
+      }
+    }
+  });
+});
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script>
 const clientTabParam = "{{ active_tab }}";
 const clientAllTabs  = ["all-clients", "new-client"];
 const clientTarget   = clientAllTabs.includes(clientTabParam) ? clientTabParam : "all-clients";

@@ -62,3 +62,18 @@
   </div>
 </div>
 {% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelector('form').addEventListener('submit', function(e) {
+  const companyName = document.querySelector('input[name="company_name"]').value.trim();
+  const clientName = document.querySelector('input[name="client_name"]').value.trim();
+
+  if (!companyName && !clientName) {
+    e.preventDefault();
+    alert('Please enter either Company Name or Client Name.');
+    return false;
+  }
+});
+</script>
+{% endblock %}
