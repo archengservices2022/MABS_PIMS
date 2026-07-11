@@ -48,7 +48,7 @@
               <option value="">-- Select Client --</option>
               {% for c in clients %}
               <option value="{{ c }}"
-                {{ 'selected' if quote and quote.get('client_name') == c }}>{{ c }}</option>
+                {{ 'selected' if quote and (quote.get('company_name') == c or quote.get('client_name') == c) }}>{{ c }}</option>
               {% endfor %}
             </select>
           </div>
