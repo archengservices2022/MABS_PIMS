@@ -3150,10 +3150,8 @@ def invoicing():
         items = [i for i in items if i.get("meta", {}).get("client_name", "") == client_filter]
     if plant_filter:
         items = [i for i in items if i.get("plant_state", "") == plant_filter]
-    if date_from:
-        items = [i for i in items if (i.get("meta", {}).get("invoice_date") or "") >= date_from]
-    if date_to:
-        items = [i for i in items if (i.get("meta", {}).get("invoice_date") or "") <= date_to]
+    # Don't filter by invoice_date here - let payment date filtering handle date range
+    # This allows invoices from any year to show payments within the selected date range
 
     # Build filter dropdown lists
     inv_clients = _load_clients()
