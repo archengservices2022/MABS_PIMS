@@ -53,11 +53,12 @@
           </div>
           <div class="col-md-6">
             <label class="form-label">Client <span class="text-danger">*</span></label>
+            {% set pqd = prefill_quote_data|default({}, boolean=False) %}
             <select name="client_name" class="form-select">
               <option value="">-- Select Client --</option>
               {% for c in clients %}
               <option value="{{ c }}"
-                {{ 'selected' if (project and (project.get('company_name') == c or project.get('client_name') == c or project.get('company') == c)) or (prefill_quote_data|default({}).get('company_name') == c) }}>{{ c }}</option>
+                {{ 'selected' if (project and (project.get('company_name') == c or project.get('client_name') == c or project.get('company') == c)) or (pqd.get('company_name') == c) }}>{{ c }}</option>
               {% endfor %}
             </select>
           </div>
