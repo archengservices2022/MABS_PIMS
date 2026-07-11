@@ -278,7 +278,7 @@
           <i class="bi bi-cash-coin me-1"></i>
           {% if dash_commission.role == 'sales' %}My Commission{% else %}Commission Overview{% endif %}
         </h6>
-        <a href="{{ url_for('quotes') }}" class="btn btn-xs" style="background:#EDE9FE;color:#5B21B6;border:none;font-size:11px;padding:3px 10px;border-radius:4px;">View Details →</a>
+        <a href="{{ url_for('quotes') }}?tab=salespeople" class="btn btn-xs" style="background:#EDE9FE;color:#5B21B6;border:none;font-size:11px;padding:3px 10px;border-radius:4px;">View Details →</a>
       </div>
 
       {% if dash_commission.role == 'sales' %}
