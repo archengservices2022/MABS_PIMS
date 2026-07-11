@@ -5200,16 +5200,17 @@ def _sync_client_changes(old_company_name, new_company_name, new_client_name):
                 print(f"[SYNC] Quote {quote_id}: client_id='{quote_cid}' company_name='{quote_company}'", flush=True)
                 # Match by client_id OR by legacy name matching (and add client_id to legacy records)
                 if quote_data.get("client_id") == client_id:
-                    print(f"[SYNC] Updating quote {quote_id} with client_id={client_id}", flush=True)
+                    print(f"[SYNC] Updating quote {quote_id} with client_id={client_id}: '{quote_data.get('company_name')}' → '{new_company_name}'", flush=True)
                     quote_data["company_name"] = new_company_name
                     quote_data["client_name"] = new_client_name
-                    fb_update(f"/quotes/{quote_id}", quote_data)
+                    fb_update(f"/job_forms/{quote_id}", quote_data)
+                    print(f"[SYNC] Quote {quote_id} updated: company_name='{new_company_name}' client_name='{new_client_name}'", flush=True)
                 elif not quote_data.get("client_id") and (quote_data.get("company_name", "") == old_company_name or quote_data.get("client_name", "") == old_company_name):
                     print(f"[SYNC] Migrating legacy quote {quote_id}: '{quote_data.get('company_name') or quote_data.get('client_name')}' → '{new_company_name}' (adding client_id)", flush=True)
                     quote_data["client_id"] = client_id
                     quote_data["company_name"] = new_company_name
                     quote_data["client_name"] = new_client_name
-                    fb_update(f"/quotes/{quote_id}", quote_data)
+                    fb_update(f"/job_forms/{quote_id}", quote_data)
 
     # Update projects by client_id
     projects = fb_get("/projects") or {}
@@ -5254,7 +5255,7 @@ def _sync_client_changes_by_name(old_company_name, new_company_name, new_client_
                 if quote_data.get("company_name", "") == old_company_name or quote_data.get("client_name", "") == old_company_name:
                     quote_data["company_name"] = new_company_name
                     quote_data["client_name"] = new_client_name
-                    fb_update(f"/quotes/{quote_id}", quote_data)
+                    fb_update(f"/job_forms/{quote_id}", quote_data)
 
     # Update projects
     projects = fb_get("/projects") or {}
