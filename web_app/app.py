@@ -8834,16 +8834,33 @@ def employees():
         for e in stale_open_entries:
             e["_suggested_close"] = f"{e.get('date', today_str)}T17:00"
 
+        _cur_month_str = now.strftime("%Y-%m")
+        timesheets_this_month = sum(
+            1 for e in all_entries
+            if (e.get("date") or "")[:7] == _cur_month_str
+        )
+
+        _week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+        _week_end   = (now + timedelta(days=6 - now.weekday())).strftime("%Y-%m-%d")
+        approved_time_off_this_week = sum(
+            1 for r in all_time_off
+            if r.get("status") == "Approved"
+            and (r.get("end_date") or r.get("date") or "") >= _week_start
+            and (r.get("start_date") or r.get("date") or "") <= _week_end
+        )
+
         context.update({
-            "all_users":           _load_all_users(),
-            "open_entries_by_uid": {e["employee_uid"]: e for e in all_entries if e.get("status") == "open"},
-            "pending_time_off":    [r for r in all_time_off if r.get("status") == "Pending"],
+            "all_users":                    _load_all_users(),
+            "open_entries_by_uid":          {e["employee_uid"]: e for e in all_entries if e.get("status") == "open"},
+            "pending_time_off":             [r for r in all_time_off if r.get("status") == "Pending"],
             "all_time_off_balances": {
                 u["firebase_uid"]: _time_off_balance(all_time_off, u["firebase_uid"], now.year)
                 for u in _load_all_users() if u.get("firebase_uid")
             },
-            "hours_by_project":    _aggregate_hours_by_project(period_entries),
-            "stale_open_entries":  stale_open_entries,
+            "hours_by_project":             _aggregate_hours_by_project(period_entries),
+            "stale_open_entries":           stale_open_entries,
+            "timesheets_this_month":        timesheets_this_month,
+            "approved_time_off_this_week":  approved_time_off_this_week,
             "period":              period,
             "period_start":        period_start,
             "period_end":          period_end,

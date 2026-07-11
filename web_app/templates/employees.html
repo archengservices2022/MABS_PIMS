@@ -897,8 +897,8 @@
     </div>
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-green">
-        <div class="kpi-top"><span class="kpi-label">Clocked In Now</span><i class="bi bi-record-circle-fill kpi-icon-sm"></i></div>
-        <div class="kpi-value">{{ open_entries_by_uid|length }}</div>
+        <div class="kpi-top"><span class="kpi-label">Timesheets This Month</span><i class="bi bi-clock-history kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ timesheets_this_month }}</div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
@@ -908,9 +908,9 @@
       </div>
     </div>
     <div class="col-6 col-xl-3">
-      <div class="kpi-card {% if stale_open_entries %}kpi-red{% else %}kpi-blue{% endif %}">
-        <div class="kpi-top"><span class="kpi-label">Needs Attention</span><i class="bi bi-exclamation-triangle-fill kpi-icon-sm"></i></div>
-        <div class="kpi-value">{{ stale_open_entries|length }}</div>
+      <div class="kpi-card kpi-blue">
+        <div class="kpi-top"><span class="kpi-label">Approved Off This Week</span><i class="bi bi-calendar-check kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ approved_time_off_this_week }}</div>
       </div>
     </div>
   </div>
