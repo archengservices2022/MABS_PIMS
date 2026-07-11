@@ -134,6 +134,57 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET", "mabs-pims-secret-2025-change-in-prod")
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
 
+# ── Session inactivity timeout ─────────────────────────────────────────────────
+SESSION_INACTIVITY_HOURS = 8
+
+@app.before_request
+def check_session_timeout():
+    # Skip for login/logout/static routes
+    if request.endpoint in ("login", "logout", "static", None):
+        return
+    if "user_email" not in session:
+        return
+    last = session.get("last_activity")
+    now_ts = datetime.now(timezone.utc).timestamp()
+    if last and (now_ts - last) > SESSION_INACTIVITY_HOURS * 3600:
+        session.clear()
+        flash("Your session expired due to inactivity. Please log in again.", "warning")
+        return redirect(url_for("login"))
+    session["last_activity"] = now_ts
+
+# ── Login rate limiting (in-memory, per IP) ────────────────────────────────────
+_login_attempts: Dict[str, dict] = {}
+_RATE_MAX_ATTEMPTS = 5
+_RATE_WINDOW_MINUTES = 15
+_RATE_BLOCK_MINUTES  = 15
+
+def _check_rate_limit(ip: str):
+    """Returns (is_blocked, seconds_remaining)."""
+    now = datetime.now(timezone.utc)
+    rec = _login_attempts.get(ip)
+    if not rec:
+        return False, 0
+    blocked_until = rec.get("blocked_until")
+    if blocked_until and now < blocked_until:
+        remaining = int((blocked_until - now).total_seconds())
+        return True, remaining
+    # Clear expired window
+    first = rec.get("first_attempt", now)
+    if (now - first).total_seconds() > _RATE_WINDOW_MINUTES * 60:
+        _login_attempts.pop(ip, None)
+        return False, 0
+    return False, 0
+
+def _record_failed_login(ip: str):
+    now = datetime.now(timezone.utc)
+    rec = _login_attempts.setdefault(ip, {"count": 0, "first_attempt": now})
+    rec["count"] += 1
+    if rec["count"] >= _RATE_MAX_ATTEMPTS:
+        rec["blocked_until"] = now + timedelta(minutes=_RATE_BLOCK_MINUTES)
+
+def _clear_login_attempts(ip: str):
+    _login_attempts.pop(ip, None)
+
 # Register Jinja2 filters (will be added after _format_date_display is defined)
 # We'll add these filters later in the code once the functions are defined
 
@@ -345,35 +396,44 @@ def login():
 
     error = None
     if request.method == "POST":
-        email    = request.form.get("email", "").strip().lower()
-        password = request.form.get("password", "")
-
-        if not email or not password:
-            error = "Please enter your email and password."
-        elif not FIREBASE_AVAILABLE:
-            error = "Authentication service unavailable. Please check server configuration."
+        ip = request.remote_addr or "unknown"
+        is_blocked, secs_left = _check_rate_limit(ip)
+        if is_blocked:
+            mins = (secs_left // 60) + 1
+            error = f"Too many failed attempts. Please wait {mins} minute(s) and try again."
         else:
-            ok, uid, err_msg = firebase_sign_in(email, password)
-            if not ok:
-                error = "Invalid email or password. Please try again."
-                log.warning("Login failed for %s: %s", email, err_msg)
+            email    = request.form.get("email", "").strip().lower()
+            password = request.form.get("password", "")
+
+            if not email or not password:
+                error = "Please enter your email and password."
+            elif not FIREBASE_AVAILABLE:
+                error = "Authentication service unavailable. Please check server configuration."
             else:
-                profile = load_user_profile(uid)
-                if not profile:
-                    error = "No app profile found. Contact your administrator."
-                elif not profile.get("active", True):
-                    error = "Your account is inactive. Contact your administrator."
+                ok, uid, err_msg = firebase_sign_in(email, password)
+                if not ok:
+                    _record_failed_login(ip)
+                    error = "Invalid email or password. Please try again."
+                    log.warning("Login failed for %s: %s", email, err_msg)
                 else:
-                    role         = normalize_role(profile.get("role", "sales"))
-                    custom_pages = profile.get("custom_pages") or None
-                    session.permanent        = True
-                    session["user_email"]    = email
-                    session["user_uid"]      = uid
-                    session["user_name"]     = profile.get("username", email.split("@")[0])
-                    session["user_role"]     = role
-                    session["custom_pages"]  = custom_pages
-                    log.info("Login: %s (%s) pages=%s", email, role, custom_pages or "role-default")
-                    return redirect(url_for(first_page(role, custom_pages)))
+                    profile = load_user_profile(uid)
+                    if not profile:
+                        error = "No app profile found. Contact your administrator."
+                    elif not profile.get("active", True):
+                        error = "Your account is inactive. Contact your administrator."
+                    else:
+                        _clear_login_attempts(ip)
+                        role         = normalize_role(profile.get("role", "sales"))
+                        custom_pages = profile.get("custom_pages") or None
+                        session.permanent        = True
+                        session["user_email"]    = email
+                        session["user_uid"]      = uid
+                        session["user_name"]     = profile.get("username", email.split("@")[0])
+                        session["user_role"]     = role
+                        session["custom_pages"]  = custom_pages
+                        session["last_activity"] = datetime.now(timezone.utc).timestamp()
+                        log.info("Login: %s (%s) pages=%s", email, role, custom_pages or "role-default")
+                        return redirect(url_for(first_page(role, custom_pages)))
 
     return render_template("login.html", error=error)
 
