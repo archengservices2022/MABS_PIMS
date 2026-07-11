@@ -9643,7 +9643,8 @@ def user_details_update(uid):
     data = request.get_json() or {}
     updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
 
-    # Track if display_name changed for syncing
+    # Load current user data once for old-name tracking
+    user_data = fb_get(f"/users/{uid}") or {}
     old_display_name = None
     new_display_name = None
 
@@ -9651,11 +9652,11 @@ def user_details_update(uid):
         if field in data:
             value = str(data[field]).strip()
             updates[field] = value
-            if field == "display_name":
-                # Get old display name before updating
-                user_data = fb_get(f"/users/{uid}") or {}
-                old_display_name = user_data.get("display_name") or user_data.get("username", "")
-                new_display_name = value
+            if field in ("username", "display_name"):
+                old_val = user_data.get(field) or user_data.get("username", "")
+                if old_val and old_val != value:
+                    old_display_name = old_val
+                    new_display_name = value
 
     for field in ("hourly_rate", "monthly_salary", "commission_rate"):
         if field in data:
@@ -9670,9 +9671,13 @@ def user_details_update(uid):
 
     fb_update(f"/users/{uid}", updates)
 
-    # Sync display name changes across all records
-    if new_display_name and old_display_name and old_display_name != new_display_name:
+    # Sync name changes across timesheets, expenses, approvals, etc.
+    if old_display_name and new_display_name:
         _sync_user_display_name(old_display_name, new_display_name)
+
+    # Update session if the logged-in user changed their own name
+    if uid == session.get("user_uid") and new_display_name:
+        session["user_name"] = new_display_name
 
     return jsonify({"ok": True})
 
