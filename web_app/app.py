@@ -6661,6 +6661,23 @@ def financial():
         _extract_year_from_date(r.get("date", "")) in [stat_card_year, prev_year]
         or _extract_year_from_date(invoices.get(r.get("invoice_id"), {}).get("meta", {}).get("invoice_date", "")) in [stat_card_year, prev_year]]
 
+    # Recalculate amount_paid and tax_paid for rev_list to only include payments in current/previous years
+    for r in rev_list:
+        inv_id = r.get("invoice_id")
+        if inv_id and inv_id in invoices:
+            inv_data = invoices[inv_id]
+            # Sum only payments from current/previous years
+            r["amount_paid"] = sum(
+                _safe_float(p.get("amount", 0))
+                for p in (inv_data.get("payment_log", []) or [])
+                if _extract_year_from_date(p.get("date", "")) in [stat_card_year, prev_year]
+            )
+            r["tax_paid"] = sum(
+                _safe_float(p.get("amount", 0))
+                for p in (inv_data.get("tax_payments", []) or [])
+                if _extract_year_from_date(p.get("date", "")) in [stat_card_year, prev_year]
+            )
+
     # Sort by date ascending (oldest to newest)
     rev_list = sorted(rev_list, key=lambda r: r.get('invoice_date', '') or r.get('date', ''), reverse=True)
 
