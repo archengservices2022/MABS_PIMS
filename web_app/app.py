@@ -897,7 +897,7 @@ def dashboard():
         total_outstanding=total_outstanding,
         active_projects=active_projects,
         open_quotes=open_quotes,
-        total_invoices=len(inv_list),
+        total_invoices=len(cur_year_invs),
         recent_invoices=recent_invoices,
         recent_projects=recent_projects,
         chart_labels=json.dumps(chart_labels),
