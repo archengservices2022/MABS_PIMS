@@ -14876,6 +14876,51 @@ def timesheet_detail(sheet_id):
         sheet=sheet, by_date=by_date, is_admin=is_admin)
 
 
+def _recalc_timesheet_hours(entries):
+    """Classify each work entry's hours as regular/overtime: Sat/Sun hours are
+    always overtime; Mon-Fri hours are regular up to a running weekly total of
+    40, with anything beyond that (weekdays only) counted as overtime."""
+    by_date = {}
+    for e in entries:
+        by_date.setdefault(e.get("date", ""), []).append(e)
+
+    running_weekday_total = 0.0
+    for d in sorted(by_date.keys()):
+        day_entries = by_date[d]
+        try:
+            is_weekend = datetime.strptime(d, "%Y-%m-%d").weekday() >= 5
+        except (ValueError, TypeError):
+            is_weekend = False
+
+        if is_weekend:
+            for e in day_entries:
+                if e.get("entry_type", "work") != "work":
+                    e["regular_hours"] = 0
+                    e["overtime_hours"] = 0
+                    continue
+                worked = _safe_float(e.get("total_hours", 0))
+                e["regular_hours"] = 0
+                e["overtime_hours"] = worked
+        else:
+            remaining_reg = max(0.0, 40.0 - running_weekday_total)
+            day_worked = 0.0
+            for e in day_entries:
+                if e.get("entry_type", "work") != "work":
+                    e["regular_hours"] = 0
+                    e["overtime_hours"] = 0
+                    continue
+                worked = _safe_float(e.get("total_hours", 0))
+                day_worked += worked
+                row_reg = min(worked, remaining_reg)
+                row_ot = worked - row_reg
+                remaining_reg -= row_reg
+                e["regular_hours"] = row_reg
+                e["overtime_hours"] = row_ot
+            running_weekday_total += day_worked
+
+    return entries
+
+
 @app.route("/api/timesheets", methods=["POST"])
 @login_required
 def api_timesheets_save():
@@ -14889,6 +14934,7 @@ def api_timesheets_save():
     if not week_of:
         return jsonify({"error": "week_of is required"}), 400
 
+    entries   = _recalc_timesheet_hours(entries)
     total_reg = sum(_safe_float(e.get("regular_hours", 0)) for e in entries)
     total_ot  = sum(_safe_float(e.get("overtime_hours", 0)) for e in entries)
     now_iso   = datetime.now(timezone.utc).isoformat()
