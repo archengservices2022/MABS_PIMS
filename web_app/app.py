@@ -7355,6 +7355,9 @@ def financial():
                         # Update tax_amount and total from invoice meta
                         rdata["tax_amount"] = _safe_float(inv_meta.get("tax_amount", 0))
                         rdata["total"] = _safe_float(inv_meta.get("total", 0))
+                        # Get synced company_name and client_name from invoice meta
+                        rdata["company_name"] = inv_meta.get("company_name", "")
+                        rdata["client_name"] = inv_meta.get("client_name", rdata.get("client_name", ""))
 
                 rev_list.append(rdata)
     rev_list.sort(key=lambda x: x.get("date", ""), reverse=True)
