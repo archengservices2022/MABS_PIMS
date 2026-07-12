@@ -7666,6 +7666,7 @@ def financial():
         project_pnl.append({
             "project_number": pnum,
             "project_name":   p.get("project_name",""),
+            "company_name":   p.get("company_name",""),
             "client_name":    p.get("client_name",""),
             "status":         p.get("status",""),
             "base_contract":  p_base_contract,
@@ -8089,6 +8090,7 @@ def financial():
             days_overdue = 0
         entry = {
             "invoice_number": m.get("invoice_number", ""),
+            "company_name":   m.get("company_name", ""),
             "client_name":    m.get("client_name", ""),
             "invoice_date":   m.get("invoice_date", ""),
             "due_date":       due_str,
@@ -8162,6 +8164,7 @@ def financial():
             _days_ov = 0
         _entry = {
             "invoice_number": _m.get("invoice_number", ""),
+            "company_name":   _m.get("company_name", ""),
             "client_name":    _m.get("client_name", ""),
             "invoice_date":   _inv_date,
             "due_date":       _due_str,

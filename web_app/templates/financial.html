@@ -2261,7 +2261,7 @@ function viewReceipt(expId) {
           <tr class="bp-row" onclick="location.href='{{ url_for('project_detail', project_id=row.firebase_id) }}'" style="cursor:pointer;">
             <td><span class="fw-bold text-teal">{{ row.project_number }}</span></td>
             <td class="fw-medium">{{ row.project_name }}</td>
-            <td class="text-muted small">{{ row.client_name }}</td>
+            <td class="text-muted small">{{ row.company_name or row.client_name }}</td>
             <td>{{ status_badge(row.status, 'Not Started') }}</td>
             <td class="text-end">
               ${{ "{:,.2f}".format(row.base_contract or row.contract_value) }}
@@ -3132,7 +3132,7 @@ function viewReceipt(expId) {
                 {{ e.invoice_number }}
               </a>
             </td>
-            <td style="padding:8px 12px;">{{ e.client_name or '—' }}</td>
+            <td style="padding:8px 12px;">{{ e.company_name or e.client_name or '—' }}</td>
             <td style="padding:8px 12px;">{{ (e.invoice_date or '—') | format_date }}</td>
             <td style="padding:8px 12px;">{{ (e.due_date or '—') | format_date }}</td>
             <td style="padding:8px 12px; text-align:center;">
