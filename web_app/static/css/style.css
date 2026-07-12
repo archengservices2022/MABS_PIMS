@@ -281,7 +281,15 @@ body {
 .topbar-title {
   font-weight: 700; font-size: 15px; color: var(--slate-800); flex: 1;
 }
-.topbar-date { color: var(--slate-400); font-size: 12px; }
+.topbar-date {
+  color: var(--slate-600);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 5px 12px;
+  background: var(--slate-100);
+  border-radius: 999px;
+}
 
 /* ══ CONTENT ════════════════════════════════════════════════════════════════ */
 .content { padding: 24px; flex: 1; }

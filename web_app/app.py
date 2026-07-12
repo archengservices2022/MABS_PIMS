@@ -8,9 +8,16 @@ import logging
 import secrets
 import hashlib
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from functools import wraps
 from typing import Dict, List, Optional
+
+# Single source of truth for "what day is it" across the whole app (timesheet
+# locking, dashboard "today", payroll/commission period grouping, due dates,
+# etc.), regardless of which timezone the server or an individual user is in.
+# Storage timestamps (created_at/updated_at) intentionally stay on UTC.
+COMPANY_TZ = ZoneInfo("America/Chicago")
 
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -360,7 +367,7 @@ def inject_globals():
             "last_project_number":   my_entries[0].get("project_number", "") if my_entries else "",
             "clock_active_projects": [p for p in _load_projects_list()
                                        if isinstance(p, dict) and p.get("status", "") not in ("Completed", "invoiced_Fully paid", "Cancelled")],
-            "today_str":             datetime.now().strftime("%Y-%m-%d"),
+            "today_str":             datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
         }
 
     return {
@@ -370,7 +377,7 @@ def inject_globals():
         "user_uid":    uid,
         "allowed_pages": get_allowed_pages(role, session.get("custom_pages") or None),
         "company":     company_info(),
-        "now":         datetime.now(),
+        "now":         datetime.now(COMPANY_TZ),
         "timedelta":   timedelta,
         "format_date": _format_date_display,  # Make date formatter available in templates (MM-DD-YYYY)
         "format_date_invoice": _format_date_invoice,  # Invoice-specific formatter (MM-DD-YY)
@@ -613,7 +620,7 @@ def dashboard():
     quot_list = list(quotes.values())   if isinstance(quotes, dict)   else []
 
     # Dashboard totals — current year only
-    cur_year = str(datetime.now().year)
+    cur_year = str(datetime.now(COMPANY_TZ).year)
 
     cur_year_invs = [i for i in inv_list if isinstance(i, dict)
                      and (i.get("meta", {}).get("invoice_date", "") or "").startswith(cur_year)]
@@ -680,7 +687,7 @@ def dashboard():
 
     # Build a full 6-month window ending this month (zero-fill gaps)
     from dateutil.relativedelta import relativedelta
-    now = datetime.now()
+    now = datetime.now(COMPANY_TZ)
     chart_labels = [(now - relativedelta(months=i)).strftime("%b %Y") for i in range(5, -1, -1)]
     chart_data   = [monthly.get(m, 0) for m in chart_labels]
 
@@ -698,9 +705,9 @@ def dashboard():
             proj_status_counts[st] = proj_status_counts.get(st, 0) + 1
 
     # ── Alert counts — show all warnings (not filtered by year) ──────────────────────────────────────
-    today_str     = datetime.now().strftime("%Y-%m-%d")
-    week_str      = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
-    three_day_str = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
+    today_str     = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
+    week_str      = (datetime.now(COMPANY_TZ) + timedelta(days=7)).strftime("%Y-%m-%d")
+    three_day_str = (datetime.now(COMPANY_TZ) + timedelta(days=3)).strftime("%Y-%m-%d")
     overdue_count = sum(1 for i in inv_list
                         if isinstance(i, dict) and i.get("meta", {}).get("status", "") == "Overdue")
     _QTERMINAL = {"Approved", "Converted", "Invoiced", "Rejected", "Cancelled", "Expired"}
@@ -759,7 +766,7 @@ def dashboard():
             pipeline[_bucket].append(_p)
 
     # ── Urgent alerts (overdue + due within 3 days only) ─────────────────────
-    three_day_str = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
+    three_day_str = (datetime.now(COMPANY_TZ) + timedelta(days=3)).strftime("%Y-%m-%d")
 
     # 1. Overdue invoices — ALL years (show all warnings)
     reminder_overdue_invoices = sorted(
@@ -803,8 +810,8 @@ def dashboard():
     projects_ready_to_invoice = sorted(projects_ready_to_invoice, key=lambda x: x["project_number"], reverse=True)[:8]
 
     # ── This month vs last month collected ────────────────────────────────────
-    this_month_str = datetime.now().strftime("%Y-%m")
-    last_month_str = (datetime.now() - timedelta(days=30)).strftime("%Y-%m")
+    this_month_str = datetime.now(COMPANY_TZ).strftime("%Y-%m")
+    last_month_str = (datetime.now(COMPANY_TZ) - timedelta(days=30)).strftime("%Y-%m")
     this_month_collected = 0.0
     last_month_collected = 0.0
     for inv in inv_list:
@@ -862,7 +869,7 @@ def dashboard():
     # ── Commission widget ──────────────────────────────────────────────────────
     _dash_role = normalize_role(session.get("user_role", ""))
     _dash_name = session.get("user_name", "")
-    _cur_month = datetime.now().strftime("%Y-%m")
+    _cur_month = datetime.now(COMPANY_TZ).strftime("%Y-%m")
     _dash_commission: Dict[str, object] = {}
 
     # Project status lookup for cancellation check
@@ -1012,8 +1019,8 @@ def dashboard():
 def sales_dashboard():
     user_name  = session.get("user_name", "")
     raw        = fb_get("/job_forms") or {}
-    today_str  = datetime.now().strftime("%Y-%m-%d")
-    week_str   = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+    today_str  = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
+    week_str   = (datetime.now(COMPANY_TZ) + timedelta(days=7)).strftime("%Y-%m-%d")
     _TERMINAL  = {"Approved", "Converted", "Invoiced", "Rejected", "Cancelled", "Expired"}
 
     all_quotes: list = []
@@ -1033,7 +1040,7 @@ def sales_dashboard():
     total_value     = sum(_safe_float(q.get("total", 0)) for q in my_quotes)
     win_rate        = round(len(converted) / len(my_quotes) * 100) if my_quotes else 0
 
-    next14_str = (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d")
+    next14_str = (datetime.now(COMPANY_TZ) + timedelta(days=14)).strftime("%Y-%m-%d")
     followups_due = sorted(
         [q for q in my_quotes
          if q.get("status") not in _TERMINAL
@@ -1061,7 +1068,7 @@ def sales_dashboard():
     _u_data = fb_get(f"/users/{_uid}") or {} if _uid else {}
     _comm_rate = _safe_float(_u_data.get("commission_rate", 0))
     _emp_type = _u_data.get("employee_type", "")
-    _cur_month = datetime.now().strftime("%Y-%m")
+    _cur_month = datetime.now(COMPANY_TZ).strftime("%Y-%m")
     _proj_raw = fb_get("/projects") or {}
     _proj_status_sd: Dict[str, str] = {}
     if isinstance(_proj_raw, dict):
@@ -1112,7 +1119,7 @@ def sales_dashboard():
 def quotes():
     raw = fb_get("/job_forms") or {}
     _QUOTE_TERMINAL = {"Approved", "Converted", "Invoiced", "Rejected", "Cancelled", "Expired"}
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     items = []
     for fid, fdata in (raw.items() if isinstance(raw, dict) else []):
         if fdata and isinstance(fdata, dict):
@@ -1192,7 +1199,7 @@ def quotes():
 
     # Build follow-ups lists from ALL items (unaffected by list filters)
     from datetime import date as _date, timedelta as _td
-    _today     = datetime.now().strftime("%Y-%m-%d")
+    _today     = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     _today_d   = _date.today()
     _in14      = (_today_d + _td(days=14)).isoformat()
     follow_ups = []       # due today or overdue
@@ -1219,7 +1226,7 @@ def quotes():
 
     statuses   = ["Not Started", "In Progress", "Sent", "Approved", "Converted", "Rejected", "Expired", "Cancelled"]
     active_tab = request.args.get("tab", "all")
-    today_date = datetime.now().strftime("%Y-%m-%d")
+    today_date = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
 
     # KPI stats computed from filtered items (matches table rows)
     _OPEN_STATUSES      = {"Not Started", "In Progress"}
@@ -1437,7 +1444,7 @@ def quotes_export():
 
     output.seek(0)
     from flask import Response
-    fname = f"quotes_{datetime.now().strftime('%Y%m%d')}.csv"
+    fname = f"quotes_{datetime.now(COMPANY_TZ).strftime('%Y%m%d')}.csv"
     return Response(output.getvalue(), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
@@ -1576,7 +1583,7 @@ def quotes_export_excel():
     buf = _io.BytesIO()
     wb.save(buf); buf.seek(0)
     from flask import Response
-    fname = f"quotes_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    fname = f"quotes_{datetime.now(COMPANY_TZ).strftime('%Y%m%d')}.xlsx"
     return Response(buf.getvalue(),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment;filename={fname}"})
@@ -1722,7 +1729,7 @@ def quotes_export_pdf():
     buf.seek(0)
 
     from flask import Response
-    fname = f"quotes_{datetime.now().strftime('%Y%m%d')}.pdf"
+    fname = f"quotes_{datetime.now(COMPANY_TZ).strftime('%Y%m%d')}.pdf"
     return Response(buf.getvalue(), mimetype="application/pdf",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
@@ -1853,7 +1860,7 @@ def quote_followup_done(quote_id):
 def quote_followup_snooze(quote_id):
     from datetime import timedelta
     days = int(request.form.get("days", 7))
-    new_date = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+    new_date = (datetime.now(COMPANY_TZ) + timedelta(days=days)).strftime("%Y-%m-%d")
     fb_update(f"/job_forms/{quote_id}", {
         "follow_up_date": new_date,
         "updated_at": datetime.now(timezone.utc).isoformat()
@@ -1871,7 +1878,7 @@ def quote_duplicate(quote_id):
     new_q = {k: v for k, v in original.items() if not k.startswith("firebase_")}
     new_q["job_number"]   = _next_quote_number()
     new_q["status"]       = "Not Started"
-    new_q["date"]         = datetime.now().strftime("%Y-%m-%d")
+    new_q["date"]         = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     new_q["valid_until"]  = ""
     new_q["created_at"]   = datetime.now(timezone.utc).isoformat()
     new_q["updated_at"]   = datetime.now(timezone.utc).isoformat()
@@ -2227,7 +2234,7 @@ def project_detail(project_id):
                         stage_invoices[stage_idx] = []
                     stage_invoices[stage_idx].append(inv)
 
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
         for idx, stage in enumerate(data["payment_stages"]):
             stage_amount = _safe_float(stage.get("amount", 0))
 
@@ -2333,7 +2340,7 @@ def project_detail(project_id):
         else:
             # Check if overdue
             due_date = meta.get("due_date", "")
-            today = datetime.now().strftime("%Y-%m-%d")
+            today = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
             if due_date and due_date < today:
                 invoice["_display_status"] = "Overdue"
             else:
@@ -2749,8 +2756,8 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
     client_name = project.get("client_name", "")
     client_id = project.get("client_id", "")
     now_str    = datetime.now(timezone.utc).isoformat()
-    today      = datetime.now().strftime("%Y-%m-%d")
-    due_date   = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+    today      = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
+    due_date   = (datetime.now(COMPANY_TZ) + timedelta(days=30)).strftime("%Y-%m-%d")
     inv_num    = _next_invoice_number()
     inv_status = "Paid" if mark_paid else "Draft"
     amt_paid   = str(amount) if mark_paid else "0"
@@ -3007,7 +3014,7 @@ def projects_export_csv():
 
     output.seek(0)
     from flask import Response
-    fname = f"projects_{datetime.now().strftime('%Y%m%d')}.csv"
+    fname = f"projects_{datetime.now(COMPANY_TZ).strftime('%Y%m%d')}.csv"
     return Response(output.getvalue(), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
@@ -3101,7 +3108,7 @@ def projects_export_excel():
     buf = _io.BytesIO()
     wb.save(buf); buf.seek(0)
     from flask import Response
-    fname = f"projects_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    fname = f"projects_{datetime.now(COMPANY_TZ).strftime('%Y%m%d')}.xlsx"
     return Response(buf.getvalue(),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment;filename={fname}"})
@@ -3209,7 +3216,7 @@ def projects_export_pdf():
     doc.build(elems)
     buf.seek(0)
     from flask import Response
-    fname = f"projects_{datetime.now().strftime('%Y%m%d')}.pdf"
+    fname = f"projects_{datetime.now(COMPANY_TZ).strftime('%Y%m%d')}.pdf"
     return Response(buf.getvalue(), mimetype="application/pdf",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
@@ -3250,7 +3257,7 @@ def invoicing():
     all_invoices_raw = list(items)
 
     # Calculate status for all invoices BEFORE filtering (so filter uses calculated status, not stored status)
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     for inv in items:
         m = inv.get("meta", {})
         calculated_status = _calculate_invoice_status(inv)
@@ -3267,7 +3274,7 @@ def invoicing():
     plant_filter  = request.args.get("plant", "").strip().upper()
 
     # Recalculate status for every invoice BEFORE filtering so status_filter works correctly
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     for inv in items:
         m = inv.get("meta", {})
         calculated_status = _calculate_invoice_status(inv)
@@ -3543,8 +3550,8 @@ def create_bulk_invoices():
                     "company_name": company_name,
                     "client_name": client_name,
                     "client_id": client_id,
-                    "invoice_date": datetime.now().strftime("%Y-%m-%d"),
-                    "due_date": (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
+                    "invoice_date": datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
+                    "due_date": (datetime.now(COMPANY_TZ) + timedelta(days=30)).strftime("%Y-%m-%d"),
                     "status": "Draft",
                     "payment_stage_index": next_stage_idx,
                     "payment_stage": stage_name,
@@ -3876,7 +3883,7 @@ def invoice_new():
 
                     payment_log.append({
                         "amount": str(allocate),
-                        "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
+                        "date": payment_date or datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
                         "method": data["meta"].get("payment_method", ""),
                         "reference": payment_reference,
                         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -3896,7 +3903,7 @@ def invoice_new():
                     allocate_tax = min(tax_needs, remaining)
                     tax_log.append({
                         "amount": str(allocate_tax),
-                        "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
+                        "date": payment_date or datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
                         "method": data["meta"].get("payment_method", ""),
                         "reference": payment_reference,
                     })
@@ -4152,7 +4159,7 @@ def invoice_detail(invoice_id):
                 source_quote["firebase_id"] = sq_id
 
     return render_template("invoice_detail.html", invoice=data, company=company_info(),
-                           today_date=datetime.now().strftime("%Y-%m-%d"),
+                           today_date=datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
                            linked_project=linked_project, linked_projects=linked_projects,
                            source_quote=source_quote, enriched_payment_log=enriched_payment_log,
                            enriched_tax_payments=enriched_tax_payments)
@@ -4298,7 +4305,7 @@ def invoice_edit(invoice_id):
 
                     payment_log.append({
                         "amount": str(allocate),
-                        "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
+                        "date": payment_date or datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
                         "method": payment_method,
                         "reference": payment_reference,
                         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -4318,7 +4325,7 @@ def invoice_edit(invoice_id):
                     allocate_tax = min(tax_needs, remaining)
                     tax_log.append({
                         "amount": str(allocate_tax),
-                        "date": payment_date or datetime.now().strftime("%Y-%m-%d"),
+                        "date": payment_date or datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
                         "method": payment_method,
                         "reference": payment_reference,
                         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -4453,7 +4460,7 @@ def invoice_send_reminder(invoice_id):
         outstanding  = max(0.0, total - amt_paid - tax_paid)
         proj_num     = meta.get("project_number", "")
         proj_name    = meta.get("project_name", proj_num)
-        today_str    = datetime.now().strftime("%Y-%m-%d")
+        today_str    = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
         is_overdue   = bool(due_date and due_date < today_str)
         company_name = co.get("name", "Our Company")
         from_name    = em.get("from_name", company_name)
@@ -4779,7 +4786,7 @@ def invoice_update_amount(invoice_id):
 
                         new_payment_log.append({
                             "amount": str(distribute_to_proj),
-                            "date": datetime.now().strftime("%Y-%m-%d"),
+                            "date": datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
                             "created_at": datetime.now(timezone.utc).isoformat(),
                             "project_number": proj_num,
                             "invoice_number": meta.get("invoice_number", ""),
@@ -4793,7 +4800,7 @@ def invoice_update_amount(invoice_id):
                 tax_needs = min(tax_amount, remaining_to_distribute)
                 new_tax_log.append({
                     "amount": str(tax_needs),
-                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "date": datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
                     "created_at": datetime.now(timezone.utc).isoformat(),
                 })
                 remaining_to_distribute -= tax_needs
@@ -5103,7 +5110,7 @@ def invoicing_export_csv():
 
     output.seek(0)
     from flask import Response
-    fname = f"invoices_{datetime.now().strftime('%Y%m%d')}.csv"
+    fname = f"invoices_{datetime.now(COMPANY_TZ).strftime('%Y%m%d')}.csv"
     return Response(output.getvalue(), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
@@ -5206,7 +5213,7 @@ def invoicing_export_excel():
     buf = _io.BytesIO()
     wb.save(buf); buf.seek(0)
     from flask import Response
-    fname = f"invoices_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    fname = f"invoices_{datetime.now(COMPANY_TZ).strftime('%Y%m%d')}.xlsx"
     return Response(buf.getvalue(),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment;filename={fname}"})
@@ -5327,7 +5334,7 @@ def invoicing_export_pdf():
     doc.build(elems)
     buf.seek(0)
     from flask import Response
-    fname = f"invoices_{datetime.now().strftime('%Y%m%d')}.pdf"
+    fname = f"invoices_{datetime.now(COMPANY_TZ).strftime('%Y%m%d')}.pdf"
     return Response(buf.getvalue(), mimetype="application/pdf",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
@@ -5800,7 +5807,7 @@ def client_statement(company_name):
                   ParagraphStyle("cs", parent=styles["Normal"], fontSize=18, fontName="Helvetica-Bold", textColor=teal, alignment=2)),
     ],[
         Paragraph(f"{co.get('address','').replace(chr(10),' | ')}  |  {co.get('phone','')}  |  {co.get('email','')}", sm),
-        Paragraph(f"As of {datetime.now().strftime('%B %d, %Y')}",
+        Paragraph(f"As of {datetime.now(COMPANY_TZ).strftime('%B %d, %Y')}",
                   ParagraphStyle("dt", parent=styles["Normal"], fontSize=10, textColor=muted, alignment=2)),
     ]]
     hdr = Table(hdr_data, colWidths=[3.5*inch, 3.5*inch])
@@ -5907,7 +5914,7 @@ def client_statement(company_name):
     from flask import Response
     import re
     safe_name = re.sub(r'[^a-zA-Z0-9_-]', '', client_name.replace(" ", "_"))
-    fname = f"statement_{safe_name}_{datetime.now().strftime('%Y%m%d')}.pdf"
+    fname = f"statement_{safe_name}_{datetime.now(COMPANY_TZ).strftime('%Y%m%d')}.pdf"
     return Response(buf.getvalue(), mimetype="application/pdf",
                     headers={"Content-Disposition": f'attachment;filename="{fname}"'})
 
@@ -5932,7 +5939,7 @@ def _auto_generate_monthly_salaries() -> int:
     users = _load_all_users()
     if not users:
         return 0
-    now         = datetime.now()
+    now         = datetime.now(COMPANY_TZ)
     month_key   = now.strftime("%Y-%m")
     month_label = now.strftime("%B %Y")
     raw_sal     = fb_get("/balance_sheet_salary") or {}
@@ -6219,7 +6226,7 @@ def payroll_export_csv():
     w.writerow(["", "", "", "Totals", f"{comm_total_rev:.2f}", f"{comm_total_earned:.2f}", ""])
 
     from flask import Response
-    fname = f"payroll_{datetime.now().strftime('%Y%m%d')}.csv"
+    fname = f"payroll_{datetime.now(COMPANY_TZ).strftime('%Y%m%d')}.csv"
     return Response(output.getvalue(), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
@@ -6364,7 +6371,7 @@ def payroll_export_excel():
     buf.seek(0)
 
     from flask import Response
-    fname = f"payroll_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    fname = f"payroll_{datetime.now(COMPANY_TZ).strftime('%Y%m%d')}.xlsx"
     return Response(buf.getvalue(),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment;filename={fname}"})
@@ -6541,7 +6548,7 @@ def payroll_export_pdf():
     buf.seek(0)
 
     from flask import Response
-    fname = f"payroll_{datetime.now().strftime('%Y%m%d')}.pdf"
+    fname = f"payroll_{datetime.now(COMPANY_TZ).strftime('%Y%m%d')}.pdf"
     return Response(buf.getvalue(), mimetype="application/pdf",
                     headers={"Content-Disposition": f"attachment;filename={fname}"})
 
@@ -6569,7 +6576,7 @@ def _sanitize_for_export(cell):
 
 def _export_response(buf_or_str, fmt, name_prefix):
     from flask import Response
-    ts = datetime.now().strftime("%Y%m%d")
+    ts = datetime.now(COMPANY_TZ).strftime("%Y%m%d")
     if fmt == "pdf":
         return Response(buf_or_str.getvalue(), mimetype="application/pdf",
                         headers={"Content-Disposition": f"attachment;filename={name_prefix}_{ts}.pdf"})
@@ -6660,7 +6667,7 @@ def _make_pdf(title, headers, data_rows, col_widths_inch):
 @login_required
 def financial_income_export(fmt):
     import csv, io as _io
-    cur_year  = datetime.now().year
+    cur_year  = datetime.now(COMPANY_TZ).year
     prev_year = cur_year - 1
     revenue      = fb_get("/balance_sheet_revenue") or {}
     invoices_raw = fb_get("/invoices") or {}
@@ -6902,7 +6909,7 @@ def financial_expenses_export(fmt):
 @login_required
 def financial_byproject_export(fmt):
     import csv, io as _io
-    year = int(request.args.get("year", datetime.now().year))
+    year = int(request.args.get("year", datetime.now(COMPANY_TZ).year))
     projects = _load_projects_list()
     inv_raw = fb_get("/invoices") or {}
     invoices = inv_raw if isinstance(inv_raw, dict) else {}
@@ -6978,7 +6985,7 @@ def financial_byproject_export(fmt):
 @login_required
 def financial_aging_export(fmt):
     import csv, io as _io
-    today_d = datetime.now().date()
+    today_d = datetime.now(COMPANY_TZ).date()
     inv_raw = fb_get("/invoices") or {}
     BUCKET_LABELS = {"current":"Current","1_30":"1-30 Days","31_60":"31-60 Days","61_90":"61-90 Days","90plus":"90+ Days"}
     buckets = {"current":[],"1_30":[],"31_60":[],"61_90":[],"90plus":[]}
@@ -7122,9 +7129,9 @@ def create_salary():
     data = request.json
     date_str = data.get("date", "")
     try:
-        year = int(date_str[:4]) if date_str else datetime.now().year
+        year = int(date_str[:4]) if date_str else datetime.now(COMPANY_TZ).year
     except (ValueError, IndexError):
-        year = datetime.now().year
+        year = datetime.now(COMPANY_TZ).year
 
     region = data.get("region", "Inside America")
     if region == "USA":
@@ -7151,9 +7158,9 @@ def update_salary(sal_id):
     data = request.json
     date_str = data.get("date", "")
     try:
-        year = int(date_str[:4]) if date_str else datetime.now().year
+        year = int(date_str[:4]) if date_str else datetime.now(COMPANY_TZ).year
     except (ValueError, IndexError):
-        year = datetime.now().year
+        year = datetime.now(COMPANY_TZ).year
     region = data.get("region", "Inside America")
     if region == "USA":
         region = "Inside America"
@@ -7188,11 +7195,11 @@ def financial():
 
     # Get filter parameters from URL
     filter_expense = request.args.get("filter_expense", "")
-    selected_year = request.args.get("year", str(datetime.now().year))
+    selected_year = request.args.get("year", str(datetime.now(COMPANY_TZ).year))
     try:
         selected_year = int(selected_year)
     except (ValueError, TypeError):
-        selected_year = datetime.now().year
+        selected_year = datetime.now(COMPANY_TZ).year
 
     inv_list  = [v for v in invoices.values() if isinstance(v, dict)] if isinstance(invoices, dict) else []
     exp_list_raw  = []
@@ -7249,7 +7256,7 @@ def financial():
 
     # Create a list for Overview tab KPI cards that filters by present running year (stat_card_year)
     # This is separate from the Balance Sheet view which uses selected_year
-    exp_list_for_overview = filter_by_year(exp_list_raw, datetime.now().year)
+    exp_list_for_overview = filter_by_year(exp_list_raw, datetime.now(COMPANY_TZ).year)
 
     # Filter for balance sheet (only selected year)
     exp_list_raw_filtered = filter_by_year(exp_list_raw, selected_year)
@@ -7359,15 +7366,15 @@ def financial():
             return None
 
     # Get actual current year for stat cards (always use current system year, not URL filter)
-    stat_card_year = datetime.now().year
+    stat_card_year = datetime.now(COMPANY_TZ).year
     prev_year = stat_card_year - 1
 
     # Get selected year for Balance Sheet filtering (can be different from current year)
-    selected_year = request.args.get("year", str(datetime.now().year))
+    selected_year = request.args.get("year", str(datetime.now(COMPANY_TZ).year))
     try:
         selected_year = int(selected_year)
     except (ValueError, TypeError):
-        selected_year = datetime.now().year
+        selected_year = datetime.now(COMPANY_TZ).year
 
     # Total collected = sum of payment_log entries by PAYMENT DATE in past & present years
     total_collected = 0.0
@@ -7471,7 +7478,7 @@ def financial():
             pass
 
     from dateutil.relativedelta import relativedelta as _rd
-    _now = datetime.now()
+    _now = datetime.now(COMPANY_TZ)
     all_months = [(_now - _rd(months=i)).strftime("%b %Y") for i in range(5, -1, -1)]
     rev_data   = [monthly_revenue.get(m, 0) for m in all_months]
     exp_data   = [monthly_expenses.get(m, 0) for m in all_months]
@@ -8009,7 +8016,7 @@ def financial():
     available_years = sorted(list(available_years), reverse=True)
 
     # ── Accounts Receivable Aging ─────────────────────────────────────────────
-    today_d = datetime.now().date()
+    today_d = datetime.now(COMPANY_TZ).date()
     aging_buckets = {"current": [], "1_30": [], "31_60": [], "61_90": [], "90plus": []}
     for inv in inv_list:
         m = inv.get("meta", {}) or {}
@@ -8158,7 +8165,7 @@ def financial():
             except Exception:
                 pass
 
-    today_date = datetime.now().strftime("%Y-%m-%d")
+    today_date = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     active_tab = request.args.get("tab", "overview")
     _valid_fin_tabs = {'overview', 'income', 'expenses', 'by-project', 'balance-sheet', 'aging', 'commission'}
     if active_tab not in _valid_fin_tabs:
@@ -8333,7 +8340,7 @@ def expense_new():
         "description":       request.form.get("description", "") or request.form.get("expense_name", ""),
         "amount":            _safe_float(request.form.get("amount", 0)),
         "category":          request.form.get("category", ""),
-        "date":              request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+        "date":              request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
         "vendor":            request.form.get("vendor", ""),
         "project_number":    request.form.get("project_number", ""),
         "notes":             request.form.get("notes", ""),
@@ -8423,7 +8430,7 @@ def expense_edit(exp_id):
             "description":    request.form.get("description", "") or request.form.get("expense_name", ""),
             "amount":         request.form.get("amount", "0"),
             "category":       request.form.get("category", ""),
-            "date":           request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+            "date":           request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
             "vendor":         request.form.get("vendor", ""),
             "project_number": request.form.get("project_number", ""),
             "notes":          request.form.get("notes", ""),
@@ -8496,11 +8503,11 @@ def export_balance_sheet():
         from openpyxl.worksheet.pagebreak import Break
         from io import BytesIO
 
-        year_param = request.args.get("year", str(datetime.now().year))
+        year_param = request.args.get("year", str(datetime.now(COMPANY_TZ).year))
         try:
             year = int(year_param)
         except (ValueError, TypeError):
-            year = datetime.now().year
+            year = datetime.now(COMPANY_TZ).year
 
         # Get financial data
         invoices_data = fb_get("/invoices") or {}
@@ -8944,7 +8951,7 @@ def employees():
     active_projects = [p for p in _load_projects_list()
                        if p.get("status", "") not in ("Completed", "invoiced_Fully paid", "Cancelled")]
 
-    now = datetime.now()
+    now = datetime.now(COMPANY_TZ)
     today_str = now.strftime("%Y-%m-%d")
     week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
     month_start = now.strftime("%Y-%m-01")
@@ -9127,7 +9134,7 @@ def employees():
 def medical_claim_form_download():
     return render_template("medical_claim_form.html",
                            user_name=session.get("user_name", ""),
-                           today=datetime.now().strftime("%Y-%m-%d"))
+                           today=datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"))
 
 @app.route("/employees/medical-claims/new", methods=["POST"])
 @role_required("employees")
@@ -9218,7 +9225,7 @@ def employee_expense_submit():
         "description":       request.form.get("expense_name", ""),
         "amount":            _safe_float(request.form.get("amount", 0)),
         "category":          request.form.get("category", ""),
-        "date":              request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+        "date":              request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
         "vendor":            request.form.get("vendor", "").strip(),
         "project_number":    request.form.get("project_number", ""),
         "notes":             request.form.get("notes", "").strip(),
@@ -9473,7 +9480,7 @@ def employee_clock_in():
         if proj:
             project_name = proj.get("project_name", "")
 
-    now = datetime.now()
+    now = datetime.now(COMPANY_TZ)
     fb_push("/time_entries", {
         "employee_uid":   uid,
         "employee_name":  name,
@@ -9505,7 +9512,7 @@ def employee_switch_project():
         flash("You're already clocked into that project.", "warning")
         return redirect(url_for("employees"))
 
-    now = datetime.now()
+    now = datetime.now(COMPANY_TZ)
     clock_in = datetime.fromisoformat(open_entry["clock_in"])
     duration = round((now - clock_in).total_seconds() / 60.0, 1)
     fb_update(f"/time_entries/{open_entry['firebase_id']}", {
@@ -9545,7 +9552,7 @@ def employee_clock_out():
         return redirect(url_for("employees"))
 
     clock_in = datetime.fromisoformat(open_entry["clock_in"])
-    now = datetime.now()
+    now = datetime.now(COMPANY_TZ)
     duration = round((now - clock_in).total_seconds() / 60.0, 1)
     fb_update(f"/time_entries/{open_entry['firebase_id']}", {
         "clock_out":        now.isoformat(),
@@ -9566,7 +9573,7 @@ def employee_log_time():
     hours = _safe_float(request.form.get("hours", 0))
     notes = request.form.get("notes", "").strip()
 
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     if not date_str or date_str > today_str or hours <= 0:
         flash("Enter a valid date (not in the future) and number of hours.", "danger")
         return redirect(url_for("employees"))
@@ -9763,7 +9770,7 @@ def commission_mark_paid():
                     break
         return jsonify({"ok": True, "action": "unpaid"})
     # Mark as paid — store record
-    _new_id = f"{period}_{sp_name.replace(' ', '_')}_{int(datetime.now().timestamp())}"
+    _new_id = f"{period}_{sp_name.replace(' ', '_')}_{int(datetime.now(COMPANY_TZ).timestamp())}"
     fb_update(f"/commission_payments/{_new_id}", {
         "period":      period,
         "salesperson": sp_name,
@@ -10071,7 +10078,7 @@ def ai_draft_reminder(invoice_id):
     if not inv_data:
         return jsonify({"error": "Invoice not found"}), 404
     meta = inv_data.get("meta", {})
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     due   = meta.get("due_date", "")
     try:
         days_overdue = (datetime.fromisoformat(today) - datetime.fromisoformat(due)).days if due else 0
@@ -10635,7 +10642,7 @@ def _calculate_invoice_status(inv_data: dict) -> str:
 
     # Check due date for Overdue
     due_date = meta.get("due_date", "")
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     is_overdue = due_date and due_date < today
 
     # Determine status based on actual amounts
@@ -11327,7 +11334,7 @@ def _auto_flag_overdue() -> int:
     """Flip any Sent/Viewed/Partial invoice whose due_date < today to Overdue.
     Returns the number of invoices updated.
     """
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     raw = fb_get("/invoices") or {}
     count = 0
     if not isinstance(raw, dict):
@@ -11370,7 +11377,7 @@ def _upsert_revenue_entry(invoice_id: str, inv_meta: dict) -> None:
         "client":         inv_meta.get("client_name", ""),
         "invoice_id":     invoice_id,
         "project_number": proj_num,
-        "date":           inv_meta.get("invoice_date", datetime.now().strftime("%Y-%m-%d")),
+        "date":           inv_meta.get("invoice_date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
         "created_at":     datetime.now(timezone.utc).isoformat(),
     }
     raw_rev = fb_get("/balance_sheet_revenue") or {}
@@ -11482,7 +11489,7 @@ def _project_has_overdue_stage(payment_stages, raw_inv: dict) -> bool:
     invoice's due date has passed without being fully paid."""
     if not isinstance(payment_stages, list):
         return False
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     for stage in payment_stages:
         if not isinstance(stage, dict):
             continue
@@ -11663,7 +11670,7 @@ def _sum_minutes(entries: List[dict]) -> float:
 
 def _period_range(period: str, custom_start: str = "", custom_end: str = "") -> tuple:
     """Return (start_date, end_date, label) as YYYY-MM-DD strings for a named reporting period."""
-    now = datetime.now()
+    now = datetime.now(COMPANY_TZ)
     today_str = now.strftime("%Y-%m-%d")
     if period == "month":
         return now.strftime("%Y-%m-01"), today_str, f"Month of {now.strftime('%B %Y')}"
@@ -11721,7 +11728,7 @@ def _aggregate_hours_from_timesheets(sheets: list, period_start: str = "", perio
     return agg
 
 def _next_quote_number() -> str:
-    now = datetime.now()
+    now = datetime.now(COMPANY_TZ)
     prefix = f"QT-{now.strftime('%Y%m')}-"
     raw = fb_get("/job_forms") or {}
     nums = []
@@ -11737,7 +11744,7 @@ def _next_quote_number() -> str:
     return f"{prefix}{next_n:03d}"
 
 def _next_invoice_number() -> str:
-    now = datetime.now()
+    now = datetime.now(COMPANY_TZ)
     prefix = f"INV-{now.strftime('%Y%m')}-"
     raw = fb_get("/invoices") or {}
     nums = []
@@ -11753,7 +11760,7 @@ def _next_invoice_number() -> str:
     return f"{prefix}{next_n:03d}"
 
 def _next_project_number() -> str:
-    now = datetime.now()
+    now = datetime.now(COMPANY_TZ)
     prefix = f"MABS-{now.strftime('%Y%m')}-"
     raw = fb_get("/projects") or {}
     nums = []
@@ -11812,7 +11819,7 @@ def _parse_quote_form(form) -> dict:
         "description":          form.get("description", ""),
         "status":               form.get("status", "Not Started"),
         "salesperson":          form.get("salesperson", ""),
-        "date":                 form.get("date", datetime.now().strftime("%Y-%m-%d")),
+        "date":                 form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
         "valid_until":          form.get("valid_until", ""),
         "expected_completion":  form.get("expected_completion", ""),
         "service_types":        _parse_service_types(form),
@@ -11996,7 +12003,7 @@ def _parse_invoice_form(form) -> dict:
     return {
         "meta": {
             "invoice_number": form.get("invoice_number", ""),
-            "invoice_date":   form.get("invoice_date", datetime.now().strftime("%Y-%m-%d")),
+            "invoice_date":   form.get("invoice_date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
             "due_date":       form.get("due_date", ""),
             "net_terms":      form.get("net_terms", ""),
             "client_id":      client_id,
@@ -12112,8 +12119,8 @@ def quote_to_invoice(quote_id):
     invoice_data = {
         "meta": {
             "invoice_number": inv_num,
-            "invoice_date":   datetime.now().strftime("%Y-%m-%d"),
-            "due_date":       (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
+            "invoice_date":   datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
+            "due_date":       (datetime.now(COMPANY_TZ) + timedelta(days=30)).strftime("%Y-%m-%d"),
             "company_name":   quote.get("company_name", ""),
             "client_name":    quote.get("client_name", ""),
             "client_id":      quote.get("client_id", ""),
@@ -12288,7 +12295,7 @@ def project_pdf(project_id):
     # ── Footer ──
     elems.append(Spacer(1, 20))
     elems.append(HRFlowable(width="100%", thickness=0.5, color=border, spaceAfter=4))
-    gen_date = datetime.now().strftime("%B %d, %Y")
+    gen_date = datetime.now(COMPANY_TZ).strftime("%B %d, %Y")
     elems.append(Paragraph(f"Document generated {gen_date}  ·  {co.get('name','')}  ·  {co.get('phone','')}  ·  {co.get('email','')}", sm))
 
     doc.build(elems)
@@ -13397,7 +13404,7 @@ def payment_add(invoice_id):
 
     payment_entry = {
         "amount":     str(amount),
-        "date":       request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+        "date":       request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
         "method":     request.form.get("method", ""),
         "reference":  request.form.get("reference", ""),
         "notes":      request.form.get("notes", ""),
@@ -13463,7 +13470,7 @@ def tax_payment_add(invoice_id):
 
     tax_log.append({
         "amount":     str(amount),
-        "date":       request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+        "date":       request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
         "method":     request.form.get("method", ""),
         "reference":  request.form.get("reference", ""),
         "notes":      request.form.get("notes", ""),
@@ -13509,7 +13516,7 @@ def payment_full(invoice_id):
     project_subtotal = invoice_total - tax_amount
 
     # Distribute payment proportionally across projects (based on REMAINING amounts)
-    payment_date = request.form.get("date", datetime.now().strftime("%Y-%m-%d"))
+    payment_date = request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"))
     payment_method = request.form.get("method", "")
     payment_reference = request.form.get("reference", "")
     payment_notes = request.form.get("notes", "")
@@ -13700,7 +13707,7 @@ def payment_sequential(invoice_id):
 
                 payment_entry = {
                     "amount":     str(distribute_to_proj),
-                    "date":       request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+                    "date":       request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
                     "method":     request.form.get("method", ""),
                     "reference":  request.form.get("reference", ""),
                     "notes":      request.form.get("notes", ""),
@@ -13779,7 +13786,7 @@ def payment_sequential(invoice_id):
 
                 payment_entry = {
                     "amount":     str(distribute_to_proj),
-                    "date":       request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+                    "date":       request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
                     "method":     request.form.get("method", ""),
                     "reference":  request.form.get("reference", ""),
                     "notes":      request.form.get("notes", ""),
@@ -13802,7 +13809,7 @@ def payment_sequential(invoice_id):
             distribute_to_tax = min(tax_needs, remaining_to_distribute)
             tax_log.append({
                 "amount":     str(distribute_to_tax),
-                "date":       request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+                "date":       request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
                 "method":     request.form.get("method", ""),
                 "reference":  request.form.get("reference", ""),
                 "notes":      request.form.get("notes", ""),
@@ -14103,7 +14110,7 @@ def payment_edit(invoice_id, idx):
 
                 new_payment_log.append({
                     "amount": str(distribute_to_proj),
-                    "date": request.form.get("date", datetime.now().strftime("%Y-%m-%d")) if is_edited_project else datetime.now().strftime("%Y-%m-%d"),
+                    "date": request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")) if is_edited_project else datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
                     "method": request.form.get("method", "") if is_edited_project else "",
                     "reference": request.form.get("reference", "") if is_edited_project else "",
                     "notes": request.form.get("notes", "") if is_edited_project else "",
@@ -14125,7 +14132,7 @@ def payment_edit(invoice_id, idx):
         tax_needs = min(tax_amount, remaining_to_distribute)
         new_tax_log.append({
             "amount": str(tax_needs),
-            "date": request.form.get("date", datetime.now().strftime("%Y-%m-%d")),
+            "date": request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
             "method": request.form.get("method", ""),
             "reference": request.form.get("reference", ""),
             "notes": request.form.get("notes", ""),
@@ -14611,8 +14618,8 @@ def quick_invoice_stage(project_id, stage_idx):
                 "company_name": company_name,
                 "client_name": client_name,
                 "client_id": client_id,
-                "invoice_date": datetime.now().strftime("%Y-%m-%d"),
-                "due_date": (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
+                "invoice_date": datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
+                "due_date": (datetime.now(COMPANY_TZ) + timedelta(days=30)).strftime("%Y-%m-%d"),
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
                 "created_by": session.get("user_email", ""),
@@ -14670,7 +14677,7 @@ def _week_monday(date_str: str = "") -> str:
     try:
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
     except (ValueError, TypeError):
-        d = datetime.now().date()
+        d = datetime.now(COMPANY_TZ).date()
     return (d - timedelta(days=d.weekday())).isoformat()
 
 def _load_timesheets(week_of: str = "", employee_uid: str = "") -> list:
@@ -14798,7 +14805,7 @@ def timesheets():
                         }
 
         # Monthly stats (current calendar month)
-        current_month = datetime.now().strftime("%Y-%m")
+        current_month = datetime.now(COMPANY_TZ).strftime("%Y-%m")
         month_sheets  = [s for s in my_sheets if s.get("week_of", "")[:7] == current_month]
         stat_month_hours   = sum(_safe_float(s.get("total_hours", 0)) for s in month_sheets)
         stat_month_ot      = sum(_safe_float(s.get("total_overtime_hours", 0)) for s in month_sheets)

@@ -398,7 +398,7 @@ const WEEK_DAYS = {{ week_days | tojson }};
 const PROJECTS  = {{ active_projects | tojson }};
 const EXISTING  = {{ (existing_sheet.entries if existing_sheet else []) | tojson }};
 const IS_APPROVED = {{ 'true' if (existing_sheet and existing_sheet.status == 'Approved') else 'false' }};
-const TODAY_ISO = new Date().toISOString().slice(0, 10);
+const TODAY_ISO = {{ now.strftime('%Y-%m-%d') | tojson }}; // company-timezone "today", not the browser's local/UTC date
 
 const WEEKDAYS = WEEK_DAYS; // All 7 days allowed
 

@@ -326,6 +326,8 @@
 
 {% block scripts %}
 <script>
+const TODAY_ISO = {{ now.strftime('%Y-%m-%d') | tojson }}; // company-timezone "today", not the browser's local/UTC date
+
 // ── Quick Pay ────────────────────────────────────────────────────────────────
 async function quickPay(invoiceId, total, amountPaid, btn) {
   const fmt = v => '$' + parseFloat(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -343,7 +345,7 @@ async function quickPay(invoiceId, total, amountPaid, btn) {
 
   const form = new FormData();
   form.append('amount', remaining.toFixed(2));
-  form.append('date', new Date().toISOString().split('T')[0]); // Today's date
+  form.append('date', TODAY_ISO);
   form.append('method', 'Quick Pay');
 
   const resp = await fetch(`/invoicing/${invoiceId}/payment/sequential`, {method:'POST', body:form});

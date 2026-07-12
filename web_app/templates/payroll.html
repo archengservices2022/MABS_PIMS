@@ -451,6 +451,8 @@
 </div>
 
 <script>
+const TODAY_ISO = {{ now.strftime('%Y-%m-%d') | tojson }}; // company-timezone "today", not the browser's local/UTC date
+
 // ── Two-level grouping: Year → Month ─────────────────────────────────────────
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -752,7 +754,7 @@ function addSalary(e) {
   if (!employeeName) { alert('Please enter an employee name'); return; }
 
   const dateVal = document.getElementById('sal_date').value;
-  if (dateVal > new Date().toISOString().slice(0, 10)) {
+  if (dateVal > TODAY_ISO) {
     alert('Date cannot be a future date.'); return;
   }
   const amountVal = parseFloat(document.getElementById('sal_amount').value);
@@ -807,7 +809,7 @@ function deleteSalary(id) {
 
 // Real-time filter listeners
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('sal_date').setAttribute('max', new Date().toISOString().slice(0, 10));
+  document.getElementById('sal_date').setAttribute('max', TODAY_ISO);
   initEmployeeAutocomplete();
   document.getElementById('searchEmployee').addEventListener('input', applySalaryFilters);
   document.getElementById('filterRegion').addEventListener('change', applySalaryFilters);
