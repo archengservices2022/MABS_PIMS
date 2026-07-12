@@ -5501,7 +5501,7 @@ def _sync_user_display_name(old_name, new_name):
                     fb_update(f"/time_off_requests/{to_id}", to_data)
                     print(f"[SYNC_USER] Updated time_off_request {to_id}", flush=True)
 
-    # Update Expenses
+    # Update Employee Expenses (/expenses)
     expenses = fb_get("/expenses") or {}
     if isinstance(expenses, dict):
         for exp_id, exp_data in expenses.items():
@@ -5516,6 +5516,20 @@ def _sync_user_display_name(old_name, new_name):
                     exp_data["updated_at"] = now_iso
                     fb_update(f"/expenses/{exp_id}", exp_data)
                     print(f"[SYNC_USER] Updated expense {exp_id}", flush=True)
+
+    # Update Finance Expenses (/balance_sheet_expenses)
+    finance_expenses = fb_get("/balance_sheet_expenses") or {}
+    if isinstance(finance_expenses, dict):
+        for exp_id, exp_data in finance_expenses.items():
+            if isinstance(exp_data, dict):
+                if exp_data.get("submitted_by_name", "") == old_name or exp_data.get("created_by", "") == old_name:
+                    if exp_data.get("submitted_by_name", "") == old_name:
+                        exp_data["submitted_by_name"] = new_name
+                    if exp_data.get("created_by", "") == old_name:
+                        exp_data["created_by"] = new_name
+                    exp_data["updated_at"] = now_iso
+                    fb_update(f"/balance_sheet_expenses/{exp_id}", exp_data)
+                    print(f"[SYNC_USER] Updated balance_sheet_expense {exp_id}", flush=True)
 
     # Update Pending Approvals
     approvals = fb_get("/pending_approvals") or {}
@@ -5546,16 +5560,16 @@ def _sync_user_display_name(old_name, new_name):
                     fb_update(f"/invoices/{inv_id}", inv_data)
                     print(f"[SYNC_USER] Updated invoice {inv_id}", flush=True)
 
-    # Update Payroll records
-    payroll = fb_get("/payroll") or {}
+    # Update Payroll records (balance_sheet_salary)
+    payroll = fb_get("/balance_sheet_salary") or {}
     if isinstance(payroll, dict):
         for pay_id, pay_data in payroll.items():
             if isinstance(pay_data, dict):
                 if pay_data.get("employee_name", "") == old_name:
                     pay_data["employee_name"] = new_name
                     pay_data["updated_at"] = now_iso
-                    fb_update(f"/payroll/{pay_id}", pay_data)
-                    print(f"[SYNC_USER] Updated payroll {pay_id}", flush=True)
+                    fb_update(f"/balance_sheet_salary/{pay_id}", pay_data)
+                    print(f"[SYNC_USER] Updated balance_sheet_salary {pay_id}", flush=True)
 
     print(f"[SYNC_USER] Completed syncing '{old_name}' → '{new_name}'", flush=True)
 
