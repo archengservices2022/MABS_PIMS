@@ -96,11 +96,12 @@ except Exception as exc:
 
 # ── Role helpers ──────────────────────────────────────────────────────────────
 ROLE_PAGES = {
-    "admin":    ["dashboard", "quotes", "projects", "invoicing", "payroll", "financial", "settings", "employees", "sales_dashboard", "timesheets"],
-    "sales":    ["sales_dashboard", "quotes", "employees", "timesheets"],
-    "projects": ["projects", "invoicing", "employees", "timesheets"],
-    "finance":  ["financial", "employees", "timesheets"],
-    "engineer": ["employees", "timesheets"],
+    "admin":          ["dashboard", "quotes", "projects", "invoicing", "payroll", "financial", "settings", "employees", "sales_dashboard", "timesheets"],
+    "sales":          ["sales_dashboard", "quotes", "employees", "timesheets"],
+    "projects":       ["projects", "invoicing", "employees", "timesheets"],
+    "finance":        ["financial", "employees", "timesheets"],
+    "engineer":       ["employees", "timesheets"],
+    "administration": ["dashboard", "projects", "invoicing", "employees", "timesheets"],
 }
 
 ALL_PAGES = ["dashboard", "sales_dashboard", "quotes", "projects", "invoicing", "payroll",
@@ -881,6 +882,7 @@ def dashboard():
 
     _CONV_DASH = {"Converted", "Invoiced"}
 
+    _dash_commission = {}
     if _dash_role == "sales":
         # Personal commission for logged-in salesperson
         _uid = session.get("user_uid", "")
@@ -9729,7 +9731,7 @@ def user_details_update(uid):
         if field in data:
             updates[field] = _safe_float(data[field])
     if "role" in data:
-        allowed_roles = {"sales", "projects", "finance", "engineer", "admin"}
+        allowed_roles = {"sales", "projects", "finance", "engineer", "admin", "administration"}
         r = str(data["role"]).strip().lower()
         if r in allowed_roles:
             updates["role"] = r
