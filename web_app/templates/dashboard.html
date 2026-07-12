@@ -777,13 +777,14 @@
 
       {% for inv in recent_invoices %}
       {% set meta = inv.get('meta', {}) %}
+      {% set client_display = meta.get('company_name') or meta.get('client_name','—') %}
       <a href="{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}"
          class="list-item text-decoration-none" style="display:flex;justify-content:space-between;align-items:center;">
         <div class="d-flex align-items-center gap-2">
-          <div class="inv-avatar">{{ meta.get('client_name','?')[0]|upper }}</div>
+          <div class="inv-avatar">{{ client_display[0]|upper }}</div>
           <div>
             <div class="list-item-title">{{ meta.get('invoice_number','N/A') }}</div>
-            <div class="list-item-sub">{{ meta.get('client_name','—') }}</div>
+            <div class="list-item-sub">{{ client_display }}</div>
           </div>
         </div>
         <div class="text-end">
@@ -844,7 +845,7 @@
             style="cursor:pointer;">
           <td><span class="fw-bold text-teal">{{ p.get('project_number','—') }}</span></td>
           <td class="fw-500">{{ p.get('project_name','—') }}</td>
-          <td class="text-muted">{{ p.get('client_name','—') }}</td>
+          <td class="text-muted">{{ p.get('company_name') or p.get('client_name','—') }}</td>
           <td>
             {{ status_badge(p.get('status'), 'Not Started') }}
           </td>
