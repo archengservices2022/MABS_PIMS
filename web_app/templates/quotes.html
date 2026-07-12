@@ -553,7 +553,7 @@
       {% endif %}
     </div>
       <!-- ── Commission Payroll (admin only) ──────────────────────────────── -->
-      {% if _viewer_is_admin and monthly_payroll %}
+      {% if _viewer_is_admin %}
       <div class="card-panel mt-3" style="border-top:3px solid #7C3AED;">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h6 class="panel-title mb-0">
@@ -562,6 +562,7 @@
             <span class="text-muted fw-normal" style="font-size:12px;">— mark periods as paid</span>
           </h6>
         </div>
+        {% if monthly_payroll %}
         <div class="table-responsive">
           <table class="table table-hover align-middle mb-0" style="font-size:13px;">
             <thead>
@@ -626,6 +627,18 @@
             </tfoot>
           </table>
         </div>
+        {% else %}
+        <div class="text-center text-muted py-4">
+          <i class="bi bi-cash-coin" style="font-size:32px;opacity:.3;"></i>
+          <div class="mt-2">No commission payroll to show yet.
+            <div class="small mt-1">This appears once a salesperson has both a commission rate set and a converted quote.
+              {% if 'settings' in allowed_pages %}
+              <a href="{{ url_for('settings') }}?tab=users">Set commission rates in Settings →</a>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% endif %}
       </div>
       {% endif %}
 
