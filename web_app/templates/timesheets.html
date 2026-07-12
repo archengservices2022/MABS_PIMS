@@ -389,7 +389,7 @@
 {% endblock %}
 
 {% block content %}
-{% set is_admin = user_role == 'admin' %}
+{% set is_admin = user_role in ('admin', 'finance') %}
 <div class="ts-root">
 
 <!-- ── Hero Header ───────────────────────────────────────────── -->
