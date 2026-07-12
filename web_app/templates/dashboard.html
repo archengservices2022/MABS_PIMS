@@ -64,7 +64,7 @@
         <div class="mt-1" style="font-size:13px;">
           {% for q in expiring_soon_quotes %}
             <span class="badge me-1 mb-1" style="background:#D97706;color:#fff;">
-              {{ q.client_name or q.job_name or 'Quote' }}
+              {{ (q.get('company_name') or q.get('client_name') or q.get('job_name') or 'Quote') }}
               {% if q.valid_until %} · expires {{ q.valid_until }}{% endif %}
             </span>
           {% endfor %}
@@ -467,7 +467,7 @@
       </div>
       <div class="focus-body">
         <div class="focus-title">
-          <strong>{{ meta.get('invoice_number','—') }}</strong> · {{ meta.get('client_name','—') }}
+          <strong>{{ meta.get('invoice_number','—') }}</strong> · {{ meta.get('company_name') or meta.get('client_name','—') }}
           <span class="badge ms-1" style="background:#FFEDD5;color:#C2410C;font-size:0.68rem;">DUE IN 3 DAYS</span>
         </div>
         <div class="focus-sub">Due {{ meta.get('due_date','—') | format_date }} · ${{ "{:,.0f}".format(meta.get('total',0)|float) }}</div>

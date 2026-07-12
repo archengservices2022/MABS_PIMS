@@ -27,7 +27,7 @@
       <i class="bi bi-receipt me-1"></i>Create Invoice
     </a>
     {% elif not project.get('payment_stages') %}
-    <a href="{{ url_for('invoice_new') }}?project={{ project.get('project_number','') }}&client={{ project.get('client_name','') }}"
+    <a href="{{ url_for('invoice_new') }}?project={{ project.get('project_number','') }}&client={{ (project.get('company_name') or project.get('client_name','')) }}"
        class="btn btn-sm btn-teal"
        data-bs-toggle="tooltip" data-bs-placement="bottom"
        title="Create a manual invoice for this project">
@@ -1900,9 +1900,9 @@ function handleStatusUpdate() {
   const status = document.getElementById('statusSelect').value;
   if (status === 'Sent out_Not Invoiced') {
     {% if has_pending_stage %}
-    const invoiceUrl = '{{ url_for("invoice_new") }}?project={{ project.get("project_number","") }}&client={{ project.get("client_name","")|urlencode }}&stage_idx={{ next_stage_idx }}&stage_name={{ next_stage_name|urlencode }}&stage_amount={{ next_stage_amount }}';
+    const invoiceUrl = '{{ url_for("invoice_new") }}?project={{ project.get("project_number","") }}&client={{ (project.get("company_name") or project.get("client_name",""))|urlencode }}&stage_idx={{ next_stage_idx }}&stage_name={{ next_stage_name|urlencode }}&stage_amount={{ next_stage_amount }}';
     {% elif not project.get('payment_stages') %}
-    const invoiceUrl = '{{ url_for("invoice_new") }}?project={{ project.get("project_number","") }}&client={{ project.get("client_name","")|urlencode }}';
+    const invoiceUrl = '{{ url_for("invoice_new") }}?project={{ project.get("project_number","") }}&client={{ (project.get("company_name") or project.get("client_name",""))|urlencode }}';
     {% else %}
     const invoiceUrl = null;
     {% endif %}

@@ -2029,7 +2029,7 @@ def projects():
         status_counts[st] = status_counts.get(st, 0) + 1
     overdue_count = sum(1 for i in items if i.get("_has_overdue"))
 
-    statuses = ["Sent out_Invoiced", "Sent out_Not Invoiced",
+    statuses = ["Not Started", "In Progress", "Sent out_Invoiced", "Sent out_Not Invoiced",
                 "invoiced_Not paid yet", "invoiced_Partially paid", "invoiced_Fully paid"]
     clients = _load_clients()
     next_project_num = _next_project_number()
@@ -5601,16 +5601,52 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
                     fb_update(f"/projects/{proj_id}", proj_data)
                     print(f"[SYNC_USER] Updated project {proj_id}", flush=True)
 
-    # Update Medical Claims (employee_name field)
+    # Update Medical Claims (employee_name and reviewed_by fields)
     medical_claims = fb_get("/medical_claims") or {}
     if isinstance(medical_claims, dict):
         for claim_id, claim_data in medical_claims.items():
             if isinstance(claim_data, dict):
-                if claim_data.get("employee_name", "") == old_name:
-                    claim_data["employee_name"] = new_name
+                if claim_data.get("employee_name", "") == old_name or claim_data.get("reviewed_by", "") == old_name:
+                    if claim_data.get("employee_name", "") == old_name:
+                        claim_data["employee_name"] = new_name
+                    if claim_data.get("reviewed_by", "") == old_name:
+                        claim_data["reviewed_by"] = new_name
                     claim_data["updated_at"] = now_iso
                     fb_update(f"/medical_claims/{claim_id}", claim_data)
                     print(f"[SYNC_USER] Updated medical_claim {claim_id}", flush=True)
+
+    # Update Commission Payments (salesperson field) - match by name or email
+    commission_payments = fb_get("/commission_payments") or {}
+    if isinstance(commission_payments, dict):
+        # First pass: update records with old name
+        for cp_id, cp_data in commission_payments.items():
+            if isinstance(cp_data, dict):
+                if cp_data.get("salesperson", "") == old_name or (user_email and cp_data.get("salesperson_email", "") == user_email):
+                    cp_data["salesperson"] = new_name
+                    if user_email:
+                        cp_data["salesperson_email"] = user_email
+                    cp_data["updated_at"] = now_iso
+                    fb_update(f"/commission_payments/{cp_id}", cp_data)
+                    print(f"[SYNC_USER] Updated commission_payment {cp_id}", flush=True)
+
+        # Second pass: consolidate duplicates (keep most recent, delete others)
+        period_sp_groups: Dict[str, list] = {}
+        cp_fresh = fb_get("/commission_payments") or {}
+        if isinstance(cp_fresh, dict):
+            for cp_id, cp_data in cp_fresh.items():
+                if cp_data and isinstance(cp_data, dict) and cp_data.get("salesperson") == new_name:
+                    key = (cp_data.get("period", ""), new_name)
+                    if key not in period_sp_groups:
+                        period_sp_groups[key] = []
+                    period_sp_groups[key].append((cp_id, cp_data))
+
+            # For each (period, salesperson) pair, keep only the most recent record
+            for (period, sp), records in period_sp_groups.items():
+                if len(records) > 1:
+                    sorted_recs = sorted(records, key=lambda x: x[1].get("paid_at", ""), reverse=True)
+                    for cp_id, _ in sorted_recs[1:]:
+                        fb_delete(f"/commission_payments/{cp_id}")
+                        print(f"[SYNC_USER] Deleted duplicate commission_payment {cp_id}", flush=True)
 
     print(f"[SYNC_USER] Completed syncing '{old_name}' → '{new_name}'", flush=True)
 
@@ -7443,14 +7479,34 @@ def financial():
             if tax_year in [stat_card_year, prev_year]:
                 total_collected += _safe_float(tp.get("amount", 0))
 
-    # Filter Income tab: include payment records where EITHER the payment date OR the invoice date
-    # falls in current/prev year. This ensures a 2026 invoice paid in 2028 still appears in 2028.
+    # Filter Income tab: show ONLY invoices created in current & previous years
+    # This ensures the Income tab displays data for only current year + 1 past year
     rev_list = [r for r in rev_list if
-        _extract_year_from_date(r.get("date", "")) in [stat_card_year, prev_year]
-        or _extract_year_from_date(invoices.get(r.get("invoice_id"), {}).get("meta", {}).get("invoice_date", "")) in [stat_card_year, prev_year]]
+        _extract_year_from_date(invoices.get(r.get("invoice_id"), {}).get("meta", {}).get("invoice_date", "")) in [stat_card_year, prev_year]]
 
-    # Sort by date ascending (oldest to newest)
-    rev_list = sorted(rev_list, key=lambda r: r.get('invoice_date', '') or r.get('date', ''), reverse=True)
+    # Sort by invoice date descending (newest to oldest), then by invoice number descending (higher number = newer)
+    # Convert dates to YYYY-MM-DD format for proper string sorting (handles MM-DD-YYYY format)
+    def sort_key_invoice(r):
+        date_str = r.get('invoice_date', '') or r.get('date', '')
+        # Convert MM-DD-YYYY to YYYY-MM-DD for proper sorting
+        try:
+            if len(date_str) == 10 and date_str[2] == '-':  # MM-DD-YYYY format
+                parts = date_str.split('-')
+                date_sortable = f"{parts[2]}-{parts[0]}-{parts[1]}"
+            else:
+                date_sortable = date_str
+        except (IndexError, ValueError):
+            date_sortable = date_str
+        inv_num = r.get('invoice_number', '')
+        # Extract just the numeric part for proper number sorting
+        try:
+            inv_num_parts = inv_num.split('-')
+            inv_num_numeric = inv_num_parts[-1] if inv_num_parts else '0'
+        except (IndexError, AttributeError):
+            inv_num_numeric = '0'
+        return (date_sortable, inv_num_numeric)
+
+    rev_list = sorted(rev_list, key=sort_key_invoice, reverse=True)
 
     # Recalculate statuses based on actual payments
     for inv in inv_list:
@@ -7612,6 +7668,18 @@ def financial():
     for p in projects_list:
         pnum = p.get("project_number", "")
 
+        # Filter by project START DATE (only include projects starting in current running year)
+        proj_start_date = p.get("start_date", "")
+        if proj_start_date:
+            proj_year = _extract_year_from_date(proj_start_date)
+        else:
+            # Skip projects with no start date
+            continue
+
+        # Only include projects starting in current running year
+        if proj_year != stat_card_year:
+            continue
+
         # Calculate INVOICED and COLLECTED based on line items and payment_log (not equal split!)
         p_invoiced = 0
         p_collected = 0
@@ -7623,12 +7691,8 @@ def financial():
                     continue
                 if pnum not in _invoice_linked_projects(inv_data):
                     continue
-                # Filter by current running year based on invoice_date
+                # Include all invoices for this project (regardless of year)
                 inv_meta = inv_data.get("meta", {}) or {}
-                inv_date_str = inv_meta.get("invoice_date", "")
-                inv_year = _extract_year_from_date(inv_date_str)
-                if inv_year != stat_card_year:
-                    continue
 
                 # Calculate project's portion from actual line items
                 line_items = inv_data.get("line_items", []) or []
@@ -7864,6 +7928,7 @@ def financial():
                 bs_total_commission += _amt
                 monthly_commission_details[_mon].append({
                     "salesperson": _cp.get("salesperson", ""),
+                    "salesperson_email": _cp.get("salesperson_email", ""),
                     "period":      _cp.get("period", ""),
                     "amount":      _amt,
                     "paid_at":     _paid_at[:10],
@@ -9839,13 +9904,27 @@ def commission_mark_paid():
                     break
         return jsonify({"ok": True, "action": "unpaid"})
     # Mark as paid — store record
+    # First, delete any existing paid record for this period/salesperson to avoid duplicates
+    raw = fb_get("/commission_payments") or {}
+    if isinstance(raw, dict):
+        for cpid, cp in raw.items():
+            if cp and cp.get("period") == period and cp.get("salesperson") == sp_name:
+                fb_delete(f"/commission_payments/{cpid}")
+
+    # Look up salesperson email for reliable sync
+    sp_email = ""
+    for user in _load_all_users():
+        if (user.get("username") or "").strip() == sp_name:
+            sp_email = user.get("email", "")
+            break
     _new_id = f"{period}_{sp_name.replace(' ', '_')}_{int(datetime.now().timestamp())}"
     fb_update(f"/commission_payments/{_new_id}", {
-        "period":      period,
-        "salesperson": sp_name,
-        "amount":      amount,
-        "paid_at":     datetime.now(timezone.utc).isoformat(),
-        "paid_by":     session.get("user_name", ""),
+        "period":           period,
+        "salesperson":      sp_name,
+        "salesperson_email": sp_email,
+        "amount":           amount,
+        "paid_at":          datetime.now(timezone.utc).isoformat(),
+        "paid_by":          session.get("user_name", ""),
     })
     return jsonify({"ok": True, "action": "paid"})
 

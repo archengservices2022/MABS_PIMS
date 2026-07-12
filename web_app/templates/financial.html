@@ -621,7 +621,7 @@ a[href*="filter_expense"]:hover {
               data-subtotal="{{ ((r.get('total',0)|float) - (r.get('tax_amount',0)|float)) }}"
               data-tax="{{ r.get('tax_amount',0)|float }}"
               data-total="{{ r.get('total',0)|float }}"
-              data-search="{{ r.get('client_name','')|lower }} {{ r.get('invoice_number','')|lower }}">
+              data-search="{{ r.get('company_name','')|lower }} {{ r.get('client_name','')|lower }} {{ r.get('invoice_number','')|lower }}">
             <td class="text-muted small">{{ r.get('invoice_date', r.get('date','—')) | format_date }}</td>
             <td class="text-muted small">
               {% set cd = r.get('collection_date', '') %}
@@ -3126,7 +3126,7 @@ function viewReceipt(expId) {
           <tr class="aging-row" data-bucket="{{ key }}"
               data-date="{{ e.invoice_date or '' }}"
               data-due-date="{{ e.due_date or '' }}"
-              data-search="{{ (e.invoice_number or '')|lower }} {{ (e.client_name or '')|lower }}"
+              data-search="{{ (e.invoice_number or '')|lower }} {{ (e.company_name or '')|lower }} {{ (e.client_name or '')|lower }}"
               style="border-bottom:1px solid #F1F5F9;">
             <td style="padding:8px 12px;">
               <a href="{{ url_for('invoice_detail', invoice_id=e.firebase_id) }}" class="text-teal fw-bold text-decoration-none">
