@@ -251,7 +251,7 @@
         {% for q in recent_quotes %}
         <tr onclick="location.href='{{ url_for('quote_detail', quote_id=q.firebase_id) }}'" style="cursor:pointer;">
           <td><span class="fw-bold text-teal">{{ q.get('job_number','—') }}</span></td>
-          <td>{{ q.get('client_name','—') }}</td>
+          <td>{{ ((q.get('company_name') or q.get('client_name','—')) or '—')[:30] }}</td>
           <td class="text-muted">{{ (q.get('project_name','') or '—')[:35] }}</td>
           <td class="text-muted">{{ q.get('date','—') | format_date }}</td>
           <td>

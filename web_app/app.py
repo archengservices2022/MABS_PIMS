@@ -2111,7 +2111,7 @@ def projects():
         status_counts[st] = status_counts.get(st, 0) + 1
     overdue_count = sum(1 for i in items if i.get("_has_overdue"))
 
-    statuses = ["Sent out_Invoiced", "Sent out_Not Invoiced",
+    statuses = ["Not Started", "In Progress", "Sent out_Invoiced", "Sent out_Not Invoiced",
                 "invoiced_Not paid yet", "invoiced_Partially paid", "invoiced_Fully paid"]
     clients = _load_clients()
     next_project_num = _next_project_number()
@@ -5555,9 +5555,10 @@ def _sync_client_changes_by_name(old_company_name, new_company_name, new_client_
                     proj_data["client_name"] = new_client_name
                     fb_update(f"/projects/{proj_id}", proj_data)
 
-def _sync_user_display_name(old_name, new_name):
-    """Sync display name changes across all records: timesheets, expenses, approvals, invoices, etc."""
-    print(f"[SYNC_USER] Syncing display name: '{old_name}' → '{new_name}'", flush=True)
+def _sync_user_display_name(old_name, new_name, user_email=None):
+    """Sync display name changes across all records: timesheets, expenses, approvals, invoices, etc.
+    Uses both name and email for reliable matching."""
+    print(f"[SYNC_USER] Syncing display name: '{old_name}' → '{new_name}'" + (f" (email: {user_email})" if user_email else ""), flush=True)
 
     now_iso = datetime.now(timezone.utc).isoformat()
 
@@ -5573,29 +5574,45 @@ def _sync_user_display_name(old_name, new_name):
                     print(f"[SYNC_USER] Updated timesheet {ts_id}", flush=True)
 
     # Update Time Off / Vacation requests
-    time_off = fb_get("/time_off") or {}
+    time_off = fb_get("/time_off_requests") or {}
     if isinstance(time_off, dict):
         for to_id, to_data in time_off.items():
             if isinstance(to_data, dict):
                 if to_data.get("employee_name", "") == old_name:
                     to_data["employee_name"] = new_name
                     to_data["updated_at"] = now_iso
-                    fb_update(f"/time_off/{to_id}", to_data)
-                    print(f"[SYNC_USER] Updated time_off {to_id}", flush=True)
+                    fb_update(f"/time_off_requests/{to_id}", to_data)
+                    print(f"[SYNC_USER] Updated time_off_request {to_id}", flush=True)
 
-    # Update Expenses
+    # Update Employee Expenses (/expenses)
     expenses = fb_get("/expenses") or {}
     if isinstance(expenses, dict):
         for exp_id, exp_data in expenses.items():
             if isinstance(exp_data, dict):
-                if exp_data.get("employee_name", "") == old_name or exp_data.get("created_by", "") == old_name:
+                if exp_data.get("employee_name", "") == old_name or exp_data.get("created_by", "") == old_name or exp_data.get("submitted_by_name", "") == old_name:
                     if exp_data.get("employee_name", "") == old_name:
                         exp_data["employee_name"] = new_name
                     if exp_data.get("created_by", "") == old_name:
                         exp_data["created_by"] = new_name
+                    if exp_data.get("submitted_by_name", "") == old_name:
+                        exp_data["submitted_by_name"] = new_name
                     exp_data["updated_at"] = now_iso
                     fb_update(f"/expenses/{exp_id}", exp_data)
                     print(f"[SYNC_USER] Updated expense {exp_id}", flush=True)
+
+    # Update Finance Expenses (/balance_sheet_expenses)
+    finance_expenses = fb_get("/balance_sheet_expenses") or {}
+    if isinstance(finance_expenses, dict):
+        for exp_id, exp_data in finance_expenses.items():
+            if isinstance(exp_data, dict):
+                if exp_data.get("submitted_by_name", "") == old_name or exp_data.get("created_by", "") == old_name:
+                    if exp_data.get("submitted_by_name", "") == old_name:
+                        exp_data["submitted_by_name"] = new_name
+                    if exp_data.get("created_by", "") == old_name:
+                        exp_data["created_by"] = new_name
+                    exp_data["updated_at"] = now_iso
+                    fb_update(f"/balance_sheet_expenses/{exp_id}", exp_data)
+                    print(f"[SYNC_USER] Updated balance_sheet_expense {exp_id}", flush=True)
 
     # Update Pending Approvals
     approvals = fb_get("/pending_approvals") or {}
@@ -5626,16 +5643,92 @@ def _sync_user_display_name(old_name, new_name):
                     fb_update(f"/invoices/{inv_id}", inv_data)
                     print(f"[SYNC_USER] Updated invoice {inv_id}", flush=True)
 
-    # Update Payroll records
-    payroll = fb_get("/payroll") or {}
+    # Update Payroll records (balance_sheet_salary)
+    payroll = fb_get("/balance_sheet_salary") or {}
     if isinstance(payroll, dict):
         for pay_id, pay_data in payroll.items():
             if isinstance(pay_data, dict):
                 if pay_data.get("employee_name", "") == old_name:
                     pay_data["employee_name"] = new_name
                     pay_data["updated_at"] = now_iso
-                    fb_update(f"/payroll/{pay_id}", pay_data)
-                    print(f"[SYNC_USER] Updated payroll {pay_id}", flush=True)
+                    fb_update(f"/balance_sheet_salary/{pay_id}", pay_data)
+                    print(f"[SYNC_USER] Updated balance_sheet_salary {pay_id}", flush=True)
+
+    # Update Quotes (salesperson field) - match by name or email
+    quotes = fb_get("/job_forms") or {}
+    if isinstance(quotes, dict):
+        for quote_id, quote_data in quotes.items():
+            if isinstance(quote_data, dict):
+                if quote_data.get("salesperson", "") == old_name or (user_email and quote_data.get("salesperson_email", "") == user_email):
+                    quote_data["salesperson"] = new_name
+                    if user_email:
+                        quote_data["salesperson_email"] = user_email
+                    quote_data["updated_at"] = now_iso
+                    fb_update(f"/job_forms/{quote_id}", quote_data)
+                    print(f"[SYNC_USER] Updated quote {quote_id}", flush=True)
+
+    # Update Projects (sales field for salesperson) - match by name or email
+    projects = fb_get("/projects") or {}
+    if isinstance(projects, dict):
+        for proj_id, proj_data in projects.items():
+            if isinstance(proj_data, dict):
+                if proj_data.get("sales", "") == old_name or proj_data.get("assigned_to", "") == old_name or (user_email and proj_data.get("sales_email", "") == user_email):
+                    if proj_data.get("sales", "") == old_name:
+                        proj_data["sales"] = new_name
+                    if proj_data.get("assigned_to", "") == old_name:
+                        proj_data["assigned_to"] = new_name
+                    if user_email:
+                        proj_data["sales_email"] = user_email
+                    proj_data["updated_at"] = now_iso
+                    fb_update(f"/projects/{proj_id}", proj_data)
+                    print(f"[SYNC_USER] Updated project {proj_id}", flush=True)
+
+    # Update Medical Claims (employee_name and reviewed_by fields)
+    medical_claims = fb_get("/medical_claims") or {}
+    if isinstance(medical_claims, dict):
+        for claim_id, claim_data in medical_claims.items():
+            if isinstance(claim_data, dict):
+                if claim_data.get("employee_name", "") == old_name or claim_data.get("reviewed_by", "") == old_name:
+                    if claim_data.get("employee_name", "") == old_name:
+                        claim_data["employee_name"] = new_name
+                    if claim_data.get("reviewed_by", "") == old_name:
+                        claim_data["reviewed_by"] = new_name
+                    claim_data["updated_at"] = now_iso
+                    fb_update(f"/medical_claims/{claim_id}", claim_data)
+                    print(f"[SYNC_USER] Updated medical_claim {claim_id}", flush=True)
+
+    # Update Commission Payments (salesperson field) - match by name or email
+    commission_payments = fb_get("/commission_payments") or {}
+    if isinstance(commission_payments, dict):
+        # First pass: update records with old name
+        for cp_id, cp_data in commission_payments.items():
+            if isinstance(cp_data, dict):
+                if cp_data.get("salesperson", "") == old_name or (user_email and cp_data.get("salesperson_email", "") == user_email):
+                    cp_data["salesperson"] = new_name
+                    if user_email:
+                        cp_data["salesperson_email"] = user_email
+                    cp_data["updated_at"] = now_iso
+                    fb_update(f"/commission_payments/{cp_id}", cp_data)
+                    print(f"[SYNC_USER] Updated commission_payment {cp_id}", flush=True)
+
+        # Second pass: consolidate duplicates (keep most recent, delete others)
+        period_sp_groups: Dict[str, list] = {}
+        cp_fresh = fb_get("/commission_payments") or {}
+        if isinstance(cp_fresh, dict):
+            for cp_id, cp_data in cp_fresh.items():
+                if cp_data and isinstance(cp_data, dict) and cp_data.get("salesperson") == new_name:
+                    key = (cp_data.get("period", ""), new_name)
+                    if key not in period_sp_groups:
+                        period_sp_groups[key] = []
+                    period_sp_groups[key].append((cp_id, cp_data))
+
+            # For each (period, salesperson) pair, keep only the most recent record
+            for (period, sp), records in period_sp_groups.items():
+                if len(records) > 1:
+                    sorted_recs = sorted(records, key=lambda x: x[1].get("paid_at", ""), reverse=True)
+                    for cp_id, _ in sorted_recs[1:]:
+                        fb_delete(f"/commission_payments/{cp_id}")
+                        print(f"[SYNC_USER] Deleted duplicate commission_payment {cp_id}", flush=True)
 
     print(f"[SYNC_USER] Completed syncing '{old_name}' → '{new_name}'", flush=True)
 
@@ -7380,6 +7473,9 @@ def financial():
                         # Update tax_amount and total from invoice meta
                         rdata["tax_amount"] = _safe_float(inv_meta.get("tax_amount", 0))
                         rdata["total"] = _safe_float(inv_meta.get("total", 0))
+                        # Get synced company_name and client_name from invoice meta
+                        rdata["company_name"] = inv_meta.get("company_name", "")
+                        rdata["client_name"] = inv_meta.get("client_name", rdata.get("client_name", ""))
 
                 rev_list.append(rdata)
     rev_list.sort(key=lambda x: x.get("date", ""), reverse=True)
@@ -7465,14 +7561,34 @@ def financial():
             if tax_year in [stat_card_year, prev_year]:
                 total_collected += _safe_float(tp.get("amount", 0))
 
-    # Filter Income tab: include payment records where EITHER the payment date OR the invoice date
-    # falls in current/prev year. This ensures a 2026 invoice paid in 2028 still appears in 2028.
+    # Filter Income tab: show ONLY invoices created in current & previous years
+    # This ensures the Income tab displays data for only current year + 1 past year
     rev_list = [r for r in rev_list if
-        _extract_year_from_date(r.get("date", "")) in [stat_card_year, prev_year]
-        or _extract_year_from_date(invoices.get(r.get("invoice_id"), {}).get("meta", {}).get("invoice_date", "")) in [stat_card_year, prev_year]]
+        _extract_year_from_date(invoices.get(r.get("invoice_id"), {}).get("meta", {}).get("invoice_date", "")) in [stat_card_year, prev_year]]
 
-    # Sort by date ascending (oldest to newest)
-    rev_list = sorted(rev_list, key=lambda r: r.get('invoice_date', '') or r.get('date', ''), reverse=True)
+    # Sort by invoice date descending (newest to oldest), then by invoice number descending (higher number = newer)
+    # Convert dates to YYYY-MM-DD format for proper string sorting (handles MM-DD-YYYY format)
+    def sort_key_invoice(r):
+        date_str = r.get('invoice_date', '') or r.get('date', '')
+        # Convert MM-DD-YYYY to YYYY-MM-DD for proper sorting
+        try:
+            if len(date_str) == 10 and date_str[2] == '-':  # MM-DD-YYYY format
+                parts = date_str.split('-')
+                date_sortable = f"{parts[2]}-{parts[0]}-{parts[1]}"
+            else:
+                date_sortable = date_str
+        except (IndexError, ValueError):
+            date_sortable = date_str
+        inv_num = r.get('invoice_number', '')
+        # Extract just the numeric part for proper number sorting
+        try:
+            inv_num_parts = inv_num.split('-')
+            inv_num_numeric = inv_num_parts[-1] if inv_num_parts else '0'
+        except (IndexError, AttributeError):
+            inv_num_numeric = '0'
+        return (date_sortable, inv_num_numeric)
+
+    rev_list = sorted(rev_list, key=sort_key_invoice, reverse=True)
 
     # Recalculate statuses based on actual payments
     for inv in inv_list:
@@ -7634,6 +7750,18 @@ def financial():
     for p in projects_list:
         pnum = p.get("project_number", "")
 
+        # Filter by project START DATE (only include projects starting in current running year)
+        proj_start_date = p.get("start_date", "")
+        if proj_start_date:
+            proj_year = _extract_year_from_date(proj_start_date)
+        else:
+            # Skip projects with no start date
+            continue
+
+        # Only include projects starting in current running year
+        if proj_year != stat_card_year:
+            continue
+
         # Calculate INVOICED and COLLECTED based on line items and payment_log (not equal split!)
         p_invoiced = 0
         p_collected = 0
@@ -7645,12 +7773,8 @@ def financial():
                     continue
                 if pnum not in _invoice_linked_projects(inv_data):
                     continue
-                # Filter by current running year based on invoice_date
+                # Include all invoices for this project (regardless of year)
                 inv_meta = inv_data.get("meta", {}) or {}
-                inv_date_str = inv_meta.get("invoice_date", "")
-                inv_year = _extract_year_from_date(inv_date_str)
-                if inv_year != stat_card_year:
-                    continue
 
                 # Calculate project's portion from actual line items
                 line_items = inv_data.get("line_items", []) or []
@@ -7688,6 +7812,7 @@ def financial():
         project_pnl.append({
             "project_number": pnum,
             "project_name":   p.get("project_name",""),
+            "company_name":   p.get("company_name",""),
             "client_name":    p.get("client_name",""),
             "status":         p.get("status",""),
             "base_contract":  p_base_contract,
@@ -7885,6 +8010,7 @@ def financial():
                 bs_total_commission += _amt
                 monthly_commission_details[_mon].append({
                     "salesperson": _cp.get("salesperson", ""),
+                    "salesperson_email": _cp.get("salesperson_email", ""),
                     "period":      _cp.get("period", ""),
                     "amount":      _amt,
                     "paid_at":     _paid_at[:10],
@@ -8111,6 +8237,7 @@ def financial():
             days_overdue = 0
         entry = {
             "invoice_number": m.get("invoice_number", ""),
+            "company_name":   m.get("company_name", ""),
             "client_name":    m.get("client_name", ""),
             "invoice_date":   m.get("invoice_date", ""),
             "due_date":       due_str,
@@ -8184,6 +8311,7 @@ def financial():
             _days_ov = 0
         _entry = {
             "invoice_number": _m.get("invoice_number", ""),
+            "company_name":   _m.get("company_name", ""),
             "client_name":    _m.get("client_name", ""),
             "invoice_date":   _inv_date,
             "due_date":       _due_str,
@@ -9794,11 +9922,23 @@ def user_details_update(uid):
         if field in data:
             value = str(data[field]).strip()
             updates[field] = value
-            if field in ("username", "display_name"):
-                old_val = user_data.get(field) or user_data.get("username", "")
+            # Track changes in display_name and username for syncing
+            if field == "display_name":
+                # Prefer display_name if it exists in current data
+                old_val = user_data.get("display_name")
+                if not old_val:
+                    # If no display_name, use username as the identifier
+                    old_val = user_data.get("username", "")
                 if old_val and old_val != value:
                     old_display_name = old_val
                     new_display_name = value
+            elif field == "username":
+                # If display_name wasn't in the update, check username
+                if "display_name" not in data and old_display_name is None:
+                    old_val = user_data.get("username", "")
+                    if old_val and old_val != value:
+                        old_display_name = old_val
+                        new_display_name = value
 
     for field in ("hourly_rate", "monthly_salary", "commission_rate"):
         if field in data:
@@ -9815,7 +9955,8 @@ def user_details_update(uid):
 
     # Sync name changes across timesheets, expenses, approvals, etc.
     if old_display_name and new_display_name:
-        _sync_user_display_name(old_display_name, new_display_name)
+        user_email = user_data.get("email", "")
+        _sync_user_display_name(old_display_name, new_display_name, user_email)
 
     # Update session if the logged-in user changed their own name
     if uid == session.get("user_uid") and new_display_name:
@@ -9845,13 +9986,27 @@ def commission_mark_paid():
                     break
         return jsonify({"ok": True, "action": "unpaid"})
     # Mark as paid — store record
+    # First, delete any existing paid record for this period/salesperson to avoid duplicates
+    raw = fb_get("/commission_payments") or {}
+    if isinstance(raw, dict):
+        for cpid, cp in raw.items():
+            if cp and cp.get("period") == period and cp.get("salesperson") == sp_name:
+                fb_delete(f"/commission_payments/{cpid}")
+
+    # Look up salesperson email for reliable sync
+    sp_email = ""
+    for user in _load_all_users():
+        if (user.get("username") or "").strip() == sp_name:
+            sp_email = user.get("email", "")
+            break
     _new_id = f"{period}_{sp_name.replace(' ', '_')}_{int(datetime.now(COMPANY_TZ).timestamp())}"
     fb_update(f"/commission_payments/{_new_id}", {
-        "period":      period,
-        "salesperson": sp_name,
-        "amount":      amount,
-        "paid_at":     datetime.now(timezone.utc).isoformat(),
-        "paid_by":     session.get("user_name", ""),
+        "period":           period,
+        "salesperson":      sp_name,
+        "salesperson_email": sp_email,
+        "amount":           amount,
+        "paid_at":          datetime.now(timezone.utc).isoformat(),
+        "paid_by":          session.get("user_name", ""),
     })
     return jsonify({"ok": True, "action": "paid"})
 
@@ -11885,6 +12040,16 @@ def _parse_quote_form(form) -> dict:
         client_name_from_db = client_data.get("client_name", "")
         print(f"[QUOTE_FORM] Quote created for client '{company_name}': client_id='{client_id}'", flush=True)
 
+    # Look up salesperson email for reliable matching
+    salesperson_name = form.get("salesperson", "")
+    salesperson_email = ""
+    if salesperson_name:
+        users = _load_all_users()
+        for u in users:
+            if u.get("username", "").strip() == salesperson_name:
+                salesperson_email = u.get("email", "")
+                break
+
     return {
         "job_number":           form.get("job_number", ""),
         "client_id":            client_id,
@@ -11893,7 +12058,8 @@ def _parse_quote_form(form) -> dict:
         "project_name":         form.get("project_name", ""),
         "description":          form.get("description", ""),
         "status":               form.get("status", "Not Started"),
-        "salesperson":          form.get("salesperson", ""),
+        "salesperson":          salesperson_name,
+        "salesperson_email":    salesperson_email,
         "date":                 form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
         "valid_until":          form.get("valid_until", ""),
         "expected_completion":  form.get("expected_completion", ""),
@@ -11995,6 +12161,16 @@ def _parse_project_form(form) -> dict:
         client_data = fb_get(f"/clients/{company_name}") or {}
         client_id = client_data.get("client_id", "")
 
+    # Look up sales person email for reliable matching
+    sales_name = form.get("sales", "")
+    sales_email = ""
+    if sales_name:
+        users = _load_all_users()
+        for u in users:
+            if u.get("username", "").strip() == sales_name:
+                sales_email = u.get("email", "")
+                break
+
     return {
         # ── identifiers (match desktop field names exactly) ──────────────────
         "project_number":  form.get("project_number", ""),
@@ -12010,7 +12186,8 @@ def _parse_project_form(form) -> dict:
         "mail_address":    form.get("mail_address", ""),
         "date_received":   form.get("date_received", ""),
         "plant":           form.get("plant", ""),          # 2-letter state code
-        "sales":           form.get("sales", ""),
+        "sales":           sales_name,
+        "sales_email":     sales_email,
         "service_types":   service_types,
         "service_costs":   service_costs,
         "scope_of_work":   form.get("scope_of_work", ""),

@@ -16,8 +16,9 @@
       <form method="POST">
         <div class="mb-3">
           <label class="form-label">Company Name</label>
+          {% set should_prefill = client and (client.get('has_explicit_company') or (client.get('company_name') and client.get('company_name') != client.get('client_name'))) %}
           <input type="text" name="company_name" class="form-control"
-                 value="{% if client and client.get('has_explicit_company') %}{{ client.get('company_name','') }}{% else %}{% endif %}">
+                 value="{% if should_prefill %}{{ client.get('company_name','') }}{% else %}{% endif %}">
         </div>
         <div class="mb-3">
           <label class="form-label">Client Name</label>
