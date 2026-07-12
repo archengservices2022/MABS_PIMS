@@ -5473,9 +5473,10 @@ def _sync_client_changes_by_name(old_company_name, new_company_name, new_client_
                     proj_data["client_name"] = new_client_name
                     fb_update(f"/projects/{proj_id}", proj_data)
 
-def _sync_user_display_name(old_name, new_name):
-    """Sync display name changes across all records: timesheets, expenses, approvals, invoices, etc."""
-    print(f"[SYNC_USER] Syncing display name: '{old_name}' → '{new_name}'", flush=True)
+def _sync_user_display_name(old_name, new_name, user_email=None):
+    """Sync display name changes across all records: timesheets, expenses, approvals, invoices, etc.
+    Uses both name and email for reliable matching."""
+    print(f"[SYNC_USER] Syncing display name: '{old_name}' → '{new_name}'" + (f" (email: {user_email})" if user_email else ""), flush=True)
 
     now_iso = datetime.now(timezone.utc).isoformat()
 
@@ -5571,24 +5572,31 @@ def _sync_user_display_name(old_name, new_name):
                     fb_update(f"/balance_sheet_salary/{pay_id}", pay_data)
                     print(f"[SYNC_USER] Updated balance_sheet_salary {pay_id}", flush=True)
 
-    # Update Quotes (salesperson field)
+    # Update Quotes (salesperson field) - match by name or email
     quotes = fb_get("/job_forms") or {}
     if isinstance(quotes, dict):
         for quote_id, quote_data in quotes.items():
             if isinstance(quote_data, dict):
-                if quote_data.get("salesperson", "") == old_name:
+                if quote_data.get("salesperson", "") == old_name or (user_email and quote_data.get("salesperson_email", "") == user_email):
                     quote_data["salesperson"] = new_name
+                    if user_email:
+                        quote_data["salesperson_email"] = user_email
                     quote_data["updated_at"] = now_iso
                     fb_update(f"/job_forms/{quote_id}", quote_data)
                     print(f"[SYNC_USER] Updated quote {quote_id}", flush=True)
 
-    # Update Projects (assigned_to field for salesperson)
+    # Update Projects (sales field for salesperson) - match by name or email
     projects = fb_get("/projects") or {}
     if isinstance(projects, dict):
         for proj_id, proj_data in projects.items():
             if isinstance(proj_data, dict):
-                if proj_data.get("assigned_to", "") == old_name:
-                    proj_data["assigned_to"] = new_name
+                if proj_data.get("sales", "") == old_name or proj_data.get("assigned_to", "") == old_name or (user_email and proj_data.get("sales_email", "") == user_email):
+                    if proj_data.get("sales", "") == old_name:
+                        proj_data["sales"] = new_name
+                    if proj_data.get("assigned_to", "") == old_name:
+                        proj_data["assigned_to"] = new_name
+                    if user_email:
+                        proj_data["sales_email"] = user_email
                     proj_data["updated_at"] = now_iso
                     fb_update(f"/projects/{proj_id}", proj_data)
                     print(f"[SYNC_USER] Updated project {proj_id}", flush=True)
@@ -9771,7 +9779,8 @@ def user_details_update(uid):
 
     # Sync name changes across timesheets, expenses, approvals, etc.
     if old_display_name and new_display_name:
-        _sync_user_display_name(old_display_name, new_display_name)
+        user_email = user_data.get("email", "")
+        _sync_user_display_name(old_display_name, new_display_name, user_email)
 
     # Update session if the logged-in user changed their own name
     if uid == session.get("user_uid") and new_display_name:
@@ -11841,6 +11850,16 @@ def _parse_quote_form(form) -> dict:
         client_name_from_db = client_data.get("client_name", "")
         print(f"[QUOTE_FORM] Quote created for client '{company_name}': client_id='{client_id}'", flush=True)
 
+    # Look up salesperson email for reliable matching
+    salesperson_name = form.get("salesperson", "")
+    salesperson_email = ""
+    if salesperson_name:
+        users = _load_all_users()
+        for u in users:
+            if u.get("username", "").strip() == salesperson_name:
+                salesperson_email = u.get("email", "")
+                break
+
     return {
         "job_number":           form.get("job_number", ""),
         "client_id":            client_id,
@@ -11849,7 +11868,8 @@ def _parse_quote_form(form) -> dict:
         "project_name":         form.get("project_name", ""),
         "description":          form.get("description", ""),
         "status":               form.get("status", "Not Started"),
-        "salesperson":          form.get("salesperson", ""),
+        "salesperson":          salesperson_name,
+        "salesperson_email":    salesperson_email,
         "date":                 form.get("date", datetime.now().strftime("%Y-%m-%d")),
         "valid_until":          form.get("valid_until", ""),
         "expected_completion":  form.get("expected_completion", ""),
@@ -11951,6 +11971,16 @@ def _parse_project_form(form) -> dict:
         client_data = fb_get(f"/clients/{company_name}") or {}
         client_id = client_data.get("client_id", "")
 
+    # Look up sales person email for reliable matching
+    sales_name = form.get("sales", "")
+    sales_email = ""
+    if sales_name:
+        users = _load_all_users()
+        for u in users:
+            if u.get("username", "").strip() == sales_name:
+                sales_email = u.get("email", "")
+                break
+
     return {
         # ── identifiers (match desktop field names exactly) ──────────────────
         "project_number":  form.get("project_number", ""),
@@ -11966,7 +11996,8 @@ def _parse_project_form(form) -> dict:
         "mail_address":    form.get("mail_address", ""),
         "date_received":   form.get("date_received", ""),
         "plant":           form.get("plant", ""),          # 2-letter state code
-        "sales":           form.get("sales", ""),
+        "sales":           sales_name,
+        "sales_email":     sales_email,
         "service_types":   service_types,
         "service_costs":   service_costs,
         "scope_of_work":   form.get("scope_of_work", ""),
