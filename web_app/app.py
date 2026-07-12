@@ -5491,26 +5491,28 @@ def _sync_user_display_name(old_name, new_name):
                     print(f"[SYNC_USER] Updated timesheet {ts_id}", flush=True)
 
     # Update Time Off / Vacation requests
-    time_off = fb_get("/time_off") or {}
+    time_off = fb_get("/time_off_requests") or {}
     if isinstance(time_off, dict):
         for to_id, to_data in time_off.items():
             if isinstance(to_data, dict):
                 if to_data.get("employee_name", "") == old_name:
                     to_data["employee_name"] = new_name
                     to_data["updated_at"] = now_iso
-                    fb_update(f"/time_off/{to_id}", to_data)
-                    print(f"[SYNC_USER] Updated time_off {to_id}", flush=True)
+                    fb_update(f"/time_off_requests/{to_id}", to_data)
+                    print(f"[SYNC_USER] Updated time_off_request {to_id}", flush=True)
 
     # Update Expenses
     expenses = fb_get("/expenses") or {}
     if isinstance(expenses, dict):
         for exp_id, exp_data in expenses.items():
             if isinstance(exp_data, dict):
-                if exp_data.get("employee_name", "") == old_name or exp_data.get("created_by", "") == old_name:
+                if exp_data.get("employee_name", "") == old_name or exp_data.get("created_by", "") == old_name or exp_data.get("submitted_by_name", "") == old_name:
                     if exp_data.get("employee_name", "") == old_name:
                         exp_data["employee_name"] = new_name
                     if exp_data.get("created_by", "") == old_name:
                         exp_data["created_by"] = new_name
+                    if exp_data.get("submitted_by_name", "") == old_name:
+                        exp_data["submitted_by_name"] = new_name
                     exp_data["updated_at"] = now_iso
                     fb_update(f"/expenses/{exp_id}", exp_data)
                     print(f"[SYNC_USER] Updated expense {exp_id}", flush=True)
