@@ -604,9 +604,79 @@ def portfolio():
         featured_repo=featured_repo,
     )
 
+def _administration_dashboard():
+    """Read-only operational dashboard for the 'administration' role: project/invoice
+    status, pending timesheet/time-off approvals, and who's clocked in — no dollar
+    amounts anywhere, since this role can't see overall company financials."""
+    _auto_flag_overdue()
+
+    projects  = fb_get("/projects") or {}
+    proj_list = [dict(v, firebase_id=k) for k, v in projects.items()
+                 if isinstance(v, dict) and v.get("project_number")] if isinstance(projects, dict) else []
+    proj_status_counts: Dict[str, int] = {}
+    for p in proj_list:
+        st = p.get("status") or "Not Started"
+        proj_status_counts[st] = proj_status_counts.get(st, 0) + 1
+
+    invoices = fb_get("/invoices") or {}
+    inv_list = [dict(v, firebase_id=k) for k, v in invoices.items()
+                if isinstance(v, dict)] if isinstance(invoices, dict) else []
+    for inv in inv_list:
+        meta = dict(inv.get("meta", {}) or {})
+        meta["status"] = _calculate_invoice_status(inv)
+        inv["meta"] = meta
+
+    inv_status_counts: Dict[str, int] = {}
+    for i in inv_list:
+        st = i.get("meta", {}).get("status") or "Draft"
+        inv_status_counts[st] = inv_status_counts.get(st, 0) + 1
+
+    overdue_invoices_all = [i for i in inv_list if i.get("meta", {}).get("status") == "Overdue"]
+    overdue_invoices_all.sort(key=lambda i: i.get("meta", {}).get("due_date", ""))
+    draft_invoices_all = [i for i in inv_list if i.get("meta", {}).get("status") == "Draft"]
+    draft_invoices_all.sort(key=lambda i: i.get("meta", {}).get("invoice_date", ""), reverse=True)
+    recently_paid_all = [i for i in inv_list if i.get("meta", {}).get("status") in ("Paid", "Partial")]
+    recently_paid_all.sort(key=lambda i: i.get("meta", {}).get("updated_at", ""), reverse=True)
+
+    all_sheets = _load_timesheets()
+    pending_timesheets_all = [s for s in all_sheets if s.get("status") == "Submitted"]
+    pending_timesheets_all.sort(key=lambda s: s.get("submitted_at", ""), reverse=True)
+
+    all_users = _load_all_users()
+    active_employees = [u for u in all_users if u.get("active", True)]
+
+    all_time_entries = _load_time_entries()
+    clocked_in_now = [e for e in all_time_entries if e.get("status") == "open"]
+
+    all_time_off = _load_time_off_requests()
+    pending_time_off_all = [r for r in all_time_off if r.get("status") == "Pending"]
+    pending_time_off_all.sort(key=lambda r: r.get("requested_at", ""), reverse=True)
+
+    return render_template("administration_dashboard.html",
+        proj_status_counts=proj_status_counts,
+        proj_total=len(proj_list),
+        inv_status_counts=inv_status_counts,
+        inv_total=len(inv_list),
+        overdue_invoices=overdue_invoices_all[:8],
+        overdue_invoices_count=len(overdue_invoices_all),
+        draft_invoices=draft_invoices_all[:8],
+        draft_invoices_count=len(draft_invoices_all),
+        recently_paid_invoices=recently_paid_all[:8],
+        pending_timesheets=pending_timesheets_all[:8],
+        pending_timesheets_count=len(pending_timesheets_all),
+        active_employees_count=len(active_employees),
+        clocked_in_now=clocked_in_now,
+        pending_time_off=pending_time_off_all[:8],
+        pending_time_off_count=len(pending_time_off_all),
+    )
+
+
 @app.route("/dashboard")
 @role_required("dashboard")
 def dashboard():
+    if normalize_role(session.get("user_role", "")) == "administration":
+        return _administration_dashboard()
+
     _auto_flag_overdue()
     invoices = fb_get("/invoices") or {}
     projects = fb_get("/projects") or {}

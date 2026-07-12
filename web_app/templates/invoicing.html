@@ -34,6 +34,7 @@
       <div class="kpi-sub">{{ i_draft_count }} draft · {{ i_sent_count }} sent</div>
     </div>
   </div>
+  {% if 'financial' in allowed_pages %}
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-blue">
       <div class="kpi-top"><span class="kpi-label">Total Billed</span><i class="bi bi-currency-dollar kpi-icon-sm"></i></div>
@@ -63,6 +64,7 @@
       <div class="kpi-sub">{{ i_over_count }} overdue invoice{{ 's' if i_over_count != 1 }}</div>
     </div>
   </div>
+  {% endif %}
 </div>
 
 <!-- ── Tab nav -->
