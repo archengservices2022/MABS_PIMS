@@ -2706,9 +2706,10 @@ function viewReceipt(expId) {
           }
           var statusColor = {'Sent':'#0369a1','Viewed':'#D97706','Partial':'#D97706','Overdue':'#DC2626'}[e.status] || '#6b7280';
           var bg = idx%2===0?'#fffbeb':'#fef9ee';
+          var clientDisplay = (e.company_name || e.client_name || '—');
           return '<tr style="background:'+bg+';border-bottom:1px solid #FED7AA;">'
             +'<td style="padding:8px 12px;">'+invLink+'</td>'
-            +'<td style="padding:8px 12px;">'+(e.client_name||'—')+'</td>'
+            +'<td style="padding:8px 12px;">'+clientDisplay+'</td>'
             +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(e.invoice_date)+'</td>'
             +'<td style="padding:8px 12px;text-align:center;">'+(e.net_terms?'Net '+e.net_terms:'—')+'</td>'
             +'<td style="padding:8px 12px;text-align:center;color:#374151;">'+formatDate(e.due_date)+'</td>'
