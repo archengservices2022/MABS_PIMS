@@ -5571,6 +5571,28 @@ def _sync_user_display_name(old_name, new_name):
                     fb_update(f"/balance_sheet_salary/{pay_id}", pay_data)
                     print(f"[SYNC_USER] Updated balance_sheet_salary {pay_id}", flush=True)
 
+    # Update Quotes (salesperson field)
+    quotes = fb_get("/job_forms") or {}
+    if isinstance(quotes, dict):
+        for quote_id, quote_data in quotes.items():
+            if isinstance(quote_data, dict):
+                if quote_data.get("salesperson", "") == old_name:
+                    quote_data["salesperson"] = new_name
+                    quote_data["updated_at"] = now_iso
+                    fb_update(f"/job_forms/{quote_id}", quote_data)
+                    print(f"[SYNC_USER] Updated quote {quote_id}", flush=True)
+
+    # Update Projects (assigned_to field for salesperson)
+    projects = fb_get("/projects") or {}
+    if isinstance(projects, dict):
+        for proj_id, proj_data in projects.items():
+            if isinstance(proj_data, dict):
+                if proj_data.get("assigned_to", "") == old_name:
+                    proj_data["assigned_to"] = new_name
+                    proj_data["updated_at"] = now_iso
+                    fb_update(f"/projects/{proj_id}", proj_data)
+                    print(f"[SYNC_USER] Updated project {proj_id}", flush=True)
+
     print(f"[SYNC_USER] Completed syncing '{old_name}' → '{new_name}'", flush=True)
 
 @app.route("/clients/new", methods=["GET", "POST"])
