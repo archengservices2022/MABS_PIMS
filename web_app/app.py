@@ -5601,6 +5601,17 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
                     fb_update(f"/projects/{proj_id}", proj_data)
                     print(f"[SYNC_USER] Updated project {proj_id}", flush=True)
 
+    # Update Medical Claims (employee_name field)
+    medical_claims = fb_get("/medical_claims") or {}
+    if isinstance(medical_claims, dict):
+        for claim_id, claim_data in medical_claims.items():
+            if isinstance(claim_data, dict):
+                if claim_data.get("employee_name", "") == old_name:
+                    claim_data["employee_name"] = new_name
+                    claim_data["updated_at"] = now_iso
+                    fb_update(f"/medical_claims/{claim_id}", claim_data)
+                    print(f"[SYNC_USER] Updated medical_claim {claim_id}", flush=True)
+
     print(f"[SYNC_USER] Completed syncing '{old_name}' → '{new_name}'", flush=True)
 
 @app.route("/clients/new", methods=["GET", "POST"])
