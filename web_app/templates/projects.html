@@ -20,6 +20,7 @@
       <div class="kpi-sub">all time</div>
     </div>
   </div>
+  {% if 'financial' in allowed_pages %}
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-blue">
       <div class="kpi-top"><span class="kpi-label">Portfolio Value</span><i class="bi bi-briefcase-fill kpi-icon-sm"></i></div>
@@ -41,6 +42,7 @@
       <div class="kpi-sub">remaining to collect</div>
     </div>
   </div>
+  {% endif %}
 </div>
 
 <!-- ── Tab nav -->

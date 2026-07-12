@@ -398,7 +398,7 @@ const WEEK_DAYS = {{ week_days | tojson }};
 const PROJECTS  = {{ active_projects | tojson }};
 const EXISTING  = {{ (existing_sheet.entries if existing_sheet else []) | tojson }};
 const IS_APPROVED = {{ 'true' if (existing_sheet and existing_sheet.status == 'Approved') else 'false' }};
-const TODAY_ISO = new Date().toISOString().slice(0, 10);
+const TODAY_ISO = {{ now.strftime('%Y-%m-%d') | tojson }}; // company-timezone "today", not the browser's local/UTC date
 
 const WEEKDAYS = WEEK_DAYS; // All 7 days allowed
 
@@ -530,11 +530,12 @@ function onTypeChange(id) {
   if (!isWork) {
     tr.querySelector('.entry-start').value = '';
     tr.querySelector('.entry-end').value = '';
+    delete tr.dataset.worked;
     ['reg','ot','tot'].forEach(k => {
       const el = document.getElementById(`${k}-${id}`);
       if (el) { el.textContent = '0.00'; }
     });
-    updateSummary();
+    recalcWeek();
   } else {
     tr.querySelector('.entry-start').value = '9:00 AM';
     tr.querySelector('.entry-end').value = '5:00 PM';
@@ -631,7 +632,7 @@ function updateAddDayBtn() {
 function delRow(id, date) {
   const tr = document.getElementById(`row-${id}`);
   if (tr) tr.remove();
-  updateSummary();
+  recalcWeek();
   const tbody = document.getElementById(`tbody-${date}`);
   if (tbody && tbody.querySelectorAll('tr').length === 0) {
     const block = document.getElementById(`day-block-${date}`);
@@ -643,17 +644,22 @@ function delRow(id, date) {
 }
 
 // ── Hour calculation ─────────────────────────────────────────────────────────
+// A row's own Total is just the worked hours from its start/end time.
+// Whether those hours count as Regular or Overtime depends on the whole week
+// (weekend = all OT; weekday hours are Regular up to a running 40hr cap), so
+// that classification happens in recalcWeek(), not here.
 function calcRow(id) {
   const tr = document.getElementById(`row-${id}`);
   if (!tr) return;
 
   const type = tr.querySelector('.entry-type') ? tr.querySelector('.entry-type').value : 'work';
   if (type !== 'work') {
+    delete tr.dataset.worked;
     ['reg','ot','tot'].forEach(k => {
       const el = document.getElementById(`${k}-${id}`);
       if (el) el.textContent = '0.00';
     });
-    updateSummary();
+    recalcWeek();
     return;
   }
 
@@ -668,27 +674,62 @@ function calcRow(id) {
   }
 
   if (!s || !e) {
+    delete tr.dataset.worked;
     ['reg','ot','tot'].forEach(k => {
       const el = document.getElementById(`${k}-${id}`);
       if (el) el.textContent = '—';
     });
-    updateSummary();
+    recalcWeek();
     return;
   }
 
   let mins = (e.h*60+e.min) - (s.h*60+s.min);
   if (mins < 0) mins = 0;
   const worked = mins / 60;
-  const reg = Math.min(8, worked);
-  const ot  = Math.max(0, worked - 8);
-
-  document.getElementById(`reg-${id}`).textContent = reg.toFixed(2);
-  document.getElementById(`ot-${id}`).textContent  = ot > 0 ? ot.toFixed(2) : '—';
+  tr.dataset.worked = worked;
   document.getElementById(`tot-${id}`).textContent = worked.toFixed(2);
-  updateSummary();
+  recalcWeek();
 }
 
-function updateSummary() {
+// Classifies every work row's hours as Regular/Overtime across the whole
+// week: Sat/Sun rows are always 100% overtime; Mon-Fri rows are regular up
+// to a running weekly total of 40 hours (in date order), with anything
+// beyond that counted as overtime. Then refreshes the weekly summary totals.
+function recalcWeek() {
+  const byDate = {};
+  document.querySelectorAll('[data-row-id]').forEach(tr => {
+    const date = tr.dataset.date;
+    if (!date || tr.dataset.worked === undefined) return;
+    (byDate[date] = byDate[date] || []).push(tr);
+  });
+
+  let runningWeekdayTotal = 0;
+  Object.keys(byDate).sort().forEach(date => {
+    const rows = byDate[date];
+    if (isWeekend(date)) {
+      rows.forEach(tr => {
+        const id = tr.dataset.rowId;
+        const worked = parseFloat(tr.dataset.worked) || 0;
+        document.getElementById(`reg-${id}`).textContent = '0.00';
+        document.getElementById(`ot-${id}`).textContent  = worked > 0 ? worked.toFixed(2) : '—';
+      });
+    } else {
+      let remainingReg = Math.max(0, 40 - runningWeekdayTotal);
+      let dayWorked = 0;
+      rows.forEach(tr => {
+        const id = tr.dataset.rowId;
+        const worked = parseFloat(tr.dataset.worked) || 0;
+        dayWorked += worked;
+        const rowReg = Math.min(worked, remainingReg);
+        const rowOt  = worked - rowReg;
+        remainingReg -= rowReg;
+        document.getElementById(`reg-${id}`).textContent = rowReg.toFixed(2);
+        document.getElementById(`ot-${id}`).textContent  = rowOt > 0 ? rowOt.toFixed(2) : '—';
+      });
+      runningWeekdayTotal += dayWorked;
+    }
+  });
+
   let totalReg = 0, totalOT = 0;
   const activeDays = new Set();
   document.querySelectorAll('[data-row-id]').forEach(tr => {
