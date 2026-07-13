@@ -78,6 +78,15 @@
                      value="{{ co.get('website', '') }}">
             </div>
 
+            <h6 class="section-heading mt-4">Currency Settings</h6>
+            <div class="mb-3">
+              <label class="form-label">BDT Exchange Rate <span class="text-muted fw-normal">(1 USD = ? BDT)</span></label>
+              <input type="number" name="bdt_exchange_rate" class="form-control"
+                     value="{{ co.get('bdt_exchange_rate', 110) }}"
+                     min="1" step="0.01" style="max-width:150px;">
+              <div class="form-text text-muted">Used to show USD ↔ BDT equivalent for Outside America employees.</div>
+            </div>
+
             <h6 class="section-heading mt-4">Invoice Defaults</h6>
             <div class="mb-3">
               <label class="form-label">Default Tax Rate (%)</label>

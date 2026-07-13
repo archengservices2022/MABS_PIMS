@@ -9393,6 +9393,9 @@ def employees():
     else:
         context["pending_expenses"] = []
 
+    _emp_settings = load_settings().get("company", {})
+    context["bdt_exchange_rate"] = _safe_float(_emp_settings.get("bdt_exchange_rate", 110)) or 110
+
     return render_template("employees.html", **context)
 
 @app.route("/employees/medical-claims/form")
@@ -10177,8 +10180,9 @@ def settings_company():
         "email":            request.form.get("email", ""),
         "phone":            request.form.get("phone", ""),
         "website":          request.form.get("website", ""),
-        "default_tax_rate": _safe_float(request.form.get("default_tax_rate", "0")),
-        "default_terms":    request.form.get("default_terms", ""),
+        "default_tax_rate":  _safe_float(request.form.get("default_tax_rate", "0")),
+        "default_terms":     request.form.get("default_terms", ""),
+        "bdt_exchange_rate": _safe_float(request.form.get("bdt_exchange_rate", "110")) or 110,
     })
     # Save to Firebase and local settings.json
     fb_update("/settings", {"company": co})
