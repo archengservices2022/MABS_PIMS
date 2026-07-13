@@ -2132,7 +2132,7 @@ def projects():
                     pdata["status"] = "In Progress"
                     fb_update(f"/projects/{pid}", {"status": "In Progress", "updated_at": _now_iso})
             items.append(pdata)
-    items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    items.sort(key=lambda x: x.get("project_number", ""), reverse=True)
 
     search        = request.args.get("q", "").strip().lower()
     status_filter = request.args.get("status", "")
@@ -2349,13 +2349,24 @@ def projects_import_excel():
             else:
                 status = "In Progress"
 
+            site_addr    = str_val("site_address")
+            date_recv    = date_val("date_received")
+            # Use site address as project name; fall back to project number
+            project_name = site_addr if site_addr else proj_num
+            # Use date_received as created_at so sort by project_number still wins,
+            # but if date missing fall back to import timestamp
+            record_ts = (datetime.strptime(date_recv, "%Y-%m-%d")
+                         .replace(tzinfo=timezone.utc).isoformat()
+                         if date_recv else now_ts)
+
             data = {
                 "project_number":   proj_num,
+                "project_name":     project_name,
                 "client_name":      str_val("client_name"),
                 "po_wo_number":     str_val("po_wo_number"),
-                "site_address":     str_val("site_address"),
+                "site_address":     site_addr,
                 "mail_address":     str_val("mail_address"),
-                "date_received":    date_val("date_received"),
+                "date_received":    date_recv,
                 "final_date":       date_val("final_date"),
                 "plant":            str_val("plant"),
                 "contract_value":   contract_value,
@@ -2374,7 +2385,7 @@ def projects_import_excel():
                     "invoice_id":     "",
                     "invoice_number": ""
                 }],
-                "created_at":  now_ts,
+                "created_at":  record_ts,
                 "updated_at":  now_ts,
                 "created_by":  f"Excel Import ({sheet_name})",
                 "source_sheet": sheet_name,
