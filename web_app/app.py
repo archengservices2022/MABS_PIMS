@@ -2257,13 +2257,20 @@ def projects_import_excel():
     skipped  = 0
     errors   = []
 
+    selected_sheet = request.form.get("sheet_name", "").strip()
+
     try:
         wb = load_workbook(io.BytesIO(file.read()), data_only=True)
     except Exception as ex:
         flash(f"Could not read Excel file: {ex}", "danger")
         return redirect(url_for("projects"))
 
-    for sheet_name in wb.sheetnames:
+    sheets_to_import = [selected_sheet] if selected_sheet and selected_sheet in wb.sheetnames else wb.sheetnames
+    if selected_sheet and selected_sheet not in wb.sheetnames:
+        flash(f"Sheet '{selected_sheet}' not found. Available: {', '.join(wb.sheetnames)}", "warning")
+        return redirect(url_for("projects"))
+
+    for sheet_name in sheets_to_import:
         ws = wb[sheet_name]
         rows = list(ws.iter_rows(values_only=True))
         if len(rows) < 2:
