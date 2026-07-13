@@ -287,7 +287,7 @@
                 </td>
                 <td style="font-weight:700;color:#0369a1;">${{ "{:,.2f}".format(sal_total) }}</td>
                 <td>
-                  {% set ss = sal.get('salary_status','Paid') %}
+                  {% set ss = sal.get('salary_status','Pending') %}
                   <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;
                     {% if ss == 'Paid' %}background:#dcfce7;color:#15803d;
                     {% elif ss == 'Pending' %}background:#fef9c3;color:#92400e;
@@ -297,7 +297,7 @@
                 <td>{{ sal.notes or '—' }}</td>
                 <td>
                   <div class="action-buttons">
-                    <button onclick="editSalary('{{ sal.firebase_id }}','{{ sal_emp | replace("'","&#39;") }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace("'","&#39;") }}','{{ sal.get('salary_status','Paid') }}')" class="btn-sm" title="Edit" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
+                    <button onclick="editSalary('{{ sal.firebase_id }}','{{ sal_emp | replace("'","&#39;") }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace("'","&#39;") }}','{{ sal.get('salary_status','Pending') }}')" class="btn-sm" title="Edit" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
                       <i class="bi bi-pencil"></i>
                     </button>
                     <button onclick="deleteSalary('{{ sal.firebase_id }}')" class="btn-sm" title="Delete" style="background:#DC2626;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
@@ -361,8 +361,8 @@
             <div class="form-group">
               <label for="sal_status">Salary Status</label>
               <select id="sal_status">
-                <option value="Paid">Paid</option>
                 <option value="Pending">Pending</option>
+                <option value="Paid">Paid</option>
                 <option value="Processing">Processing</option>
               </select>
             </div>
@@ -733,7 +733,7 @@ function editSalary(id, employee, date, amount, region, notes, status) {
   document.getElementById('sal_amount').value = amount;
   document.getElementById('sal_region').value = region;
   document.getElementById('sal_notes').value = notes || '';
-  document.getElementById('sal_status').value = status || 'Paid';
+  document.getElementById('sal_status').value = status || 'Pending';
   document.getElementById('submitBtnText').textContent = 'Update Salary Entry';
   // Switch to add-salary tab
   document.querySelectorAll('.payroll-tab-content').forEach(t => t.classList.remove('active'));
@@ -769,7 +769,7 @@ function addSalary(e) {
     amount:         amountVal,
     region:         document.getElementById('sal_region').value,
     notes:          document.getElementById('sal_notes').value,
-    salary_status:  document.getElementById('sal_status').value || 'Paid',
+    salary_status:  document.getElementById('sal_status').value || 'Pending',
   };
 
   const method = salaryId ? 'PUT' : 'POST';
