@@ -830,11 +830,11 @@
             <div class="text-muted small fw-semibold mb-1">Monthly Salary</div>
             {% if profile_user.get('region') == 'Outside America' %}
             <div class="fw-800" style="font-size:22px;color:#15803D;">
-              ৳{{ "{:,.0f}".format(profile_user.monthly_salary|float) }}<span class="text-muted fw-normal" style="font-size:13px;"> BDT/mo</span>
+              ৳{{ "{:,.0f}".format((profile_user.monthly_salary|float) * (bdt_exchange_rate or 110)) }}<span class="text-muted fw-normal" style="font-size:13px;"> BDT/mo</span>
             </div>
             {% if user_role == 'admin' %}
             <div class="text-muted" style="font-size:12px;margin-top:2px;">
-              ≈ ${{ "{:,.0f}".format((profile_user.monthly_salary|float) / (bdt_exchange_rate or 110)) }} USD/mo
+              ≈ ${{ "{:,.0f}".format(profile_user.monthly_salary|float) }} USD/mo
             </div>
             {% endif %}
             {% else %}
@@ -1021,7 +1021,7 @@
             {% if u.get('hourly_rate') %}<div class="fw-500">${{ '%.2f'|format(u.hourly_rate|float) }}/hr</div>{% endif %}
             {% if u.get('monthly_salary') %}
             {% if u.get('region') == 'Outside America' %}
-            <div class="text-success">৳{{ '{:,.0f}'.format(u.monthly_salary|float) }} BDT/mo</div>
+            <div class="text-success">৳{{ '{:,.0f}'.format((u.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT/mo</div>
             {% else %}
             <div class="text-success">${{ '{:,.0f}'.format(u.monthly_salary|float) }}/mo</div>
             {% endif %}
@@ -1216,8 +1216,8 @@
             {% if u.monthly_salary %}
             {% if u.get('region') == 'Outside America' %}
             <span class="badge" style="background:#EDE9FE;color:#5B21B6;border:1px solid #C4B5FD;font-size:11px;"
-                  title="≈ ${{ '{:,.0f}'.format((u.monthly_salary|float) / (bdt_exchange_rate or 110)) }} USD">
-              ৳{{ '{:,.0f}'.format(u.monthly_salary|float) }} BDT/mo
+                  title="≈ ${{ '{:,.0f}'.format(u.monthly_salary|float) }} USD">
+              ৳{{ '{:,.0f}'.format((u.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT/mo
             </span>
             {% else %}
             <span class="badge" style="background:#ECFDF5;color:#065F46;border:1px solid #A7F3D0;font-size:11px;"
