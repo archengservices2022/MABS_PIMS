@@ -2228,8 +2228,11 @@ def projects_clear_all():
 @app.route("/projects/import-excel", methods=["POST"])
 @role_required("projects")
 def projects_import_excel():
-    """Bulk-import projects from an Excel workbook (one sheet per month)."""
-    import io
+    """Bulk-import projects from an Excel workbook (one sheet per month).
+    Rows with CO suffixes (_C, _CO, _CO-1 etc.) are attached as change orders
+    on the parent project instead of being created as separate projects.
+    """
+    import io, re
     from openpyxl import load_workbook
 
     file = request.files.get("excel_file")
@@ -2263,20 +2266,32 @@ def projects_import_excel():
         "additional notes": "additional_notes",
     }
 
-    # ── Load existing project numbers so we can skip duplicates ──────────────
+    _CO_RE = re.compile(r'[_-]C(?:O|o)?[-_]?\d*$')
+
+    def _is_co(num):
+        return bool(_CO_RE.search(num))
+
+    def _parent_num(num):
+        return _CO_RE.sub('', num).strip()
+
+    # ── Load existing projects (number → firebase_id) ─────────────────────────
     existing_raw = fb_get("/projects") or {}
-    existing_nums = set()
+    existing_nums  = {}   # project_number → firebase_id
     if isinstance(existing_raw, dict):
-        for pdata in existing_raw.values():
+        for pid, pdata in existing_raw.items():
             if isinstance(pdata, dict):
                 num = pdata.get("project_number", "")
                 if num:
-                    existing_nums.add(num.strip())
+                    existing_nums[num.strip()] = pid
 
-    now_ts = datetime.now(timezone.utc).isoformat()
+    now_ts   = datetime.now(timezone.utc).isoformat()
     imported = 0
+    co_added = 0
     skipped  = 0
     errors   = []
+
+    # CO rows deferred until all projects are imported
+    co_pending = []   # list of (proj_num, row_data_dict, sheet_name)
 
     selected_sheet = request.form.get("sheet_name", "").strip()
 
@@ -2291,13 +2306,93 @@ def projects_import_excel():
         flash(f"Sheet '{selected_sheet}' not found. Available: {', '.join(wb.sheetnames)}", "warning")
         return redirect(url_for("projects"))
 
+    # ── Helper closures that capture col_idx and row per iteration ────────────
+    def _parse_row(row, col_idx):
+        def cell(field):
+            idx = col_idx.get(field)
+            return row[idx] if idx is not None and idx < len(row) else None
+
+        def str_val(field):
+            v = cell(field)
+            return str(v).strip() if v is not None else ""
+
+        def date_val(field):
+            v = cell(field)
+            if v is None:
+                return ""
+            if hasattr(v, "strftime"):
+                return v.strftime("%Y-%m-%d")
+            s = str(v).strip()
+            for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y", "%m-%d-%Y"):
+                try:
+                    return datetime.strptime(s[:10], fmt).strftime("%Y-%m-%d")
+                except Exception:
+                    pass
+            return s[:10] if len(s) >= 10 else s
+
+        def float_val(field):
+            v = cell(field)
+            if v is None:
+                return 0.0
+            try:
+                return float(str(v).replace("$", "").replace(",", "").strip() or 0)
+            except Exception:
+                return 0.0
+
+        notes_parts = []
+        if str_val("notes"):
+            notes_parts.append(str_val("notes"))
+        if str_val("additional_notes"):
+            notes_parts.append(str_val("additional_notes"))
+        combined_notes = " | ".join(notes_parts)
+
+        contract_value  = float_val("contract_value")
+        down_pmt_amount = float_val("down_payment_amount")
+        down_pct        = round((down_pmt_amount / contract_value * 100), 2) if contract_value else 0.0
+        site_addr       = str_val("site_address")
+        date_recv       = date_val("date_received")
+        note_lc         = combined_notes.lower()
+        xl_stat         = str_val("xl_status").lower()
+
+        if "invoiced" in xl_stat or "invoiced" in note_lc:
+            status = "invoiced_Not paid yet"
+        elif "completed" in xl_stat or "complete" in note_lc:
+            status = "Completed"
+        elif "cancelled" in xl_stat or "cancel" in note_lc:
+            status = "Cancelled"
+        else:
+            status = "In Progress"
+
+        record_ts = (datetime.strptime(date_recv, "%Y-%m-%d")
+                     .replace(tzinfo=timezone.utc).isoformat()
+                     if date_recv else now_ts)
+
+        return {
+            "project_name":     site_addr or str_val("project_number"),
+            "client_name":      str_val("client_name"),
+            "po_wo_number":     str_val("po_wo_number"),
+            "site_address":     site_addr,
+            "mail_address":     str_val("mail_address"),
+            "date_received":    date_recv,
+            "final_date":       date_val("final_date"),
+            "plant":            str_val("plant"),
+            "contract_value":   contract_value,
+            "down_payment_percent": down_pct,
+            "engineer":         str_val("engineer"),
+            "project_type":     str_val("project_type"),
+            "notes":            combined_notes,
+            "status":           status,
+            "note_lc":          note_lc,
+            "record_ts":        record_ts,
+        }
+
+    # ── Pass 1: import normal projects, queue CO rows ─────────────────────────
     for sheet_name in sheets_to_import:
         ws = wb[sheet_name]
         rows = list(ws.iter_rows(values_only=True))
         if len(rows) < 2:
             continue
 
-        # Build header index from first row
         header_row = [str(c).strip().lower() if c is not None else "" for c in rows[0]]
         col_idx = {}
         for ci, h in enumerate(header_row):
@@ -2306,127 +2401,98 @@ def projects_import_excel():
                     col_idx[field] = ci
 
         if "project_number" not in col_idx:
-            errors.append(f"Sheet '{sheet_name}': no 'Project Number' column found — skipped.")
+            errors.append(f"Sheet '{sheet_name}': no 'Project Number' column — skipped.")
             continue
 
         for row in rows[1:]:
-            def cell(field):
-                idx = col_idx.get(field)
-                if idx is None or idx >= len(row):
-                    return None
-                v = row[idx]
-                return v
-
-            proj_num = str(cell("project_number") or "").strip()
+            proj_num_idx = col_idx.get("project_number")
+            proj_num = str(row[proj_num_idx] if proj_num_idx is not None and proj_num_idx < len(row) else "").strip()
             if not proj_num or proj_num.lower() in ("none", "project number", ""):
-                continue  # blank row
+                continue
+
+            if _is_co(proj_num):
+                # Defer to pass 2
+                co_pending.append((proj_num, _parse_row(row, col_idx), sheet_name))
+                continue
 
             if proj_num in existing_nums:
                 skipped += 1
                 continue
 
-            # ── Build project record ─────────────────────────────────────────
-            def str_val(field):
-                v = cell(field)
-                return str(v).strip() if v is not None else ""
-
-            def date_val(field):
-                v = cell(field)
-                if v is None:
-                    return ""
-                if hasattr(v, "strftime"):
-                    return v.strftime("%Y-%m-%d")
-                s = str(v).strip()
-                # try common formats
-                for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y", "%m-%d-%Y"):
-                    try:
-                        return datetime.strptime(s[:10], fmt).strftime("%Y-%m-%d")
-                    except Exception:
-                        pass
-                return s[:10] if len(s) >= 10 else s
-
-            def float_val(field):
-                v = cell(field)
-                if v is None:
-                    return 0.0
-                try:
-                    return float(str(v).replace("$","").replace(",","").strip() or 0)
-                except Exception:
-                    return 0.0
-
-            contract_value    = float_val("contract_value")
-            down_pmt_amount   = float_val("down_payment_amount")
-            down_pct          = round((down_pmt_amount / contract_value * 100), 2) if contract_value else 0.0
-
-            notes_parts = []
-            if str_val("notes"):
-                notes_parts.append(str_val("notes"))
-            if str_val("additional_notes"):
-                notes_parts.append(str_val("additional_notes"))
-            combined_notes = " | ".join(notes_parts)
-
-            # Status: map Excel notes to app statuses
-            xl_stat = str_val("xl_status").lower()
-            note_lc = combined_notes.lower()
-            if "invoiced" in xl_stat or "invoiced" in note_lc:
-                status = "invoiced_Not paid yet"
-            elif "completed" in xl_stat or "complete" in note_lc:
-                status = "Completed"
-            elif "cancelled" in xl_stat or "cancel" in note_lc:
-                status = "Cancelled"
-            else:
-                status = "In Progress"
-
-            site_addr    = str_val("site_address")
-            date_recv    = date_val("date_received")
-            # Use site address as project name; fall back to project number
-            project_name = site_addr if site_addr else proj_num
-            # Use date_received as created_at so sort by project_number still wins,
-            # but if date missing fall back to import timestamp
-            record_ts = (datetime.strptime(date_recv, "%Y-%m-%d")
-                         .replace(tzinfo=timezone.utc).isoformat()
-                         if date_recv else now_ts)
-
+            d = _parse_row(row, col_idx)
             data = {
                 "project_number":   proj_num,
-                "project_name":     project_name,
-                "client_name":      str_val("client_name"),
-                "po_wo_number":     str_val("po_wo_number"),
-                "site_address":     site_addr,
-                "mail_address":     str_val("mail_address"),
-                "date_received":    date_recv,
-                "final_date":       date_val("final_date"),
-                "plant":            str_val("plant"),
-                "contract_value":   contract_value,
-                "down_payment_percent": down_pct,
-                "engineer":         str_val("engineer"),
-                "project_type":     str_val("project_type"),
-                "notes":            combined_notes,
-                "status":           status,
+                "project_name":     d["project_name"],
+                "client_name":      d["client_name"],
+                "po_wo_number":     d["po_wo_number"],
+                "site_address":     d["site_address"],
+                "mail_address":     d["mail_address"],
+                "date_received":    d["date_received"],
+                "final_date":       d["final_date"],
+                "plant":            d["plant"],
+                "contract_value":   d["contract_value"],
+                "down_payment_percent": d["down_payment_percent"],
+                "engineer":         d["engineer"],
+                "project_type":     d["project_type"],
+                "notes":            d["notes"],
+                "status":           d["status"],
                 "service_types":    ["Structural"],
                 "installment_count": 1,
                 "installment_mode":  "single",
                 "payment_stages": [{
                     "name":           "Full Payment",
-                    "amount":         contract_value,
-                    "status":         "Invoiced" if "invoiced" in note_lc else "Pending Invoice",
+                    "amount":         d["contract_value"],
+                    "status":         "Invoiced" if "invoiced" in d["note_lc"] else "Pending Invoice",
                     "invoice_id":     "",
                     "invoice_number": ""
                 }],
-                "created_at":  record_ts,
+                "created_at":  d["record_ts"],
                 "updated_at":  now_ts,
                 "created_by":  f"Excel Import ({sheet_name})",
                 "source_sheet": sheet_name,
             }
-
             try:
-                fb_push("/projects", data)
-                existing_nums.add(proj_num)
+                pid = fb_push("/projects", data)
+                existing_nums[proj_num] = pid
                 imported += 1
             except Exception as ex:
                 errors.append(f"{proj_num}: {ex}")
 
-    msg = f"Import complete: {imported} projects added, {skipped} skipped (already exist)."
+    # ── Pass 2: attach CO rows to parent projects ─────────────────────────────
+    for co_num, d, sheet_name in co_pending:
+        parent_num = _parent_num(co_num)
+        parent_id  = existing_nums.get(parent_num)
+        if not parent_id:
+            errors.append(f"{co_num}: parent project '{parent_num}' not found — skipped.")
+            continue
+        parent = fb_get(f"/projects/{parent_id}") or {}
+        cos = parent.get("change_orders") or []
+        if not isinstance(cos, list):
+            cos = list(cos.values()) if isinstance(cos, dict) else []
+        # Skip if CO with same number already exists
+        if any(c.get("co_number") == co_num for c in cos):
+            skipped += 1
+            continue
+        co_entry = {
+            "co_number":    co_num,
+            "title":        d["site_address"] or co_num,
+            "description":  d["notes"],
+            "amount":       d["contract_value"],
+            "status":       "Approved",
+            "created_at":   d["record_ts"],
+            "created_by":   f"Excel Import ({sheet_name})",
+            "submitted_at": d["record_ts"],
+            "approved_at":  d["record_ts"],
+            "notes":        d["notes"],
+        }
+        cos.append(co_entry)
+        # Save base_contract_value if not set
+        if not parent.get("base_contract_value"):
+            fb_update(f"/projects/{parent_id}", {"base_contract_value": parent.get("contract_value", 0)})
+        fb_update(f"/projects/{parent_id}", {"change_orders": cos, "updated_at": now_ts})
+        co_added += 1
+
+    msg = f"Import complete: {imported} projects added, {co_added} change orders linked, {skipped} skipped."
     if errors:
         msg += f" {len(errors)} error(s): " + "; ".join(errors[:5])
         flash(msg, "warning")
