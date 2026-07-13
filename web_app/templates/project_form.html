@@ -63,8 +63,8 @@
             </select>
           </div>
           <div class="col-md-6">
-            <label class="form-label">Sales Person</label>
-            <select name="sales" class="form-select">
+            <label class="form-label">Sales Person <span class="text-danger">*</span></label>
+            <select name="sales" class="form-select" required>
               <option value="">-- Select Sales Person --</option>
               {% for sp in sales_people %}
               <option value="{{ sp }}"
@@ -256,7 +256,7 @@
                  value="{{ contract_val }}"
                  min="0.01" step="0.01" oninput="(function() { try { handleContractValueChange(); } catch(e) { console.error('handleContractValueChange error:', e); } updatePlanPreview(); })();"
                  data-original-value="{{ contract_val|float }}"
-                 {% if has_invoiced %}disabled title="Cannot edit: payment stages are invoiced"{% else %}{% if is_new %}required{% endif %}{% endif %}>
+                 {% if has_invoiced %}disabled title="Cannot edit: payment stages are invoiced"{% else %}required{% endif %}>
           {% if has_invoiced %}
           <small class="text-muted d-block mt-1"><i class="bi bi-lock me-1"></i>Contract value is locked because payment stages are invoiced.</small>
           {% endif %}
