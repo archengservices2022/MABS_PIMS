@@ -2266,13 +2266,20 @@ def projects_import_excel():
         "additional notes": "additional_notes",
     }
 
-    _CO_RE = re.compile(r'[_-]C(?:O|o)?[-_]?\d*$')
+    # Matches CO suffix with any separator (space, dash, underscore) and optional text after number
+    # e.g. " CO-1", "-CO 1", " -CO - 1", "_C1", "-CO-2_Letter"
+    _CO_RE = re.compile(r'[\s_-]+C[Oo][\s_-]*[\d_\-\w]*$', re.IGNORECASE)
+
+    def _norm_num(num):
+        """Normalize project number: strip internal spaces, leading/trailing whitespace."""
+        return re.sub(r'\s+', '', num.strip())
 
     def _is_co(num):
         return bool(_CO_RE.search(num))
 
     def _parent_num(num):
-        return _CO_RE.sub('', num).strip()
+        parent = _CO_RE.sub('', num).strip().rstrip('-_ ')
+        return _norm_num(parent)
 
     # ── Load existing projects (number → firebase_id) ─────────────────────────
     existing_raw = fb_get("/projects") or {}
@@ -2416,9 +2423,11 @@ def projects_import_excel():
 
         for row in rows[1:]:
             proj_num_idx = col_idx.get("project_number")
-            proj_num = str(row[proj_num_idx] if proj_num_idx is not None and proj_num_idx < len(row) else "").strip()
-            if not proj_num or proj_num.lower() in ("none", "project number", ""):
+            proj_num_raw = str(row[proj_num_idx] if proj_num_idx is not None and proj_num_idx < len(row) else "").strip()
+            if not proj_num_raw or proj_num_raw.lower() in ("none", "project number", ""):
                 continue
+            # Normalize: remove internal spaces so "MABS- 202602110" → "MABS-202602110"
+            proj_num = _norm_num(proj_num_raw) if not _is_co(proj_num_raw) else proj_num_raw
 
             if _is_co(proj_num):
                 # Defer to pass 2
