@@ -2301,10 +2301,20 @@ def projects_import_excel():
         flash(f"Could not read Excel file: {ex}", "danger")
         return redirect(url_for("projects"))
 
-    sheets_to_import = [selected_sheet] if selected_sheet and selected_sheet in wb.sheetnames else wb.sheetnames
-    if selected_sheet and selected_sheet not in wb.sheetnames:
-        flash(f"Sheet '{selected_sheet}' not found. Available: {', '.join(wb.sheetnames)}", "warning")
-        return redirect(url_for("projects"))
+    if selected_sheet:
+        # Exact match first, then case-insensitive partial match
+        if selected_sheet in wb.sheetnames:
+            sheets_to_import = [selected_sheet]
+        else:
+            sl = selected_sheet.lower()
+            matches = [s for s in wb.sheetnames if sl in s.lower() or s.lower() in sl]
+            if matches:
+                sheets_to_import = [matches[0]]
+            else:
+                flash(f"Sheet '{selected_sheet}' not found. Available sheets: {', '.join(wb.sheetnames)}", "warning")
+                return redirect(url_for("projects"))
+    else:
+        sheets_to_import = list(wb.sheetnames)
 
     # ── Helper closures that capture col_idx and row per iteration ────────────
     def _parse_row(row, col_idx):
