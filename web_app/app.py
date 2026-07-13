@@ -6198,6 +6198,7 @@ def _auto_generate_monthly_salaries() -> int:
             "description":    f"Monthly salary — {month_label}",
             "type":           "salary",
             "region":         u.get("region", ""),
+            "salary_status":  "Pending",
             "auto_generated": True,
             "created_at":     datetime.now(timezone.utc).isoformat(),
         })
