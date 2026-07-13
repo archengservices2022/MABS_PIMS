@@ -188,8 +188,9 @@
       <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Salary Records</h5>
 
       <!-- Summary Cards (server-rendered) -->
-      {% set usa_total  = salaries | selectattr('region','equalto','Inside America')  | sum(attribute='amount') %}
-      {% set intl_total = salaries | selectattr('region','equalto','Outside America') | sum(attribute='amount') %}
+      {% set paid_salaries = salaries | selectattr('salary_status','equalto','Paid') | list %}
+      {% set usa_total  = paid_salaries | selectattr('region','equalto','Inside America')  | sum(attribute='amount') %}
+      {% set intl_total = paid_salaries | selectattr('region','equalto','Outside America') | sum(attribute='amount') %}
       {% set _comm_all_flat = namespace(v=0.0) %}
       {% for sp_periods in commission_by_period.values() %}
         {% for earned in sp_periods.values() %}
