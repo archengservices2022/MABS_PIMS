@@ -1011,6 +1011,19 @@ def dashboard():
                 _admin_comm_total += _qval * _rate / 100
                 if (_q.get("date", "") or "").startswith(_cur_month):
                     _admin_comm_month += _qval * _rate / 100
+        # Also include direct projects (no linked quote, not cancelled)
+        for _pid, _pd in (projects.items() if isinstance(projects, dict) else []):
+            if not _pd or not isinstance(_pd, dict): continue
+            if _pd.get("status", "") == "Cancelled": continue
+            if (_pd.get("quote_number") or "").strip(): continue  # already counted via quote
+            _sp = (_pd.get("sales") or "").strip()
+            _rate = _comm_map.get(_sp, 0)
+            if not _rate: continue
+            _pval = _safe_float(_pd.get("contract_value", 0))
+            if not _pval: continue
+            _admin_comm_total += _pval * _rate / 100
+            if (_pd.get("date_received") or _pd.get("start_date") or "")[:7] == _cur_month:
+                _admin_comm_month += _pval * _rate / 100
         # Subtract already-paid commissions so dashboard shows outstanding balance
         # Only count payments for salespersons with a commission rate set (matches Sales People tab logic)
         _dash_comm_paid = 0.0
@@ -1368,6 +1381,35 @@ def quotes():
                 _rate = _sp_stats[_sp]["commission_rate"]
                 _sp_stats[_sp]["commission_earned"] += _safe_float(_q.get("total", 0)) * _rate / 100
 
+    # Also include direct projects (no linked quote, not cancelled) in sp_stats
+    _all_proj_comm = fb_get("/projects") or {}
+    if isinstance(_all_proj_comm, dict):
+        for _pid, _pd in _all_proj_comm.items():
+            if not _pd or not isinstance(_pd, dict): continue
+            if _pd.get("status", "") == "Cancelled": continue
+            if (_pd.get("quote_number") or "").strip(): continue  # already via quote
+            _sp = (_pd.get("sales") or "").strip()
+            if not _sp: continue
+            _pval = _safe_float(_pd.get("contract_value", 0))
+            if not _pval: continue
+            _ci = _comm_by_name.get(_sp, {})
+            _rate = _ci.get("commission_rate", 0.0)
+            if not _rate: continue
+            if _sp not in _sp_stats:
+                _sp_stats[_sp] = {
+                    "name":              _sp,
+                    "email":             _ci.get("email", ""),
+                    "employee_type":     _ci.get("employee_type", ""),
+                    "commission_rate":   _rate,
+                    "quotes_total":      0,
+                    "quotes_converted":  0,
+                    "revenue_generated": 0.0,
+                    "commission_earned": 0.0,
+                }
+            _sp_stats[_sp]["quotes_converted"] += 1
+            _sp_stats[_sp]["revenue_generated"] += _pval
+            _sp_stats[_sp]["commission_earned"] += _pval * _rate / 100
+
     for _s in _sp_stats.values():
         _t = _s["quotes_total"]
         _s["win_rate"] = round(_s["quotes_converted"] / _t * 100) if _t else 0
@@ -1399,6 +1441,27 @@ def quotes():
         _qval = _safe_float(_q.get("total", 0))
         _monthly_comm[_qdate][_sp]["earned"]  += _qval * _rate / 100
         _monthly_comm[_qdate][_sp]["revenue"] += _qval
+
+    # Also add direct projects to monthly breakdown
+    if isinstance(_all_proj_comm, dict):
+        for _pid, _pd in _all_proj_comm.items():
+            if not _pd or not isinstance(_pd, dict): continue
+            if _pd.get("status", "") == "Cancelled": continue
+            if (_pd.get("quote_number") or "").strip(): continue
+            _sp = (_pd.get("sales") or "").strip()
+            if not _sp or _sp not in _sp_stats: continue
+            _rate = _sp_stats[_sp]["commission_rate"]
+            if not _rate: continue
+            _pval = _safe_float(_pd.get("contract_value", 0))
+            if not _pval: continue
+            _pdate = (_pd.get("date_received") or _pd.get("start_date") or "")[:7]
+            if not _pdate: continue
+            if _pdate not in _monthly_comm:
+                _monthly_comm[_pdate] = {}
+            if _sp not in _monthly_comm[_pdate]:
+                _monthly_comm[_pdate][_sp] = {"earned": 0.0, "revenue": 0.0}
+            _monthly_comm[_pdate][_sp]["earned"]  += _pval * _rate / 100
+            _monthly_comm[_pdate][_sp]["revenue"] += _pval
 
     # Load existing commission payments
     _comm_payments_raw = fb_get("/commission_payments") or {}
