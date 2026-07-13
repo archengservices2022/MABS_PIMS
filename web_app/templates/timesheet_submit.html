@@ -863,10 +863,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (dateOrder.length>0) {
       dateOrder.forEach(date => renderDayBlock(date, byDate[date]));
     } else {
-      WEEKDAYS.forEach(d => renderDayBlock(d.date,[{}]));
+      renderDayBlock(WEEKDAYS[0].date, [{}]);
     }
   } else {
-    WEEKDAYS.forEach(d => renderDayBlock(d.date,[{}]));
+    renderDayBlock(WEEKDAYS[0].date, [{}]);
     if (!IS_APPROVED) {
       fetch('/api/timesheets/previous?week='+encodeURIComponent(WEEK_OF))
         .then(r=>r.json())
