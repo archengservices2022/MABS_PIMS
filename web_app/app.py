@@ -2204,6 +2204,198 @@ def projects():
                            p_active_cv=p_active_cv, p_total_paid=p_total_paid,
                            p_outstanding=p_outstanding)
 
+@app.route("/projects/import-excel", methods=["POST"])
+@role_required("projects")
+def projects_import_excel():
+    """Bulk-import projects from an Excel workbook (one sheet per month)."""
+    import io
+    from openpyxl import load_workbook
+
+    file = request.files.get("excel_file")
+    if not file or not file.filename:
+        flash("No file selected.", "danger")
+        return redirect(url_for("projects"))
+
+    # ── Column header → field name map ───────────────────────────────────────
+    HEADER_MAP = {
+        "project number": "project_number",
+        "clients":        "client_name",
+        "client":         "client_name",
+        "d/vo numb":      "po_wo_number",
+        "d/vo number":    "po_wo_number",
+        "dvo number":     "po_wo_number",
+        "site address":   "site_address",
+        "mail address":   "mail_address",
+        "date":           "date_received",
+        "pi":             "plant",
+        "state":          "plant",
+        "price":          "contract_value",
+        "down paym":      "down_payment_amount",
+        "down payment":   "down_payment_amount",
+        "final date":     "final_date",
+        "status":         "xl_status",
+        "engr":           "engineer",
+        "engineer":       "engineer",
+        "project typ":    "project_type",
+        "project type":   "project_type",
+        "notes":          "notes",
+        "additional notes": "additional_notes",
+    }
+
+    # ── Load existing project numbers so we can skip duplicates ──────────────
+    existing_raw = fb_get("/projects") or {}
+    existing_nums = set()
+    if isinstance(existing_raw, dict):
+        for pdata in existing_raw.values():
+            if isinstance(pdata, dict):
+                num = pdata.get("project_number", "")
+                if num:
+                    existing_nums.add(num.strip())
+
+    now_ts = datetime.now(timezone.utc).isoformat()
+    imported = 0
+    skipped  = 0
+    errors   = []
+
+    try:
+        wb = load_workbook(io.BytesIO(file.read()), data_only=True)
+    except Exception as ex:
+        flash(f"Could not read Excel file: {ex}", "danger")
+        return redirect(url_for("projects"))
+
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        rows = list(ws.iter_rows(values_only=True))
+        if len(rows) < 2:
+            continue
+
+        # Build header index from first row
+        header_row = [str(c).strip().lower() if c is not None else "" for c in rows[0]]
+        col_idx = {}
+        for ci, h in enumerate(header_row):
+            for key, field in HEADER_MAP.items():
+                if key in h and field not in col_idx:
+                    col_idx[field] = ci
+
+        if "project_number" not in col_idx:
+            errors.append(f"Sheet '{sheet_name}': no 'Project Number' column found — skipped.")
+            continue
+
+        for row in rows[1:]:
+            def cell(field):
+                idx = col_idx.get(field)
+                if idx is None or idx >= len(row):
+                    return None
+                v = row[idx]
+                return v
+
+            proj_num = str(cell("project_number") or "").strip()
+            if not proj_num or proj_num.lower() in ("none", "project number", ""):
+                continue  # blank row
+
+            if proj_num in existing_nums:
+                skipped += 1
+                continue
+
+            # ── Build project record ─────────────────────────────────────────
+            def str_val(field):
+                v = cell(field)
+                return str(v).strip() if v is not None else ""
+
+            def date_val(field):
+                v = cell(field)
+                if v is None:
+                    return ""
+                if hasattr(v, "strftime"):
+                    return v.strftime("%Y-%m-%d")
+                s = str(v).strip()
+                # try common formats
+                for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y", "%m-%d-%Y"):
+                    try:
+                        return datetime.strptime(s[:10], fmt).strftime("%Y-%m-%d")
+                    except Exception:
+                        pass
+                return s[:10] if len(s) >= 10 else s
+
+            def float_val(field):
+                v = cell(field)
+                if v is None:
+                    return 0.0
+                try:
+                    return float(str(v).replace("$","").replace(",","").strip() or 0)
+                except Exception:
+                    return 0.0
+
+            contract_value    = float_val("contract_value")
+            down_pmt_amount   = float_val("down_payment_amount")
+            down_pct          = round((down_pmt_amount / contract_value * 100), 2) if contract_value else 0.0
+
+            notes_parts = []
+            if str_val("notes"):
+                notes_parts.append(str_val("notes"))
+            if str_val("additional_notes"):
+                notes_parts.append(str_val("additional_notes"))
+            combined_notes = " | ".join(notes_parts)
+
+            # Status: map Excel notes to app statuses
+            xl_stat = str_val("xl_status").lower()
+            note_lc = combined_notes.lower()
+            if "invoiced" in xl_stat or "invoiced" in note_lc:
+                status = "invoiced_Not paid yet"
+            elif "completed" in xl_stat or "complete" in note_lc:
+                status = "Completed"
+            elif "cancelled" in xl_stat or "cancel" in note_lc:
+                status = "Cancelled"
+            else:
+                status = "In Progress"
+
+            data = {
+                "project_number":   proj_num,
+                "client_name":      str_val("client_name"),
+                "po_wo_number":     str_val("po_wo_number"),
+                "site_address":     str_val("site_address"),
+                "mail_address":     str_val("mail_address"),
+                "date_received":    date_val("date_received"),
+                "final_date":       date_val("final_date"),
+                "plant":            str_val("plant"),
+                "contract_value":   contract_value,
+                "down_payment_percent": down_pct,
+                "engineer":         str_val("engineer"),
+                "project_type":     str_val("project_type"),
+                "notes":            combined_notes,
+                "status":           status,
+                "service_types":    ["Structural"],
+                "installment_count": 1,
+                "installment_mode":  "single",
+                "payment_stages": [{
+                    "name":           "Full Payment",
+                    "amount":         contract_value,
+                    "status":         "Invoiced" if "invoiced" in note_lc else "Pending Invoice",
+                    "invoice_id":     "",
+                    "invoice_number": ""
+                }],
+                "created_at":  now_ts,
+                "updated_at":  now_ts,
+                "created_by":  f"Excel Import ({sheet_name})",
+                "source_sheet": sheet_name,
+            }
+
+            try:
+                fb_push("/projects", data)
+                existing_nums.add(proj_num)
+                imported += 1
+            except Exception as ex:
+                errors.append(f"{proj_num}: {ex}")
+
+    msg = f"Import complete: {imported} projects added, {skipped} skipped (already exist)."
+    if errors:
+        msg += f" {len(errors)} error(s): " + "; ".join(errors[:5])
+        flash(msg, "warning")
+    else:
+        flash(msg, "success")
+    return redirect(url_for("projects"))
+
+
 @app.route("/projects/new", methods=["GET", "POST"])
 @role_required("projects")
 def project_new():
