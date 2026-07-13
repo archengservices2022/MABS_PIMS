@@ -8034,23 +8034,21 @@ def financial():
         for sid, sdata in salaries.items():
             if isinstance(sdata, dict):
                 sdata["firebase_id"] = sid
-                sal_amount = _safe_float(sdata.get("amount", 0))
-                total_salaries += sal_amount
                 region = sdata.get("region", "").lower()
                 if "international" in region or "outside" in region:
                     salaries_international_raw.append(sdata)
                 else:
                     salaries_domestic_raw.append(sdata)
 
-    # Balance Sheet: salary totals filtered by selected year (current_year)
+    # Balance Sheet: salary totals filtered by selected year (current_year) — Paid only
     bs_sal_dom_raw = filter_by_year(list(salaries_domestic_raw), current_year)
     bs_sal_int_raw = filter_by_year(list(salaries_international_raw), current_year)
-    bs_total_salaries = sum(_safe_float(s.get("amount", 0)) for s in bs_sal_dom_raw + bs_sal_int_raw)
+    bs_total_salaries = sum(_safe_float(s.get("amount", 0)) for s in bs_sal_dom_raw + bs_sal_int_raw if s.get("salary_status", "Pending") == "Paid")
 
-    # Filter salaries by present running year for KPI cards (stat_card_year is always current year)
+    # Filter salaries by present running year for KPI cards — Paid only
     salaries_domestic_raw = filter_by_year(salaries_domestic_raw, stat_card_year)
     salaries_international_raw = filter_by_year(salaries_international_raw, stat_card_year)
-    total_salaries = sum(_safe_float(s.get("amount", 0)) for s in salaries_domestic_raw + salaries_international_raw)
+    total_salaries = sum(_safe_float(s.get("amount", 0)) for s in salaries_domestic_raw + salaries_international_raw if s.get("salary_status", "Pending") == "Paid")
 
     # ── Commission paid — treated as a cost on the balance sheet ────────────
     _cp_bs_raw = fb_get("/commission_payments") or {}
