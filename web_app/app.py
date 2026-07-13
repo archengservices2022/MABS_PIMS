@@ -9413,7 +9413,7 @@ def medical_claim_new():
     except ValueError:
         amount = 0.0
     if amount > 50000:
-        flash("Medical claim cannot exceed $50,000.", "danger")
+        flash("Medical claim cannot exceed ৳50,000 BDT.", "danger")
         return redirect(url_for("employees") + "#medical")
     claim = {
         "employee_uid":    uid,

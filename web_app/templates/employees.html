@@ -1741,10 +1741,10 @@
             </select>
           </div>
           <div class="mb-2">
-            <label class="form-label fw-semibold" style="font-size:12px;">Amount Claimed ($)</label>
+            <label class="form-label fw-semibold" style="font-size:12px;">Amount Claimed (৳ BDT)</label>
             <input type="number" name="amount_claimed" class="form-control form-control-sm"
                    min="0.01" max="50000" step="0.01" placeholder="0.00" required>
-            <div class="form-text text-muted" style="font-size:11px;">Maximum claim: $50,000</div>
+            <div class="form-text text-muted" style="font-size:11px;">Maximum claim: ৳50,000 BDT</div>
           </div>
           <div class="mb-2">
             <label class="form-label fw-semibold" style="font-size:12px;">Provider / Hospital</label>
@@ -1794,11 +1794,11 @@
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
               <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
-              <td class="text-end fw-semibold">${{ '%.2f'|format(c.amount_claimed|float) }}</td>
+              <td class="text-end fw-semibold">৳{{ '%.2f'|format(c.amount_claimed|float) }}</td>
               <td class="text-end text-success fw-semibold">
                 {% set _amt_appr = c.get('amount_approved') %}
                 {% if _amt_appr is not none and _amt_appr != '' %}
-                  ${{ '%.2f'|format(_amt_appr|float) }}
+                  ৳{{ '%.2f'|format(_amt_appr|float) }}
                 {% else %}—{% endif %}
               </td>
               <td>
@@ -1846,7 +1846,7 @@
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
               <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
-              <td class="text-end fw-semibold">${{ '%.2f'|format(c.amount_claimed|float) }}</td>
+              <td class="text-end fw-semibold">৳{{ '%.2f'|format(c.amount_claimed|float) }}</td>
               <td>
                 {% set cs = c.status or 'Pending' %}
                 <span class="badge" style="font-size:11px;
@@ -1895,7 +1895,7 @@
         <div class="modal-body py-2">
           <input type="hidden" name="action" id="medReviewAction">
           <div class="mb-2" id="medApprovedRow">
-            <label class="form-label fw-semibold" style="font-size:12px;">Amount Approved ($)</label>
+            <label class="form-label fw-semibold" style="font-size:12px;">Amount Approved (৳ BDT)</label>
             <input type="number" name="amount_approved" id="medApprovedAmt"
                    class="form-control form-control-sm" min="0" step="0.01">
           </div>
