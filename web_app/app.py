@@ -8129,7 +8129,7 @@ def financial():
             _role_lookup[_uname.lower()] = normalize_role(_u.get("role", "")).capitalize()
 
     monthly_salary_details = {str(i): [] for i in range(1, 13)}
-    for _sal in bs_sal_dom_raw + bs_sal_int_raw:
+    for _sal in [s for s in bs_sal_dom_raw + bs_sal_int_raw if s.get("salary_status", "Pending") == "Paid"]:
         _ds = (_sal.get("date") or "")[:10]
         try:
             _d = datetime.fromisoformat(_ds)
