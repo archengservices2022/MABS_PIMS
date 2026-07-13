@@ -9235,7 +9235,8 @@ def employees():
     my_month_minutes = _sum_minutes(my_month_entries)
     my_year_minutes = _sum_minutes(my_year_entries)
     my_time_off = [r for r in all_time_off if r.get("employee_uid") == uid]
-    my_time_off_balance = _time_off_balance(all_time_off, uid, now.year)
+    _profile_data = fb_get(f"/users/{uid}") or {}
+    my_time_off_balance = _time_off_balance(all_time_off, uid, now.year, _profile_data.get("hire_date", ""))
 
     # "Hours by Project" breakdown for My Time Clock tab, with its own period selector
     my_period = request.args.get("myperiod", "week")
@@ -9249,7 +9250,7 @@ def employees():
     context = {
         "active_projects":  active_projects,
         "today_str":        today_str,
-        "profile_user":     fb_get(f"/users/{uid}") or {},
+        "profile_user":     _profile_data,
         "last_project_number": last_project_number,
         "my_open_entry":    my_open_entry,
         "my_today_entries": my_today_entries,
@@ -9302,7 +9303,7 @@ def employees():
             "open_entries_by_uid":          {e["employee_uid"]: e for e in all_entries if e.get("status") == "open"},
             "pending_time_off":             [r for r in all_time_off if r.get("status") == "Pending"],
             "all_time_off_balances": {
-                u["firebase_uid"]: _time_off_balance(all_time_off, u["firebase_uid"], now.year)
+                u["firebase_uid"]: _time_off_balance(all_time_off, u["firebase_uid"], now.year, u.get("hire_date", ""))
                 for u in _load_all_users() if u.get("firebase_uid")
             },
             "hours_by_project":             _aggregate_hours_from_timesheets(all_sheets, period_start, period_end),
@@ -11896,8 +11897,9 @@ def _load_time_off_requests() -> List[dict]:
         return sorted(items, key=lambda x: x.get("requested_at", ""), reverse=True)
     return []
 
-DEFAULT_TIME_OFF_DAYS = 15
-HOURS_PER_DAY = 8
+DEFAULT_PTO_DAYS  = 10
+DEFAULT_SICK_DAYS = 5
+HOURS_PER_DAY     = 8
 
 def _count_working_days(start_str: str, end_str: str) -> int:
     """Count Mon–Fri working days between start and end dates (inclusive)."""
@@ -11917,39 +11919,83 @@ def _count_working_days(start_str: str, end_str: str) -> int:
     except Exception:
         return 0
 
-def _time_off_balance(all_requests: list, uid: str, year: int) -> dict:
-    """Return {allotment_hours, used_hours, remaining_hours, allotment, used, remaining} for a user in a given year."""
+def _time_off_balance(all_requests: list, uid: str, year: int, hire_date: str = "") -> dict:
+    """Return split PTO/Sick balance for a user in a given year, prorated for new hires."""
+    # Determine allotments — prorate if employee was hired during this year
+    pto_days  = float(DEFAULT_PTO_DAYS)
+    sick_days = float(DEFAULT_SICK_DAYS)
+    if hire_date:
+        try:
+            hd = datetime.strptime(hire_date[:10], "%Y-%m-%d")
+            if hd.year == year:
+                months_remaining = 13 - hd.month   # e.g. hired July → 6 months
+                factor = months_remaining / 12.0
+                # Round to nearest 0.5 day
+                pto_days  = round(DEFAULT_PTO_DAYS  * factor * 2) / 2
+                sick_days = round(DEFAULT_SICK_DAYS * factor * 2) / 2
+        except Exception:
+            pass
+
+    pto_allotment_hours  = pto_days  * HOURS_PER_DAY
+    sick_allotment_hours = sick_days * HOURS_PER_DAY
+
     year_str = str(year)
-    used_hours = 0.0
+    used_pto_hours  = 0.0
+    used_sick_hours = 0.0
+
     for r in all_requests:
         if r.get("employee_uid") != uid:
             continue
         if r.get("status") != "Approved":
             continue
-        if r.get("type") == "Unpaid":
+        rtype = r.get("type", "")
+        if rtype == "Unpaid":
             continue
         start = r.get("start_date", "")
         if not start or not start.startswith(year_str):
             continue
-        # Use stored total_hours if available, otherwise fall back to working_days × 8
+        # Calculate hours used
         if r.get("total_hours") is not None:
-            used_hours += _safe_float(r.get("total_hours", 0))
-        elif r.get("type") == "Half Day":
-            used_hours += 4.0
+            hours = _safe_float(r.get("total_hours", 0))
+        elif rtype == "Half Day":
+            hours = 4.0
         else:
-            used_hours += _count_working_days(start, r.get("end_date", start)) * HOURS_PER_DAY
-    allotment_hours = DEFAULT_TIME_OFF_DAYS * HOURS_PER_DAY
-    remaining_hours = max(0.0, allotment_hours - used_hours)
-    # Also keep day-based values for backwards compat
-    used_days = used_hours / HOURS_PER_DAY
-    remaining_days = remaining_hours / HOURS_PER_DAY
+            hours = _count_working_days(start, r.get("end_date", start)) * HOURS_PER_DAY
+        # Route to the correct pool
+        if rtype in ("Sick", "Sick Leave"):
+            used_sick_hours += hours
+        else:  # PTO, Vacation, Personal, Half Day → all count as PTO
+            used_pto_hours += hours
+
+    remaining_pto_hours  = max(0.0, pto_allotment_hours  - used_pto_hours)
+    remaining_sick_hours = max(0.0, sick_allotment_hours - used_sick_hours)
+
+    total_allotment_hours = pto_allotment_hours + sick_allotment_hours
+    total_used_hours      = used_pto_hours + used_sick_hours
+    total_remaining_hours = remaining_pto_hours + remaining_sick_hours
+
     return {
-        "allotment_hours": allotment_hours,
-        "used_hours": used_hours,
-        "remaining_hours": remaining_hours,
-        "allotment": DEFAULT_TIME_OFF_DAYS,
-        "used": used_days,
-        "remaining": remaining_days,
+        # PTO pool
+        "pto_allotment":       pto_days,
+        "pto_allotment_hours": pto_allotment_hours,
+        "pto_used":            used_pto_hours / HOURS_PER_DAY,
+        "pto_used_hours":      used_pto_hours,
+        "pto_remaining":       remaining_pto_hours / HOURS_PER_DAY,
+        "pto_remaining_hours": remaining_pto_hours,
+        # Sick pool
+        "sick_allotment":       sick_days,
+        "sick_allotment_hours": sick_allotment_hours,
+        "sick_used":            used_sick_hours / HOURS_PER_DAY,
+        "sick_used_hours":      used_sick_hours,
+        "sick_remaining":       remaining_sick_hours / HOURS_PER_DAY,
+        "sick_remaining_hours": remaining_sick_hours,
+        # Combined totals (backwards compat)
+        "allotment_hours": total_allotment_hours,
+        "used_hours":      total_used_hours,
+        "remaining_hours": total_remaining_hours,
+        "allotment":       pto_days + sick_days,
+        "used":            total_used_hours / HOURS_PER_DAY,
+        "remaining":       total_remaining_hours / HOURS_PER_DAY,
     }
 
 def _sum_minutes_by_project(entries: List[dict]) -> dict:
