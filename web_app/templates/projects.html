@@ -64,6 +64,11 @@
       <i class="bi bi-file-earmark-excel me-1"></i>Import Excel
     </a>
   </li>
+  <li class="nav-item">
+    <a class="nav-link text-danger" href="#" data-bs-toggle="modal" data-bs-target="#clearAllModal">
+      <i class="bi bi-trash3 me-1"></i>Clear All
+    </a>
+  </li>
   {% endif %}
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-export">
@@ -731,6 +736,37 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
   </div>
 </div>
+
+<!-- ── Clear All Projects Modal ───────────────────────────────────────────── -->
+{% if user_role == 'admin' %}
+<div class="modal fade" id="clearAllModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="bi bi-trash3 me-2"></i>Clear All Projects</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('projects_clear_all') }}">
+        <div class="modal-body">
+          <div class="alert alert-danger">
+            <strong>Warning:</strong> This will permanently delete ALL {{ projects|length }} projects from this system. This cannot be undone.
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Type <code>DELETE ALL</code> to confirm:</label>
+            <input type="text" name="confirm_text" class="form-control" placeholder="DELETE ALL" required autocomplete="off">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger">
+            <i class="bi bi-trash3 me-1"></i>Delete All Projects
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <!-- ── Import Excel Modal ─────────────────────────────────────────────────── -->
 <div class="modal fade" id="importExcelModal" tabindex="-1">

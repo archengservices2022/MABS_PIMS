@@ -2204,6 +2204,27 @@ def projects():
                            p_active_cv=p_active_cv, p_total_paid=p_total_paid,
                            p_outstanding=p_outstanding)
 
+@app.route("/projects/clear-all", methods=["POST"])
+@role_required("projects")
+def projects_clear_all():
+    """Admin-only: delete every project from Firebase (for test resets)."""
+    if normalize_role(session.get("user_role", "")) != "admin":
+        flash("Admin only.", "danger")
+        return redirect(url_for("projects"))
+    confirm = request.form.get("confirm_text", "").strip()
+    if confirm != "DELETE ALL":
+        flash("Confirmation text did not match. Nothing was deleted.", "warning")
+        return redirect(url_for("projects"))
+    raw = fb_get("/projects") or {}
+    count = 0
+    if isinstance(raw, dict):
+        for pid in list(raw.keys()):
+            fb_delete(f"/projects/{pid}")
+            count += 1
+    flash(f"Deleted {count} projects.", "success")
+    return redirect(url_for("projects"))
+
+
 @app.route("/projects/import-excel", methods=["POST"])
 @role_required("projects")
 def projects_import_excel():
