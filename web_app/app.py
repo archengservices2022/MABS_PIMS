@@ -12421,20 +12421,25 @@ def _next_invoice_number() -> str:
     return f"{prefix}{next_n:03d}"
 
 def _next_project_number() -> str:
+    import re as _re
     now = datetime.now(COMPANY_TZ)
-    prefix = f"MABS-{now.strftime('%Y%m')}-"
+    ym = now.strftime('%Y%m')          # e.g. "202607"
+    base = f"MABS-{ym}"               # matches both "MABS-202607-NNN" and "MABS-202607NNN"
     raw = fb_get("/projects") or {}
     nums = []
     for p in (raw.values() if isinstance(raw, dict) else []):
         if isinstance(p, dict):
-            num = p.get("project_number", "") or ""
-            if num.startswith(prefix):
-                try:
-                    nums.append(int(num[len(prefix):]))
-                except ValueError:
-                    pass
+            num = (p.get("project_number", "") or "").strip()
+            if num.upper().startswith(base.upper()):
+                suffix = num[len(base):].lstrip('-_ ')
+                m = _re.match(r'^(\d+)', suffix)
+                if m:
+                    try:
+                        nums.append(int(m.group(1)))
+                    except ValueError:
+                        pass
     next_n = (max(nums) + 1) if nums else 1
-    return f"{prefix}{next_n:03d}"
+    return f"{base}-{next_n:03d}"
 
 def _parse_service_types(form) -> list:
     """Return service_types list, substituting 'Other' with 'Other: {specify}' when filled."""
