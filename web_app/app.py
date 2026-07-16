@@ -2298,8 +2298,11 @@ def projects_import_excel():
                 if num:
                     existing_nums[num.strip()] = pid
 
+    update_existing = request.form.get("update_existing") == "1"
+
     now_ts   = datetime.now(timezone.utc).isoformat()
     imported = 0
+    updated  = 0
     co_added = 0
     skipped  = 0
     errors   = []
@@ -2442,7 +2445,25 @@ def projects_import_excel():
                 continue
 
             if proj_num in existing_nums:
-                skipped += 1
+                if update_existing:
+                    # Fill only empty fields on the existing project
+                    pid_existing = existing_nums[proj_num]
+                    existing_data = existing_raw.get(pid_existing, {}) or {}
+                    d = _parse_row(row, col_idx)
+                    patch = {}
+                    for field in ("po_wo_number", "plant", "site_address", "mail_address",
+                                  "client_name", "date_received", "final_date",
+                                  "contract_value", "engineer", "project_type", "notes"):
+                        if not existing_data.get(field) and d.get(field):
+                            patch[field] = d[field]
+                    if patch:
+                        patch["updated_at"] = now_ts
+                        fb_update(f"/projects/{pid_existing}", patch)
+                        updated += 1
+                    else:
+                        skipped += 1
+                else:
+                    skipped += 1
                 continue
 
             d = _parse_row(row, col_idx)
@@ -2518,7 +2539,7 @@ def projects_import_excel():
         fb_update(f"/projects/{parent_id}", {"change_orders": cos, "updated_at": now_ts})
         co_added += 1
 
-    msg = f"Import complete: {imported} projects added, {co_added} change orders linked, {skipped} skipped."
+    msg = f"Import complete: {imported} projects added, {updated} updated, {co_added} change orders linked, {skipped} skipped."
     if errors:
         msg += f" {len(errors)} error(s): " + "; ".join(errors[:5])
         flash(msg, "warning")

@@ -784,6 +784,15 @@ document.addEventListener('DOMContentLoaded', function() {
             Projects with existing job numbers are skipped to avoid duplicates.
           </div>
           <div class="mb-3">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" name="update_existing" id="updateExistingCheck" value="1">
+              <label class="form-check-label fw-semibold" for="updateExistingCheck">
+                Update existing projects
+              </label>
+            </div>
+            <div class="form-text">When enabled, projects that already exist will have their <strong>empty fields filled in</strong> from Excel (e.g. PO/WO, Plant). Fields you've already filled manually will not be overwritten.</div>
+          </div>
+          <div class="mb-3">
             <label class="form-label fw-semibold">Expected columns in each sheet:</label>
             <ul class="small text-muted mb-2" style="padding-left:18px;">
               <li><strong>Project Number</strong> — original job number (e.g. MABS-202601101)</li>
