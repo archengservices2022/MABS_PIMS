@@ -158,6 +158,23 @@
       {% endif %}
     </a>
   </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-my-reviews">
+      <i class="bi bi-clipboard-check me-1"></i>My Reviews
+      {% if my_performance_reviews is defined %}
+        {% set _action_count = namespace(n=0) %}
+        {% for _r in my_performance_reviews %}
+          {% set _rs = _r.status or 'Submitted' %}
+          {% if _rs == 'pending_self_assessment' or (_rs in ('pending_acknowledgement','Submitted') and not _r.employee_acknowledged) %}
+            {% set _action_count.n = _action_count.n + 1 %}
+          {% endif %}
+        {% endfor %}
+        {% if _action_count.n > 0 %}
+        <span class="badge rounded-pill bg-danger ms-1" style="font-size:10px;padding:3px 6px;vertical-align:middle;">{{ _action_count.n }}</span>
+        {% endif %}
+      {% endif %}
+    </a>
+  </li>
   {% if user_role == 'admin' %}
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-team">
@@ -891,6 +908,63 @@
     </div>
   </div>
 </div><!-- /tab-profile -->
+
+<!-- ── My Reviews Tab ────────────────────────────────────────────────────── -->
+<div class="tab-pane fade" id="tab-my-reviews">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h6 class="fw-semibold mb-0"><i class="bi bi-clipboard-check me-2 text-primary"></i>My Performance Reviews</h6>
+    <a href="{{ url_for('reviews') }}" class="btn btn-sm btn-outline-primary">View All</a>
+  </div>
+  {% if my_performance_reviews is defined and my_performance_reviews %}
+    {% for r in my_performance_reviews %}
+    {% set rstatus = r.status or 'Submitted' %}
+    {% set score   = r.weighted_score | float if r.weighted_score else 0 %}
+    {% set acked   = r.employee_acknowledged %}
+    {% set needs_action = (rstatus == 'pending_self_assessment') or (rstatus in ('pending_acknowledgement', 'Submitted') and not acked) %}
+    <div class="card mb-3 shadow-sm {% if needs_action %}border-warning{% endif %}" style="cursor:pointer;" onclick="window.location='{{ url_for('review_detail', review_id=r.firebase_id) }}'">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+          <div>
+            <div class="fw-semibold">{{ r.review_period }}</div>
+            <div class="text-muted small">{{ r.created_at[:10] if r.created_at else '' }}</div>
+          </div>
+          <div class="d-flex gap-2 align-items-center flex-wrap">
+            {% if rstatus == 'pending_self_assessment' %}
+              <span class="badge bg-warning text-dark" style="font-size:11px;"><i class="bi bi-pencil-square me-1"></i>Fill Self-Assessment</span>
+            {% elif rstatus == 'pending_manager_review' %}
+              <span class="badge bg-secondary" style="font-size:11px;">Waiting for Manager</span>
+            {% elif rstatus in ('pending_acknowledgement', 'Submitted') and not acked %}
+              <span class="badge bg-primary" style="font-size:11px;"><i class="bi bi-bell me-1"></i>Acknowledge Required</span>
+            {% elif rstatus == 'completed' or acked %}
+              <span class="badge bg-success" style="font-size:11px;">Completed</span>
+            {% endif %}
+          </div>
+        </div>
+        {% if score > 0 %}
+        <div class="mt-2" style="height:6px;background:#E5E7EB;border-radius:3px;overflow:hidden;">
+          <div style="width:{{ ((score/5)*100)|round }}%;height:100%;border-radius:3px;
+            background:{% if score>=4.5 %}#2E7D32{% elif score>=3.5 %}#558B2F{% elif score>=2.5 %}#C9920A{% elif score>=1.5 %}#E65100{% else %}#C0392B{% endif %};">
+          </div>
+        </div>
+        <div class="text-muted small mt-1">{{ "%.2f"|format(score) }}/5.00 — {{ r.rating_label or '' }}</div>
+        {% endif %}
+        {% if (rstatus == 'completed' or acked) and r.approved_raise_pct and r.approved_raise_pct|float > 0 %}
+        <div class="mt-2 text-success small fw-semibold">
+          <i class="bi bi-arrow-up-circle me-1"></i>{{ r.approved_raise_pct }}% raise approved
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-clipboard" style="font-size:40px;opacity:.3;"></i>
+    <div class="mt-2">No reviews yet.</div>
+    <div class="small mt-1">Your performance reviews will appear here once submitted by your manager.</div>
+    <a href="{{ url_for('reviews') }}" class="btn btn-outline-primary btn-sm mt-3">Go to Reviews</a>
+  </div>
+  {% endif %}
+</div><!-- /tab-my-reviews -->
 
 <!-- ── Change Password Modal ─────────────────────────────────────────────── -->
 <div class="modal fade" id="changePasswordModal" tabindex="-1">
@@ -2027,7 +2101,7 @@ function submitChangePassword() {
 
 // Tab persistence via URL hash
 (function () {
-  const map = { clock:'#tab-clock', 'time-off':'#tab-time-off', profile:'#tab-profile', team:'#tab-team', directory:'#tab-directory', medical:'#tab-medical', expenses:'#tab-emp-expenses' };
+  const map = { clock:'#tab-clock', 'time-off':'#tab-time-off', profile:'#tab-profile', team:'#tab-team', directory:'#tab-directory', medical:'#tab-medical', expenses:'#tab-emp-expenses', reviews:'#tab-my-reviews' };
   const hash = (window.location.hash || '').replace('#','');
   const target = map[hash];
   if (target) {

@@ -1,0 +1,962 @@
+{% extends "base.html" %}
+{% block title %}Performance Reviews{% endblock %}
+{% block page_title %}Performance Reviews{% endblock %}
+
+{% block content %}
+<style>
+  .score-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  }
+  .score-outstanding    { background: #E8F5E9; color: #2E7D32; }
+  .score-exceeds        { background: #F1F8E9; color: #558B2F; }
+  .score-meets          { background: #FDF4DC; color: #9A6F00; }
+  .score-needs          { background: #FFF3E0; color: #E65100; }
+  .score-unsatisfactory { background: #FDECEA; color: #C0392B; }
+
+  .status-self  { background: #FEF9C3; color: #854D0E; border: 1px solid #FDE047; }
+  .status-mgr   { background: #FFF7ED; color: #9A3412; border: 1px solid #FDBA74; }
+  .status-ack   { background: #EFF6FF; color: #1E40AF; border: 1px solid #93C5FD; }
+  .status-done  { background: #F0FDF4; color: #166534; border: 1px solid #86EFAC; }
+
+  .cat-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
+  .cat-label { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 2px; }
+  .cat-desc  { font-size: 12px; color: #6B7280; margin-bottom: 6px; }
+  .star-row  { display: flex; gap: 6px; }
+  .star-btn  {
+    width: 36px; height: 36px; border-radius: 6px; border: 1.5px solid #D1D5DB;
+    background: #fff; cursor: pointer; font-size: 15px; font-weight: 700;
+    color: #9CA3AF; transition: all .15s; display: flex; align-items: center; justify-content: center;
+  }
+  .star-btn.active, .star-btn:hover { border-color: #C9920A; background: #FDF4DC; color: #C9920A; }
+  .star-btn.active-5  { border-color: #2E7D32; background: #E8F5E9; color: #2E7D32; }
+  .star-btn.active-4  { border-color: #558B2F; background: #F1F8E9; color: #558B2F; }
+  .star-btn.active-3  { border-color: #C9920A; background: #FDF4DC; color: #9A6F00; }
+  .star-btn.active-2  { border-color: #E65100; background: #FFF3E0; color: #E65100; }
+  .star-btn.active-1  { border-color: #C0392B; background: #FDECEA; color: #C0392B; }
+  .score-display { font-size: 12px; color: #6B7280; margin-left: 8px; align-self: center; }
+
+  .weight-badge {
+    display: inline-block; background: #1A2B3C; color: #E8B84B;
+    font-size: 10px; font-weight: 700; letter-spacing: .06em;
+    padding: 2px 7px; border-radius: 3px; margin-left: 6px;
+  }
+
+  .review-card {
+    border: 1px solid #E5E7EB; border-radius: 10px; padding: 20px 24px;
+    margin-bottom: 12px; background: #fff; cursor: pointer;
+    transition: box-shadow .15s, border-color .15s;
+  }
+  .review-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,.08); border-color: #C9920A; }
+  .review-card.action-required { border-left: 4px solid #EAB308; }
+
+  .gauge-bar { height: 8px; background: #E5E7EB; border-radius: 4px; overflow: hidden; margin-top: 4px; }
+  .gauge-fill { height: 100%; border-radius: 4px; }
+
+  .ack-banner {
+    border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-size: 14px;
+  }
+  .ack-banner.pending { background: #FDF4DC; border: 1px solid #F5C842; color: #92400E; }
+  .ack-banner.done    { background: #E8F5E9; border: 1px solid #81C784; color: #1B5E20; }
+
+  .section-divider { border: none; border-top: 1.5px solid #E5E7EB; margin: 24px 0; }
+
+  .raise-suggest {
+    background: #F0FDF4; border: 1px solid #86EFAC; border-radius: 8px;
+    padding: 12px 16px; font-size: 13px; color: #166534; margin-bottom: 16px;
+  }
+
+  .compare-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid #F3F4F6;
+  }
+  .compare-row:last-child { border-bottom: none; }
+  .compare-label { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: #9CA3AF; margin-bottom: 3px; }
+  .compare-score { font-family: Georgia, serif; font-size: 22px; font-weight: 700; line-height: 1; }
+
+  .self-section-header {
+    background: linear-gradient(90deg, #EFF6FF, #F8FAFF);
+    border: 1px solid #BFDBFE; border-radius: 8px;
+    padding: 12px 16px; margin-bottom: 20px;
+    font-size: 13px; color: #1E40AF;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .review-card { background: #1e293b; border-color: #334155; }
+    .star-btn    { background: #1e293b; border-color: #475569; color: #94a3b8; }
+    .cat-label   { color: #e2e8f0; }
+    .cat-desc    { color: #94a3b8; }
+    .raise-suggest { background: #0f2e1a; border-color: #166534; color: #4ade80; }
+  }
+</style>
+
+{% set view = view if view is defined else 'list' %}
+
+{% set cats_full = [
+  ('job_performance', 'Job Performance & Quality of Work', '35%', 'Accuracy, technical competency, productivity, deadlines, quality, attention to detail.'),
+  ('teamwork',        'Teamwork & Communication',          '20%', 'Collaboration, communication with coworkers and clients, professionalism.'),
+  ('initiative',      'Initiative & Problem Solving',      '15%', 'Taking ownership, identifying solutions, innovation, working independently.'),
+  ('reliability',     'Reliability & Accountability',      '15%', 'Attendance, punctuality, dependability, compliance with policies.'),
+  ('professional_dev','Professional Development & Goals',  '15%', 'Training, certifications, new skills, career growth.'),
+] %}
+
+<!-- ════════════════════════════════════════════════════════════
+     LIST VIEW
+════════════════════════════════════════════════════════════ -->
+{% if view == 'list' %}
+
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h5 class="mb-1 fw-semibold">
+      {% if role == 'admin' %}All Performance Reviews{% else %}My Performance Reviews{% endif %}
+    </h5>
+    <p class="text-muted small mb-0">Semi-annual reviews — January &amp; July cycles</p>
+  </div>
+  {% if role == 'admin' %}
+  <a href="{{ url_for('reviews_new') }}" class="btn btn-primary">
+    <i class="bi bi-plus-lg me-1"></i>New Review
+  </a>
+  {% endif %}
+</div>
+
+{% if reviews %}
+{% if role == 'admin' %}
+<div class="d-flex gap-2 mb-3 flex-wrap">
+  <input type="text" id="reviewSearch" class="form-control form-control-sm" style="max-width:220px;" placeholder="Search employee…">
+  <select id="reviewPeriodFilter" class="form-select form-select-sm" style="max-width:160px;">
+    <option value="">All Periods</option>
+    {% for p in periods %}
+    <option value="{{ p }}">{{ p }}</option>
+    {% endfor %}
+  </select>
+  <select id="reviewStatusFilter" class="form-select form-select-sm" style="max-width:220px;">
+    <option value="">All Statuses</option>
+    <option value="pending_self_assessment">Self-Assessment Pending</option>
+    <option value="pending_manager_review">Manager Review Pending</option>
+    <option value="pending_acknowledgement">Pending Acknowledgement</option>
+    <option value="completed">Completed</option>
+  </select>
+</div>
+{% endif %}
+
+<div id="reviewList">
+{% for r in reviews %}
+{% set rstatus = r.status or 'Submitted' %}
+{% set acked   = r.employee_acknowledged %}
+{% set score   = r.weighted_score | float if r.weighted_score else 0 %}
+{% set label   = r.rating_label or '' %}
+{% set is_action = (rstatus == 'pending_self_assessment' and r.employee_uid == my_uid) %}
+<div class="review-card review-item {% if is_action %}action-required{% endif %}"
+     data-name="{{ r.employee_name | lower }}"
+     data-period="{{ r.review_period }}"
+     data-status="{{ rstatus }}"
+     onclick="window.location='{{ url_for('review_detail', review_id=r.firebase_id) }}'">
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div>
+      <div class="fw-semibold" style="font-size:15px;">{{ r.employee_name }}</div>
+      <div class="text-muted small">{{ r.review_period }} &nbsp;·&nbsp; Initiated by {{ r.reviewer_name }}</div>
+    </div>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      {% if rstatus == 'pending_self_assessment' %}
+        <span class="score-pill status-self"><i class="bi bi-pencil-square me-1"></i>Self-Assessment Pending</span>
+      {% elif rstatus == 'pending_manager_review' %}
+        <span class="score-pill status-mgr"><i class="bi bi-hourglass-split me-1"></i>Manager Review Pending</span>
+      {% elif rstatus in ('pending_acknowledgement', 'Submitted') %}
+        <span class="score-pill status-ack"><i class="bi bi-bell me-1"></i>Pending Acknowledgement</span>
+      {% elif rstatus == 'completed' %}
+        <span class="score-pill status-done"><i class="bi bi-check-circle me-1"></i>Completed</span>
+      {% endif %}
+    </div>
+  </div>
+  {% if rstatus in ('pending_acknowledgement', 'completed', 'Submitted') and score > 0 %}
+  <div class="d-flex gap-4 mt-3 flex-wrap">
+    <div>
+      <div class="text-muted" style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;">Score</div>
+      <div class="fw-bold" style="font-size:20px;font-family:Georgia,serif;color:#1A2B3C;">{{ "%.2f"|format(score) }}<span style="font-size:13px;color:#9CA3AF;">/5.00</span></div>
+    </div>
+    {% if acked and r.approved_raise_pct %}
+    <div>
+      <div class="text-muted" style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;">Raise</div>
+      <div class="fw-bold" style="font-size:20px;font-family:Georgia,serif;color:#2E7D32;">{{ r.approved_raise_pct }}%</div>
+    </div>
+    {% endif %}
+    <div style="flex:1;min-width:120px;align-self:flex-end;padding-bottom:4px;">
+      <div class="gauge-bar">
+        <div class="gauge-fill" style="width:{{ ((score/5)*100)|round }}%;
+          background:{% if score >= 4.5 %}#2E7D32{% elif score >= 3.5 %}#558B2F{% elif score >= 2.5 %}#C9920A{% elif score >= 1.5 %}#E65100{% else %}#C0392B{% endif %};"></div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+</div>
+
+<div id="noReviewsMsg" class="text-center text-muted py-5 d-none">
+  <i class="bi bi-search" style="font-size:32px;opacity:.3;"></i>
+  <div class="mt-2">No reviews match your filter.</div>
+</div>
+
+{% else %}
+<div class="text-center text-muted py-5">
+  <i class="bi bi-clipboard-check" style="font-size:48px;opacity:.25;"></i>
+  <div class="mt-3 fw-semibold">No reviews yet</div>
+  {% if role == 'admin' %}
+  <div class="mt-1 small">Click <strong>New Review</strong> to start the process for an employee.</div>
+  <a href="{{ url_for('reviews_new') }}" class="btn btn-primary mt-3">
+    <i class="bi bi-plus-lg me-1"></i>New Review
+  </a>
+  {% else %}
+  <div class="mt-1 small">Your performance reviews will appear here once initiated by your manager.</div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ════════════════════════════════════════════════════════════
+     NEW REVIEW FORM  (admin initiates — employee + period only)
+════════════════════════════════════════════════════════════ -->
+{% elif view == 'new' %}
+
+<div class="d-flex align-items-center gap-3 mb-4">
+  <a href="{{ url_for('reviews') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+  <div>
+    <h5 class="mb-0 fw-semibold">Initiate Performance Review</h5>
+    <p class="text-muted small mb-0">The employee will be asked to complete a self-assessment first.</p>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <form method="POST" action="{{ url_for('reviews_new') }}">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h6 class="fw-semibold mb-3"><i class="bi bi-person me-2 text-primary"></i>Employee &amp; Period</h6>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Employee <span class="text-danger">*</span></label>
+            <select name="employee_uid" id="empSelect" class="form-select" required onchange="fillEmpName(this)">
+              <option value="">— Select Employee —</option>
+              {% for u in all_users %}
+              <option value="{{ u.firebase_uid }}" data-name="{{ u.get('username','') }}">
+                {{ u.get('username','') }}
+              </option>
+              {% endfor %}
+            </select>
+            <input type="hidden" name="employee_name" id="empName" value="">
+          </div>
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Review Period <span class="text-danger">*</span></label>
+            <select name="review_period" class="form-select" required>
+              <option value="">— Select Period —</option>
+              {% for p in periods %}
+              <option value="{{ p }}">{{ p }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="alert alert-info py-2" style="font-size:13px;">
+            <i class="bi bi-info-circle me-1"></i>
+            After you click <strong>Initiate</strong>, the employee will log in and complete their self-assessment. You will then review their scores and add your manager evaluation.
+          </div>
+          <div class="d-grid gap-2 mt-3">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-send me-1"></i>Initiate Review
+            </button>
+            <a href="{{ url_for('reviews') }}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     DETAIL VIEW
+════════════════════════════════════════════════════════════ -->
+{% elif view == 'detail' %}
+{% set r       = review %}
+{% set rstatus = r.status or 'Submitted' %}
+{% set sa      = r.self_assessment or {} %}
+{% set sa_scores   = sa.scores or {} %}
+{% set sa_comments = sa.comments or {} %}
+{% set has_mgr_scores = r.scores is defined and r.scores %}
+{% set acked   = r.employee_acknowledged %}
+{% set score   = r.weighted_score | float if r.weighted_score else 0 %}
+{% set label   = r.rating_label or '' %}
+{% set lo = r.suggested_raise_lo | int if r.suggested_raise_lo else 0 %}
+{% set hi = r.suggested_raise_hi | int if r.suggested_raise_hi else 0 %}
+{% set is_my_review = (r.employee_uid == my_uid) %}
+
+<!-- Header -->
+<div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
+  <a href="{{ url_for('reviews') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+  <div class="flex-grow-1">
+    <h5 class="mb-0 fw-semibold">{{ r.employee_name }} — {{ r.review_period }}</h5>
+    <div class="text-muted small">Initiated by {{ r.reviewer_name }}
+      &nbsp;·&nbsp; {{ r.created_at[:10] if r.created_at else '' }}</div>
+  </div>
+  {% if role == 'admin' and rstatus in ('pending_acknowledgement', 'completed', 'Submitted') %}
+  <a href="#" onclick="document.getElementById('editForm').classList.toggle('d-none');return false;"
+     class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil me-1"></i>Edit</a>
+  <form method="POST" action="{{ url_for('review_delete', review_id=r.firebase_id) }}" class="d-inline"
+        onsubmit="return confirm('Delete this review?');">
+    <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+  </form>
+  {% elif role == 'admin' and rstatus == 'pending_self_assessment' %}
+  <form method="POST" action="{{ url_for('review_delete', review_id=r.firebase_id) }}" class="d-inline"
+        onsubmit="return confirm('Delete this review?');">
+    <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+  </form>
+  {% endif %}
+</div>
+
+<!-- ── STATE 1: Waiting for employee self-assessment ── -->
+{% if rstatus == 'pending_self_assessment' %}
+
+  {% if role == 'admin' %}
+  <!-- Admin sees waiting message -->
+  <div class="card shadow-sm text-center py-5">
+    <div class="card-body">
+      <i class="bi bi-hourglass-split" style="font-size:48px;color:#EAB308;opacity:.8;"></i>
+      <h5 class="mt-3 fw-semibold">Waiting for Self-Assessment</h5>
+      <p class="text-muted mb-0">{{ r.employee_name }} has not yet completed their self-assessment for <strong>{{ r.review_period }}</strong>.</p>
+      <p class="text-muted small mt-1">They will see a form to rate themselves when they open this review.</p>
+    </div>
+  </div>
+
+  {% elif is_my_review %}
+  <!-- Employee sees self-assessment form -->
+  <div class="self-section-header">
+    <i class="bi bi-info-circle me-1"></i>
+    Rate yourself on each category below honestly. Your manager will see these ratings and add their own evaluation.
+  </div>
+
+  <form method="POST" action="{{ url_for('review_self_assess', review_id=r.firebase_id) }}">
+    <div class="row g-4">
+      <div class="col-lg-7">
+        <div class="card shadow-sm mb-4">
+          <div class="card-body">
+            <h6 class="fw-semibold mb-1"><i class="bi bi-person-check me-2 text-primary"></i>Self-Assessment</h6>
+            <p class="text-muted small mb-4">Rate yourself 1–5 for each category.</p>
+            {% for key, name, weight, desc in cats_full %}
+            <div class="cat-row">
+              <div class="cat-label">{{ name }}<span class="weight-badge">{{ weight }}</span></div>
+              <div class="cat-desc">{{ desc }}</div>
+              <div class="d-flex align-items-center">
+                <div class="star-row" data-field="self_{{ key }}">
+                  {% for n in [1,2,3,4,5] %}
+                  <button type="button" class="star-btn" data-val="{{ n }}"
+                          onclick="setSelfScore('{{ key }}', {{ n }})">{{ n }}</button>
+                  {% endfor %}
+                </div>
+                <span class="score-display" id="self_lbl_{{ key }}"></span>
+              </div>
+              <input type="hidden" name="self_{{ key }}" id="self_inp_{{ key }}" value="0">
+              <div class="mt-2">
+                <textarea name="self_comment_{{ key }}" class="form-control form-control-sm" rows="2"
+                          placeholder="Your comments for this category…"></textarea>
+              </div>
+            </div>
+            {% if not loop.last %}<hr class="section-divider">{% endif %}
+            {% endfor %}
+          </div>
+        </div>
+        <div class="card shadow-sm mb-4">
+          <div class="card-body">
+            <h6 class="fw-semibold mb-2"><i class="bi bi-chat-text me-2 text-info"></i>Overall Self-Comments</h6>
+            <textarea name="self_overall_comments" class="form-control" rows="4"
+                      placeholder="Summarize your performance, key achievements, areas you want to improve…"></textarea>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg w-100"
+                onclick="return validateSelfAssessment();">
+          <i class="bi bi-send me-1"></i>Submit Self-Assessment
+        </button>
+        <div class="text-muted small text-center mt-2">
+          Once submitted, your manager will review your ratings and complete the evaluation.
+        </div>
+      </div>
+    </div>
+  </form>
+  {% endif %}
+
+<!-- ── STATE 2: Employee submitted, waiting for manager ── -->
+{% elif rstatus == 'pending_manager_review' %}
+
+  {% if is_my_review and role != 'admin' %}
+  <!-- Employee sees waiting message + their submitted self-assessment -->
+  <div class="ack-banner pending">
+    <i class="bi bi-check-circle me-2"></i>
+    Your self-assessment has been submitted. Your manager will now complete the evaluation.
+  </div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h6 class="fw-semibold mb-3"><i class="bi bi-person-check me-2 text-primary"></i>Your Self-Assessment</h6>
+      {% for key, name, weight, _ in cats_full %}
+      {% set s = (sa_scores[key] | int) if key in sa_scores else 0 %}
+      {% set c = sa_comments[key] if key in sa_comments else '' %}
+      <div class="mb-3 {% if not loop.last %}pb-3 border-bottom{% endif %}">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <div class="fw-semibold" style="font-size:13px;">{{ name }}<span class="weight-badge">{{ weight }}</span></div>
+          <span style="font-family:Georgia,serif;font-size:20px;font-weight:700;
+            color:{% if s==5 %}#2E7D32{% elif s==4 %}#558B2F{% elif s==3 %}#9A6F00{% elif s==2 %}#E65100{% else %}#C0392B{% endif %};">{{ s }}<span class="text-muted" style="font-size:13px;">/5</span></span>
+        </div>
+        <div class="gauge-bar mb-1">
+          <div class="gauge-fill" style="width:{{ (s/5*100)|round }}%;
+            background:{% if s>=5 %}#2E7D32{% elif s>=4 %}#558B2F{% elif s>=3 %}#C9920A{% elif s>=2 %}#E65100{% else %}#C0392B{% endif %};"></div>
+        </div>
+        <div class="text-muted small">{{ ['','Unsatisfactory','Needs Improvement','Meets Expectations','Exceeds Expectations','Outstanding'][s] }}</div>
+        {% if c %}<div style="font-size:12px;color:#4B5563;margin-top:6px;padding:8px 10px;background:#F9FAFB;border-radius:6px;">{{ c }}</div>{% endif %}
+      </div>
+      {% endfor %}
+      {% if sa.overall_comments %}
+      <div class="mt-3 pt-3 border-top">
+        <div class="fw-semibold small mb-1">Overall Comments</div>
+        <p style="font-size:13px;white-space:pre-wrap;color:#4B5563;">{{ sa.overall_comments }}</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% elif role == 'admin' %}
+  <!-- Admin sees self-assessment + scoring form -->
+  <div class="ack-banner pending">
+    <i class="bi bi-clipboard-check me-2"></i>
+    <strong>{{ r.employee_name }}</strong> has completed their self-assessment. Review their ratings and submit your manager evaluation below.
+  </div>
+
+  <div class="row g-4">
+    <!-- Left: employee's self-assessment (read-only) -->
+    <div class="col-lg-6">
+      <div class="card shadow-sm mb-4 h-100">
+        <div class="card-header py-2" style="background:#EFF6FF;border-bottom:1px solid #BFDBFE;">
+          <h6 class="mb-0 fw-semibold" style="color:#1E40AF;font-size:13px;">
+            <i class="bi bi-person-check me-1"></i>{{ r.employee_name }}'s Self-Assessment
+          </h6>
+        </div>
+        <div class="card-body">
+          {% for key, name, weight, _ in cats_full %}
+          {% set s = (sa_scores[key] | int) if key in sa_scores else 0 %}
+          {% set c = sa_comments[key] if key in sa_comments else '' %}
+          <div class="mb-3 {% if not loop.last %}pb-3 border-bottom{% endif %}">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <div class="fw-semibold" style="font-size:12px;">{{ name }}</div>
+              <span style="font-family:Georgia,serif;font-size:18px;font-weight:700;
+                color:{% if s==5 %}#2E7D32{% elif s==4 %}#558B2F{% elif s==3 %}#9A6F00{% elif s==2 %}#E65100{% else %}#C0392B{% endif %};">{{ s }}<span class="text-muted" style="font-size:12px;">/5</span></span>
+            </div>
+            <div class="gauge-bar mb-1">
+              <div class="gauge-fill" style="width:{{ (s/5*100)|round }}%;
+                background:{% if s>=5 %}#2E7D32{% elif s>=4 %}#558B2F{% elif s>=3 %}#C9920A{% elif s>=2 %}#E65100{% else %}#C0392B{% endif %};"></div>
+            </div>
+            <div class="text-muted" style="font-size:11px;">{{ ['','Unsatisfactory','Needs Improvement','Meets Expectations','Exceeds Expectations','Outstanding'][s] }}</div>
+            {% if c %}<div style="font-size:11px;color:#4B5563;margin-top:4px;padding:6px 8px;background:#F9FAFB;border-radius:5px;">{{ c }}</div>{% endif %}
+          </div>
+          {% endfor %}
+          {% if sa.overall_comments %}
+          <div class="mt-3 pt-3 border-top">
+            <div class="fw-semibold" style="font-size:12px;margin-bottom:4px;">Overall Self-Comments</div>
+            <p style="font-size:12px;white-space:pre-wrap;color:#4B5563;">{{ sa.overall_comments }}</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: manager scoring form -->
+    <div class="col-lg-6">
+      <form method="POST" action="{{ url_for('review_edit', review_id=r.firebase_id) }}" id="reviewForm">
+        <input type="hidden" name="employee_uid"   value="{{ r.employee_uid }}">
+        <input type="hidden" name="employee_name"  value="{{ r.employee_name }}">
+        <input type="hidden" name="review_period"  value="{{ r.review_period }}">
+
+        <div class="card shadow-sm mb-4">
+          <div class="card-header py-2" style="background:#F0FDF4;border-bottom:1px solid #86EFAC;">
+            <h6 class="mb-0 fw-semibold" style="color:#166534;font-size:13px;">
+              <i class="bi bi-person-badge me-1"></i>Manager Evaluation
+            </h6>
+          </div>
+          <div class="card-body">
+            {% for key, name, weight, desc in cats_full %}
+            <div class="cat-row">
+              <div class="cat-label" style="font-size:12px;">{{ name }}<span class="weight-badge">{{ weight }}</span></div>
+              <div class="d-flex align-items-center">
+                <div class="star-row" data-field="{{ key }}">
+                  {% for n in [1,2,3,4,5] %}
+                  <button type="button" class="star-btn" data-val="{{ n }}"
+                          onclick="setScore('{{ key }}', {{ n }})">{{ n }}</button>
+                  {% endfor %}
+                </div>
+                <span class="score-display" id="lbl_{{ key }}"></span>
+              </div>
+              <input type="hidden" name="{{ key }}" id="inp_{{ key }}" value="0">
+              <div class="mt-1">
+                <textarea name="comment_{{ key }}" class="form-control form-control-sm" rows="1"
+                          placeholder="Manager comment…"></textarea>
+              </div>
+            </div>
+            {% if not loop.last %}<hr style="margin:10px 0;">{% endif %}
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Live score summary (sticky-ish) -->
+        <div class="card shadow-sm mb-4">
+          <div class="card-body">
+            <div class="text-center mb-3">
+              <div id="scoreDisplay" style="font-family:Georgia,serif;font-size:44px;color:#1A2B3C;line-height:1;">—</div>
+              <div class="text-muted small">weighted score out of 5.00</div>
+              <div id="labelDisplay" class="mt-2"></div>
+            </div>
+            <div id="raiseHint" class="raise-suggest d-none">
+              <i class="bi bi-arrow-up-circle me-1"></i>
+              Suggested raise: <strong id="raiseRange"></strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="card shadow-sm mb-4">
+          <div class="card-body">
+            <h6 class="fw-semibold mb-2" style="font-size:13px;">Overall Comments</h6>
+            <textarea name="overall_comments" class="form-control form-control-sm" rows="3"
+                      placeholder="Overall performance summary, key accomplishments…"></textarea>
+            <h6 class="fw-semibold mb-2 mt-3" style="font-size:13px;">Goals for Next Period</h6>
+            <textarea name="goals" class="form-control form-control-sm" rows="3"
+                      placeholder="List 2–3 specific goals for the next 6 months…"></textarea>
+          </div>
+        </div>
+
+        <div class="card shadow-sm mb-4">
+          <div class="card-body">
+            <h6 class="fw-semibold mb-3" style="font-size:13px;"><i class="bi bi-currency-dollar me-1 text-success"></i>Raise Settings</h6>
+            <div class="mb-3">
+              <label class="form-label fw-semibold" style="font-size:12px;">Approved Raise %</label>
+              <div class="input-group input-group-sm">
+                <input type="number" name="approved_raise_pct" class="form-control"
+                       min="0" max="25" step="0.5" placeholder="e.g. 6">
+                <span class="input-group-text">%</span>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold" style="font-size:12px;">Raise Effective Date</label>
+              <input type="date" name="raise_effective_date" class="form-control form-control-sm">
+            </div>
+            <div class="d-grid">
+              <button type="submit" class="btn btn-success">
+                <i class="bi bi-check-lg me-1"></i>Submit Manager Evaluation
+              </button>
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+<!-- ── STATE 3 & 4: Review submitted — standard view ── -->
+{% else %}
+
+<!-- Acknowledgement Banner -->
+{% if acked %}
+<div class="ack-banner done">
+  <i class="bi bi-check-circle-fill me-2"></i>
+  Employee acknowledged this review on {{ r.acknowledged_at[:10] if r.acknowledged_at else 'record' }}.
+</div>
+{% elif is_my_review %}
+<div class="ack-banner pending">
+  <i class="bi bi-exclamation-circle-fill me-2"></i>
+  Please read your review and click <strong>Acknowledge</strong> below to confirm you have read it.
+</div>
+{% endif %}
+
+<div class="row g-4">
+  <!-- Left: scores -->
+  <div class="col-lg-7">
+    {% if has_mgr_scores %}
+    <!-- Score summary card -->
+    <div class="card shadow-sm mb-4">
+      <div class="card-body text-center">
+        <div style="font-family:Georgia,serif;font-size:56px;color:#1A2B3C;line-height:1;">{{ "%.2f"|format(score) }}</div>
+        <div class="text-muted small mb-2">weighted score out of 5.00</div>
+        <span class="score-pill
+          {% if label == 'Outstanding' %}score-outstanding
+          {% elif label == 'Exceeds Expectations' %}score-exceeds
+          {% elif label == 'Meets Expectations' %}score-meets
+          {% elif label == 'Needs Improvement' %}score-needs
+          {% else %}score-unsatisfactory{% endif %}"
+          style="font-size:14px;padding:5px 14px;">{{ label }}</span>
+      </div>
+    </div>
+
+    <!-- Category breakdown: comparison if self-assessment exists -->
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        {% if sa_scores %}
+        <h6 class="fw-semibold mb-3">Category Breakdown
+          <span class="text-muted fw-normal" style="font-size:11px;margin-left:8px;">Employee vs Manager</span>
+        </h6>
+        {% for key, name, weight, _ in cats_full %}
+        {% set ms = (r.scores[key] | int) if (r.scores and key in r.scores) else 0 %}
+        {% set es = (sa_scores[key] | int) if key in sa_scores else 0 %}
+        {% set mc = r.comments[key] if (r.comments and key in r.comments) else '' %}
+        {% set ec = sa_comments[key] if key in sa_comments else '' %}
+        <div class="mb-4 {% if not loop.last %}pb-3 border-bottom{% endif %}">
+          <div class="fw-semibold mb-2" style="font-size:13px;">{{ name }}<span class="weight-badge">{{ weight }}</span></div>
+          <div class="compare-row">
+            <div>
+              <div class="compare-label">Employee</div>
+              <div class="compare-score"
+                   style="color:{% if es==5 %}#2E7D32{% elif es==4 %}#558B2F{% elif es==3 %}#9A6F00{% elif es==2 %}#E65100{% else %}#C0392B{% endif %};">{{ es }}<span class="text-muted" style="font-size:13px;">/5</span></div>
+              <div class="gauge-bar">
+                <div class="gauge-fill" style="width:{{ (es/5*100)|round }}%;background:{% if es>=5 %}#2E7D32{% elif es>=4 %}#558B2F{% elif es>=3 %}#C9920A{% elif es>=2 %}#E65100{% else %}#C0392B{% endif %};"></div>
+              </div>
+              {% if ec %}<div style="font-size:11px;color:#4B5563;margin-top:4px;padding:5px 8px;background:#EFF6FF;border-radius:5px;">{{ ec }}</div>{% endif %}
+            </div>
+            <div>
+              <div class="compare-label">Manager</div>
+              <div class="compare-score"
+                   style="color:{% if ms==5 %}#2E7D32{% elif ms==4 %}#558B2F{% elif ms==3 %}#9A6F00{% elif ms==2 %}#E65100{% else %}#C0392B{% endif %};">{{ ms }}<span class="text-muted" style="font-size:13px;">/5</span></div>
+              <div class="gauge-bar">
+                <div class="gauge-fill" style="width:{{ (ms/5*100)|round }}%;background:{% if ms>=5 %}#2E7D32{% elif ms>=4 %}#558B2F{% elif ms>=3 %}#C9920A{% elif ms>=2 %}#E65100{% else %}#C0392B{% endif %};"></div>
+              </div>
+              {% if mc %}<div style="font-size:11px;color:#4B5563;margin-top:4px;padding:5px 8px;background:#F0FDF4;border-radius:5px;">{{ mc }}</div>{% endif %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <h6 class="fw-semibold mb-3">Category Breakdown</h6>
+        {% for key, name, weight, _ in cats_full %}
+        {% set s = (r.scores[key] | int) if (r.scores and key in r.scores) else 0 %}
+        {% set c = r.comments[key] if (r.comments and key in r.comments) else '' %}
+        <div class="mb-3 {% if not loop.last %}pb-3 border-bottom{% endif %}">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <div class="fw-semibold" style="font-size:13px;">{{ name }}<span class="weight-badge">{{ weight }}</span></div>
+            <div class="d-flex align-items-center gap-2">
+              <span style="font-family:Georgia,serif;font-size:20px;font-weight:700;
+                color:{% if s==5 %}#2E7D32{% elif s==4 %}#558B2F{% elif s==3 %}#9A6F00{% elif s==2 %}#E65100{% else %}#C0392B{% endif %};">{{ s }}</span>
+              <span class="text-muted small">/5</span>
+            </div>
+          </div>
+          <div class="gauge-bar mb-1">
+            <div class="gauge-fill" style="width:{{ (s/5*100)|round }}%;
+              background:{% if s>=5 %}#2E7D32{% elif s>=4 %}#558B2F{% elif s>=3 %}#C9920A{% elif s>=2 %}#E65100{% else %}#C0392B{% endif %};"></div>
+          </div>
+          <div class="text-muted small">{{ ['','Unsatisfactory','Needs Improvement','Meets Expectations','Exceeds Expectations','Outstanding'][s] }}</div>
+          {% if c %}<div style="font-size:12px;color:#4B5563;margin-top:6px;padding:8px 10px;background:#F9FAFB;border-radius:6px;">{{ c }}</div>{% endif %}
+        </div>
+        {% endfor %}
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Self-assessment overall comments (if exists, non-admin) -->
+    {% if sa.overall_comments and is_my_review %}
+    <div class="card shadow-sm mb-4" style="border-color:#BFDBFE;">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-2" style="color:#1E40AF;"><i class="bi bi-person-check me-2"></i>Your Self-Comments</h6>
+        <p style="font-size:14px;white-space:pre-wrap;color:#4B5563;">{{ sa.overall_comments }}</p>
+      </div>
+    </div>
+    {% elif sa.overall_comments and role == 'admin' %}
+    <div class="card shadow-sm mb-4" style="border-color:#BFDBFE;">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-2" style="color:#1E40AF;"><i class="bi bi-person-check me-2"></i>Employee Self-Comments</h6>
+        <p style="font-size:14px;white-space:pre-wrap;color:#4B5563;">{{ sa.overall_comments }}</p>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if r.overall_comments %}
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-2"><i class="bi bi-chat-text me-2 text-info"></i>Manager Comments</h6>
+        <p style="font-size:14px;white-space:pre-wrap;">{{ r.overall_comments }}</p>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if r.goals %}
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-2"><i class="bi bi-flag me-2 text-success"></i>Goals for Next Period</h6>
+        <p style="font-size:14px;white-space:pre-wrap;">{{ r.goals }}</p>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if not acked and is_my_review %}
+    <form method="POST" action="{{ url_for('review_acknowledge', review_id=r.firebase_id) }}">
+      <button type="submit" class="btn btn-success btn-lg w-100">
+        <i class="bi bi-check-circle me-2"></i>I Have Read and Acknowledge This Review
+      </button>
+      <div class="text-muted small text-center mt-2">
+        Acknowledging confirms you have read the review. It does not mean you agree with the ratings.
+      </div>
+    </form>
+    {% endif %}
+  </div>
+
+  <!-- Right: raise + status -->
+  <div class="col-lg-5">
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-3"><i class="bi bi-currency-dollar me-2 text-success"></i>Raise Summary</h6>
+        <div class="mb-3">
+          <div class="text-muted small mb-1">Suggested Range</div>
+          <div class="fw-semibold" style="font-size:18px;color:#1A2B3C;">
+            {% if lo == 0 and hi == 0 %}No raise recommended{% else %}{{ lo }}% – {{ hi }}%{% endif %}
+          </div>
+        </div>
+        {% if role == 'admin' or acked %}
+        <div class="mb-3">
+          <div class="text-muted small mb-1">Approved Raise</div>
+          <div class="fw-bold" style="font-size:24px;font-family:Georgia,serif;
+            color:{% if r.approved_raise_pct and r.approved_raise_pct|float > 0 %}#2E7D32{% else %}#9CA3AF{% endif %};">
+            {% if r.approved_raise_pct and r.approved_raise_pct|float > 0 %}{{ r.approved_raise_pct }}%{% else %}—{% endif %}
+          </div>
+        </div>
+        {% endif %}
+        {% if r.raise_effective_date %}
+        <div class="mb-3">
+          <div class="text-muted small mb-1">Effective Date</div>
+          <div class="fw-semibold">{{ r.raise_effective_date | format_date }}</div>
+        </div>
+        {% endif %}
+        {% if r.salary_updated and r.salary_update_result %}
+        {% set sr = r.salary_update_result %}
+        <div class="alert alert-success py-2" style="font-size:13px;">
+          <i class="bi bi-check-circle me-1"></i>
+          Salary updated: ${{ "%.2f"|format(sr.old | float) }} → ${{ "%.2f"|format(sr.new | float) }}
+          ({{ 'hourly' if sr.field == 'hourly_rate' else 'monthly' }})
+        </div>
+        {% elif r.raise_effective_date and r.approved_raise_pct and r.approved_raise_pct|float > 0 %}
+        <div class="alert alert-warning py-2" style="font-size:12px;">
+          <i class="bi bi-clock me-1"></i>
+          Salary update pending — effective {{ r.raise_effective_date | format_date }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-2">Review Status</h6>
+        <div class="d-flex flex-column gap-2" style="font-size:13px;">
+          <div class="d-flex justify-content-between">
+            <span class="text-muted">Self-Assessment</span>
+            <span class="badge {{ 'bg-success' if sa_scores else 'bg-warning text-dark' }}">
+              {{ 'Done' if sa_scores else 'Pending' }}
+            </span>
+          </div>
+          <div class="d-flex justify-content-between">
+            <span class="text-muted">Manager Evaluation</span>
+            <span class="badge {{ 'bg-success' if has_mgr_scores else 'bg-warning text-dark' }}">
+              {{ 'Done' if has_mgr_scores else 'Pending' }}
+            </span>
+          </div>
+          <div class="d-flex justify-content-between">
+            <span class="text-muted">Employee Acknowledged</span>
+            <span class="badge {{ 'bg-success' if acked else 'bg-warning text-dark' }}">
+              {{ 'Yes' if acked else 'Pending' }}
+            </span>
+          </div>
+          <div class="d-flex justify-content-between">
+            <span class="text-muted">Salary Updated</span>
+            <span class="badge {{ 'bg-success' if r.salary_updated else 'bg-secondary' }}">
+              {{ 'Yes' if r.salary_updated else 'No' }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit form (hidden by default, admin only) -->
+{% if role == 'admin' %}
+<div id="editForm" class="d-none mt-4">
+  <h5 class="fw-semibold mb-3"><i class="bi bi-pencil me-2"></i>Edit Manager Evaluation</h5>
+  <form method="POST" action="{{ url_for('review_edit', review_id=r.firebase_id) }}">
+    <div class="row g-4">
+      <div class="col-lg-7">
+        <div class="card shadow-sm mb-3">
+          <div class="card-body">
+            {% for key, name, weight, desc in cats_full %}
+            {% set cur = (r.scores[key] | int) if (r.scores and key in r.scores) else 0 %}
+            <div class="cat-row">
+              <div class="cat-label">{{ name }}<span class="weight-badge">{{ weight }}</span></div>
+              <div class="d-flex align-items-center">
+                <div class="star-row" data-field="e_{{ key }}">
+                  {% for n in [1,2,3,4,5] %}
+                  <button type="button" class="star-btn {% if cur == n %}active-{{ n }}{% endif %}"
+                          data-val="{{ n }}" onclick="setScore('e_{{ key }}', {{ n }})">{{ n }}</button>
+                  {% endfor %}
+                </div>
+                <span class="score-display" id="lbl_e_{{ key }}">
+                  {{ ['','Unsatisfactory','Needs Improvement','Meets Expectations','Exceeds Expectations','Outstanding'][cur] if cur > 0 else '' }}
+                </span>
+              </div>
+              <input type="hidden" name="{{ key }}" id="inp_e_{{ key }}" value="{{ cur }}">
+              <div class="mt-2">
+                <textarea name="comment_{{ key }}" class="form-control form-control-sm" rows="2">{{ r.comments[key] if (r.comments and key in r.comments) else '' }}</textarea>
+              </div>
+            </div>
+            {% if not loop.last %}<hr class="section-divider">{% endif %}
+            {% endfor %}
+          </div>
+        </div>
+        <div class="card shadow-sm mb-3">
+          <div class="card-body">
+            <h6 class="fw-semibold mb-2">Overall Comments</h6>
+            <textarea name="overall_comments" class="form-control" rows="3">{{ r.overall_comments or '' }}</textarea>
+            <h6 class="fw-semibold mb-2 mt-3">Goals for Next Period</h6>
+            <textarea name="goals" class="form-control" rows="3">{{ r.goals or '' }}</textarea>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-5">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h6 class="fw-semibold mb-3">Raise Settings</h6>
+            <input type="hidden" name="employee_uid"  value="{{ r.employee_uid }}">
+            <input type="hidden" name="employee_name" value="{{ r.employee_name }}">
+            <input type="hidden" name="review_period" value="{{ r.review_period }}">
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Approved Raise %</label>
+              <div class="input-group">
+                <input type="number" name="approved_raise_pct" class="form-control"
+                       min="0" max="25" step="0.5" value="{{ r.approved_raise_pct or '' }}">
+                <span class="input-group-text">%</span>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Raise Effective Date</label>
+              <input type="date" name="raise_effective_date" class="form-control"
+                     value="{{ r.raise_effective_date or '' }}">
+            </div>
+            <div class="d-grid gap-2">
+              <button type="submit" class="btn btn-primary">Save Changes</button>
+              <button type="button" class="btn btn-outline-secondary"
+                      onclick="document.getElementById('editForm').classList.add('d-none')">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+{% endif %}{# end status blocks #}
+{% endif %}{# end view blocks #}
+
+<script>
+var LABELS  = ['','Unsatisfactory','Needs Improvement','Meets Expectations','Exceeds Expectations','Outstanding'];
+var WEIGHTS = {job_performance:0.35, teamwork:0.20, initiative:0.15, reliability:0.15, professional_dev:0.15};
+
+// Manager score buttons (new review form + manager eval form)
+function setScore(field, val) {
+  var inp = document.getElementById('inp_' + field);
+  var lbl = document.getElementById('lbl_' + field);
+  var row = document.querySelector('[data-field="' + field + '"]');
+  if (!inp || !row) return;
+  inp.value = val;
+  if (lbl) lbl.textContent = LABELS[val] || '';
+  row.querySelectorAll('.star-btn').forEach(function(b) {
+    b.className = 'star-btn';
+    if (parseInt(b.dataset.val) === val) b.classList.add('active-' + val);
+  });
+  recalc();
+}
+
+function recalc() {
+  var total = 0; var allSet = true;
+  Object.keys(WEIGHTS).forEach(function(k) {
+    var inp = document.getElementById('inp_' + k);
+    if (!inp) return;
+    var v = parseFloat(inp.value) || 0;
+    if (v === 0) allSet = false;
+    total += v * WEIGHTS[k];
+  });
+  total = Math.round(total * 100) / 100;
+  var disp = document.getElementById('scoreDisplay');
+  var lblDisp = document.getElementById('labelDisplay');
+  var raiseHint = document.getElementById('raiseHint');
+  var raiseRange = document.getElementById('raiseRange');
+  if (disp) disp.textContent = allSet ? total.toFixed(2) : '—';
+  var label = ''; var cls = ''; var lo = 0, hi = 0;
+  if      (total >= 4.5) { label='Outstanding';          cls='score-outstanding'; lo=8;  hi=10; }
+  else if (total >= 3.5) { label='Exceeds Expectations'; cls='score-exceeds';     lo=5;  hi=7;  }
+  else if (total >= 2.5) { label='Meets Expectations';   cls='score-meets';       lo=2;  hi=4;  }
+  else if (total >= 1.5) { label='Needs Improvement';    cls='score-needs';       lo=0;  hi=0;  }
+  else if (total >  0)   { label='Unsatisfactory';        cls='score-unsatisfactory'; lo=0; hi=0; }
+  if (lblDisp && label) {
+    lblDisp.innerHTML = '<span class="score-pill ' + cls + '" style="font-size:13px;">' + label + '</span>';
+  }
+  if (raiseHint && raiseRange && allSet) {
+    raiseHint.classList.remove('d-none');
+    raiseRange.textContent = (lo === 0 && hi === 0) ? 'No raise recommended' : (lo + '–' + hi + '%');
+  }
+}
+
+// Self-assessment score buttons
+function setSelfScore(field, val) {
+  var inp = document.getElementById('self_inp_' + field);
+  var lbl = document.getElementById('self_lbl_' + field);
+  var row = document.querySelector('[data-field="self_' + field + '"]');
+  if (!inp || !row) return;
+  inp.value = val;
+  if (lbl) lbl.textContent = LABELS[val] || '';
+  row.querySelectorAll('.star-btn').forEach(function(b) {
+    b.className = 'star-btn';
+    if (parseInt(b.dataset.val) === val) b.classList.add('active-' + val);
+  });
+}
+
+function validateSelfAssessment() {
+  var keys = ['job_performance','teamwork','initiative','reliability','professional_dev'];
+  for (var i = 0; i < keys.length; i++) {
+    var inp = document.getElementById('self_inp_' + keys[i]);
+    if (!inp || parseInt(inp.value) < 1) {
+      alert('Please rate all 5 categories before submitting.');
+      return false;
+    }
+  }
+  return true;
+}
+
+// Employee select → fill hidden name field
+function fillEmpName(sel) {
+  var opt = sel.options[sel.selectedIndex];
+  var nameInp = document.getElementById('empName');
+  if (nameInp) nameInp.value = opt.dataset.name || '';
+}
+
+// List filters
+document.addEventListener('DOMContentLoaded', function() {
+  var search = document.getElementById('reviewSearch');
+  var period = document.getElementById('reviewPeriodFilter');
+  var status = document.getElementById('reviewStatusFilter');
+  if (!search && !period && !status) return;
+  function filter() {
+    var q = search ? search.value.toLowerCase() : '';
+    var p = period ? period.value : '';
+    var s = status ? status.value : '';
+    var items = document.querySelectorAll('.review-item');
+    var visible = 0;
+    items.forEach(function(el) {
+      var show = (!q || el.dataset.name.includes(q))
+              && (!p || el.dataset.period === p)
+              && (!s || el.dataset.status === s);
+      el.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    var msg = document.getElementById('noReviewsMsg');
+    if (msg) msg.classList.toggle('d-none', visible > 0);
+  }
+  if (search) search.addEventListener('input', filter);
+  if (period) period.addEventListener('change', filter);
+  if (status) status.addEventListener('change', filter);
+});
+</script>
+{% endblock %}

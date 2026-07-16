@@ -96,7 +96,7 @@ except Exception as exc:
 
 # ── Role helpers ──────────────────────────────────────────────────────────────
 ROLE_PAGES = {
-    "admin":          ["dashboard", "quotes", "projects", "invoicing", "payroll", "financial", "settings", "employees", "sales_dashboard", "timesheets"],
+    "admin":          ["dashboard", "quotes", "projects", "invoicing", "payroll", "financial", "settings", "employees", "sales_dashboard", "timesheets", "reviews"],
     "sales":          ["sales_dashboard", "quotes", "employees", "timesheets"],
     "projects":       ["projects", "invoicing", "employees", "timesheets"],
     "finance":        ["financial", "payroll", "employees", "timesheets"],
@@ -105,7 +105,7 @@ ROLE_PAGES = {
 }
 
 ALL_PAGES = ["dashboard", "sales_dashboard", "quotes", "projects", "invoicing", "payroll",
-             "financial", "settings", "employees", "timesheets"]
+             "financial", "settings", "employees", "timesheets", "reviews"]
 
 PAGE_LABELS = {
     "dashboard":      "Dashboard",
@@ -118,6 +118,7 @@ PAGE_LABELS = {
     "employees":      "Employees",
     "sales_dashboard":"Sales Dashboard",
     "timesheets":     "Timesheets",
+    "reviews":        "Performance Reviews",
 }
 
 def normalize_role(role: str) -> str:
@@ -9798,6 +9799,17 @@ def employees():
     _emp_settings = load_settings().get("company", {})
     context["bdt_exchange_rate"] = _safe_float(_emp_settings.get("bdt_exchange_rate", 110)) or 110
 
+    # My performance reviews (current user's reviews for the My Reviews tab)
+    _all_rev_raw = fb_get("/performance_reviews") or {}
+    _my_rev = []
+    if isinstance(_all_rev_raw, dict):
+        for _rid, _rdata in _all_rev_raw.items():
+            if isinstance(_rdata, dict) and _rdata.get("employee_uid") == uid:
+                _rdata["firebase_id"] = _rid
+                _my_rev.append(_rdata)
+    _my_rev.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+    context["my_performance_reviews"] = _my_rev
+
     return render_template("employees.html", **context)
 
 @app.route("/employees/medical-claims/form")
@@ -10557,6 +10569,322 @@ def employee_close_entry(entry_id):
     })
     flash(f"Closed {entry.get('employee_name','')}'s entry — {round(duration/60, 1)}h logged.", "success")
     return redirect(url_for("employees") + redirect_tab)
+
+# ── Routes: Performance Reviews ───────────────────────────────────────────────
+
+_REVIEW_WEIGHTS = {
+    "job_performance": 0.35,
+    "teamwork":        0.20,
+    "initiative":      0.15,
+    "reliability":     0.15,
+    "professional_dev":0.15,
+}
+
+_RATING_LABELS = [
+    (4.50, "Outstanding"),
+    (3.50, "Exceeds Expectations"),
+    (2.50, "Meets Expectations"),
+    (1.50, "Needs Improvement"),
+    (0.00, "Unsatisfactory"),
+]
+
+_RAISE_RANGES = [
+    (4.50, 8,  10),
+    (3.50, 5,   7),
+    (2.50, 2,   4),
+    (1.50, 0,   0),
+    (0.00, 0,   0),
+]
+
+def _calc_review_score(scores: dict) -> float:
+    total = sum(_REVIEW_WEIGHTS[k] * _safe_float(scores.get(k, 0))
+                for k in _REVIEW_WEIGHTS)
+    return round(total, 2)
+
+def _score_label(score: float) -> str:
+    for threshold, label in _RATING_LABELS:
+        if score >= threshold:
+            return label
+    return "Unsatisfactory"
+
+def _raise_range(score: float):
+    for threshold, lo, hi in _RAISE_RANGES:
+        if score >= threshold:
+            return lo, hi
+    return 0, 0
+
+def _apply_salary_raise(uid: str, raise_pct: float) -> dict:
+    """Apply raise % to employee's hourly_rate or monthly_salary. Returns {old, new, field}."""
+    profile = fb_get(f"/users/{uid}") or {}
+    hourly  = _safe_float(profile.get("hourly_rate", 0))
+    salary  = _safe_float(profile.get("monthly_salary", 0))
+    if hourly:
+        new_val = round(hourly * (1 + raise_pct / 100), 2)
+        fb_update(f"/users/{uid}", {"hourly_rate": new_val,
+                                     "updated_at": datetime.now(timezone.utc).isoformat()})
+        return {"field": "hourly_rate", "old": hourly, "new": new_val}
+    elif salary:
+        new_val = round(salary * (1 + raise_pct / 100), 2)
+        fb_update(f"/users/{uid}", {"monthly_salary": new_val,
+                                     "updated_at": datetime.now(timezone.utc).isoformat()})
+        return {"field": "monthly_salary", "old": salary, "new": new_val}
+    return {}
+
+@app.route("/reviews")
+@login_required
+def reviews():
+    role = session.get("user_role", "")
+    uid  = session.get("user_uid", "")
+    raw  = fb_get("/performance_reviews") or {}
+    all_reviews = []
+    if isinstance(raw, dict):
+        for rid, rdata in raw.items():
+            if isinstance(rdata, dict):
+                rdata["firebase_id"] = rid
+                all_reviews.append(rdata)
+    all_reviews.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+
+    if role == "admin":
+        displayed = all_reviews
+    else:
+        displayed = [r for r in all_reviews if r.get("employee_uid") == uid]
+
+    all_users = [u for u in _load_all_users() if u.get("active", True) != False]
+    periods   = _review_periods()
+    return render_template("reviews.html", reviews=displayed, all_users=all_users,
+                           periods=periods, role=role, my_uid=uid)
+
+def _push_notification(uid, notif_type, title, message, link=""):
+    if not uid:
+        return
+    fb_push(f"/notifications/{uid}", {
+        "type":       notif_type,
+        "title":      title,
+        "message":    message,
+        "link":       link,
+        "read":       False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+def _review_periods():
+    now = datetime.now(COMPANY_TZ)
+    periods = []
+    for yr in range(now.year + 1, now.year - 4, -1):
+        periods.append(f"H2 {yr}")
+        periods.append(f"H1 {yr}")
+    return periods
+
+@app.route("/reviews/new", methods=["GET", "POST"])
+@login_required
+def reviews_new():
+    if session.get("user_role") != "admin":
+        flash("Admin access required.", "danger")
+        return redirect(url_for("reviews"))
+    all_users = [u for u in _load_all_users() if u.get("active", True) != False]
+    periods   = _review_periods()
+    if request.method == "POST":
+        f = request.form
+        emp_uid  = f.get("employee_uid", "").strip()
+        emp_name = f.get("employee_name", "").strip()
+        period   = f.get("review_period", "").strip()
+        if not emp_uid or not period:
+            flash("Please select an employee and review period.", "danger")
+            return render_template("reviews.html", view="new", all_users=all_users,
+                                   periods=periods, role="admin", reviews=[],
+                                   my_uid=session.get("user_uid", ""))
+        now_ts = datetime.now(timezone.utc).isoformat()
+        data = {
+            "employee_uid":          emp_uid,
+            "employee_name":         emp_name,
+            "reviewer_uid":          session.get("user_uid", ""),
+            "reviewer_name":         session.get("user_name", ""),
+            "review_period":         period,
+            "status":                "pending_self_assessment",
+            "employee_acknowledged": False,
+            "salary_updated":        False,
+            "created_at":            now_ts,
+            "updated_at":            now_ts,
+        }
+        rid = fb_push("/performance_reviews", data)
+        _push_notification(
+            emp_uid, "review_initiated",
+            f"Performance Review — {period}",
+            f"Your {period} performance review has been initiated. Please complete your self-assessment.",
+            f"/reviews/{rid}",
+        )
+        flash(f"Review initiated for {emp_name} ({period}). They will now complete their self-assessment.", "success")
+        return redirect(url_for("review_detail", review_id=rid))
+    return render_template("reviews.html", view="new", all_users=all_users,
+                           periods=periods, role="admin", reviews=[],
+                           my_uid=session.get("user_uid", ""))
+
+@app.route("/reviews/<review_id>")
+@login_required
+def review_detail(review_id):
+    role = session.get("user_role", "")
+    uid  = session.get("user_uid", "")
+    data = fb_get(f"/performance_reviews/{review_id}") or {}
+    if not data:
+        flash("Review not found.", "danger")
+        return redirect(url_for("reviews"))
+    if role != "admin" and data.get("employee_uid") != uid:
+        flash("Access denied.", "danger")
+        return redirect(url_for("reviews"))
+    data["firebase_id"] = review_id
+    all_users = _load_all_users() if role == "admin" else []
+    periods   = _review_periods()
+    return render_template("reviews.html", view="detail", review=data,
+                           all_users=all_users, periods=periods,
+                           role=role, my_uid=uid, reviews=[],
+                           weights=_REVIEW_WEIGHTS)
+
+@app.route("/reviews/<review_id>/edit", methods=["POST"])
+@login_required
+def review_edit(review_id):
+    if session.get("user_role") != "admin":
+        flash("Admin access required.", "danger")
+        return redirect(url_for("review_detail", review_id=review_id))
+    f = request.form
+    existing = fb_get(f"/performance_reviews/{review_id}") or {}
+    scores = {k: _safe_float(f.get(k, 0)) for k in _REVIEW_WEIGHTS}
+    weighted = _calc_review_score(scores)
+    label    = _score_label(weighted)
+    lo, hi   = _raise_range(weighted)
+    approved_raise = _safe_float(f.get("approved_raise_pct", 0))
+    effective_date = f.get("raise_effective_date", "").strip()
+    patch = {
+        "employee_uid":       f.get("employee_uid", existing.get("employee_uid","")),
+        "employee_name":      f.get("employee_name", existing.get("employee_name","")),
+        "review_period":      f.get("review_period", existing.get("review_period","")),
+        "scores":             scores,
+        "weighted_score":     weighted,
+        "rating_label":       label,
+        "suggested_raise_lo": lo,
+        "suggested_raise_hi": hi,
+        "approved_raise_pct": approved_raise,
+        "raise_effective_date": effective_date,
+        "comments": {k: f.get(f"comment_{k}", "").strip() for k in _REVIEW_WEIGHTS},
+        "overall_comments":   f.get("overall_comments", "").strip(),
+        "goals":              f.get("goals", "").strip(),
+        "updated_at":         datetime.now(timezone.utc).isoformat(),
+    }
+    if existing.get("status") == "pending_manager_review":
+        patch["status"] = "pending_acknowledgement"
+        _push_notification(
+            patch["employee_uid"], "review_ready",
+            f"Review Ready — {patch['review_period']}",
+            f"Your {patch['review_period']} performance review is complete. Please open it and click Acknowledge.",
+            f"/reviews/{review_id}",
+        )
+    fb_update(f"/performance_reviews/{review_id}", patch)
+    # Apply raise if effective date passed and not yet applied
+    if approved_raise > 0 and effective_date and not existing.get("salary_updated"):
+        today = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
+        if effective_date <= today:
+            result = _apply_salary_raise(patch["employee_uid"], approved_raise)
+            if result:
+                fb_update(f"/performance_reviews/{review_id}", {"salary_updated": True,
+                                                                  "salary_update_result": result})
+    flash("Review updated.", "success")
+    return redirect(url_for("review_detail", review_id=review_id))
+
+@app.route("/reviews/<review_id>/acknowledge", methods=["POST"])
+@login_required
+def review_acknowledge(review_id):
+    uid  = session.get("user_uid", "")
+    data = fb_get(f"/performance_reviews/{review_id}") or {}
+    if data.get("employee_uid") != uid and session.get("user_role") != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("reviews"))
+    now_ts = datetime.now(timezone.utc).isoformat()
+    fb_update(f"/performance_reviews/{review_id}", {
+        "employee_acknowledged": True,
+        "acknowledged_at":       now_ts,
+        "status":                "completed",
+        "updated_at":            now_ts,
+    })
+    flash("Review acknowledged.", "success")
+    return redirect(url_for("review_detail", review_id=review_id))
+
+@app.route("/reviews/<review_id>/self-assess", methods=["POST"])
+@login_required
+def review_self_assess(review_id):
+    uid  = session.get("user_uid", "")
+    data = fb_get(f"/performance_reviews/{review_id}") or {}
+    if not data:
+        flash("Review not found.", "danger")
+        return redirect(url_for("reviews"))
+    if data.get("employee_uid") != uid:
+        flash("Access denied.", "danger")
+        return redirect(url_for("reviews"))
+    if data.get("status") != "pending_self_assessment":
+        flash("Self-assessment already submitted.", "warning")
+        return redirect(url_for("review_detail", review_id=review_id))
+    f = request.form
+    self_scores   = {k: _safe_float(f.get(f"self_{k}", 0)) for k in _REVIEW_WEIGHTS}
+    self_comments = {k: f.get(f"self_comment_{k}", "").strip() for k in _REVIEW_WEIGHTS}
+    now_ts = datetime.now(timezone.utc).isoformat()
+    fb_update(f"/performance_reviews/{review_id}", {
+        "self_assessment": {
+            "scores":           self_scores,
+            "comments":         self_comments,
+            "overall_comments": f.get("self_overall_comments", "").strip(),
+            "submitted_at":     now_ts,
+        },
+        "status":     "pending_manager_review",
+        "updated_at": now_ts,
+    })
+    reviewer_uid = data.get("reviewer_uid", "")
+    emp_name     = data.get("employee_name", "")
+    period       = data.get("review_period", "")
+    _push_notification(
+        reviewer_uid, "self_assessment_submitted",
+        f"Self-Assessment Ready — {emp_name}",
+        f"{emp_name} has completed their self-assessment for {period}. Please complete the manager evaluation.",
+        f"/reviews/{review_id}",
+    )
+    flash("Self-assessment submitted. Your manager will now complete the review.", "success")
+    return redirect(url_for("review_detail", review_id=review_id))
+
+@app.route("/reviews/<review_id>/delete", methods=["POST"])
+@login_required
+def review_delete(review_id):
+    if session.get("user_role") != "admin":
+        flash("Admin access required.", "danger")
+        return redirect(url_for("reviews"))
+    fb_delete(f"/performance_reviews/{review_id}")
+    flash("Review deleted.", "success")
+    return redirect(url_for("reviews"))
+
+@app.route("/api/notifications")
+@login_required
+def api_notifications():
+    uid  = session.get("user_uid", "")
+    raw  = fb_get(f"/notifications/{uid}") or {}
+    items = []
+    if isinstance(raw, dict):
+        for nid, n in raw.items():
+            if isinstance(n, dict):
+                n["id"] = nid
+                items.append(n)
+    items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    unread = sum(1 for n in items if not n.get("read"))
+    return jsonify({"items": items[:20], "unread": unread})
+
+@app.route("/api/notifications/mark-read", methods=["POST"])
+@login_required
+def api_notifications_mark_read():
+    uid  = session.get("user_uid", "")
+    data = request.get_json(silent=True) or {}
+    nid  = data.get("id")
+    if nid:
+        fb_update(f"/notifications/{uid}/{nid}", {"read": True})
+    else:
+        raw = fb_get(f"/notifications/{uid}") or {}
+        if isinstance(raw, dict):
+            for n in raw:
+                fb_update(f"/notifications/{uid}/{n}", {"read": True})
+    return jsonify({"ok": True})
 
 # ── Routes: Settings ──────────────────────────────────────────────────────────
 @app.route("/settings")
