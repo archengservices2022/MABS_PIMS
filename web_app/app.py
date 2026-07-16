@@ -11654,52 +11654,33 @@ def _mark_project_stage(project_number: str, stage_index: int, status: str, invo
     fb_update(f"/projects/{pid}", proj_updates)
 
 def _calculate_invoice_status(inv_data: dict) -> str:
-    """Calculate invoice status based on payments vs total (including tax).
+    """Calculate invoice status based on amount_paid vs total.
 
-    Returns: "Paid", "Partial", or "Overdue" based on actual payments.
-    If no payments, returns the stored status (user-selected).
+    Uses meta.amount_paid as the source of truth (maintained by all payment paths).
+    Respects admin-set terminal statuses (Paid, Cancelled).
     """
     meta = inv_data.get("meta", {}) or {}
+    stored_status = meta.get("status", "Draft")
 
-    # Always calculate from actual payments, not from stored status
+    # Respect admin-set terminal statuses
+    if stored_status in ("Paid", "Cancelled"):
+        return stored_status
+
     invoice_total = _safe_float(meta.get("total", 0))
-    tax_amount = _safe_float(meta.get("tax_amount", 0))
-    invoice_subtotal = invoice_total - tax_amount  # Subtract tax from total to get line items amount
+    amount_paid   = _safe_float(meta.get("amount_paid", 0))
 
-    # Get invoice payments (line items)
-    payment_log = inv_data.get("payment_log", [])
-    if not isinstance(payment_log, list):
-        payment_log = []
-    invoice_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+    due_date   = meta.get("due_date", "")
+    today      = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
+    is_overdue = bool(due_date and due_date < today)
 
-    # Get tax payments
-    tax_log = inv_data.get("tax_payments", [])
-    if not isinstance(tax_log, list):
-        tax_log = []
-    tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
-
-    # If invoice_paid covers both line items and tax (overpayment towards tax), credit it
-    if invoice_paid > invoice_subtotal:
-        tax_paid += (invoice_paid - invoice_subtotal)
-        invoice_paid = invoice_subtotal
-
-    # Check due date for Overdue
-    due_date = meta.get("due_date", "")
-    today = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
-    is_overdue = due_date and due_date < today
-
-    # Determine status based on actual amounts
-    invoice_paid_enough = invoice_paid >= (invoice_subtotal - 0.01)
-    tax_paid_enough = tax_amount <= 0.01 or tax_paid >= (tax_amount - 0.01)
-
-    if invoice_paid_enough and tax_paid_enough:
+    if invoice_total > 0 and amount_paid >= invoice_total - 0.01:
         return "Paid"
-    elif invoice_paid > 0 or tax_paid > 0:
+    elif amount_paid > 0:
         return "Partial"
-    elif is_overdue:
+    elif is_overdue and stored_status not in ("Draft", "Cancelled"):
         return "Overdue"
     else:
-        return meta.get("status", "Draft")
+        return stored_status
 
 def _derive_stage_index_from_line_items(project_number: str, line_items: list) -> int:
     """Try to find stage_index from line items by looking for paid stage references."""
