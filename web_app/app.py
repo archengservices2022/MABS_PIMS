@@ -4458,11 +4458,17 @@ def invoice_new():
             total_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log_data)
             tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log_data)
 
+            _inv_total_new = _safe_float(data.get("meta", {}).get("total", 0))
+            _auto_status_new = ("Paid" if total_paid >= _inv_total_new - 0.01 and _inv_total_new > 0
+                                else "Partial" if total_paid > 0 else None)
+            _status_patch = {"meta/status": _auto_status_new} if _auto_status_new else {}
+
             fb_update(f"/invoices/{inv_id}", {
                 "payment_log": payment_log_data,
                 "tax_payments": tax_log_data,
                 "meta/amount_paid": str(total_paid),
                 "meta/tax_paid": str(tax_paid),
+                **_status_patch,
             })
 
             # Update project stage payment amounts and status
@@ -4882,6 +4888,11 @@ def invoice_edit(invoice_id):
             print(f"[INVOICE_EDIT] payment_log={payment_log}", flush=True)
             print(f"[INVOICE_EDIT] tax_log={tax_log}", flush=True)
 
+            # Auto-set status based on payment vs total
+            _inv_total_edit = _safe_float(data.get("meta", {}).get("total", 0))
+            _auto_status_edit = ("Paid" if total_paid >= _inv_total_edit - 0.01 and _inv_total_edit > 0
+                                 else "Partial" if total_paid > 0 else None)
+
             # Update invoice with payment log and totals
             update_dict = {
                 "payment_log": payment_log,
@@ -4889,6 +4900,8 @@ def invoice_edit(invoice_id):
                 "meta/amount_paid": str(total_paid),
                 "meta/tax_paid": str(tax_paid),
             }
+            if _auto_status_edit:
+                update_dict["meta/status"] = _auto_status_edit
             print(f"[INVOICE_EDIT] Updating Firebase with: {update_dict}", flush=True)
             fb_update(f"/invoices/{invoice_id}", update_dict)
 
