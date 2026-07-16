@@ -12170,12 +12170,14 @@ def _load_sales_people() -> List[dict]:
         if not name:
             continue
         people.append({
-            "name":        name,
-            "email":       u.get("email", ""),
-            "phone":       u.get("phone", ""),
-            "title":       u.get("title", ""),
-            "firebase_id": u.get("firebase_uid", ""),
-            "from_users":  True,
+            "name":            name,
+            "email":           u.get("email", ""),
+            "phone":           u.get("phone", ""),
+            "title":           u.get("title", ""),
+            "firebase_id":     u.get("firebase_uid", ""),
+            "employee_type":   u.get("employee_type", ""),
+            "commission_rate": _safe_float(u.get("commission_rate", 0)),
+            "from_users":      True,
         })
         seen_names.add(name.lower())
 

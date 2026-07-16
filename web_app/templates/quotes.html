@@ -502,7 +502,7 @@
             <tr>
               <td class="fw-semibold">{{ sp.name }}</td>
               <td>
-                {% set _etype = sp_stat.employee_type if sp_stat else sp.get('employee_type','') if sp.get else '' %}
+                {% set _etype = sp_stat.employee_type if sp_stat else sp.employee_type %}
                 {% if _etype == 'full_time' %}
                 <span class="badge" style="background:#0D9488;color:#fff;font-size:11px;">Full Time</span>
                 {% elif _etype == 'contractor' %}
@@ -519,11 +519,11 @@
               </td>
               <td class="text-end fw-semibold">${{ "{:,.2f}".format(sp_stat.revenue_generated if sp_stat else 0) }}</td>
               <td class="text-center text-muted">
-                {% set _cr = sp_stat.commission_rate if sp_stat else 0 %}
+                {% set _cr = sp_stat.commission_rate if sp_stat else sp.commission_rate %}
                 {% if _cr > 0 %}{{ _cr }}%{% else %}—{% endif %}
               </td>
               <td class="text-end fw-bold" style="color:#7C3AED;">
-                {% set _cr = sp_stat.commission_rate if sp_stat else 0 %}
+                {% set _cr = sp_stat.commission_rate if sp_stat else sp.commission_rate %}
                 {% if _cr > 0 %}
                 ${{ "{:,.2f}".format(sp_stat.commission_earned if sp_stat else 0) }}
                 {% else %}
