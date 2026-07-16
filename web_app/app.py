@@ -2257,6 +2257,7 @@ def projects_import_excel():
         "site address":   "site_address",
         "mail address":   "mail_address",
         "date":           "date_received",
+        "plant":          "plant",
         "pi":             "plant",
         "state":          "plant",
         "price":          "contract_value",
