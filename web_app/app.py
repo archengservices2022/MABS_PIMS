@@ -508,6 +508,64 @@ def api_forgot_password():
         log.error("API forgot password error: %s", str(e))
         return jsonify({"success": False, "error": "An error occurred. Please try again later."})
 
+@app.route("/api/change-password", methods=["POST"])
+@login_required
+def api_change_password():
+    """Logged-in user changes their own password."""
+    try:
+        data        = request.get_json() or {}
+        current_pw  = data.get("current_password", "").strip()
+        new_pw      = data.get("new_password", "").strip()
+        confirm_pw  = data.get("confirm_password", "").strip()
+
+        if not current_pw or not new_pw or not confirm_pw:
+            return jsonify({"success": False, "error": "All fields are required."})
+        if new_pw != confirm_pw:
+            return jsonify({"success": False, "error": "New passwords do not match."})
+        if len(new_pw) < 6:
+            return jsonify({"success": False, "error": "New password must be at least 6 characters."})
+
+        email = session.get("user_email", "")
+        # Re-authenticate to get a fresh idToken
+        sign_url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_API_KEY}"
+        sign_resp = requests.post(sign_url, json={"email": email, "password": current_pw,
+                                                   "returnSecureToken": True}, timeout=10)
+        if sign_resp.status_code != 200:
+            return jsonify({"success": False, "error": "Current password is incorrect."})
+
+        id_token = sign_resp.json().get("idToken", "")
+        # Update password
+        upd_url  = f"https://identitytoolkit.googleapis.com/v1/accounts:update?key={FIREBASE_API_KEY}"
+        upd_resp = requests.post(upd_url, json={"idToken": id_token, "password": new_pw,
+                                                  "returnSecureToken": True}, timeout=10)
+        if upd_resp.status_code == 200:
+            log.info("Password changed for %s", email)
+            return jsonify({"success": True, "message": "Password changed successfully."})
+        err = upd_resp.json().get("error", {}).get("message", "Failed to update password.")
+        return jsonify({"success": False, "error": err})
+    except Exception as e:
+        log.error("Change password error: %s", e)
+        return jsonify({"success": False, "error": "An error occurred. Please try again."})
+
+@app.route("/api/admin/send-reset-email", methods=["POST"])
+@login_required
+def api_admin_send_reset_email():
+    """Admin sends a password reset email to any user."""
+    if session.get("user_role") != "admin":
+        return jsonify({"success": False, "error": "Admin access required."})
+    try:
+        data  = request.get_json() or {}
+        email = data.get("email", "").strip().lower()
+        if not email:
+            return jsonify({"success": False, "error": "No email provided."})
+        ok, err_msg = firebase_send_password_reset(email)
+        if ok:
+            return jsonify({"success": True, "message": f"Reset email sent to {email}."})
+        return jsonify({"success": False, "error": err_msg or "Failed to send reset email."})
+    except Exception as e:
+        log.error("Admin reset email error: %s", e)
+        return jsonify({"success": False, "error": "An error occurred."})
+
 def firebase_reset_password_with_code(email: str, password: str, oob_code: str):
     """Reset password using Firebase OOB code. Returns (ok, error_msg)"""
     try:

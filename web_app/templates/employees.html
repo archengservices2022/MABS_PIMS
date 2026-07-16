@@ -882,10 +882,80 @@
         <p class="text-muted small mt-3 mb-0">
           <i class="bi bi-info-circle me-1"></i>Contact an admin to update your details.
         </p>
+        <div class="mt-3">
+          <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#changePasswordModal">
+            <i class="bi bi-key me-1"></i>Change Password
+          </button>
+        </div>
       </div>
     </div>
   </div>
 </div><!-- /tab-profile -->
+
+<!-- ── Change Password Modal ─────────────────────────────────────────────── -->
+<div class="modal fade" id="changePasswordModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:420px;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-key me-2"></i>Change Password</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="cpwAlert" class="alert d-none mb-3" style="font-size:13px;"></div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Current Password</label>
+          <input type="password" id="cpwCurrent" class="form-control" placeholder="Enter current password">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">New Password</label>
+          <input type="password" id="cpwNew" class="form-control" placeholder="At least 6 characters">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Confirm New Password</label>
+          <input type="password" id="cpwConfirm" class="form-control" placeholder="Repeat new password">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="cpwSubmitBtn" onclick="submitChangePassword()">
+          <i class="bi bi-check-lg me-1"></i>Update Password
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+function submitChangePassword() {
+  var btn = document.getElementById('cpwSubmitBtn');
+  var alert = document.getElementById('cpwAlert');
+  var cur = document.getElementById('cpwCurrent').value.trim();
+  var nw  = document.getElementById('cpwNew').value.trim();
+  var cnf = document.getElementById('cpwConfirm').value.trim();
+  alert.className = 'alert d-none mb-3';
+  if (!cur || !nw || !cnf) {
+    alert.className = 'alert alert-danger mb-3'; alert.textContent = 'All fields are required.'; return;
+  }
+  btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Updating...';
+  fetch('/api/change-password', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({current_password: cur, new_password: nw, confirm_password: cnf})
+  }).then(r => r.json()).then(data => {
+    btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Update Password';
+    if (data.success) {
+      alert.className = 'alert alert-success mb-3'; alert.textContent = data.message;
+      document.getElementById('cpwCurrent').value = '';
+      document.getElementById('cpwNew').value = '';
+      document.getElementById('cpwConfirm').value = '';
+    } else {
+      alert.className = 'alert alert-danger mb-3'; alert.textContent = data.error;
+    }
+  }).catch(() => {
+    btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Update Password';
+    alert.className = 'alert alert-danger mb-3'; alert.textContent = 'Network error. Please try again.';
+  });
+}
+</script>
 
 
 {% if user_role == 'admin' %}
