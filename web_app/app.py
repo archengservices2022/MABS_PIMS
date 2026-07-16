@@ -11668,14 +11668,16 @@ def _calculate_invoice_status(inv_data: dict) -> str:
 
     invoice_total = _safe_float(meta.get("total", 0))
     amount_paid   = _safe_float(meta.get("amount_paid", 0))
+    tax_paid      = _safe_float(meta.get("tax_paid", 0))
+    total_paid    = amount_paid + tax_paid
 
     due_date   = meta.get("due_date", "")
     today      = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     is_overdue = bool(due_date and due_date < today)
 
-    if invoice_total > 0 and amount_paid >= invoice_total - 0.01:
+    if invoice_total > 0 and total_paid >= invoice_total - 0.01:
         return "Paid"
-    elif amount_paid > 0:
+    elif total_paid > 0:
         return "Partial"
     elif is_overdue and stored_status not in ("Draft", "Cancelled"):
         return "Overdue"
