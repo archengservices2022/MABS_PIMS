@@ -242,8 +242,11 @@ TablePager.prototype._render = function(totalPages, total) {
   var btnBase = 'display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:14px;color:#374151;text-decoration:none;';
   var btnDis  = btnBase + 'opacity:0.4;cursor:default;pointer-events:none;';
   var html = '<div class="d-flex align-items-center justify-content-center gap-2 mt-3 pt-3" style="border-top:1px solid #e2e8f0;">';
+  var inputStyle = 'width:52px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;font-size:14px;color:#374151;font-weight:600;text-align:center;padding:0 4px;outline:none;';
+  var goFn = 'var v=parseInt(this.value);if(v>=1&&v<=' + totalPages + ')_pagerGo(\'' + self.id + '\',v);else this.value=' + self.page + ';';
   html += '<a href="#" onclick="event.preventDefault();' + (prevDis ? '' : '_pagerGo(\'' + self.id + '\',' + (self.page - 1) + ')') + '" style="' + (prevDis ? btnDis : btnBase) + '">&#8249;</a>';
-  html += '<span style="font-size:14px;color:#374151;font-weight:500;border:1px solid #d1d5db;border-radius:6px;padding:4px 14px;background:#fff;white-space:nowrap;">Page ' + self.page + ' of ' + totalPages + '</span>';
+  html += '<input type="number" min="1" max="' + totalPages + '" value="' + self.page + '" title="Type page number and press Enter" style="' + inputStyle + '" onkeydown="if(event.key===\'Enter\'){' + goFn + '}" onblur="' + goFn + '">';
+  html += '<span style="font-size:14px;color:#6b7280;white-space:nowrap;">of ' + totalPages + '</span>';
   html += '<a href="#" onclick="event.preventDefault();' + (nextDis ? '' : '_pagerGo(\'' + self.id + '\',' + (self.page + 1) + ')') + '" style="' + (nextDis ? btnDis : btnBase) + '">&#8250;</a>';
   html += '</div>';
   el.innerHTML = html;
