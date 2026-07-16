@@ -12126,17 +12126,17 @@ def _load_clients() -> List[str]:
     return []
 
 def _load_sales_people() -> List[dict]:
-    """Return salesperson list sourced primarily from Settings /users (sales role only).
+    """Return salesperson list sourced primarily from Settings /users (sales or admin role).
     Legacy /sales_persons entries are merged in as fallback so existing quote data
     that references old names is not orphaned.
     """
     seen_names: set = set()
     people: List[dict] = []
 
-    # Primary source: Settings users with sales role only
+    # Primary source: Settings users with sales or admin role
     for u in _load_all_users():
         role = normalize_role(u.get("role", ""))
-        if role != "sales":
+        if role not in ("sales", "admin"):
             continue
         name = (u.get("username") or "").strip()
         if not name:
