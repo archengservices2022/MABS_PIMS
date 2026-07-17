@@ -8416,15 +8416,15 @@ def financial():
     for p in projects_list:
         pnum = p.get("project_number", "")
 
-        # Filter by project START DATE (only include projects starting in current running year)
-        proj_start_date = p.get("start_date", "")
-        if proj_start_date:
-            proj_year = _extract_year_from_date(proj_start_date)
+        # Filter by project RECEIVED DATE (only include projects received in current running year)
+        proj_received_date = p.get("date_received", "")
+        if proj_received_date:
+            proj_year = _extract_year_from_date(proj_received_date)
         else:
-            # Skip projects with no start date
+            # Skip projects with no received date
             continue
 
-        # Only include projects starting in current running year
+        # Only include projects received in current running year
         if proj_year != stat_card_year:
             continue
 
