@@ -2845,16 +2845,21 @@ def project_detail(project_id):
                 idata["firebase_id"] = iid
                 idata["_project_share"] = _invoice_project_share(idata, proj_num)
                 project_invoices.append(idata)
-    project_invoices.sort(key=lambda x: x.get("meta", {}).get("invoice_date", ""), reverse=True)
+    # Sort by invoice_date DESC, then created_at DESC (for same-date invoices, newest first)
+    project_invoices.sort(key=lambda x: (x.get("meta", {}).get("invoice_date", ""), x.get("meta", {}).get("created_at", "")), reverse=True)
 
     # Recalculate fresh statuses for display (based on actual payments)
     for invoice in project_invoices:
         # Calculate project-specific paid amount from payment_log (filtered by project_number)
         proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (invoice.get("payment_log", []) or []) if p.get("project_number") == proj_num)
 
-        # Fallback: if payment_log entries don't have project_number (legacy data),
-        # use the invoice's total amount_paid and allocate by share
-        if proj_payments == 0 and proj_num in _invoice_linked_projects(invoice):
+        # CRITICAL: Check if invoice uses sequential allocation (payments have project_number)
+        # If yes, do NOT use fallback - each project only gets what was explicitly allocated to them
+        payment_log = invoice.get("payment_log", []) or []
+        has_project_numbers = any(p.get("project_number") for p in payment_log if isinstance(p, dict))
+
+        # Fallback ONLY for legacy invoices without project_number allocation
+        if proj_payments == 0 and proj_num in _invoice_linked_projects(invoice) and not has_project_numbers:
             project_share = _invoice_project_share(invoice, proj_num)
             total_amount_paid = _safe_float(invoice.get("meta", {}).get("amount_paid", 0))
             proj_payments = total_amount_paid * project_share
@@ -14614,31 +14619,78 @@ def payment_add(invoice_id):
     # Get invoice metadata for additional context
     inv_meta = inv_data.get("meta", {}) or {}
 
-    # CRITICAL FIX: For multi-project invoices, record payment WITHOUT project_number
-    # so it applies to ALL linked projects (per _sync_project_payment logic at line 12452-12453)
-    # For single-project invoices, record with the specific project_number
+    # For multi-project invoices: allocate payment SEQUENTIALLY to projects
+    # Fill up Project A first, then B, then C (based on their line item amounts)
     linked_projects_list = _invoice_linked_projects(inv_data)
-    payment_entry = {
-        "amount":     str(amount),
-        "date":       request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
-        "method":     request.form.get("method", ""),
-        "reference":  request.form.get("reference", ""),
-        "notes":      request.form.get("notes", ""),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "invoice_number": inv_meta.get("invoice_number", ""),
-        "stage_name": inv_meta.get("payment_stage", ""),
-        "stage_index": inv_meta.get("payment_stage_index", ""),
-    }
+    line_items = inv_data.get("line_items", []) or []
 
-    # Only add project_number for SINGLE-project invoices
-    if len(linked_projects_list) == 1:
+    if len(linked_projects_list) > 1:
+        # Multi-project: sequential allocation by project
+        print(f"[PAYMENT_ADD] Multi-project invoice: allocating ${amount} sequentially across {len(linked_projects_list)} projects", flush=True)
+        remaining = amount
+
+        # Calculate each project's line amount
+        project_amounts = {}
+        for item in line_items:
+            if isinstance(item, dict):
+                proj = item.get("project_number", "")
+                if proj:
+                    project_amounts[proj] = project_amounts.get(proj, 0) + _safe_float(item.get("amount", 0))
+
+        # Sort projects for consistent ordering
+        sorted_projects = sorted(linked_projects_list)
+
+        # Allocate payment sequentially
+        payment_date = request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"))
+        payment_method = request.form.get("method", "")
+        payment_ref = request.form.get("reference", "")
+        payment_notes = request.form.get("notes", "")
+
+        for proj_num in sorted_projects:
+            if remaining <= 0.01:
+                break
+
+            # Get how much this project already has paid
+            proj_already_paid = sum(_safe_float(p.get("amount", 0)) for p in log if p.get("project_number") == proj_num)
+            proj_needs = project_amounts.get(proj_num, 0)
+            proj_remaining_need = max(0, proj_needs - proj_already_paid)
+
+            # Allocate to this project
+            proj_allocation = min(remaining, proj_remaining_need) if proj_remaining_need > 0 else 0
+
+            if proj_allocation > 0.01:
+                payment_entry = {
+                    "amount":     str(proj_allocation),
+                    "date":       payment_date,
+                    "method":     payment_method,
+                    "reference":  payment_ref,
+                    "notes":      payment_notes,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "invoice_number": inv_meta.get("invoice_number", ""),
+                    "stage_name": inv_meta.get("payment_stage", ""),
+                    "stage_index": inv_meta.get("payment_stage_index", ""),
+                    "project_number": proj_num,
+                }
+                log.append(payment_entry)
+                remaining -= proj_allocation
+                print(f"[PAYMENT_ADD]   Project {proj_num}: allocated ${proj_allocation:.2f}", flush=True)
+    else:
+        # Single-project: record normally
         project_number = linked_projects_list[0] if linked_projects_list else (request.form.get("project_number", "") or inv_meta.get("project_number", ""))
+        payment_entry = {
+            "amount":     str(amount),
+            "date":       request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
+            "method":     request.form.get("method", ""),
+            "reference":  request.form.get("reference", ""),
+            "notes":      request.form.get("notes", ""),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "invoice_number": inv_meta.get("invoice_number", ""),
+            "stage_name": inv_meta.get("payment_stage", ""),
+            "stage_index": inv_meta.get("payment_stage_index", ""),
+        }
         if project_number:
             payment_entry["project_number"] = project_number
-    else:
-        print(f"[PAYMENT_ADD] Multi-project invoice with {len(linked_projects_list)} projects: recording payment without project_number so all projects receive it", flush=True)
-
-    log.append(payment_entry)
+        log.append(payment_entry)
 
     amount_paid = sum(_safe_float(p.get("amount", 0)) for p in log)
     fresh_inv = dict(inv_data)
@@ -14689,14 +14741,73 @@ def tax_payment_add(invoice_id):
     if amount <= 0:
         return jsonify({"error": "Invalid tax payment amount"}), 400
 
-    tax_log.append({
-        "amount":     str(amount),
-        "date":       request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
-        "method":     request.form.get("method", ""),
-        "reference":  request.form.get("reference", ""),
-        "notes":      request.form.get("notes", ""),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    })
+    # For multi-project invoices: allocate tax sequentially to projects
+    linked_projects_list = _invoice_linked_projects(inv_data)
+    line_items = inv_data.get("line_items", []) or []
+    inv_meta = inv_data.get("meta", {}) or {}
+
+    if len(linked_projects_list) > 1:
+        # Multi-project: sequential allocation of tax by project
+        print(f"[TAX_PAYMENT_ADD] Multi-project invoice: allocating ${amount} tax sequentially across {len(linked_projects_list)} projects", flush=True)
+        remaining = amount
+
+        # Calculate each project's tax share (based on line item amounts)
+        invoice_tax = _safe_float(inv_meta.get("tax_amount", 0))
+        total_line = sum(_safe_float(item.get("amount", 0)) for item in line_items if isinstance(item, dict))
+
+        project_line_amounts = {}
+        for item in line_items:
+            if isinstance(item, dict):
+                proj = item.get("project_number", "")
+                if proj:
+                    project_line_amounts[proj] = project_line_amounts.get(proj, 0) + _safe_float(item.get("amount", 0))
+
+        # Sort projects for consistent ordering
+        sorted_projects = sorted(linked_projects_list)
+
+        # Allocate tax payment sequentially
+        tax_date = request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"))
+        tax_method = request.form.get("method", "")
+        tax_ref = request.form.get("reference", "")
+        tax_notes = request.form.get("notes", "")
+
+        for proj_num in sorted_projects:
+            if remaining <= 0.01:
+                break
+
+            # Calculate this project's tax portion
+            proj_line = project_line_amounts.get(proj_num, 0)
+            proj_tax_portion = (proj_line / total_line * invoice_tax) if total_line > 0 else 0
+
+            # Get how much tax this project already paid
+            proj_tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log if p.get("project_number") == proj_num)
+            proj_tax_need = max(0, proj_tax_portion - proj_tax_paid)
+
+            # Allocate to this project
+            proj_allocation = min(remaining, proj_tax_need) if proj_tax_need > 0 else 0
+
+            if proj_allocation > 0.01:
+                tax_log.append({
+                    "amount":     str(proj_allocation),
+                    "date":       tax_date,
+                    "method":     tax_method,
+                    "reference":  tax_ref,
+                    "notes":      tax_notes,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "project_number": proj_num,
+                })
+                remaining -= proj_allocation
+                print(f"[TAX_PAYMENT_ADD]   Project {proj_num}: allocated ${proj_allocation:.2f} tax", flush=True)
+    else:
+        # Single-project: record normally
+        tax_log.append({
+            "amount":     str(amount),
+            "date":       request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
+            "method":     request.form.get("method", ""),
+            "reference":  request.form.get("reference", ""),
+            "notes":      request.form.get("notes", ""),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
 
     tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
     fresh_inv = dict(inv_data)
