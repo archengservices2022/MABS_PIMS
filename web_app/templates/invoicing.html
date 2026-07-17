@@ -177,14 +177,12 @@
               </td>
               <td>{{ meta.get('company_name') or meta.get('client_name','—') }}</td>
               <td class="text-muted small">
-                {%- set main_proj = meta.get('project_number','') %}
-                {%- if main_proj %}
-                  {{ main_proj }}
+                {%- set line_projs = inv.get('line_items', []) | map(attribute='project_number') | select | unique | list | sort %}
+                {%- if line_projs %}
+                  <span title="{{ line_projs | join(', ') }}">{{ line_projs | join(', ') }}</span>
                 {%- else %}
-                  {%- set line_projs = inv.get('line_items', []) | map(attribute='project_number') | select | unique | list %}
-                  {%- if line_projs %}
-                    <span title="{{ line_projs | join(', ') }}">{{ line_projs | join(', ') }}</span>
-                  {%- else %}—{%- endif %}
+                  {%- set main_proj = meta.get('project_number','') %}
+                  {%- if main_proj %}{{ main_proj }}{%- else %}—{%- endif %}
                 {%- endif %}
               </td>
               <td>
