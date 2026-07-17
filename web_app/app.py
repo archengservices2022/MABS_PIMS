@@ -2655,7 +2655,13 @@ def project_new():
 
                 if abs(total_amount - contract_value) > 0.01:
                     flash(f"❌ Error: Payment plan total (${total_amount:.2f}) does not match contract value (${contract_value:.2f}). Please adjust amounts and try again.", "danger")
-                    return redirect(url_for("project_new"))
+                    # Preserve form data and re-render
+                    sales_people = _load_sales_people()
+                    next_proj_num = _next_project_number()
+                    return render_template("project_form.html", project=data, clients=clients,
+                                         sales_people=sales_people, prefill_quote="",
+                                         prefill_quote_id="", prefill_quote_data={},
+                                         is_new=True, next_proj_num=next_proj_num)
             except (json.JSONDecodeError, ValueError):
                 custom_stage_amounts = None
 
@@ -2667,7 +2673,14 @@ def project_new():
                 for proj_data in all_projects.values():
                     if isinstance(proj_data, dict) and proj_data.get("po_wo_number", "").strip() == po_wo_num:
                         flash(f"PO/WO number {po_wo_num} already exists. Please use a different number.", "danger")
-                        return redirect(url_for("project_new"))
+                        # Clear only the PO/WO field, preserve all other data
+                        data["po_wo_number"] = ""
+                        sales_people = _load_sales_people()
+                        next_proj_num = _next_project_number()
+                        return render_template("project_form.html", project=data, clients=clients,
+                                             sales_people=sales_people, prefill_quote="",
+                                             prefill_quote_id="", prefill_quote_data={},
+                                             is_new=True, next_proj_num=next_proj_num)
 
         # Always generate project number server-side to prevent duplicates
         data["project_number"] = _next_project_number()
