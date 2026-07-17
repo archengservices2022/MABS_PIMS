@@ -5883,7 +5883,7 @@ def invoicing_export_excel():
                     tax = _safe_float(m.get("tax_amount", 0))
                     linked_projects = _invoice_linked_projects(inv)
                     projects_str = ", ".join(sorted(linked_projects)) if linked_projects else ""
-                    row = [m.get("invoice_number",""), m.get("client_name",""),
+                    row = [m.get("invoice_number",""), m.get("company_name","") or m.get("client_name",""),
                            projects_str, fmt_inv_excel_date(m.get("invoice_date","")), fmt_inv_excel_date(m.get("due_date","")),
                            subtotal, tax, total, total_paid, total - total_paid, m.get("status","")]
                     # Clean any "—" placeholders (replace with empty string)
@@ -5991,7 +5991,7 @@ def invoicing_export_pdf():
                     projects_str = "\n".join(sorted(linked_projects)) if linked_projects else "—"
                     data.append([
                         Paragraph(m.get("invoice_number","—"), cell_style),
-                        Paragraph(m.get("client_name","—") or "—", cell_style),
+                        Paragraph(m.get("company_name","") or m.get("client_name","—"), cell_style),
                         Paragraph(projects_str, cell_style),
                         Paragraph(fmt_inv_date(m.get("invoice_date","")), cell_style),
                         Paragraph(fmt_inv_date(m.get("due_date","")), cell_style),
