@@ -8123,11 +8123,22 @@ def financial():
     rev_list = updated_rev_list
     rev_list.sort(key=lambda x: x.get("invoice_date", "") or x.get("date", ""), reverse=True)
 
-    # Helper to extract year from date string
+    # Helper to extract year from date string (handles both YYYY-MM-DD and MM-DD-YY formats)
     def _extract_year_from_date(date_str):
         """Extract year from date string"""
+        if not date_str:
+            return None
         try:
-            return int(date_str[:4])
+            # Try YYYY-MM-DD format first (first 4 chars are year)
+            if len(date_str) >= 4 and date_str[4] in ('-', '/'):
+                return int(date_str[:4])
+            # Try MM-DD-YY format (last 2 chars are year, need to convert YY to YYYY)
+            elif len(date_str) >= 8 and date_str[2] in ('-', '/') and date_str[5] in ('-', '/'):
+                yy = int(date_str[-2:])
+                # Convert YY to YYYY: 00-29 -> 2000-2029, 30-99 -> 1930-1999
+                return 2000 + yy if yy <= 29 else 1900 + yy
+            else:
+                return None
         except (ValueError, IndexError, TypeError):
             return None
 
@@ -8156,9 +8167,21 @@ def financial():
             if tax_year in [stat_card_year, prev_year]:
                 total_collected += _safe_float(tp.get("amount", 0))
 
-    # NOTE: Removed year filter - show ALL invoices with Paid/Partial status
-    # Users can filter by date range using the UI filters if needed
-    # rev_list now includes all paid/partial invoices regardless of year
+    # Filter Income tab: show ONLY invoices created in current & previous years
+    # All 5 invoices are from 2026 (current year), so they should all be included
+    print(f"[INCOME_FILTER] stat_card_year={stat_card_year}, prev_year={prev_year}, rev_list count before filter={len(rev_list)}", flush=True)
+    rev_list_filtered = []
+    for r in rev_list:
+        inv_id = r.get("invoice_id")
+        if not inv_id or inv_id not in invoices:
+            continue
+        inv_meta = invoices.get(inv_id, {}).get("meta", {}) or {}
+        inv_year = _extract_year_from_date(inv_meta.get("invoice_date", ""))
+        print(f"[INCOME_FILTER] Invoice {r.get('invoice_number')}: date={inv_meta.get('invoice_date')}, year={inv_year}", flush=True)
+        if inv_year in [stat_card_year, prev_year]:
+            rev_list_filtered.append(r)
+    rev_list = rev_list_filtered
+    print(f"[INCOME_FILTER] rev_list count after filter={len(rev_list)}", flush=True)
 
     # Sort by invoice date descending (newest to oldest), then by invoice number descending (higher number = newer)
     # Convert dates to YYYY-MM-DD format for proper string sorting (handles MM-DD-YYYY format)
