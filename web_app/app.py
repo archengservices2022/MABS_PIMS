@@ -8207,6 +8207,43 @@ def financial():
 
     rev_list = sorted(rev_list, key=sort_key_invoice, reverse=True)
 
+    # CRITICAL: Add invoices that are Paid/Partial but don't have revenue entries yet
+    # This ensures all invoices appear in Income tab regardless of how they were created
+    invoices_in_rev_list = set(r.get("invoice_id") for r in rev_list if r.get("invoice_id"))
+
+    for inv_id, inv_data in invoices.items():
+        if not isinstance(inv_data, dict) or inv_id in invoices_in_rev_list:
+            continue  # Already in rev_list or invalid
+
+        inv_meta = inv_data.get("meta", {}) or {}
+        inv_status = _calculate_invoice_status(inv_data)
+
+        # Only add if Paid or Partial AND from current/previous year
+        if inv_status in ["Paid", "Partial"]:
+            inv_year = _extract_year_from_date(inv_meta.get("invoice_date", ""))
+            if inv_year in [stat_card_year, prev_year]:
+                # Create revenue entry structure from invoice data
+                new_rev_entry = {
+                    "invoice_id": inv_id,
+                    "firebase_id": inv_id,
+                    "invoice_number": inv_meta.get("invoice_number", ""),
+                    "invoice_date": inv_meta.get("invoice_date", ""),
+                    "client_name": inv_meta.get("client_name", ""),
+                    "company_name": inv_meta.get("company_name", ""),
+                    "total": _safe_float(inv_meta.get("total", 0)),
+                    "amount_paid": _safe_float(inv_meta.get("amount_paid", 0)),
+                    "tax_paid": sum(_safe_float(tp.get("amount", 0)) for tp in (inv_data.get("tax_payments", []) or [])),
+                    "tax_amount": _safe_float(inv_meta.get("tax_amount", 0)),
+                    "status": inv_status,
+                    "linked_projects": _invoice_linked_projects(inv_data),
+                    "date": inv_meta.get("invoice_date", ""),
+                }
+                rev_list.append(new_rev_entry)
+                print(f"[INCOME_TAB] Added missing invoice {new_rev_entry['invoice_number']} to rev_list", flush=True)
+
+    # Re-sort after adding missing invoices
+    rev_list = sorted(rev_list, key=sort_key_invoice, reverse=True)
+
     # Recalculate statuses based on actual payments
     for inv in inv_list:
         inv["meta"]["status"] = _calculate_invoice_status(inv)
