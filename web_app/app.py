@@ -2228,7 +2228,7 @@ def projects():
     if overdue_filter:
         items = [i for i in items if i.get("_has_overdue")]
     if client_filter:
-        items = [i for i in items if i.get("client_name", "") == client_filter]
+        items = [i for i in items if (i.get("company_name", "") or i.get("client_name", "")) == client_filter]
     if plant_filter:
         items = [i for i in items if i.get("_plant_display", "") == plant_filter]
     if date_from:
@@ -2244,7 +2244,17 @@ def projects():
 
     statuses = ["Not Started", "In Progress", "Sent out_Invoiced", "Sent out_Not Invoiced",
                 "invoiced_Not paid yet", "invoiced_Partially paid", "invoiced_Fully paid"]
-    clients = _load_clients()
+    # Get unique client/company names from all projects, fallback to _load_clients()
+    clients_set = set()
+    for p in raw.values() if isinstance(raw, dict) else []:
+        if p and isinstance(p, dict):
+            co_name = p.get("company_name", "").strip()
+            client_name = p.get("client_name", "").strip()
+            if co_name:
+                clients_set.add(co_name)
+            if client_name:
+                clients_set.add(client_name)
+    clients = sorted(clients_set) if clients_set else _load_clients()
     next_project_num = _next_project_number()
     active_tab = request.args.get("tab", "all-projects")
 
