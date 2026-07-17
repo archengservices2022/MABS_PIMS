@@ -3529,7 +3529,7 @@ def _filter_projects_export(items):
     if request.args.get("status"):
         items = [i for i in items if i.get("status","") == request.args["status"]]
     if request.args.get("client"):
-        items = [i for i in items if i.get("client_name","") == request.args["client"]]
+        items = [i for i in items if (i.get("company_name","") or i.get("client_name","")) == request.args["client"]]
     date_from = request.args.get("from","")
     date_to   = request.args.get("to","")
     if date_from:
@@ -5727,7 +5727,7 @@ def _filter_invoices_export(items):
     if request.args.get("status"):
         items = [i for i in items if i.get("meta",{}).get("status","") == request.args["status"]]
     if request.args.get("client"):
-        items = [i for i in items if i.get("meta",{}).get("client_name","") == request.args["client"]]
+        items = [i for i in items if (i.get("meta",{}).get("company_name","") or i.get("meta",{}).get("client_name","")) == request.args["client"]]
     date_from = request.args.get("from","")
     date_to   = request.args.get("to","")
     if date_from:
