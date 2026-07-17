@@ -1634,7 +1634,7 @@ def quotes_export():
         _qearned = (total * _qrate / 100) if (_qrate and _qconv) else None
         w.writerow([
             q.get("job_number",""),
-            q.get("client_name",""),
+            q.get("company_name","") or q.get("client_name",""),
             q.get("project_name",""),
             _qsp,
             fmt_csv_date(q.get("date","")),
@@ -1762,7 +1762,7 @@ def quotes_export_excel():
                     _qtotal = _safe_float(q.get("total", 0))
                     _qconv = q.get("status","") in _QXL_CONV or bool(q.get("linked_project_id",""))
                     _qearned = (_qtotal * _qrate / 100) if (_qrate and _qconv) else None
-                    row = [q.get("job_number",""), q.get("client_name",""), q.get("project_name",""),
+                    row = [q.get("job_number",""), q.get("company_name","") or q.get("client_name",""), q.get("project_name",""),
                            _qsp, fmt_date(q.get("date","")), fmt_date(q.get("valid_until","")),
                            q.get("status",""), _safe_float(q.get("subtotal",0)),
                            _safe_float(q.get("tax_amount",0)), _qtotal,
@@ -1900,7 +1900,7 @@ def quotes_export_pdf():
                     _qearned = (total * _qrate / 100) if (_qrate and _qconv) else None
                     data.append([
                         Paragraph(q.get("job_number","—"), cell_style),
-                        Paragraph(q.get("client_name","—"), cell_style),
+                        Paragraph(q.get("company_name","") or q.get("client_name","—"), cell_style),
                         Paragraph(q.get("project_name") or "—", cell_style),
                         Paragraph(_qsp or "—", cell_style),
                         Paragraph(date_str, cell_style),
@@ -3581,8 +3581,8 @@ def projects_export_csv():
                     row = [
                         p.get("project_number",""),
                         p.get("project_name",""),
-                        p.get("client_name",""),
-                        fmt_csv_date(p.get("start_date","")),
+                        p.get("company_name","") or p.get("client_name",""),
+                        fmt_csv_date(p.get("date_received","")),
                         fmt_csv_date(p.get("end_date","")),
                         f"{cv:.2f}",
                         f"{paid:.2f}",
@@ -3668,7 +3668,7 @@ def projects_export_excel():
                     cv   = _safe_float(p.get("contract_value", 0))
                     paid = _safe_float(p.get("amount_paid", 0))
                     row = [p.get("project_number",""), p.get("project_name",""),
-                           p.get("client_name",""), fmt_proj_date(p.get("date_received","")), fmt_proj_date(p.get("end_date","")),
+                           p.get("company_name","") or p.get("client_name",""), fmt_proj_date(p.get("date_received","")), fmt_proj_date(p.get("end_date","")),
                            cv, paid, cv - paid, p.get("status","")]
                     for ci, val in enumerate(row, 1):
                         cell = ws.cell(row=ri, column=ci, value=val)
@@ -3763,7 +3763,7 @@ def projects_export_pdf():
                     data.append([
                         Paragraph(p.get("project_number","—"), cell_style),
                         Paragraph(p.get("project_name","—") or "—", cell_style),
-                        Paragraph(p.get("client_name","—") or "—", cell_style),
+                        Paragraph(p.get("company_name","") or p.get("client_name","—") or "—", cell_style),
                         Paragraph(fmt_date_pdf(p.get("date_received","")), cell_style),
                         Paragraph(fmt_date_pdf(p.get("end_date","")), cell_style),
                         Paragraph(f"${cv:,.0f}", cell_style),
