@@ -8156,10 +8156,9 @@ def financial():
             if tax_year in [stat_card_year, prev_year]:
                 total_collected += _safe_float(tp.get("amount", 0))
 
-    # Filter Income tab: show ONLY invoices created in current & previous years
-    # This ensures the Income tab displays data for only current year + 1 past year
-    rev_list = [r for r in rev_list if
-        _extract_year_from_date(invoices.get(r.get("invoice_id"), {}).get("meta", {}).get("invoice_date", "")) in [stat_card_year, prev_year]]
+    # NOTE: Removed year filter - show ALL invoices with Paid/Partial status
+    # Users can filter by date range using the UI filters if needed
+    # rev_list now includes all paid/partial invoices regardless of year
 
     # Sort by invoice date descending (newest to oldest), then by invoice number descending (higher number = newer)
     # Convert dates to YYYY-MM-DD format for proper string sorting (handles MM-DD-YYYY format)
