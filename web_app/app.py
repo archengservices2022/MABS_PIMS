@@ -3873,7 +3873,7 @@ def invoicing():
             continue
         if status_filter and inv.get("meta", {}).get("status", "") != status_filter:
             continue
-        if client_filter and inv.get("meta", {}).get("client_name", "") != client_filter:
+        if client_filter and (inv.get("meta", {}).get("company_name", "") or inv.get("meta", {}).get("client_name", "")) != client_filter:
             continue
         if plant_filter and inv.get("plant_state", "") != plant_filter:
             continue
@@ -3886,7 +3886,7 @@ def invoicing():
     if status_filter:
         items = [i for i in items if i.get("meta", {}).get("status", "") == status_filter]
     if client_filter:
-        items = [i for i in items if i.get("meta", {}).get("client_name", "") == client_filter]
+        items = [i for i in items if (i.get("meta", {}).get("company_name", "") or i.get("meta", {}).get("client_name", "")) == client_filter]
     if plant_filter:
         items = [i for i in items if i.get("plant_state", "") == plant_filter]
 
@@ -3896,7 +3896,18 @@ def invoicing():
         items = [i for i in items if (i.get("meta", {}).get("invoice_date") or "") <= date_to]
 
     # Build filter dropdown lists
-    inv_clients = _load_clients()
+    # Get unique client/company names from all invoices
+    inv_clients_set = set()
+    for inv in all_invoices_raw:
+        if inv and isinstance(inv, dict):
+            m = inv.get("meta", {}) or {}
+            co_name = m.get("company_name", "").strip()
+            client_name = m.get("client_name", "").strip()
+            if co_name:
+                inv_clients_set.add(co_name)
+            if client_name:
+                inv_clients_set.add(client_name)
+    inv_clients = sorted(inv_clients_set) if inv_clients_set else _load_clients()
     all_plants = sorted({i.get("plant_state", "") for i in all_invoices_raw if i.get("plant_state", "")})
 
     statuses = ["Draft", "Sent", "Viewed", "Paid", "Partial", "Overdue", "Cancelled"]
