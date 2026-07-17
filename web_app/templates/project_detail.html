@@ -563,7 +563,7 @@
                 </tr>
               </thead>
               <tbody>
-                {% for inv in project_invoices %}
+                {% for inv in project_invoices[:1] %}
                 {% set m = inv.get('meta', {}) %}
                 {% set share = inv.get('_project_share', 1.0) %}
                 {% set tax_paid = inv.get('tax_payments',[])|map(attribute='amount')|map('float')|sum %}
