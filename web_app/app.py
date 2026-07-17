@@ -2232,9 +2232,9 @@ def projects():
     if plant_filter:
         items = [i for i in items if i.get("_plant_display", "") == plant_filter]
     if date_from:
-        items = [i for i in items if (i.get("start_date") or i.get("created_at","")[:10]) >= date_from]
+        items = [i for i in items if (i.get("date_received") or i.get("created_at","")[:10]) >= date_from]
     if date_to:
-        items = [i for i in items if (i.get("start_date") or i.get("created_at","")[:10]) <= date_to]
+        items = [i for i in items if (i.get("date_received") or i.get("created_at","")[:10]) <= date_to]
 
     status_counts = {}
     for i in items:
@@ -3509,9 +3509,9 @@ def _filter_projects_export(items):
     date_from = request.args.get("from","")
     date_to   = request.args.get("to","")
     if date_from:
-        items = [i for i in items if (i.get("start_date") or i.get("created_at","")[:10]) >= date_from]
+        items = [i for i in items if (i.get("date_received") or i.get("created_at","")[:10]) >= date_from]
     if date_to:
-        items = [i for i in items if (i.get("start_date") or i.get("created_at","")[:10]) <= date_to]
+        items = [i for i in items if (i.get("date_received") or i.get("created_at","")[:10]) <= date_to]
     return items
 
 @app.route("/projects/export/csv")
@@ -3541,14 +3541,14 @@ def projects_export_csv():
     w.writerow([f"{co.get('name','')} - Projects Report"])
     w.writerow([])
 
-    headers = ["Project Number", "Project Name", "Client", "Start Date", "End Date", "Contract Value", "Amount Paid", "Outstanding", "Status"]
+    headers = ["Project Number", "Project Name", "Client", "Received Date", "End Date", "Contract Value", "Amount Paid", "Outstanding", "Status"]
     w.writerow(headers)
 
     from collections import defaultdict
     grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
     for p in items:
-        date_str = p.get("start_date", "")
+        date_str = p.get("date_received", "")
         if date_str:
             year = date_str[:4]
             month = date_str[5:7]
@@ -3618,7 +3618,7 @@ def projects_export_excel():
     ws.row_dimensions[1].height = 20
 
     # Add headers
-    headers = ["Project Number","Project Name","Client","Start Date","End Date",
+    headers = ["Project Number","Project Name","Client","Received Date","End Date",
                "Contract Value ($)","Amount Paid ($)","Outstanding ($)","Status"]
     header_row = 2
     for col, h in enumerate(headers, 1):
@@ -3635,7 +3635,7 @@ def projects_export_excel():
     from collections import defaultdict
     grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     for p in items:
-        date_str = p.get("start_date", "")
+        date_str = p.get("date_received", "")
         if date_str:
             year = date_str[:4]
             month = date_str[5:7]
@@ -3657,7 +3657,7 @@ def projects_export_excel():
                     cv   = _safe_float(p.get("contract_value", 0))
                     paid = _safe_float(p.get("amount_paid", 0))
                     row = [p.get("project_number",""), p.get("project_name",""),
-                           p.get("client_name",""), fmt_proj_date(p.get("start_date","")), fmt_proj_date(p.get("end_date","")),
+                           p.get("client_name",""), fmt_proj_date(p.get("date_received","")), fmt_proj_date(p.get("end_date","")),
                            cv, paid, cv - paid, p.get("status","")]
                     for ci, val in enumerate(row, 1):
                         cell = ws.cell(row=ri, column=ci, value=val)
@@ -3714,7 +3714,7 @@ def projects_export_pdf():
                               alignment=1)  # CENTER
     elems.append(Paragraph(f"{co.get('name','')} — Projects Report", title_s))
     elems.append(Spacer(1, 0.2*inch))
-    hdrs = ["Project Number", "Project Name", "Client", "Start Date", "End Date", "Contract Value", "Paid", "Outstanding", "Status"]
+    hdrs = ["Project Number", "Project Name", "Client", "Received Date", "End Date", "Contract Value", "Paid", "Outstanding", "Status"]
     data = [hdrs]
     def fmt_date_pdf(d):
         if not d or d == "—":
@@ -3730,7 +3730,7 @@ def projects_export_pdf():
     from collections import defaultdict
     grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     for p in items:
-        date_str = p.get("start_date", "")
+        date_str = p.get("date_received", "")
         if date_str:
             year = date_str[:4]
             month = date_str[5:7]
@@ -3753,7 +3753,7 @@ def projects_export_pdf():
                         Paragraph(p.get("project_number","—"), cell_style),
                         Paragraph(p.get("project_name","—") or "—", cell_style),
                         Paragraph(p.get("client_name","—") or "—", cell_style),
-                        Paragraph(fmt_date_pdf(p.get("start_date","")), cell_style),
+                        Paragraph(fmt_date_pdf(p.get("date_received","")), cell_style),
                         Paragraph(fmt_date_pdf(p.get("end_date","")), cell_style),
                         Paragraph(f"${cv:,.0f}", cell_style),
                         Paragraph(f"${paid:,.0f}", cell_style),
