@@ -4327,20 +4327,33 @@ def invoice_new():
             linked_projects = []
 
             # Mark each stage from line items - use project's actual line item amount (without tax)
-            invoice_subtotal = _safe_float(data["meta"].get("subtotal", 0))
+            # Ensure we have matching lengths by padding stage_indices if needed
+            while len(item_stage_indices) < len(item_projects):
+                item_stage_indices.append("")
+
+            line_items = data.get("line_items", []) or []
+
             for i, proj_num in enumerate(item_projects):
-                if i < len(item_stage_indices):
-                    stage_idx_str = item_stage_indices[i].strip() if item_stage_indices[i] else ""
-                    if stage_idx_str:
-                        try:
-                            stage_idx = int(stage_idx_str)
-                            # Get project's actual line item amount (not including tax)
-                            line_items = data.get("line_items", []) or []
-                            project_line_amount = sum(_safe_float(item.get("amount", 0)) for item in line_items if isinstance(item, dict) and item.get("project_number", "") == proj_num)
-                            _mark_project_stage(proj_num, stage_idx, "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=project_line_amount)
-                            linked_projects.append({"project_number": proj_num, "payment_stage_index": stage_idx})
-                        except (ValueError, IndexError):
-                            pass
+                if not proj_num or not proj_num.strip():
+                    continue
+                proj_num = proj_num.strip()
+
+                # Get the stage index for this project
+                stage_idx_str = item_stage_indices[i].strip() if i < len(item_stage_indices) and item_stage_indices[i] else ""
+
+                # Calculate this project's line item amount (not including tax)
+                # Only sum line items that explicitly match this project
+                project_line_amount = sum(_safe_float(item.get("amount", 0)) for item in line_items
+                                         if isinstance(item, dict) and item.get("project_number", "").strip() == proj_num)
+
+                # Mark as invoiced if we have a stage index, otherwise skip this project
+                if stage_idx_str:
+                    try:
+                        stage_idx = int(stage_idx_str)
+                        _mark_project_stage(proj_num, stage_idx, "Invoiced", invoice_id=inv_id, invoice_number=invoice_number, amount=project_line_amount)
+                        linked_projects.append({"project_number": proj_num, "payment_stage_index": stage_idx})
+                    except (ValueError, TypeError):
+                        pass
 
             # Update invoice metadata with linked projects for multi-project invoices
             # SORT by project number (extract last digits, sort numerically) so 005 comes before 006
