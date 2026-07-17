@@ -8223,11 +8223,23 @@ def financial():
             inv_year = _extract_year_from_date(inv_meta.get("invoice_date", ""))
             if inv_year in [stat_card_year, prev_year]:
                 # Create revenue entry structure from invoice data
+                # Calculate collection_date from latest payment_log entry
+                pay_log = inv_data.get("payment_log", []) or []
+                if pay_log:
+                    latest_payment = max(pay_log, key=lambda p: p.get("date", ""))
+                    collection_date = latest_payment.get("date", inv_meta.get("invoice_date", ""))
+                    payment_method = latest_payment.get("method", "") or inv_meta.get("payment_method", "")
+                else:
+                    collection_date = inv_meta.get("invoice_date", "")
+                    payment_method = inv_meta.get("payment_method", "")
+
                 new_rev_entry = {
                     "invoice_id": inv_id,
                     "firebase_id": inv_id,
                     "invoice_number": inv_meta.get("invoice_number", ""),
                     "invoice_date": inv_meta.get("invoice_date", ""),
+                    "collection_date": collection_date,
+                    "payment_method": payment_method,
                     "client_name": inv_meta.get("client_name", ""),
                     "company_name": inv_meta.get("company_name", ""),
                     "total": _safe_float(inv_meta.get("total", 0)),
