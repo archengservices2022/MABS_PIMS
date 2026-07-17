@@ -2244,15 +2244,16 @@ def projects():
 
     statuses = ["Not Started", "In Progress", "Sent out_Invoiced", "Sent out_Not Invoiced",
                 "invoiced_Not paid yet", "invoiced_Partially paid", "invoiced_Fully paid"]
-    # Get unique client/company names from all projects, fallback to _load_clients()
+    # Get unique client names from all projects (company_name preferred over client_name)
     clients_set = set()
     for p in raw.values() if isinstance(raw, dict) else []:
         if p and isinstance(p, dict):
             co_name = p.get("company_name", "").strip()
             client_name = p.get("client_name", "").strip()
+            # Add company_name if present, otherwise add client_name
             if co_name:
                 clients_set.add(co_name)
-            if client_name:
+            elif client_name:
                 clients_set.add(client_name)
     clients = sorted(clients_set) if clients_set else _load_clients()
     next_project_num = _next_project_number()
@@ -3896,16 +3897,17 @@ def invoicing():
         items = [i for i in items if (i.get("meta", {}).get("invoice_date") or "") <= date_to]
 
     # Build filter dropdown lists
-    # Get unique client/company names from all invoices
+    # Get unique client names from all invoices (company_name preferred over client_name)
     inv_clients_set = set()
     for inv in all_invoices_raw:
         if inv and isinstance(inv, dict):
             m = inv.get("meta", {}) or {}
             co_name = m.get("company_name", "").strip()
             client_name = m.get("client_name", "").strip()
+            # Add company_name if present, otherwise add client_name
             if co_name:
                 inv_clients_set.add(co_name)
-            if client_name:
+            elif client_name:
                 inv_clients_set.add(client_name)
     inv_clients = sorted(inv_clients_set) if inv_clients_set else _load_clients()
     all_plants = sorted({i.get("plant_state", "") for i in all_invoices_raw if i.get("plant_state", "")})
