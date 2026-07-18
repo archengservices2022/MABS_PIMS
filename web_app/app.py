@@ -8625,14 +8625,17 @@ def financial():
                     # If stage still empty, try to look it up from project payment_stages using stage_index
                     if not _stage:
                         _stage_idx = _pay.get("stage_index")
+
+                        # For multi-project invoices, check linked_projects for per-project stage index FIRST
                         if _stage_idx is None:
-                            # For multi-project invoices, check linked_projects for per-project stage index
                             _linked_projects = _inv_meta.get("linked_projects", [])
                             if isinstance(_linked_projects, list):
                                 for _lp in _linked_projects:
                                     if isinstance(_lp, dict) and _lp.get("project_number") == _proj_num:
                                         _stage_idx = _lp.get("payment_stage_index")
                                         break
+
+                        # Only fall back to invoice's global stage index if no per-project index found
                         if _stage_idx is None:
                             _stage_idx = _inv_meta.get("payment_stage_index")
                         if _stage_idx is not None and str(_stage_idx).strip():
@@ -8666,6 +8669,27 @@ def financial():
                     # Last resort: use invoice's payment_stage
                     if not _stage:
                         _stage = _inv_meta.get("payment_stage", "")
+
+                    # FINAL VERIFICATION: For multi-project invoices, verify stage_name using linked_projects stage_index
+                    # This ensures we display the correct invoiced stage even if payment_log has wrong stage_name
+                    if _stage and _proj_num != "TAX":
+                        _linked_projects = _inv_meta.get("linked_projects", [])
+                        if isinstance(_linked_projects, list):
+                            for _lp in _linked_projects:
+                                if isinstance(_lp, dict) and _lp.get("project_number") == _proj_num:
+                                    _lp_stage_idx = _lp.get("payment_stage_index")
+                                    if _lp_stage_idx is not None:
+                                        try:
+                                            _lp_stage_idx = int(_lp_stage_idx) if not isinstance(_lp_stage_idx, int) else _lp_stage_idx
+                                            _proj_data = _proj_num_to_data.get(_proj_num, {})
+                                            _p_stages = _proj_data.get("payment_stages", [])
+                                            if isinstance(_p_stages, list) and 0 <= _lp_stage_idx < len(_p_stages):
+                                                _verified_stage = (_p_stages[_lp_stage_idx].get("name", "") or "").strip()
+                                                if _verified_stage:
+                                                    _stage = _verified_stage
+                                        except (ValueError, TypeError, IndexError):
+                                            pass
+                                    break
 
                     # Final fallback: infer stage from payment amount if available
                     # Only do this if stage wasn't directly from payment entry
