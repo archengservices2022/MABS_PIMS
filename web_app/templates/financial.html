@@ -2706,8 +2706,8 @@ function viewReceipt(expId) {
         var totalInvoiced = payments.reduce(function(s,p){return s+parseFloat(p.total_amount||0);},0);
         var totalPaid = payments.reduce(function(s,p){return s+parseFloat(p.paid_amount||0);},0);
         document.getElementById('monthPaymentsTfoot').innerHTML = '<tr><td colspan="5" style="padding:8px 12px;font-weight:700;">Total — '+payments.length+' payment(s)</td>'
-          +'<td style="padding:8px 12px;"></td>'
-          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#16a34a;font-size:13px;">'+fmt(totalPaid)+'</td></tr>';
+          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#16a34a;font-size:13px;">'+fmt(totalPaid)+'</td>'
+          +'<td style="padding:8px 12px;"></td></tr>';
       }
 
       /* ── 2. Unpaid — Due This Month ── */
