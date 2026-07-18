@@ -5554,52 +5554,16 @@ def invoice_delete(invoice_id):
     total_payments_deleted = sum(_safe_float(p.get("amount", 0)) for p in payment_log if isinstance(p, dict))
     print(f"Total payments in deleted invoice: {total_payments_deleted}", flush=True)
 
-    if project_number and payment_stage_index is not None:
-        # Single project with single stage - clear its amount_paid since this invoice is deleted
-        print(f"Reverting single stage: {project_number} stage {payment_stage_index}", flush=True)
-        _mark_project_stage(project_number, payment_stage_index, "Pending Invoice", amount_paid=0)
+    # Collect projects to sync later (from meta)
+    if project_number:
         project_numbers_to_sync.add(project_number)
-    elif project_number and not payment_stage_index:
-        # Invoice without explicit stage - find the stage by invoice_id
-        print("Invoice without payment_stage_index - finding by invoice_id", flush=True)
-        all_proj = fb_get("/projects") or {}
-        for pid, pdata in (all_proj.items() if isinstance(all_proj, dict) else []):
-            if isinstance(pdata, dict) and pdata.get("project_number", "") == project_number:
-                stages = pdata.get("payment_stages", [])
-                if isinstance(stages, list):
-                    for idx, stage in enumerate(stages):
-                        if isinstance(stage, dict) and stage.get("invoice_id") == invoice_id:
-                            print(f"Found stage {idx} with this invoice_id, reverting", flush=True)
-                            _mark_project_stage(project_number, idx, "Pending Invoice", amount_paid=0)
-                            project_numbers_to_sync.add(project_number)
-                            break
-                break
-    else:
-        # Multiple projects - check linked_projects first, then line items
-        linked_projects = meta.get("linked_projects", [])
-        print(f"Linked projects: {linked_projects}", flush=True)
-        if isinstance(linked_projects, list) and linked_projects:
-            for lp in linked_projects:
-                if isinstance(lp, dict):
-                    proj_num = lp.get("project_number", "")
-                    stage_idx = lp.get("payment_stage_index")
-                    print(f"Processing linked project: proj_num={proj_num}, stage_idx={stage_idx}", flush=True)
-                    if proj_num and stage_idx is not None:
-                        _mark_project_stage(proj_num, stage_idx, "Pending Invoice", amount_paid=0)
-                        project_numbers_to_sync.add(proj_num)
-        else:
-            # Fallback: check line items for older invoices
-            line_items = inv_data.get("line_items", [])
-            print(f"Line items: {line_items}", flush=True)
-            if isinstance(line_items, list):
-                for item in line_items:
-                    if isinstance(item, dict):
-                        proj_num = item.get("project_number", "") or item.get("project", "")
-                        stage_idx = item.get("stage_index")
-                        print(f"Processing line item: proj_num={proj_num}, stage_idx={stage_idx}", flush=True)
-                        if proj_num and stage_idx is not None:
-                            _mark_project_stage(proj_num, stage_idx, "Pending Invoice", amount_paid=0)
-                            project_numbers_to_sync.add(proj_num)
+    linked_projects = meta.get("linked_projects", [])
+    if isinstance(linked_projects, list):
+        for lp in linked_projects:
+            if isinstance(lp, dict):
+                proj_num = lp.get("project_number", "")
+                if proj_num:
+                    project_numbers_to_sync.add(proj_num)
 
     # Delete associated revenue entries
     all_revenue = fb_get("/balance_sheet_revenue") or {}
@@ -5612,6 +5576,8 @@ def invoice_delete(invoice_id):
     # FIX: Direct status update - ensure all project stages linked to this invoice are reverted
     print("=== REVERTING PROJECT STAGES ===", flush=True)
     all_proj = fb_get("/projects") or {}
+    reverted_stages = set()  # Track which project/stage pairs we've already reverted
+
     if isinstance(all_proj, dict):
         for pid, pdata in all_proj.items():
             if isinstance(pdata, dict):
@@ -5619,17 +5585,20 @@ def invoice_delete(invoice_id):
                 if isinstance(stages, list):
                     stages_updated = False
                     for idx, stage in enumerate(stages):
-                        if isinstance(stage, dict) and stage.get("invoice_id") == invoice_id:
-                            print(f"[REVERT] Found stage {idx} in project {pdata.get('project_number')} linked to invoice {invoice_id}", flush=True)
-                            # Clear invoice references
-                            stage.pop("invoice_id", None)
-                            stage.pop("invoice_number", None)
-                            stage.pop("invoice_date", None)
-                            # CRITICAL: Set status to "Pending Invoice"
-                            stage["status"] = "Pending Invoice"
-                            stage.pop("amount_paid", None)  # Clear amount_paid
-                            print(f"[REVERT] Stage {idx} status set to 'Pending Invoice'", flush=True)
-                            stages_updated = True
+                        if isinstance(stage, dict):
+                            # Check by invoice_id first
+                            if stage.get("invoice_id") == invoice_id:
+                                print(f"[REVERT] Found stage {idx} in project {pdata.get('project_number')} linked to invoice {invoice_id} (by invoice_id)", flush=True)
+                                # Clear invoice references
+                                stage.pop("invoice_id", None)
+                                stage.pop("invoice_number", None)
+                                stage.pop("invoice_date", None)
+                                # CRITICAL: Set status to "Pending Invoice"
+                                stage["status"] = "Pending Invoice"
+                                stage.pop("amount_paid", None)  # Clear amount_paid
+                                print(f"[REVERT] Stage {idx} status set to 'Pending Invoice'", flush=True)
+                                stages_updated = True
+                                reverted_stages.add((pdata.get("project_number"), idx))
 
                     if stages_updated:
                         fb_update(f"/projects/{pid}", {
@@ -5638,6 +5607,24 @@ def invoice_delete(invoice_id):
                         })
                         print(f"[REVERT] Updated project {pdata.get('project_number', pid)} in Firebase", flush=True)
 
+    # CRITICAL: Also revert stages using linked_projects metadata (handles CO stages and stages without invoice_id)
+    print("=== REVERTING VIA LINKED_PROJECTS METADATA ===", flush=True)
+    linked_projects_list = meta.get("linked_projects", []) or []
+    if isinstance(linked_projects_list, list):
+        for lp in linked_projects_list:
+            if isinstance(lp, dict):
+                lp_proj_num = lp.get("project_number", "")
+                lp_stage_idx = lp.get("payment_stage_index")
+                if lp_proj_num and lp_stage_idx is not None:
+                    # Skip if we already reverted this stage by invoice_id
+                    if (lp_proj_num, lp_stage_idx) in reverted_stages:
+                        print(f"[REVERT] Stage {lp_stage_idx} in project {lp_proj_num} already reverted by invoice_id", flush=True)
+                        continue
+
+                    print(f"[REVERT] Reverting {lp_proj_num} stage {lp_stage_idx} via linked_projects metadata", flush=True)
+                    _mark_project_stage(lp_proj_num, lp_stage_idx, "Pending Invoice", amount_paid=0)
+                    print(f"[REVERT] Successfully reverted {lp_proj_num} stage {lp_stage_idx}", flush=True)
+
     # Delete the invoice
     delete_result = fb_delete(f"/invoices/{invoice_id}")
     print(f"[DELETE_RESULT] Invoice deletion result: {delete_result}", flush=True)
@@ -5645,16 +5632,6 @@ def invoice_delete(invoice_id):
     # Verify deletion
     verify_delete = fb_get(f"/invoices/{invoice_id}")
     print(f"[DELETE_VERIFY] Invoice still exists after delete? {verify_delete is not None}", flush=True)
-
-    # CRITICAL: Ensure all linked projects are synced (multi-project invoice fix)
-    linked_projects_list = meta.get("linked_projects", []) or []
-    if isinstance(linked_projects_list, list):
-        for lp in linked_projects_list:
-            if isinstance(lp, dict):
-                lp_proj_num = lp.get("project_number", "")
-                if lp_proj_num:
-                    project_numbers_to_sync.add(lp_proj_num)
-                    print(f"[DELETE] Added linked project {lp_proj_num} to sync list", flush=True)
 
     print(f"=== INVOICE DELETE COMPLETE ===\n", flush=True)
 
