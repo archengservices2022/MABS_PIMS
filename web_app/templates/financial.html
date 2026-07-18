@@ -310,7 +310,7 @@ a[href*="filter_expense"]:hover {
   <div class="row g-3 mb-4">
     <div class="col-6 col-xl-2">
       <div class="kpi-card kpi-teal">
-        <div class="kpi-top"><span class="kpi-label">Total Invoiced</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
+        <div class="kpi-top"><span class="kpi-label">Invoice Total</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
         <div class="kpi-value">${{ "{:,.2f}".format(total_invoiced) }}</div>
         <div class="kpi-sub">{{ invoiced_count }} invoice{{ 's' if invoiced_count != 1 }}</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">{{ invoiced_years }}</small></div>
@@ -392,7 +392,7 @@ a[href*="filter_expense"]:hover {
 
         <!-- Key metrics -->
         <div class="summary-row">
-          <span class="text-muted small">Total Invoiced</span>
+          <span class="text-muted small">Invoice Total</span>
           <span class="fw-bold">${{ "{:,.2f}".format(total_invoiced) }}</span>
         </div>
         <div class="summary-row">
@@ -2196,7 +2196,7 @@ function viewReceipt(expId) {
   <div class="row g-3 mb-4">
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-teal">
-        <div class="kpi-top"><span class="kpi-label">Total Invoiced</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
+        <div class="kpi-top"><span class="kpi-label">Invoice Total</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
         <div class="kpi-value">${{ "{:,.2f}".format(project_pnl|sum(attribute='invoiced')) }}</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">All projects · {{ stat_card_year }}</small></div>
       </div>
@@ -2251,7 +2251,7 @@ function viewReceipt(expId) {
             <th style="color: #ffffff; font-weight: 700;">Client</th>
             <th style="color: #ffffff; font-weight: 700;">Status</th>
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Contract</th>
-            <th class="text-end" style="color: #ffffff; font-weight: 700;">Total Invoiced</th>
+            <th class="text-end" style="color: #ffffff; font-weight: 700;">Invoice Total</th>
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Stage Amount</th>
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Collected</th>
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Outstanding</th>
@@ -2524,7 +2524,7 @@ function viewReceipt(expId) {
               <th style="padding:8px 12px; color:#fff; font-weight:700;">Invoice</th>
               <th style="padding:8px 12px; color:#fff; font-weight:700;">Stage</th>
               <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Stage Amount</th>
-              <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Total Invoiced</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Invoice Total</th>
               <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Paid</th>
               <th style="padding:8px 12px; color:#fff; font-weight:700;">Date</th>
             </tr>
