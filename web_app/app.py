@@ -8707,33 +8707,9 @@ def financial():
                             except (ValueError, TypeError):
                                 pass
 
-                    # Fallback: if stage_label is generic "Installment", verify it matches payment amount
-                    # If not, find the actual stage that matches the payment amount
-                    if (_proj_num != "TAX" and "Installment" in _stage_label and _pay.get("amount")):
-                        _paid_amount = _safe_float(_pay.get("amount", 0))
-                        _proj_data = _proj_num_to_data.get(_proj_num, {})
-                        _stages = _proj_data.get("payment_stages", [])
-                        if isinstance(_stages, list) and _paid_amount > 0:
-                            # Check if current stage_label matches the payment amount
-                            _stage_matches_amount = False
-                            for _s in _stages:
-                                if isinstance(_s, dict):
-                                    _s_name = (_s.get("name", "") or "").strip()
-                                    _s_amt = _safe_float(_s.get("amount", 0))
-                                    if _s_name == _stage_label and abs(_s_amt - _paid_amount) < 0.01:
-                                        _stage_matches_amount = True
-                                        break
-
-                            # If stage doesn't match amount, find the one that does
-                            if not _stage_matches_amount:
-                                for _s in _stages:
-                                    if isinstance(_s, dict):
-                                        _s_amt = _safe_float(_s.get("amount", 0))
-                                        if abs(_s_amt - _paid_amount) < 0.01:
-                                            _actual_name = (_s.get("name", "") or "").strip()
-                                            if _actual_name:
-                                                _stage_label = _actual_name
-                                                break
+                    # Note: Stage name should come from payment_log's stage_name field (set at invoice creation)
+                    # Do NOT try to infer or correct stage names based on payment amount
+                    # The invoiced stage is what was selected when creating the invoice
 
                     # FIX: Get stage amount from project data using multiple strategies
                     _stage_amount = 0.0
