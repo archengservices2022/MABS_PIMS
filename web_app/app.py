@@ -146,6 +146,31 @@ app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
 # ── Session inactivity timeout ─────────────────────────────────────────────────
 SESSION_INACTIVITY_HOURS = 8
 
+# ── Employee app-activity tracking (admin-only usage report) ───────────────────
+# Records how long each employee is logged in / active, per session, so an
+# admin-only Settings tab can show daily/weekly totals per employee. Firebase
+# writes are throttled (not on every request) to keep this cheap.
+ACTIVITY_SYNC_THROTTLE_SECONDS = 120
+
+def _start_activity_session(uid: str, name: str) -> str:
+    sid = secrets.token_hex(8)
+    now = datetime.now(COMPANY_TZ)
+    fb_update(f"/activity_sessions/{sid}", {
+        "employee_uid":  uid,
+        "employee_name": name,
+        "date":          now.strftime("%Y-%m-%d"),
+        "login_at":      now.isoformat(),
+        "last_seen_at":  now.isoformat(),
+    })
+    return sid
+
+def _touch_activity_session(sid: str):
+    if not sid:
+        return
+    fb_update(f"/activity_sessions/{sid}", {
+        "last_seen_at": datetime.now(COMPANY_TZ).isoformat(),
+    })
+
 @app.before_request
 def check_session_timeout():
     # Skip for login/logout/static routes
@@ -156,10 +181,20 @@ def check_session_timeout():
     last = session.get("last_activity")
     now_ts = datetime.now(timezone.utc).timestamp()
     if last and (now_ts - last) > SESSION_INACTIVITY_HOURS * 3600:
+        activity_sid = session.get("activity_session_id")
+        if activity_sid:
+            _touch_activity_session(activity_sid)
         session.clear()
         flash("Your session expired due to inactivity. Please log in again.", "warning")
         return redirect(url_for("login"))
     session["last_activity"] = now_ts
+
+    activity_sid = session.get("activity_session_id")
+    if activity_sid:
+        last_synced = session.get("activity_last_synced", 0)
+        if now_ts - last_synced > ACTIVITY_SYNC_THROTTLE_SECONDS:
+            _touch_activity_session(activity_sid)
+            session["activity_last_synced"] = now_ts
 
 # ── Login rate limiting (in-memory, per IP) ────────────────────────────────────
 _login_attempts: Dict[str, dict] = {}
@@ -441,6 +476,7 @@ def login():
                         session["user_role"]     = role
                         session["custom_pages"]  = custom_pages
                         session["last_activity"] = datetime.now(timezone.utc).timestamp()
+                        session["activity_session_id"] = _start_activity_session(uid, session["user_name"])
                         log.info("Login: %s (%s) pages=%s", email, role, custom_pages or "role-default")
                         return redirect(url_for(first_page(role, custom_pages)))
 
@@ -448,6 +484,7 @@ def login():
 
 @app.route("/logout")
 def logout():
+    _touch_activity_session(session.get("activity_session_id"))
     session.clear()
     return redirect(url_for("login"))
 
@@ -11284,7 +11321,8 @@ def settings():
             _u["role"] = normalize_role(_u["role"])
     settings_data = load_settings()
     return render_template("settings.html", users=all_users, settings=settings_data,
-                           role_pages=ROLE_PAGES, all_pages=ALL_PAGES, page_labels=PAGE_LABELS)
+                           role_pages=ROLE_PAGES, all_pages=ALL_PAGES, page_labels=PAGE_LABELS,
+                           activity_summary=_activity_usage_summary())
 
 @app.route("/settings/company", methods=["POST"])
 @role_required("settings")
@@ -12982,6 +13020,41 @@ def _load_all_users() -> List[dict]:
                 users.append(udata)
         return sorted(users, key=lambda x: x.get("username", "").lower())
     return []
+
+def _activity_usage_summary() -> List[dict]:
+    """Per-employee today/this-week active-in-app minutes, from /activity_sessions."""
+    raw = fb_get("/activity_sessions") or {}
+    today = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
+    week_start = _week_monday()
+
+    by_employee: Dict[str, dict] = {}
+    if isinstance(raw, dict):
+        for _sid, s in raw.items():
+            if not isinstance(s, dict):
+                continue
+            uid = s.get("employee_uid", "")
+            if not uid:
+                continue
+            try:
+                login_at = datetime.fromisoformat(s.get("login_at", ""))
+                last_seen = datetime.fromisoformat(s.get("last_seen_at", ""))
+                minutes = max(0.0, (last_seen - login_at).total_seconds() / 60.0)
+            except (ValueError, TypeError):
+                continue
+
+            entry = by_employee.setdefault(uid, {
+                "employee_uid": uid, "employee_name": s.get("employee_name", "—"),
+                "today_minutes": 0.0, "week_minutes": 0.0, "last_seen_at": "",
+            })
+            s_date = s.get("date", "")
+            if s_date == today:
+                entry["today_minutes"] += minutes
+            if s_date >= week_start:
+                entry["week_minutes"] += minutes
+            if s.get("last_seen_at", "") > entry["last_seen_at"]:
+                entry["last_seen_at"] = s.get("last_seen_at", "")
+
+    return sorted(by_employee.values(), key=lambda x: x["week_minutes"], reverse=True)
 
 def _load_time_entries() -> List[dict]:
     raw = fb_get("/time_entries") or {}

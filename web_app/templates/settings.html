@@ -40,6 +40,11 @@
       <i class="bi bi-robot me-1"></i>AI
     </a>
   </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'activity' }}" data-bs-toggle="tab" href="#tab-activity">
+      <i class="bi bi-eye me-1"></i>Activity
+    </a>
+  </li>
 </ul>
 
 <div class="tab-content">
@@ -608,6 +613,47 @@
           </ul>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ── ACTIVITY ────────────────────────────────────────────────────────────── -->
+  <div class="tab-pane fade {{ 'show active' if active_tab == 'activity' }}" id="tab-activity">
+    <div class="card-panel">
+      <div class="d-flex align-items-center justify-content-between mb-1">
+        <h6 class="section-heading mb-0">Employee App Activity</h6>
+      </div>
+      <p class="text-muted small mb-3">
+        Time each employee has been logged in and active in the app, based on login/last-activity
+        timestamps. Admin-only.
+      </p>
+      {% if activity_summary %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size:13px;">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th class="text-end">Today</th>
+              <th class="text-end">This Week</th>
+              <th class="text-end">Last Seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in activity_summary %}
+            <tr>
+              <td class="fw-semibold">{{ a.employee_name }}</td>
+              <td class="text-end">{{ (a.today_minutes // 60)|int }}h {{ (a.today_minutes % 60)|int }}m</td>
+              <td class="text-end">{{ (a.week_minutes // 60)|int }}h {{ (a.week_minutes % 60)|int }}m</td>
+              <td class="text-end text-muted">
+                {% if a.last_seen_at %}{{ a.last_seen_at[:16].replace('T',' ') }}{% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state py-4"><i class="bi bi-eye fs-2 d-block mb-2"></i>No activity recorded yet.</div>
+      {% endif %}
     </div>
   </div>
 
