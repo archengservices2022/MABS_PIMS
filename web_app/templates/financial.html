@@ -2251,8 +2251,7 @@ function viewReceipt(expId) {
             <th style="color: #ffffff; font-weight: 700;">Client</th>
             <th style="color: #ffffff; font-weight: 700;">Status</th>
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Contract</th>
-            <th class="text-end" style="color: #ffffff; font-weight: 700;">Invoice Total</th>
-            <th class="text-end" style="color: #ffffff; font-weight: 700;">Stage Amount</th>
+            <th class="text-end" style="color: #ffffff; font-weight: 700;">Invoiced</th>
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Collected</th>
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Outstanding</th>
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Expenses</th>
@@ -2279,7 +2278,6 @@ function viewReceipt(expId) {
               {% endif %}
             </td>
             <td class="text-end text-teal fw-semibold">${{ "{:,.2f}".format(row.invoiced) }}</td>
-            <td class="text-end text-info fw-semibold">${{ "{:,.2f}".format(row.invoiced_stages) }}</td>
             <td class="text-end text-success fw-semibold">${{ "{:,.2f}".format(row.paid) }}</td>
             <td class="text-end fw-semibold {{ 'text-danger' if row.outstanding > 0 else 'text-muted' }}">
               {{ ("$" + "{:,.2f}".format(row.outstanding)) if row.outstanding > 0 else "—" }}
@@ -2307,7 +2305,6 @@ function viewReceipt(expId) {
             <td colspan="4" class="text-end text-muted small">Totals</td>
             <td class="text-end">${{ "{:,.2f}".format(project_pnl|sum(attribute='contract_value')) }}</td>
             <td class="text-end text-teal">${{ "{:,.2f}".format(project_pnl|sum(attribute='invoiced')) }}</td>
-            <td class="text-end text-info">${{ "{:,.2f}".format(project_pnl|sum(attribute='invoiced_stages')) }}</td>
             <td class="text-end text-success fw-semibold">${{ "{:,.2f}".format(project_pnl|sum(attribute='paid')) }}</td>
             <td class="text-end text-danger">${{ "{:,.2f}".format(project_pnl|sum(attribute='outstanding')) }}</td>
             <td class="text-end text-danger">${{ "{:,.2f}".format(project_pnl|sum(attribute='expenses')) }}</td>
