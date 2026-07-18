@@ -96,15 +96,15 @@ except Exception as exc:
 
 # ── Role helpers ──────────────────────────────────────────────────────────────
 ROLE_PAGES = {
-    "admin":          ["dashboard", "quotes", "projects", "invoicing", "payroll", "financial", "settings", "employees", "sales_dashboard", "timesheets", "reviews"],
-    "sales":          ["sales_dashboard", "quotes", "employees", "timesheets"],
-    "projects":       ["projects", "invoicing", "employees", "timesheets"],
+    "admin":          ["dashboard", "quotes", "projects", "invoicing", "clients", "payroll", "financial", "settings", "employees", "sales_dashboard", "timesheets", "reviews"],
+    "sales":          ["sales_dashboard", "quotes", "clients", "employees", "timesheets"],
+    "projects":       ["projects", "invoicing", "clients", "employees", "timesheets"],
     "finance":        ["financial", "payroll", "employees", "timesheets"],
     "engineer":       ["employees", "timesheets"],
-    "administration": ["dashboard", "projects", "invoicing", "employees", "timesheets"],
+    "administration": ["dashboard", "projects", "invoicing", "clients", "employees", "timesheets"],
 }
 
-ALL_PAGES = ["dashboard", "sales_dashboard", "quotes", "projects", "invoicing", "payroll",
+ALL_PAGES = ["dashboard", "sales_dashboard", "quotes", "projects", "invoicing", "clients", "payroll",
              "financial", "settings", "employees", "timesheets", "reviews"]
 
 PAGE_LABELS = {
@@ -112,6 +112,7 @@ PAGE_LABELS = {
     "quotes":         "Quotes",
     "projects":       "Projects",
     "invoicing":      "Invoicing",
+    "clients":        "Clients",
     "payroll":        "Payroll",
     "financial":      "Financial",
     "settings":       "Settings",
@@ -5931,7 +5932,7 @@ def invoicing_export_pdf():
 
 # ── Routes: Clients ───────────────────────────────────────────────────────────
 @app.route("/clients")
-@role_required("invoicing")
+@role_required("clients")
 def clients():
     raw = fb_get("/clients") or {}
     items = []
@@ -6249,7 +6250,7 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
     print(f"[SYNC_USER] Completed syncing '{old_name}' → '{new_name}'", flush=True)
 
 @app.route("/clients/new", methods=["GET", "POST"])
-@role_required("invoicing")
+@role_required("clients")
 def client_new():
     if request.method == "POST":
         company_name = request.form.get("company_name", "").strip()
@@ -6328,7 +6329,7 @@ def client_new():
     return render_template("client_form.html", client=None, is_new=True)
 
 @app.route("/clients/<company_name>/edit", methods=["GET", "POST"])
-@role_required("invoicing")
+@role_required("clients")
 def client_edit(company_name):
     data = fb_get(f"/clients/{company_name}") or {}
     # Get the ACTUAL company name from database (in case it's different)
@@ -6419,7 +6420,7 @@ def client_edit(company_name):
     return render_template("client_form.html", client=data, is_new=False)
 
 @app.route("/clients/<company_name>/delete", methods=["POST"])
-@role_required("invoicing")
+@role_required("clients")
 def delete_client(company_name):
     # Only delete the client record - do NOT cascade delete quotes/projects/invoices
     # They keep the client information (company_name, client_name, client_id) for historical reference

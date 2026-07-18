@@ -130,8 +130,11 @@
       <span class="nav-icon"><i class="bi bi-receipt-cutoff"></i></span>
       <span class="nav-label">Invoicing</span>
     </a>
+    {% endif %}
+
+    {% if 'clients' in allowed_pages %}
     <a href="{{ url_for('clients') }}"
-       class="nav-item nav-sub accent-amber {% if request.endpoint in ['clients','client_new','client_edit'] %}active{% endif %}">
+       class="nav-item {{ 'nav-sub' if 'invoicing' in allowed_pages }} accent-amber {% if request.endpoint in ['clients','client_new','client_edit'] %}active{% endif %}">
       <span class="nav-icon"><i class="bi bi-people-fill"></i></span>
       <span class="nav-label">Clients</span>
     </a>

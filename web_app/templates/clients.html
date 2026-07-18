@@ -102,10 +102,12 @@
               </td>
               <td>
                 <div class="d-flex gap-1">
+                  {% if 'invoicing' in allowed_pages %}
                   <a href="{{ url_for('client_statement', company_name=c.company_name) }}"
                      class="btn btn-xs btn-outline-danger" title="Client Statement PDF">
                     <i class="bi bi-file-earmark-pdf"></i>
                   </a>
+                  {% endif %}
                   <a href="{{ url_for('client_edit', company_name=c.company_name) }}"
                      class="btn btn-xs btn-outline-secondary" title="Edit">
                     <i class="bi bi-pencil"></i>
