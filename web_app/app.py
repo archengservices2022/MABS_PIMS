@@ -8778,6 +8778,12 @@ def financial():
                                     _chosen_stg = _co_stg if _co_stg else _matching_stgs[0]
                                     _stage_amount = _safe_float(_chosen_stg.get("amount", 0))
 
+                    # Calculate project's line item total (without tax)
+                    _proj_line_total = 0.0
+                    for _li in (_inv.get("line_items", []) or []):
+                        if isinstance(_li, dict) and _li.get("project_number") == _proj_num:
+                            _proj_line_total += _safe_float(_li.get("amount", 0))
+
                     monthly_payment_details[_mkey].append({
                         "project_number": _proj_num,
                         "project_id":     _proj_num_to_id.get(_proj_num, ""),
@@ -8785,7 +8791,7 @@ def financial():
                         "invoice_number": _inv_num,
                         "stage":          _stage_label,
                         "stage_amount":   _stage_amount,
-                        "total_amount":   _inv_total,
+                        "total_amount":   _proj_line_total if _proj_line_total > 0 else _inv_total,
                         "paid_amount":    _safe_float(_pay.get("amount", 0)),
                         "paid_date":      _pay_ds,
                     })
