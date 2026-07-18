@@ -2251,7 +2251,8 @@ function viewReceipt(expId) {
             <th style="color: #ffffff; font-weight: 700;">Client</th>
             <th style="color: #ffffff; font-weight: 700;">Status</th>
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Contract</th>
-            <th class="text-end" style="color: #ffffff; font-weight: 700;">Invoiced</th>
+            <th class="text-end" style="color: #ffffff; font-weight: 700;">Total Invoiced</th>
+            <th class="text-end" style="color: #ffffff; font-weight: 700;">Stage Amount</th>
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Collected</th>
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Outstanding</th>
             <th class="text-end" style="color: #ffffff; font-weight: 700;">Expenses</th>
@@ -2278,6 +2279,7 @@ function viewReceipt(expId) {
               {% endif %}
             </td>
             <td class="text-end text-teal fw-semibold">${{ "{:,.2f}".format(row.invoiced) }}</td>
+            <td class="text-end text-info fw-semibold">${{ "{:,.2f}".format(row.invoiced_stages) }}</td>
             <td class="text-end text-success fw-semibold">${{ "{:,.2f}".format(row.paid) }}</td>
             <td class="text-end fw-semibold {{ 'text-danger' if row.outstanding > 0 else 'text-muted' }}">
               {{ ("$" + "{:,.2f}".format(row.outstanding)) if row.outstanding > 0 else "—" }}
@@ -2305,6 +2307,7 @@ function viewReceipt(expId) {
             <td colspan="4" class="text-end text-muted small">Totals</td>
             <td class="text-end">${{ "{:,.2f}".format(project_pnl|sum(attribute='contract_value')) }}</td>
             <td class="text-end text-teal">${{ "{:,.2f}".format(project_pnl|sum(attribute='invoiced')) }}</td>
+            <td class="text-end text-info">${{ "{:,.2f}".format(project_pnl|sum(attribute='invoiced_stages')) }}</td>
             <td class="text-end text-success fw-semibold">${{ "{:,.2f}".format(project_pnl|sum(attribute='paid')) }}</td>
             <td class="text-end text-danger">${{ "{:,.2f}".format(project_pnl|sum(attribute='outstanding')) }}</td>
             <td class="text-end text-danger">${{ "{:,.2f}".format(project_pnl|sum(attribute='expenses')) }}</td>
@@ -2520,7 +2523,8 @@ function viewReceipt(expId) {
               <th style="padding:8px 12px; color:#fff; font-weight:700;">Project</th>
               <th style="padding:8px 12px; color:#fff; font-weight:700;">Invoice</th>
               <th style="padding:8px 12px; color:#fff; font-weight:700;">Stage</th>
-              <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Total</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Stage Amount</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Total Invoiced</th>
               <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Paid</th>
               <th style="padding:8px 12px; color:#fff; font-weight:700;">Date</th>
             </tr>
@@ -2683,13 +2687,18 @@ function viewReceipt(expId) {
             +'<td style="padding:8px 12px;">'+projLink+'</td>'
             +'<td style="padding:8px 12px;">'+invLink+'</td>'
             +'<td style="padding:8px 12px;">'+stageBadge+'</td>'
+            +'<td style="padding:8px 12px;text-align:right;color:#0369a1;font-weight:600;">'+fmt(p.stage_amount)+'</td>'
             +'<td style="padding:8px 12px;text-align:right;color:#374151;">'+fmt(p.total_amount)+'</td>'
             +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#16a34a;">'+fmt(p.paid_amount)+'</td>'
             +'<td style="padding:8px 12px;color:#374151;">'+formatDate(p.paid_date)+'</td></tr>';
         });
         document.getElementById('monthPaymentsTbody').innerHTML = rows.join('');
+        var totalStageAmount = payments.reduce(function(s,p){return s+parseFloat(p.stage_amount||0);},0);
+        var totalInvoiced = payments.reduce(function(s,p){return s+parseFloat(p.total_amount||0);},0);
         var totalPaid = payments.reduce(function(s,p){return s+parseFloat(p.paid_amount||0);},0);
-        document.getElementById('monthPaymentsTfoot').innerHTML = '<tr><td colspan="4" style="padding:8px 12px;font-weight:700;">Total Paid — '+payments.length+' payment(s)</td>'
+        document.getElementById('monthPaymentsTfoot').innerHTML = '<tr><td colspan="4" style="padding:8px 12px;font-weight:700;">Total — '+payments.length+' payment(s)</td>'
+          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#0369a1;font-size:13px;">'+fmt(totalStageAmount)+'</td>'
+          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#374151;font-size:13px;">'+fmt(totalInvoiced)+'</td>'
           +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#16a34a;font-size:13px;">'+fmt(totalPaid)+'</td><td></td></tr>';
       }
 
