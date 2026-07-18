@@ -621,7 +621,7 @@ a[href*="filter_expense"]:hover {
               data-subtotal="{{ ((r.get('total',0)|float) - (r.get('tax_amount',0)|float)) }}"
               data-tax="{{ r.get('tax_amount',0)|float }}"
               data-total="{{ r.get('total',0)|float }}"
-              data-search="{{ r.get('client_name','')|lower }} {{ r.get('invoice_number','')|lower }}">
+              data-search="{{ r.get('company_name','')|lower }} {{ r.get('client_name','')|lower }} {{ r.get('invoice_number','')|lower }}">
             <td class="text-muted small">{{ r.get('invoice_date', r.get('date','—')) | format_date }}</td>
             <td class="text-muted small">
               {% set cd = r.get('collection_date', '') %}
@@ -2261,7 +2261,7 @@ function viewReceipt(expId) {
           <tr class="bp-row" onclick="location.href='{{ url_for('project_detail', project_id=row.firebase_id) }}'" style="cursor:pointer;">
             <td><span class="fw-bold text-teal">{{ row.project_number }}</span></td>
             <td class="fw-medium">{{ row.project_name }}</td>
-            <td class="text-muted small">{{ row.client_name }}</td>
+            <td class="text-muted small">{{ row.company_name or row.client_name }}</td>
             <td>{{ status_badge(row.status, 'Not Started') }}</td>
             <td class="text-end">
               ${{ "{:,.2f}".format(row.base_contract or row.contract_value) }}
@@ -2706,9 +2706,10 @@ function viewReceipt(expId) {
           }
           var statusColor = {'Sent':'#0369a1','Viewed':'#D97706','Partial':'#D97706','Overdue':'#DC2626'}[e.status] || '#6b7280';
           var bg = idx%2===0?'#fffbeb':'#fef9ee';
+          var clientDisplay = (e.company_name || e.client_name || '—');
           return '<tr style="background:'+bg+';border-bottom:1px solid #FED7AA;">'
             +'<td style="padding:8px 12px;">'+invLink+'</td>'
-            +'<td style="padding:8px 12px;">'+(e.client_name||'—')+'</td>'
+            +'<td style="padding:8px 12px;">'+clientDisplay+'</td>'
             +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(e.invoice_date)+'</td>'
             +'<td style="padding:8px 12px;text-align:center;">'+(e.net_terms?'Net '+e.net_terms:'—')+'</td>'
             +'<td style="padding:8px 12px;text-align:center;color:#374151;">'+formatDate(e.due_date)+'</td>'
@@ -3125,14 +3126,14 @@ function viewReceipt(expId) {
           <tr class="aging-row" data-bucket="{{ key }}"
               data-date="{{ e.invoice_date or '' }}"
               data-due-date="{{ e.due_date or '' }}"
-              data-search="{{ (e.invoice_number or '')|lower }} {{ (e.client_name or '')|lower }}"
+              data-search="{{ (e.invoice_number or '')|lower }} {{ (e.company_name or '')|lower }} {{ (e.client_name or '')|lower }}"
               style="border-bottom:1px solid #F1F5F9;">
             <td style="padding:8px 12px;">
               <a href="{{ url_for('invoice_detail', invoice_id=e.firebase_id) }}" class="text-teal fw-bold text-decoration-none">
                 {{ e.invoice_number }}
               </a>
             </td>
-            <td style="padding:8px 12px;">{{ e.client_name or '—' }}</td>
+            <td style="padding:8px 12px;">{{ e.company_name or e.client_name or '—' }}</td>
             <td style="padding:8px 12px;">{{ (e.invoice_date or '—') | format_date }}</td>
             <td style="padding:8px 12px;">{{ (e.due_date or '—') | format_date }}</td>
             <td style="padding:8px 12px; text-align:center;">

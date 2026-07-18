@@ -84,7 +84,8 @@
                 <div class="d-flex align-items-center gap-2">
                   {% set has_separate_company = c.get('company_name') and c.get('company_name') != c.get('client_name') %}
                   {% set company_display = c.get('company_name') if has_separate_company else '—' %}
-                  <div class="inv-avatar">{{ company_display[0]|upper if company_display != '—' else '?' }}</div>
+                  {% set avatar_letter = (c.get('company_name') or c.get('client_name') or '?')|first|upper %}
+                  <div class="inv-avatar">{{ avatar_letter }}</div>
                   <strong>{{ company_display }}</strong>
                 </div>
               </td>

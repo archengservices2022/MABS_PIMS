@@ -83,6 +83,15 @@
                      value="{{ co.get('website', '') }}">
             </div>
 
+            <h6 class="section-heading mt-4">Currency Settings</h6>
+            <div class="mb-3">
+              <label class="form-label">BDT Exchange Rate <span class="text-muted fw-normal">(1 USD = ? BDT)</span></label>
+              <input type="number" name="bdt_exchange_rate" class="form-control"
+                     value="{{ co.get('bdt_exchange_rate', 110) }}"
+                     min="1" step="0.01" style="max-width:150px;">
+              <div class="form-text text-muted">Used to show USD ↔ BDT equivalent for Outside America employees.</div>
+            </div>
+
             <h6 class="section-heading mt-4">Invoice Defaults</h6>
             <div class="mb-3">
               <label class="form-label">Default Tax Rate (%)</label>
@@ -497,6 +506,12 @@
                               title="Customize Pages">
                         <i class="bi bi-layout-sidebar"></i>
                       </button>
+                      <button class="btn btn-xs btn-outline-warning send-reset-btn"
+                              data-email="{{ u.get('email','') | e }}"
+                              data-name="{{ u.get('username','') | e }}"
+                              title="Send Password Reset Email">
+                        <i class="bi bi-envelope-arrow-up"></i>
+                      </button>
                       {% if not _is_me %}
                       <form method="POST"
                             action="{{ url_for('user_delete', uid=u.firebase_uid) }}"
@@ -790,6 +805,27 @@ document.addEventListener('DOMContentLoaded', function() {
       var isSales = (d.role || '').toLowerCase() === 'sales';
       document.getElementById('editCommissionSection').style.display = isSales ? '' : 'none';
       new bootstrap.Modal(document.getElementById('editUserModal')).show();
+    });
+  });
+
+  document.querySelectorAll('.send-reset-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var email = btn.dataset.email;
+      var name  = btn.dataset.name;
+      if (!confirm('Send password reset email to ' + name + ' (' + email + ')?')) return;
+      btn.disabled = true;
+      fetch('/api/admin/send-reset-email', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({email: email})
+      }).then(r => r.json()).then(data => {
+        btn.disabled = false;
+        if (data.success) {
+          alert('Reset email sent to ' + email);
+        } else {
+          alert('Error: ' + data.error);
+        }
+      }).catch(() => { btn.disabled = false; alert('Network error. Please try again.'); });
     });
   });
 

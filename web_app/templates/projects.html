@@ -58,6 +58,18 @@
       <i class="bi bi-plus-square me-1"></i>New Project
     </a>
   </li>
+  {% if user_role == 'admin' %}
+  <li class="nav-item">
+    <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#importExcelModal">
+      <i class="bi bi-file-earmark-excel me-1"></i>Import Excel
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link text-danger" href="#" data-bs-toggle="modal" data-bs-target="#clearAllModal">
+      <i class="bi bi-trash3 me-1"></i>Clear All
+    </a>
+  </li>
+  {% endif %}
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-export">
       <i class="bi bi-download me-1"></i>Export
@@ -74,6 +86,8 @@
       'Active':                ('bi-lightning-charge',    'bg-blue'),
       'In Progress':           ('bi-arrow-repeat',        'bg-blue'),
       'On Hold':               ('bi-pause-circle',        'bg-amber'),
+      'Not Started':           ('bi-hourglass-start',     'bg-slate'),
+      'In Progress':           ('bi-arrow-repeat',        'bg-blue'),
       'Completed':             ('bi-check-circle-fill',   'bg-green'),
       'Cancelled':             ('bi-x-circle',            'bg-red'),
       'Ready to Sent':         ('bi-send',                'bg-amber'),
@@ -719,6 +733,102 @@ document.addEventListener('DOMContentLoaded', function() {
           <i class="bi bi-upload me-1"></i>Load to Invoice
         </button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Clear All Projects Modal ───────────────────────────────────────────── -->
+{% if user_role == 'admin' %}
+<div class="modal fade" id="clearAllModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="bi bi-trash3 me-2"></i>Clear All Projects</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('projects_clear_all') }}">
+        <div class="modal-body">
+          <div class="alert alert-danger">
+            <strong>Warning:</strong> This will permanently delete ALL {{ projects|length }} projects from this system. This cannot be undone.
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Type <code>DELETE ALL</code> to confirm:</label>
+            <input type="text" name="confirm_text" class="form-control" placeholder="DELETE ALL" required autocomplete="off">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger">
+            <i class="bi bi-trash3 me-1"></i>Delete All Projects
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Import Excel Modal ─────────────────────────────────────────────────── -->
+<div class="modal fade" id="importExcelModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-file-earmark-excel me-2 text-success"></i>Import Projects from Excel</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('projects_import_excel') }}" enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="alert alert-info" style="font-size:13px;">
+            <i class="bi bi-info-circle-fill me-1"></i>
+            <strong>How it works:</strong> Upload your Excel file (.xlsx). Each sheet (Dec 25, Jan 26, etc.) is read automatically.
+            Projects with existing job numbers are skipped to avoid duplicates.
+          </div>
+          <div class="mb-3">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" name="update_existing" id="updateExistingCheck" value="1">
+              <label class="form-check-label fw-semibold" for="updateExistingCheck">
+                Update existing projects
+              </label>
+            </div>
+            <div class="form-text">When enabled, projects that already exist will have their <strong>empty fields filled in</strong> from Excel (e.g. PO/WO, Plant). Fields you've already filled manually will not be overwritten.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Expected columns in each sheet:</label>
+            <ul class="small text-muted mb-2" style="padding-left:18px;">
+              <li><strong>Project Number</strong> — original job number (e.g. MABS-202601101)</li>
+              <li><strong>Clients</strong> — client/company name</li>
+              <li><strong>D/VO Number</strong> — PO / work order number</li>
+              <li><strong>Site Address</strong> — project site</li>
+              <li><strong>Mail Address</strong> — mailing address</li>
+              <li><strong>Date</strong> — date received</li>
+              <li><strong>PI</strong> — state abbreviation</li>
+              <li><strong>Price</strong> — contract value</li>
+              <li><strong>Notes / Additional Notes</strong> — any remarks</li>
+            </ul>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Select Excel file <span class="text-danger">*</span></label>
+            <input type="file" name="excel_file" class="form-control" accept=".xlsx,.xls" required>
+            <div class="form-text">Supports .xlsx and .xls formats.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Sheet Name <span class="text-muted fw-normal">(optional)</span></label>
+            <input type="text" name="sheet_name" class="form-control" placeholder="e.g. Dec 25 — leave blank to import ALL sheets">
+            <div class="form-text">Type the exact sheet tab name to import just one month. Leave blank to import all sheets at once.</div>
+          </div>
+          <div class="alert alert-warning" style="font-size:12px;">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>
+            Importing all sheets (~354 projects) takes 30–60 seconds. One sheet at a time is faster and easier to verify.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success" id="importSubmitBtn"
+                  onclick="this.disabled=true; this.innerHTML='<span class=&quot;spinner-border spinner-border-sm me-1&quot;></span> Importing...'; this.form.submit();">
+            <i class="bi bi-file-earmark-arrow-up me-1"></i>Import All Projects
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 </div>

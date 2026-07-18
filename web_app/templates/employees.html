@@ -158,6 +158,23 @@
       {% endif %}
     </a>
   </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-my-reviews">
+      <i class="bi bi-clipboard-check me-1"></i>My Reviews
+      {% if my_performance_reviews is defined %}
+        {% set _action_count = namespace(n=0) %}
+        {% for _r in my_performance_reviews %}
+          {% set _rs = _r.status or 'Submitted' %}
+          {% if _rs == 'pending_self_assessment' or (_rs in ('pending_acknowledgement','Submitted') and not _r.employee_acknowledged) %}
+            {% set _action_count.n = _action_count.n + 1 %}
+          {% endif %}
+        {% endfor %}
+        {% if _action_count.n > 0 %}
+        <span class="badge rounded-pill bg-danger ms-1" style="font-size:10px;padding:3px 6px;vertical-align:middle;">{{ _action_count.n }}</span>
+        {% endif %}
+      {% endif %}
+    </a>
+  </li>
   {% if user_role == 'admin' %}
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-team">
@@ -484,48 +501,65 @@
 <div class="tab-pane fade show active" id="tab-time-off">
 
   {% set bal = my_time_off_balance %}
-  {% set pct_used = ((bal.used_hours / bal.allotment_hours) * 100) | int if bal.allotment_hours > 0 else 0 %}
+  {% set pto_pct  = ((bal.pto_used_hours  / bal.pto_allotment_hours)  * 100) | int if bal.pto_allotment_hours  > 0 else 0 %}
+  {% set sick_pct = ((bal.sick_used_hours / bal.sick_allotment_hours) * 100) | int if bal.sick_allotment_hours > 0 else 0 %}
 
   <!-- Balance Banner -->
-  <div class="card-panel mb-3" style="border-left:4px solid {% if bal.remaining_hours == 0 %}#DC2626{% elif bal.remaining_hours <= 24 %}#F59E0B{% else %}#0D9488{% endif %};">
-    <div class="d-flex justify-content-between align-items-center mb-2">
+  <div class="card-panel mb-3" style="border-left:4px solid #0D9488;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
       <h6 class="panel-title mb-0">
         <i class="bi bi-umbrella me-2" style="color:#0D9488;"></i>{{ current_year }} Time Off Balance
       </h6>
-      <span class="text-muted small">{{ bal.allotment }} days &times; 8 hrs = {{ bal.allotment_hours | int }} hrs allotted</span>
+      <span class="badge bg-light text-secondary border" style="font-weight:500;">Resets Jan 1</span>
     </div>
-    <div class="row g-3 mb-2">
-      <div class="col-4 text-center">
-        <div style="font-size:1.6rem; font-weight:800; color:#0D9488;">{{ bal.allotment_hours | int }}</div>
-        <div class="text-muted small">Total Hours</div>
-        <div class="text-muted" style="font-size:10px;">{{ bal.allotment }} days</div>
+
+    <!-- PTO row -->
+    <div class="mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <span style="font-size:13px; font-weight:700; color:#0f172a;">
+          <i class="bi bi-briefcase me-1" style="color:#0D9488;"></i>PTO
+        </span>
+        <span style="font-size:13px;">
+          <span style="font-weight:700; color:{% if bal.pto_remaining_hours == 0 %}#DC2626{% elif bal.pto_remaining_hours <= 8 %}#F59E0B{% else %}#16A34A{% endif %};">
+            {{ "%.1f" | format(bal.pto_remaining) }} days left
+          </span>
+          <span class="text-muted"> / {{ bal.pto_allotment | int }} days ({{ bal.pto_used_hours | int }} of {{ bal.pto_allotment_hours | int }} hrs used)</span>
+        </span>
       </div>
-      <div class="col-4 text-center">
-        <div style="font-size:1.6rem; font-weight:800; color:#D97706;">{{ "%.1f" | format(bal.used_hours) }}</div>
-        <div class="text-muted small">Used</div>
-        <div class="text-muted" style="font-size:10px;">{{ "%.1f" | format(bal.used) }} days</div>
+      <div class="progress" style="height:8px; border-radius:4px;">
+        <div class="progress-bar {% if bal.pto_remaining_hours == 0 %}bg-danger{% elif bal.pto_remaining_hours <= 8 %}bg-warning{% else %}bg-success{% endif %}"
+             style="width:{{ pto_pct }}%; border-radius:4px;"></div>
       </div>
-      <div class="col-4 text-center">
-        <div style="font-size:1.6rem; font-weight:800; color:{% if bal.remaining_hours == 0 %}#DC2626{% elif bal.remaining_hours <= 24 %}#F59E0B{% else %}#16A34A{% endif %};">{{ "%.1f" | format(bal.remaining_hours) }}</div>
-        <div class="text-muted small">Remaining</div>
-        <div class="text-muted" style="font-size:10px;">{{ "%.1f" | format(bal.remaining) }} days</div>
+      {% if bal.pto_remaining_hours == 0 %}
+      <div class="mt-1 small" style="color:#DC2626;"><i class="bi bi-x-circle-fill me-1"></i>No PTO hours remaining for {{ current_year }}.</div>
+      {% elif bal.pto_remaining_hours <= 8 %}
+      <div class="mt-1 small" style="color:#92400E;"><i class="bi bi-exclamation-triangle-fill me-1"></i>Only {{ "%.1f" | format(bal.pto_remaining) }} PTO days left.</div>
+      {% endif %}
+    </div>
+
+    <!-- Sick Leave row -->
+    <div>
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <span style="font-size:13px; font-weight:700; color:#0f172a;">
+          <i class="bi bi-heart-pulse me-1" style="color:#7C3AED;"></i>Sick Leave
+        </span>
+        <span style="font-size:13px;">
+          <span style="font-weight:700; color:{% if bal.sick_remaining_hours == 0 %}#DC2626{% elif bal.sick_remaining_hours <= 8 %}#F59E0B{% else %}#7C3AED{% endif %};">
+            {{ "%.1f" | format(bal.sick_remaining) }} days left
+          </span>
+          <span class="text-muted"> / {{ bal.sick_allotment | int }} days ({{ bal.sick_used_hours | int }} of {{ bal.sick_allotment_hours | int }} hrs used)</span>
+        </span>
       </div>
+      <div class="progress" style="height:8px; border-radius:4px; background:#EDE9FE;">
+        <div class="progress-bar {% if bal.sick_remaining_hours == 0 %}bg-danger{% elif bal.sick_remaining_hours <= 8 %}bg-warning{% else %}{% endif %}"
+             style="width:{{ sick_pct }}%; border-radius:4px; {% if bal.sick_remaining_hours > 8 %}background:#7C3AED;{% endif %}"></div>
+      </div>
+      {% if bal.sick_remaining_hours == 0 %}
+      <div class="mt-1 small" style="color:#DC2626;"><i class="bi bi-x-circle-fill me-1"></i>No sick leave remaining for {{ current_year }}.</div>
+      {% elif bal.sick_remaining_hours <= 8 %}
+      <div class="mt-1 small" style="color:#92400E;"><i class="bi bi-exclamation-triangle-fill me-1"></i>Only {{ "%.1f" | format(bal.sick_remaining) }} sick days left.</div>
+      {% endif %}
     </div>
-    <div class="progress" style="height:10px; border-radius:6px;">
-      <div class="progress-bar {% if bal.remaining_hours == 0 %}bg-danger{% elif bal.remaining_hours <= 24 %}bg-warning{% else %}bg-success{% endif %}"
-           style="width:{{ pct_used }}%; border-radius:6px;"></div>
-    </div>
-    {% if bal.remaining_hours == 0 %}
-    <div class="mt-2 d-flex align-items-center gap-2" style="background:#FEF2F2; border:1px solid #FECACA; border-radius:6px; padding:8px 12px;">
-      <i class="bi bi-x-circle-fill" style="color:#DC2626;"></i>
-      <span style="color:#DC2626; font-weight:600; font-size:13px;">No more time off hours available for {{ current_year }}.</span>
-    </div>
-    {% elif bal.remaining_hours <= 24 %}
-    <div class="mt-2 d-flex align-items-center gap-2" style="background:#FFFBEB; border:1px solid #FCD34D; border-radius:6px; padding:8px 12px;">
-      <i class="bi bi-exclamation-triangle-fill" style="color:#F59E0B;"></i>
-      <span style="color:#92400E; font-weight:600; font-size:13px;">Only {{ "%.1f" | format(bal.remaining_hours) }} hrs ({{ "%.1f" | format(bal.remaining) }} days) remaining for {{ current_year }}.</span>
-    </div>
-    {% endif %}
   </div>
 
   <div class="row g-3">
@@ -534,41 +568,13 @@
         <h6 class="panel-title mb-3">
           <i class="bi bi-calendar-plus me-1" style="color:#0D9488;"></i>Request Time Off
         </h6>
-        {% if bal.remaining_hours == 0 %}
-        <div class="text-center py-3" style="background:#FEF2F2; border-radius:8px;">
-          <i class="bi bi-x-circle-fill" style="font-size:28px; color:#DC2626;"></i>
-          <div class="mt-2 fw-600" style="color:#DC2626;">No time off hours remaining</div>
-          <div class="text-muted small mt-1">You have used all {{ bal.allotment_hours | int }} hrs for {{ current_year }}.<br>You may still request <strong>Unpaid</strong> leave.</div>
-        </div>
-        <form method="post" action="{{ url_for('employee_time_off_new') }}" class="mt-3">
-          <input type="hidden" name="type" value="Unpaid">
-          <input type="hidden" name="hours_per_day" value="8">
-          <div class="row g-2 mb-2">
-            <div class="col-6">
-              <label class="form-label small fw-semibold">Start Date</label>
-              <input type="date" name="start_date" class="form-control form-control-sm" required>
-            </div>
-            <div class="col-6">
-              <label class="form-label small fw-semibold">End Date</label>
-              <input type="date" name="end_date" class="form-control form-control-sm" required>
-            </div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold">Reason <span class="text-muted fw-normal">(optional)</span></label>
-            <textarea name="reason" class="form-control form-control-sm" rows="2"></textarea>
-          </div>
-          <button type="submit" class="btn btn-outline-secondary btn-sm w-100">
-            <i class="bi bi-send me-1"></i>Submit Unpaid Leave Request
-          </button>
-        </form>
-        {% else %}
         <form method="post" action="{{ url_for('employee_time_off_new') }}" id="timeOffForm">
           <div class="row g-2 mb-2">
             <div class="col-6">
               <label class="form-label small fw-semibold">Type</label>
               <select name="type" class="form-select form-select-sm" id="timeOffType" onchange="onLeaveTypeChange()">
-                <option>Vacation</option><option>Sick</option>
-                <option>Personal</option><option>Unpaid</option>
+                <option>PTO</option><option>Sick Leave</option>
+                <option>Unpaid</option>
               </select>
             </div>
             <div class="col-6">
@@ -603,7 +609,6 @@
             <i class="bi bi-send me-1"></i>Submit Request
           </button>
         </form>
-        {% endif %}
       </div>
     </div>
 
@@ -674,16 +679,20 @@
         <thead>
           <tr>
             <th>Employee</th>
-            <th class="text-center">Allotted</th>
+            <th class="text-center" colspan="2" style="color:#0D9488;"><i class="bi bi-briefcase me-1"></i>PTO (10 days)</th>
+            <th class="text-center" colspan="2" style="color:#7C3AED;"><i class="bi bi-heart-pulse me-1"></i>Sick Leave (5 days)</th>
+          </tr>
+          <tr class="text-muted" style="font-size:11px;">
+            <th></th>
             <th class="text-center">Used</th>
             <th class="text-center">Remaining</th>
-            <th style="width:180px;">Balance</th>
+            <th class="text-center">Used</th>
+            <th class="text-center">Remaining</th>
           </tr>
         </thead>
         <tbody>
         {% for u in all_users %}
-          {% set ub = all_time_off_balances.get(u.firebase_uid, {'allotment':15,'used':0,'remaining':15}) %}
-          {% set upct = ((ub.used / ub.allotment) * 100) | int if ub.allotment > 0 else 0 %}
+          {% set ub = all_time_off_balances.get(u.firebase_uid, {'pto_allotment':10,'pto_used':0,'pto_remaining':10,'sick_allotment':5,'sick_used':0,'sick_remaining':5}) %}
           <tr>
             <td>
               <div class="d-flex align-items-center gap-2">
@@ -691,17 +700,15 @@
                 <span class="fw-500">{{ u.username }}</span>
               </div>
             </td>
-            <td class="text-center text-muted">{{ ub.allotment }}</td>
-            <td class="text-center" style="color:#D97706; font-weight:600;">{{ ub.used }}</td>
-            <td class="text-center fw-bold" style="color:{% if ub.remaining == 0 %}#DC2626{% elif ub.remaining <= 3 %}#F59E0B{% else %}#16A34A{% endif %};">
-              {{ ub.remaining }}
-              {% if ub.remaining == 0 %}<i class="bi bi-x-circle-fill ms-1" style="color:#DC2626;"></i>{% endif %}
+            <td class="text-center" style="color:#D97706; font-weight:600;">{{ "%.1f" | format(ub.pto_used | float) }}</td>
+            <td class="text-center fw-bold" style="color:{% if ub.pto_remaining == 0 %}#DC2626{% elif ub.pto_remaining <= 2 %}#F59E0B{% else %}#16A34A{% endif %};">
+              {{ "%.1f" | format(ub.pto_remaining | float) }}
+              {% if ub.pto_remaining == 0 %}<i class="bi bi-x-circle-fill ms-1" style="color:#DC2626;font-size:10px;"></i>{% endif %}
             </td>
-            <td>
-              <div class="progress" style="height:8px; border-radius:4px;">
-                <div class="progress-bar {% if ub.remaining == 0 %}bg-danger{% elif ub.remaining <= 3 %}bg-warning{% else %}bg-success{% endif %}"
-                     style="width:{{ upct }}%; border-radius:4px;"></div>
-              </div>
+            <td class="text-center" style="color:#D97706; font-weight:600;">{{ "%.1f" | format(ub.sick_used | float) }}</td>
+            <td class="text-center fw-bold" style="color:{% if ub.sick_remaining == 0 %}#DC2626{% elif ub.sick_remaining <= 1 %}#F59E0B{% else %}#7C3AED{% endif %};">
+              {{ "%.1f" | format(ub.sick_remaining | float) }}
+              {% if ub.sick_remaining == 0 %}<i class="bi bi-x-circle-fill ms-1" style="color:#DC2626;font-size:10px;"></i>{% endif %}
             </td>
           </tr>
         {% endfor %}
@@ -728,7 +735,7 @@
         </thead>
         <tbody>
         {% for r in pending_time_off %}
-        {% set emp_bal = all_time_off_balances.get(r.employee_uid, {'remaining_hours': 120, 'remaining': 15}) %}
+        {% set emp_bal = all_time_off_balances.get(r.employee_uid, {'pto_remaining_hours': 80, 'sick_remaining_hours': 40, 'pto_remaining': 10, 'sick_remaining': 5}) %}
         {% set r_hours = r.get('total_hours') %}
         {% if r_hours is none %}
           {% if r.type == 'Half Day' %}{% set r_hours = 4 %}
@@ -740,7 +747,7 @@
               <span class="emp-avatar" style="width:28px;height:28px;font-size:11px;">{{ (r.employee_name or 'U')[0]|upper }}</span>
               <div>
                 <div class="fw-500">{{ r.employee_name }}</div>
-                <div class="text-muted" style="font-size:11px;">{{ "%.1f" | format(emp_bal.remaining_hours | float) }} hrs left</div>
+                <div class="text-muted" style="font-size:11px;">PTO {{ "%.1f" | format(emp_bal.pto_remaining | float) }}d / Sick {{ "%.1f" | format(emp_bal.sick_remaining | float) }}d left</div>
               </div>
             </div>
           </td>
@@ -828,9 +835,25 @@
           {% if profile_user.get('monthly_salary') %}
           <div class="comp-card green">
             <div class="text-muted small fw-semibold mb-1">Monthly Salary</div>
+            {% if profile_user.get('region') == 'Outside America' %}
+            <div class="fw-800" style="font-size:22px;color:#15803D;">
+              ৳{{ "{:,.0f}".format((profile_user.monthly_salary|float) * (bdt_exchange_rate or 110)) }}<span class="text-muted fw-normal" style="font-size:13px;"> BDT/mo</span>
+            </div>
+            {% if user_role == 'admin' %}
+            <div class="text-muted" style="font-size:12px;margin-top:2px;">
+              ≈ ${{ "{:,.0f}".format(profile_user.monthly_salary|float) }} USD/mo
+            </div>
+            {% endif %}
+            {% else %}
             <div class="fw-800" style="font-size:22px;color:#15803D;">
               ${{ "{:,.0f}".format(profile_user.monthly_salary|float) }}<span class="text-muted fw-normal" style="font-size:13px;">/mo</span>
             </div>
+            {% if user_role == 'admin' %}
+            <div class="text-muted" style="font-size:12px;margin-top:2px;">
+              ≈ ৳{{ "{:,.0f}".format((profile_user.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT/mo
+            </div>
+            {% endif %}
+            {% endif %}
           </div>
           {% endif %}
         </div>
@@ -876,10 +899,137 @@
         <p class="text-muted small mt-3 mb-0">
           <i class="bi bi-info-circle me-1"></i>Contact an admin to update your details.
         </p>
+        <div class="mt-3">
+          <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#changePasswordModal">
+            <i class="bi bi-key me-1"></i>Change Password
+          </button>
+        </div>
       </div>
     </div>
   </div>
 </div><!-- /tab-profile -->
+
+<!-- ── My Reviews Tab ────────────────────────────────────────────────────── -->
+<div class="tab-pane fade" id="tab-my-reviews">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h6 class="fw-semibold mb-0"><i class="bi bi-clipboard-check me-2 text-primary"></i>My Performance Reviews</h6>
+    <a href="{{ url_for('reviews') }}" class="btn btn-sm btn-outline-primary">View All</a>
+  </div>
+  {% if my_performance_reviews is defined and my_performance_reviews %}
+    {% for r in my_performance_reviews %}
+    {% set rstatus = r.status or 'Submitted' %}
+    {% set score   = r.weighted_score | float if r.weighted_score else 0 %}
+    {% set acked   = r.employee_acknowledged %}
+    {% set needs_action = (rstatus == 'pending_self_assessment') or (rstatus in ('pending_acknowledgement', 'Submitted') and not acked) %}
+    <div class="card mb-3 shadow-sm {% if needs_action %}border-warning{% endif %}" style="cursor:pointer;" onclick="window.location='{{ url_for('review_detail', review_id=r.firebase_id) }}'">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+          <div>
+            <div class="fw-semibold">{{ r.review_period }}</div>
+            <div class="text-muted small">{{ r.created_at[:10] if r.created_at else '' }}</div>
+          </div>
+          <div class="d-flex gap-2 align-items-center flex-wrap">
+            {% if rstatus == 'pending_self_assessment' %}
+              <span class="badge bg-warning text-dark" style="font-size:11px;"><i class="bi bi-pencil-square me-1"></i>Fill Self-Assessment</span>
+            {% elif rstatus == 'pending_manager_review' %}
+              <span class="badge bg-secondary" style="font-size:11px;">Waiting for Manager</span>
+            {% elif rstatus in ('pending_acknowledgement', 'Submitted') and not acked %}
+              <span class="badge bg-primary" style="font-size:11px;"><i class="bi bi-bell me-1"></i>Acknowledge Required</span>
+            {% elif rstatus == 'completed' or acked %}
+              <span class="badge bg-success" style="font-size:11px;">Completed</span>
+            {% endif %}
+          </div>
+        </div>
+        {% if score > 0 %}
+        <div class="mt-2" style="height:6px;background:#E5E7EB;border-radius:3px;overflow:hidden;">
+          <div style="width:{{ ((score/5)*100)|round }}%;height:100%;border-radius:3px;
+            background:{% if score>=4.5 %}#2E7D32{% elif score>=3.5 %}#558B2F{% elif score>=2.5 %}#C9920A{% elif score>=1.5 %}#E65100{% else %}#C0392B{% endif %};">
+          </div>
+        </div>
+        <div class="text-muted small mt-1">{{ "%.2f"|format(score) }}/5.00 — {{ r.rating_label or '' }}</div>
+        {% endif %}
+        {% if (rstatus == 'completed' or acked) and r.approved_raise_pct and r.approved_raise_pct|float > 0 %}
+        <div class="mt-2 text-success small fw-semibold">
+          <i class="bi bi-arrow-up-circle me-1"></i>{{ r.approved_raise_pct }}% raise approved
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-clipboard" style="font-size:40px;opacity:.3;"></i>
+    <div class="mt-2">No reviews yet.</div>
+    <div class="small mt-1">Your performance reviews will appear here once submitted by your manager.</div>
+    <a href="{{ url_for('reviews') }}" class="btn btn-outline-primary btn-sm mt-3">Go to Reviews</a>
+  </div>
+  {% endif %}
+</div><!-- /tab-my-reviews -->
+
+<!-- ── Change Password Modal ─────────────────────────────────────────────── -->
+<div class="modal fade" id="changePasswordModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:420px;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-key me-2"></i>Change Password</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="cpwAlert" class="alert d-none mb-3" style="font-size:13px;"></div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Current Password</label>
+          <input type="password" id="cpwCurrent" class="form-control" placeholder="Enter current password">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">New Password</label>
+          <input type="password" id="cpwNew" class="form-control" placeholder="At least 6 characters">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Confirm New Password</label>
+          <input type="password" id="cpwConfirm" class="form-control" placeholder="Repeat new password">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="cpwSubmitBtn" onclick="submitChangePassword()">
+          <i class="bi bi-check-lg me-1"></i>Update Password
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+function submitChangePassword() {
+  var btn = document.getElementById('cpwSubmitBtn');
+  var alert = document.getElementById('cpwAlert');
+  var cur = document.getElementById('cpwCurrent').value.trim();
+  var nw  = document.getElementById('cpwNew').value.trim();
+  var cnf = document.getElementById('cpwConfirm').value.trim();
+  alert.className = 'alert d-none mb-3';
+  if (!cur || !nw || !cnf) {
+    alert.className = 'alert alert-danger mb-3'; alert.textContent = 'All fields are required.'; return;
+  }
+  btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Updating...';
+  fetch('/api/change-password', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({current_password: cur, new_password: nw, confirm_password: cnf})
+  }).then(r => r.json()).then(data => {
+    btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Update Password';
+    if (data.success) {
+      alert.className = 'alert alert-success mb-3'; alert.textContent = data.message;
+      document.getElementById('cpwCurrent').value = '';
+      document.getElementById('cpwNew').value = '';
+      document.getElementById('cpwConfirm').value = '';
+    } else {
+      alert.className = 'alert alert-danger mb-3'; alert.textContent = data.error;
+    }
+  }).catch(() => {
+    btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Update Password';
+    alert.className = 'alert alert-danger mb-3'; alert.textContent = 'Network error. Please try again.';
+  });
+}
+</script>
 
 
 {% if user_role == 'admin' %}
@@ -1003,7 +1153,13 @@
           <td class="text-muted">{{ (u.get('hire_date') or '—') | format_date }}</td>
           <td class="text-end" style="font-size:12px;">
             {% if u.get('hourly_rate') %}<div class="fw-500">${{ '%.2f'|format(u.hourly_rate|float) }}/hr</div>{% endif %}
-            {% if u.get('monthly_salary') %}<div class="text-success">${{ '{:,.0f}'.format(u.monthly_salary|float) }}/mo</div>{% endif %}
+            {% if u.get('monthly_salary') %}
+            {% if u.get('region') == 'Outside America' %}
+            <div class="text-success">৳{{ '{:,.0f}'.format((u.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT/mo</div>
+            {% else %}
+            <div class="text-success">${{ '{:,.0f}'.format(u.monthly_salary|float) }}/mo</div>
+            {% endif %}
+            {% endif %}
             {% if not u.get('hourly_rate') and not u.get('monthly_salary') %}<span class="text-muted">—</span>{% endif %}
           </td>
           <td>
@@ -1192,9 +1348,17 @@
           <td class="text-end fw-500">{{ ('$%.2f/hr' % u.hourly_rate) if u.hourly_rate else '—' }}</td>
           <td class="text-end">
             {% if u.monthly_salary %}
-            <span class="badge" style="background:#ECFDF5;color:#065F46;border:1px solid #A7F3D0;font-size:11px;">
+            {% if u.get('region') == 'Outside America' %}
+            <span class="badge" style="background:#EDE9FE;color:#5B21B6;border:1px solid #C4B5FD;font-size:11px;"
+                  title="≈ ${{ '{:,.0f}'.format(u.monthly_salary|float) }} USD">
+              ৳{{ '{:,.0f}'.format((u.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT/mo
+            </span>
+            {% else %}
+            <span class="badge" style="background:#ECFDF5;color:#065F46;border:1px solid #A7F3D0;font-size:11px;"
+                  title="≈ ৳{{ '{:,.0f}'.format((u.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT">
               ${{ '{:,.0f}'.format(u.monthly_salary|float) }}/mo
             </span>
+            {% endif %}
             {% else %}—{% endif %}
           </td>
           <td class="text-muted small">{{ u.email or '—' }}</td>
@@ -1741,9 +1905,10 @@
             </select>
           </div>
           <div class="mb-2">
-            <label class="form-label fw-semibold" style="font-size:12px;">Amount Claimed ($)</label>
+            <label class="form-label fw-semibold" style="font-size:12px;">Amount Claimed (৳ BDT)</label>
             <input type="number" name="amount_claimed" class="form-control form-control-sm"
-                   min="0.01" step="0.01" placeholder="0.00" required>
+                   min="0.01" max="50000" step="0.01" placeholder="0.00" required>
+            <div class="form-text text-muted" style="font-size:11px;">Maximum claim: ৳50,000 BDT</div>
           </div>
           <div class="mb-2">
             <label class="form-label fw-semibold" style="font-size:12px;">Provider / Hospital</label>
@@ -1793,11 +1958,11 @@
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
               <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
-              <td class="text-end fw-semibold">${{ '%.2f'|format(c.amount_claimed|float) }}</td>
+              <td class="text-end fw-semibold">৳{{ '%.2f'|format(c.amount_claimed|float) }}</td>
               <td class="text-end text-success fw-semibold">
                 {% set _amt_appr = c.get('amount_approved') %}
                 {% if _amt_appr is not none and _amt_appr != '' %}
-                  ${{ '%.2f'|format(_amt_appr|float) }}
+                  ৳{{ '%.2f'|format(_amt_appr|float) }}
                 {% else %}—{% endif %}
               </td>
               <td>
@@ -1845,7 +2010,7 @@
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
               <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
-              <td class="text-end fw-semibold">${{ '%.2f'|format(c.amount_claimed|float) }}</td>
+              <td class="text-end fw-semibold">৳{{ '%.2f'|format(c.amount_claimed|float) }}</td>
               <td>
                 {% set cs = c.status or 'Pending' %}
                 <span class="badge" style="font-size:11px;
@@ -1894,7 +2059,7 @@
         <div class="modal-body py-2">
           <input type="hidden" name="action" id="medReviewAction">
           <div class="mb-2" id="medApprovedRow">
-            <label class="form-label fw-semibold" style="font-size:12px;">Amount Approved ($)</label>
+            <label class="form-label fw-semibold" style="font-size:12px;">Amount Approved (৳ BDT)</label>
             <input type="number" name="amount_approved" id="medApprovedAmt"
                    class="form-control form-control-sm" min="0" step="0.01">
           </div>
@@ -1936,7 +2101,7 @@
 
 // Tab persistence via URL hash
 (function () {
-  const map = { clock:'#tab-clock', 'time-off':'#tab-time-off', profile:'#tab-profile', team:'#tab-team', directory:'#tab-directory', medical:'#tab-medical', expenses:'#tab-emp-expenses' };
+  const map = { clock:'#tab-clock', 'time-off':'#tab-time-off', profile:'#tab-profile', team:'#tab-team', directory:'#tab-directory', medical:'#tab-medical', expenses:'#tab-emp-expenses', reviews:'#tab-my-reviews' };
   const hash = (window.location.hash || '').replace('#','');
   const target = map[hash];
   if (target) {
@@ -2058,10 +2223,6 @@ function countWorkingDays(startStr, endStr) {
 }
 
 window.onLeaveTypeChange = function() {
-  var type = (document.getElementById('timeOffType') || {}).value || '';
-  var hpdEl = document.getElementById('hoursPerDay');
-  // Auto-set hours per day for Unpaid (keep at 8 by default)
-  if (hpdEl && type === 'Unpaid') { hpdEl.value = 8; }
   calcRequestedDays();
 };
 
@@ -2078,8 +2239,13 @@ window.calcRequestedDays = function() {
   if (!s || !e) { infoDiv.style.display = 'none'; return; }
   var days = countWorkingDays(s, e);
   var totalHours = Math.round(days * hoursPerDay * 10) / 10;
-  var remainingHours = {{ my_time_off_balance.remaining_hours }};
+  var isSick   = type === 'Sick Leave';
   var isUnpaid = type === 'Unpaid';
+  // Choose the right pool
+  var ptoRemaining  = {{ my_time_off_balance.pto_remaining_hours }};
+  var sickRemaining = {{ my_time_off_balance.sick_remaining_hours }};
+  var remainingHours = isSick ? sickRemaining : ptoRemaining;
+  var poolLabel = isSick ? 'Sick Leave' : 'PTO';
   infoDiv.style.display = 'block';
   infoDiv.style.cssText = 'display:block;padding:8px 10px;border-radius:6px;margin-bottom:8px;border:1px solid #D1FAE5;background:#F0FDF4;';
   if (days <= 0) {
@@ -2091,11 +2257,12 @@ window.calcRequestedDays = function() {
   var hrsLabel = hoursPerDay + ' hr' + (hoursPerDay !== 1 ? 's' : '') + '/day';
   if (!isUnpaid && totalHours > remainingHours) {
     infoDiv.style.cssText = 'display:block;padding:8px 10px;border-radius:6px;margin-bottom:8px;border:1px solid #FECACA;background:#FEF2F2;';
-    infoText.innerHTML = '<i class="bi bi-x-circle me-1" style="color:#DC2626;"></i><span style="color:#DC2626;"><strong>' + days + ' day' + (days!==1?'s':'') + ' × ' + hrsLabel + ' = ' + totalHours + ' hrs</strong> requested — exceeds your <strong>' + remainingHours + ' hrs</strong> remaining. Consider Unpaid leave.</span>';
+    infoText.innerHTML = '<i class="bi bi-x-circle me-1" style="color:#DC2626;"></i><span style="color:#DC2626;"><strong>' + days + ' day' + (days!==1?'s':'') + ' × ' + hrsLabel + ' = ' + totalHours + ' hrs</strong> — exceeds your <strong>' + remainingHours + ' ' + poolLabel + ' hrs</strong> remaining. Use Unpaid leave instead.</span>';
     if (submitBtn) submitBtn.disabled = true;
   } else {
-    var leftHrs = Math.round((remainingHours - totalHours) * 10) / 10;
-    infoText.innerHTML = '<i class="bi bi-calendar-check me-1" style="color:#16A34A;"></i><span style="color:#16A34A;"><strong>' + days + ' day' + (days!==1?'s':'') + ' × ' + hrsLabel + ' = <span style="font-size:1.05em;">' + totalHours + ' hrs</span></strong> requested.' + (!isUnpaid ? ' You will have <strong>' + leftHrs + ' hrs</strong> left.' : '') + '</span>';
+    var leftHrs = isUnpaid ? null : Math.round((remainingHours - totalHours) * 10) / 10;
+    var leftDays = leftHrs !== null ? Math.round(leftHrs / 8 * 10) / 10 : null;
+    infoText.innerHTML = '<i class="bi bi-calendar-check me-1" style="color:#16A34A;"></i><span style="color:#16A34A;"><strong>' + days + ' day' + (days!==1?'s':'') + ' × ' + hrsLabel + ' = <span style="font-size:1.05em;">' + totalHours + ' hrs</span></strong> ' + poolLabel + ' requested.' + (leftHrs !== null ? ' You will have <strong>' + leftDays + ' days (' + leftHrs + ' hrs)</strong> left.' : '') + '</span>';
     if (submitBtn) submitBtn.disabled = false;
   }
 };

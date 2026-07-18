@@ -480,7 +480,7 @@
       {% set _viewer_name = session.get('user_name','') %}
       {% set _viewer_is_admin = _viewer_role in ('admin','finance') %}
 
-      {% if salesperson_stats %}
+      {% if sales_people %}
       <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
           <thead>
@@ -496,31 +496,36 @@
             </tr>
           </thead>
           <tbody>
-            {% for sp in salesperson_stats %}
+            {% for sp in sales_people %}
             {% if _viewer_is_admin or sp.name == _viewer_name %}
+            {% set sp_stat = salesperson_stats | selectattr('name', 'equalto', sp.name) | first | default(none) %}
             <tr>
               <td class="fw-semibold">{{ sp.name }}</td>
               <td>
-                {% if sp.employee_type == 'full_time' %}
+                {% set _etype = sp_stat.employee_type if sp_stat else sp.employee_type %}
+                {% if _etype == 'full_time' %}
                 <span class="badge" style="background:#0D9488;color:#fff;font-size:11px;">Full Time</span>
-                {% elif sp.employee_type == 'contractor' %}
+                {% elif _etype == 'contractor' %}
                 <span class="badge" style="background:#7C3AED;color:#fff;font-size:11px;">Contractor</span>
                 {% else %}
                 <span class="text-muted small">—</span>
                 {% endif %}
               </td>
-              <td class="text-center">{{ sp.quotes_total }}</td>
-              <td class="text-center text-success fw-semibold">{{ sp.quotes_converted }}</td>
+              <td class="text-center">{{ sp_stat.quotes_total if sp_stat else 0 }}</td>
+              <td class="text-center text-success fw-semibold">{{ sp_stat.quotes_converted if sp_stat else 0 }}</td>
               <td class="text-center">
-                <span class="badge {{ 'bg-success' if sp.win_rate >= 50 else 'bg-secondary' }}">{{ sp.win_rate }}%</span>
+                {% set _wr = sp_stat.win_rate if sp_stat else 0 %}
+                <span class="badge {{ 'bg-success' if _wr >= 50 else 'bg-secondary' }}">{{ _wr }}%</span>
               </td>
-              <td class="text-end fw-semibold">${{ "{:,.2f}".format(sp.revenue_generated) }}</td>
+              <td class="text-end fw-semibold">${{ "{:,.2f}".format(sp_stat.revenue_generated if sp_stat else 0) }}</td>
               <td class="text-center text-muted">
-                {% if sp.commission_rate > 0 %}{{ sp.commission_rate }}%{% else %}—{% endif %}
+                {% set _cr = sp_stat.commission_rate if sp_stat else sp.commission_rate %}
+                {% if _cr > 0 %}{{ _cr }}%{% else %}—{% endif %}
               </td>
               <td class="text-end fw-bold" style="color:#7C3AED;">
-                {% if sp.commission_rate > 0 %}
-                ${{ "{:,.2f}".format(sp.commission_earned) }}
+                {% set _cr = sp_stat.commission_rate if sp_stat else sp.commission_rate %}
+                {% if _cr > 0 %}
+                ${{ "{:,.2f}".format(sp_stat.commission_earned if sp_stat else 0) }}
                 {% else %}
                 <span class="text-muted small">Rate not set</span>
                 {% endif %}
@@ -544,7 +549,7 @@
       {% else %}
       <div class="text-center text-muted py-5">
         <i class="bi bi-people" style="font-size:40px;opacity:.3;"></i>
-        <div class="mt-2">No sales activity found.
+        <div class="mt-2">No sales people found.
           {% if 'settings' in allowed_pages %}
           <a href="{{ url_for('settings') }}?tab=users">Add employees in Settings →</a>
           {% endif %}

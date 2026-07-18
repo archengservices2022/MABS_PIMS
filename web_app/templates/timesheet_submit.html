@@ -494,13 +494,13 @@ function buildEntryRow(id, date, entry, locked) {
     </td>
     <td style="min-width:88px;">
       <input type="text" class="entry-start"
-        value="${escHtml(entry.start_time ? formatTimeDisplay(entry.start_time) : (isWork?'9:00 AM':''))}"
+        value="${escHtml(entry.start_time ? formatTimeDisplay(entry.start_time) : '')}"
         oninput="calcRow(${id})" placeholder="9:00 AM"
         style="text-align:center;" ${dis}>
     </td>
     <td style="min-width:88px;">
       <input type="text" class="entry-end"
-        value="${escHtml(entry.end_time ? formatTimeDisplay(entry.end_time) : (isWork?'5:00 PM':''))}"
+        value="${escHtml(entry.end_time ? formatTimeDisplay(entry.end_time) : '')}"
         oninput="calcRow(${id})" placeholder="5:00 PM"
         style="text-align:center;" ${dis}>
     </td>
@@ -537,8 +537,8 @@ function onTypeChange(id) {
     });
     recalcWeek();
   } else {
-    tr.querySelector('.entry-start').value = '9:00 AM';
-    tr.querySelector('.entry-end').value = '5:00 PM';
+    tr.querySelector('.entry-start').value = '';
+    tr.querySelector('.entry-end').value = '';
     calcRow(id);
   }
 }
@@ -863,10 +863,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (dateOrder.length>0) {
       dateOrder.forEach(date => renderDayBlock(date, byDate[date]));
     } else {
-      WEEKDAYS.forEach(d => renderDayBlock(d.date,[{}]));
+      renderDayBlock(WEEKDAYS[0].date, [{}]);
     }
   } else {
-    WEEKDAYS.forEach(d => renderDayBlock(d.date,[{}]));
+    renderDayBlock(WEEKDAYS[0].date, [{}]);
     if (!IS_APPROVED) {
       fetch('/api/timesheets/previous?week='+encodeURIComponent(WEEK_OF))
         .then(r=>r.json())

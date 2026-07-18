@@ -64,7 +64,7 @@
         <div class="mt-1" style="font-size:13px;">
           {% for q in expiring_soon_quotes %}
             <span class="badge me-1 mb-1" style="background:#D97706;color:#fff;">
-              {{ q.client_name or q.job_name or 'Quote' }}
+              {{ (q.get('company_name') or q.get('client_name') or q.get('job_name') or 'Quote') }}
               {% if q.valid_until %} · expires {{ q.valid_until }}{% endif %}
             </span>
           {% endfor %}
@@ -473,7 +473,7 @@
       </div>
       <div class="focus-body">
         <div class="focus-title">
-          <strong>{{ meta.get('invoice_number','—') }}</strong> · {{ meta.get('client_name','—') }}
+          <strong>{{ meta.get('invoice_number','—') }}</strong> · {{ meta.get('company_name') or meta.get('client_name','—') }}
           <span class="badge ms-1" style="background:#FFEDD5;color:#C2410C;font-size:0.68rem;">DUE IN 3 DAYS</span>
         </div>
         <div class="focus-sub">Due {{ meta.get('due_date','—') | format_date }} · ${{ "{:,.0f}".format(meta.get('total',0)|float) }}</div>
@@ -789,13 +789,14 @@
 
       {% for inv in recent_invoices %}
       {% set meta = inv.get('meta', {}) %}
+      {% set client_display = meta.get('company_name') or meta.get('client_name','—') %}
       <a href="{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}"
          class="list-item text-decoration-none" style="display:flex;justify-content:space-between;align-items:center;">
         <div class="d-flex align-items-center gap-2">
-          <div class="inv-avatar">{{ meta.get('client_name','?')[0]|upper }}</div>
+          <div class="inv-avatar">{{ client_display[0]|upper }}</div>
           <div>
             <div class="list-item-title">{{ meta.get('invoice_number','N/A') }}</div>
-            <div class="list-item-sub">{{ meta.get('client_name','—') }}</div>
+            <div class="list-item-sub">{{ client_display }}</div>
           </div>
         </div>
         <div class="text-end">
@@ -860,7 +861,7 @@
             style="cursor:pointer;">
           <td><span class="fw-bold text-teal">{{ p.get('project_number','—') }}</span></td>
           <td class="fw-500">{{ p.get('project_name','—') }}</td>
-          <td class="text-muted">{{ p.get('client_name','—') }}</td>
+          <td class="text-muted">{{ p.get('company_name') or p.get('client_name','—') }}</td>
           <td>
             {{ status_badge(p.get('status'), 'Not Started') }}
           </td>
