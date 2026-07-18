@@ -8809,16 +8809,14 @@ def financial():
                     })
             except Exception:
                 pass
-    # Merge multiple partial payments for the same invoice+project into one row
+    # Merge multiple partial payments for the same invoice+project+date into one row
+    # But keep payments on different dates as separate rows
     for _mk in monthly_payment_details:
         _merged: dict = {}
         for _row in monthly_payment_details[_mk]:
-            _key = (_row["invoice_id"], _row["project_number"])
+            _key = (_row["invoice_id"], _row["project_number"], _row["paid_date"])
             if _key in _merged:
                 _merged[_key]["paid_amount"] += _row["paid_amount"]
-                # keep latest payment date
-                if _row["paid_date"] > _merged[_key]["paid_date"]:
-                    _merged[_key]["paid_date"] = _row["paid_date"]
             else:
                 _merged[_key] = dict(_row)
         monthly_payment_details[_mk] = sorted(_merged.values(), key=lambda x: x.get("paid_date", ""))
