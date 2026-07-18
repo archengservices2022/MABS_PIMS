@@ -614,8 +614,16 @@ a[href*="filter_expense"]:hover {
         <tbody id="incomeTableBody">
           {% for r in rev_list %}
           <tr class="inc-row"
-              data-date="{{ r.get('collection_date', r.get('date','')) | format_date }}"
-              data-year="{{ r.get('invoice_date', r.get('date',''))[:4] }}"
+              {%- set inv_date = r.get('invoice_date', r.get('date','')) -%}
+              {%- if inv_date and inv_date|length >= 8 and inv_date[2] == '-' -%}
+              {%- set date_parts = inv_date.split('-') -%}
+              {%- set formatted_date = date_parts[2] + '-' + date_parts[0] + '-' + date_parts[1] -%}
+              data-date="{{ formatted_date }}"
+              data-year="{{ date_parts[2] }}"
+              {%- else -%}
+              data-date="{{ inv_date }}"
+              data-year="{{ inv_date[:4] if inv_date else '' }}"
+              {%- endif %}
               data-status="{{ r.get('status','') }}"
               data-amount="{{ ((r.get('amount_paid',0)|float) + (r.get('tax_paid',0)|float))|float }}"
               data-subtotal="{{ ((r.get('total',0)|float) - (r.get('tax_amount',0)|float)) }}"

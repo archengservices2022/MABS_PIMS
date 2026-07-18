@@ -67,8 +67,8 @@
             <select name="sales" class="form-select" required>
               <option value="">-- Select Sales Person --</option>
               {% for sp in sales_people %}
-              <option value="{{ sp }}"
-                {{ 'selected' if project and (project.get('sales') == sp or project.get('assigned_to') == sp) }}>{{ sp }}</option>
+              <option value="{{ sp.get('name') if sp is mapping else sp }}"
+                {{ 'selected' if project and (project.get('sales') == (sp.get('name') if sp is mapping else sp) or project.get('assigned_to') == (sp.get('name') if sp is mapping else sp)) }}>{{ sp.get('name') if sp is mapping else sp }}</option>
               {% endfor %}
             </select>
           </div>
