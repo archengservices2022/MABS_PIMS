@@ -310,7 +310,7 @@ a[href*="filter_expense"]:hover {
   <div class="row g-3 mb-4">
     <div class="col-6 col-xl-2">
       <div class="kpi-card kpi-teal">
-        <div class="kpi-top"><span class="kpi-label">Total Invoiced</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
+        <div class="kpi-top"><span class="kpi-label">Invoice Total</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
         <div class="kpi-value">${{ "{:,.2f}".format(total_invoiced) }}</div>
         <div class="kpi-sub">{{ invoiced_count }} invoice{{ 's' if invoiced_count != 1 }}</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">{{ invoiced_years }}</small></div>
@@ -392,7 +392,7 @@ a[href*="filter_expense"]:hover {
 
         <!-- Key metrics -->
         <div class="summary-row">
-          <span class="text-muted small">Total Invoiced</span>
+          <span class="text-muted small">Invoice Total</span>
           <span class="fw-bold">${{ "{:,.2f}".format(total_invoiced) }}</span>
         </div>
         <div class="summary-row">
@@ -2196,7 +2196,7 @@ function viewReceipt(expId) {
   <div class="row g-3 mb-4">
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-teal">
-        <div class="kpi-top"><span class="kpi-label">Total Invoiced</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
+        <div class="kpi-top"><span class="kpi-label">Invoice Total</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
         <div class="kpi-value">${{ "{:,.2f}".format(project_pnl|sum(attribute='invoiced')) }}</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">All projects · {{ stat_card_year }}</small></div>
       </div>
@@ -2513,14 +2513,24 @@ function viewReceipt(expId) {
         <i class="bi bi-cash-stack me-1"></i>Revenue Collected
       </div>
       <div id="monthPaymentsEmpty" class="text-center py-3 text-muted" style="display:none; font-size:13px;">No payments this month</div>
-      <div class="table-responsive" id="monthPaymentsTableWrap">
-        <table class="table table-hover mb-0" style="font-size:12px;">
+      <div class="table-responsive" id="monthPaymentsTableWrap" style="width:100%;">
+        <table class="table table-hover mb-0" style="font-size:12px; width:100%; table-layout:fixed;">
+          <colgroup>
+            <col style="width:12%;">
+            <col style="width:12%;">
+            <col style="width:18%;">
+            <col style="width:15%;">
+            <col style="width:15%;">
+            <col style="width:15%;">
+            <col style="width:13%;">
+          </colgroup>
           <thead style="background:#1e293b;">
             <tr>
               <th style="padding:8px 12px; color:#fff; font-weight:700;">Project</th>
               <th style="padding:8px 12px; color:#fff; font-weight:700;">Invoice</th>
               <th style="padding:8px 12px; color:#fff; font-weight:700;">Stage</th>
-              <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Total</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Stage Amount</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Invoice Total</th>
               <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Paid</th>
               <th style="padding:8px 12px; color:#fff; font-weight:700;">Date</th>
             </tr>
@@ -2683,14 +2693,18 @@ function viewReceipt(expId) {
             +'<td style="padding:8px 12px;">'+projLink+'</td>'
             +'<td style="padding:8px 12px;">'+invLink+'</td>'
             +'<td style="padding:8px 12px;">'+stageBadge+'</td>'
+            +'<td style="padding:8px 12px;text-align:right;color:#0369a1;font-weight:600;">'+fmt(p.stage_amount)+'</td>'
             +'<td style="padding:8px 12px;text-align:right;color:#374151;">'+fmt(p.total_amount)+'</td>'
             +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#16a34a;">'+fmt(p.paid_amount)+'</td>'
             +'<td style="padding:8px 12px;color:#374151;">'+formatDate(p.paid_date)+'</td></tr>';
         });
         document.getElementById('monthPaymentsTbody').innerHTML = rows.join('');
+        var totalStageAmount = payments.reduce(function(s,p){return s+parseFloat(p.stage_amount||0);},0);
+        var totalInvoiced = payments.reduce(function(s,p){return s+parseFloat(p.total_amount||0);},0);
         var totalPaid = payments.reduce(function(s,p){return s+parseFloat(p.paid_amount||0);},0);
-        document.getElementById('monthPaymentsTfoot').innerHTML = '<tr><td colspan="4" style="padding:8px 12px;font-weight:700;">Total Paid — '+payments.length+' payment(s)</td>'
-          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#16a34a;font-size:13px;">'+fmt(totalPaid)+'</td><td></td></tr>';
+        document.getElementById('monthPaymentsTfoot').innerHTML = '<tr><td colspan="5" style="padding:8px 12px;font-weight:700;">Total — '+payments.length+' payment(s)</td>'
+          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#16a34a;font-size:13px;">'+fmt(totalPaid)+'</td>'
+          +'<td style="padding:8px 12px;"></td></tr>';
       }
 
       /* ── 2. Unpaid — Due This Month ── */
