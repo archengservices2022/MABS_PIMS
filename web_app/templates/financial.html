@@ -2280,7 +2280,7 @@ function viewReceipt(expId) {
             <td class="text-end text-teal fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(row.invoiced) }}</td>
             <td class="text-end text-success fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(row.paid) }}</td>
             <td class="text-end fw-semibold {{ 'text-danger' if row.outstanding > 0 else 'text-muted' }}">
-              {{ (currency_symbol + "{:,.2f}".format(row.outstanding)) if row.outstanding > 0 else "?" }}
+              {{ (currency_symbol + "{:,.2f}".format(row.outstanding)) if row.outstanding > 0 else "—" }}
             </td>
             <td class="text-end text-danger">{{ currency_symbol }}{{ "{:,.2f}".format(row.expenses) }}</td>
             <td class="text-end fw-bold {{ 'text-success' if row.gross_profit >= 0 else 'text-danger' }}">
