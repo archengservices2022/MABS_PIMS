@@ -214,7 +214,7 @@
   <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
     <div>
       <div class="fw-semibold" style="font-size:15px;">{{ r.employee_name }}</div>
-      <div class="text-muted small">{{ r.review_period }} &nbsp;?&nbsp; Initiated by {{ r.reviewer_name }}</div>
+      <div class="text-muted small">{{ r.review_period }} &nbsp;&middot;&nbsp; Initiated by {{ r.reviewer_name }}</div>
     </div>
     <div class="d-flex align-items-center gap-2 flex-wrap">
       {% if rstatus == 'pending_self_assessment' %}
@@ -367,7 +367,7 @@
   <div class="flex-grow-1">
     <h5 class="mb-0 fw-semibold">{{ r.employee_name }} — {{ r.review_period }}</h5>
     <div class="text-muted small">Initiated by {{ r.reviewer_name }}
-      &nbsp;?&nbsp; {{ r.created_at[:10] if r.created_at else '' }}</div>
+      &nbsp;&middot;&nbsp; {{ r.created_at[:10] if r.created_at else '' }}</div>
   </div>
   {% if role == 'admin' and rstatus in ('pending_acknowledgement', 'completed', 'Submitted') %}
   <a href="#" onclick="document.getElementById('editForm').classList.toggle('d-none');return false;"
@@ -821,7 +821,7 @@
           <div class="text-muted small mb-1">Approved Raise</div>
           <div class="fw-bold" style="font-size:24px;font-family:Georgia,serif;
             color:{% if r.approved_raise_pct and r.approved_raise_pct|float > 0 %}#2E7D32{% else %}#9CA3AF{% endif %};">
-            {% if r.approved_raise_pct and r.approved_raise_pct|float > 0 %}{{ r.approved_raise_pct }}%{% else %}?{% endif %}
+            {% if r.approved_raise_pct and r.approved_raise_pct|float > 0 %}{{ r.approved_raise_pct }}%{% else %}-{% endif %}
           </div>
         </div>
         {% endif %}
