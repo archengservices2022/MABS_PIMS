@@ -157,7 +157,7 @@
             <thead>
               <tr>
                 <th style="width:26%">Description</th>
-                <th style="width:25%">Project <i class="bi bi-info-circle text-muted" title="Override which project this line item bills to ? useful when one invoice covers multiple projects"></i></th>
+                <th style="width:25%">Project <i class="bi bi-info-circle text-muted" title="Override which project this line item bills to — useful when one invoice covers multiple projects"></i></th>
                 <th style="width:10%">Qty</th>
                 <th style="width:17%">Unit Price</th>
                 <th style="width:14%">Amount</th>
@@ -328,7 +328,7 @@ function findLineItemRowByProject(number) {
 
 function renderClientProjects() {
   const wrap = document.getElementById('projectsPickerWrap');
-  if (!wrap) return;   // stage_idx mode ? no multi-project panel
+  if (!wrap) return;   // stage_idx mode — no multi-project panel
 
   const client  = document.getElementById('clientSelect').value;
   const mainNum = document.querySelector('#invoiceForm select[name="project_number"]').value;
@@ -354,7 +354,7 @@ function renderClientProjects() {
     col.className = 'col-md-6 col-lg-4';
 
     if (isMain) {
-      // Primary project ? always included, shown as a teal card (no checkbox)
+      // Primary project — always included, shown as a teal card (no checkbox)
       col.innerHTML = `
         <div class="d-flex align-items-center gap-2 p-2 border rounded"
              style="background:#f0fdfa; border-color:#0D9488 !important;">
@@ -369,7 +369,7 @@ function renderClientProjects() {
           </div>
         </div>`;
     } else {
-      // Additional project ? checkbox to include/exclude. Pre-check it (and
+      // Additional project — checkbox to include/exclude. Pre-check it (and
       // mark it "added") when it's already on the invoice as a line item,
       // e.g. from the "select multiple projects -> load to invoice" flow.
       const alreadyIncluded = includedProjects.has(p.number);

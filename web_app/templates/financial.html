@@ -3483,7 +3483,7 @@ document.getElementById('pdfExtractBtn')?.addEventListener('click', async () => 
     if (data.amount)       document.getElementById('expenseAmount').value = data.amount;
     if (data.date)         document.getElementById('expenseDate').value = data.date;
     if (data.vendor)       document.getElementById('expenseVendor').value = data.vendor;
-    status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Fields filled ? review and save.</span>';
+    status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Fields filled — review and save.</span>';
   } catch(e) { status.innerHTML = '<span class="text-danger">Request failed.</span>'; }
 });
 

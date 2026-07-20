@@ -110,7 +110,7 @@
     <h5 class="mb-1 fw-semibold">
       {% if role == 'admin' %}All Performance Reviews{% else %}My Performance Reviews{% endif %}
     </h5>
-    <p class="text-muted small mb-0">Semi-annual reviews ? January &amp; July cycles</p>
+    <p class="text-muted small mb-0">Semi-annual reviews — January &amp; July cycles</p>
   </div>
   {% if role == 'admin' %}
   <a href="{{ url_for('reviews_new') }}" class="btn btn-primary">
@@ -213,7 +213,7 @@
 {% endif %}
 
 <!-- ????????????????????????????????????????????????????????????
-     NEW REVIEW FORM  (admin initiates ? employee + period only)
+     NEW REVIEW FORM  (admin initiates — employee + period only)
 ???????????????????????????????????????????????????????????? -->
 {% elif view == 'new' %}
 
@@ -551,7 +551,7 @@
   </div>
   {% endif %}
 
-<!-- ?? STATE 3 & 4: Review submitted ? standard view ?? -->
+<!-- ?? STATE 3 & 4: Review submitted — standard view ?? -->
 {% else %}
 
 <!-- Acknowledgement Banner -->
@@ -732,7 +732,7 @@
         {% elif r.raise_effective_date and r.approved_raise_pct and r.approved_raise_pct|float > 0 %}
         <div class="alert alert-warning py-2" style="font-size:12px;">
           <i class="bi bi-clock me-1"></i>
-          Salary update pending ? effective {{ r.raise_effective_date | format_date }}
+          Salary update pending — effective {{ r.raise_effective_date | format_date }}
         </div>
         {% endif %}
       </div>
@@ -925,7 +925,7 @@ function validateSelfAssessment() {
   return true;
 }
 
-// Employee select ? fill hidden name field
+// Employee select — fill hidden name field
 function fillEmpName(sel) {
   var opt = sel.options[sel.selectedIndex];
   var nameInp = document.getElementById('empName');

@@ -303,7 +303,7 @@
                     </div>
                   </div>
                   {% endfor %}
-                  <!-- Other specify ? shown when Other is ticked -->
+                  <!-- Other specify — shown when Other is ticked -->
                   <div class="col-12" id="otherSpecifyRowNew" style="display:none;">
                     <div class="d-flex align-items-center gap-2 p-2 rounded border border-warning bg-warning bg-opacity-10">
                       <i class="bi bi-pencil-square text-warning"></i>
@@ -472,7 +472,7 @@
 
       <div class="alert py-2 mb-3" style="background:#F0FDF4;border:1px solid #86EFAC;font-size:13px;">
         <i class="bi bi-info-circle me-1" style="color:#16A34A;"></i>
-        Sales people are pulled from <strong>Settings ? Users</strong> (Sales &amp; Admin roles).
+        Sales people are pulled from <strong>Settings — Users</strong> (Sales &amp; Admin roles).
         Add or remove people there to update this list.
       </div>
 
@@ -723,7 +723,7 @@
                   <form method="POST"
                         action="{{ url_for('quote_followup_done', quote_id=q.firebase_id) }}">
                     <button type="submit" class="btn btn-xs btn-teal"
-                            title="Mark follow-up done ? clears the reminder">
+                            title="Mark follow-up done — clears the reminder">
                       <i class="bi bi-check-lg me-1"></i>Done
                     </button>
                   </form>
@@ -732,7 +732,7 @@
                         action="{{ url_for('quote_followup_snooze', quote_id=q.firebase_id) }}">
                     <input type="hidden" name="days" value="7">
                     <button type="submit" class="btn btn-xs btn-outline-secondary"
-                            title="Snooze ? reschedule follow-up by 7 days">
+                            title="Snooze — reschedule follow-up by 7 days">
                       <i class="bi bi-alarm me-1"></i>+7d
                     </button>
                   </form>
@@ -757,7 +757,7 @@
         <div class="fw-semibold mb-1">No follow-ups due today</div>
         <div class="text-muted small">
           Set a follow-up date on any quote to get reminded here.<br>
-          Open a quote ? Edit ? Follow-up Date field.
+          Open a quote — Edit — Follow-up Date field.
         </div>
       </div>
     </div>
@@ -767,7 +767,7 @@
     {% if upcoming_followups %}
     <div class="d-flex align-items-center gap-2 mb-2 mt-2">
       <span class="fw-semibold text-muted small text-uppercase" style="letter-spacing:.05em;">
-        <i class="bi bi-calendar-event me-1"></i>Upcoming ? Next 14 Days
+        <i class="bi bi-calendar-event me-1"></i>Upcoming — Next 14 Days
       </span>
       <span class="badge bg-secondary">{{ upcoming_followups|length }}</span>
     </div>
@@ -958,7 +958,7 @@ document.getElementById('nav-new').addEventListener('click', function(e) {
   window.location.assign('{{ url_for("quotes_new") }}');
 });
 
-// ?? Local date helper ? avoids UTC offset shifting the date ??????????????????
+// ?? Local date helper — avoids UTC offset shifting the date ??????????????????
 function localDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
@@ -985,7 +985,7 @@ function setListRange(type) {
   form.submit();
 }
 
-// ?? Export links ? rebuild whenever any filter changes ???????????????????????
+// ?? Export links — rebuild whenever any filter changes ???????????????????????
 function buildExportLinks() {
   const status = document.getElementById('exportStatus').value;
   const from   = document.getElementById('exportFrom').value;
@@ -1109,7 +1109,7 @@ function toggleSvcNew(cb) {
   const serviceName = cb.value;
   const box = cb.closest('.svc-box');
 
-  // Show/hide "Other ? please specify" row
+  // Show/hide "Other — please specify" row
   if (cb.dataset.other) {
     const specRow = document.getElementById('otherSpecifyRowNew');
     const specInp = document.getElementById('otherSpecifyInputNew');
@@ -1135,7 +1135,7 @@ function toggleSvcNew(cb) {
   }
 }
 
-// Delegated listener ? survives tab switching and bfcache restores
+// Delegated listener — survives tab switching and bfcache restores
 document.addEventListener('change', function(e) {
   if (e.target.classList.contains('svc-cb')) toggleSvcNew(e.target);
 });

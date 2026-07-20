@@ -337,7 +337,7 @@
 
     {% if existing_sheet and existing_sheet.status == 'Submitted' %}
     <div class="ts-alert ts-alert-info">
-      <i class="bi bi-info-circle-fill"></i> Already submitted ? re-submit to overwrite.
+      <i class="bi bi-info-circle-fill"></i> Already submitted — re-submit to overwrite.
     </div>
     {% elif existing_sheet and existing_sheet.status == 'Approved' %}
     <div class="ts-alert ts-alert-success">
@@ -345,7 +345,7 @@
     </div>
     {% elif existing_sheet and existing_sheet.status == 'Rejected' %}
     <div class="ts-alert ts-alert-danger">
-      <i class="bi bi-exclamation-circle-fill"></i> Rejected ? please update and resubmit.
+      <i class="bi bi-exclamation-circle-fill"></i> Rejected — please update and resubmit.
     </div>
     {% endif %}
 
@@ -516,7 +516,7 @@ function buildEntryRow(id, date, entry, locked) {
   return tr;
 }
 
-// ?? Type changed ? toggle time/project fields ????????????????????????????????
+// ?? Type changed — toggle time/project fields ????????????????????????????????
 function onTypeChange(id) {
   const tr = document.getElementById(`row-${id}`);
   if (!tr) return;

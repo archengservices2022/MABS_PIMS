@@ -342,7 +342,7 @@
           </form>
         </div>
 
-        <!-- Invoice prompt modal ? shown when status set to Sent out_Not Invoiced -->
+        <!-- Invoice prompt modal — shown when status set to Sent out_Not Invoiced -->
         <div class="modal fade" id="invoicePromptModal" tabindex="-1" aria-hidden="true">
           <div class="modal-dialog modal-dialog-centered modal-sm">
             <div class="modal-content">
@@ -352,7 +352,7 @@
               </div>
               <div class="modal-body pt-1 pb-2">
                 <p class="text-muted small mb-0">
-                  You're marking this project as <strong>Sent Out ? Not Invoiced</strong>.<br>
+                  You're marking this project as <strong>Sent Out — Not Invoiced</strong>.<br>
                   Do you want to create the invoice now?
                 </p>
               </div>
@@ -465,7 +465,7 @@
               <td>
                 <i class="bi bi-person-badge me-1 text-muted"></i>Labor
                 {% if manual_labor_cost > 0 and labor_total_minutes == 0 %}
-                <span class="badge bg-light text-secondary border ms-1" title="Manually entered ? no time entries logged">manual</span>
+                <span class="badge bg-light text-secondary border ms-1" title="Manually entered — no time entries logged">manual</span>
                 {% endif %}
               </td>
               <td class="text-end">{{ currency_symbol }}{{ "{:,.0f}".format(b_labor) }}</td>
@@ -504,7 +504,7 @@
               </td>
             </tr>
             {% endif %}
-            <!-- Subcontractor row (budget only ? no tracking yet) -->
+            <!-- Subcontractor row (budget only — no tracking yet) -->
             {% if b_sub > 0 %}
             <tr>
               <td><i class="bi bi-people me-1 text-muted"></i>Subcontractor</td>
@@ -572,7 +572,7 @@
                   <td>
                     <span class="fw-bold text-teal">{{ m.get('invoice_number','?') }}</span>
                     {% if share < 0.999 %}
-                    <span class="badge bg-secondary ms-1" title="This invoice spans multiple projects ? only this project's share is counted here">
+                    <span class="badge bg-secondary ms-1" title="This invoice spans multiple projects — only this project's share is counted here">
                       {{ "%.0f"|format(share * 100) }}% share
                     </span>
                     {% endif %}
@@ -783,7 +783,7 @@
                     {% elif co.get('status') == 'Submitted' %}
                     <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}" class="d-inline">
                       <input type="hidden" name="status" value="Approved">
-                      <button class="btn btn-xs btn-success" title="Approve ? adds to contract value">Approve</button>
+                      <button class="btn btn-xs btn-success" title="Approve — adds to contract value">Approve</button>
                     </form>
                     <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}" class="d-inline ms-1">
                       <input type="hidden" name="status" value="Rejected">
@@ -832,7 +832,7 @@
             </div>
             <div class="d-flex gap-2 align-items-start">
               <span class="badge" style="background:#DCFCE7;color:#166534;margin-top:2px;">3</span>
-              <span class="small text-muted">Approve ? contract value updates automatically and a new payment stage is added for invoicing.</span>
+              <span class="small text-muted">Approve — contract value updates automatically and a new payment stage is added for invoicing.</span>
             </div>
           </div>
         </div>
@@ -977,7 +977,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-          <i class="bi bi-x-lg me-1"></i>Cancel ? Keep Project
+          <i class="bi bi-x-lg me-1"></i>Cancel — Keep Project
         </button>
         <form method="POST" action="{{ url_for('project_delete', project_id=project.firebase_id) }}">
           <button type="submit" id="deleteConfirmBtn" class="btn btn-danger" disabled>

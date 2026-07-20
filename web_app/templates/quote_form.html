@@ -109,7 +109,7 @@
                 </div>
               </div>
               {% endfor %}
-              <!-- Other specify ? shown when Other is ticked -->
+              <!-- Other specify — shown when Other is ticked -->
               <div class="col-12" id="otherSpecifyRow"
                    style="{{ '' if ns.other_checked else 'display:none;' }}">
                 <div class="d-flex align-items-center gap-2 p-2 rounded border border-warning bg-warning bg-opacity-10">
@@ -370,7 +370,7 @@ function removeRow(btn) {
 function toggleServiceType(cb, serviceName, boxId) {
   const box = document.getElementById(boxId);
 
-  // Show/hide "Other ? please specify" row
+  // Show/hide "Other — please specify" row
   if (cb.dataset.other) {
     const specRow = document.getElementById('otherSpecifyRow');
     const specInp = document.getElementById('otherSpecifyInput');

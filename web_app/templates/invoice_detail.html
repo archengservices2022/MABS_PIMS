@@ -488,7 +488,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-          <i class="bi bi-x-lg me-1"></i>Cancel ? Keep Invoice
+          <i class="bi bi-x-lg me-1"></i>Cancel — Keep Invoice
         </button>
         <form method="POST" action="{{ url_for('invoice_delete', invoice_id=invoice.firebase_id) }}">
           <button type="submit" id="deleteConfirmBtn" class="btn btn-danger" disabled>

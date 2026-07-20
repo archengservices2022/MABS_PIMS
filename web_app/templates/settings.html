@@ -80,11 +80,11 @@
 
             <h6 class="section-heading mt-4">Currency Settings</h6>
             <div class="mb-3">
-              <label class="form-label">BDT Exchange Rate <span class="text-muted fw-normal">(1 USD = ? BDT)</span></label>
+              <label class="form-label">BDT Exchange Rate <span class="text-muted fw-normal">(1 USD = — BDT)</span></label>
               <input type="number" name="bdt_exchange_rate" class="form-control"
                      value="{{ co.get('bdt_exchange_rate', 110) }}"
                      min="1" step="0.01" style="max-width:150px;">
-              <div class="form-text text-muted">Used to show USD ? BDT equivalent for Outside America employees.</div>
+              <div class="form-text text-muted">Used to show USD — BDT equivalent for Outside America employees.</div>
             </div>
 
             <h6 class="section-heading mt-4">Invoice Defaults</h6>
@@ -445,7 +445,7 @@
                       {% set _et = u.get('employee_type', '') %}
                       <div style="font-size:10px;color:#94a3b8;margin-top:3px;">
                         {% if _cr > 0 %}{{ _cr }}% commission{% else %}<span style="color:#f59e0b;">rate not set</span>{% endif %}
-                        {% if _et %} ? {{ 'FT' if _et == 'full_time' else 'Contractor' }}{% endif %}
+                        {% if _et %} — {{ 'FT' if _et == 'full_time' else 'Contractor' }}{% endif %}
                       </div>
                     {% endif %}
                   </td>
@@ -460,7 +460,7 @@
                   <td class="text-end">
                     {% if u.get('hourly_rate') %}<div>{{ currency_symbol }}{{ '%.2f'|format(u.get('hourly_rate',0)|float) }}/hr</div>{% endif %}
                     {% if u.get('monthly_salary') %}<div class="text-success fw-semibold">{{ currency_symbol }}{{ '%.0f'|format(u.get('monthly_salary',0)|float) }}/mo</div>{% endif %}
-                    {% if not u.get('hourly_rate') and not u.get('monthly_salary') %}<span class="text-muted">?</span>{% endif %}
+                    {% if not u.get('hourly_rate') and not u.get('monthly_salary') %}<span class="text-muted">—</span>{% endif %}
                   </td>
                   <!-- Status (clickable toggle) -->
                   <td class="text-center">
@@ -601,10 +601,10 @@
         <div class="card-panel">
           <h6 class="section-heading">What AI can do</h6>
           <ul class="list-unstyled small text-muted mb-0">
-            <li class="mb-2"><i class="bi bi-filetype-pdf text-danger me-2"></i><strong>PDF Extraction</strong> ? upload a vendor bill, AI fills the expense form automatically</li>
-            <li class="mb-2"><i class="bi bi-graph-up text-teal me-2"></i><strong>Cash Flow Forecast</strong> ? predicts next 90 days of incoming payments</li>
-            <li class="mb-2"><i class="bi bi-envelope-exclamation text-warning me-2"></i><strong>Overdue Reminders</strong> ? drafts a professional follow-up email per invoice</li>
-            <li class="mb-2"><i class="bi bi-heart-pulse text-blue me-2"></i><strong>Project Health</strong> ? one-line status summary for each active project</li>
+            <li class="mb-2"><i class="bi bi-filetype-pdf text-danger me-2"></i><strong>PDF Extraction</strong> — upload a vendor bill, AI fills the expense form automatically</li>
+            <li class="mb-2"><i class="bi bi-graph-up text-teal me-2"></i><strong>Cash Flow Forecast</strong> — predicts next 90 days of incoming payments</li>
+            <li class="mb-2"><i class="bi bi-envelope-exclamation text-warning me-2"></i><strong>Overdue Reminders</strong> — drafts a professional follow-up email per invoice</li>
+            <li class="mb-2"><i class="bi bi-heart-pulse text-blue me-2"></i><strong>Project Health</strong> — one-line status summary for each active project</li>
           </ul>
         </div>
       </div>
@@ -616,7 +616,7 @@
   <div class="modal-dialog modal-sm">
     <div class="modal-content">
       <div class="modal-header py-2">
-        <h6 class="modal-title">Customize Pages ? <span id="pagesUserName"></span> <span id="pagesRoleBadge" class="badge ms-1" style="font-size:10px;"></span></h6>
+        <h6 class="modal-title">Customize Pages — <span id="pagesUserName"></span> <span id="pagesRoleBadge" class="badge ms-1" style="font-size:10px;"></span></h6>
         <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body py-2">
