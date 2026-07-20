@@ -3786,19 +3786,31 @@ def project_stage_set_amount(project_id, stage_idx):
         return redirect(url_for("project_detail", project_id=project_id))
     stages[stage_idx]["amount"] = new_amount
 
-    # Auto-balance: spread remaining balance equally across all OTHER pending stages
+    # Auto-balance: spread remaining balance equally across other pending BASE stages.
+    # CO stages (name contains "CO-") are fixed approved amounts — never redistribute into them.
     contract_value = _safe_float(data.get("contract_value", 0))
+    co_total = sum(
+        _safe_float(s.get("amount", 0))
+        for s in stages
+        if isinstance(s, dict) and "CO-" in s.get("name", "")
+    )
+    base_contract = max(0.0, contract_value - co_total)
+
     locked_sum = sum(
         _safe_float(s.get("amount", 0))
         for i, s in enumerate(stages)
-        if i != stage_idx and isinstance(s, dict) and s.get("status") != "Pending"
+        if i != stage_idx and isinstance(s, dict)
+           and s.get("status") not in ("Pending Invoice", "Pending")
+           and "CO-" not in s.get("name", "")
     )
     other_pending = [
         i for i, s in enumerate(stages)
-        if i != stage_idx and isinstance(s, dict) and s.get("status") == "Pending Invoice"
+        if i != stage_idx and isinstance(s, dict)
+           and s.get("status") == "Pending Invoice"
+           and "CO-" not in s.get("name", "")
     ]
-    if other_pending and contract_value > 0:
-        remaining = round(contract_value - locked_sum - new_amount, 2)
+    if other_pending and base_contract > 0:
+        remaining = round(base_contract - locked_sum - new_amount, 2)
         per = round(remaining / len(other_pending), 2)
         allocated = 0
         for j, idx in enumerate(other_pending):
