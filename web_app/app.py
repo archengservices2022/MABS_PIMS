@@ -197,6 +197,16 @@ def _project_plant_display(project: dict) -> str:
             return US_STATE_NAMES.get(name_matches[-1].upper(), "")
     return ""
 
+def _project_number_sort_key(project: dict):
+    num = str(project.get("project_number", "") or "").strip().upper()
+    match = re.match(r"^[A-Z]+-(\d{6})[-_ ]?(\d+)", num)
+    if match:
+        return (int(match.group(1)), int(match.group(2)), num)
+    digits = re.findall(r"\d+", num)
+    if digits:
+        return (int(digits[0]), int(digits[-1]), num)
+    return (0, 0, num)
+
 def normalize_role(role: str) -> str:
     r = str(role or "sales").strip().lower()
     return r if r in ROLE_PAGES else "sales"
@@ -1082,7 +1092,7 @@ def dashboard():
                 "pending_stages": len(pending_stages),
                 "pending_amount": pending_amt,
             })
-    projects_ready_to_invoice = sorted(projects_ready_to_invoice, key=lambda x: x["project_number"], reverse=True)[:8]
+    projects_ready_to_invoice = sorted(projects_ready_to_invoice, key=_project_number_sort_key, reverse=True)[:8]
 
     # ── This month vs last month collected ────────────────────────────────────
     this_month_str = datetime.now(COMPANY_TZ).strftime("%Y-%m")
@@ -2336,7 +2346,7 @@ def projects():
                     pdata["status"] = "In Progress"
                     fb_update(f"/projects/{pid}", {"status": "In Progress", "updated_at": _now_iso})
             items.append(pdata)
-    items.sort(key=lambda x: x.get("project_number", ""), reverse=True)
+    items.sort(key=_project_number_sort_key, reverse=True)
 
     search        = request.args.get("q", "").strip().lower()
     status_filter = request.args.get("status", "")
@@ -2753,6 +2763,8 @@ def projects_import_excel():
             fb_update(f"/projects/{parent_id}", {"base_contract_value": parent.get("contract_value", 0)})
         fb_update(f"/projects/{parent_id}", {"change_orders": cos, "updated_at": now_ts})
         co_added += 1
+
+    cache_bust("projects_list")
 
     msg = f"Import complete: {imported} projects added, {updated} updated, {co_added} change orders linked, {skipped} skipped."
     if errors:
@@ -4583,7 +4595,7 @@ def invoice_new():
             # Update invoice metadata with linked projects for multi-project invoices
             # SORT by project number (extract last digits, sort numerically) so 005 comes before 006
             if linked_projects:
-                linked_projects.sort(key=lambda x: int(x.get("project_number", "")[-3:]) if x.get("project_number", "")[-3:].isdigit() else x.get("project_number", ""))
+                linked_projects.sort(key=_project_number_sort_key)
                 fb_update(f"/invoices/{inv_id}", {"meta/linked_projects": linked_projects})
 
         # Auto-advance project status: Not Started → In Progress when first invoice created
@@ -8704,7 +8716,7 @@ def financial():
             "net_profit":     p_gross_profit - p_labor_cost,
             "firebase_id":    p.get("firebase_id",""),
         })
-    project_pnl.sort(key=lambda x: x["project_number"], reverse=True)
+    project_pnl.sort(key=_project_number_sort_key, reverse=True)
 
     # Show projects that have a contract value OR any financial activity this year
     project_pnl = [p for p in project_pnl if
@@ -13110,7 +13122,7 @@ def _load_projects_list() -> List[dict]:
             if pdata and isinstance(pdata, dict):
                 pdata["firebase_id"] = pid
                 items.append(pdata)
-        result = sorted(items, key=lambda x: x.get("project_number", ""), reverse=True)
+        result = sorted(items, key=_project_number_sort_key, reverse=True)
         _cache_set("projects_list", result, 30)  # 30-second TTL
         return result
     return []
