@@ -28,7 +28,7 @@
 
 {% macro project_select(selected) %}
 <select name="item_project[]" class="form-select form-select-sm">
-  <option value="">? invoice project ?</option>
+  <option value="">— invoice project —</option>
   {% for p in projects %}
   <option value="{{ p.get('project_number','') }}" {{ 'selected' if selected == p.get('project_number','') }}>{{ p.get('project_number','') }}</option>
   {% endfor %}
@@ -106,7 +106,7 @@
             <div class="border rounded p-2 ps-3" style="background:#f8fafc;">
               <div class="small fw-bold text-muted mb-2">
                 <i class="bi bi-kanban me-1 text-teal"></i>Active projects for this client
-                <span class="fw-normal">? check any to also bill on this invoice (one invoice can cover several projects)</span>
+                <span class="fw-normal">— check any to also bill on this invoice (one invoice can cover several projects)</span>
               </div>
               <div id="clientProjectsList" class="row g-2"></div>
             </div>
@@ -287,7 +287,7 @@
 <script>
 const TODAY_ISO = {{ now.strftime('%Y-%m-%d') | tojson }}; // company-timezone "today", not the browser's local/UTC date
 
-const projectOptionsHtml = '<option value="">? invoice project ?</option>' +
+const projectOptionsHtml = '<option value="">— invoice project —</option>' +
   [{% for p in projects %}{{ p.get('project_number','')|tojson }}{{ ',' if not loop.last }}{% endfor %}]
     .map(num => `<option value="${num}">${num}</option>`).join('');
 

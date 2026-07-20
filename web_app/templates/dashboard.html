@@ -7,12 +7,12 @@
 {% endblock %}
 
 {% set status_icons = {
-  'Draft':       ('bi-pencil',              'Draft ? not sent to client yet'),
-  'Sent':        ('bi-send',                'Sent ? awaiting client payment'),
-  'Viewed':      ('bi-eye',                 'Viewed ? client has opened the invoice'),
-  'Paid':        ('bi-check-circle-fill',   'Paid ? payment received in full'),
-  'Partial':     ('bi-circle-half',         'Partial ? part payment received'),
-  'Overdue':     ('bi-exclamation-circle-fill', 'Overdue ? past due date'),
+  'Draft':       ('bi-pencil',              'Draft — not sent to client yet'),
+  'Sent':        ('bi-send',                'Sent — awaiting client payment'),
+  'Viewed':      ('bi-eye',                 'Viewed — client has opened the invoice'),
+  'Paid':        ('bi-check-circle-fill',   'Paid — payment received in full'),
+  'Partial':     ('bi-circle-half',         'Partial — part payment received'),
+  'Overdue':     ('bi-exclamation-circle-fill', 'Overdue — past due date'),
   'Cancelled':   ('bi-x-circle',            'Cancelled'),
   'Not Started': ('bi-hourglass-split',     'Not yet started'),
   'In Progress': ('bi-arrow-repeat',        'Currently in progress'),
@@ -39,9 +39,9 @@
     <div>
       <i class="bi bi-exclamation-triangle-fill me-2"></i>
       <strong>{{ overdue_count }} overdue invoice{{ 's' if overdue_count != 1 }}</strong>
-      ? payment past due date.
+      — payment past due date.
       {% if 'invoicing' in allowed_pages %}
-      <a href="{{ url_for('invoicing', status='Overdue') }}" class="alert-link ms-2">View ?</a>
+      <a href="{{ url_for('invoicing', status='Overdue') }}" class="alert-link ms-2">View →</a>
       {% endif %}
     </div>
     {% if 'invoicing' in allowed_pages %}
@@ -60,17 +60,17 @@
     <div class="d-flex align-items-start gap-2">
       <i class="bi bi-alarm-fill mt-1" style="color:#D97706;font-size:16px;flex-shrink:0;"></i>
       <div>
-        <strong>{{ expiring_soon_quotes|length }} quote{{ 's' if expiring_soon_quotes|length != 1 }} expiring within 3 days ? act now!</strong>
+        <strong>{{ expiring_soon_quotes|length }} quote{{ 's' if expiring_soon_quotes|length != 1 }} expiring within 3 days — act now!</strong>
         <div class="mt-1" style="font-size:13px;">
           {% for q in expiring_soon_quotes %}
             <span class="badge me-1 mb-1" style="background:#D97706;color:#fff;">
               {{ (q.get('company_name') or q.get('client_name') or q.get('job_name') or 'Quote') }}
-              {% if q.valid_until %} ? expires {{ q.valid_until }}{% endif %}
+              {% if q.valid_until %} — expires {{ q.valid_until }}{% endif %}
             </span>
           {% endfor %}
         </div>
         {% if 'quotes' in allowed_pages %}
-        <a href="{{ url_for('quotes') }}" class="fw-semibold" style="color:#92400E;font-size:13px;">View quotes ?</a>
+        <a href="{{ url_for('quotes') }}" class="fw-semibold" style="color:#92400E;font-size:13px;">View quotes →</a>
         {% endif %}
       </div>
     </div>
@@ -79,9 +79,9 @@
   <div class="alert alert-warning d-flex align-items-center py-2 mb-0">
     <i class="bi bi-clock-fill me-2"></i>
     <strong>{{ expiring_count }} quote{{ 's' if expiring_count != 1 }}</strong>
-    expiring within 7 days ? follow up now.
+    expiring within 7 days — follow up now.
     {% if 'quotes' in allowed_pages %}
-    <a href="{{ url_for('quotes') }}" class="alert-link ms-2">View quotes ?</a>
+    <a href="{{ url_for('quotes') }}" class="alert-link ms-2">View quotes →</a>
     {% endif %}
   </div>
   {% endif %}
@@ -290,7 +290,7 @@
       {% if dash_commission.role == 'sales' %}
         {% if not dash_commission.rate_set %}
         <div class="alert alert-warning py-2 px-3 mb-3" style="font-size:12px;">
-          <i class="bi bi-info-circle me-1"></i>Commission rate not set ? contact your administrator.
+          <i class="bi bi-info-circle me-1"></i>Commission rate not set — contact your administrator.
         </div>
         {% endif %}
         <div class="row g-2">
@@ -305,14 +305,14 @@
           </div>
           <div class="col-6 col-md-3">
             <div style="background:#ECFDF5;border-radius:8px;padding:12px 14px;">
-              <div style="font-size:10px;color:#059669;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Earned ? This Month</div>
+              <div style="font-size:10px;color:#059669;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Earned — This Month</div>
               <div style="font-size:1.5rem;font-weight:800;color:#059669;line-height:1.2;">{{ currency_symbol }}{{ "{:,.0f}".format(dash_commission.earned_month) }}</div>
               <div style="font-size:10px;color:#94a3b8;margin-top:2px;">from {{ currency_symbol }}{{ "{:,.0f}".format(dash_commission.revenue_month) }} rev</div>
             </div>
           </div>
           <div class="col-6 col-md-3">
             <div style="background:#F0FDF4;border-radius:8px;padding:12px 14px;">
-              <div style="font-size:10px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Earned ? All Time</div>
+              <div style="font-size:10px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Earned — All Time</div>
               <div style="font-size:1.5rem;font-weight:800;color:#16a34a;line-height:1.2;">{{ currency_symbol }}{{ "{:,.0f}".format(dash_commission.earned_alltime) }}</div>
               <div style="font-size:10px;color:#94a3b8;margin-top:2px;">from {{ currency_symbol }}{{ "{:,.0f}".format(dash_commission.revenue_alltime) }} rev</div>
             </div>
@@ -380,8 +380,8 @@
       {% for q in followup_quotes %}
       <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
         <div>
-          <div class="fw-500 small">{{ q.get('job_number','?') }} ? {{ q.get('project_name') or (q.get('company_name') or q.get('client_name','?')) }}</div>
-          <div class="text-muted" style="font-size:0.75rem;">{{ q.get('company_name') or q.get('client_name','') }}{% if q.get('follow_up_date') %} ? Due {{ q.get('follow_up_date') | format_date }}{% endif %}</div>
+          <div class="fw-500 small">{{ q.get('job_number','?') }} — {{ q.get('project_name') or (q.get('company_name') or q.get('client_name','?')) }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ q.get('company_name') or q.get('client_name','') }}{% if q.get('follow_up_date') %} — Due {{ q.get('follow_up_date') | format_date }}{% endif %}</div>
         </div>
         <div class="d-flex gap-1">
           {% if 'quotes' in allowed_pages and q.get('firebase_id') %}
@@ -401,13 +401,13 @@
   <div class="col-lg-6">
     <div class="card-panel" style="height:100%;">
       <div class="panel-header d-flex justify-content-between align-items-center mb-2">
-        <h6 class="panel-title mb-0"><i class="bi bi-check2-circle text-success me-1"></i>Approved ? Ready to Convert</h6>
+        <h6 class="panel-title mb-0"><i class="bi bi-check2-circle text-success me-1"></i>Approved — Ready to Convert</h6>
       </div>
       {% for q in approved_quotes %}
       <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
         <div>
-          <div class="fw-500 small">{{ q.get('job_number','?') }} ? {{ q.get('project_name') or (q.get('company_name') or q.get('client_name','?')) }}</div>
-          <div class="text-muted" style="font-size:0.75rem;">{{ q.get('company_name') or q.get('client_name','') }}{% if q.get('total') %} ? {{ currency_symbol }}{{ "{:,.0f}".format(q.get('total',0)|float) }}{% endif %}</div>
+          <div class="fw-500 small">{{ q.get('job_number','?') }} — {{ q.get('project_name') or (q.get('company_name') or q.get('client_name','?')) }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ q.get('company_name') or q.get('client_name','') }}{% if q.get('total') %} — {{ currency_symbol }}{{ "{:,.0f}".format(q.get('total',0)|float) }}{% endif %}</div>
         </div>
         <div class="d-flex gap-1">
           {% if 'quotes' in allowed_pages and q.get('firebase_id') %}
@@ -428,7 +428,7 @@
 </div>
 {% endif %}
 
-<!-- ?? Urgent Alerts (overdue + due in 3 days ? silent when all clear) ????????? -->
+<!-- ?? Urgent Alerts (overdue + due in 3 days — silent when all clear) ????????? -->
 {% if reminder_overdue_invoices or reminder_due_soon %}
 <div class="card-panel mb-3" style="border-left:4px solid #DC2626;">
   <div class="d-flex justify-content-between align-items-center mb-2">
@@ -450,10 +450,10 @@
       </div>
       <div class="focus-body">
         <div class="focus-title">
-          <strong>{{ meta.get('invoice_number','?') }}</strong> ? {{ meta.get('company_name') or meta.get('client_name','?') }}
+          <strong>{{ meta.get('invoice_number','?') }}</strong> — {{ meta.get('company_name') or meta.get('client_name','?') }}
           <span class="badge ms-1" style="background:#FEE2E2;color:#991B1B;font-size:0.68rem;">OVERDUE</span>
         </div>
-        <div class="focus-sub">Due {{ meta.get('due_date','?') | format_date }} ? {{ currency_symbol }}{{ "{:,.0f}".format(meta.get('total',0)|float) }}</div>
+        <div class="focus-sub">Due {{ meta.get('due_date','?') | format_date }} — {{ currency_symbol }}{{ "{:,.0f}".format(meta.get('total',0)|float) }}</div>
       </div>
       <div class="focus-actions">
         {% if 'invoicing' in allowed_pages and inv.get('firebase_id') %}
@@ -473,10 +473,10 @@
       </div>
       <div class="focus-body">
         <div class="focus-title">
-          <strong>{{ meta.get('invoice_number','?') }}</strong> ? {{ meta.get('company_name') or meta.get('client_name','?') }}
+          <strong>{{ meta.get('invoice_number','?') }}</strong> — {{ meta.get('company_name') or meta.get('client_name','?') }}
           <span class="badge ms-1" style="background:#FFEDD5;color:#C2410C;font-size:0.68rem;">DUE IN 3 DAYS</span>
         </div>
-        <div class="focus-sub">Due {{ meta.get('due_date','?') | format_date }} ? {{ currency_symbol }}{{ "{:,.0f}".format(meta.get('total',0)|float) }}</div>
+        <div class="focus-sub">Due {{ meta.get('due_date','?') | format_date }} — {{ currency_symbol }}{{ "{:,.0f}".format(meta.get('total',0)|float) }}</div>
       </div>
       <div class="focus-actions">
         {% if 'invoicing' in allowed_pages and inv.get('firebase_id') %}
@@ -526,7 +526,7 @@
       <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
         <div>
           <div class="fw-500 small">{{ r.employee_name }}</div>
-          <div class="text-muted" style="font-size:0.75rem;">{{ r.type }} ? {{ r.start_date | format_date }} ? {{ r.end_date | format_date }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ r.type }} — {{ r.start_date | format_date }} — {{ r.end_date | format_date }}</div>
         </div>
       </div>
       {% endfor %}
@@ -548,7 +548,7 @@
       <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
         <div>
           <div class="fw-500 small">{{ e.submitted_by_name or e.submitted_by_email or '?' }}</div>
-          <div class="text-muted" style="font-size:0.75rem;">{{ e.expense_name or e.description or '?' }} ? {{ e.date | format_date }}</div>
+          <div class="text-muted" style="font-size:0.75rem;">{{ e.expense_name or e.description or '?' }} — {{ e.date | format_date }}</div>
         </div>
         <div class="fw-semibold text-success small">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</div>
       </div>
@@ -621,7 +621,7 @@
       <i class="bi bi-circle-fill text-teal" style="font-size:.45rem; flex-shrink:0;"></i>
       <div style="min-width:0; overflow:hidden;">
         <div class="fw-500 text-dark text-truncate">{{ p.get('project_name','?') }}</div>
-        <div class="text-muted text-truncate" style="font-size:0.73rem;">{{ p.get('project_number','') }}{% if p.get('contract_value') and 'financial' in allowed_pages %} ? {{ currency_symbol }}{{ "{:,.0f}".format(p.get('contract_value',0)|float) }}{% endif %}</div>
+        <div class="text-muted text-truncate" style="font-size:0.73rem;">{{ p.get('project_number','') }}{% if p.get('contract_value') and 'financial' in allowed_pages %} — {{ currency_symbol }}{{ "{:,.0f}".format(p.get('contract_value',0)|float) }}{% endif %}</div>
       </div>
     </a>
     {% endfor %}
@@ -768,7 +768,7 @@
   <div class="col-lg-7">
     <div class="card-panel" style="height:100%;">
       <div class="panel-header d-flex justify-content-between align-items-center">
-        <h6 class="panel-title mb-0">Revenue Overview ? Last 6 Months</h6>
+        <h6 class="panel-title mb-0">Revenue Overview — Last 6 Months</h6>
         {% if 'invoicing' in allowed_pages %}
         <a href="{{ url_for('invoicing') }}" class="text-teal small">View invoices ?</a>
         {% endif %}

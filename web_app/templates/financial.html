@@ -4,7 +4,7 @@
 
 {% set status_icons = {
   'Draft':       ('bi-pencil',                  'Not sent to client yet'),
-  'Sent':        ('bi-send',                    'Sent ? awaiting payment'),
+  'Sent':        ('bi-send',                    'Sent — awaiting payment'),
   'Viewed':      ('bi-eye',                     'Client has opened the invoice'),
   'Paid':        ('bi-check-circle-fill',       'Payment received in full'),
   'Partial':     ('bi-circle-half',             'Part payment received'),
@@ -306,7 +306,7 @@ a[href*="filter_expense"]:hover {
 
   {% set collection_pct = ((total_collected / total_invoiced * 100) if total_invoiced > 0 else 0)|round|int %}
 
-  <!-- ?? Row 1 ? 6 KPI cards ??????????????????????????????????????? -->
+  <!-- ?? Row 1 — 6 KPI cards ??????????????????????????????????????? -->
   <div class="row g-3 mb-4">
     <div class="col-6 col-xl-2">
       <div class="kpi-card kpi-teal">
@@ -353,7 +353,7 @@ a[href*="filter_expense"]:hover {
       <div class="kpi-card {{ 'kpi-green' if net_profit >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
         <div class="kpi-value {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">{{ currency_symbol }}{{ "{:,.2f}".format(net_profit) }}</div>
-        <div class="kpi-sub">collected ? expenses ? salaries</div>
+        <div class="kpi-sub">collected — expenses — salaries</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">{{ stat_card_year }}</small></div>
       </div>
     </div>
@@ -366,7 +366,7 @@ a[href*="filter_expense"]:hover {
         <div class="d-flex justify-content-between align-items-center mb-3">
           <div>
             <h6 class="panel-title mb-0">Revenue vs Expenses</h6>
-            <span class="text-muted" style="font-size:11px;">Monthly breakdown ? all recorded data</span>
+            <span class="text-muted" style="font-size:11px;">Monthly breakdown — all recorded data</span>
           </div>
           <div class="d-flex gap-3 align-items-center">
             <span class="d-flex align-items-center gap-1 small text-muted">
@@ -556,7 +556,7 @@ a[href*="filter_expense"]:hover {
 
   <div class="card-panel">
     <div class="d-flex justify-content-between align-items-center mb-2">
-      <h6 class="panel-title mb-0">Income ? Paid &amp; Partial Invoices</h6>
+      <h6 class="panel-title mb-0">Income — Paid &amp; Partial Invoices</h6>
       <span class="text-muted small" id="incomeCountInfo">{{ rev_list|length }} entries</span>
     </div>
 
@@ -1016,10 +1016,10 @@ a[href*="filter_expense"]:hover {
         <div class="col-md-6">
           <label class="form-label form-label-sm fw-600">Link to Project</label>
           <select name="project_number" id="expenseProject" class="form-select form-select-sm">
-            <option value="">? Optional ?</option>
+            <option value="">— Optional —</option>
             {% for p in projects %}
             <option value="{{ p.get('project_number','') }}">
-              {{ p.get('project_number','') }} ? {{ p.get('project_name','') }}
+              {{ p.get('project_number','') }} — {{ p.get('project_name','') }}
             </option>
             {% endfor %}
           </select>
@@ -1401,7 +1401,7 @@ function renderExpenseTable() {
     alert.style.display = active ? '' : 'none';
     if (active) {
       const grandTotal = expenseFilteredRows.reduce((sum, row) => sum + parseFloat(row.querySelector('td:nth-child(7)')?.textContent.replace(/[$,]/g,'') || 0), 0);
-      alert.textContent = `Showing ${expenseFilteredRows.length} of ${rows.length} entries ? $${grandTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} total`;
+      alert.textContent = `Showing ${expenseFilteredRows.length} of ${rows.length} entries — $${grandTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} total`;
     }
   }
 
@@ -1755,10 +1755,10 @@ document.addEventListener('DOMContentLoaded', function() {
           <div class="mb-3">
             <label class="form-label form-label-sm fw-600">Link to Project</label>
             <select name="project_number" id="modalProject" class="form-select form-select-sm">
-              <option value="">? Optional ?</option>
+              <option value="">— Optional —</option>
               {% for p in projects %}
               <option value="{{ p.get('project_number','') }}">
-                {{ p.get('project_number','') }} ? {{ p.get('project_name','') }}
+                {{ p.get('project_number','') }} — {{ p.get('project_name','') }}
               </option>
               {% endfor %}
             </select>
@@ -2198,14 +2198,14 @@ function viewReceipt(expId) {
       <div class="kpi-card kpi-teal">
         <div class="kpi-top"><span class="kpi-label">Invoice Total</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
         <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='invoiced')) }}</div>
-        <div class="kpi-sub"><small style="color:#94a3b8;">All projects ? {{ stat_card_year }}</small></div>
+        <div class="kpi-sub"><small style="color:#94a3b8;">All projects — {{ stat_card_year }}</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-green">
         <div class="kpi-top"><span class="kpi-label">Total Collected</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
         <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='paid')) }}</div>
-        <div class="kpi-sub"><small style="color:#94a3b8;">All projects ? {{ stat_card_year }}</small></div>
+        <div class="kpi-sub"><small style="color:#94a3b8;">All projects — {{ stat_card_year }}</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
@@ -2433,7 +2433,7 @@ function viewReceipt(expId) {
       <div class="kpi-card {{ 'kpi-green' if bs_net >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit/Loss</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
         <div id="bsKpiNet" class="kpi-value {{ 'text-success' if bs_net >= 0 else 'text-danger' }}">{{ currency_symbol }}{{ "{:,.2f}".format(bs_net) }}</div>
-        <div class="kpi-sub">collected ? expenses ? salaries ? commission</div>
+        <div class="kpi-sub">collected — expenses — salaries — commission</div>
       </div>
     </div>
   </div>
@@ -2441,7 +2441,7 @@ function viewReceipt(expId) {
   <!-- Annual Financial Summary Table -->
   <div class="card mb-4">
     <div class="card-header bg-light">
-      <h6 class="mb-0">Annual Financial Summary ? {{ selected_year }} <small class="text-muted fw-normal ms-2" style="font-size:12px;">Click any revenue amount to view monthly details</small></h6>
+      <h6 class="mb-0">Annual Financial Summary — {{ selected_year }} <small class="text-muted fw-normal ms-2" style="font-size:12px;">Click any revenue amount to view monthly details</small></h6>
     </div>
     <div class="card-body p-0">
       <div class="table-responsive">
@@ -2541,10 +2541,10 @@ function viewReceipt(expId) {
       </div>
     </div>
 
-    <!-- Unpaid ? Due This Month Section -->
+    <!-- Unpaid — Due This Month Section -->
     <div class="mb-3" id="monthDueSection" style="display:none;">
       <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#D97706; padding:6px 0; border-bottom:2px solid #FED7AA; margin-bottom:8px;">
-        <i class="bi bi-clock-history me-1"></i>Unpaid ? Due This Month
+        <i class="bi bi-clock-history me-1"></i>Unpaid — Due This Month
       </div>
       <div class="table-responsive">
         <table class="table mb-0" style="font-size:12px;">
@@ -2668,7 +2668,7 @@ function viewReceipt(expId) {
 
       var mkey = String(month);
       var label = monthNames[month] + ' ' + {{ selected_year }};
-      document.getElementById('monthPaymentsTitle').textContent = label + ' ? Monthly Breakdown';
+      document.getElementById('monthPaymentsTitle').textContent = label + ' — Monthly Breakdown';
 
       /* ?? 1. Revenue / Payments ?? */
       var payments = monthlyPaymentDetails[mkey] || [];
@@ -2702,12 +2702,12 @@ function viewReceipt(expId) {
         var totalStageAmount = payments.reduce(function(s,p){return s+parseFloat(p.stage_amount||0);},0);
         var totalInvoiced = payments.reduce(function(s,p){return s+parseFloat(p.total_amount||0);},0);
         var totalPaid = payments.reduce(function(s,p){return s+parseFloat(p.paid_amount||0);},0);
-        document.getElementById('monthPaymentsTfoot').innerHTML = '<tr><td colspan="5" style="padding:8px 12px;font-weight:700;">Total ? '+payments.length+' payment(s)</td>'
+        document.getElementById('monthPaymentsTfoot').innerHTML = '<tr><td colspan="5" style="padding:8px 12px;font-weight:700;">Total — '+payments.length+' payment(s)</td>'
           +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#16a34a;font-size:13px;">'+fmt(totalPaid)+'</td>'
           +'<td style="padding:8px 12px;"></td></tr>';
       }
 
-      /* ?? 2. Unpaid ? Due This Month ?? */
+      /* ?? 2. Unpaid — Due This Month ?? */
       var due = monthlyDueDetails[mkey] || [];
       var dueSec = document.getElementById('monthDueSection');
       if (due.length > 0) {
@@ -2740,7 +2740,7 @@ function viewReceipt(expId) {
         });
         document.getElementById('monthDueTbody').innerHTML = dRows.join('');
         var totalDue = due.reduce(function(s,e){return s+parseFloat(e.balance||0);},0);
-        document.getElementById('monthDueTfoot').innerHTML = '<tr><td colspan="6" style="padding:8px 12px;font-weight:700;">Total Unpaid ? '+due.length+' invoice(s)</td>'
+        document.getElementById('monthDueTfoot').innerHTML = '<tr><td colspan="6" style="padding:8px 12px;font-weight:700;">Total Unpaid — '+due.length+' invoice(s)</td>'
           +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#D97706;font-size:13px;">'+fmt(totalDue)+'</td></tr>';
       } else {
         dueSec.style.display = 'none';
@@ -2956,11 +2956,11 @@ function viewReceipt(expId) {
     .bs-month-pill.inactive { background: #f8fafc; color: #cbd5e1; border-color: #f1f5f9; }
   </style>
 
-  <!-- Accounts Receivable Aging (Balance Sheet ? year-filtered) -->
+  <!-- Accounts Receivable Aging (Balance Sheet — year-filtered) -->
   {% if bs_aging_total_outstanding > 0 %}
   <div class="card mb-4">
     <div class="card-header bg-light d-flex justify-content-between align-items-center">
-      <h6 class="mb-0"><i class="bi bi-clock-history me-2" style="color:#D97706;"></i>Accounts Receivable ? Aging Summary <span class="text-muted fw-normal" style="font-size:12px;">? {{ selected_year }} invoices only</span></h6>
+      <h6 class="mb-0"><i class="bi bi-clock-history me-2" style="color:#D97706;"></i>Accounts Receivable — Aging Summary <span class="text-muted fw-normal" style="font-size:12px;">— {{ selected_year }} invoices only</span></h6>
       <a href="?tab=aging" class="btn btn-sm btn-outline-secondary">View All A/R</a>
     </div>
     <div class="card-body p-0">
@@ -3127,7 +3127,7 @@ function viewReceipt(expId) {
     <div class="d-flex align-items-center mb-3 gap-2">
       <span class="badge {{ badge_cls }}">{{ label }}</span>
       <span class="fw-bold">{{ hint }}</span>
-      <span class="ms-auto text-muted small">{{ currency_symbol }}{{ "{:,.2f}".format(aging_totals[key]) }} total ? {{ aging_buckets[key]|length }} invoice{{ 's' if aging_buckets[key]|length != 1 }}</span>
+      <span class="ms-auto text-muted small">{{ currency_symbol }}{{ "{:,.2f}".format(aging_totals[key]) }} total — {{ aging_buckets[key]|length }} invoice{{ 's' if aging_buckets[key]|length != 1 }}</span>
     </div>
     <div style="overflow-x:auto;">
       <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
@@ -3189,7 +3189,7 @@ function viewReceipt(expId) {
   {% if aging_total_outstanding == 0 %}
   <div class="text-center py-5 text-muted">
     <i class="bi bi-check-circle-fill text-success" style="font-size:2rem;"></i>
-    <div class="mt-2 fw-bold">All invoices are paid ? no outstanding balance!</div>
+    <div class="mt-2 fw-bold">All invoices are paid — no outstanding balance!</div>
   </div>
   {% endif %}
 
@@ -3321,13 +3321,13 @@ function viewReceipt(expId) {
 
   <div class="text-muted small mt-2 ps-1">
     <i class="bi bi-info-circle me-1"></i>
-    Mark commissions as paid in <a href="{{ url_for('quotes') }}?tab=salespeople">Quotes ? Sales People</a>.
+    Mark commissions as paid in <a href="{{ url_for('quotes') }}?tab=salespeople">Quotes — Sales People</a>.
   </div>
 
   {% else %}
   <div class="card-panel text-center py-5">
     <i class="bi bi-cash-coin" style="font-size:40px;color:#e2e8f0;"></i>
-    <div class="text-muted mt-2">No commission data yet. Set commission rates in <a href="{{ url_for('settings') }}?tab=users">Settings ? Users</a>.</div>
+    <div class="text-muted mt-2">No commission data yet. Set commission rates in <a href="{{ url_for('settings') }}?tab=users">Settings — Users</a>.</div>
   </div>
   {% endif %}
 
@@ -3403,7 +3403,7 @@ function buildDonutLegend(containerId, labels, data, colors, isCurrency) {
       <div style="width:10px;height:10px;border-radius:3px;background:${colors[i]};flex-shrink:0;"></div>
       <div style="flex:1;min-width:0;">
         <div style="font-size:12px;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${lbl}">${lbl}</div>
-        <div style="font-size:11px;color:#64748b;">${val} ? <span style="font-weight:700;color:${colors[i]};">${pct}%</span></div>
+        <div style="font-size:11px;color:#64748b;">${val} — <span style="font-weight:700;color:${colors[i]};">${pct}%</span></div>
       </div>
     </div>`;
   }).join('');
@@ -3778,9 +3778,9 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     if (chipTxt && hasFilter) {
       var parts = [];
       if (activeBucket !== 'all') parts.push('Bucket: ' + activeBucket);
-      if (agingDueFrom || agingDueTo) parts.push('Due: ' + (agingDueFrom ? fmtDate(agingDueFrom) : '?') + ' ? ' + (agingDueTo ? fmtDate(agingDueTo) : '?'));
+      if (agingDueFrom || agingDueTo) parts.push('Due: ' + (agingDueFrom ? fmtDate(agingDueFrom) : '?') + ' — ' + (agingDueTo ? fmtDate(agingDueTo) : '?'));
       if (q) parts.push('"' + q + '"');
-      chipTxt.textContent = parts.join(' ? ') + ' (' + totalShown + ' shown)';
+      chipTxt.textContent = parts.join(' — ') + ' (' + totalShown + ' shown)';
     }
   }
 

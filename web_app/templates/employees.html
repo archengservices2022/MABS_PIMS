@@ -281,7 +281,7 @@
               {% if my_open_entry.project_number %}<option value="">General / Admin</option>{% endif %}
               {% for p in active_projects %}
               {% if p.project_number != my_open_entry.project_number %}
-              <option value="{{ p.project_number }}">{{ p.project_number }} ? {{ p.project_name }}</option>
+              <option value="{{ p.project_number }}">{{ p.project_number }} — {{ p.project_name }}</option>
               {% endif %}
               {% endfor %}
             </select>
@@ -310,7 +310,7 @@
               <option value="" {% if not last_project_number %}selected{% endif %}>General / Admin</option>
               {% for p in active_projects %}
               <option value="{{ p.project_number }}" {% if p.project_number == last_project_number %}selected{% endif %}>
-                {{ p.project_number }} ? {{ p.project_name }}
+                {{ p.project_number }} — {{ p.project_name }}
               </option>
               {% endfor %}
             </select>
@@ -347,7 +347,7 @@
                 <select name="project_number" class="form-select form-select-sm">
                   <option value="">General / Admin</option>
                   {% for p in active_projects %}
-                  <option value="{{ p.project_number }}">{{ p.project_number }} ? {{ p.project_name }}</option>
+                  <option value="{{ p.project_number }}">{{ p.project_number }} — {{ p.project_name }}</option>
                   {% endfor %}
                 </select>
               </div>
@@ -638,7 +638,7 @@
               </td>
               <td class="text-muted small">
                 {{ r.start_date | format_date }}
-                {% if r.start_date != r.end_date %} ? {{ r.end_date | format_date }}{% endif %}
+                {% if r.start_date != r.end_date %} — {{ r.end_date | format_date }}{% endif %}
                 {% if r.get('hours_per_day') and r.get('hours_per_day') | float < 8 %}
                 <span class="text-muted" style="font-size:10px;">({{ r.hours_per_day }}h/day)</span>
                 {% endif %}
@@ -672,7 +672,7 @@
   <!-- Admin: All Employees Balance -->
   <div class="card-panel mt-3">
     <h6 class="panel-title mb-3">
-      <i class="bi bi-people me-1" style="color:#0D9488;"></i>All Employees ? {{ current_year }} Time Off Balance
+      <i class="bi bi-people me-1" style="color:#0D9488;"></i>All Employees — {{ current_year }} Time Off Balance
     </h6>
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0 align-middle">
@@ -753,7 +753,7 @@
           </td>
           <td>{{ r.type }}</td>
           <td class="text-muted small">
-            {{ r.start_date | format_date }}{% if r.start_date != r.end_date %} ? {{ r.end_date | format_date }}{% endif %}
+            {{ r.start_date | format_date }}{% if r.start_date != r.end_date %} — {{ r.end_date | format_date }}{% endif %}
             {% if r.get('hours_per_day') and r.get('hours_per_day') | float < 8 %}
             <span class="text-muted" style="font-size:10px;">({{ r.hours_per_day }}h/day)</span>
             {% endif %}
@@ -781,7 +781,7 @@
     {% else %}
     <div class="text-center text-muted py-3">
       <i class="bi bi-check-circle" style="font-size:28px;opacity:.3;"></i>
-      <div class="mt-2 small">No pending requests ? all caught up.</div>
+      <div class="mt-2 small">No pending requests — all caught up.</div>
     </div>
     {% endif %}
   </div>
@@ -837,11 +837,11 @@
             <div class="text-muted small fw-semibold mb-1">Monthly Salary</div>
             {% if profile_user.get('region') == 'Outside America' %}
             <div class="fw-800" style="font-size:22px;color:#15803D;">
-              ?{{ "{:,.0f}".format((profile_user.monthly_salary|float) * (bdt_exchange_rate or 110)) }}<span class="text-muted fw-normal" style="font-size:13px;"> BDT/mo</span>
+              ৳{{ "{:,.0f}".format((profile_user.monthly_salary|float) * (bdt_exchange_rate or 110)) }}<span class="text-muted fw-normal" style="font-size:13px;"> BDT/mo</span>
             </div>
             {% if user_role == 'admin' %}
             <div class="text-muted" style="font-size:12px;margin-top:2px;">
-              ? {{ currency_symbol }}{{ "{:,.0f}".format(profile_user.monthly_salary|float) }} USD/mo
+              — {{ currency_symbol }}{{ "{:,.0f}".format(profile_user.monthly_salary|float) }} USD/mo
             </div>
             {% endif %}
             {% else %}
@@ -850,7 +850,7 @@
             </div>
             {% if user_role == 'admin' %}
             <div class="text-muted" style="font-size:12px;margin-top:2px;">
-              ? ?{{ "{:,.0f}".format((profile_user.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT/mo
+              — ৳{{ "{:,.0f}".format((profile_user.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT/mo
             </div>
             {% endif %}
             {% endif %}
@@ -946,7 +946,7 @@
             background:{% if score>=4.5 %}#2E7D32{% elif score>=3.5 %}#558B2F{% elif score>=2.5 %}#C9920A{% elif score>=1.5 %}#E65100{% else %}#C0392B{% endif %};">
           </div>
         </div>
-        <div class="text-muted small mt-1">{{ "%.2f"|format(score) }}/5.00 ? {{ r.rating_label or '' }}</div>
+        <div class="text-muted small mt-1">{{ "%.2f"|format(score) }}/5.00 — {{ r.rating_label or '' }}</div>
         {% endif %}
         {% if (rstatus == 'completed' or acked) and r.approved_raise_pct and r.approved_raise_pct|float > 0 %}
         <div class="mt-2 text-success small fw-semibold">
@@ -1286,7 +1286,7 @@ function submitChangePassword() {
           </div>
           <p class="text-muted small mt-3 mb-0">
             <i class="bi bi-info-circle me-1"></i>
-            Name, email, role, title, or region ? <a href="{{ url_for('settings') }}?tab=users" target="_blank">Settings ? Users</a>.
+            Name, email, role, title, or region — <a href="{{ url_for('settings') }}?tab=users" target="_blank">Settings — Users</a>.
           </p>
         </div>
         <div class="modal-footer">
@@ -1401,7 +1401,7 @@ function submitChangePassword() {
           <div class="mb-2">
             <label class="form-label fw-semibold" style="font-size:12px;">Region</label>
             <select id="dirEditRegion" class="form-select form-select-sm">
-              <option value="">? None ?</option>
+              <option value="">— None —</option>
               <option value="Inside America">Inside America</option>
               <option value="Outside America">Outside America</option>
             </select>
@@ -1467,7 +1467,7 @@ function submitChangePassword() {
             <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
             <select name="category" id="empExpCategory" class="form-select form-select-sm" required
                     onchange="empUpdateNames(this.value,'empExpName')">
-              <option value="">? Select type first ?</option>
+              <option value="">— Select type first —</option>
             </select>
           </div>
           <div class="mb-2" id="empCatTextWrap" style="display:none;">
@@ -1480,7 +1480,7 @@ function submitChangePassword() {
           <div class="mb-2" id="empNameSelectWrap">
             <label class="form-label small fw-semibold">Expense Name <span class="text-danger">*</span></label>
             <select name="expense_name" id="empExpName" class="form-select form-select-sm" required>
-              <option value="">? Select category first ?</option>
+              <option value="">— Select category first —</option>
             </select>
           </div>
           <div class="mb-2" id="empNameTextWrap" style="display:none;">
@@ -1505,9 +1505,9 @@ function submitChangePassword() {
           <div class="mb-2">
             <label class="form-label small fw-semibold">Link to Project <span class="text-muted fw-normal">(optional)</span></label>
             <select name="project_number" class="form-select form-select-sm">
-              <option value="">? Optional ?</option>
+              <option value="">— Optional —</option>
               {% for p in active_projects %}
-              <option value="{{ p.project_number }}">{{ p.project_number }}{% if p.project_name %} ? {{ p.project_name[:35] }}{% endif %}</option>
+              <option value="{{ p.project_number }}">{{ p.project_number }}{% if p.project_name %} — {{ p.project_name[:35] }}{% endif %}</option>
               {% endfor %}
             </select>
           </div>
@@ -1518,7 +1518,7 @@ function submitChangePassword() {
                       placeholder="Any additional details..."></textarea>
           </div>
 
-          <!-- Receipt ? REQUIRED -->
+          <!-- Receipt — REQUIRED -->
           <div class="mb-3">
             <label class="form-label small fw-semibold">
               Receipt <span class="text-danger">*</span>
@@ -1532,7 +1532,7 @@ function submitChangePassword() {
               <span class="badge bg-success"><i class="bi bi-paperclip me-1"></i><span id="empReceiptName"></span></span>
             </div>
             <div class="form-text text-danger fw-semibold" style="font-size:11px;">
-              <i class="bi bi-info-circle me-1"></i>Receipt is required ? expenses without a receipt will not be accepted.
+              <i class="bi bi-info-circle me-1"></i>Receipt is required — expenses without a receipt will not be accepted.
             </div>
           </div>
 
@@ -1780,7 +1780,7 @@ function submitChangePassword() {
             <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
             <select name="category" id="editExpCategory" class="form-select form-select-sm"
                     onchange="empUpdateNames(this.value,'editExpName')">
-              <option value="">? Select type first ?</option>
+              <option value="">— Select type first —</option>
             </select>
           </div>
           <div class="mb-2" id="editCatTextWrap" style="display:none;">
@@ -1791,7 +1791,7 @@ function submitChangePassword() {
           <div class="mb-2" id="editNameSelectWrap">
             <label class="form-label small fw-semibold">Expense Name <span class="text-danger">*</span></label>
             <select name="expense_name" id="editExpName" class="form-select form-select-sm">
-              <option value="">? Select category first ?</option>
+              <option value="">— Select category first —</option>
             </select>
           </div>
           <div class="mb-2" id="editNameTextWrap" style="display:none;">
@@ -1812,9 +1812,9 @@ function submitChangePassword() {
           <div class="mb-2">
             <label class="form-label small fw-semibold">Link to Project <span class="text-muted fw-normal">(optional)</span></label>
             <select name="project_number" id="editExpProject" class="form-select form-select-sm">
-              <option value="">? Optional ?</option>
+              <option value="">— Optional —</option>
               {% for p in active_projects %}
-              <option value="{{ p.project_number }}">{{ p.project_number }}{% if p.project_name %} ? {{ p.project_name[:35] }}{% endif %}</option>
+              <option value="{{ p.project_number }}">{{ p.project_number }}{% if p.project_name %} — {{ p.project_name[:35] }}{% endif %}</option>
               {% endfor %}
             </select>
           </div>
@@ -2208,7 +2208,7 @@ window.saveDirEdit = async function() {
 };
 </script>
 <script>
-// Time Off ? working days preview
+// Time Off — working days preview
 function countWorkingDays(startStr, endStr) {
   if (!startStr || !endStr) return 0;
   var s = new Date(startStr + 'T00:00:00');
@@ -2257,12 +2257,12 @@ window.calcRequestedDays = function() {
   var hrsLabel = hoursPerDay + ' hr' + (hoursPerDay !== 1 ? 's' : '') + '/day';
   if (!isUnpaid && totalHours > remainingHours) {
     infoDiv.style.cssText = 'display:block;padding:8px 10px;border-radius:6px;margin-bottom:8px;border:1px solid #FECACA;background:#FEF2F2;';
-    infoText.innerHTML = '<i class="bi bi-x-circle me-1" style="color:#DC2626;"></i><span style="color:#DC2626;"><strong>' + days + ' day' + (days!==1?'s':'') + ' ? ' + hrsLabel + ' = ' + totalHours + ' hrs</strong> ? exceeds your <strong>' + remainingHours + ' ' + poolLabel + ' hrs</strong> remaining. Use Unpaid leave instead.</span>';
+    infoText.innerHTML = '<i class="bi bi-x-circle me-1" style="color:#DC2626;"></i><span style="color:#DC2626;"><strong>' + days + ' day' + (days!==1?'s':'') + ' — ' + hrsLabel + ' = ' + totalHours + ' hrs</strong> — exceeds your <strong>' + remainingHours + ' ' + poolLabel + ' hrs</strong> remaining. Use Unpaid leave instead.</span>';
     if (submitBtn) submitBtn.disabled = true;
   } else {
     var leftHrs = isUnpaid ? null : Math.round((remainingHours - totalHours) * 10) / 10;
     var leftDays = leftHrs !== null ? Math.round(leftHrs / 8 * 10) / 10 : null;
-    infoText.innerHTML = '<i class="bi bi-calendar-check me-1" style="color:#16A34A;"></i><span style="color:#16A34A;"><strong>' + days + ' day' + (days!==1?'s':'') + ' ? ' + hrsLabel + ' = <span style="font-size:1.05em;">' + totalHours + ' hrs</span></strong> ' + poolLabel + ' requested.' + (leftHrs !== null ? ' You will have <strong>' + leftDays + ' days (' + leftHrs + ' hrs)</strong> left.' : '') + '</span>';
+    infoText.innerHTML = '<i class="bi bi-calendar-check me-1" style="color:#16A34A;"></i><span style="color:#16A34A;"><strong>' + days + ' day' + (days!==1?'s':'') + ' — ' + hrsLabel + ' = <span style="font-size:1.05em;">' + totalHours + ' hrs</span></strong> ' + poolLabel + ' requested.' + (leftHrs !== null ? ' You will have <strong>' + leftDays + ' days (' + leftHrs + ' hrs)</strong> left.' : '') + '</span>';
     if (submitBtn) submitBtn.disabled = false;
   }
 };
@@ -2274,7 +2274,7 @@ document.addEventListener('DOMContentLoaded', function() {
   if (hpdEl)  hpdEl.addEventListener('input',  calcRequestedDays);
 });
 
-// Employee Expenses ? cascading dropdowns
+// Employee Expenses — cascading dropdowns
 const empCatsByType = {{ emp_categories_by_type|safe }};
 const empNamesByCat = {{ emp_names_by_cat|safe }};
 
@@ -2361,8 +2361,8 @@ window.empUpdateCategories = function(typeVal, catId, nameId) {
   var catSel  = document.getElementById(catId);
   var nameSel = document.getElementById(nameId);
   if (!catSel) return;
-  catSel.innerHTML = '<option value="">? Select category ?</option>';
-  if (nameSel) nameSel.innerHTML = '<option value="">? Select category first ?</option>';
+  catSel.innerHTML = '<option value="">— Select category —</option>';
+  if (nameSel) nameSel.innerHTML = '<option value="">— Select category first —</option>';
   var cats = empCatsByType[typeVal] || [];
   cats.forEach(function(c) {
     var o = document.createElement('option');
@@ -2374,7 +2374,7 @@ window.empUpdateCategories = function(typeVal, catId, nameId) {
 window.empUpdateNames = function(catVal, nameId) {
   var nameSel = document.getElementById(nameId);
   if (!nameSel) return;
-  nameSel.innerHTML = '<option value="">? Select expense name ?</option>';
+  nameSel.innerHTML = '<option value="">— Select expense name —</option>';
   var names = (empNamesByCat[catVal] && empNamesByCat[catVal].length)
     ? empNamesByCat[catVal] : (empNamesFallback[catVal] || []);
   names.forEach(function(n) {
@@ -2671,7 +2671,7 @@ window.openMedReview = function(claimId, empName, amtClaimed, action) {
   form.action = '/employees/medical-claims/' + claimId + '/review';
   document.getElementById('medReviewAction').value = action;
   document.getElementById('medReviewTitle').textContent =
-    (action === 'approve' ? 'Approve' : 'Reject') + ' claim ? ' + empName;
+    (action === 'approve' ? 'Approve' : 'Reject') + ' claim — ' + empName;
   const approvedRow = document.getElementById('medApprovedRow');
   const submitBtn   = document.getElementById('medReviewSubmitBtn');
   if (action === 'approve') {

@@ -305,7 +305,7 @@
 .act-btn.view:hover    { background: #0D9488; border-color: #0D9488; color: #fff; }
 .act-btn.del:hover     { background: #dc2626; border-color: #dc2626; color: #fff; }
 
-/* ?? My Timesheets ? personal grid card ??????????????????????? */
+/* ?? My Timesheets — personal grid card ??????????????????????? */
 .my-week-card {
   background: #fff;
   border-radius: 14px;
@@ -498,19 +498,19 @@
               <td style="min-width:96px;">
                 {% if cell %}
                   <div class="dc dc-{{ cell.status | lower }}"
-                       title="{{ cell.projects | join(', ') or 'No project' }} ? {{ cell.time_range }} ? {{ '%.1f'|format(cell.hours) }}h"
+                       title="{{ cell.projects | join(', ') or 'No project' }} — {{ cell.time_range }} — {{ '%.1f'|format(cell.hours) }}h"
                        {% if cell.sheet_id %}onclick="window.location='{{ url_for('timesheet_detail', sheet_id=cell.sheet_id) }}'"{% endif %}>
                     {% if cell.time_range %}<div class="dc-time">{{ cell.time_range }}</div>{% endif %}
                     {% if cell.projects %}<div class="dc-proj">{{ cell.projects[0] }}{% if cell.projects|length > 1 %} +{{ cell.projects|length - 1 }}{% endif %}</div>{% endif %}
                     <div class="dc-hrs">{{ "%.1f"|format(cell.hours) }}h</div>
                   </div>
                 {% else %}
-                  <div class="dc-empty">?</div>
+                  <div class="dc-empty">—</div>
                 {% endif %}
               </td>
             {% endfor %}
             <td class="total-col">
-              {% if row.total_hours > 0 %}{{ "%.1f"|format(row.total_hours) }}{% else %}<span style="color:#d1d5db;">?</span>{% endif %}
+              {% if row.total_hours > 0 %}{{ "%.1f"|format(row.total_hours) }}{% else %}<span style="color:#d1d5db;">—</span>{% endif %}
             </td>
             <td>
               {% if row.sheet %}
@@ -548,7 +548,7 @@
           <td colspan="{{ 7 + (3 if is_admin else 2) + 1 }}">
             <div class="ts-empty-state">
               <i class="bi bi-people"></i>
-              <p>No employees found. Add employees in <strong>Settings ? Users</strong>.</p>
+              <p>No employees found. Add employees in <strong>Settings — Users</strong>.</p>
             </div>
           </td>
         </tr>
@@ -669,19 +669,19 @@
             <td style="min-width:96px;">
               {% if cell %}
                 <div class="dc dc-{{ cell.status | lower }}"
-                     title="{{ cell.projects | join(', ') or 'General' }} ? {{ cell.time_range }} ? {{ '%.1f'|format(cell.hours) }}h"
+                     title="{{ cell.projects | join(', ') or 'General' }} — {{ cell.time_range }} — {{ '%.1f'|format(cell.hours) }}h"
                      {% if cell.sheet_id %}onclick="window.location='{{ url_for('timesheet_detail', sheet_id=cell.sheet_id) }}'"{% endif %}>
                   {% if cell.time_range %}<div class="dc-time">{{ cell.time_range }}</div>{% endif %}
                   {% if cell.projects %}<div class="dc-proj">{{ cell.projects[0] }}{% if cell.projects|length > 1 %} +{{ cell.projects|length - 1 }}{% endif %}</div>{% endif %}
                   <div class="dc-hrs">{{ "%.1f"|format(cell.hours) }}h</div>
                 </div>
               {% else %}
-                <div class="dc-empty">?</div>
+                <div class="dc-empty">—</div>
               {% endif %}
             </td>
           {% endfor %}
           <td class="total-col">
-            {% if week_total > 0 %}{{ "%.1f"|format(week_total) }}h{% else %}<span style="color:#d1d5db;">?</span>{% endif %}
+            {% if week_total > 0 %}{{ "%.1f"|format(week_total) }}h{% else %}<span style="color:#d1d5db;">—</span>{% endif %}
           </td>
         </tr>
       </tbody>
