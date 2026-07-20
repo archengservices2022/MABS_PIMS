@@ -126,6 +126,77 @@ PAGE_LABELS = {
     "reviews":        "Performance Reviews",
 }
 
+US_STATE_ABBRS = {
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+    "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+    "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+    "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+    "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+    "DC", "PR", "GU",
+}
+
+US_STATE_NAMES = {
+    "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ", "ARKANSAS": "AR",
+    "CALIFORNIA": "CA", "COLORADO": "CO", "CONNECTICUT": "CT", "DELAWARE": "DE",
+    "FLORIDA": "FL", "GEORGIA": "GA", "HAWAII": "HI", "IDAHO": "ID",
+    "ILLINOIS": "IL", "INDIANA": "IN", "IOWA": "IA", "KANSAS": "KS",
+    "KENTUCKY": "KY", "LOUISIANA": "LA", "MAINE": "ME", "MARYLAND": "MD",
+    "MASSACHUSETTS": "MA", "MICHIGAN": "MI", "MINNESOTA": "MN",
+    "MISSISSIPPI": "MS", "MISSOURI": "MO", "MONTANA": "MT", "NEBRASKA": "NE",
+    "NEVADA": "NV", "NEW HAMPSHIRE": "NH", "NEW JERSEY": "NJ",
+    "NEW MEXICO": "NM", "NEW YORK": "NY", "NORTH CAROLINA": "NC",
+    "NORTH DAKOTA": "ND", "OHIO": "OH", "OKLAHOMA": "OK", "OREGON": "OR",
+    "PENNSYLVANIA": "PA", "RHODE ISLAND": "RI", "SOUTH CAROLINA": "SC",
+    "SOUTH DAKOTA": "SD", "TENNESSEE": "TN", "TEXAS": "TX", "UTAH": "UT",
+    "VERMONT": "VT", "VIRGINIA": "VA", "WASHINGTON": "WA",
+    "WEST VIRGINIA": "WV", "WISCONSIN": "WI", "WYOMING": "WY",
+    "DISTRICT OF COLUMBIA": "DC", "PUERTO RICO": "PR", "GUAM": "GU",
+}
+
+_STATE_ABBR_RE = re.compile(
+    r"(?:^|[\s,])("
+    + "|".join(sorted(US_STATE_ABBRS))
+    + r")(?=\s+\d{5}(?:-\d{4})?\b|\s*$|[,;])",
+    re.IGNORECASE,
+)
+_STATE_NAME_RE = re.compile(
+    r"\b("
+    + "|".join(re.escape(name) for name in sorted(US_STATE_NAMES, key=len, reverse=True))
+    + r")\b(?=\s+\d{5}(?:-\d{4})?\b|\s*$|[,;])",
+    re.IGNORECASE,
+)
+
+def _normalise_state(value) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    cleaned = re.sub(r"[^A-Za-z ]+", " ", text).strip().upper()
+    if cleaned in {"", "?", "NA", "N A", "N/A", "NONE", "NULL", "UNKNOWN"}:
+        return ""
+    if cleaned in US_STATE_ABBRS:
+        return cleaned
+    if cleaned in US_STATE_NAMES:
+        return US_STATE_NAMES[cleaned]
+    return ""
+
+def _project_plant_display(project: dict) -> str:
+    for key in ("plant", "plant_location", "state"):
+        state = _normalise_state(project.get(key))
+        if state:
+            return state
+
+    for key in ("site_address", "project_site_address", "project_name", "mail_address"):
+        text = str(project.get(key) or "")
+        if not text:
+            continue
+        abbr_matches = _STATE_ABBR_RE.findall(text)
+        if abbr_matches:
+            return abbr_matches[-1].upper()
+        name_matches = _STATE_NAME_RE.findall(text)
+        if name_matches:
+            return US_STATE_NAMES.get(name_matches[-1].upper(), "")
+    return ""
+
 def normalize_role(role: str) -> str:
     r = str(role or "sales").strip().lower()
     return r if r in ROLE_PAGES else "sales"
@@ -2280,7 +2351,7 @@ def projects():
     for i in items:
         cos = i.get("change_orders") or []
         i["_has_co"] = isinstance(cos, list) and len(cos) > 0
-        pl = (i.get("plant") or "").strip().upper()
+        pl = _project_plant_display(i)
         i["_plant_display"] = pl
         if pl:
             all_plants_set.add(pl)

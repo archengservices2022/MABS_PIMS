@@ -284,8 +284,8 @@
                     </span>
                   </td>
                   <td><span class="badge status-{{ status_class.get(st, st|lower|replace(' ','-')) }}">{{ st }}</span></td>
-                  <td class="text-end">{% set paid_amount = s.get('amount_paid', 0)|float %}{% if paid_amount > 0 %}{{ currency_symbol }}{{ "{:,.2f}".format(paid_amount) }}{% else %}?{% endif %}</td>
-                  <td>{% if inv_id and (inv_num or inv_data.get('number')) %}<a href="{{ url_for('invoice_detail', invoice_id=inv_id) }}" class="text-decoration-none">{{ inv_num or inv_data.get('number') }}</a>{% else %}?{% endif %}</td>
+                  <td class="text-end">{% set paid_amount = s.get('amount_paid', 0)|float %}{% if paid_amount > 0 %}{{ currency_symbol }}{{ "{:,.2f}".format(paid_amount) }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                  <td>{% if inv_id and (inv_num or inv_data.get('number')) %}<a href="{{ url_for('invoice_detail', invoice_id=inv_id) }}" class="text-decoration-none">{{ inv_num or inv_data.get('number') }}</a>{% else %}<span class="text-muted">-</span>{% endif %}</td>
                   <td class="text-center">
                     {% if st == 'Pending Invoice' %}
                     <button type="button" class="btn btn-xs btn-outline-teal" onclick="quickInvoiceStage({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ project.firebase_id }}')"
