@@ -182,7 +182,7 @@
   </div>
 </div>
 <div class="d-flex gap-2 mb-3 flex-wrap">
-  <input type="text" id="reviewSearch" class="form-control form-control-sm" style="max-width:220px;" placeholder="Search employee?">
+  <input type="text" id="reviewSearch" class="form-control form-control-sm" style="max-width:220px;" placeholder="Search employee">
   <select id="reviewPeriodFilter" class="form-select form-select-sm" style="max-width:160px;">
     <option value="">All Periods</option>
     {% for p in periods %}
@@ -461,7 +461,7 @@
               <input type="hidden" name="self_{{ key }}" id="self_inp_{{ key }}" value="0">
               <div class="mt-2">
                 <textarea name="self_comment_{{ key }}" class="form-control form-control-sm" rows="2"
-                          placeholder="Your comments for this category?"></textarea>
+                          placeholder="Your comments for this category"></textarea>
               </div>
             </div>
             {% if not loop.last %}<hr class="section-divider">{% endif %}
@@ -472,7 +472,7 @@
           <div class="card-body">
             <h6 class="fw-semibold mb-2"><i class="bi bi-chat-text me-2 text-info"></i>Overall Self-Comments</h6>
             <textarea name="self_overall_comments" class="form-control" rows="4"
-                      placeholder="Summarize your performance, key achievements, areas you want to improve?"></textarea>
+                      placeholder="Summarize your performance, key achievements, and areas to improve"></textarea>
           </div>
         </div>
         <button type="submit" class="btn btn-primary btn-lg w-100"
@@ -599,7 +599,7 @@
               <input type="hidden" name="{{ key }}" id="inp_{{ key }}" value="0">
               <div class="mt-1">
                 <textarea name="comment_{{ key }}" class="form-control form-control-sm" rows="1"
-                          placeholder="Manager comment?"></textarea>
+                          placeholder="Manager comment"></textarea>
               </div>
             </div>
             {% if not loop.last %}<hr style="margin:10px 0;">{% endif %}
@@ -626,10 +626,10 @@
           <div class="card-body">
             <h6 class="fw-semibold mb-2" style="font-size:13px;">Overall Comments</h6>
             <textarea name="overall_comments" class="form-control form-control-sm" rows="3"
-                      placeholder="Overall performance summary, key accomplishments?"></textarea>
+                      placeholder="Overall performance summary and key accomplishments"></textarea>
             <h6 class="fw-semibold mb-2 mt-3" style="font-size:13px;">Goals for Next Period</h6>
             <textarea name="goals" class="form-control form-control-sm" rows="3"
-                      placeholder="List 2–3 specific goals for the next 6 months?"></textarea>
+                      placeholder="List 2-3 specific goals for the next 6 months"></textarea>
           </div>
         </div>
 
