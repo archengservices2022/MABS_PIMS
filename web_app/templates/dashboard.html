@@ -123,7 +123,7 @@
           <i class="bi bi-file-earmark-text me-1"></i>Quotes
           <span class="text-muted fw-normal" style="font-size:11px;margin-left:4px;">{{ _q_widget_total }} total</span>
         </h6>
-        <a href="{{ url_for('quotes') }}" class="btn btn-xs" style="background:#EDE9FE;color:#5B21B6;border:none;font-size:11px;padding:3px 10px;border-radius:4px;">View All ?</a>
+        <a href="{{ url_for('quotes') }}" class="btn btn-xs" style="background:#EDE9FE;color:#5B21B6;border:none;font-size:11px;padding:3px 10px;border-radius:4px;">View All →</a>
       </div>
       <div class="row g-2 mb-3">
         <div class="col-6">
@@ -175,7 +175,7 @@
           <i class="bi bi-kanban me-1"></i>Projects
           <span class="text-muted fw-normal" style="font-size:11px;margin-left:4px;">{{ proj_status_counts.values()|sum }} total</span>
         </h6>
-        <a href="{{ url_for('projects') }}" class="btn btn-xs" style="background:#F0FDFA;color:#0D9488;border:none;font-size:11px;padding:3px 10px;border-radius:4px;">View All ?</a>
+        <a href="{{ url_for('projects') }}" class="btn btn-xs" style="background:#F0FDFA;color:#0D9488;border:none;font-size:11px;padding:3px 10px;border-radius:4px;">View All →</a>
       </div>
       {% set _st_styles = {
         'Not Started':             ('#EFF6FF', '#3B82F6'),
@@ -228,7 +228,7 @@
           <i class="bi bi-receipt me-1"></i>Invoices
           <span class="text-muted fw-normal" style="font-size:11px;margin-left:4px;">{{ total_invoices }} total</span>
         </h6>
-        <a href="{{ url_for('invoicing') }}" class="btn btn-xs" style="background:#EFF6FF;color:#0369A1;border:none;font-size:11px;padding:3px 10px;border-radius:4px;">View All ?</a>
+        <a href="{{ url_for('invoicing') }}" class="btn btn-xs" style="background:#EFF6FF;color:#0369A1;border:none;font-size:11px;padding:3px 10px;border-radius:4px;">View All →</a>
       </div>
       <div class="row g-2 mb-3">
         <div class="col-6">
@@ -284,7 +284,7 @@
           <i class="bi bi-cash-coin me-1"></i>
           {% if dash_commission.role == 'sales' %}My Commission{% else %}Commission Overview{% endif %}
         </h6>
-        <a href="{{ url_for('quotes') }}?tab=salespeople" class="btn btn-xs" style="background:#EDE9FE;color:#5B21B6;border:none;font-size:11px;padding:3px 10px;border-radius:4px;">View Details ?</a>
+        <a href="{{ url_for('quotes') }}?tab=salespeople" class="btn btn-xs" style="background:#EDE9FE;color:#5B21B6;border:none;font-size:11px;padding:3px 10px;border-radius:4px;">View Details →</a>
       </div>
 
       {% if dash_commission.role == 'sales' %}
@@ -570,7 +570,7 @@
     <h6 class="panel-title mb-0"><i class="bi bi-kanban me-1"></i>Project Pipeline
       <span class="text-muted fw-normal" style="font-size:11px;margin-left:4px;">{{ proj_status_counts.values()|sum }} total</span>
     </h6>
-    <a href="{{ url_for('projects') }}" class="text-teal small">View all ?</a>
+    <a href="{{ url_for('projects') }}" class="text-teal small">View all →</a>
   </div>
 
   <!-- Actual status counters (matches Projects tab statuses) -->
@@ -770,7 +770,7 @@
       <div class="panel-header d-flex justify-content-between align-items-center">
         <h6 class="panel-title mb-0">Revenue Overview — Last 6 Months</h6>
         {% if 'invoicing' in allowed_pages %}
-        <a href="{{ url_for('invoicing') }}" class="text-teal small">View invoices ?</a>
+        <a href="{{ url_for('invoicing') }}" class="text-teal small">View invoices →</a>
         {% endif %}
       </div>
       <canvas id="revenueChart" height="140"></canvas>
@@ -783,7 +783,7 @@
       <div class="panel-header d-flex justify-content-between align-items-center">
         <h6 class="panel-title mb-0">Recent Invoices</h6>
         {% if 'invoicing' in allowed_pages %}
-        <a href="{{ url_for('invoicing') }}" class="text-teal small">View all ?</a>
+        <a href="{{ url_for('invoicing') }}" class="text-teal small">View all →</a>
         {% endif %}
       </div>
 
@@ -836,7 +836,7 @@
   <div class="panel-header d-flex justify-content-between align-items-center">
     <h6 class="panel-title mb-0">Recent Projects</h6>
     {% if 'projects' in allowed_pages %}
-    <a href="{{ url_for('projects') }}" class="text-teal small">View all ?</a>
+    <a href="{{ url_for('projects') }}" class="text-teal small">View all →</a>
     {% endif %}
   </div>
 
