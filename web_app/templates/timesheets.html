@@ -303,6 +303,7 @@
 .act-btn.approve:hover { background: #16a34a; border-color: #16a34a; color: #fff; }
 .act-btn.reject:hover  { background: #dc2626; border-color: #dc2626; color: #fff; }
 .act-btn.view:hover    { background: #0D9488; border-color: #0D9488; color: #fff; }
+.act-btn.remind:hover  { background: #f59e0b; border-color: #f59e0b; color: #fff; }
 .act-btn.del:hover     { background: #dc2626; border-color: #dc2626; color: #fff; }
 
 /* ?? My Timesheets — personal grid card ??????????????????????? */
@@ -529,11 +530,22 @@
                     <i class="bi bi-x-lg"></i>
                   </button>
                 {% endif %}
+                {% if row.sheet.status == 'Draft' %}
+                  <button class="act-btn remind" onclick='sendTimesheetReminder({{ row.uid|tojson }}, {{ week_of|tojson }}, {{ row.name|tojson }})' title="Remind to submit">
+                    <i class="bi bi-bell"></i>
+                  </button>
+                {% endif %}
                 <a class="act-btn view" href="{{ url_for('timesheet_detail', sheet_id=row.sheet.firebase_id) }}" title="View">
                   <i class="bi bi-eye"></i>
                 </a>
                 <button class="act-btn del" onclick="deleteSheet('{{ row.sheet.firebase_id }}')" title="Delete">
                   <i class="bi bi-trash3"></i>
+                </button>
+              </div>
+              {% else %}
+              <div class="act-btns">
+                <button class="act-btn remind" onclick='sendTimesheetReminder({{ row.uid|tojson }}, {{ week_of|tojson }}, {{ row.name|tojson }})' title="Remind to submit">
+                  <i class="bi bi-bell"></i>
                 </button>
               </div>
               {% endif %}
@@ -783,6 +795,22 @@ function deleteSheet(sheetId) {
   .then(r => r.json())
   .then(d => {
     if (d.success) location.reload();
+    else alert('Error: ' + (d.error || 'Unknown'));
+  })
+  .catch(() => alert('Network error. Please try again.'));
+}
+
+function sendTimesheetReminder(uid, weekOf, name) {
+  if (!uid) return;
+  if (!confirm(`Send timesheet submission reminder to ${name || 'this employee'}?`)) return;
+  fetch('/api/timesheets/remind', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({employee_uid: uid, week_of: weekOf})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) alert('Reminder sent.');
     else alert('Error: ' + (d.error || 'Unknown'));
   })
   .catch(() => alert('Network error. Please try again.'));

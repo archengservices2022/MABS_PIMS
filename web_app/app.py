@@ -17053,6 +17053,30 @@ def api_timesheet_delete(sheet_id):
     return jsonify({"success": True})
 
 
+@app.route("/api/timesheets/remind", methods=["POST"])
+@role_required("timesheets")
+def api_timesheet_remind():
+    if normalize_role(session.get("user_role", "")) not in ("admin", "finance"):
+        return jsonify({"success": False, "error": "Admin access required"}), 403
+    data = request.get_json(silent=True) or {}
+    employee_uid = str(data.get("employee_uid", "")).strip()
+    week_of = _week_monday(str(data.get("week_of", "")).strip())
+    if not employee_uid:
+        return jsonify({"success": False, "error": "Employee is required"}), 400
+
+    week_start = datetime.strptime(week_of, "%Y-%m-%d").date()
+    week_end = week_start + timedelta(days=6)
+    week_label = f"{week_start.strftime('%b %d')} - {week_end.strftime('%b %d, %Y')}"
+    _push_notification(
+        employee_uid,
+        "timesheet_reminder",
+        f"Timesheet Reminder - {week_label}",
+        "Please submit your timesheet for review.",
+        f"/timesheets/submit?week={week_of}",
+    )
+    return jsonify({"success": True})
+
+
 @app.route("/api/timesheets/previous")
 @login_required
 def api_timesheet_previous():
