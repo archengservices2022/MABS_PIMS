@@ -498,9 +498,8 @@
               <td style="min-width:96px;">
                 {% if cell %}
                   <div class="dc dc-{{ cell.status | lower }}"
-                       title="{{ cell.projects | join(', ') or 'No project' }} — {{ cell.time_range }} — {{ '%.1f'|format(cell.hours) }}h"
+                       title="{{ cell.projects | join(', ') or 'No project' }} — {{ '%.1f'|format(cell.hours) }}h"
                        {% if cell.sheet_id %}onclick="window.location='{{ url_for('timesheet_detail', sheet_id=cell.sheet_id) }}'"{% endif %}>
-                    {% if cell.time_range %}<div class="dc-time">{{ cell.time_range }}</div>{% endif %}
                     {% if cell.projects %}<div class="dc-proj">{{ cell.projects[0] }}{% if cell.projects|length > 1 %} +{{ cell.projects|length - 1 }}{% endif %}</div>{% endif %}
                     <div class="dc-hrs">{{ "%.1f"|format(cell.hours) }}h</div>
                   </div>
