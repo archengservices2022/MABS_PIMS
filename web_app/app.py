@@ -16378,18 +16378,21 @@ def update_project_payment_plan(project_id):
         # Check if edited stage is invoiced
         edited_stage_invoiced = stages[edited_idx].get("status") in ["Invoiced", "Paid", "Partially Paid", "Overdue"]
 
-        # Find non-invoiced stages (excluding the one being edited)
+        # Identify CO stages — these are fixed approved amounts, never auto-adjust them
+        co_indices = {i for i in range(len(stages)) if "CO-" in stages[i].get("name", "")}
+        edited_is_co = edited_idx in co_indices
+
+        # Find non-invoiced BASE stages to auto-adjust (exclude the edited stage and all CO stages)
         uninvoiced_indices = [i for i in range(len(stages))
-                             if i != edited_idx and stages[i].get("status") == "Pending Invoice"]
+                             if i != edited_idx
+                             and stages[i].get("status") == "Pending Invoice"
+                             and i not in co_indices]
 
         # Determine if permission is needed
-        # Never ask if user is manually editing all amounts (they balance themselves)
         needs_permission = False
-        if not skip_auto_adjust:
-            # Case 1: All stages are invoiced and user is editing one
+        if not skip_auto_adjust and not edited_is_co:
             if non_invoiced_count == 0 and edited_stage_invoiced:
                 needs_permission = True
-            # Case 2: Editing a non-invoiced stage but all other stages are invoiced (no other stages to auto-adjust to)
             elif not edited_stage_invoiced and len(uninvoiced_indices) == 0:
                 needs_permission = True
 
@@ -16403,27 +16406,23 @@ def update_project_payment_plan(project_id):
                 "new_contract_value": new_contract_value
             }, 400
 
-        # Auto-adjust logic: ONLY adjust non-invoiced stages (never adjust invoiced)
-        # Skip auto-adjust if user manually edited all amounts
-        if not skip_auto_adjust:
+        # Auto-adjust: only redistribute among base stages, never touch CO stages
+        if not skip_auto_adjust and not edited_is_co:
             difference = new_amount - old_amount
-
-            # If there are non-invoiced stages, distribute the difference to them
             if uninvoiced_indices:
                 per_stage = difference / len(uninvoiced_indices)
                 for idx in uninvoiced_indices:
                     current_amt = _safe_float(amounts[idx].get("amount", 0)) if idx < len(amounts) else _safe_float(stages[idx].get("amount", 0))
                     amounts[idx] = {"index": idx, "amount": max(0, current_amt - per_stage)}
 
-        # Calculate total from (possibly adjusted) amounts
-        total = sum(_safe_float(a.get("amount", 0)) for a in amounts)
-
-        # Update contract value only if:
-        # - NOT manually editing all amounts (skipAutoAdjust = user keeps CV stable)
-        # - AND permission was granted OR no permission was needed
-        if not skip_auto_adjust and abs(total - old_contract_value) > 0.01:
-            if needs_permission or non_invoiced_count > 0 or invoiced_count > 0:
-                project["contract_value"] = str(total)
+        # Recalculate contract_value and base_contract_value from final stage amounts
+        # so Financial Summary always matches the Payment Plan total
+        def _get_amt(i):
+            return _safe_float(amounts[i].get("amount", 0)) if i < len(amounts) else _safe_float(stages[i].get("amount", 0))
+        base_total = sum(_get_amt(i) for i in range(len(stages)) if i not in co_indices)
+        co_total   = sum(_get_amt(i) for i in range(len(stages)) if i in co_indices)
+        project["contract_value"]      = str(round(base_total + co_total, 2))
+        project["base_contract_value"] = str(round(base_total, 2))
 
         # Update all stages with new amounts; sync back to linked change orders
         change_orders = project.get("change_orders") or []
