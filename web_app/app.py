@@ -3519,11 +3519,17 @@ def project_edit(project_id):
                     import json
                     custom_stage_amounts = json.loads(custom_stage_amounts_json)
                     if custom_stage_amounts:  # Only process if list is not empty
+                        existing_stages = data.get("payment_stages") or []
+                        # Isolate CO stages — the frontend never sends these, so we must preserve them manually
+                        co_stages = [s for s in existing_stages if isinstance(s, dict) and "CO-" in s.get("name", "")]
+                        co_total  = sum(_safe_float(s.get("amount", 0)) for s in co_stages)
+
                         # If custom amounts has name and amount fields (from preview),
                         # ensure they include status and invoice_id fields
                         if custom_stage_amounts and isinstance(custom_stage_amounts[0], dict) and "name" in custom_stage_amounts[0]:
                             # Ensure all required fields are present
                             enriched_stages = []
+                            submitted_names = set()
                             for stage in custom_stage_amounts:
                                 enriched = {
                                     "name": stage.get("name", ""),
@@ -3532,19 +3538,23 @@ def project_edit(project_id):
                                     "invoice_id": stage.get("invoice_id", "")
                                 }
                                 enriched_stages.append(enriched)
+                                submitted_names.add(stage.get("name", ""))
+                            # Re-attach any CO stages absent from the submitted list
+                            for co_s in co_stages:
+                                if co_s.get("name", "") not in submitted_names:
+                                    enriched_stages.append(co_s)
                             updated["payment_stages"] = enriched_stages
                         else:
-                            # If payment plan changed, recalculate stages first, then apply custom amounts
-                            existing_stages = data.get("payment_stages") or []
+                            # If payment plan changed, recalculate base stages then re-append CO stages
                             if payment_plan_changed:
-                                # Recalculate stages based on new installment count
-                                new_stages = _compute_payment_stages(
-                                    _safe_float(updated["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
-                                # Then apply custom amounts to the new stages
+                                # Exclude CO value from base so CO stages stay independent
+                                base_cv    = max(0.0, _safe_float(updated["contract_value"]) - co_total)
+                                new_stages = _compute_payment_stages(base_cv, down_pct, installments, custom_amounts=custom_amounts)
+                                # Apply custom amounts to base stages
                                 for i, amount_data in enumerate(custom_stage_amounts):
                                     if i < len(new_stages) and isinstance(new_stages[i], dict):
                                         new_stages[i]["amount"] = _safe_float(amount_data.get("amount", 0))
-                                updated["payment_stages"] = new_stages
+                                updated["payment_stages"] = new_stages + co_stages
                             else:
                                 # Payment plan didn't change, just update existing stage amounts
                                 for i, amount_data in enumerate(custom_stage_amounts):
