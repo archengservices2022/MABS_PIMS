@@ -11418,6 +11418,31 @@ def review_edit(review_id):
     flash("Review updated.", "success")
     return redirect(url_for("review_detail", review_id=review_id))
 
+@app.route("/reviews/<review_id>/setup", methods=["POST"])
+@login_required
+def review_setup_edit(review_id):
+    if session.get("user_role") != "admin":
+        flash("Admin access required.", "danger")
+        return redirect(url_for("review_detail", review_id=review_id))
+    existing = fb_get(f"/performance_reviews/{review_id}") or {}
+    if existing.get("status") != "pending_self_assessment":
+        flash("Only reviews waiting for self-assessment can have setup edited.", "warning")
+        return redirect(url_for("review_detail", review_id=review_id))
+    f = request.form
+    emp_uid = f.get("employee_uid", "").strip()
+    period = f.get("review_period", "").strip()
+    if not emp_uid or not period:
+        flash("Employee and review period are required.", "danger")
+        return redirect(url_for("review_detail", review_id=review_id) + "?edit=setup")
+    fb_update(f"/performance_reviews/{review_id}", {
+        "employee_uid": emp_uid,
+        "employee_name": f.get("employee_name", existing.get("employee_name", "")).strip(),
+        "review_period": period,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    flash("Review setup updated.", "success")
+    return redirect(url_for("review_detail", review_id=review_id))
+
 @app.route("/reviews/<review_id>/acknowledge", methods=["POST"])
 @login_required
 def review_acknowledge(review_id):
