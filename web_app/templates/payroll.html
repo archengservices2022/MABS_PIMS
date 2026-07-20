@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Payroll{% endblock %}
 {% block page_title %}Payroll Management{% endblock %}
 
@@ -182,7 +182,7 @@
     </button>
   </div>
 
-  <!-- ── Salaries Tab ────────────────────────────────────────── -->
+  <!-- â”€â”€ Salaries Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div id="salaries" class="payroll-tab-content active">
     <div class="salaries-section">
       <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Salary Records</h5>
@@ -200,23 +200,23 @@
       <div class="summary-cards" id="salaryCards">
         <div class="summary-card usa">
           <div class="summary-card-label">Inside America</div>
-          <div class="summary-card-value" id="cardUSA">${{ "{:,.2f}".format(usa_total | float) }}</div>
+          <div class="summary-card-value" id="cardUSA">{{ currency_symbol }}{{ "{:,.2f}".format(usa_total | float) }}</div>
         </div>
         <div class="summary-card intl">
           <div class="summary-card-label">Outside America</div>
-          <div class="summary-card-value" id="cardIntl">${{ "{:,.2f}".format(intl_total | float) }}</div>
+          <div class="summary-card-value" id="cardIntl">{{ currency_symbol }}{{ "{:,.2f}".format(intl_total | float) }}</div>
         </div>
         <div class="summary-card">
           <div class="summary-card-label">Total Salary</div>
-          <div class="summary-card-value" id="cardTotal">${{ "{:,.2f}".format((usa_total + intl_total) | float) }}</div>
+          <div class="summary-card-value" id="cardTotal">{{ currency_symbol }}{{ "{:,.2f}".format((usa_total + intl_total) | float) }}</div>
         </div>
         <div class="summary-card" style="border-top:3px solid #7C3AED;">
           <div class="summary-card-label" style="color:#7C3AED;">Commission</div>
-          <div class="summary-card-value" style="color:#7C3AED;">${{ "{:,.2f}".format(_comm_all_flat.v) }}</div>
+          <div class="summary-card-value" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(_comm_all_flat.v) }}</div>
         </div>
         <div class="summary-card" style="border-top:3px solid #0369a1;">
           <div class="summary-card-label" style="color:#0369a1;">Total Compensation</div>
-          <div class="summary-card-value" style="color:#0369a1;">${{ "{:,.2f}".format((usa_total + intl_total) | float + _comm_all_flat.v) }}</div>
+          <div class="summary-card-value" style="color:#0369a1;">{{ currency_symbol }}{{ "{:,.2f}".format((usa_total + intl_total) | float + _comm_all_flat.v) }}</div>
         </div>
       </div>
 
@@ -272,21 +272,21 @@
               {% set _sal_emp_lc = sal_emp | lower %}
               {% set comm_paid = (_sal_emp_lc + '|' + sal_period) in comm_paid_set %}
               <tr data-salary="1" data-employee="{{ sal_emp | lower }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}" data-amount="{{ sal.amount | float }}">
-                <td><strong>{{ sal_emp or '—' }}</strong></td>
-                <td>{{ sal.date[5:7] + '-' + sal.date[8:10] + '-' + sal.date[0:4] if sal.date and sal.date|length >= 10 else '—' }}</td>
-                <td style="color:#475569;font-size:.82rem;">{{ sal_period or '—' }}</td>
-                <td>${{ "{:,.2f}".format(sal.amount | float) }}</td>
+                <td><strong>{{ sal_emp or 'â€”' }}</strong></td>
+                <td>{{ sal.date[5:7] + '-' + sal.date[8:10] + '-' + sal.date[0:4] if sal.date and sal.date|length >= 10 else 'â€”' }}</td>
+                <td style="color:#475569;font-size:.82rem;">{{ sal_period or 'â€”' }}</td>
+                <td>{{ currency_symbol }}{{ "{:,.2f}".format(sal.amount | float) }}</td>
                 <td>
                   {% if sal_comm > 0 %}
-                  <div style="color:#7C3AED;font-weight:700;">${{ "{:,.2f}".format(sal_comm) }}</div>
+                  <div style="color:#7C3AED;font-weight:700;">{{ currency_symbol }}{{ "{:,.2f}".format(sal_comm) }}</div>
                   <div style="font-size:10px;color:#94a3b8;">
-                    {% if comm_paid %}<span style="font-size:10px;font-weight:700;color:#16a34a;">✓ Paid</span>{% else %}<span style="font-size:10px;color:#94a3b8;">Pending</span>{% endif %}
+                    {% if comm_paid %}<span style="font-size:10px;font-weight:700;color:#16a34a;">âœ“ Paid</span>{% else %}<span style="font-size:10px;color:#94a3b8;">Pending</span>{% endif %}
                   </div>
                   {% else %}
-                  <span class="text-muted">—</span>
+                  <span class="text-muted">â€”</span>
                   {% endif %}
                 </td>
-                <td style="font-weight:700;color:#0369a1;">${{ "{:,.2f}".format(sal_total) }}</td>
+                <td style="font-weight:700;color:#0369a1;">{{ currency_symbol }}{{ "{:,.2f}".format(sal_total) }}</td>
                 <td>
                   {% set ss = sal.get('salary_status','Pending') %}
                   <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;
@@ -294,8 +294,8 @@
                     {% elif ss == 'Pending' %}background:#fef9c3;color:#92400e;
                     {% else %}background:#dbeafe;color:#1d4ed8;{% endif %}">{{ ss }}</span>
                 </td>
-                <td><span class="region-badge {{ 'region-usa' if sal.region == 'Inside America' else 'region-intl' }}">{{ sal.region or '—' }}</span></td>
-                <td>{{ sal.notes or '—' }}</td>
+                <td><span class="region-badge {{ 'region-usa' if sal.region == 'Inside America' else 'region-intl' }}">{{ sal.region or 'â€”' }}</span></td>
+                <td>{{ sal.notes or 'â€”' }}</td>
                 <td>
                   <div class="action-buttons">
                     <button onclick="editSalary('{{ sal.firebase_id }}','{{ sal_emp | replace("'","&#39;") }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace("'","&#39;") }}','{{ sal.get('salary_status','Pending') }}')" class="btn-sm" title="Edit" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
@@ -311,7 +311,7 @@
             {% else %}
             <tr>
               <td colspan="10" class="empty-state">
-                <div class="empty-state-icon">💰</div>
+                <div class="empty-state-icon">ðŸ’°</div>
                 <div class="empty-state-title">No Salary Entries</div>
                 <p style="margin:0;">Click "Add Salary" tab to create entries.</p>
               </td>
@@ -323,7 +323,7 @@
     </div>
   </div>
 
-  <!-- ── Add Salary Tab ──────────────────────────────────────── -->
+  <!-- â”€â”€ Add Salary Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div id="add-salary" class="payroll-tab-content">
     <div>
       <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Add Salary Entry</h5>
@@ -385,7 +385,7 @@
     </div>
   </div>
 
-  <!-- ── Export Tab ──────────────────────────────────────────── -->
+  <!-- â”€â”€ Export Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div id="export" class="payroll-tab-content">
     <div class="card-panel mb-4">
       <h6 class="section-heading mb-3">Filter Export</h6>
@@ -454,14 +454,14 @@
 <script>
 const TODAY_ISO = {{ now.strftime('%Y-%m-%d') | tojson }}; // company-timezone "today", not the browser's local/UTC date
 
-// ── Two-level grouping: Year → Month ─────────────────────────────────────────
+// â”€â”€ Two-level grouping: Year â†’ Month â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 function fmt(n) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function formatMonthLabel(period) {
-  if (!period || period === '—') return period;
+  if (!period || period === 'â€”') return period;
   const [, m] = period.split('-');
   return MONTHS[parseInt(m, 10) - 1];
 }
@@ -475,9 +475,9 @@ function buildPeriodGroups() {
 
   // Tag each row with period + year
   rows.forEach(r => {
-    const p = (r.dataset.date || '').slice(0, 7) || '—';
+    const p = (r.dataset.date || '').slice(0, 7) || 'â€”';
     r.dataset.periodGroup = p;
-    r.dataset.yearGroup   = p.slice(0, 4) || '—';
+    r.dataset.yearGroup   = p.slice(0, 4) || 'â€”';
   });
 
   // Unique years (in order of appearance)
@@ -502,7 +502,7 @@ function buildPeriodGroups() {
       <span class="period-toggle"><i class="bi bi-chevron-down"></i></span>
       <strong style="font-size:14px;">${year}</strong>
       <span class="text-muted ms-2" style="font-size:12px;font-weight:400;">${months.length} month${months.length !== 1 ? 's' : ''}</span>
-      <span class="ms-2 fw-semibold" style="color:#15803d;font-size:13px;" data-year-total="${year}">$${fmt(yearTotal)}</span>
+      <span class="ms-2 fw-semibold" style="color:#15803d;font-size:13px;" data-year-total="${year}">${CURRENCY_SYMBOL}${fmt(yearTotal)}</span>
     </td>`;
     tbody.insertBefore(yearHdr, yearRows[0]);
 
@@ -524,7 +524,7 @@ function buildPeriodGroups() {
         <span class="period-toggle"><i class="bi bi-chevron-down"></i></span>
         <strong>${formatMonthLabel(period)}</strong>
         <span class="text-muted ms-2" style="font-size:12px;font-weight:400;">${count} record${count !== 1 ? 's' : ''}</span>
-        <span class="ms-2 fw-semibold" style="color:#15803d;font-size:13px;" data-period-total="${period}">$${fmt(periodTotal)}</span>
+        <span class="ms-2 fw-semibold" style="color:#15803d;font-size:13px;" data-period-total="${period}">${CURRENCY_SYMBOL}${fmt(periodTotal)}</span>
       </td>`;
       tbody.insertBefore(mHdr, periodRows[0]);
 
@@ -643,14 +643,14 @@ function applySalaryFilters() {
     const yearCollapsed = document.querySelector(`[data-year-header="${yr}"]`)?.classList.contains('collapsed');
     hdr.style.display = (vis && !yearCollapsed) ? '' : 'none';
     const totalEl = hdr.querySelector('[data-period-total]');
-    if (totalEl) totalEl.textContent = '$' + fmt(periodTotals[p] || 0);
+    if (totalEl) totalEl.textContent = CURRENCY_SYMBOL + fmt(periodTotals[p] || 0);
   });
 
   // Update year headers
   const yearVisible = {}, yearTotals = {};
   document.querySelectorAll('#salaryTableBody tr[data-salary]').forEach(row => {
     if (row.dataset.filterHidden !== '1') {
-      const yr  = row.dataset.yearGroup || '—';
+      const yr  = row.dataset.yearGroup || 'â€”';
       const amt = parseFloat(row.dataset.amount || 0);
       yearVisible[yr] = (yearVisible[yr] || 0) + 1;
       yearTotals[yr]  = (yearTotals[yr]  || 0) + amt;
@@ -660,13 +660,13 @@ function applySalaryFilters() {
     const yr = hdr.dataset.yearHeader;
     hdr.style.display = (yearVisible[yr] || 0) > 0 ? '' : 'none';
     const totalEl = hdr.querySelector('[data-year-total]');
-    if (totalEl) totalEl.textContent = '$' + fmt(yearTotals[yr] || 0);
+    if (totalEl) totalEl.textContent = CURRENCY_SYMBOL + fmt(yearTotals[yr] || 0);
   });
 
   // Update summary cards to reflect filtered data
-  document.getElementById('cardUSA').textContent   = '$' + fmt(usaTotal);
-  document.getElementById('cardIntl').textContent  = '$' + fmt(intlTotal);
-  document.getElementById('cardTotal').textContent = '$' + fmt(usaTotal + intlTotal);
+  document.getElementById('cardUSA').textContent   = CURRENCY_SYMBOL + fmt(usaTotal);
+  document.getElementById('cardIntl').textContent  = CURRENCY_SYMBOL + fmt(intlTotal);
+  document.getElementById('cardTotal').textContent = CURRENCY_SYMBOL + fmt(usaTotal + intlTotal);
 }
 
 function setDateRange(range) {
@@ -717,7 +717,7 @@ function renderEmployeeOptions(filter) {
   filtered.forEach(emp => {
     const d = document.createElement('div');
     d.className = 'option';
-    d.textContent = emp.name + (emp.title ? ' · ' + emp.title : '');
+    d.textContent = emp.name + (emp.title ? ' Â· ' + emp.title : '');
     d.onclick = () => {
       input.value = emp.name;
       dropdown.style.display = 'none';
@@ -819,7 +819,7 @@ document.addEventListener('DOMContentLoaded', () => {
   buildPayrollExportLinks();
 });
 
-// ── Export Functions ──────────────────────────────────────
+// â”€â”€ Export Functions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PDF_PAYROLL   = "{{ url_for('payroll_export_pdf') }}";
 const EXCEL_PAYROLL = "{{ url_for('payroll_export_excel') }}";
 const CSV_PAYROLL   = "{{ url_for('payroll_export_csv') }}";

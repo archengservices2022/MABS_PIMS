@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Projects{% endblock %}
 {% block page_title %}Projects{% endblock %}
 
@@ -11,7 +11,7 @@
   }
 </style>
 
-<!-- ── Projects Overview ────────────────────────────────────────────────────── -->
+<!-- â”€â”€ Projects Overview â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="row g-3 mb-4">
   <div class="col-6 col-xl">
     <div class="kpi-card" style="border-left:4px solid #7C3AED;">
@@ -24,28 +24,28 @@
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-blue">
       <div class="kpi-top"><span class="kpi-label">Portfolio Value</span><i class="bi bi-briefcase-fill kpi-icon-sm"></i></div>
-      <div class="kpi-value">${{ "{:,.2f}".format(p_total_cv) }}</div>
+      <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(p_total_cv) }}</div>
       <div class="kpi-sub">total contract value</div>
     </div>
   </div>
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-green">
       <div class="kpi-top"><span class="kpi-label">Total Paid</span><i class="bi bi-check-circle-fill kpi-icon-sm"></i></div>
-      <div class="kpi-value">${{ "{:,.2f}".format(p_total_paid) }}</div>
+      <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(p_total_paid) }}</div>
       <div class="kpi-sub">received so far</div>
     </div>
   </div>
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-red">
       <div class="kpi-top"><span class="kpi-label">Outstanding</span><i class="bi bi-hourglass-split kpi-icon-sm"></i></div>
-      <div class="kpi-value">${{ "{:,.2f}".format(p_outstanding) }}</div>
+      <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(p_outstanding) }}</div>
       <div class="kpi-sub">remaining to collect</div>
     </div>
   </div>
   {% endif %}
 </div>
 
-<!-- ── Tab nav -->
+<!-- â”€â”€ Tab nav -->
 <ul class="nav nav-tabs mb-4" id="projectTabs">
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-all-projects">
@@ -79,7 +79,7 @@
 
 <div class="tab-content">
 
-  <!-- ── Tab 1: All Projects ─────────────────────────────────────────────── -->
+  <!-- â”€â”€ Tab 1: All Projects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div class="tab-pane fade" id="tab-all-projects">
     {% set status_styles = {
       'Not Started':           ('bi-hourglass-split',     'bg-slate'),
@@ -136,7 +136,7 @@
       <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
         <div class="d-flex gap-2 align-items-center flex-wrap">
           <input type="text" name="q" value="{{ search }}" class="form-control form-control-sm"
-                 placeholder="Search projects…" style="width:200px;">
+                 placeholder="Search projectsâ€¦" style="width:200px;">
           <select name="status" class="form-select form-select-sm" style="width:150px;">
             <option value="">All Statuses</option>
             {% for s in statuses %}
@@ -183,11 +183,11 @@
           <i class="bi bi-funnel text-teal"></i>
           <span>
             {% if date_from and date_to %}{{ date_from }} to {{ date_to }}{% elif date_from %}From {{ date_from }}{% elif date_to %}Up to {{ date_to }}{% endif %}
-            {% if status_filter %} · Status: <strong>{{ status_filter }}</strong>{% endif %}
-            {% if overdue_filter %} · <strong class="text-danger">Overdue payments only</strong>{% endif %}
-            {% if client_filter %} · Client: <strong>{{ client_filter }}</strong>{% endif %}
-            {% if plant_filter %} · State: <strong>{{ plant_filter }}</strong>{% endif %}
-            &nbsp;·&nbsp; {{ projects|length }} result{{ 's' if projects|length != 1 else '' }}
+            {% if status_filter %} Â· Status: <strong>{{ status_filter }}</strong>{% endif %}
+            {% if overdue_filter %} Â· <strong class="text-danger">Overdue payments only</strong>{% endif %}
+            {% if client_filter %} Â· Client: <strong>{{ client_filter }}</strong>{% endif %}
+            {% if plant_filter %} Â· State: <strong>{{ plant_filter }}</strong>{% endif %}
+            &nbsp;Â·&nbsp; {{ projects|length }} result{{ 's' if projects|length != 1 else '' }}
           </span>
         </div>
         {% endif %}
@@ -203,7 +203,7 @@
               <th>Name</th>
               <th>Client</th>
               <th>State</th>
-              <th>Received Date</th>
+              <th>Start Date</th>
               <th class="text-end">Contract Value</th>
               <th class="text-end">Paid</th>
               <th class="text-end">Outstanding</th>
@@ -220,25 +220,25 @@
                 onclick="selectProject(event, '{{ p.firebase_id }}')"
                 style="cursor:pointer;user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;">
               <td>
-                <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}" onclick="event.stopPropagation();" class="text-teal fw-bold" style="text-decoration:none;">{{ p.get('project_number','—') }}</a>
+                <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}" onclick="event.stopPropagation();" class="text-teal fw-bold" style="text-decoration:none;">{{ p.get('project_number','â€”') }}</a>
                 {% if p.get('_has_co') %}
                 <span title="Has Change Order(s)" style="display:inline-flex;align-items:center;gap:2px;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:4px;font-size:.6rem;font-weight:700;padding:1px 5px;margin-left:4px;vertical-align:middle;letter-spacing:.03em;">
                   <i class="bi bi-arrow-repeat"></i> CO
                 </span>
                 {% endif %}
               </td>
-              <td class="fw-500">{{ p.get('project_name','—') }}</td>
-              <td class="text-muted">{{ p.get('company_name') or p.get('client_name','—') }}</td>
+              <td class="fw-500">{{ p.get('project_name','â€”') }}</td>
+              <td class="text-muted">{{ p.get('company_name') or p.get('client_name','â€”') }}</td>
               <td>
                 {% if p.get('_plant_display') %}
                 <span class="badge" style="background:#0D9488;color:#fff;font-size:11px;font-weight:700;letter-spacing:.04em;">{{ p._plant_display }}</span>
-                {% else %}—{% endif %}
+                {% else %}â€”{% endif %}
               </td>
-              <td>{{ p.get('date_received','—') | format_date }}</td>
-              <td class="text-end fw-bold">${{ "{:,.2f}".format(p.get('contract_value',0)|float) }}</td>
-              <td class="text-end text-success">${{ "{:,.2f}".format(p.get('amount_paid',0)|float) }}</td>
+              <td>{{ p.get('start_date','â€”') | format_date }}</td>
+              <td class="text-end fw-bold">{{ currency_symbol }}{{ "{:,.2f}".format(p.get('contract_value',0)|float) }}</td>
+              <td class="text-end text-success">{{ currency_symbol }}{{ "{:,.2f}".format(p.get('amount_paid',0)|float) }}</td>
               {% set _owed = [p.get('contract_value',0)|float - p.get('amount_paid',0)|float, 0]|max %}
-              <td class="text-end {{ 'text-danger' if _owed > 0 else 'text-muted' }}">${{ "{:,.2f}".format(_owed) }}</td>
+              <td class="text-end {{ 'text-danger' if _owed > 0 else 'text-muted' }}">{{ currency_symbol }}{{ "{:,.2f}".format(_owed) }}</td>
               <td>
                 <span class="badge status-{{ p.get('status','Not Started')|lower|replace(' ','-') }}">
                   {{ p.get('status','Not Started') }}
@@ -269,9 +269,9 @@
           <tfoot>
             <tr class="fw-bold table-light border-top" style="border-top:2px solid #dee2e6!important;">
               <td colspan="5" class="text-end text-muted small pe-3">Totals ({{ projects|length }} project{{ 's' if projects|length != 1 }})</td>
-              <td class="text-end">${{ "{:,.2f}".format(p_total_cv) }}</td>
-              <td class="text-end text-success">${{ "{:,.2f}".format(p_total_paid) }}</td>
-              <td class="text-end text-danger">${{ "{:,.2f}".format(p_outstanding) }}</td>
+              <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(p_total_cv) }}</td>
+              <td class="text-end text-success">{{ currency_symbol }}{{ "{:,.2f}".format(p_total_paid) }}</td>
+              <td class="text-end text-danger">{{ currency_symbol }}{{ "{:,.2f}".format(p_outstanding) }}</td>
               <td colspan="2"></td>
             </tr>
           </tfoot>
@@ -282,7 +282,7 @@
     </div>
   </div>
 
-  <!-- ── Tab 3: Export ───────────────────────────────────────────────────── -->
+  <!-- â”€â”€ Tab 3: Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div class="tab-pane fade" id="tab-export">
     <div class="card-panel mb-4">
       <h6 class="section-heading mb-3">Filter Export</h6>
@@ -361,7 +361,7 @@
 
 {% block scripts %}
 <script>
-// ── Project filter quick-range ───────────────────────────────────────────────
+// â”€â”€ Project filter quick-range â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function localDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
@@ -622,10 +622,10 @@ function openLoadModal() {
           const reasonColor = isBlocked ? '#b45309' : '#0f766e';
 
           html += `<tr style="border-bottom:1px solid #f1f5f9;background:${proj.firebase_id % 2 === 0 ? '#ffffff' : '#f8fafc'};">
-            <td style="padding:12px;color:#1e293b;"><strong>${proj.project_number || '—'}</strong></td>
-            <td style="padding:12px;color:#1e293b;">${proj.project_name || '—'}</td>
+            <td style="padding:12px;color:#1e293b;"><strong>${proj.project_number || 'â€”'}</strong></td>
+            <td style="padding:12px;color:#1e293b;">${proj.project_name || 'â€”'}</td>
             <td style="padding:12px;color:${stageColor};font-weight:600;">${nextStage}</td>
-            <td style="padding:12px;text-align:right;color:#1e293b;"><strong>$${amount.toFixed(2)}</strong></td>
+            <td style="padding:12px;text-align:right;color:#1e293b;"><strong>${CURRENCY_SYMBOL}${amount.toFixed(2)}</strong></td>
             <td style="padding:12px;color:${reasonColor};font-size:11px;">${reason}</td>
           </tr>`;
         });
@@ -636,7 +636,7 @@ function openLoadModal() {
         if (blockedCount > 0) {
           html += `<div style="background:#fef3c7;border-radius:6px;padding:12px;margin-bottom:16px;border-left:4px solid #f59e0b;">
             <div style="color:#92400e;font-size:12px;font-weight:500;">
-              ⚠ ${blockedCount} project(s) have a prior stage not yet paid. They will still be loaded — confirm with client before sending.
+              âš  ${blockedCount} project(s) have a prior stage not yet paid. They will still be loaded â€” confirm with client before sending.
             </div>
           </div>`;
         }
@@ -706,7 +706,7 @@ document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
   });
 });
 
-// ── Projects table pager ──────────────────────────────────────────────────────
+// â”€â”€ Projects table pager â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('projectsTableBody')) {
     new TablePager('projectsPager', '#projectsTableBody', 'tr.project-row', 15);
@@ -737,7 +737,7 @@ document.addEventListener('DOMContentLoaded', function() {
   </div>
 </div>
 
-<!-- ── Clear All Projects Modal ───────────────────────────────────────────── -->
+<!-- â”€â”€ Clear All Projects Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 {% if user_role == 'admin' %}
 <div class="modal fade" id="clearAllModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
@@ -768,7 +768,7 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 {% endif %}
 
-<!-- ── Import Excel Modal ─────────────────────────────────────────────────── -->
+<!-- â”€â”€ Import Excel Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="modal fade" id="importExcelModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -795,15 +795,15 @@ document.addEventListener('DOMContentLoaded', function() {
           <div class="mb-3">
             <label class="form-label fw-semibold">Expected columns in each sheet:</label>
             <ul class="small text-muted mb-2" style="padding-left:18px;">
-              <li><strong>Project Number</strong> — original job number (e.g. MABS-202601101)</li>
-              <li><strong>Clients</strong> — client/company name</li>
-              <li><strong>D/VO Number</strong> — PO / work order number</li>
-              <li><strong>Site Address</strong> — project site</li>
-              <li><strong>Mail Address</strong> — mailing address</li>
-              <li><strong>Date</strong> — date received</li>
-              <li><strong>PI</strong> — state abbreviation</li>
-              <li><strong>Price</strong> — contract value</li>
-              <li><strong>Notes / Additional Notes</strong> — any remarks</li>
+              <li><strong>Project Number</strong> â€” original job number (e.g. MABS-202601101)</li>
+              <li><strong>Clients</strong> â€” client/company name</li>
+              <li><strong>D/VO Number</strong> â€” PO / work order number</li>
+              <li><strong>Site Address</strong> â€” project site</li>
+              <li><strong>Mail Address</strong> â€” mailing address</li>
+              <li><strong>Date</strong> â€” date received</li>
+              <li><strong>PI</strong> â€” state abbreviation</li>
+              <li><strong>Price</strong> â€” contract value</li>
+              <li><strong>Notes / Additional Notes</strong> â€” any remarks</li>
             </ul>
           </div>
           <div class="mb-3">
@@ -813,12 +813,12 @@ document.addEventListener('DOMContentLoaded', function() {
           </div>
           <div class="mb-3">
             <label class="form-label fw-semibold">Sheet Name <span class="text-muted fw-normal">(optional)</span></label>
-            <input type="text" name="sheet_name" class="form-control" placeholder="e.g. Dec 25 — leave blank to import ALL sheets">
+            <input type="text" name="sheet_name" class="form-control" placeholder="e.g. Dec 25 â€” leave blank to import ALL sheets">
             <div class="form-text">Type the exact sheet tab name to import just one month. Leave blank to import all sheets at once.</div>
           </div>
           <div class="alert alert-warning" style="font-size:12px;">
             <i class="bi bi-exclamation-triangle-fill me-1"></i>
-            Importing all sheets (~354 projects) takes 30–60 seconds. One sheet at a time is faster and easier to verify.
+            Importing all sheets (~354 projects) takes 30â€“60 seconds. One sheet at a time is faster and easier to verify.
           </div>
         </div>
         <div class="modal-footer">

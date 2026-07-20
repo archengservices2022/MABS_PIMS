@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Performance Reviews{% endblock %}
 {% block page_title %}Performance Reviews{% endblock %}
 
@@ -100,9 +100,9 @@
   ('professional_dev','Professional Development & Goals',  '15%', 'Training, certifications, new skills, career growth.'),
 ] %}
 
-<!-- ════════════════════════════════════════════════════════════
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
      LIST VIEW
-════════════════════════════════════════════════════════════ -->
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 {% if view == 'list' %}
 
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
@@ -110,7 +110,7 @@
     <h5 class="mb-1 fw-semibold">
       {% if role == 'admin' %}All Performance Reviews{% else %}My Performance Reviews{% endif %}
     </h5>
-    <p class="text-muted small mb-0">Semi-annual reviews — January &amp; July cycles</p>
+    <p class="text-muted small mb-0">Semi-annual reviews â€” January &amp; July cycles</p>
   </div>
   {% if role == 'admin' %}
   <a href="{{ url_for('reviews_new') }}" class="btn btn-primary">
@@ -122,7 +122,7 @@
 {% if reviews %}
 {% if role == 'admin' %}
 <div class="d-flex gap-2 mb-3 flex-wrap">
-  <input type="text" id="reviewSearch" class="form-control form-control-sm" style="max-width:220px;" placeholder="Search employee…">
+  <input type="text" id="reviewSearch" class="form-control form-control-sm" style="max-width:220px;" placeholder="Search employeeâ€¦">
   <select id="reviewPeriodFilter" class="form-select form-select-sm" style="max-width:160px;">
     <option value="">All Periods</option>
     {% for p in periods %}
@@ -154,7 +154,7 @@
   <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
     <div>
       <div class="fw-semibold" style="font-size:15px;">{{ r.employee_name }}</div>
-      <div class="text-muted small">{{ r.review_period }} &nbsp;·&nbsp; Initiated by {{ r.reviewer_name }}</div>
+      <div class="text-muted small">{{ r.review_period }} &nbsp;Â·&nbsp; Initiated by {{ r.reviewer_name }}</div>
     </div>
     <div class="d-flex align-items-center gap-2 flex-wrap">
       {% if rstatus == 'pending_self_assessment' %}
@@ -212,9 +212,9 @@
 </div>
 {% endif %}
 
-<!-- ════════════════════════════════════════════════════════════
-     NEW REVIEW FORM  (admin initiates — employee + period only)
-════════════════════════════════════════════════════════════ -->
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+     NEW REVIEW FORM  (admin initiates â€” employee + period only)
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 {% elif view == 'new' %}
 
 <div class="d-flex align-items-center gap-3 mb-4">
@@ -234,7 +234,7 @@
           <div class="mb-3">
             <label class="form-label fw-semibold">Employee <span class="text-danger">*</span></label>
             <select name="employee_uid" id="empSelect" class="form-select" required onchange="fillEmpName(this)">
-              <option value="">— Select Employee —</option>
+              <option value="">â€” Select Employee â€”</option>
               {% for u in all_users %}
               <option value="{{ u.firebase_uid }}" data-name="{{ u.get('username','') }}">
                 {{ u.get('username','') }}
@@ -246,7 +246,7 @@
           <div class="mb-4">
             <label class="form-label fw-semibold">Review Period <span class="text-danger">*</span></label>
             <select name="review_period" class="form-select" required>
-              <option value="">— Select Period —</option>
+              <option value="">â€” Select Period â€”</option>
               {% for p in periods %}
               <option value="{{ p }}">{{ p }}</option>
               {% endfor %}
@@ -268,9 +268,9 @@
   </div>
 </div>
 
-<!-- ════════════════════════════════════════════════════════════
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
      DETAIL VIEW
-════════════════════════════════════════════════════════════ -->
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 {% elif view == 'detail' %}
 {% set r       = review %}
 {% set rstatus = r.status or 'Submitted' %}
@@ -289,9 +289,9 @@
 <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
   <a href="{{ url_for('reviews') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
   <div class="flex-grow-1">
-    <h5 class="mb-0 fw-semibold">{{ r.employee_name }} — {{ r.review_period }}</h5>
+    <h5 class="mb-0 fw-semibold">{{ r.employee_name }} â€” {{ r.review_period }}</h5>
     <div class="text-muted small">Initiated by {{ r.reviewer_name }}
-      &nbsp;·&nbsp; {{ r.created_at[:10] if r.created_at else '' }}</div>
+      &nbsp;Â·&nbsp; {{ r.created_at[:10] if r.created_at else '' }}</div>
   </div>
   {% if role == 'admin' and rstatus in ('pending_acknowledgement', 'completed', 'Submitted') %}
   <a href="#" onclick="document.getElementById('editForm').classList.toggle('d-none');return false;"
@@ -308,7 +308,7 @@
   {% endif %}
 </div>
 
-<!-- ── STATE 1: Waiting for employee self-assessment ── -->
+<!-- â”€â”€ STATE 1: Waiting for employee self-assessment â”€â”€ -->
 {% if rstatus == 'pending_self_assessment' %}
 
   {% if role == 'admin' %}
@@ -335,7 +335,7 @@
         <div class="card shadow-sm mb-4">
           <div class="card-body">
             <h6 class="fw-semibold mb-1"><i class="bi bi-person-check me-2 text-primary"></i>Self-Assessment</h6>
-            <p class="text-muted small mb-4">Rate yourself 1–5 for each category.</p>
+            <p class="text-muted small mb-4">Rate yourself 1â€“5 for each category.</p>
             {% for key, name, weight, desc in cats_full %}
             <div class="cat-row">
               <div class="cat-label">{{ name }}<span class="weight-badge">{{ weight }}</span></div>
@@ -352,7 +352,7 @@
               <input type="hidden" name="self_{{ key }}" id="self_inp_{{ key }}" value="0">
               <div class="mt-2">
                 <textarea name="self_comment_{{ key }}" class="form-control form-control-sm" rows="2"
-                          placeholder="Your comments for this category…"></textarea>
+                          placeholder="Your comments for this categoryâ€¦"></textarea>
               </div>
             </div>
             {% if not loop.last %}<hr class="section-divider">{% endif %}
@@ -363,7 +363,7 @@
           <div class="card-body">
             <h6 class="fw-semibold mb-2"><i class="bi bi-chat-text me-2 text-info"></i>Overall Self-Comments</h6>
             <textarea name="self_overall_comments" class="form-control" rows="4"
-                      placeholder="Summarize your performance, key achievements, areas you want to improve…"></textarea>
+                      placeholder="Summarize your performance, key achievements, areas you want to improveâ€¦"></textarea>
           </div>
         </div>
         <button type="submit" class="btn btn-primary btn-lg w-100"
@@ -378,7 +378,7 @@
   </form>
   {% endif %}
 
-<!-- ── STATE 2: Employee submitted, waiting for manager ── -->
+<!-- â”€â”€ STATE 2: Employee submitted, waiting for manager â”€â”€ -->
 {% elif rstatus == 'pending_manager_review' %}
 
   {% if is_my_review and role != 'admin' %}
@@ -490,7 +490,7 @@
               <input type="hidden" name="{{ key }}" id="inp_{{ key }}" value="0">
               <div class="mt-1">
                 <textarea name="comment_{{ key }}" class="form-control form-control-sm" rows="1"
-                          placeholder="Manager comment…"></textarea>
+                          placeholder="Manager commentâ€¦"></textarea>
               </div>
             </div>
             {% if not loop.last %}<hr style="margin:10px 0;">{% endif %}
@@ -502,7 +502,7 @@
         <div class="card shadow-sm mb-4">
           <div class="card-body">
             <div class="text-center mb-3">
-              <div id="scoreDisplay" style="font-family:Georgia,serif;font-size:44px;color:#1A2B3C;line-height:1;">—</div>
+              <div id="scoreDisplay" style="font-family:Georgia,serif;font-size:44px;color:#1A2B3C;line-height:1;">â€”</div>
               <div class="text-muted small">weighted score out of 5.00</div>
               <div id="labelDisplay" class="mt-2"></div>
             </div>
@@ -517,10 +517,10 @@
           <div class="card-body">
             <h6 class="fw-semibold mb-2" style="font-size:13px;">Overall Comments</h6>
             <textarea name="overall_comments" class="form-control form-control-sm" rows="3"
-                      placeholder="Overall performance summary, key accomplishments…"></textarea>
+                      placeholder="Overall performance summary, key accomplishmentsâ€¦"></textarea>
             <h6 class="fw-semibold mb-2 mt-3" style="font-size:13px;">Goals for Next Period</h6>
             <textarea name="goals" class="form-control form-control-sm" rows="3"
-                      placeholder="List 2–3 specific goals for the next 6 months…"></textarea>
+                      placeholder="List 2â€“3 specific goals for the next 6 monthsâ€¦"></textarea>
           </div>
         </div>
 
@@ -551,7 +551,7 @@
   </div>
   {% endif %}
 
-<!-- ── STATE 3 & 4: Review submitted — standard view ── -->
+<!-- â”€â”€ STATE 3 & 4: Review submitted â€” standard view â”€â”€ -->
 {% else %}
 
 <!-- Acknowledgement Banner -->
@@ -704,7 +704,7 @@
         <div class="mb-3">
           <div class="text-muted small mb-1">Suggested Range</div>
           <div class="fw-semibold" style="font-size:18px;color:#1A2B3C;">
-            {% if lo == 0 and hi == 0 %}No raise recommended{% else %}{{ lo }}% – {{ hi }}%{% endif %}
+            {% if lo == 0 and hi == 0 %}No raise recommended{% else %}{{ lo }}% â€“ {{ hi }}%{% endif %}
           </div>
         </div>
         {% if role == 'admin' or acked %}
@@ -712,7 +712,7 @@
           <div class="text-muted small mb-1">Approved Raise</div>
           <div class="fw-bold" style="font-size:24px;font-family:Georgia,serif;
             color:{% if r.approved_raise_pct and r.approved_raise_pct|float > 0 %}#2E7D32{% else %}#9CA3AF{% endif %};">
-            {% if r.approved_raise_pct and r.approved_raise_pct|float > 0 %}{{ r.approved_raise_pct }}%{% else %}—{% endif %}
+            {% if r.approved_raise_pct and r.approved_raise_pct|float > 0 %}{{ r.approved_raise_pct }}%{% else %}â€”{% endif %}
           </div>
         </div>
         {% endif %}
@@ -726,13 +726,13 @@
         {% set sr = r.salary_update_result %}
         <div class="alert alert-success py-2" style="font-size:13px;">
           <i class="bi bi-check-circle me-1"></i>
-          Salary updated: ${{ "%.2f"|format(sr.old | float) }} → ${{ "%.2f"|format(sr.new | float) }}
+          Salary updated: {{ currency_symbol }}{{ "%.2f"|format(sr.old | float) }} â†’ {{ currency_symbol }}{{ "%.2f"|format(sr.new | float) }}
           ({{ 'hourly' if sr.field == 'hourly_rate' else 'monthly' }})
         </div>
         {% elif r.raise_effective_date and r.approved_raise_pct and r.approved_raise_pct|float > 0 %}
         <div class="alert alert-warning py-2" style="font-size:12px;">
           <i class="bi bi-clock me-1"></i>
-          Salary update pending — effective {{ r.raise_effective_date | format_date }}
+          Salary update pending â€” effective {{ r.raise_effective_date | format_date }}
         </div>
         {% endif %}
       </div>
@@ -883,7 +883,7 @@ function recalc() {
   var lblDisp = document.getElementById('labelDisplay');
   var raiseHint = document.getElementById('raiseHint');
   var raiseRange = document.getElementById('raiseRange');
-  if (disp) disp.textContent = allSet ? total.toFixed(2) : '—';
+  if (disp) disp.textContent = allSet ? total.toFixed(2) : 'â€”';
   var label = ''; var cls = ''; var lo = 0, hi = 0;
   if      (total >= 4.5) { label='Outstanding';          cls='score-outstanding'; lo=8;  hi=10; }
   else if (total >= 3.5) { label='Exceeds Expectations'; cls='score-exceeds';     lo=5;  hi=7;  }
@@ -895,7 +895,7 @@ function recalc() {
   }
   if (raiseHint && raiseRange && allSet) {
     raiseHint.classList.remove('d-none');
-    raiseRange.textContent = (lo === 0 && hi === 0) ? 'No raise recommended' : (lo + '–' + hi + '%');
+    raiseRange.textContent = (lo === 0 && hi === 0) ? 'No raise recommended' : (lo + 'â€“' + hi + '%');
   }
 }
 
@@ -925,7 +925,7 @@ function validateSelfAssessment() {
   return true;
 }
 
-// Employee select → fill hidden name field
+// Employee select â†’ fill hidden name field
 function fillEmpName(sel) {
   var opt = sel.options[sel.selectedIndex];
   var nameInp = document.getElementById('empName');

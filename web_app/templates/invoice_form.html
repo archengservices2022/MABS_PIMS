@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}{{ 'New Invoice' if is_new else 'Edit Invoice' }}{% endblock %}
 {% block page_title %}{{ 'New Invoice' if is_new else 'Edit Invoice' }}{% endblock %}
 {% block head %}
@@ -28,7 +28,7 @@
 
 {% macro project_select(selected) %}
 <select name="item_project[]" class="form-select form-select-sm">
-  <option value="">— invoice project —</option>
+  <option value="">â€” invoice project â€”</option>
   {% for p in projects %}
   <option value="{{ p.get('project_number','') }}" {{ 'selected' if selected == p.get('project_number','') }}>{{ p.get('project_number','') }}</option>
   {% endfor %}
@@ -42,7 +42,7 @@
   <div class="alert alert-info py-2 px-3 mb-3 small">
     <i class="bi bi-info-circle me-1"></i>
     Generating invoice for payment plan stage <strong>{{ stage_name }}</strong>
-    (${{ "{:,.2f}".format(stage_amount|float) }}). This invoice will be linked to that stage.
+    ({{ currency_symbol }}{{ "{:,.2f}".format(stage_amount|float) }}). This invoice will be linked to that stage.
   </div>
   {% endif %}
   {% if request.args.get('co_number') %}
@@ -94,7 +94,7 @@
               {% for p in projects %}
               <option value="{{ p.get('project_number','') }}"
                 {{ 'selected' if (meta.get('project_number') or prefill_proj|default('')) == p.get('project_number','') }}>
-                {{ p.get('project_number','') }} — {{ p.get('project_name','') }}
+                {{ p.get('project_number','') }} â€” {{ p.get('project_name','') }}
               </option>
               {% endfor %}
             </select>
@@ -106,7 +106,7 @@
             <div class="border rounded p-2 ps-3" style="background:#f8fafc;">
               <div class="small fw-bold text-muted mb-2">
                 <i class="bi bi-kanban me-1 text-teal"></i>Active projects for this client
-                <span class="fw-normal">— check any to also bill on this invoice (one invoice can cover several projects)</span>
+                <span class="fw-normal">â€” check any to also bill on this invoice (one invoice can cover several projects)</span>
               </div>
               <div id="clientProjectsList" class="row g-2"></div>
             </div>
@@ -127,7 +127,7 @@
           <div class="col-md-3" id="paymentMethodWrap" style="display:none;">
             <label class="form-label">Payment Method</label>
             <select name="payment_method" class="form-select">
-              <option value="">— Select —</option>
+              <option value="">â€” Select â€”</option>
               {% for pm in ['Check','Wire Transfer','ACH','Cash','Zelle','Credit Card','Other'] %}
               <option value="{{ pm }}" {{ 'selected' if meta.get('payment_method') == pm }}>{{ pm }}</option>
               {% endfor %}
@@ -157,7 +157,7 @@
             <thead>
               <tr>
                 <th style="width:26%">Description</th>
-                <th style="width:25%">Project <i class="bi bi-info-circle text-muted" title="Override which project this line item bills to — useful when one invoice covers multiple projects"></i></th>
+                <th style="width:25%">Project <i class="bi bi-info-circle text-muted" title="Override which project this line item bills to â€” useful when one invoice covers multiple projects"></i></th>
                 <th style="width:10%">Qty</th>
                 <th style="width:17%">Unit Price</th>
                 <th style="width:14%">Amount</th>
@@ -180,7 +180,7 @@
                 {% endfor %}
               {% elif stage_idx != '' %}
               <tr class="line-item-row">
-                <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="{{ prefill_name }} — {{ stage_name }}" placeholder="Description" required></td>
+                <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="{{ prefill_name }} â€” {{ stage_name }}" placeholder="Description" required></td>
                 <td>{{ project_select(prefill_proj|default('')) }}</td>
                 <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
                 <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="{{ stage_amount }}" min="0" step="0.01" oninput="calcRow(this)"></td>
@@ -203,7 +203,7 @@
                 {% endfor %}
               {% elif prefill_proj|default('') %}
               <tr class="line-item-row">
-                <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="{{ prefill_name }} — {{ prefill_proj }}" placeholder="Description" required></td>
+                <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="{{ prefill_name }} â€” {{ prefill_proj }}" placeholder="Description" required></td>
                 <td>
                   {{ project_select(prefill_proj|default('')) }}
                   <input type="hidden" name="item_stage_index[]" value="">
@@ -287,7 +287,7 @@
 <script>
 const TODAY_ISO = {{ now.strftime('%Y-%m-%d') | tojson }}; // company-timezone "today", not the browser's local/UTC date
 
-const projectOptionsHtml = '<option value="">— invoice project —</option>' +
+const projectOptionsHtml = '<option value="">â€” invoice project â€”</option>' +
   [{% for p in projects %}{{ p.get('project_number','')|tojson }}{{ ',' if not loop.last }}{% endfor %}]
     .map(num => `<option value="${num}">${num}</option>`).join('');
 
@@ -309,7 +309,7 @@ const projectsData = [
 
 // Project numbers that already have a line item on this invoice (whether
 // pre-loaded server-side via "select multiple projects -> load to invoice",
-// or added earlier through this picker) — used so the picker reflects what's
+// or added earlier through this picker) â€” used so the picker reflects what's
 // already on the invoice instead of overlapping/duplicating it.
 function getIncludedProjectNumbers() {
   const set = new Set();
@@ -328,7 +328,7 @@ function findLineItemRowByProject(number) {
 
 function renderClientProjects() {
   const wrap = document.getElementById('projectsPickerWrap');
-  if (!wrap) return;   // stage_idx mode — no multi-project panel
+  if (!wrap) return;   // stage_idx mode â€” no multi-project panel
 
   const client  = document.getElementById('clientSelect').value;
   const mainNum = document.querySelector('#invoiceForm select[name="project_number"]').value;
@@ -354,7 +354,7 @@ function renderClientProjects() {
     col.className = 'col-md-6 col-lg-4';
 
     if (isMain) {
-      // Primary project — always included, shown as a teal card (no checkbox)
+      // Primary project â€” always included, shown as a teal card (no checkbox)
       col.innerHTML = `
         <div class="d-flex align-items-center gap-2 p-2 border rounded"
              style="background:#f0fdfa; border-color:#0D9488 !important;">
@@ -364,12 +364,12 @@ function renderClientProjects() {
             <div class="text-muted text-truncate" style="font-size:0.72rem;">${p.name}</div>
           </div>
           <div class="text-end flex-shrink-0">
-            <div class="small fw-bold text-teal">$${billable.toFixed(2)}</div>
+            <div class="small fw-bold text-teal">${CURRENCY_SYMBOL}${billable.toFixed(2)}</div>
             <div class="badge" style="font-size:0.6rem;background:#0D9488;color:#fff;">Primary</div>
           </div>
         </div>`;
     } else {
-      // Additional project — checkbox to include/exclude. Pre-check it (and
+      // Additional project â€” checkbox to include/exclude. Pre-check it (and
       // mark it "added") when it's already on the invoice as a line item,
       // e.g. from the "select multiple projects -> load to invoice" flow.
       const alreadyIncluded = includedProjects.has(p.number);
@@ -386,7 +386,7 @@ function renderClientProjects() {
             <div class="text-muted text-truncate" style="font-size:0.72rem;">${p.name}</div>
           </div>
           <div class="text-end flex-shrink-0">
-            <div class="small fw-bold text-muted">$${billable.toFixed(2)}</div>
+            <div class="small fw-bold text-muted">${CURRENCY_SYMBOL}${billable.toFixed(2)}</div>
             <div class="text-muted text-truncate" style="font-size:0.7rem;max-width:120px;">${badgeLabel}</div>
           </div>
         </label>`;
@@ -410,12 +410,12 @@ function renderClientProjects() {
 
 function addProjectLineItem(number, name, amount, stageIdx, stageName) {
   // Already on the invoice (e.g. pre-loaded via "select multiple projects ->
-  // load to invoice") — don't add a second, duplicate line item.
+  // load to invoice") â€” don't add a second, duplicate line item.
   if (findLineItemRowByProject(number)) return;
 
   const tbody = document.getElementById('lineItemsBody');
   const price = parseFloat(amount || 0) || 0;
-  const description = stageName ? `${name} — ${stageName}` : `${name} — ${number}`;
+  const description = stageName ? `${name} â€” ${stageName}` : `${name} â€” ${number}`;
   const row   = document.createElement('tr');
   row.className = 'line-item-row';
   row.dataset.autoProject = number;
@@ -453,7 +453,7 @@ function removeProjectLineItem(number) {
     addLineItem();
   }
 }
-function fmt(n) { return '$' + parseFloat(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+function fmt(n) { return CURRENCY_SYMBOL + parseFloat(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
 function calcRow(input) {
   const row   = input.closest('tr');
   const qty   = parseFloat(row.querySelector('.item-qty').value   || 0);

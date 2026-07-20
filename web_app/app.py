@@ -54,6 +54,10 @@ ASSETS_DIR = BASE_DIR / "assets"
 FIREBASE_API_KEY = os.environ.get("FIREBASE_API_KEY", "AIzaSyD6F6T_KIZ90TkCOL03-jSXTeuPM5WVwJY")
 FIREBASE_DB_URL  = os.environ.get("FIREBASE_DB_URL", "https://invoice-7fe93-default-rtdb.firebaseio.com")
 
+# Currency: MABS (Bangladesh) uses BDT ৳, Arch uses USD $
+CURRENCY_SYMBOL = "৳" if "pims-955e3" in FIREBASE_DB_URL else "$"
+CURRENCY_CODE   = "BDT" if "pims-955e3" in FIREBASE_DB_URL else "USD"
+
 FIREBASE_AVAILABLE = False
 db = None
 
@@ -419,6 +423,8 @@ def inject_globals():
         "timedelta":   timedelta,
         "format_date": _format_date_display,  # Make date formatter available in templates (MM-DD-YYYY)
         "format_date_invoice": _format_date_invoice,  # Invoice-specific formatter (MM-DD-YY)
+        "currency_symbol": CURRENCY_SYMBOL,
+        "currency_code":   CURRENCY_CODE,
         **clock_widget,
     }
 

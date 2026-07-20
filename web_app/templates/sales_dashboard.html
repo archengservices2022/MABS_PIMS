@@ -1,14 +1,14 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Sales Dashboard{% endblock %}
 {% block page_title %}Sales Dashboard{% endblock %}
 
 {% block content %}
 
-<!-- ── Header ─────────────────────────────────────────────────────────────────── -->
+<!-- â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
   <div>
-    <h5 class="mb-0 fw-700">Welcome back, {{ user_name }} 👋</h5>
-    <div class="text-muted small">{{ today_str }} — Here's your quote pipeline</div>
+    <h5 class="mb-0 fw-700">Welcome back, {{ user_name }} ðŸ‘‹</h5>
+    <div class="text-muted small">{{ today_str }} â€” Here's your quote pipeline</div>
   </div>
   {% if 'quotes' in allowed_pages %}
   <a href="{{ url_for('quotes_new') }}" class="btn btn-teal btn-sm">
@@ -17,7 +17,7 @@
   {% endif %}
 </div>
 
-<!-- ── KPI Cards ──────────────────────────────────────────────────────────────── -->
+<!-- â”€â”€ KPI Cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="row g-3 mb-4">
   <div class="col-6 col-xl-3">
     <div class="kpi-card kpi-teal">
@@ -45,7 +45,7 @@
         <span class="kpi-label">Pipeline Value</span>
         <i class="bi bi-currency-dollar kpi-icon-sm"></i>
       </div>
-      <div class="kpi-value">${{ '{:,.0f}'.format(pipeline_value) }}</div>
+      <div class="kpi-value">{{ currency_symbol }}{{ '{:,.0f}'.format(pipeline_value) }}</div>
       <div class="kpi-sub">open quotes</div>
     </div>
   </div>
@@ -61,35 +61,35 @@
   </div>
 </div>
 
-<!-- ── Commission Widget ──────────────────────────────────────────────────────── -->
+<!-- â”€â”€ Commission Widget â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="card-panel mb-4" style="border-top:3px solid #7C3AED;">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h6 class="mb-0 fw-bold" style="color:#7C3AED;font-size:14px;">
       <i class="bi bi-cash-coin me-1"></i>My Commission
     </h6>
     {% if not commission.rate_set %}
-    <span class="badge" style="background:#FEF3C7;color:#92400E;font-size:11px;">Rate not set — contact admin</span>
+    <span class="badge" style="background:#FEF3C7;color:#92400E;font-size:11px;">Rate not set â€” contact admin</span>
     {% else %}
-    <span class="badge" style="background:#EDE9FE;color:#5B21B6;font-size:11px;">{{ commission.rate }}% · {{ commission.employee_type or 'Not specified' }}</span>
+    <span class="badge" style="background:#EDE9FE;color:#5B21B6;font-size:11px;">{{ commission.rate }}% Â· {{ commission.employee_type or 'Not specified' }}</span>
     {% endif %}
   </div>
   <div class="row g-2">
     <div class="col-6 col-md-3">
       <div style="background:#ECFDF5;border-radius:8px;padding:12px 14px;">
-        <div style="font-size:10px;color:#059669;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Earned — This Month</div>
+        <div style="font-size:10px;color:#059669;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Earned â€” This Month</div>
         <div style="font-size:1.5rem;font-weight:800;color:#059669;line-height:1.2;">
-          {% if commission.rate_set %} ${{ "{:,.0f}".format(commission.earned_month) }} {% else %} <span style="color:#94a3b8;font-size:.9rem;">—</span> {% endif %}
+          {% if commission.rate_set %} {{ currency_symbol }}{{ "{:,.0f}".format(commission.earned_month) }} {% else %} <span style="color:#94a3b8;font-size:.9rem;">â€”</span> {% endif %}
         </div>
-        <div style="font-size:10px;color:#94a3b8;margin-top:2px;">from ${{ "{:,.0f}".format(commission.revenue_month) }} rev</div>
+        <div style="font-size:10px;color:#94a3b8;margin-top:2px;">from {{ currency_symbol }}{{ "{:,.0f}".format(commission.revenue_month) }} rev</div>
       </div>
     </div>
     <div class="col-6 col-md-3">
       <div style="background:#F0FDF4;border-radius:8px;padding:12px 14px;">
-        <div style="font-size:10px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Earned — All Time</div>
+        <div style="font-size:10px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Earned â€” All Time</div>
         <div style="font-size:1.5rem;font-weight:800;color:#16a34a;line-height:1.2;">
-          {% if commission.rate_set %} ${{ "{:,.0f}".format(commission.earned_alltime) }} {% else %} <span style="color:#94a3b8;font-size:.9rem;">—</span> {% endif %}
+          {% if commission.rate_set %} {{ currency_symbol }}{{ "{:,.0f}".format(commission.earned_alltime) }} {% else %} <span style="color:#94a3b8;font-size:.9rem;">â€”</span> {% endif %}
         </div>
-        <div style="font-size:10px;color:#94a3b8;margin-top:2px;">from ${{ "{:,.0f}".format(commission.revenue_alltime) }} rev</div>
+        <div style="font-size:10px;color:#94a3b8;margin-top:2px;">from {{ currency_symbol }}{{ "{:,.0f}".format(commission.revenue_alltime) }} rev</div>
       </div>
     </div>
     <div class="col-6 col-md-3">
@@ -102,20 +102,20 @@
     <div class="col-6 col-md-3">
       <div style="background:#FFFBEB;border-radius:8px;padding:12px 14px;">
         <div style="font-size:10px;color:#D97706;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Revenue Generated</div>
-        <div style="font-size:1.5rem;font-weight:800;color:#D97706;line-height:1.2;">${{ "{:,.0f}".format(commission.revenue_alltime) }}</div>
+        <div style="font-size:1.5rem;font-weight:800;color:#D97706;line-height:1.2;">{{ currency_symbol }}{{ "{:,.0f}".format(commission.revenue_alltime) }}</div>
         <div style="font-size:10px;color:#94a3b8;margin-top:2px;">all time</div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ── Alerts ─────────────────────────────────────────────────────────────────── -->
+<!-- â”€â”€ Alerts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 {% if followups_due %}
 <div class="alert mb-3 py-2" style="background:#FEF2F2;border:1px solid #FCA5A5;color:#991B1B;">
   <i class="bi bi-bell-fill me-2" style="color:#DC2626;"></i>
   <strong>{{ followups_due|length }} follow-up{{ 's' if followups_due|length != 1 }} overdue</strong>
-  — action needed today.
-  <a href="{{ url_for('quotes') }}#tab-followups" class="fw-semibold ms-2" style="color:#991B1B;">View →</a>
+  â€” action needed today.
+  <a href="{{ url_for('quotes') }}#tab-followups" class="fw-semibold ms-2" style="color:#991B1B;">View â†’</a>
 </div>
 {% endif %}
 
@@ -123,11 +123,11 @@
 <div class="alert mb-3 py-2" style="background:#FEF3C7;border:1px solid #F59E0B;color:#92400E;">
   <i class="bi bi-alarm-fill me-2" style="color:#D97706;"></i>
   <strong>{{ expiring_soon|length }} quote{{ 's' if expiring_soon|length != 1 }} expiring within 7 days</strong>
-  — follow up before they lapse.
+  â€” follow up before they lapse.
 </div>
 {% endif %}
 
-<!-- ── Main content ──────────────────────────────────────────────────────────── -->
+<!-- â”€â”€ Main content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="row g-4">
 
   <!-- Follow-ups panel -->
@@ -153,11 +153,11 @@
           <tbody>
             {% for q in followups_due %}
             <tr onclick="location.href='{{ url_for('quote_detail', quote_id=q.firebase_id) }}'" style="cursor:pointer;">
-              <td><span class="fw-bold text-teal">{{ q.get('job_number','—') }}</span></td>
-              <td>{{ ((q.get('company_name') or q.get('client_name','—')) or '—')[:22] }}</td>
+              <td><span class="fw-bold text-teal">{{ q.get('job_number','â€”') }}</span></td>
+              <td>{{ ((q.get('company_name') or q.get('client_name','â€”')) or 'â€”')[:22] }}</td>
               <td>
                 <span class="{% if q.get('follow_up_date','') < today_str %}text-danger fw-semibold{% else %}text-muted{% endif %}">
-                  {{ q.get('follow_up_date','—') | format_date }}
+                  {{ q.get('follow_up_date','â€”') | format_date }}
                 </span>
               </td>
               <td>
@@ -173,7 +173,7 @@
       {% else %}
       <div class="text-center text-muted py-4">
         <i class="bi bi-check-circle" style="font-size:32px;opacity:.3;"></i>
-        <div class="mt-2 small">No follow-ups due — you're all caught up!</div>
+        <div class="mt-2 small">No follow-ups due â€” you're all caught up!</div>
       </div>
       {% endif %}
     </div>
@@ -202,13 +202,13 @@
           <tbody>
             {% for q in expiring_soon %}
             <tr onclick="location.href='{{ url_for('quote_detail', quote_id=q.firebase_id) }}'" style="cursor:pointer;">
-              <td><span class="fw-bold text-teal">{{ q.get('job_number','—') }}</span></td>
-              <td>{{ ((q.get('company_name') or q.get('client_name','—')) or '—')[:22] }}</td>
+              <td><span class="fw-bold text-teal">{{ q.get('job_number','â€”') }}</span></td>
+              <td>{{ ((q.get('company_name') or q.get('client_name','â€”')) or 'â€”')[:22] }}</td>
               <td>
                 {% set days_left = ((q.get('valid_until','') | string) | length) %}
-                <span class="fw-semibold" style="color:#D97706;">{{ q.get('valid_until','—') }}</span>
+                <span class="fw-semibold" style="color:#D97706;">{{ q.get('valid_until','â€”') }}</span>
               </td>
-              <td class="text-end fw-semibold">${{ '{:,.0f}'.format(q.get('total',0)|float) }}</td>
+              <td class="text-end fw-semibold">{{ currency_symbol }}{{ '{:,.0f}'.format(q.get('total',0)|float) }}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -225,12 +225,12 @@
 
 </div>
 
-<!-- ── Recent Quotes ──────────────────────────────────────────────────────────── -->
+<!-- â”€â”€ Recent Quotes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="card-panel mt-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h6 class="panel-title mb-0"><i class="bi bi-clock-history me-1" style="color:#0D9488;"></i>Recent Quotes</h6>
     {% if 'quotes' in allowed_pages %}
-    <a href="{{ url_for('quotes') }}" class="btn btn-xs btn-outline-secondary">View all →</a>
+    <a href="{{ url_for('quotes') }}" class="btn btn-xs btn-outline-secondary">View all â†’</a>
     {% endif %}
   </div>
   {% if recent_quotes %}
@@ -250,10 +250,10 @@
       <tbody>
         {% for q in recent_quotes %}
         <tr onclick="location.href='{{ url_for('quote_detail', quote_id=q.firebase_id) }}'" style="cursor:pointer;">
-          <td><span class="fw-bold text-teal">{{ q.get('job_number','—') }}</span></td>
-          <td>{{ ((q.get('company_name') or q.get('client_name','—')) or '—')[:30] }}</td>
-          <td class="text-muted">{{ (q.get('project_name','') or '—')[:35] }}</td>
-          <td class="text-muted">{{ q.get('date','—') | format_date }}</td>
+          <td><span class="fw-bold text-teal">{{ q.get('job_number','â€”') }}</span></td>
+          <td>{{ ((q.get('company_name') or q.get('client_name','â€”')) or 'â€”')[:30] }}</td>
+          <td class="text-muted">{{ (q.get('project_name','') or 'â€”')[:35] }}</td>
+          <td class="text-muted">{{ q.get('date','â€”') | format_date }}</td>
           <td>
             {% if q.get('valid_until') %}
               {% if q.get('valid_until') < today_str and q.get('status') not in ('Converted','Invoiced','Approved','Rejected','Cancelled','Expired') %}
@@ -261,14 +261,14 @@
               {% else %}
                 <span class="text-muted">{{ q.get('valid_until') }}</span>
               {% endif %}
-            {% else %}—{% endif %}
+            {% else %}â€”{% endif %}
           </td>
           <td>
             <span class="badge status-{{ (q.get('status','Not Started')|lower|replace(' ','-')) }}">
               {{ q.get('status','Not Started') }}
             </span>
           </td>
-          <td class="text-end fw-semibold">${{ '{:,.2f}'.format(q.get('total',0)|float) }}</td>
+          <td class="text-end fw-semibold">{{ currency_symbol }}{{ '{:,.2f}'.format(q.get('total',0)|float) }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -277,7 +277,7 @@
   {% else %}
   <div class="text-center text-muted py-5">
     <i class="bi bi-file-earmark-text" style="font-size:40px;opacity:.3;"></i>
-    <div class="mt-2">No quotes yet. <a href="{{ url_for('quotes_new') }}">Create your first quote →</a></div>
+    <div class="mt-2">No quotes yet. <a href="{{ url_for('quotes_new') }}">Create your first quote â†’</a></div>
   </div>
   {% endif %}
 </div>
