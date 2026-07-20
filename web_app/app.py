@@ -294,10 +294,31 @@ def fb_delete(path: str) -> bool:
     ref.delete()
     return True
 
+# ── In-memory TTL cache (avoids repeated Firebase reads on every page load) ───
+import time as _time
+_CACHE: Dict[str, dict] = {}
+
+def _cache_get(key: str):
+    entry = _CACHE.get(key)
+    if entry and _time.monotonic() < entry["exp"]:
+        return entry["val"], True
+    return None, False
+
+def _cache_set(key: str, val, ttl: int):
+    _CACHE[key] = {"val": val, "exp": _time.monotonic() + ttl}
+
+def cache_bust(*keys: str):
+    for k in keys:
+        _CACHE.pop(k, None)
+
 def load_settings() -> dict:
+    cached, hit = _cache_get("settings")
+    if hit:
+        return cached
     try:
         data = fb_get("/settings") or {}
         if isinstance(data, dict):
+            _cache_set("settings", data, 300)  # 5-minute TTL
             return data
     except Exception:
         pass
@@ -305,7 +326,9 @@ def load_settings() -> dict:
         sf = DATA_DIR / "settings.json"
         if sf.exists():
             with open(sf, encoding="utf-8") as f:
-                return json.load(f)
+                result = json.load(f)
+                _cache_set("settings", result, 300)
+                return result
     except Exception:
         pass
     return {}
@@ -2774,6 +2797,7 @@ def project_new():
                   f"{source_quote.get('job_number','')}.", "success")
             return redirect(url_for("project_detail", project_id=pid))
 
+        cache_bust("projects_list")
         flash(f"Project {data['project_number']} created successfully.", "success")
         return redirect(url_for("projects", tab="all-projects"))
     sales_people = [p.get("name","") for p in _load_sales_people() if p.get("name","")]
@@ -3339,6 +3363,7 @@ def project_edit(project_id):
             _sync_project_payment(proj_num)
             _auto_complete_project_if_paid(proj_num)
 
+        cache_bust("projects_list")
         flash("Project updated successfully.", "success")
         return redirect(url_for("project_detail", project_id=project_id))
     sales_people = [p.get("name","") for p in _load_sales_people() if p.get("name","")]
@@ -3520,6 +3545,7 @@ def project_delete(project_id):
     source_quote_id = project.get("source_quote_id")
 
     fb_delete(f"/projects/{project_id}")
+    cache_bust("projects_list")
 
     # If project was created from a quote, reset quote status to "Approved"
     if source_quote_id:
@@ -10609,6 +10635,7 @@ def employee_clock_in():
         "date":           now.strftime("%Y-%m-%d"),
         "status":         "open",
     })
+    cache_bust("time_entries")
     flash(f"Clocked in{' to ' + project_name if project_name else ''}.", "success")
     return redirect(url_for("employees"))
 
@@ -10677,6 +10704,7 @@ def employee_clock_out():
         "status":           "closed",
         "notes":            request.form.get("notes", "").strip(),
     })
+    cache_bust("time_entries")
     flash("Clocked out.", "success")
     return redirect(url_for("employees"))
 
@@ -11348,6 +11376,7 @@ def settings_company():
     })
     # Save to Firebase and local settings.json
     fb_update("/settings", {"company": co})
+    cache_bust("settings")
     _save_local_settings_key("company", co)
     flash("Company settings saved.", "success")
     return redirect(url_for("settings"))
@@ -11378,6 +11407,7 @@ def settings_logo():
         co = existing.get("company", {})
         co["logo_path"] = str(save_path.resolve())
         fb_update("/settings", {"company": co})
+        cache_bust("settings")
         _save_local_settings_key("company", co)
         flash("Logo uploaded successfully.", "success")
     else:
@@ -11397,6 +11427,7 @@ def settings_email():
         "reminder_days_before": int(request.form.get("reminder_days_before", 3) or 3),
     }
     fb_update("/settings", {"email": email_cfg})
+    cache_bust("settings")
     _save_local_settings_key("email", email_cfg)
     flash("Email settings saved.", "success")
     return redirect(url_for("settings"))
@@ -11410,6 +11441,7 @@ def settings_app():
         "auto_check_updates":  request.form.get("auto_check_updates") == "on",
     }
     fb_update("/settings", {"app": app_cfg})
+    cache_bust("settings")
     _save_local_settings_key("app", app_cfg)
     flash("App preferences saved.", "success")
     return redirect(url_for("settings"))
@@ -11419,6 +11451,7 @@ def settings_app():
 def settings_ai():
     ai_cfg = {"anthropic_key": request.form.get("anthropic_key", "").strip()}
     fb_update("/settings", {"ai": ai_cfg})
+    cache_bust("settings")
     _save_local_settings_key("ai", ai_cfg)
     flash("AI settings saved.", "success")
     return redirect(url_for("settings") + "?tab=ai")
@@ -13002,6 +13035,9 @@ def _load_sales_people() -> List[dict]:
     return sorted(people, key=lambda x: str(x.get("name", "")).lower())
 
 def _load_projects_list() -> List[dict]:
+    cached, hit = _cache_get("projects_list")
+    if hit:
+        return cached
     raw = fb_get("/projects") or {}
     if isinstance(raw, dict):
         items = []
@@ -13009,7 +13045,9 @@ def _load_projects_list() -> List[dict]:
             if pdata and isinstance(pdata, dict):
                 pdata["firebase_id"] = pid
                 items.append(pdata)
-        return sorted(items, key=lambda x: x.get("project_number", ""), reverse=True)
+        result = sorted(items, key=lambda x: x.get("project_number", ""), reverse=True)
+        _cache_set("projects_list", result, 30)  # 30-second TTL
+        return result
     return []
 
 def _load_all_users() -> List[dict]:
@@ -13064,6 +13102,9 @@ def _activity_usage_summary() -> List[dict]:
     return sorted(by_employee.values(), key=lambda x: x["week_minutes"], reverse=True)
 
 def _load_time_entries() -> List[dict]:
+    cached, hit = _cache_get("time_entries")
+    if hit:
+        return cached
     raw = fb_get("/time_entries") or {}
     if isinstance(raw, dict):
         items = []
@@ -13071,7 +13112,9 @@ def _load_time_entries() -> List[dict]:
             if tdata and isinstance(tdata, dict):
                 tdata["firebase_id"] = tid
                 items.append(tdata)
-        return sorted(items, key=lambda x: x.get("clock_in", ""), reverse=True)
+        result = sorted(items, key=lambda x: x.get("clock_in", ""), reverse=True)
+        _cache_set("time_entries", result, 10)  # 10-second TTL
+        return result
     return []
 
 def _load_time_off_requests() -> List[dict]:
