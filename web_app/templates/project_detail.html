@@ -3,6 +3,7 @@
 {% block page_title %}Project Detail{% endblock %}
 
 {% block content %}
+{% set can_manage_projects = user_role in ('admin', 'projects', 'administration') %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div class="d-flex align-items-center gap-2">
     <a href="{{ url_for('projects') }}" class="btn btn-sm btn-outline-secondary">
@@ -729,7 +730,7 @@
         <div class="card-panel">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="section-heading mb-0">Change Orders</h6>
-            {% if user_role in ('admin','projects') %}
+            {% if can_manage_projects %}
             <button class="btn btn-sm btn-teal" data-bs-toggle="modal" data-bs-target="#newCOModal">
               <i class="bi bi-plus-lg me-1"></i>New Change Order
             </button>
@@ -746,7 +747,7 @@
                   <th class="text-end">Amount</th>
                   <th>Status</th>
                   <th>Date</th>
-                  {% if user_role in ('admin','projects') %}<th></th>{% endif %}
+                  {% if can_manage_projects %}<th></th>{% endif %}
                 </tr>
               </thead>
               <tbody>
@@ -761,7 +762,7 @@
                     {% endif %}
                   </td>
                   <td class="text-end fw-600">
-                    {% if user_role in ('admin','projects') %}
+                    {% if can_manage_projects %}
                     <form id="coAmountForm{{ co_idx }}" method="POST" action="{{ url_for('co_update_amount', project_id=project.firebase_id, co_idx=co_idx) }}" class="d-inline-flex align-items-center justify-content-end gap-1">
                       <span class="text-muted">{{ currency_symbol }}</span>
                       <input type="number" name="amount" min="0" step="0.01" value="{{ '%.2f'|format(co.get('amount',0)|float) }}" class="form-control form-control-sm text-end" style="width:110px;">
@@ -782,7 +783,7 @@
                     {% endif %}
                   </td>
                   <td class="text-muted small">{{ co.get('created_at','')[:10] | format_date }}</td>
-                  {% if user_role in ('admin','projects') %}
+                  {% if can_manage_projects %}
                   <td>
                     <button type="submit" form="coAmountForm{{ co_idx }}" class="btn btn-xs btn-outline-primary me-1" title="Save CO amount">
                       <i class="bi bi-floppy"></i>
@@ -812,7 +813,7 @@
                 <tr class="table-light fw-bold">
                   <td colspan="2">Approved Total</td>
                   <td class="text-end text-success">{{ currency_symbol }}{{ "{:,.0f}".format(co_approved_total) }}</td>
-                  <td colspan="{{ 3 if user_role in ('admin','projects') else 2 }}"></td>
+                  <td colspan="{{ 3 if can_manage_projects else 2 }}"></td>
                 </tr>
               </tfoot>
               {% endif %}
@@ -822,7 +823,7 @@
           <div class="empty-state py-4">
             <i class="bi bi-arrow-repeat fs-2 d-block mb-2 text-muted"></i>
             <div class="text-muted">No change orders yet.</div>
-            {% if user_role in ('admin','projects') %}
+            {% if can_manage_projects %}
             <div class="text-muted small mt-1">Click "New Change Order" to add one.</div>
             {% endif %}
           </div>
