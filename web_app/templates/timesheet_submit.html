@@ -755,8 +755,23 @@ function collectEntries() {
     if (!date) return;
     const type  = tr.querySelector('.entry-type') ? tr.querySelector('.entry-type').value : 'work';
     const proj  = tr.querySelector('.entry-proj').value || '';
-    const start = type==='work' ? timeToStorage(tr.querySelector('.entry-start').value) : '';
-    const end   = type==='work' ? timeToStorage(tr.querySelector('.entry-end').value)   : '';
+    let start = '', end = '';
+    if (type === 'work') {
+      const startVal = tr.querySelector('.entry-start').value;
+      const endVal   = tr.querySelector('.entry-end').value;
+      start = timeToStorage(startVal);
+      // Apply the same PM auto-correction as calcRow so stored end_time matches
+      // the displayed hours (e.g. "3:00" after "7:00 AM" → stored as "15:00" not "03:00")
+      let s = parseTime(startVal);
+      let e = parseTime(endVal);
+      if (s && e && e.h < 12) {
+        const rawEnd = endVal.trim().toUpperCase();
+        if (!/AM|PM/.test(rawEnd) && (e.h*60+e.min) <= (s.h*60+s.min)) {
+          e = {h: e.h+12, min: e.min};
+        }
+      }
+      end = e ? `${String(e.h).padStart(2,'0')}:${String(e.min).padStart(2,'0')}` : '';
+    }
     const notes = tr.querySelector('.entry-notes').value.trim();
     const reg   = type==='work' ? (parseFloat(document.getElementById(`reg-${id}`)?.textContent)||0) : 0;
     const ot    = type==='work' ? (parseFloat(document.getElementById(`ot-${id}`)?.textContent)||0)  : 0;
