@@ -684,7 +684,9 @@ function calcRow(id) {
   }
 
   let mins = (e.h*60+e.min) - (s.h*60+s.min);
-  if (mins < 0) mins = 0;
+  // Overnight shift: treat an end time earlier than the start time as next day.
+  // Example: 6 PM -> 12 AM should calculate as 6 hours, not 0.
+  if (mins < 0) mins += 24 * 60;
   const worked = mins / 60;
   tr.dataset.worked = worked;
   document.getElementById(`tot-${id}`).textContent = worked.toFixed(2);
