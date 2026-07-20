@@ -1347,14 +1347,25 @@ function autoRedistributeStages(changedIndex) {
     const input = document.querySelector(`.stageAmountInput[data-index="${idx}"]`);
     if (input) {
       const currentValue = parseFloat(input.value) || currentStages[idx].amount || 0;
-      // For last stage, account for rounding
-      const adjustment = (position === nonInvoicedIndices.length - 1)
-        ? (delta - (deltaPerStage * (nonInvoicedIndices.length - 1)))
-        : deltaPerStage;
-      const newAmount = currentValue - adjustment;
+      const newAmount = currentValue - deltaPerStage;
       input.value = Math.max(0, newAmount).toFixed(2);
     }
   });
+
+  // Fix any rounding error by setting the last redistributed stage to exactly
+  // whatever is needed so that all stages sum to contractValue
+  if (nonInvoicedIndices.length > 0) {
+    const lastIdx = nonInvoicedIndices[nonInvoicedIndices.length - 1];
+    const lastInput = document.querySelector(`.stageAmountInput[data-index="${lastIdx}"]`);
+    if (lastInput) {
+      const dpAmount = parseFloat(document.getElementById('editDownPaymentAmount').value) || 0;
+      let othersSum = dpAmount;
+      document.querySelectorAll('.stageAmountInput').forEach(inp => {
+        if (parseInt(inp.dataset.index) !== lastIdx) othersSum += parseFloat(inp.value) || 0;
+      });
+      lastInput.value = Math.max(0, Math.round((contractValue - othersSum) * 100) / 100).toFixed(2);
+    }
+  }
 
   calculateEditPlanTotal();
 }
