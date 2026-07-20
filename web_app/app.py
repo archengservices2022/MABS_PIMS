@@ -54,9 +54,9 @@ ASSETS_DIR = BASE_DIR / "assets"
 FIREBASE_API_KEY = os.environ.get("FIREBASE_API_KEY", "AIzaSyBZIG4Gj_ZRRCqI1DXcf8DSXpO_9PkTgeY")
 FIREBASE_DB_URL  = os.environ.get("FIREBASE_DB_URL",  "https://pims-955e3-default-rtdb.firebaseio.com")
 
-# Currency: MABS (Bangladesh) uses BDT ৳, Arch uses USD $
-CURRENCY_SYMBOL = "৳" if "pims-955e3" in FIREBASE_DB_URL else "$"
-CURRENCY_CODE   = "BDT" if "pims-955e3" in FIREBASE_DB_URL else "USD"
+# Both MABS and Arch use USD $
+CURRENCY_SYMBOL = "$"
+CURRENCY_CODE   = "USD"
 
 FIREBASE_AVAILABLE = False
 db = None
