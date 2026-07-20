@@ -856,6 +856,10 @@ function updatePlanPreview() {
   const fmt = v => CURRENCY_SYMBOL + v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
   const rows = [];
 
+  // Separate CO stages from base stages — CO stages must always be preserved
+  const coStages = (stageAmountsData || []).filter(s => s.name && s.name.includes('CO-'));
+  const coTotal  = coStages.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
+
   // Only preserve custom amounts if user explicitly customized them via the dialog
   if (hasExplicitCustomAmounts && stageAmountsData && stageAmountsData.length > 0) {
     // Use existing custom amounts - don't recalculate
@@ -873,13 +877,14 @@ function updatePlanPreview() {
       rows.push(`<div class="d-flex justify-content-between py-1 ${!isLast?'border-bottom':''}"><span>${stage.name}</span><span class="fw-600">${fmt(stage.amount)}</span></div>`);
     });
   } else {
-    // New project or no custom amounts - calculate from down payment % and installment count
+    // Calculate base stages from (contract value - CO total) so CO amounts stay independent
+    const baseCv = Math.max(0, cv - coTotal);
     previewStagesData = [];
-    let remaining = cv;
+    let remaining = baseCv;
 
     if (dpPct > 0) {
-      const dp = Math.round(cv * dpPct / 100 * 100) / 100;
-      remaining = cv - dp;
+      const dp = Math.round(baseCv * dpPct / 100 * 100) / 100;
+      remaining = baseCv - dp;
       previewStagesData.push({
         name: `Down Payment (${dpPct}%)`,
         amount: dp,
@@ -904,8 +909,21 @@ function updatePlanPreview() {
         invoice_id: '',
         index: previewStagesData.length
       });
-      rows.push(`<div class="d-flex justify-content-between py-1 ${i<inst-1?'border-bottom':''}"><span>${label}</span><span class="fw-600">${fmt(amt)}</span></div>`);
+      rows.push(`<div class="d-flex justify-content-between py-1 ${(i<inst-1||coStages.length>0)?'border-bottom':''}"><span>${label}</span><span class="fw-600">${fmt(amt)}</span></div>`);
     }
+
+    // Always re-append CO stages so they are visible in the preview and submitted with the form
+    coStages.forEach((co, i) => {
+      const isLast = i === coStages.length - 1;
+      previewStagesData.push({
+        name: co.name,
+        amount: parseFloat(co.amount) || 0,
+        status: co.status || 'Pending Invoice',
+        invoice_id: co.invoice_id || '',
+        index: previewStagesData.length
+      });
+      rows.push(`<div class="d-flex justify-content-between py-1 ${!isLast?'border-bottom':''}"><span>${co.name}</span><span class="fw-600">${fmt(parseFloat(co.amount)||0)}</span></div>`);
+    });
   }
 
   stages.innerHTML = rows.join('');
