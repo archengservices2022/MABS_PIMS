@@ -207,6 +207,47 @@ def _project_number_sort_key(project: dict):
         return (int(digits[0]), int(digits[-1]), num)
     return (0, 0, num)
 
+def _normalise_list(value) -> list:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return list(value.values())
+    return []
+
+def _approved_co_total(change_orders) -> float:
+    return sum(
+        _safe_float(co.get("amount", 0))
+        for co in _normalise_list(change_orders)
+        if isinstance(co, dict) and co.get("status") in ("Approved", "Invoiced", "Paid")
+    )
+
+def _base_contract_value(project: dict, change_orders=None) -> float:
+    stored = project.get("base_contract_value")
+    if stored not in (None, ""):
+        return _safe_float(stored)
+    return _safe_float(project.get("contract_value", 0)) - _approved_co_total(
+        project.get("change_orders") if change_orders is None else change_orders
+    )
+
+def _sync_contract_value_from_cos(project_id: str, project: dict, change_orders=None) -> bool:
+    cos = project.get("change_orders") if change_orders is None else change_orders
+    if not _normalise_list(cos):
+        return False
+    base_value = _base_contract_value(project, cos)
+    expected_value = base_value + _approved_co_total(cos)
+    current_value = _safe_float(project.get("contract_value", 0))
+    if abs(expected_value - current_value) <= 0.01:
+        return False
+    project["base_contract_value"] = base_value
+    project["contract_value"] = expected_value
+    project["updated_at"] = datetime.now(timezone.utc).isoformat()
+    fb_update(f"/projects/{project_id}", {
+        "base_contract_value": base_value,
+        "contract_value": expected_value,
+        "updated_at": project["updated_at"],
+    })
+    return True
+
 def normalize_role(role: str) -> str:
     r = str(role or "sales").strip().lower()
     return r if r in ROLE_PAGES else "sales"
@@ -2320,6 +2361,7 @@ def projects():
         if pdata and isinstance(pdata, dict):
             pdata["firebase_id"] = pid
             pdata["_has_overdue"] = _project_has_overdue_stage(pdata.get("payment_stages"), raw_inv)
+            _sync_contract_value_from_cos(pid, pdata)
             # Repair status if amount_paid contradicts stored status
             _amt   = _safe_float(pdata.get("amount_paid", 0))
             _cv    = _safe_float(pdata.get("contract_value", 0))
@@ -2759,9 +2801,15 @@ def projects_import_excel():
         }
         cos.append(co_entry)
         # Save base_contract_value if not set
+        base_value = _base_contract_value(parent, cos)
         if not parent.get("base_contract_value"):
-            fb_update(f"/projects/{parent_id}", {"base_contract_value": parent.get("contract_value", 0)})
-        fb_update(f"/projects/{parent_id}", {"change_orders": cos, "updated_at": now_ts})
+            base_value = _safe_float(parent.get("contract_value", 0))
+        fb_update(f"/projects/{parent_id}", {
+            "base_contract_value": base_value,
+            "contract_value": base_value + _approved_co_total(cos),
+            "change_orders": cos,
+            "updated_at": now_ts,
+        })
         co_added += 1
 
     cache_bust("projects_list")
@@ -3159,16 +3207,15 @@ def project_detail(project_id):
     next_stage_amount = detection.get("amount", 0)
 
     # Change orders
-    change_orders = data.get("change_orders") or []
-    if not isinstance(change_orders, list):
-        change_orders = list(change_orders.values()) if isinstance(change_orders, dict) else []
+    change_orders = _normalise_list(data.get("change_orders"))
     # Actual sum of approved CO amounts — used in the CO table and KPI card.
     # Include Approved, Invoiced, and Paid statuses (all active/completed COs)
-    co_approved_total = sum(_safe_float(co.get("amount", 0)) for co in change_orders
-                            if co.get("status") in ("Approved", "Invoiced", "Paid"))
+    co_approved_total = _approved_co_total(change_orders)
     # Base contract value = Contract Value - Sum(Approved Change Orders)
-    # Always recalculate to ensure consistency with current CO amounts
-    base_contract = _safe_float(data.get("contract_value", 0)) - co_approved_total
+    # Prefer the stored base for imported projects so CO totals do not make
+    # the base appear negative when older imports missed contract sync.
+    _sync_contract_value_from_cos(project_id, data, change_orders)
+    base_contract = _base_contract_value(data, change_orders)
     # Actual contract increase from base — used in Financial Summary bar so
     # Base + co_contract_increase always equals contract_value exactly.
     co_contract_increase = max(0.0, _safe_float(data.get("contract_value", 0)) - base_contract)
@@ -3277,6 +3324,53 @@ def co_status(project_id, co_idx):
         return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
     fb_update(f"/projects/{project_id}", {"change_orders": cos})
     flash(f"{cos[co_idx]['co_number']} status updated to {new_status}.", "success")
+    return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+
+@app.route("/projects/<project_id>/change-orders/<int:co_idx>/amount", methods=["POST"])
+@role_required("projects")
+def co_update_amount(project_id, co_idx):
+    project = fb_get(f"/projects/{project_id}") or {}
+    if not project:
+        abort(404)
+    cos = _normalise_list(project.get("change_orders"))
+    if co_idx >= len(cos) or not isinstance(cos[co_idx], dict):
+        abort(404)
+
+    new_amount = _safe_float(request.form.get("amount", 0))
+    if new_amount < 0:
+        flash("CO amount cannot be negative.", "danger")
+        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+
+    base_value = _base_contract_value(project, cos)
+    co = cos[co_idx]
+    co["amount"] = new_amount
+    if request.form.get("title") is not None:
+        co["title"] = request.form.get("title", "").strip()
+    if request.form.get("description") is not None:
+        co["description"] = request.form.get("description", "").strip()
+    co["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    stages = _normalise_list(project.get("payment_stages"))
+    co_number = co.get("co_number", "")
+    for idx, stage in enumerate(stages):
+        if not isinstance(stage, dict):
+            continue
+        stage_co_idx = stage.get("co_index")
+        stage_co_num = stage.get("co_number", "")
+        stage_name = str(stage.get("name", ""))
+        if stage_co_idx == co_idx or (co_number and (stage_co_num == co_number or co_number in stage_name)):
+            stage["amount"] = new_amount
+
+    update_data = {
+        "base_contract_value": base_value,
+        "contract_value": base_value + _approved_co_total(cos),
+        "change_orders": cos,
+        "payment_stages": stages,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    fb_update(f"/projects/{project_id}", update_data)
+    cache_bust("projects_list")
+    flash(f"{co.get('co_number', 'CO')} updated.", "success")
     return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
 
 @app.route("/projects/<project_id>/edit", methods=["GET", "POST"])

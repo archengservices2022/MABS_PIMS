@@ -760,7 +760,16 @@
                     <div class="text-muted small">{{ co.get('description') }}</div>
                     {% endif %}
                   </td>
-                  <td class="text-end fw-600">{{ currency_symbol }}{{ "{:,.0f}".format(co.get('amount',0)|float) }}</td>
+                  <td class="text-end fw-600">
+                    {% if user_role in ('admin','projects') %}
+                    <form id="coAmountForm{{ co_idx }}" method="POST" action="{{ url_for('co_update_amount', project_id=project.firebase_id, co_idx=co_idx) }}" class="d-inline-flex align-items-center justify-content-end gap-1">
+                      <span class="text-muted">{{ currency_symbol }}</span>
+                      <input type="number" name="amount" min="0" step="0.01" value="{{ '%.2f'|format(co.get('amount',0)|float) }}" class="form-control form-control-sm text-end" style="width:110px;">
+                    </form>
+                    {% else %}
+                    {{ currency_symbol }}{{ "{:,.0f}".format(co.get('amount',0)|float) }}
+                    {% endif %}
+                  </td>
                   <td>
                     {% if co.get('status') == 'Approved' %}
                     <span class="badge" style="background:#DCFCE7;color:#166534;">Approved</span>
@@ -775,6 +784,9 @@
                   <td class="text-muted small">{{ co.get('created_at','')[:10] | format_date }}</td>
                   {% if user_role in ('admin','projects') %}
                   <td>
+                    <button type="submit" form="coAmountForm{{ co_idx }}" class="btn btn-xs btn-outline-primary me-1" title="Save CO amount">
+                      <i class="bi bi-floppy"></i>
+                    </button>
                     {% if co.get('status') == 'Draft' %}
                     <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}" class="d-inline">
                       <input type="hidden" name="status" value="Submitted">
