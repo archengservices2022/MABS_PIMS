@@ -895,12 +895,10 @@ def dashboard():
     chart_labels = [(now - relativedelta(months=i)).strftime("%b %Y") for i in range(5, -1, -1)]
     chart_data   = [monthly.get(m, 0) for m in chart_labels]
 
-    # ── Status distribution for donut charts — current year only ──────────────────────────────────
+    # ── Status distribution for donut charts — all-time invoices ─────────────
     inv_status_counts = {}
-    for i in cur_year_invs:
+    for i in inv_list:
         if isinstance(i, dict):
-            # CRITICAL: Recalculate status based on actual payments (don't use stored status)
-            # This ensures dashboard shows correct status even if stored status is stale
             st = _calculate_invoice_status(i)
             inv_status_counts[st] = inv_status_counts.get(st, 0) + 1
 

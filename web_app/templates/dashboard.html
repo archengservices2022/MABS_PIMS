@@ -729,7 +729,7 @@
         <h6 class="panel-title mb-0"><i class="bi bi-pie-chart me-1" style="color:#0D9488;"></i>Invoice Status Breakdown</h6>
         <span class="badge" style="background:#f0fdf4;color:#0D9488;font-size:11px;font-weight:600;border-radius:8px;padding:4px 10px;" id="invTotalBadge"></span>
       </div>
-      <div class="d-flex align-items-center gap-4" style="flex:1;">
+      <div class="d-flex align-items-center gap-4" style="flex:1;" id="invDonutWrap">
         <div style="position:relative;width:150px;height:150px;flex-shrink:0;">
           <canvas id="invStatusChart"></canvas>
           <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;">
@@ -739,6 +739,13 @@
         </div>
         <div id="invStatusLegend" style="flex:1;max-height:180px;overflow-y:auto;"></div>
       </div>
+      {% if 'invoicing' in allowed_pages %}
+      <div id="invEmptyState" style="display:none;flex:1;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:12px 0;">
+        <i class="bi bi-receipt" style="font-size:2rem;color:#cbd5e1;display:block;margin-bottom:8px;"></i>
+        <div class="text-muted small mb-2">No invoices created yet</div>
+        <a href="{{ url_for('invoicing') }}" class="btn btn-sm btn-outline-teal" style="font-size:12px;">Create First Invoice</a>
+      </div>
+      {% endif %}
     </div>
   </div>
   <div class="col-lg-6 d-flex">
@@ -1024,6 +1031,11 @@ if (invLabels.length) {
     options: donutOpts(),
   });
   buildDonutLegend('invStatusLegend', invLabels, invData, invColors);
+} else {
+  const wrap  = document.getElementById('invDonutWrap');
+  const empty = document.getElementById('invEmptyState');
+  if (wrap)  wrap.style.display  = 'none';
+  if (empty) empty.style.display = 'flex';
 }
 
 const projLabels = {{ proj_status_labels|safe }};
