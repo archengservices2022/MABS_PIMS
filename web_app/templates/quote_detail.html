@@ -81,23 +81,23 @@
       <div class="row g-2">
         <div class="col-sm-4">
           <div class="info-label">Client</div>
-          <div class="info-value">{{ quote.get('company_name') or quote.get('client_name','â€”') }}</div>
+          <div class="info-value">{{ quote.get('company_name') or quote.get('client_name','?') }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Salesperson</div>
-          <div class="info-value">{{ quote.get('salesperson','â€”') }}</div>
+          <div class="info-value">{{ quote.get('salesperson','?') }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Date</div>
-          <div class="info-value">{{ quote.get('date','â€”') | format_date }}</div>
+          <div class="info-value">{{ quote.get('date','?') | format_date }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Valid Until</div>
-          <div class="info-value">{{ quote.get('valid_until','â€”') | format_date }}</div>
+          <div class="info-value">{{ quote.get('valid_until','?') | format_date }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Expected Completion</div>
-          <div class="info-value">{{ (quote.get('expected_completion') | format_date) if quote.get('expected_completion') else 'â€”' }}</div>
+          <div class="info-value">{{ (quote.get('expected_completion') | format_date) if quote.get('expected_completion') else '?' }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Priority</div>
@@ -123,7 +123,7 @@
                   <span class="badge bg-secondary me-1 mb-1">{{ svc }}</span>
                 {% endif %}
               {% endfor %}
-            {% else %}â€”{% endif %}
+            {% else %}?{% endif %}
           </div>
         </div>
         <div class="col-sm-4">
@@ -151,13 +151,13 @@
         </div>
         <div class="col-sm-8">
           <div class="info-label">Project / Scope</div>
-          <div class="info-value">{{ quote.get('project_name','â€”') }}</div>
+          <div class="info-value">{{ quote.get('project_name','?') }}</div>
         </div>
         {% if quote.get('is_expedited') %}
         <div class="col-12">
           <div class="alert alert-warning py-2 mb-0">
             <i class="bi bi-lightning-charge-fill me-1"></i>
-            <strong>Expedited / Rush Order</strong> â€”
+            <strong>Expedited / Rush Order</strong> ?
             {{ quote.get('rush_rate','0') }}% surcharge applied
             ({{ currency_symbol }}{{ "{:,.2f}".format(quote.get('rush_fee',0)|float) }})
           </div>
@@ -243,7 +243,7 @@
           <a href="{{ url_for('project_detail', project_id=linked_project.firebase_id) }}" class="fw-bold text-teal text-decoration-none">
             {{ linked_project.get('project_number','') }}
           </a>
-          <span class="text-muted small ms-1">â€” {{ linked_project.get('project_name','') }}</span>
+          <span class="text-muted small ms-1">? {{ linked_project.get('project_name','') }}</span>
         </div>
         <span class="badge status-{{ linked_project.get('status','not-started')|lower|replace(' ','-') }}">
           {{ linked_project.get('status','') }}
@@ -281,11 +281,11 @@
     <div class="card-panel">
       <h6 class="section-heading">Metadata</h6>
       <div class="info-label">Created</div>
-      <div class="info-value small">{{ quote.get('created_at','â€”')[:10] | format_date }}</div>
+      <div class="info-value small">{{ quote.get('created_at','?')[:10] | format_date }}</div>
       <div class="info-label mt-2">Updated</div>
-      <div class="info-value small">{{ quote.get('updated_at','â€”')[:10] | format_date }}</div>
+      <div class="info-value small">{{ quote.get('updated_at','?')[:10] | format_date }}</div>
       <div class="info-label mt-2">Created By</div>
-      <div class="info-value small">{{ quote.get('created_by','â€”') }}</div>
+      <div class="info-value small">{{ quote.get('created_by','?') }}</div>
     </div>
   </div>
 </div>
@@ -317,7 +317,7 @@
       <div class="modal-body">
         <div id="emailLoading" class="text-center py-4">
           <div class="spinner-border text-teal mb-2"></div>
-          <div class="text-muted small">Drafting emailâ€¦</div>
+          <div class="text-muted small">Drafting email?</div>
         </div>
         <div id="emailResult" style="display:none;">
           <div class="mb-3">
@@ -359,8 +359,8 @@
         <p class="fw-bold mb-1">You are about to permanently delete:</p>
         <div class="p-3 bg-light rounded mb-3">
           <div class="fw-bold text-teal">{{ quote.get('job_number','') }}</div>
-          <div>{{ quote.get('project_name','â€”') }}</div>
-          <div class="text-muted small">Client: {{ quote.get('company_name') or quote.get('client_name','â€”') }}</div>
+          <div>{{ quote.get('project_name','?') }}</div>
+          <div class="text-muted small">Client: {{ quote.get('company_name') or quote.get('client_name','?') }}</div>
           <div class="text-muted small">Total: {{ currency_symbol }}{{ "{:,.0f}".format(quote.get('total',0)|float) }}</div>
         </div>
         <p class="text-muted small mb-2">Type the quote number to confirm:</p>
@@ -371,7 +371,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-          <i class="bi bi-x-lg me-1"></i>Cancel â€” Keep Quote
+          <i class="bi bi-x-lg me-1"></i>Cancel ? Keep Quote
         </button>
         <form method="POST" action="{{ url_for('quote_delete', quote_id=quote.firebase_id) }}">
           <button type="submit" id="deleteConfirmBtn" class="btn btn-danger" disabled>
@@ -386,7 +386,7 @@
 
 {% block scripts %}
 <script>
-// â”€â”€ Delete modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?? Delete modal ?????????????????????????????????????????????????????????????
 function openDeleteModal() {
   document.getElementById('deleteConfirmInput').value = '';
   document.getElementById('deleteConfirmBtn').disabled = true;
@@ -397,7 +397,7 @@ function checkDeleteInput(input) {
   document.getElementById('deleteConfirmBtn').disabled = input.value.trim() !== expected;
 }
 
-// â”€â”€ Expiry countdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?? Expiry countdown ??????????????????????????????????????????????????????????
 (function () {
   const banner = document.getElementById('expiryBanner');
   if (!banner) return;
@@ -408,14 +408,14 @@ function checkDeleteInput(input) {
   const diff = Math.floor((exp - now) / 86400000);
   const el   = document.getElementById('expiryCountdown');
   if (!el) return;
-  if (diff < 0)       { el.innerHTML = '<strong class="text-danger"> â€” Expired.</strong>'; banner.style.borderColor='#EF4444'; banner.style.background='#FEF2F2'; banner.style.color='#991B1B'; }
-  else if (diff === 0){ el.innerHTML = '<strong class="text-danger"> â€” Expires today!</strong>'; }
-  else if (diff <= 3) { el.innerHTML = `<strong class="text-danger"> â€” ${diff} day${diff>1?'s':''} remaining.</strong>`; }
-  else if (diff <= 7) { el.innerHTML = `<strong class="text-warning"> â€” ${diff} days remaining.</strong>`; }
+  if (diff < 0)       { el.innerHTML = '<strong class="text-danger"> ? Expired.</strong>'; banner.style.borderColor='#EF4444'; banner.style.background='#FEF2F2'; banner.style.color='#991B1B'; }
+  else if (diff === 0){ el.innerHTML = '<strong class="text-danger"> ? Expires today!</strong>'; }
+  else if (diff <= 3) { el.innerHTML = `<strong class="text-danger"> ? ${diff} day${diff>1?'s':''} remaining.</strong>`; }
+  else if (diff <= 7) { el.innerHTML = `<strong class="text-warning"> ? ${diff} days remaining.</strong>`; }
   else                { banner.style.display = 'none'; }
 })();
 
-// â”€â”€ AI Draft Email â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?? AI Draft Email ????????????????????????????????????????????????????????????
 {% if ai_enabled %}
 async function openEmailModal() {
   const modal = new bootstrap.Modal(document.getElementById('emailModal'));

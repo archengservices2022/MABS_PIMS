@@ -32,7 +32,7 @@
             </label>
             <input type="text" id="quoteNumberInput" name="quote_number" class="form-control"
                    value="{{ project.get('quote_number','') or project.get('job_number','') if project else prefill_quote }}"
-                   placeholder="e.g. QT-202606-001 â€” leave blank if none" autocomplete="off">
+                   placeholder="e.g. QT-202606-001 ? leave blank if none" autocomplete="off">
           </div>
           <div class="col-md-4">
             <label class="form-label">PO / WO Number</label>
@@ -98,7 +98,7 @@
             </select>
           </div>
           <div class="col-12">
-            <label class="form-label">Service Types <span class="text-danger">*</span> <span class="text-muted small fw-normal">â€” select all that apply</span></label>
+            <label class="form-label">Service Types <span class="text-danger">*</span> <span class="text-muted small fw-normal">? select all that apply</span></label>
             {% set all_services = ['Structural','Electrical','Civil','Mechanical','Plumbing','HVAC','Fire Protection','Geotechnical','Environmental','Other'] %}
             {% set selected_svcs = (project.get('service_types') or []) if project else [] %}
             {% set ns = namespace(other_val='', other_checked=false) %}
@@ -130,7 +130,7 @@
                   <label class="form-label mb-0 small fw-semibold text-nowrap">Please specify:</label>
                   <input type="text" name="other_specify" id="otherSpecifyInput"
                          class="form-control form-control-sm"
-                         placeholder="e.g. Surveying, Site Inspection, Consultingâ€¦"
+                         placeholder="e.g. Surveying, Site Inspection, Consulting?"
                          maxlength="80" value="{{ ns.other_val }}"
                          oninput="updateOtherCostRowLabel(this)">
                 </div>
@@ -141,7 +141,7 @@
           {% set has_invoiced = existing_stages and (existing_stages|selectattr('status', 'in', ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'])|list|length > 0) %}
           {% if not has_invoiced %}
           <div class="col-12" id="serviceCostSection" style="display:none;">
-            <label class="form-label">Service Cost Breakdown <span class="text-muted small fw-normal">â€” enter a cost for each selected service</span></label>
+            <label class="form-label">Service Cost Breakdown <span class="text-muted small fw-normal">? enter a cost for each selected service</span></label>
             <div class="table-responsive">
               <table class="table table-sm align-middle mb-1">
                 <thead>
@@ -303,7 +303,7 @@
             <select id="installmentCount" name="installment_count" class="form-select"
                     {% if has_invoiced %}disabled{% endif %}
                     onchange="updatePlanPreview()">
-              <option value="1" {{ 'selected' if curr == 1 }}>1 â€” Single payment</option>
+              <option value="1" {{ 'selected' if curr == 1 }}>1 ? Single payment</option>
               {% for n in range(2, 7) %}
               <option value="{{ n }}" {{ 'selected' if curr == n }}>{{ n }} installments</option>
               {% endfor %}
@@ -412,7 +412,7 @@
 </div>
 
 <script>
-// â”€â”€ Duration / date calculator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?? Duration / date calculator ????????????????????????????????????????????????
 function parseLocalDate(dateStr) {
   if (!dateStr) return null;
   const [year, month, day] = dateStr.split('-').map(Number);
@@ -466,7 +466,7 @@ function showDurationNote() {
   if (!startDate || !endDate) return;
   const diffDays = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24));
   const bdays = Math.round(diffDays * 5 / 7);
-  note.textContent = `${diffDays} calendar days Â· ~${bdays} business days`;
+  note.textContent = `${diffDays} calendar days ? ~${bdays} business days`;
   note.style.display = '';
 }
 function initializeDurationCalculation() {
@@ -482,7 +482,7 @@ if (document.readyState === 'loading') {
 }
 setTimeout(initializeDurationCalculation, 100);
 
-// â”€â”€ Budget total live calculation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?? Budget total live calculation ????????????????????????????????????????????
 function updateBudgetTotal() {
   var labor  = parseFloat(document.getElementById('budgetLabor')?.value) || 0;
   var exp    = parseFloat(document.getElementById('budgetExpenses')?.value) || 0;
@@ -493,7 +493,7 @@ function updateBudgetTotal() {
 }
 document.addEventListener('DOMContentLoaded', updateBudgetTotal);
 
-// â”€â”€ Payment Plan live preview â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?? Payment Plan live preview ????????????????????????????????????????????????
 let previewStagesData = [];
 
 function captureUpdatedStages(event) {
@@ -511,7 +511,7 @@ function captureUpdatedStages(event) {
     hiddenInput.value = JSON.stringify(previewStagesData);
     form.appendChild(hiddenInput);
 
-    console.log('âœ“ Captured custom preview amounts and added as custom_stage_amounts');
+    console.log('? Captured custom preview amounts and added as custom_stage_amounts');
     return true;
   }
 
@@ -557,9 +557,9 @@ function captureUpdatedStages(event) {
       hiddenInput.value = JSON.stringify(updatedStages);
       form.appendChild(hiddenInput);
 
-      console.log('âœ“ Captured and added hidden input "updated_stage_amounts" with:', JSON.stringify(updatedStages, null, 2));
+      console.log('? Captured and added hidden input "updated_stage_amounts" with:', JSON.stringify(updatedStages, null, 2));
     } else {
-      console.log('âœ— No stages captured!');
+      console.log('? No stages captured!');
     }
   } else {
     console.log('captureUpdatedStages: No existing stages found');
@@ -702,7 +702,7 @@ function handleContractValueChange() {
   const newValue = parseFloat(cvInput.value) || 0;
   const difference = newValue - oldValue;
 
-  console.log('handleContractValueChange() called:', oldValue, 'â†’', newValue, 'Difference:', difference);
+  console.log('handleContractValueChange() called:', oldValue, '?', newValue, 'Difference:', difference);
 
   // Get all payment stage elements
   const stageElements = document.querySelectorAll('.payment-stage');
@@ -726,7 +726,7 @@ function handleContractValueChange() {
 
   // If all invoiced, prevent change
   if (nonInvoicedCount === 0 && stageElements.length > 0) {
-    alert('âŒ Cannot edit contract value: all payment stages are already invoiced.');
+    alert('? Cannot edit contract value: all payment stages are already invoiced.');
     cvInput.value = oldValue;
     return;
   }
@@ -741,7 +741,7 @@ function handleContractValueChange() {
     }, 0);
 
     const scaleFactor = currentTotal > 0 ? newValue / currentTotal : 1;
-    console.log('Hybrid approach: scaling factor =', scaleFactor, '(', currentTotal, 'â†’', newValue, ')');
+    console.log('Hybrid approach: scaling factor =', scaleFactor, '(', currentTotal, '?', newValue, ')');
 
     const stages = [];
     let firstNonInvoicedAmount = 0;
@@ -801,7 +801,7 @@ function handleContractValueChange() {
         const oldAmount = stage.valueInput.value;
         stage.valueInput.value = stage.amount.toFixed(2);
         stage.displayEl.textContent = CURRENCY_SYMBOL + stage.amount.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-        console.log('Updated stage amount:', oldAmount, 'â†’', stage.amount.toFixed(2));
+        console.log('Updated stage amount:', oldAmount, '?', stage.amount.toFixed(2));
         newTotal += stage.amount;
       } else {
         console.log('Stage missing valueInput or displayEl:', stage);
@@ -936,7 +936,7 @@ function toggleServiceType(cb, boxId) {
   recalcServiceCosts();
 }
 
-// â”€â”€ Form Validation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?? Form Validation ????????????????????????????????????????????????????????????
 function validateProjectForm(event) {
   // Check if at least one service type is selected
   const serviceCheckboxes = document.querySelectorAll('input[name="service_types[]"]');
@@ -944,7 +944,7 @@ function validateProjectForm(event) {
 
   if (!anyChecked) {
     event.preventDefault();
-    alert('âŒ Please select at least one Service Type');
+    alert('? Please select at least one Service Type');
     return false;
   }
 
@@ -954,7 +954,7 @@ function validateProjectForm(event) {
 
   if (!contractValueInput.disabled && (contractValue === 0 || isNaN(contractValue))) {
     event.preventDefault();
-    alert('âŒ Contract Value must be greater than $0.00');
+    alert('? Contract Value must be greater than $0.00');
     contractValueInput.focus();
     return false;
   }
@@ -964,7 +964,7 @@ function validateProjectForm(event) {
   return captureUpdatedStages(event);
 }
 
-// â”€â”€ Service Cost Breakdown (feeds Contract Value) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?? Service Cost Breakdown (feeds Contract Value) ????????????????????????????
 function captureServiceCosts() {
   // Create hidden inputs for service costs before form submission
   const form = document.getElementById('projectForm');
@@ -1116,7 +1116,7 @@ function recalcServiceCosts() {
 document.addEventListener('DOMContentLoaded', function () {
   updatePlanPreview();
 
-  // â”€â”€ Initialize existing service costs for editing projects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ?? Initialize existing service costs for editing projects ????????????????
   {% if not is_new and project %}
   const existingServiceCosts = {{ project.get('service_costs', {})|tojson }};
   if (existingServiceCosts && Object.keys(existingServiceCosts).length > 0) {
@@ -1124,7 +1124,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   {% endif %}
 
-  // â”€â”€ Quote auto-fill â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ?? Quote auto-fill ??????????????????????????????????????????????????????
   const qInput   = document.getElementById('quoteNumberInput');
   const spinner  = document.getElementById('quoteLookupSpinner');
   const okBadge  = document.getElementById('quoteLookupOk');
@@ -1247,7 +1247,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 });
 
-// â”€â”€ Payment Plan Stage Editing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?? Payment Plan Stage Editing ??????????????????????????????????????????????????
 let currentEditStageIndex = null;
 let stageAmountsData = [];
 let hasExplicitCustomAmounts = false; // Flag to track if user explicitly customized amounts
@@ -1333,7 +1333,7 @@ function prepareEditStage(index, name, amount) {
   const maxAmount = contractValue - otherStagesTotal;
 
   document.getElementById('amountConstraintMsg').textContent =
-    `Max for this stage: ${CURRENCY_SYMBOL}${maxAmount.toFixed(2)} (to match contract value of ${CURRENCY_SYMBOL}${contractValue.toFixed(2)})`;
+    `Max for this stage: $${maxAmount.toFixed(2)} (to match contract value of $${contractValue.toFixed(2)})`;
 
   validateStageAmount();
 }
@@ -1349,7 +1349,7 @@ function validateStageAmount() {
   const saveBtn = document.getElementById('saveStageBtn');
 
   if (amount > maxAmount) {
-    msgEl.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>Amount exceeds max of ${CURRENCY_SYMBOL}${maxAmount.toFixed(2)}</span>`;
+    msgEl.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>Amount exceeds max of $${maxAmount.toFixed(2)}</span>`;
     msgEl.style.color = '#dc2626';
     saveBtn.disabled = true;
   } else if (amount <= 0) {
@@ -1403,7 +1403,7 @@ function updatePaymentPlanDisplay() {
     if (!mismatchEl) {
       const msg = document.createElement('div');
       msg.className = 'text-danger small mt-2';
-      msg.innerHTML = `<i class="bi bi-exclamation-circle me-1"></i>Mismatch: Payment plan total (${CURRENCY_SYMBOL}${total.toFixed(2)}) â‰  Contract value (${CURRENCY_SYMBOL}${contractValue.toFixed(2)})`;
+      msg.innerHTML = `<i class="bi bi-exclamation-circle me-1"></i>Mismatch: Payment plan total (${CURRENCY_SYMBOL}${total.toFixed(2)}) ? Contract value (${CURRENCY_SYMBOL}${contractValue.toFixed(2)})`;
       document.querySelector('[id*="totalStageAmount"]').parentElement.parentElement.appendChild(msg);
     }
   } else if (mismatchEl) {
@@ -1427,7 +1427,7 @@ function openEditPreviewStageModal() {
 
   const contractValue = parseFloat(document.getElementById('contractValue')?.value) || 0;
   document.getElementById('amountConstraintMsg').textContent =
-    `Max total: ${CURRENCY_SYMBOL}${contractValue.toFixed(2)} (contract value)`;
+    `Max total: $${contractValue.toFixed(2)} (contract value)`;
 
   modal.show();
 }
@@ -1628,7 +1628,7 @@ function updatePreviewStageTotals() {
       const isDec = diff < 0;
       const diffAmt = Math.abs(diff).toFixed(2);
       const changeType = isDec ? 'DECREASED' : 'INCREASED';
-      const changeIcon = isDec ? 'ðŸ“‰' : 'ðŸ“ˆ';
+      const changeIcon = isDec ? '??' : '??';
       const alertClass = isDec ? 'alert-warning' : 'alert-info';
 
       changeAlert.innerHTML = `
@@ -1637,7 +1637,7 @@ function updatePreviewStageTotals() {
             ${changeIcon} Contract value ${changeType} by <strong>${CURRENCY_SYMBOL}${diffAmt}</strong>
           </div>
           <div style="font-size: 12px; opacity: 0.9;">
-            From ${CURRENCY_SYMBOL}${originalValue.toFixed(2)} â†’ ${CURRENCY_SYMBOL}${newTotal.toFixed(2)}
+            From $${originalValue.toFixed(2)} ? $${newTotal.toFixed(2)}
           </div>
         </div>
       `;

@@ -4,7 +4,7 @@
 
 {% block content %}
 
-<!-- â”€â”€ Quotes Overview â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ?? Quotes Overview ?????????????????????????????????????????????????????????? -->
 <div class="row g-3 mb-4">
   <div class="col-6 col-xl">
     <div class="kpi-card" style="border-left:4px solid #7C3AED;">
@@ -51,7 +51,7 @@
   </div>
 </div>
 
-<!-- â”€â”€ Tab Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ?? Tab Navigation ?????????????????????????????????????????????????????????? -->
 <ul class="nav nav-tabs mb-4" id="quoteTabs">
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-all" id="nav-all">
@@ -89,14 +89,14 @@
 
 <div class="tab-content">
 
-  <!-- â•â• TAB 1 â€” ALL QUOTES â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <!-- ?? TAB 1 ? ALL QUOTES ?????????????????????????????????????????????????? -->
   <div class="tab-pane fade" id="tab-all">
 
     <form class="mb-3" method="GET" id="listFilterForm">
       <!-- Row 1: text search + status + year + month -->
       <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
         <input type="text" name="q" class="form-control form-control-sm" style="max-width:200px;"
-               placeholder="Search quotesâ€¦" value="{{ search }}">
+               placeholder="Search quotes?" value="{{ search }}">
         <select name="status" class="form-select form-select-sm" style="max-width:155px;">
           <option value="">All Statuses</option>
           {% for s in statuses %}
@@ -153,7 +153,7 @@
         {% else %}
           Year: <strong>{{ year_filter }}</strong>
         {% endif %}
-        &nbsp;Â·&nbsp; <span id="quoteFilterCount">{{ quotes|length }}</span> result{{ 's' if quotes|length != 1 else '' }}
+        &nbsp;?&nbsp; <span id="quoteFilterCount">{{ quotes|length }}</span> result{{ 's' if quotes|length != 1 else '' }}
       </span>
     </div>
 
@@ -181,11 +181,11 @@
                 data-search="{{ q.get('client_name','')|lower }} {{ q.get('job_number','')|lower }} {{ q.get('project_name','')|lower }}"
                 onclick="location.href='{{ url_for('quote_detail', quote_id=q.firebase_id) }}'"
                 style="cursor:pointer;">
-              <td><span class="fw-bold text-teal">{{ q.get('job_number','â€”') }}</span></td>
-              <td>{{ q.get('company_name') or q.get('client_name','â€”') }}</td>
-              <td class="text-muted">{{ (q.get('project_name','â€”') or 'â€”')[:40] }}</td>
-              <td>{{ q.get('salesperson','â€”') }}</td>
-              <td>{{ q.get('date','â€”') | format_date }}</td>
+              <td><span class="fw-bold text-teal">{{ q.get('job_number','?') }}</span></td>
+              <td>{{ q.get('company_name') or q.get('client_name','?') }}</td>
+              <td class="text-muted">{{ (q.get('project_name','?') or '?')[:40] }}</td>
+              <td>{{ q.get('salesperson','?') }}</td>
+              <td>{{ q.get('date','?') | format_date }}</td>
               <td>
                 <span class="badge status-{{ q.get('status','Not Started')|lower|replace(' ','-') }}">
                   {{ q.get('status','Not Started') }}
@@ -231,7 +231,7 @@
   </div><!-- /tab-all -->
 
 
-  <!-- â•â• TAB 2 â€” NEW QUOTE â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <!-- ?? TAB 2 ? NEW QUOTE ??????????????????????????????????????????????????? -->
   <div class="tab-pane fade" id="tab-new">
     <form method="POST" action="{{ url_for('quotes_new') }}">
       <div class="row g-3">
@@ -257,7 +257,7 @@
               <div class="col-md-6">
                 <label class="form-label">Client</label>
                 <select name="client_name" class="form-select">
-                  <option value="">â€” Select Client â€”</option>
+                  <option value="">? Select Client ?</option>
                   {% for c in clients %}
                   <option value="{{ c }}">{{ c }}</option>
                   {% endfor %}
@@ -266,7 +266,7 @@
               <div class="col-md-6">
                 <label class="form-label">Salesperson</label>
                 <select name="salesperson" class="form-select">
-                  <option value="">â€” Select Salesperson â€”</option>
+                  <option value="">? Select Salesperson ?</option>
                   {% for sp in sales_people %}
                   <option value="{{ sp.get('name','') }}">{{ sp.get('name','') }}</option>
                   {% endfor %}
@@ -290,7 +290,7 @@
             <h6 class="section-heading">Service Details</h6>
             <div class="row g-3">
               <div class="col-12">
-                <label class="form-label">Service Types <span class="text-muted small fw-normal">â€” select all that apply; each adds a line item</span></label>
+                <label class="form-label">Service Types <span class="text-muted small fw-normal">? select all that apply; each adds a line item</span></label>
                 <div class="row g-2">
                   {% for st in ['Mechanical','Electrical','Civil','Structural','Plumbing','HVAC','Fire Protection','Geotechnical','Environmental','Other'] %}
                   <div class="col-6 col-md-4 col-lg-3">
@@ -303,14 +303,14 @@
                     </div>
                   </div>
                   {% endfor %}
-                  <!-- Other specify â€” shown when Other is ticked -->
+                  <!-- Other specify ? shown when Other is ticked -->
                   <div class="col-12" id="otherSpecifyRowNew" style="display:none;">
                     <div class="d-flex align-items-center gap-2 p-2 rounded border border-warning bg-warning bg-opacity-10">
                       <i class="bi bi-pencil-square text-warning"></i>
                       <label class="form-label mb-0 small fw-semibold text-nowrap">Please specify:</label>
                       <input type="text" name="other_specify" id="otherSpecifyInputNew"
                              class="form-control form-control-sm"
-                             placeholder="e.g. Surveying, Site Inspection, Consultingâ€¦"
+                             placeholder="e.g. Surveying, Site Inspection, Consulting?"
                              maxlength="80">
                     </div>
                   </div>
@@ -406,7 +406,7 @@
             <div class="mb-0">
               <label class="form-label">
                 <i class="bi bi-bell me-1 text-teal"></i>Follow-up Date
-                <span class="text-muted small fw-normal">â€” remind to follow up with client</span>
+                <span class="text-muted small fw-normal">? remind to follow up with client</span>
               </label>
               <input type="date" name="follow_up_date" class="form-control">
             </div>
@@ -454,7 +454,7 @@
   </div><!-- /tab-new -->
 
 
-  <!-- â•â• TAB 3 â€” SALES PEOPLE â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <!-- ?? TAB 3 ? SALES PEOPLE ???????????????????????????????????????????????? -->
   <div class="tab-pane fade" id="tab-salespeople">
     <div class="card-panel">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -472,7 +472,7 @@
 
       <div class="alert py-2 mb-3" style="background:#F0FDF4;border:1px solid #86EFAC;font-size:13px;">
         <i class="bi bi-info-circle me-1" style="color:#16A34A;"></i>
-        Sales people are pulled from <strong>Settings â†’ Users</strong> (Sales &amp; Admin roles).
+        Sales people are pulled from <strong>Settings ? Users</strong> (Sales &amp; Admin roles).
         Add or remove people there to update this list.
       </div>
 
@@ -508,7 +508,7 @@
                 {% elif _etype == 'contractor' %}
                 <span class="badge" style="background:#7C3AED;color:#fff;font-size:11px;">Contractor</span>
                 {% else %}
-                <span class="text-muted small">â€”</span>
+                <span class="text-muted small">?</span>
                 {% endif %}
               </td>
               <td class="text-center">{{ sp_stat.quotes_total if sp_stat else 0 }}</td>
@@ -520,7 +520,7 @@
               <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(sp_stat.revenue_generated if sp_stat else 0) }}</td>
               <td class="text-center text-muted">
                 {% set _cr = sp_stat.commission_rate if sp_stat else sp.commission_rate %}
-                {% if _cr > 0 %}{{ _cr }}%{% else %}â€”{% endif %}
+                {% if _cr > 0 %}{{ _cr }}%{% else %}?{% endif %}
               </td>
               <td class="text-end fw-bold" style="color:#7C3AED;">
                 {% set _cr = sp_stat.commission_rate if sp_stat else sp.commission_rate %}
@@ -551,20 +551,20 @@
         <i class="bi bi-people" style="font-size:40px;opacity:.3;"></i>
         <div class="mt-2">No sales people found.
           {% if 'settings' in allowed_pages %}
-          <a href="{{ url_for('settings') }}?tab=users">Add employees in Settings â†’</a>
+          <a href="{{ url_for('settings') }}?tab=users">Add employees in Settings ?</a>
           {% endif %}
         </div>
       </div>
       {% endif %}
     </div>
-      <!-- â”€â”€ Commission Payroll (admin only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+      <!-- ?? Commission Payroll (admin only) ???????????????????????????????? -->
       {% if _viewer_is_admin %}
       <div class="card-panel mt-3" style="border-top:3px solid #7C3AED;">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h6 class="panel-title mb-0">
             <i class="bi bi-cash-coin me-1" style="color:#7C3AED;"></i>
             Commission Payroll
-            <span class="text-muted fw-normal" style="font-size:12px;">â€” mark periods as paid</span>
+            <span class="text-muted fw-normal" style="font-size:12px;">? mark periods as paid</span>
           </h6>
         </div>
         {% if monthly_payroll %}
@@ -592,7 +592,7 @@
                   <span class="badge" style="background:#0D9488;color:#fff;font-size:10px;">Full Time</span>
                   {% elif row.emp_type == 'contractor' %}
                   <span class="badge" style="background:#7C3AED;color:#fff;font-size:10px;">Contractor</span>
-                  {% else %}<span class="text-muted">â€”</span>{% endif %}
+                  {% else %}<span class="text-muted">?</span>{% endif %}
                 </td>
                 <td class="text-center text-muted">{{ row.rate }}%</td>
                 <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(row.revenue) }}</td>
@@ -638,7 +638,7 @@
           <div class="mt-2">No commission payroll to show yet.
             <div class="small mt-1">This appears once a salesperson has both a commission rate set and a converted quote.
               {% if 'settings' in allowed_pages %}
-              <a href="{{ url_for('settings') }}?tab=users">Set commission rates in Settings â†’</a>
+              <a href="{{ url_for('settings') }}?tab=users">Set commission rates in Settings ?</a>
               {% endif %}
             </div>
           </div>
@@ -650,7 +650,7 @@
   </div><!-- /tab-salespeople -->
 
 
-  <!-- â•â• TAB 4 â€” FOLLOW-UPS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <!-- ?? TAB 4 ? FOLLOW-UPS ???????????????????????????????????????????????? -->
   <div class="tab-pane fade" id="tab-followups">
 
     {% if follow_ups %}
@@ -682,12 +682,12 @@
               <td>
                 <a href="{{ url_for('quote_detail', quote_id=q.firebase_id) }}"
                    class="fw-bold text-teal text-decoration-none">
-                  {{ q.get('job_number','â€”') }}
+                  {{ q.get('job_number','?') }}
                 </a>
               </td>
-              <td>{{ q.get('client_name','â€”') }}</td>
-              <td class="text-muted small">{{ (q.get('project_name','') or 'â€”')[:40] }}</td>
-              <td class="text-muted small">{{ q.get('salesperson','â€”') }}</td>
+              <td>{{ q.get('client_name','?') }}</td>
+              <td class="text-muted small">{{ (q.get('project_name','') or '?')[:40] }}</td>
+              <td class="text-muted small">{{ q.get('salesperson','?') }}</td>
               <td>
                 {% set fu = q.get('follow_up_date','') %}
                 {% set od = q.get('_fu_days_overdue', 0) %}
@@ -723,7 +723,7 @@
                   <form method="POST"
                         action="{{ url_for('quote_followup_done', quote_id=q.firebase_id) }}">
                     <button type="submit" class="btn btn-xs btn-teal"
-                            title="Mark follow-up done â€” clears the reminder">
+                            title="Mark follow-up done ? clears the reminder">
                       <i class="bi bi-check-lg me-1"></i>Done
                     </button>
                   </form>
@@ -732,7 +732,7 @@
                         action="{{ url_for('quote_followup_snooze', quote_id=q.firebase_id) }}">
                     <input type="hidden" name="days" value="7">
                     <button type="submit" class="btn btn-xs btn-outline-secondary"
-                            title="Snooze â€” reschedule follow-up by 7 days">
+                            title="Snooze ? reschedule follow-up by 7 days">
                       <i class="bi bi-alarm me-1"></i>+7d
                     </button>
                   </form>
@@ -757,17 +757,17 @@
         <div class="fw-semibold mb-1">No follow-ups due today</div>
         <div class="text-muted small">
           Set a follow-up date on any quote to get reminded here.<br>
-          Open a quote â†’ Edit â†’ Follow-up Date field.
+          Open a quote ? Edit ? Follow-up Date field.
         </div>
       </div>
     </div>
     {% endif %}
 
-    <!-- â”€â”€ Upcoming section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+    <!-- ?? Upcoming section ???????????????????????????????????????????????? -->
     {% if upcoming_followups %}
     <div class="d-flex align-items-center gap-2 mb-2 mt-2">
       <span class="fw-semibold text-muted small text-uppercase" style="letter-spacing:.05em;">
-        <i class="bi bi-calendar-event me-1"></i>Upcoming â€” Next 14 Days
+        <i class="bi bi-calendar-event me-1"></i>Upcoming ? Next 14 Days
       </span>
       <span class="badge bg-secondary">{{ upcoming_followups|length }}</span>
     </div>
@@ -792,12 +792,12 @@
               <td>
                 <a href="{{ url_for('quote_detail', quote_id=q.firebase_id) }}"
                    class="fw-bold text-teal text-decoration-none">
-                  {{ q.get('job_number','â€”') }}
+                  {{ q.get('job_number','?') }}
                 </a>
               </td>
-              <td>{{ q.get('client_name','â€”') }}</td>
-              <td class="text-muted small">{{ (q.get('project_name','') or 'â€”')[:40] }}</td>
-              <td class="text-muted small">{{ q.get('salesperson','â€”') }}</td>
+              <td>{{ q.get('client_name','?') }}</td>
+              <td class="text-muted small">{{ (q.get('project_name','') or '?')[:40] }}</td>
+              <td class="text-muted small">{{ q.get('salesperson','?') }}</td>
               <td>
                 {% if days_ahead == 1 %}
                   <span class="badge" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;">
@@ -836,7 +836,7 @@
 
   </div><!-- /tab-followups -->
 
-  <!-- â•â• TAB 5 â€” EXPORT â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <!-- ?? TAB 5 ? EXPORT ?????????????????????????????????????????????????????? -->
   <div class="tab-pane fade" id="tab-export">
 
     <!-- Filter row -->
@@ -936,7 +936,7 @@
 
 {% block scripts %}
 <script>
-// â”€â”€ Activate correct tab from ?tab= URL param â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?? Activate correct tab from ?tab= URL param ?????????????????????????????????
 (function() {
   const map = { all:'#tab-all', new:'#tab-new', salespeople:'#tab-salespeople', followups:'#tab-followups', export:'#tab-export' };
   const key    = new URLSearchParams(location.search).get('tab') || 'all';
@@ -958,12 +958,12 @@ document.getElementById('nav-new').addEventListener('click', function(e) {
   window.location.assign('{{ url_for("quotes_new") }}');
 });
 
-// â”€â”€ Local date helper â€” avoids UTC offset shifting the date â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?? Local date helper ? avoids UTC offset shifting the date ??????????????????
 function localDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-// â”€â”€ List date range quick-set â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?? List date range quick-set ????????????????????????????????????????????????
 function setListRange(type) {
   const form = document.getElementById('listFilterForm');
   const fromEl = form.querySelector('[name="from"]');
@@ -985,7 +985,7 @@ function setListRange(type) {
   form.submit();
 }
 
-// â”€â”€ Export links â€” rebuild whenever any filter changes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?? Export links ? rebuild whenever any filter changes ???????????????????????
 function buildExportLinks() {
   const status = document.getElementById('exportStatus').value;
   const from   = document.getElementById('exportFrom').value;
@@ -1005,7 +1005,7 @@ function buildExportLinks() {
   if (from)   parts.push(`from: <strong>${from}</strong>`);
   if (to)     parts.push(`to: <strong>${to}</strong>`);
   document.getElementById('exportFilterSummary').innerHTML =
-    parts.length ? '<i class="bi bi-funnel me-1"></i>Filtering by ' + parts.join(' Â· ') :
+    parts.length ? '<i class="bi bi-funnel me-1"></i>Filtering by ' + parts.join(' ? ') :
                    'Leave blank to export all records.';
 }
 
@@ -1034,7 +1034,7 @@ function clearExportFilters() {
   document.getElementById(id).addEventListener('change', buildExportLinks)
 );
 
-// â”€â”€ Line item calculations (New Quote tab) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?? Line item calculations (New Quote tab) ????????????????????????????????????
 function fmt(n) { return CURRENCY_SYMBOL + parseFloat(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
 
 function calcRow(inp) {
@@ -1109,7 +1109,7 @@ function toggleSvcNew(cb) {
   const serviceName = cb.value;
   const box = cb.closest('.svc-box');
 
-  // Show/hide "Other â€” please specify" row
+  // Show/hide "Other ? please specify" row
   if (cb.dataset.other) {
     const specRow = document.getElementById('otherSpecifyRowNew');
     const specInp = document.getElementById('otherSpecifyInputNew');
@@ -1135,7 +1135,7 @@ function toggleSvcNew(cb) {
   }
 }
 
-// Delegated listener â€” survives tab switching and bfcache restores
+// Delegated listener ? survives tab switching and bfcache restores
 document.addEventListener('change', function(e) {
   if (e.target.classList.contains('svc-cb')) toggleSvcNew(e.target);
 });
@@ -1148,7 +1148,7 @@ window.addEventListener('pageshow', function(e) {
   if (e.persisted) calcTotals();
 });
 
-// â”€â”€ Update summary cards when filters change â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?? Update summary cards when filters change ????????????????????????????????
 function updateQuoteSummaryCards() {
   const searchInput = document.querySelector('input[name="q"]');
   const statusSelect = document.querySelector('select[name="status"]');
@@ -1252,7 +1252,7 @@ function updateQuoteSummaryCards() {
       filterAlert.style.display = '';
       filterCount.textContent = totalCount;
       document.getElementById('quoteFilterText').innerHTML =
-        '<strong>' + filterDesc + '</strong>&nbsp;Â·&nbsp; <span id="quoteFilterCount">' + totalCount + '</span> result' + (totalCount !== 1 ? 's' : '');
+        '<strong>' + filterDesc + '</strong>&nbsp;?&nbsp; <span id="quoteFilterCount">' + totalCount + '</span> result' + (totalCount !== 1 ? 's' : '');
     } else {
       // Hide when year is not selected (ignore auto-generated date ranges)
       filterAlert.style.display = 'none';
@@ -1263,7 +1263,7 @@ function updateQuoteSummaryCards() {
 // Filter form now submits via GET to handle server-side filtering
 // Cards are recalculated by backend based on filtered quotes
 
-// â”€â”€ Quotes table pager â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?? Quotes table pager ????????????????????????????????????????????????????????
 document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('quotesTableBody')) {
     new TablePager('quotesPager', '#quotesTableBody', 'tr.quote-row', 15);
@@ -1273,7 +1273,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 async function commissionAction(action, period, spName, amount) {
   var label = action === 'pay' ? 'Mark as Paid' : 'Undo payment';
-  if (!confirm(label + ' for ' + spName + ' â€” ' + period + '?')) return;
+  if (!confirm(label + ' for ' + spName + ' ? ' + period + '?')) return;
   try {
     var res = await fetch('/api/commission/mark-paid', {
       method: 'POST',

@@ -40,16 +40,11 @@
       <i class="bi bi-robot me-1"></i>AI
     </a>
   </li>
-  <li class="nav-item">
-    <a class="nav-link {{ 'active' if active_tab == 'activity' }}" data-bs-toggle="tab" href="#tab-activity">
-      <i class="bi bi-eye me-1"></i>Activity
-    </a>
-  </li>
 </ul>
 
 <div class="tab-content">
 
-  <!-- â”€â”€ COMPANY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+  <!-- ?? COMPANY ???????????????????????????????????????????????????????????? -->
   <div class="tab-pane fade {{ 'show active' if active_tab == 'company' }}" id="tab-company">
     <div class="row">
       <div class="col-lg-6">
@@ -89,7 +84,7 @@
               <input type="number" name="bdt_exchange_rate" class="form-control"
                      value="{{ co.get('bdt_exchange_rate', 110) }}"
                      min="1" step="0.01" style="max-width:150px;">
-              <div class="form-text text-muted">Used to show USD â†” BDT equivalent for Outside America employees.</div>
+              <div class="form-text text-muted">Used to show USD ? BDT equivalent for Outside America employees.</div>
             </div>
 
             <h6 class="section-heading mt-4">Invoice Defaults</h6>
@@ -114,7 +109,7 @@
     </div>
   </div>
 
-  <!-- â”€â”€ LOGO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+  <!-- ?? LOGO ??????????????????????????????????????????????????????????????? -->
   <div class="tab-pane fade {{ 'show active' if active_tab == 'logo' }}" id="tab-logo">
     <div class="row">
       <div class="col-lg-5">
@@ -141,7 +136,7 @@
               <label class="form-label">Upload New Logo</label>
               <input type="file" name="logo" class="form-control"
                      accept=".png,.jpg,.jpeg,.bmp">
-              <div class="form-text">PNG or JPG, recommended 300Ã—100 px or similar.</div>
+              <div class="form-text">PNG or JPG, recommended 300?100 px or similar.</div>
             </div>
             <button type="submit" class="btn btn-teal btn-sm">
               <i class="bi bi-upload me-1"></i>Upload Logo
@@ -152,7 +147,7 @@
     </div>
   </div>
 
-  <!-- â”€â”€ EMAIL / SMTP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+  <!-- ?? EMAIL / SMTP ???????????????????????????????????????????????????????? -->
   <div class="tab-pane fade {{ 'show active' if active_tab == 'email' }}" id="tab-email">
     <div class="row">
       <div class="col-lg-6">
@@ -194,7 +189,7 @@
               <label class="form-label">SMTP Password / App Password</label>
               <input type="password" name="smtp_password" class="form-control"
                      value="{{ em.get('smtp_password', '') }}"
-                     placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢">
+                     placeholder="????????????">
             </div>
             <div class="mb-3">
               <label class="form-label">From Name</label>
@@ -217,7 +212,7 @@
     </div>
   </div>
 
-  <!-- â”€â”€ APP PREFERENCES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+  <!-- ?? APP PREFERENCES ???????????????????????????????????????????????????? -->
   <div class="tab-pane fade {{ 'show active' if active_tab == 'app' }}" id="tab-app">
     <div class="row">
       <div class="col-lg-5">
@@ -262,7 +257,7 @@
     </div>
   </div>
 
-  <!-- â”€â”€ USERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+  <!-- ?? USERS ??????????????????????????????????????????????????????????????? -->
   <div class="tab-pane fade {{ 'show active' if active_tab == 'users' }}" id="tab-users">
     <div class="row g-3">
       <!-- Add user form -->
@@ -286,12 +281,12 @@
             <div class="mb-2">
               <label class="form-label">Role</label>
               <select name="role" class="form-select form-select-sm" id="createUserRole" onchange="toggleCreateCommission()">
-                <option value="sales">Sales â€” Quotes only</option>
-                <option value="projects">Projects â€” Projects &amp; Invoicing</option>
-                <option value="finance">Finance and Accountant â€” Financial overview</option>
-                <option value="engineer">Engineer â€” Employee tab only</option>
-                <option value="administration">Administration â€” Projects, Invoicing, Clients &amp; Employees</option>
-                <option value="admin">Admin â€” Full access</option>
+                <option value="sales">Sales ? Quotes only</option>
+                <option value="projects">Projects ? Projects &amp; Invoicing</option>
+                <option value="finance">Finance and Accountant ? Financial overview</option>
+                <option value="engineer">Engineer ? Employee tab only</option>
+                <option value="administration">Administration ? Projects, Invoicing, Clients &amp; Employees</option>
+                <option value="admin">Admin ? Full access</option>
               </select>
             </div>
             <hr class="my-2">
@@ -303,7 +298,7 @@
             <div class="mb-2">
               <label class="form-label">Region</label>
               <select name="region" class="form-select form-select-sm">
-                <option value="">â€” Select â€”</option>
+                <option value="">? Select ?</option>
                 <option value="Inside America">Inside America</option>
                 <option value="Outside America">Outside America</option>
               </select>
@@ -314,7 +309,7 @@
             </div>
             <div class="mb-2">
               <label class="form-label">Monthly Salary ($)
-                <span class="text-muted" style="font-size:10px;">â€” auto-posts to Payroll</span>
+                <span class="text-muted" style="font-size:10px;">? auto-posts to Payroll</span>
               </label>
               <input type="number" name="monthly_salary" class="form-control form-control-sm" placeholder="0.00 (blank if hourly)" min="0" step="0.01">
             </div>
@@ -324,7 +319,7 @@
               <div class="mb-2">
                 <label class="form-label">Employee Type</label>
                 <select name="employee_type" class="form-select form-select-sm">
-                  <option value="">â€” None â€”</option>
+                  <option value="">? None ?</option>
                   <option value="full_time">Full Time</option>
                   <option value="contractor">Contractor</option>
                 </select>
@@ -436,10 +431,10 @@
                   <!-- Name -->
                   <td>
                     <div class="fw-semibold">
-                      {{ u.get('username','â€”') }}
+                      {{ u.get('username','?') }}
                       {% if _is_me %}<span class="badge bg-secondary ms-1" style="font-size:9px;">You</span>{% endif %}
                     </div>
-                    <div class="text-muted" style="font-size:11px;">{{ u.get('email','â€”') }}</div>
+                    <div class="text-muted" style="font-size:11px;">{{ u.get('email','?') }}</div>
                   </td>
                   <!-- Role -->
                   <td>
@@ -450,13 +445,13 @@
                       {% set _et = u.get('employee_type', '') %}
                       <div style="font-size:10px;color:#94a3b8;margin-top:3px;">
                         {% if _cr > 0 %}{{ _cr }}% commission{% else %}<span style="color:#f59e0b;">rate not set</span>{% endif %}
-                        {% if _et %} Â· {{ 'FT' if _et == 'full_time' else 'Contractor' }}{% endif %}
+                        {% if _et %} ? {{ 'FT' if _et == 'full_time' else 'Contractor' }}{% endif %}
                       </div>
                     {% endif %}
                   </td>
                   <!-- Title / Region -->
                   <td>
-                    <div>{{ u.get('title') or 'â€”' }}</div>
+                    <div>{{ u.get('title') or '?' }}</div>
                     {% if u.get('region') %}
                     <span class="badge" style="font-size:10px;background:{{ '#0D9488' if u.get('region')=='Inside America' else '#7C3AED' }};color:#fff;">{{ u.get('region') }}</span>
                     {% endif %}
@@ -465,7 +460,7 @@
                   <td class="text-end">
                     {% if u.get('hourly_rate') %}<div>{{ currency_symbol }}{{ '%.2f'|format(u.get('hourly_rate',0)|float) }}/hr</div>{% endif %}
                     {% if u.get('monthly_salary') %}<div class="text-success fw-semibold">{{ currency_symbol }}{{ '%.0f'|format(u.get('monthly_salary',0)|float) }}/mo</div>{% endif %}
-                    {% if not u.get('hourly_rate') and not u.get('monthly_salary') %}<span class="text-muted">â€”</span>{% endif %}
+                    {% if not u.get('hourly_rate') and not u.get('monthly_salary') %}<span class="text-muted">?</span>{% endif %}
                   </td>
                   <!-- Status (clickable toggle) -->
                   <td class="text-center">
@@ -578,7 +573,7 @@
     </div>
   </div>
 
-  <!-- â”€â”€ AI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+  <!-- ?? AI ???????????????????????????????????????????????????????????????????? -->
   <div class="tab-pane fade {{ 'show active' if active_tab == 'ai' }}" id="tab-ai">
     <div class="row">
       <div class="col-lg-6">
@@ -606,63 +601,22 @@
         <div class="card-panel">
           <h6 class="section-heading">What AI can do</h6>
           <ul class="list-unstyled small text-muted mb-0">
-            <li class="mb-2"><i class="bi bi-filetype-pdf text-danger me-2"></i><strong>PDF Extraction</strong> â€” upload a vendor bill, AI fills the expense form automatically</li>
-            <li class="mb-2"><i class="bi bi-graph-up text-teal me-2"></i><strong>Cash Flow Forecast</strong> â€” predicts next 90 days of incoming payments</li>
-            <li class="mb-2"><i class="bi bi-envelope-exclamation text-warning me-2"></i><strong>Overdue Reminders</strong> â€” drafts a professional follow-up email per invoice</li>
-            <li class="mb-2"><i class="bi bi-heart-pulse text-blue me-2"></i><strong>Project Health</strong> â€” one-line status summary for each active project</li>
+            <li class="mb-2"><i class="bi bi-filetype-pdf text-danger me-2"></i><strong>PDF Extraction</strong> ? upload a vendor bill, AI fills the expense form automatically</li>
+            <li class="mb-2"><i class="bi bi-graph-up text-teal me-2"></i><strong>Cash Flow Forecast</strong> ? predicts next 90 days of incoming payments</li>
+            <li class="mb-2"><i class="bi bi-envelope-exclamation text-warning me-2"></i><strong>Overdue Reminders</strong> ? drafts a professional follow-up email per invoice</li>
+            <li class="mb-2"><i class="bi bi-heart-pulse text-blue me-2"></i><strong>Project Health</strong> ? one-line status summary for each active project</li>
           </ul>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ── ACTIVITY ────────────────────────────────────────────────────────────── -->
-  <div class=”tab-pane fade {{ 'show active' if active_tab == 'activity' }}” id=”tab-activity”>
-    <div class=”card-panel”>
-      <div class=”d-flex align-items-center justify-content-between mb-1”>
-        <h6 class=”section-heading mb-0”>Employee App Activity</h6>
-      </div>
-      <p class=”text-muted small mb-3”>
-        Time each employee has been logged in and active in the app, based on login/last-activity
-        timestamps. Admin-only.
-      </p>
-      {% if activity_summary %}
-      <div class=”table-responsive”>
-        <table class=”table table-hover align-middle mb-0” style=”font-size:13px;”>
-          <thead>
-            <tr>
-              <th>Employee</th>
-              <th class=”text-end”>Today</th>
-              <th class=”text-end”>This Week</th>
-              <th class=”text-end”>Last Seen</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for a in activity_summary %}
-            <tr>
-              <td class=”fw-semibold”>{{ a.employee_name }}</td>
-              <td class=”text-end”>{{ (a.today_minutes // 60)|int }}h {{ (a.today_minutes % 60)|int }}m</td>
-              <td class=”text-end”>{{ (a.week_minutes // 60)|int }}h {{ (a.week_minutes % 60)|int }}m</td>
-              <td class=”text-end text-muted”>
-                {% if a.last_seen_at %}{{ a.last_seen_at[:16].replace('T',' ') }}{% else %}—{% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% else %}
-      <div class=”empty-state py-4”><i class=”bi bi-eye fs-2 d-block mb-2”></i>No activity recorded yet.</div>
-      {% endif %}
-    </div>
-  </div>
-
-<!-- ── Customize User Pages Modal ──────────────────────────────────────────── -->
+<!-- ?? Customize User Pages Modal ???????????????????????????????????????????? -->
 <div class="modal fade" id="userPagesModal" tabindex="-1">
   <div class="modal-dialog modal-sm">
     <div class="modal-content">
       <div class="modal-header py-2">
-        <h6 class="modal-title">Customize Pages â€” <span id="pagesUserName"></span> <span id="pagesRoleBadge" class="badge ms-1" style="font-size:10px;"></span></h6>
+        <h6 class="modal-title">Customize Pages ? <span id="pagesUserName"></span> <span id="pagesRoleBadge" class="badge ms-1" style="font-size:10px;"></span></h6>
         <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body py-2">
@@ -689,7 +643,7 @@
   </div>
 </div>
 
-<!-- â”€â”€ Edit Employee Details Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ?? Edit Employee Details Modal ???????????????????????????????????????????? -->
 <div class="modal fade" id="editUserModal" tabindex="-1">
   <div class="modal-dialog modal-md">
     <div class="modal-content">
@@ -730,7 +684,7 @@
           <div class="col-6">
             <label class="form-label fw-semibold" style="font-size:12px;">Region</label>
             <select id="editRegion" class="form-select form-select-sm">
-              <option value="">â€” None â€”</option>
+              <option value="">? None ?</option>
               <option value="Inside America">Inside America</option>
               <option value="Outside America">Outside America</option>
             </select>
@@ -754,7 +708,7 @@
             <div class="col-6">
               <label class="form-label fw-semibold" style="font-size:12px;">Employee Type</label>
               <select id="editEmployeeType" class="form-select form-select-sm">
-                <option value="">â€” None â€”</option>
+                <option value="">? None ?</option>
                 <option value="full_time">Full Time</option>
                 <option value="contractor">Contractor</option>
               </select>
@@ -869,7 +823,7 @@ async function saveUserDetails() {
     employee_type:   document.getElementById('editEmployeeType').value,
     commission_rate: parseFloat(document.getElementById('editCommissionRate').value) || 0,
   };
-  msg.innerHTML = '<span class="text-muted">Savingâ€¦</span>';
+  msg.innerHTML = '<span class="text-muted">Saving?</span>';
   try {
     var res  = await fetch('/api/users/' + uid + '/details', {
       method: 'PATCH',
@@ -916,7 +870,7 @@ async function saveUserPages() {
   var defaults = ROLE_DEFAULTS[role] || [];
   var isDefault = defaults.length === pages.length && defaults.every(function(p){ return pages.indexOf(p) !== -1; });
   var payload = isDefault ? [] : pages;
-  msg.innerHTML = '<span class="text-muted">Savingâ€¦</span>';
+  msg.innerHTML = '<span class="text-muted">Saving?</span>';
   try {
     var res  = await fetch('/api/users/' + uid + '/pages', {
       method: 'PATCH',

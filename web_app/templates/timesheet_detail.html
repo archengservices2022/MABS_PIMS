@@ -1,10 +1,10 @@
-{% extends "base.html" %}
-{% block title %}Timesheet — {{ sheet.employee_name }}{% endblock %}
+﻿{% extends "base.html" %}
+{% block title %}Timesheet ? {{ sheet.employee_name }}{% endblock %}
 {% block page_title %}Timesheet Detail{% endblock %}
 
 {% block head %}
 <style>
-/* ── Global ──────────────────────────────────────────────────── */
+/* ?? Global ???????????????????????????????????????????????????? */
 .tsd * {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -12,7 +12,7 @@
   box-sizing: border-box;
 }
 
-/* ── Hero header ─────────────────────────────────────────────── */
+/* ?? Hero header ??????????????????????????????????????????????? */
 .tsd-hero {
   background: linear-gradient(120deg, #0D9488 0%, #0369a1 100%);
   border-radius: 14px;
@@ -35,7 +35,7 @@
 .tsd-emp-name { font-size: 18px; font-weight: 700; color: #fff; margin: 0; letter-spacing: -.2px; }
 .tsd-emp-week { font-size: 13px; color: rgba(255,255,255,.75); margin-top: 2px; font-weight: 400; }
 
-/* ── Status badge ────────────────────────────────────────────── */
+/* ?? Status badge ?????????????????????????????????????????????? */
 .sbadge {
   display: inline-flex; align-items: center;
   padding: 4px 14px; border-radius: 20px;
@@ -47,7 +47,7 @@
 .sb-draft     { background: #ede9fe; color: #6d28d9; }
 .sb-rejected  { background: #fee2e2; color: #b91c1c; }
 
-/* ── KPI strip ───────────────────────────────────────────────── */
+/* ?? KPI strip ????????????????????????????????????????????????? */
 .tsd-kpi-row {
   display: flex;
   gap: 12px;
@@ -79,7 +79,7 @@
   color: #94a3b8; margin-top: 5px;
 }
 
-/* ── Main card ───────────────────────────────────────────────── */
+/* ?? Main card ????????????????????????????????????????????????? */
 .tsd-card {
   background: #fff;
   border-radius: 14px;
@@ -87,7 +87,7 @@
   overflow: hidden;
 }
 
-/* ── Table ───────────────────────────────────────────────────── */
+/* ?? Table ????????????????????????????????????????????????????? */
 .tsd-table { width: 100%; border-collapse: collapse; }
 .tsd-table thead th {
   background: #f8fafc;
@@ -110,7 +110,7 @@
 .tsd-table tbody tr:last-child td { border-bottom: none; }
 .tsd-table tbody tr:hover td { background: #fafbfc; }
 
-/* ── Day group header ────────────────────────────────────────── */
+/* ?? Day group header ?????????????????????????????????????????? */
 .day-grp td {
   background: #f1f5f9;
   padding: 8px 14px;
@@ -139,7 +139,7 @@
   letter-spacing: -.1px;
 }
 
-/* ── Entry type badge ────────────────────────────────────────── */
+/* ?? Entry type badge ?????????????????????????????????????????? */
 .etype {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 2px 8px; border-radius: 10px;
@@ -150,13 +150,13 @@
 .etype-sick    { background: #fee2e2; color: #b91c1c; }
 .etype-pto     { background: #fff7ed; color: #c2410c; }
 
-/* ── Hour values ─────────────────────────────────────────────── */
+/* ?? Hour values ??????????????????????????????????????????????? */
 .val-reg  { color: #0D9488; font-weight: 700; }
 .val-ot   { color: #dc2626; font-weight: 700; }
 .val-tot  { color: #1d4ed8; font-weight: 800; }
 .val-mute { color: #cbd5e1; }
 
-/* ── Totals row ──────────────────────────────────────────────── */
+/* ?? Totals row ???????????????????????????????????????????????? */
 .tsd-totals td {
   background: #f8fafc;
   border-top: 2px solid #e2e8f0;
@@ -164,7 +164,7 @@
   font-size: 13px;
 }
 
-/* ── Status banners ──────────────────────────────────────────── */
+/* ?? Status banners ???????????????????????????????????????????? */
 .tsd-banner {
   display: flex; align-items: center; gap: 10px;
   padding: 14px 22px;
@@ -174,7 +174,7 @@
 .tsd-banner-approved { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
 .tsd-banner-rejected { background: #fff1f2; border-color: #fecdd3; color: #b91c1c; }
 
-/* ── Admin action bar ────────────────────────────────────────── */
+/* ?? Admin action bar ?????????????????????????????????????????? */
 .tsd-action-bar {
   padding: 16px 22px;
   border-top: 2px solid #f1f5f9;
@@ -284,7 +284,7 @@
           {% set ns = namespace(prev_date='') %}
           {% for entry in sheet.entries %}
 
-          {# ── Day group header ── #}
+          {# ?? Day group header ?? #}
           {% if entry.date != ns.prev_date %}
           {% set _dow = entry.date | format_date if entry.date else '' %}
           <tr class="day-grp">
@@ -300,10 +300,10 @@
           {% set ns.prev_date = entry.date %}
           {% endif %}
 
-          {# ── Entry row ── #}
+          {# ?? Entry row ?? #}
           {% set etype = entry.entry_type | default('work') | lower %}
           <tr>
-            <td style="color:#94a3b8;font-size:12px;white-space:nowrap;">{{ entry.date | format_date if entry.date else '—' }}</td>
+            <td style="color:#94a3b8;font-size:12px;white-space:nowrap;">{{ entry.date | format_date if entry.date else '?' }}</td>
             <td>
               {% if etype == 'holiday' %}
                 <span class="etype etype-holiday"><i class="bi bi-umbrella-fill"></i> Holiday</span>
@@ -328,12 +328,12 @@
             <td style="font-variant-numeric:tabular-nums;white-space:nowrap;">
               {% if entry.start_time %}
                 <span style="background:#f0fdfa;color:#0D9488;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:600;">{{ entry.start_time }}</span>
-              {% else %}<span class="val-mute">—</span>{% endif %}
+              {% else %}<span class="val-mute">?</span>{% endif %}
             </td>
             <td style="font-variant-numeric:tabular-nums;white-space:nowrap;">
               {% if entry.end_time %}
                 <span style="background:#eff6ff;color:#1d4ed8;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:600;">{{ entry.end_time }}</span>
-              {% else %}<span class="val-mute">—</span>{% endif %}
+              {% else %}<span class="val-mute">?</span>{% endif %}
             </td>
             <td style="text-align:right;">
               {% if entry.regular_hours | float > 0 %}
@@ -343,16 +343,16 @@
             <td style="text-align:right;">
               {% if entry.overtime_hours | float > 0 %}
                 <span class="val-ot">{{ "%.2f"|format(entry.overtime_hours | float) }}</span>
-              {% else %}<span class="val-mute">—</span>{% endif %}
+              {% else %}<span class="val-mute">?</span>{% endif %}
             </td>
             <td style="text-align:right;">
               <span class="val-tot">{{ "%.2f"|format(entry.total_hours | float) }}</span>
             </td>
-            <td style="color:#64748b;font-size:12px;max-width:180px;">{{ entry.notes or '—' }}</td>
+            <td style="color:#64748b;font-size:12px;max-width:180px;">{{ entry.notes or '?' }}</td>
           </tr>
           {% endfor %}
 
-          {# ── Totals row ── #}
+          {# ?? Totals row ?? #}
           <tr class="tsd-totals">
             <td colspan="5" style="text-align:right;font-weight:700;color:#475569;font-size:12px;letter-spacing:.3px;text-transform:uppercase;">Totals</td>
             <td style="text-align:right;"><span class="val-reg">{{ "%.2f"|format(sheet.total_regular_hours | float) }}</span></td>
@@ -380,12 +380,12 @@
   {% if sheet.status == 'Approved' %}
   <div class="tsd-banner tsd-banner-approved">
     <i class="bi bi-check-circle-fill"></i>
-    <span>Approved by <strong>{{ sheet.approved_by or 'manager' }}</strong>{% if sheet.approved_at %} · {{ sheet.approved_at[:10] | format_date }}{% endif %}</span>
+    <span>Approved by <strong>{{ sheet.approved_by or 'manager' }}</strong>{% if sheet.approved_at %} ? {{ sheet.approved_at[:10] | format_date }}{% endif %}</span>
   </div>
   {% elif sheet.status == 'Rejected' %}
   <div class="tsd-banner tsd-banner-rejected">
     <i class="bi bi-x-circle-fill"></i>
-    <span>Rejected by <strong>{{ sheet.approved_by or 'manager' }}</strong>{% if sheet.approved_at %} · {{ sheet.approved_at[:10] | format_date }}{% endif %}{% if sheet.rejection_notes %} — {{ sheet.rejection_notes }}{% endif %}</span>
+    <span>Rejected by <strong>{{ sheet.approved_by or 'manager' }}</strong>{% if sheet.approved_at %} ? {{ sheet.approved_at[:10] | format_date }}{% endif %}{% if sheet.rejection_notes %} ? {{ sheet.rejection_notes }}{% endif %}</span>
   </div>
   {% endif %}
 

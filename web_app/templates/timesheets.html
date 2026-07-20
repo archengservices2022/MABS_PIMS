@@ -1,10 +1,10 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Timesheets{% endblock %}
 {% block page_title %}Timesheets{% endblock %}
 
 {% block head %}
 <style>
-/* ── Global crisp rendering ──────────────────────────────────── */
+/* ?? Global crisp rendering ???????????????????????????????????? */
 .ts-root * {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -12,7 +12,7 @@
   box-sizing: border-box;
 }
 
-/* ── Page header ─────────────────────────────────────────────── */
+/* ?? Page header ??????????????????????????????????????????????? */
 .ts-hero {
   background: linear-gradient(120deg, #0D9488 0%, #0369a1 100%);
   border-radius: 14px;
@@ -62,7 +62,7 @@
 }
 .ts-hero-btn.ghost:hover { background: rgba(255,255,255,.22); color: #fff; }
 
-/* ── KPI cards ───────────────────────────────────────────────── */
+/* ?? KPI cards ????????????????????????????????????????????????? */
 .kpi-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
 .kpi-card {
   flex: 1;
@@ -109,7 +109,7 @@
 }
 .kpi-sub { font-size: 11px; color: #cbd5e1; margin-top: 3px; font-weight: 400; }
 
-/* ── Week navigation ─────────────────────────────────────────── */
+/* ?? Week navigation ??????????????????????????????????????????? */
 .week-nav {
   background: #fff;
   border-radius: 10px;
@@ -155,7 +155,7 @@
 }
 .wn-cur:hover { background: #0D9488; border-color: #0D9488; color: #fff; }
 
-/* ── Grid table ──────────────────────────────────────────────── */
+/* ?? Grid table ???????????????????????????????????????????????? */
 .ts-grid-wrap {
   background: #fff;
   border-radius: 14px;
@@ -189,11 +189,11 @@
 .ts-grid tbody tr:hover td { background: #fafbfc; }
 .ts-grid tbody td.emp-col { text-align: left; padding: 10px 8px 10px 20px; }
 
-/* ── Day header in th ────────────────────────────────────────── */
+/* ?? Day header in th ?????????????????????????????????????????? */
 .day-abbr { font-size: 11px; font-weight: 700; display: block; }
 .day-date { font-size: 10px; font-weight: 500; color: #b0bec5; margin-top: 1px; display: block; }
 
-/* ── Day cells ───────────────────────────────────────────────── */
+/* ?? Day cells ????????????????????????????????????????????????? */
 .dc {
   border-radius: 8px;
   min-height: 56px;
@@ -249,7 +249,7 @@
   font-size: 12px;
 }
 
-/* ── Status badge ────────────────────────────────────────────── */
+/* ?? Status badge ?????????????????????????????????????????????? */
 .sbadge {
   display: inline-flex;
   align-items: center;
@@ -267,7 +267,7 @@
 .sb-rejected  { background: #fee2e2; color: #b91c1c; }
 .sb-none { color: #cbd5e1; font-size: 12px; font-weight: 500; }
 
-/* ── Total hours col ─────────────────────────────────────────── */
+/* ?? Total hours col ??????????????????????????????????????????? */
 .total-col {
   font-size: 14px;
   font-weight: 800;
@@ -275,7 +275,7 @@
   letter-spacing: -.2px;
 }
 
-/* ── Employee cell ───────────────────────────────────────────── */
+/* ?? Employee cell ????????????????????????????????????????????? */
 .emp-row { display: flex; align-items: center; gap: 10px; }
 .emp-av {
   width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
@@ -286,7 +286,7 @@
 }
 .emp-nm { font-size: 13px; font-weight: 600; color: #1e293b; }
 
-/* ── Action buttons ──────────────────────────────────────────── */
+/* ?? Action buttons ???????????????????????????????????????????? */
 .act-btns { display: flex; gap: 4px; justify-content: center; align-items: center; }
 .act-btn {
   width: 28px; height: 28px; border-radius: 7px;
@@ -305,7 +305,7 @@
 .act-btn.view:hover    { background: #0D9488; border-color: #0D9488; color: #fff; }
 .act-btn.del:hover     { background: #dc2626; border-color: #dc2626; color: #fff; }
 
-/* ── My Timesheets — personal grid card ─────────────────────── */
+/* ?? My Timesheets ? personal grid card ??????????????????????? */
 .my-week-card {
   background: #fff;
   border-radius: 14px;
@@ -321,7 +321,7 @@
 .my-week-user { font-size: 15px; font-weight: 700; color: #0f172a; }
 .my-week-sub  { font-size: 11px; color: #94a3b8; margin-top: 1px; }
 
-/* ── History table ───────────────────────────────────────────── */
+/* ?? History table ????????????????????????????????????????????? */
 .hist-section-label {
   font-size: 11px;
   font-weight: 700;
@@ -359,7 +359,7 @@
 .hist-table tbody tr:last-child td { border-bottom: none; }
 .hist-table tbody tr:hover td { background: #fafbfc; }
 
-/* ── Empty state ─────────────────────────────────────────────── */
+/* ?? Empty state ??????????????????????????????????????????????? */
 .ts-empty-state {
   padding: 52px 20px;
   text-align: center;
@@ -369,7 +369,7 @@
 
 .ot-val { color: #dc2626; font-weight: 700; }
 
-/* ── Small link btn ──────────────────────────────────────────── */
+/* ?? Small link btn ???????????????????????????????????????????? */
 .link-btn {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 5px 12px; border-radius: 7px; font-size: 12px; font-weight: 600;
@@ -392,7 +392,7 @@
 {% set is_admin = user_role in ('admin', 'finance') %}
 <div class="ts-root">
 
-<!-- ── Hero Header ───────────────────────────────────────────── -->
+<!-- ?? Hero Header ????????????????????????????????????????????? -->
 <div class="ts-hero">
   <div>
     <div class="ts-hero-title">
@@ -413,7 +413,7 @@
 </div>
 
 {% if view == 'admin' %}
-<!-- ── KPI Row ────────────────────────────────────────────────── -->
+<!-- ?? KPI Row ?????????????????????????????????????????????????? -->
 <div class="kpi-row">
   <div class="kpi-card c-teal">
     <div class="kpi-icon"><i class="bi bi-people-fill"></i></div>
@@ -457,7 +457,7 @@
   </div>
 </div>
 
-<!-- ── Week Nav ──────────────────────────────────────────────── -->
+<!-- ?? Week Nav ???????????????????????????????????????????????? -->
 <div class="week-nav">
   <a href="{{ url_for('timesheets', week=prev_week) }}" class="wn-btn"><i class="bi bi-chevron-left"></i></a>
   <div class="wn-label">Week of {{ week_label }}</div>
@@ -465,7 +465,7 @@
   <a href="{{ url_for('timesheets') }}" class="wn-cur ms-1">Current Week</a>
 </div>
 
-<!-- ── Grid ──────────────────────────────────────────────────── -->
+<!-- ?? Grid ???????????????????????????????????????????????????? -->
 <div class="ts-grid-wrap">
   <div class="table-responsive">
     <table class="ts-grid">
@@ -498,18 +498,19 @@
               <td style="min-width:96px;">
                 {% if cell %}
                   <div class="dc dc-{{ cell.status | lower }}"
-                       title="{{ cell.projects | join(', ') or 'No project' }} — {{ '%.1f'|format(cell.hours) }}h"
+                       title="{{ cell.projects | join(', ') or 'No project' }} ? {{ cell.time_range }} ? {{ '%.1f'|format(cell.hours) }}h"
                        {% if cell.sheet_id %}onclick="window.location='{{ url_for('timesheet_detail', sheet_id=cell.sheet_id) }}'"{% endif %}>
+                    {% if cell.time_range %}<div class="dc-time">{{ cell.time_range }}</div>{% endif %}
                     {% if cell.projects %}<div class="dc-proj">{{ cell.projects[0] }}{% if cell.projects|length > 1 %} +{{ cell.projects|length - 1 }}{% endif %}</div>{% endif %}
                     <div class="dc-hrs">{{ "%.1f"|format(cell.hours) }}h</div>
                   </div>
                 {% else %}
-                  <div class="dc-empty">—</div>
+                  <div class="dc-empty">?</div>
                 {% endif %}
               </td>
             {% endfor %}
             <td class="total-col">
-              {% if row.total_hours > 0 %}{{ "%.1f"|format(row.total_hours) }}{% else %}<span style="color:#d1d5db;">—</span>{% endif %}
+              {% if row.total_hours > 0 %}{{ "%.1f"|format(row.total_hours) }}{% else %}<span style="color:#d1d5db;">?</span>{% endif %}
             </td>
             <td>
               {% if row.sheet %}
@@ -547,7 +548,7 @@
           <td colspan="{{ 7 + (3 if is_admin else 2) + 1 }}">
             <div class="ts-empty-state">
               <i class="bi bi-people"></i>
-              <p>No employees found. Add employees in <strong>Settings → Users</strong>.</p>
+              <p>No employees found. Add employees in <strong>Settings ? Users</strong>.</p>
             </div>
           </td>
         </tr>
@@ -558,7 +559,7 @@
 </div>
 
 {% else %}
-<!-- ── Employee: My Timesheets ────────────────────────────────── -->
+<!-- ?? Employee: My Timesheets ?????????????????????????????????? -->
 
 <!-- KPI Row -->
 <div class="kpi-row">
@@ -668,19 +669,19 @@
             <td style="min-width:96px;">
               {% if cell %}
                 <div class="dc dc-{{ cell.status | lower }}"
-                     title="{{ cell.projects | join(', ') or 'General' }} — {{ cell.time_range }} — {{ '%.1f'|format(cell.hours) }}h"
+                     title="{{ cell.projects | join(', ') or 'General' }} ? {{ cell.time_range }} ? {{ '%.1f'|format(cell.hours) }}h"
                      {% if cell.sheet_id %}onclick="window.location='{{ url_for('timesheet_detail', sheet_id=cell.sheet_id) }}'"{% endif %}>
                   {% if cell.time_range %}<div class="dc-time">{{ cell.time_range }}</div>{% endif %}
                   {% if cell.projects %}<div class="dc-proj">{{ cell.projects[0] }}{% if cell.projects|length > 1 %} +{{ cell.projects|length - 1 }}{% endif %}</div>{% endif %}
                   <div class="dc-hrs">{{ "%.1f"|format(cell.hours) }}h</div>
                 </div>
               {% else %}
-                <div class="dc-empty">—</div>
+                <div class="dc-empty">?</div>
               {% endif %}
             </td>
           {% endfor %}
           <td class="total-col">
-            {% if week_total > 0 %}{{ "%.1f"|format(week_total) }}h{% else %}<span style="color:#d1d5db;">—</span>{% endif %}
+            {% if week_total > 0 %}{{ "%.1f"|format(week_total) }}h{% else %}<span style="color:#d1d5db;">?</span>{% endif %}
           </td>
         </tr>
       </tbody>
@@ -726,7 +727,7 @@
         </td>
         <td><span class="sbadge sb-{{ sheet.status | lower }}">{{ sheet.status }}</span></td>
         <td style="color:#94a3b8;font-size:12px;">
-          {{ (sheet.submitted_at[:10] | format_date) if sheet.submitted_at else '—' }}
+          {{ (sheet.submitted_at[:10] | format_date) if sheet.submitted_at else '?' }}
         </td>
         <td>
           <div class="d-flex gap-2">
@@ -747,7 +748,7 @@
       <td colspan="7">
         <div class="ts-empty-state">
           <i class="bi bi-clipboard-x"></i>
-          <p>No timesheets yet. <a href="{{ url_for('timesheets_submit') }}" style="color:#0D9488;font-weight:600;">Submit your first timesheet →</a></p>
+          <p>No timesheets yet. <a href="{{ url_for('timesheets_submit') }}" style="color:#0D9488;font-weight:600;">Submit your first timesheet ?</a></p>
         </div>
       </td>
     </tr>

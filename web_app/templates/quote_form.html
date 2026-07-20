@@ -13,7 +13,7 @@
   {% if from_project %}
   <div class="alert alert-info py-2 mb-3">
     <i class="bi bi-kanban me-1"></i>
-    Creating quote from project <strong>{{ from_project.get('project_number','') }}</strong> â€” {{ from_project.get('project_name','') }}
+    Creating quote from project <strong>{{ from_project.get('project_number','') }}</strong> ? {{ from_project.get('project_name','') }}
   </div>
   {% endif %}
 
@@ -83,7 +83,7 @@
         <h6 class="section-heading">Service Details</h6>
         <div class="row g-3">
           <div class="col-12">
-            <label class="form-label">Service Types <span class="text-muted small fw-normal">â€” select all that apply; each adds a line item</span></label>
+            <label class="form-label">Service Types <span class="text-muted small fw-normal">? select all that apply; each adds a line item</span></label>
             {% set all_services = ['Structural','Electrical','Civil','Mechanical','Plumbing','HVAC','Fire Protection','Geotechnical','Environmental','Other'] %}
             {% set selected_svcs = ((quote.get('service_types') or ([quote.get('service_type')] if quote.get('service_type') else [])) if quote else []) %}
             {# Extract existing "Other: XYZ" specify text #}
@@ -109,7 +109,7 @@
                 </div>
               </div>
               {% endfor %}
-              <!-- Other specify â€” shown when Other is ticked -->
+              <!-- Other specify ? shown when Other is ticked -->
               <div class="col-12" id="otherSpecifyRow"
                    style="{{ '' if ns.other_checked else 'display:none;' }}">
                 <div class="d-flex align-items-center gap-2 p-2 rounded border border-warning bg-warning bg-opacity-10">
@@ -117,7 +117,7 @@
                   <label class="form-label mb-0 small fw-semibold text-nowrap">Please specify:</label>
                   <input type="text" name="other_specify" id="otherSpecifyInput"
                          class="form-control form-control-sm"
-                         placeholder="e.g. Surveying, Site Inspection, Consultingâ€¦"
+                         placeholder="e.g. Surveying, Site Inspection, Consulting?"
                          maxlength="80" value="{{ ns.other_val }}">
                 </div>
               </div>
@@ -239,7 +239,7 @@
         <div class="mb-0">
           <label class="form-label">
             <i class="bi bi-bell me-1 text-teal"></i>Follow-up Date
-            <span class="text-muted small fw-normal">â€” remind to follow up with client</span>
+            <span class="text-muted small fw-normal">? remind to follow up with client</span>
           </label>
           <input type="date" name="follow_up_date" class="form-control"
                  value="{{ quote.get('follow_up_date','') if quote else '' }}">
@@ -370,7 +370,7 @@ function removeRow(btn) {
 function toggleServiceType(cb, serviceName, boxId) {
   const box = document.getElementById(boxId);
 
-  // Show/hide "Other â€” please specify" row
+  // Show/hide "Other ? please specify" row
   if (cb.dataset.other) {
     const specRow = document.getElementById('otherSpecifyRow');
     const specInp = document.getElementById('otherSpecifyInput');

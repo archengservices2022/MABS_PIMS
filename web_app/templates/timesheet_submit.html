@@ -1,10 +1,10 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Submit Timesheet{% endblock %}
 {% block page_title %}Submit Timesheet{% endblock %}
 
 {% block head %}
 <style>
-/* ── Global crisp rendering ──────────────────────────────────── */
+/* ?? Global crisp rendering ???????????????????????????????????? */
 .tsub * {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -12,7 +12,7 @@
   box-sizing: border-box;
 }
 
-/* ── Outer card ──────────────────────────────────────────────── */
+/* ?? Outer card ???????????????????????????????????????????????? */
 .ts-card {
   background: #fff;
   border-radius: 16px;
@@ -20,7 +20,7 @@
   overflow: hidden;
 }
 
-/* ── Hero header ─────────────────────────────────────────────── */
+/* ?? Hero header ??????????????????????????????????????????????? */
 .ts-header {
   background: linear-gradient(120deg, #0D9488 0%, #0369a1 100%);
   color: #fff;
@@ -34,7 +34,7 @@
 }
 .ts-header .sub { font-size: 13px; opacity: .8; margin-top: 4px; font-weight: 400; }
 
-/* ── Week picker inside header ───────────────────────────────── */
+/* ?? Week picker inside header ????????????????????????????????? */
 #weekPicker {
   border: none;
   border-radius: 8px;
@@ -46,7 +46,7 @@
   background: rgba(255,255,255,.92);
 }
 
-/* ── Summary bar ─────────────────────────────────────────────── */
+/* ?? Summary bar ??????????????????????????????????????????????? */
 .ts-summary {
   display: flex;
   background: #f8fafc;
@@ -79,7 +79,7 @@
 .ts-summary-val.tot  { color: #1d4ed8; }
 .ts-summary-val.days { color: #7C3AED; }
 
-/* ── Day block ───────────────────────────────────────────────── */
+/* ?? Day block ????????????????????????????????????????????????? */
 .ts-day-block {
   margin-bottom: 10px;
   border-radius: 12px;
@@ -124,7 +124,7 @@
   font-weight: 500;
 }
 
-/* ── Entry table ─────────────────────────────────────────────── */
+/* ?? Entry table ??????????????????????????????????????????????? */
 .ts-table { width: 100%; border-collapse: collapse; }
 .ts-table th {
   background: #f1f5f9;
@@ -184,7 +184,7 @@
 .ts-table td .hrs.ot-val  { color: #D97706; }
 .ts-table td .hrs.tot-val { color: #1d4ed8; font-weight: 800; }
 
-/* ── Add row / Add day buttons ───────────────────────────────── */
+/* ?? Add row / Add day buttons ????????????????????????????????? */
 .add-proj-btn {
   display: inline-flex;
   align-items: center;
@@ -227,7 +227,7 @@
   background: #f0fdfa;
 }
 
-/* ── Delete row button ───────────────────────────────────────── */
+/* ?? Delete row button ????????????????????????????????????????? */
 .del-btn {
   background: none;
   border: none;
@@ -241,7 +241,7 @@
 }
 .del-btn:hover { color: #dc2626; background: #fee2e2; }
 
-/* ── Status alerts ───────────────────────────────────────────── */
+/* ?? Status alerts ????????????????????????????????????????????? */
 .ts-alert {
   display: flex;
   align-items: center;
@@ -258,7 +258,7 @@
 .ts-alert-danger  { background: #fff1f2; border-color: #fecdd3; color: #b91c1c; }
 .ts-alert-prev    { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
 
-/* ── Action buttons ──────────────────────────────────────────── */
+/* ?? Action buttons ???????????????????????????????????????????? */
 .ts-action-bar {
   display: flex;
   gap: 10px;
@@ -337,7 +337,7 @@
 
     {% if existing_sheet and existing_sheet.status == 'Submitted' %}
     <div class="ts-alert ts-alert-info">
-      <i class="bi bi-info-circle-fill"></i> Already submitted — re-submit to overwrite.
+      <i class="bi bi-info-circle-fill"></i> Already submitted ? re-submit to overwrite.
     </div>
     {% elif existing_sheet and existing_sheet.status == 'Approved' %}
     <div class="ts-alert ts-alert-success">
@@ -345,14 +345,14 @@
     </div>
     {% elif existing_sheet and existing_sheet.status == 'Rejected' %}
     <div class="ts-alert ts-alert-danger">
-      <i class="bi bi-exclamation-circle-fill"></i> Rejected — please update and resubmit.
+      <i class="bi bi-exclamation-circle-fill"></i> Rejected ? please update and resubmit.
     </div>
     {% endif %}
 
     <!-- Copy prev-week banner -->
     <div id="prevWeekBanner" class="ts-alert ts-alert-prev" style="display:none;">
       <i class="bi bi-arrow-counterclockwise"></i>
-      <span>Previous week had entries — <strong id="prevWeekLabel"></strong></span>
+      <span>Previous week had entries ? <strong id="prevWeekLabel"></strong></span>
       <div class="d-flex gap-2 ms-auto">
         <button type="button" onclick="copyPrevWeek()"
                 style="background:#1d4ed8;color:#fff;border:none;border-radius:7px;padding:4px 14px;font-size:12px;font-weight:600;cursor:pointer;">
@@ -455,7 +455,7 @@ function isWeekend(date) {
   return day === 0 || day === 6;
 }
 
-// ── Build one entry row ───────────────────────────────────────────────────────
+// ?? Build one entry row ???????????????????????????????????????????????????????
 function buildEntryRow(id, date, entry, locked) {
   entry = entry || {};
   const entryType = entry.entry_type || 'work';
@@ -469,7 +469,7 @@ function buildEntryRow(id, date, entry, locked) {
 
   const projOpts = PROJECTS.map(p => {
     const val = `${escHtml(p.project_number||'')}|${escHtml(p.project_name||'')}|${escHtml(p.firebase_id||'')}`;
-    const lbl = p.project_number ? `${p.project_number} — ${p.project_name||''}` : (p.project_name||'Unnamed');
+    const lbl = p.project_number ? `${p.project_number} ? ${p.project_name||''}` : (p.project_name||'Unnamed');
     const sel = (entry.project_id && entry.project_id===p.firebase_id) ||
                 (entry.project_number && entry.project_number===p.project_number) ? 'selected':'';
     return `<option value="${val}" ${sel}>${escHtml(lbl)}</option>`;
@@ -488,7 +488,7 @@ function buildEntryRow(id, date, entry, locked) {
     </td>
     <td style="min-width:180px;">
       <select class="entry-proj" ${dis}>
-        <option value="">— General / Admin —</option>
+        <option value="">? General / Admin ?</option>
         ${projOpts}
       </select>
     </td>
@@ -504,9 +504,9 @@ function buildEntryRow(id, date, entry, locked) {
         oninput="calcRow(${id})" placeholder="5:00 PM"
         style="text-align:center;" ${dis}>
     </td>
-    <td><div class="hrs reg-val" id="reg-${id}">—</div></td>
-    <td><div class="hrs ot-val"  id="ot-${id}">—</div></td>
-    <td><div class="hrs tot-val" id="tot-${id}">—</div></td>
+    <td><div class="hrs reg-val" id="reg-${id}">?</div></td>
+    <td><div class="hrs ot-val"  id="ot-${id}">?</div></td>
+    <td><div class="hrs tot-val" id="tot-${id}">?</div></td>
     <td style="min-width:130px;">
       <input type="text" class="entry-notes"
         value="${escHtml(entry.notes||'')}" placeholder="Notes" ${disDirect}>
@@ -516,7 +516,7 @@ function buildEntryRow(id, date, entry, locked) {
   return tr;
 }
 
-// ── Type changed — toggle time/project fields ────────────────────────────────
+// ?? Type changed ? toggle time/project fields ????????????????????????????????
 function onTypeChange(id) {
   const tr = document.getElementById(`row-${id}`);
   if (!tr) return;
@@ -543,7 +543,7 @@ function onTypeChange(id) {
   }
 }
 
-// ── Day block ────────────────────────────────────────────────────────────────
+// ?? Day block ????????????????????????????????????????????????????????????????
 function renderDayBlock(date, entries) {
   const container = document.getElementById('dayBlocksContainer');
   const locked = date > TODAY_ISO;
@@ -566,7 +566,7 @@ function renderDayBlock(date, entries) {
   block.innerHTML = `
     <div class="ts-day-block-header">
       <span class="ts-day-badge">${escHtml(dayAbbr)}</span>
-      <span class="ts-day-date">${escHtml(dayName)} — ${dateLabel}</span>
+      <span class="ts-day-date">${escHtml(dayName)} ? ${dateLabel}</span>
       ${lockHtml}
     </div>
     <div class="table-responsive">
@@ -643,7 +643,7 @@ function delRow(id, date) {
   }
 }
 
-// ── Hour calculation ─────────────────────────────────────────────────────────
+// ?? Hour calculation ?????????????????????????????????????????????????????????
 // A row's own Total is just the worked hours from its start/end time.
 // Whether those hours count as Regular or Overtime depends on the whole week
 // (weekend = all OT; weekday hours are Regular up to a running 40hr cap), so
@@ -677,7 +677,7 @@ function calcRow(id) {
     delete tr.dataset.worked;
     ['reg','ot','tot'].forEach(k => {
       const el = document.getElementById(`${k}-${id}`);
-      if (el) el.textContent = '—';
+      if (el) el.textContent = '?';
     });
     recalcWeek();
     return;
@@ -711,7 +711,7 @@ function recalcWeek() {
         const id = tr.dataset.rowId;
         const worked = parseFloat(tr.dataset.worked) || 0;
         document.getElementById(`reg-${id}`).textContent = '0.00';
-        document.getElementById(`ot-${id}`).textContent  = worked > 0 ? worked.toFixed(2) : '—';
+        document.getElementById(`ot-${id}`).textContent  = worked > 0 ? worked.toFixed(2) : '?';
       });
     } else {
       let remainingReg = Math.max(0, 40 - runningWeekdayTotal);
@@ -724,7 +724,7 @@ function recalcWeek() {
         const rowOt  = worked - rowReg;
         remainingReg -= rowReg;
         document.getElementById(`reg-${id}`).textContent = rowReg.toFixed(2);
-        document.getElementById(`ot-${id}`).textContent  = rowOt > 0 ? rowOt.toFixed(2) : '—';
+        document.getElementById(`ot-${id}`).textContent  = rowOt > 0 ? rowOt.toFixed(2) : '?';
       });
       runningWeekdayTotal += dayWorked;
     }
@@ -736,8 +736,8 @@ function recalcWeek() {
     const id = tr.dataset.rowId;
     const regEl = document.getElementById(`reg-${id}`);
     const otEl  = document.getElementById(`ot-${id}`);
-    if (regEl && regEl.textContent !== '—') totalReg += parseFloat(regEl.textContent)||0;
-    if (otEl  && otEl.textContent  !== '—') totalOT  += parseFloat(otEl.textContent)||0;
+    if (regEl && regEl.textContent !== '?') totalReg += parseFloat(regEl.textContent)||0;
+    if (otEl  && otEl.textContent  !== '?') totalOT  += parseFloat(otEl.textContent)||0;
     if (tr.dataset.date) activeDays.add(tr.dataset.date);
   });
   document.getElementById('sumReg').textContent   = totalReg.toFixed(2);
@@ -746,7 +746,7 @@ function recalcWeek() {
   document.getElementById('sumDays').textContent  = activeDays.size;
 }
 
-// ── Collect & save ────────────────────────────────────────────────────────────
+// ?? Collect & save ????????????????????????????????????????????????????????????
 function collectEntries() {
   const entries = [];
   document.querySelectorAll('[data-row-id]').forEach(tr => {
@@ -790,7 +790,7 @@ function saveSheet(action) {
   }
   const btn = event.target;
   btn.disabled = true;
-  btn.innerHTML = action==='submit' ? '<i class="bi bi-send me-1"></i>Submitting…' : '<i class="bi bi-floppy me-1"></i>Saving…';
+  btn.innerHTML = action==='submit' ? '<i class="bi bi-send me-1"></i>Submitting?' : '<i class="bi bi-floppy me-1"></i>Saving?';
   fetch('/api/timesheets', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
