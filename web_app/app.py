@@ -3802,7 +3802,25 @@ def project_stage_set_amount(project_id, stage_idx):
 @role_required("projects")
 def project_delete(project_id):
     project = fb_get(f"/projects/{project_id}") or {}
+    if not project:
+        flash("Project not found.", "warning")
+        return redirect(url_for("projects"))
+    expected = str(project.get("project_number", "") or "").strip()
+    confirmed = request.form.get("confirm_project_number", "").strip()
+    if confirmed != expected:
+        flash("Project number confirmation did not match. Project was not deleted.", "danger")
+        return redirect(url_for("project_detail", project_id=project_id))
+
     source_quote_id = project.get("source_quote_id")
+    deleted_at = datetime.now(timezone.utc).isoformat()
+    archive = dict(project)
+    archive.update({
+        "firebase_id": project_id,
+        "deleted_at": deleted_at,
+        "deleted_by": session.get("user_name") or session.get("user_email", ""),
+        "deleted_by_uid": session.get("user_uid", ""),
+    })
+    fb_update(f"/deleted_projects/{project_id}", archive)
 
     fb_delete(f"/projects/{project_id}")
     cache_bust("projects_list")
@@ -3816,7 +3834,7 @@ def project_delete(project_id):
             "updated_at": datetime.now(timezone.utc).isoformat()
         })
 
-    flash("Project deleted.", "success")
+    flash("Project deleted and archived for recovery.", "success")
     return redirect(url_for("projects"))
 
 @app.route("/projects/<project_id>/notes/add", methods=["POST"])

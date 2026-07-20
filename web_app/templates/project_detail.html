@@ -975,7 +975,7 @@
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <p class="fw-bold mb-1">You are about to permanently delete:</p>
+        <p class="fw-bold mb-1">You are about to delete the entire project:</p>
         <div class="p-3 bg-light rounded mb-3">
           <div class="fw-bold text-teal">{{ project.get('project_number','') }}</div>
           <div>{{ project.get('project_name','') }}</div>
@@ -988,8 +988,10 @@
           <strong>Warning:</strong> This project has {{ project_invoices|length }} linked invoice{{ 's' if project_invoices|length != 1 }}. Invoices will NOT be deleted but will lose their project link.
         </div>
         {% endif %}
-        <p class="text-muted small mb-2">Type the project number to confirm:</p>
+        <p class="text-muted small mb-2">Type the project number to confirm this project deletion:</p>
         <input type="text" id="deleteConfirmInput" class="form-control mb-1"
+               name="confirm_project_number"
+               form="projectDeleteForm"
                placeholder="{{ project.get('project_number','') }}"
                oninput="checkDeleteInput(this)">
         <div class="text-muted small">Type: <strong>{{ project.get('project_number','') }}</strong></div>
@@ -998,9 +1000,9 @@
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
           <i class="bi bi-x-lg me-1"></i>Cancel — Keep Project
         </button>
-        <form method="POST" action="{{ url_for('project_delete', project_id=project.firebase_id) }}">
+        <form id="projectDeleteForm" method="POST" action="{{ url_for('project_delete', project_id=project.firebase_id) }}">
           <button type="submit" id="deleteConfirmBtn" class="btn btn-danger" disabled>
-            <i class="bi bi-trash me-1"></i>Yes, Delete Permanently
+            <i class="bi bi-trash me-1"></i>Yes, Delete Project
           </button>
         </form>
       </div>
