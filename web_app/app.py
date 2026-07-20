@@ -3563,10 +3563,17 @@ def project_edit(project_id):
             if plan_in_progress:
                 # Stages already have invoices/payments against them — keep the plan intact
                 flash("Payment plan kept as-is because one or more stages are already invoiced.", "info")
+            elif existing_stages and not payment_plan_changed:
+                # Payment plan structure unchanged — preserve all stages as-is (including CO stages)
+                updated["payment_stages"] = existing_stages
             else:
-                # Always recalculate if payment plan changed or if no existing stages
-                updated["payment_stages"] = _compute_payment_stages(
-                    _safe_float(updated["contract_value"]), down_pct, installments, custom_amounts=custom_amounts)
+                # Recalculate base stages only; separate out and re-append any CO stages so they
+                # are never wiped when the user edits installment count or down-payment %
+                co_stages = [s for s in existing_stages if isinstance(s, dict) and "CO-" in s.get("name", "")]
+                co_total  = sum(_safe_float(s.get("amount", 0)) for s in co_stages)
+                base_cv   = max(0.0, _safe_float(updated["contract_value"]) - co_total)
+                new_stages = _compute_payment_stages(base_cv, down_pct, installments, custom_amounts=custom_amounts)
+                updated["payment_stages"] = new_stages + co_stages
 
         # Sync payment stages with change order amounts
         # If a payment stage is linked to a CO (stage name contains "CO-"), update that CO's amount
