@@ -352,7 +352,7 @@
     <!-- Copy prev-week banner -->
     <div id="prevWeekBanner" class="ts-alert ts-alert-prev" style="display:none;">
       <i class="bi bi-arrow-counterclockwise"></i>
-      <span>Previous week had entries ? <strong id="prevWeekLabel"></strong></span>
+      <span>Previous week had entries — <strong id="prevWeekLabel"></strong></span>
       <div class="d-flex gap-2 ms-auto">
         <button type="button" onclick="copyPrevWeek()"
                 style="background:#1d4ed8;color:#fff;border:none;border-radius:7px;padding:4px 14px;font-size:12px;font-weight:600;cursor:pointer;">
@@ -469,7 +469,7 @@ function buildEntryRow(id, date, entry, locked) {
 
   const projOpts = PROJECTS.map(p => {
     const val = `${escHtml(p.project_number||'')}|${escHtml(p.project_name||'')}|${escHtml(p.firebase_id||'')}`;
-    const lbl = p.project_number ? `${p.project_number} ? ${p.project_name||''}` : (p.project_name||'Unnamed');
+    const lbl = p.project_number ? `${p.project_number} — ${p.project_name||''}` : (p.project_name||'Unnamed');
     const sel = (entry.project_id && entry.project_id===p.firebase_id) ||
                 (entry.project_number && entry.project_number===p.project_number) ? 'selected':'';
     return `<option value="${val}" ${sel}>${escHtml(lbl)}</option>`;
@@ -504,9 +504,9 @@ function buildEntryRow(id, date, entry, locked) {
         oninput="calcRow(${id})" placeholder="5:00 PM"
         style="text-align:center;" ${dis}>
     </td>
-    <td><div class="hrs reg-val" id="reg-${id}">?</div></td>
-    <td><div class="hrs ot-val"  id="ot-${id}">?</div></td>
-    <td><div class="hrs tot-val" id="tot-${id}">?</div></td>
+    <td><div class="hrs reg-val" id="reg-${id}">—</div></td>
+    <td><div class="hrs ot-val"  id="ot-${id}">—</div></td>
+    <td><div class="hrs tot-val" id="tot-${id}">—</div></td>
     <td style="min-width:130px;">
       <input type="text" class="entry-notes"
         value="${escHtml(entry.notes||'')}" placeholder="Notes" ${disDirect}>
@@ -566,7 +566,7 @@ function renderDayBlock(date, entries) {
   block.innerHTML = `
     <div class="ts-day-block-header">
       <span class="ts-day-badge">${escHtml(dayAbbr)}</span>
-      <span class="ts-day-date">${escHtml(dayName)} ? ${dateLabel}</span>
+      <span class="ts-day-date">${escHtml(dayName)} — ${dateLabel}</span>
       ${lockHtml}
     </div>
     <div class="table-responsive">

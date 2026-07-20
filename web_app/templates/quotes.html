@@ -257,7 +257,7 @@
               <div class="col-md-6">
                 <label class="form-label">Client</label>
                 <select name="client_name" class="form-select">
-                  <option value="">? Select Client ?</option>
+                  <option value="">— Select Client —</option>
                   {% for c in clients %}
                   <option value="{{ c }}">{{ c }}</option>
                   {% endfor %}
@@ -266,7 +266,7 @@
               <div class="col-md-6">
                 <label class="form-label">Salesperson</label>
                 <select name="salesperson" class="form-select">
-                  <option value="">? Select Salesperson ?</option>
+                  <option value="">— Select Salesperson —</option>
                   {% for sp in sales_people %}
                   <option value="{{ sp.get('name','') }}">{{ sp.get('name','') }}</option>
                   {% endfor %}
@@ -290,7 +290,7 @@
             <h6 class="section-heading">Service Details</h6>
             <div class="row g-3">
               <div class="col-12">
-                <label class="form-label">Service Types <span class="text-muted small fw-normal">? select all that apply; each adds a line item</span></label>
+                <label class="form-label">Service Types <span class="text-muted small fw-normal">— select all that apply; each adds a line item</span></label>
                 <div class="row g-2">
                   {% for st in ['Mechanical','Electrical','Civil','Structural','Plumbing','HVAC','Fire Protection','Geotechnical','Environmental','Other'] %}
                   <div class="col-6 col-md-4 col-lg-3">
@@ -406,7 +406,7 @@
             <div class="mb-0">
               <label class="form-label">
                 <i class="bi bi-bell me-1 text-teal"></i>Follow-up Date
-                <span class="text-muted small fw-normal">? remind to follow up with client</span>
+                <span class="text-muted small fw-normal">— remind to follow up with client</span>
               </label>
               <input type="date" name="follow_up_date" class="form-control">
             </div>
@@ -508,7 +508,7 @@
                 {% elif _etype == 'contractor' %}
                 <span class="badge" style="background:#7C3AED;color:#fff;font-size:11px;">Contractor</span>
                 {% else %}
-                <span class="text-muted small">?</span>
+                <span class="text-muted small">—</span>
                 {% endif %}
               </td>
               <td class="text-center">{{ sp_stat.quotes_total if sp_stat else 0 }}</td>
@@ -564,7 +564,7 @@
           <h6 class="panel-title mb-0">
             <i class="bi bi-cash-coin me-1" style="color:#7C3AED;"></i>
             Commission Payroll
-            <span class="text-muted fw-normal" style="font-size:12px;">? mark periods as paid</span>
+            <span class="text-muted fw-normal" style="font-size:12px;">— mark periods as paid</span>
           </h6>
         </div>
         {% if monthly_payroll %}
@@ -592,7 +592,7 @@
                   <span class="badge" style="background:#0D9488;color:#fff;font-size:10px;">Full Time</span>
                   {% elif row.emp_type == 'contractor' %}
                   <span class="badge" style="background:#7C3AED;color:#fff;font-size:10px;">Contractor</span>
-                  {% else %}<span class="text-muted">?</span>{% endif %}
+                  {% else %}<span class="text-muted">—</span>{% endif %}
                 </td>
                 <td class="text-center text-muted">{{ row.rate }}%</td>
                 <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(row.revenue) }}</td>
@@ -1005,7 +1005,7 @@ function buildExportLinks() {
   if (from)   parts.push(`from: <strong>${from}</strong>`);
   if (to)     parts.push(`to: <strong>${to}</strong>`);
   document.getElementById('exportFilterSummary').innerHTML =
-    parts.length ? '<i class="bi bi-funnel me-1"></i>Filtering by ' + parts.join(' ? ') :
+    parts.length ? '<i class="bi bi-funnel me-1"></i>Filtering by ' + parts.join(' — ') :
                    'Leave blank to export all records.';
 }
 
@@ -1252,7 +1252,7 @@ function updateQuoteSummaryCards() {
       filterAlert.style.display = '';
       filterCount.textContent = totalCount;
       document.getElementById('quoteFilterText').innerHTML =
-        '<strong>' + filterDesc + '</strong>&nbsp;?&nbsp; <span id="quoteFilterCount">' + totalCount + '</span> result' + (totalCount !== 1 ? 's' : '');
+        '<strong>' + filterDesc + '</strong>&nbsp;—&nbsp; <span id="quoteFilterCount">' + totalCount + '</span> result' + (totalCount !== 1 ? 's' : '');
     } else {
       // Hide when year is not selected (ignore auto-generated date ranges)
       filterAlert.style.display = 'none';
@@ -1273,7 +1273,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 async function commissionAction(action, period, spName, amount) {
   var label = action === 'pay' ? 'Mark as Paid' : 'Undo payment';
-  if (!confirm(label + ' for ' + spName + ' ? ' + period + '?')) return;
+  if (!confirm(label + ' for ' + spName + ' — ' + period + '?')) return;
   try {
     var res = await fetch('/api/commission/mark-paid', {
       method: 'POST',

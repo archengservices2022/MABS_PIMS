@@ -234,7 +234,7 @@
           <div class="mb-3">
             <label class="form-label fw-semibold">Employee <span class="text-danger">*</span></label>
             <select name="employee_uid" id="empSelect" class="form-select" required onchange="fillEmpName(this)">
-              <option value="">? Select Employee ?</option>
+              <option value="">— Select Employee —</option>
               {% for u in all_users %}
               <option value="{{ u.firebase_uid }}" data-name="{{ u.get('username','') }}">
                 {{ u.get('username','') }}
@@ -246,7 +246,7 @@
           <div class="mb-4">
             <label class="form-label fw-semibold">Review Period <span class="text-danger">*</span></label>
             <select name="review_period" class="form-select" required>
-              <option value="">? Select Period ?</option>
+              <option value="">— Select Period —</option>
               {% for p in periods %}
               <option value="{{ p }}">{{ p }}</option>
               {% endfor %}
@@ -289,7 +289,7 @@
 <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
   <a href="{{ url_for('reviews') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
   <div class="flex-grow-1">
-    <h5 class="mb-0 fw-semibold">{{ r.employee_name }} ? {{ r.review_period }}</h5>
+    <h5 class="mb-0 fw-semibold">{{ r.employee_name }} — {{ r.review_period }}</h5>
     <div class="text-muted small">Initiated by {{ r.reviewer_name }}
       &nbsp;?&nbsp; {{ r.created_at[:10] if r.created_at else '' }}</div>
   </div>
@@ -335,7 +335,7 @@
         <div class="card shadow-sm mb-4">
           <div class="card-body">
             <h6 class="fw-semibold mb-1"><i class="bi bi-person-check me-2 text-primary"></i>Self-Assessment</h6>
-            <p class="text-muted small mb-4">Rate yourself 1?5 for each category.</p>
+            <p class="text-muted small mb-4">Rate yourself 1–5 for each category.</p>
             {% for key, name, weight, desc in cats_full %}
             <div class="cat-row">
               <div class="cat-label">{{ name }}<span class="weight-badge">{{ weight }}</span></div>
@@ -502,7 +502,7 @@
         <div class="card shadow-sm mb-4">
           <div class="card-body">
             <div class="text-center mb-3">
-              <div id="scoreDisplay" style="font-family:Georgia,serif;font-size:44px;color:#1A2B3C;line-height:1;">?</div>
+              <div id="scoreDisplay" style="font-family:Georgia,serif;font-size:44px;color:#1A2B3C;line-height:1;">—</div>
               <div class="text-muted small">weighted score out of 5.00</div>
               <div id="labelDisplay" class="mt-2"></div>
             </div>
@@ -520,7 +520,7 @@
                       placeholder="Overall performance summary, key accomplishments?"></textarea>
             <h6 class="fw-semibold mb-2 mt-3" style="font-size:13px;">Goals for Next Period</h6>
             <textarea name="goals" class="form-control form-control-sm" rows="3"
-                      placeholder="List 2?3 specific goals for the next 6 months?"></textarea>
+                      placeholder="List 2–3 specific goals for the next 6 months?"></textarea>
           </div>
         </div>
 
@@ -704,7 +704,7 @@
         <div class="mb-3">
           <div class="text-muted small mb-1">Suggested Range</div>
           <div class="fw-semibold" style="font-size:18px;color:#1A2B3C;">
-            {% if lo == 0 and hi == 0 %}No raise recommended{% else %}{{ lo }}% ? {{ hi }}%{% endif %}
+            {% if lo == 0 and hi == 0 %}No raise recommended{% else %}{{ lo }}% – {{ hi }}%{% endif %}
           </div>
         </div>
         {% if role == 'admin' or acked %}
@@ -726,7 +726,7 @@
         {% set sr = r.salary_update_result %}
         <div class="alert alert-success py-2" style="font-size:13px;">
           <i class="bi bi-check-circle me-1"></i>
-          Salary updated: {{ currency_symbol }}{{ "%.2f"|format(sr.old | float) }} ? {{ currency_symbol }}{{ "%.2f"|format(sr.new | float) }}
+          Salary updated: {{ currency_symbol }}{{ "%.2f"|format(sr.old | float) }} → {{ currency_symbol }}{{ "%.2f"|format(sr.new | float) }}
           ({{ 'hourly' if sr.field == 'hourly_rate' else 'monthly' }})
         </div>
         {% elif r.raise_effective_date and r.approved_raise_pct and r.approved_raise_pct|float > 0 %}
@@ -895,7 +895,7 @@ function recalc() {
   }
   if (raiseHint && raiseRange && allSet) {
     raiseHint.classList.remove('d-none');
-    raiseRange.textContent = (lo === 0 && hi === 0) ? 'No raise recommended' : (lo + '?' + hi + '%');
+    raiseRange.textContent = (lo === 0 && hi === 0) ? 'No raise recommended' : (lo + '–' + hi + '%');
   }
 }
 

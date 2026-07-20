@@ -13,7 +13,7 @@
   {% if from_project %}
   <div class="alert alert-info py-2 mb-3">
     <i class="bi bi-kanban me-1"></i>
-    Creating quote from project <strong>{{ from_project.get('project_number','') }}</strong> ? {{ from_project.get('project_name','') }}
+    Creating quote from project <strong>{{ from_project.get('project_number','') }}</strong> — {{ from_project.get('project_name','') }}
   </div>
   {% endif %}
 
@@ -83,7 +83,7 @@
         <h6 class="section-heading">Service Details</h6>
         <div class="row g-3">
           <div class="col-12">
-            <label class="form-label">Service Types <span class="text-muted small fw-normal">? select all that apply; each adds a line item</span></label>
+            <label class="form-label">Service Types <span class="text-muted small fw-normal">— select all that apply; each adds a line item</span></label>
             {% set all_services = ['Structural','Electrical','Civil','Mechanical','Plumbing','HVAC','Fire Protection','Geotechnical','Environmental','Other'] %}
             {% set selected_svcs = ((quote.get('service_types') or ([quote.get('service_type')] if quote.get('service_type') else [])) if quote else []) %}
             {# Extract existing "Other: XYZ" specify text #}
@@ -239,7 +239,7 @@
         <div class="mb-0">
           <label class="form-label">
             <i class="bi bi-bell me-1 text-teal"></i>Follow-up Date
-            <span class="text-muted small fw-normal">? remind to follow up with client</span>
+            <span class="text-muted small fw-normal">— remind to follow up with client</span>
           </label>
           <input type="date" name="follow_up_date" class="form-control"
                  value="{{ quote.get('follow_up_date','') if quote else '' }}">

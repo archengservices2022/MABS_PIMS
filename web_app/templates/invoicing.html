@@ -31,7 +31,7 @@
     <div class="kpi-card" style="border-left:4px solid #7C3AED;">
       <div class="kpi-top"><span class="kpi-label">Total Invoices</span><i class="bi bi-receipt kpi-icon-sm" style="color:#7C3AED;"></i></div>
       <div class="kpi-value" style="color:#7C3AED;">{{ i_total }}</div>
-      <div class="kpi-sub">{{ i_draft_count }} draft ? {{ i_sent_count }} sent</div>
+      <div class="kpi-sub">{{ i_draft_count }} draft — {{ i_sent_count }} sent</div>
     </div>
   </div>
   {% if 'financial' in allowed_pages %}
@@ -54,7 +54,7 @@
     <div class="kpi-card kpi-amber">
       <div class="kpi-top"><span class="kpi-label">Outstanding</span><i class="bi bi-hourglass-split kpi-icon-sm"></i></div>
       <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(i_outstanding) }}</div>
-      <div class="kpi-sub">{{ i_paid_count }} paid ? {{ i_sent_count }} pending</div>
+      <div class="kpi-sub">{{ i_paid_count }} paid — {{ i_sent_count }} pending</div>
     </div>
   </div>
   <div class="col-6 col-xl">
@@ -141,9 +141,9 @@
           <i class="bi bi-funnel text-teal"></i>
           <span>
             {% if date_from and date_to %}{{ date_from }} to {{ date_to }}{% elif date_from %}From {{ date_from }}{% elif date_to %}Up to {{ date_to }}{% endif %}
-            {% if status_filter %} ? Status: <strong>{{ status_filter }}</strong>{% endif %}
-            {% if client_filter %} ? Client: <strong>{{ client_filter }}</strong>{% endif %}
-            {% if plant_filter %} ? State: <strong>{{ plant_filter }}</strong>{% endif %}
+            {% if status_filter %} — Status: <strong>{{ status_filter }}</strong>{% endif %}
+            {% if client_filter %} — Client: <strong>{{ client_filter }}</strong>{% endif %}
+            {% if plant_filter %} — State: <strong>{{ plant_filter }}</strong>{% endif %}
           </span>
         </div>
         {% endif %}
@@ -189,7 +189,7 @@
                 {%- if inv.plant_state %}
                   <span class="badge" style="background:#0D9488;color:#fff;font-size:11px;font-weight:700;letter-spacing:.04em;">{{ inv.plant_state }}</span>
                 {%- else %}
-                  <span class="text-muted small">?</span>
+                  <span class="text-muted small">—</span>
                 {%- endif %}
               </td>
               <td>{{ meta.get('invoice_date','?') | format_date_invoice }}</td>

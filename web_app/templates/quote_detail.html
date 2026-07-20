@@ -243,7 +243,7 @@
           <a href="{{ url_for('project_detail', project_id=linked_project.firebase_id) }}" class="fw-bold text-teal text-decoration-none">
             {{ linked_project.get('project_number','') }}
           </a>
-          <span class="text-muted small ms-1">? {{ linked_project.get('project_name','') }}</span>
+          <span class="text-muted small ms-1">— {{ linked_project.get('project_name','') }}</span>
         </div>
         <span class="badge status-{{ linked_project.get('status','not-started')|lower|replace(' ','-') }}">
           {{ linked_project.get('status','') }}
@@ -408,10 +408,10 @@ function checkDeleteInput(input) {
   const diff = Math.floor((exp - now) / 86400000);
   const el   = document.getElementById('expiryCountdown');
   if (!el) return;
-  if (diff < 0)       { el.innerHTML = '<strong class="text-danger"> ? Expired.</strong>'; banner.style.borderColor='#EF4444'; banner.style.background='#FEF2F2'; banner.style.color='#991B1B'; }
-  else if (diff === 0){ el.innerHTML = '<strong class="text-danger"> ? Expires today!</strong>'; }
-  else if (diff <= 3) { el.innerHTML = `<strong class="text-danger"> ? ${diff} day${diff>1?'s':''} remaining.</strong>`; }
-  else if (diff <= 7) { el.innerHTML = `<strong class="text-warning"> ? ${diff} days remaining.</strong>`; }
+  if (diff < 0)       { el.innerHTML = '<strong class="text-danger"> Expired.</strong>'; banner.style.borderColor='#EF4444'; banner.style.background='#FEF2F2'; banner.style.color='#991B1B'; }
+  else if (diff === 0){ el.innerHTML = '<strong class="text-danger"> Expires today!</strong>'; }
+  else if (diff <= 3) { el.innerHTML = `<strong class="text-danger"> ${diff} day${diff>1?'s':''} remaining.</strong>`; }
+  else if (diff <= 7) { el.innerHTML = `<strong class="text-warning"> ${diff} days remaining.</strong>`; }
   else                { banner.style.display = 'none'; }
 })();
 

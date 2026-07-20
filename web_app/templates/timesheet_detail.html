@@ -1,5 +1,5 @@
 ﻿{% extends "base.html" %}
-{% block title %}Timesheet ? {{ sheet.employee_name }}{% endblock %}
+{% block title %}Timesheet — {{ sheet.employee_name }}{% endblock %}
 {% block page_title %}Timesheet Detail{% endblock %}
 
 {% block head %}
@@ -328,12 +328,12 @@
             <td style="font-variant-numeric:tabular-nums;white-space:nowrap;">
               {% if entry.start_time %}
                 <span style="background:#f0fdfa;color:#0D9488;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:600;">{{ entry.start_time }}</span>
-              {% else %}<span class="val-mute">?</span>{% endif %}
+              {% else %}<span class="val-mute">—</span>{% endif %}
             </td>
             <td style="font-variant-numeric:tabular-nums;white-space:nowrap;">
               {% if entry.end_time %}
                 <span style="background:#eff6ff;color:#1d4ed8;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:600;">{{ entry.end_time }}</span>
-              {% else %}<span class="val-mute">?</span>{% endif %}
+              {% else %}<span class="val-mute">—</span>{% endif %}
             </td>
             <td style="text-align:right;">
               {% if entry.regular_hours | float > 0 %}
@@ -343,7 +343,7 @@
             <td style="text-align:right;">
               {% if entry.overtime_hours | float > 0 %}
                 <span class="val-ot">{{ "%.2f"|format(entry.overtime_hours | float) }}</span>
-              {% else %}<span class="val-mute">?</span>{% endif %}
+              {% else %}<span class="val-mute">—</span>{% endif %}
             </td>
             <td style="text-align:right;">
               <span class="val-tot">{{ "%.2f"|format(entry.total_hours | float) }}</span>
@@ -380,12 +380,12 @@
   {% if sheet.status == 'Approved' %}
   <div class="tsd-banner tsd-banner-approved">
     <i class="bi bi-check-circle-fill"></i>
-    <span>Approved by <strong>{{ sheet.approved_by or 'manager' }}</strong>{% if sheet.approved_at %} ? {{ sheet.approved_at[:10] | format_date }}{% endif %}</span>
+    <span>Approved by <strong>{{ sheet.approved_by or 'manager' }}</strong>{% if sheet.approved_at %} — {{ sheet.approved_at[:10] | format_date }}{% endif %}</span>
   </div>
   {% elif sheet.status == 'Rejected' %}
   <div class="tsd-banner tsd-banner-rejected">
     <i class="bi bi-x-circle-fill"></i>
-    <span>Rejected by <strong>{{ sheet.approved_by or 'manager' }}</strong>{% if sheet.approved_at %} ? {{ sheet.approved_at[:10] | format_date }}{% endif %}{% if sheet.rejection_notes %} ? {{ sheet.rejection_notes }}{% endif %}</span>
+    <span>Rejected by <strong>{{ sheet.approved_by or 'manager' }}</strong>{% if sheet.approved_at %} — {{ sheet.approved_at[:10] | format_date }}{% endif %}{% if sheet.rejection_notes %} ? {{ sheet.rejection_notes }}{% endif %}</span>
   </div>
   {% endif %}
 

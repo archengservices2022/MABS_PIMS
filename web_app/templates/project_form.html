@@ -32,7 +32,7 @@
             </label>
             <input type="text" id="quoteNumberInput" name="quote_number" class="form-control"
                    value="{{ project.get('quote_number','') or project.get('job_number','') if project else prefill_quote }}"
-                   placeholder="e.g. QT-202606-001 ? leave blank if none" autocomplete="off">
+                   placeholder="e.g. QT-202606-001 — leave blank if none" autocomplete="off">
           </div>
           <div class="col-md-4">
             <label class="form-label">PO / WO Number</label>
@@ -98,7 +98,7 @@
             </select>
           </div>
           <div class="col-12">
-            <label class="form-label">Service Types <span class="text-danger">*</span> <span class="text-muted small fw-normal">? select all that apply</span></label>
+            <label class="form-label">Service Types <span class="text-danger">*</span> <span class="text-muted small fw-normal">— select all that apply</span></label>
             {% set all_services = ['Structural','Electrical','Civil','Mechanical','Plumbing','HVAC','Fire Protection','Geotechnical','Environmental','Other'] %}
             {% set selected_svcs = (project.get('service_types') or []) if project else [] %}
             {% set ns = namespace(other_val='', other_checked=false) %}
@@ -141,7 +141,7 @@
           {% set has_invoiced = existing_stages and (existing_stages|selectattr('status', 'in', ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'])|list|length > 0) %}
           {% if not has_invoiced %}
           <div class="col-12" id="serviceCostSection" style="display:none;">
-            <label class="form-label">Service Cost Breakdown <span class="text-muted small fw-normal">? enter a cost for each selected service</span></label>
+            <label class="form-label">Service Cost Breakdown <span class="text-muted small fw-normal">— enter a cost for each selected service</span></label>
             <div class="table-responsive">
               <table class="table table-sm align-middle mb-1">
                 <thead>
@@ -303,7 +303,7 @@
             <select id="installmentCount" name="installment_count" class="form-select"
                     {% if has_invoiced %}disabled{% endif %}
                     onchange="updatePlanPreview()">
-              <option value="1" {{ 'selected' if curr == 1 }}>1 ? Single payment</option>
+              <option value="1" {{ 'selected' if curr == 1 }}>1 — Single payment</option>
               {% for n in range(2, 7) %}
               <option value="{{ n }}" {{ 'selected' if curr == n }}>{{ n }} installments</option>
               {% endfor %}
@@ -466,7 +466,7 @@ function showDurationNote() {
   if (!startDate || !endDate) return;
   const diffDays = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24));
   const bdays = Math.round(diffDays * 5 / 7);
-  note.textContent = `${diffDays} calendar days ? ~${bdays} business days`;
+  note.textContent = `${diffDays} calendar days — ~${bdays} business days`;
   note.style.display = '';
 }
 function initializeDurationCalculation() {
@@ -1628,7 +1628,7 @@ function updatePreviewStageTotals() {
       const isDec = diff < 0;
       const diffAmt = Math.abs(diff).toFixed(2);
       const changeType = isDec ? 'DECREASED' : 'INCREASED';
-      const changeIcon = isDec ? '??' : '??';
+      const changeIcon = isDec ? '▼' : '▲';
       const alertClass = isDec ? 'alert-warning' : 'alert-info';
 
       changeAlert.innerHTML = `
@@ -1637,7 +1637,7 @@ function updatePreviewStageTotals() {
             ${changeIcon} Contract value ${changeType} by <strong>${CURRENCY_SYMBOL}${diffAmt}</strong>
           </div>
           <div style="font-size: 12px; opacity: 0.9;">
-            From $${originalValue.toFixed(2)} ? $${newTotal.toFixed(2)}
+            From $${originalValue.toFixed(2)} → $${newTotal.toFixed(2)}
           </div>
         </div>
       `;

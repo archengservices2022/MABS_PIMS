@@ -94,7 +94,7 @@
               {% for p in projects %}
               <option value="{{ p.get('project_number','') }}"
                 {{ 'selected' if (meta.get('project_number') or prefill_proj|default('')) == p.get('project_number','') }}>
-                {{ p.get('project_number','') }} ? {{ p.get('project_name','') }}
+                {{ p.get('project_number','') }} — {{ p.get('project_name','') }}
               </option>
               {% endfor %}
             </select>
@@ -180,7 +180,7 @@
                 {% endfor %}
               {% elif stage_idx != '' %}
               <tr class="line-item-row">
-                <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="{{ prefill_name }} ? {{ stage_name }}" placeholder="Description" required></td>
+                <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="{{ prefill_name }} — {{ stage_name }}" placeholder="Description" required></td>
                 <td>{{ project_select(prefill_proj|default('')) }}</td>
                 <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
                 <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="{{ stage_amount }}" min="0" step="0.01" oninput="calcRow(this)"></td>
@@ -203,7 +203,7 @@
                 {% endfor %}
               {% elif prefill_proj|default('') %}
               <tr class="line-item-row">
-                <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="{{ prefill_name }} ? {{ prefill_proj }}" placeholder="Description" required></td>
+                <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="{{ prefill_name }} — {{ prefill_proj }}" placeholder="Description" required></td>
                 <td>
                   {{ project_select(prefill_proj|default('')) }}
                   <input type="hidden" name="item_stage_index[]" value="">
@@ -415,7 +415,7 @@ function addProjectLineItem(number, name, amount, stageIdx, stageName) {
 
   const tbody = document.getElementById('lineItemsBody');
   const price = parseFloat(amount || 0) || 0;
-  const description = stageName ? `${name} ? ${stageName}` : `${name} ? ${number}`;
+  const description = stageName ? `${name} — ${stageName}` : `${name} — ${number}`;
   const row   = document.createElement('tr');
   row.className = 'line-item-row';
   row.dataset.autoProject = number;

@@ -433,9 +433,9 @@ a[href*="filter_expense"]:hover {
           <div class="ovw-section-label">A/R Aging Snapshot</div>
           {% set aging_data = [
             ('Current',    aging_totals.get('current', 0), '#10B981'),
-            ('1?30 days',  aging_totals.get('1_30', 0),   '#F59E0B'),
-            ('31?60 days', aging_totals.get('31_60', 0),  '#F97316'),
-            ('61?90 days', aging_totals.get('61_90', 0),  '#EF4444'),
+            ('1–30 days',  aging_totals.get('1_30', 0),   '#F59E0B'),
+            ('31–60 days', aging_totals.get('31_60', 0),  '#F97316'),
+            ('61–90 days', aging_totals.get('61_90', 0),  '#EF4444'),
             ('90+ days',   aging_totals.get('90plus', 0), '#7F1D1D'),
           ] %}
           {% for label, amt, color in aging_data %}{% if amt > 0 %}
@@ -479,7 +479,7 @@ a[href*="filter_expense"]:hover {
           <div style="position:relative;width:160px;height:160px;flex-shrink:0;">
             <canvas id="invStatusChart"></canvas>
             <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;">
-              <div style="font-size:22px;font-weight:800;color:#1e293b;line-height:1;" id="invStatusCenter">?</div>
+              <div style="font-size:22px;font-weight:800;color:#1e293b;line-height:1;" id="invStatusCenter">—</div>
               <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Total</div>
             </div>
           </div>
@@ -497,7 +497,7 @@ a[href*="filter_expense"]:hover {
           <div style="position:relative;width:160px;height:160px;flex-shrink:0;">
             <canvas id="expCatChart"></canvas>
             <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;">
-              <div style="font-size:18px;font-weight:800;color:#1e293b;line-height:1;" id="expCatTotal">?</div>
+              <div style="font-size:18px;font-weight:800;color:#1e293b;line-height:1;" id="expCatTotal">—</div>
               <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Total</div>
             </div>
           </div>
@@ -636,7 +636,7 @@ a[href*="filter_expense"]:hover {
               {% if cd %}
                 {{ cd | format_date }}
               {% else %}
-                <span class="text-muted">?</span>
+                <span class="text-muted">—</span>
               {% endif %}
             </td>
             <td style="white-space:nowrap;">
@@ -968,7 +968,7 @@ a[href*="filter_expense"]:hover {
           <label class="form-label form-label-sm fw-600">Expense Type *</label>
           <div class="custom-dropdown">
             <input type="text" name="expense_type" id="expenseType" class="form-control form-control-sm" placeholder="Select type..." required>
-            <span class="dropdown-arrow">?</span>
+            <span class="dropdown-arrow">▾</span>
             <div class="dropdown-list" id="expenseTypeDropdown"></div>
           </div>
         </div>
@@ -976,7 +976,7 @@ a[href*="filter_expense"]:hover {
           <label class="form-label form-label-sm fw-600">Category</label>
           <div class="custom-dropdown">
             <input type="text" name="category" id="expenseCategory" class="form-control form-control-sm" placeholder="Select category...">
-            <span class="dropdown-arrow">?</span>
+            <span class="dropdown-arrow">▾</span>
             <div class="dropdown-list" id="expenseCategoryDropdown"></div>
           </div>
         </div>
@@ -987,7 +987,7 @@ a[href*="filter_expense"]:hover {
           <label class="form-label form-label-sm fw-600">Expense Name</label>
           <div class="custom-dropdown">
             <input type="text" name="expense_name" id="expenseName" class="form-control form-control-sm" placeholder="Select or type name...">
-            <span class="dropdown-arrow">?</span>
+            <span class="dropdown-arrow">▾</span>
             <div class="dropdown-list" id="expenseNameDropdown"></div>
           </div>
         </div>
@@ -1006,7 +1006,7 @@ a[href*="filter_expense"]:hover {
           <label class="form-label form-label-sm fw-600">Vendor *</label>
           <div class="custom-dropdown">
             <input type="text" name="vendor" id="expenseVendor" class="form-control form-control-sm" placeholder="Vendor name or select..." required>
-            <span class="dropdown-arrow">?</span>
+            <span class="dropdown-arrow">▾</span>
             <div class="dropdown-list" id="expenseVendorDropdown"></div>
           </div>
         </div>
@@ -1615,7 +1615,7 @@ function addExpense(event) {
     alert('Please fill in all required fields');
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.textContent = window.editingExpenseId ? '?? Update Expense' : '? Add Expense';
+      submitBtn.textContent = window.editingExpenseId ? 'Update Expense' : 'Add Expense';
     }
     return;
   }
@@ -1665,12 +1665,12 @@ function addExpense(event) {
         expensesTab.show();
         setTimeout(() => location.reload(), 300);
       } else {
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = isUpdate ? '?? Update Expense' : '? Add Expense'; }
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = isUpdate ? 'Update Expense' : 'Add Expense'; }
         alert('Error: ' + (res.error || 'Unknown error'));
       }
     })
     .catch(err => {
-      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = isUpdate ? '?? Update Expense' : '? Add Expense'; }
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = isUpdate ? 'Update Expense' : 'Add Expense'; }
       console.error('Expense operation error:', err);
       alert('Failed to ' + (isUpdate ? 'update' : 'add') + ' expense: ' + err.message);
     });
@@ -1708,7 +1708,7 @@ document.addEventListener('DOMContentLoaded', function() {
               <label class="form-label form-label-sm fw-600">Expense Type *</label>
               <div class="custom-dropdown">
                 <input type="text" name="expense_type" id="modalExpenseType" class="form-control form-control-sm" placeholder="Select type..." required>
-                <span class="dropdown-arrow">?</span>
+                <span class="dropdown-arrow">▾</span>
                 <div class="dropdown-list" id="modalExpenseTypeDropdown"></div>
               </div>
             </div>
@@ -1716,7 +1716,7 @@ document.addEventListener('DOMContentLoaded', function() {
               <label class="form-label form-label-sm fw-600">Category</label>
               <div class="custom-dropdown">
                 <input type="text" name="category" id="modalCategory" class="form-control form-control-sm" placeholder="Select category...">
-                <span class="dropdown-arrow">?</span>
+                <span class="dropdown-arrow">▾</span>
                 <div class="dropdown-list" id="modalCategoryDropdown"></div>
               </div>
             </div>
@@ -1727,7 +1727,7 @@ document.addEventListener('DOMContentLoaded', function() {
               <label class="form-label form-label-sm fw-600">Expense Name</label>
               <div class="custom-dropdown">
                 <input type="text" name="expense_name" id="modalExpenseName" class="form-control form-control-sm" placeholder="Select or type name...">
-                <span class="dropdown-arrow">?</span>
+                <span class="dropdown-arrow">▾</span>
                 <div class="dropdown-list" id="modalExpenseNameDropdown"></div>
               </div>
             </div>
@@ -1746,7 +1746,7 @@ document.addEventListener('DOMContentLoaded', function() {
               <label class="form-label form-label-sm fw-600">Vendor *</label>
               <div class="custom-dropdown">
                 <input type="text" name="vendor" id="modalVendor" class="form-control form-control-sm" placeholder="Vendor name or select..." required>
-                <span class="dropdown-arrow">?</span>
+                <span class="dropdown-arrow">▾</span>
                 <div class="dropdown-list" id="modalVendorDropdown"></div>
               </div>
             </div>
@@ -2344,7 +2344,7 @@ function viewReceipt(expId) {
   <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <div>
       <h4 class="mb-1">Balance Sheet</h4>
-      <p class="text-muted small mb-0">Revenue, expenses &amp; salaries for <strong>{{ selected_year }}</strong> &nbsp;?&nbsp; <span id="bsPeriodLabel" style="color:#0D9488;font-weight:600;">Full Year</span></p>
+      <p class="text-muted small mb-0">Revenue, expenses &amp; salaries for <strong>{{ selected_year }}</strong> &nbsp;—&nbsp; <span id="bsPeriodLabel" style="color:#0D9488;font-weight:600;">Full Year</span></p>
     </div>
     <button class="btn btn-sm btn-outline-success" onclick="exportBalanceSheet()">
       <i class="bi bi-download me-1"></i>Export
@@ -2369,10 +2369,10 @@ function viewReceipt(expId) {
       <span class="small text-muted fw-semibold" style="white-space:nowrap;">Quarter</span>
       <div class="d-flex gap-1">
         <button class="bs-filter-btn active" onclick="setBSPeriod([1,2,3,4,5,6,7,8,9,10,11,12],'Full Year',this)">Full Year</button>
-        <button class="bs-filter-btn" onclick="setBSPeriod([1,2,3],'Q1 (Jan?Mar)',this)">Q1</button>
-        <button class="bs-filter-btn" onclick="setBSPeriod([4,5,6],'Q2 (Apr?Jun)',this)">Q2</button>
-        <button class="bs-filter-btn" onclick="setBSPeriod([7,8,9],'Q3 (Jul?Sep)',this)">Q3</button>
-        <button class="bs-filter-btn" onclick="setBSPeriod([10,11,12],'Q4 (Oct?Dec)',this)">Q4</button>
+        <button class="bs-filter-btn" onclick="setBSPeriod([1,2,3],'Q1 (Jan–Mar)',this)">Q1</button>
+        <button class="bs-filter-btn" onclick="setBSPeriod([4,5,6],'Q2 (Apr–Jun)',this)">Q2</button>
+        <button class="bs-filter-btn" onclick="setBSPeriod([7,8,9],'Q3 (Jul–Sep)',this)">Q3</button>
+        <button class="bs-filter-btn" onclick="setBSPeriod([10,11,12],'Q4 (Oct–Dec)',this)">Q4</button>
       </div>
     </div>
     <div class="vr" style="height:28px;"></div>
@@ -2466,7 +2466,7 @@ function viewReceipt(expId) {
           </thead>
           <tbody>
             <tr>
-              <th style="text-align: left; background: #f8fafc; color: #27ae60; font-weight: 700; padding: 8px;">? REVENUE</th>
+              <th style="text-align: left; background: #f8fafc; color: #27ae60; font-weight: 700; padding: 8px;">▶ REVENUE</th>
               {% for m in range(1, 13) %}
               <td class="annual-revenue-cell" data-month="{{ m }}" onclick="showMonthPayments({{ m }})" title="Click to view payment details" style="cursor:pointer;">
                 {{ currency_symbol }}{{ (annual_revenue.get(m, 0) | float) | round(2) }}
@@ -2475,14 +2475,14 @@ function viewReceipt(expId) {
               <td id="bsRevTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">{{ currency_symbol }}{{ (annual_revenue.values() | sum) | round(2) }}</td>
             </tr>
             <tr>
-              <th style="text-align: left; background: #f8fafc; color: #e74c3c; font-weight: 700; padding: 8px;">? EXPENSES</th>
+              <th style="text-align: left; background: #f8fafc; color: #e74c3c; font-weight: 700; padding: 8px;">▶ EXPENSES</th>
               {% for m in range(1, 13) %}
               <td>{{ currency_symbol }}{{ (annual_expenses.get(m, 0) | float) | round(2) }}</td>
               {% endfor %}
               <td id="bsExpTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">{{ currency_symbol }}{{ (bs_total_expenses | default(0)) | round(2) }}</td>
             </tr>
             <tr>
-              <th style="text-align: left; background: #f8fafc; color: #27ae60; font-weight: 700; padding: 8px;">? NET P/L</th>
+              <th style="text-align: left; background: #f8fafc; color: #27ae60; font-weight: 700; padding: 8px;">▶ NET P/L</th>
               {% for m in range(1, 13) %}
               {% set netval = (annual_netpl.get(m, 0) | float) %}
               <td style="{{ 'color:#16a34a;' if netval >= 0 else 'color:#dc2626;' }}">{{ currency_symbol }}{{ netval | round(2) }}</td>
@@ -2686,8 +2686,8 @@ function viewReceipt(expId) {
                             : '<span class="text-muted">'+(p.project_number||'?')+'</span>');
           var invLink = p.invoice_id
             ? '<a href="/invoicing/'+encodeURIComponent(p.invoice_id)+'" style="color:#0369a1;font-weight:700;text-decoration:none;">'+(p.invoice_number||p.invoice_id)+'</a>'
-            : '<span class="text-muted">?</span>';
-          var stageBadge = p.stage ? '<span style="background:#ede9fe;color:#5b21b6;font-size:11px;border-radius:4px;padding:2px 7px;font-weight:600;">'+p.stage+'</span>' : '?';
+            : '<span class="text-muted">—</span>';
+          var stageBadge = p.stage ? '<span style="background:#ede9fe;color:#5b21b6;font-size:11px;border-radius:4px;padding:2px 7px;font-weight:600;">'+p.stage+'</span>' : '—';
           var bg = idx%2===0?'#fff':'#f8fafc';
           return '<tr style="background:'+bg+';border-bottom:1px solid #e2e8f0;">'
             +'<td style="padding:8px 12px;">'+projLink+'</td>'
@@ -2976,9 +2976,9 @@ function viewReceipt(expId) {
         <tbody>
           {% set ar_buckets = [
             ('current', 'Current (not yet due)',  '#059669'),
-            ('1_30',    '1?30 days overdue',       '#D97706'),
-            ('31_60',   '31?60 days overdue',      '#EA580C'),
-            ('61_90',   '61?90 days overdue',      '#DC2626'),
+            ('1_30',    '1–30 days overdue',       '#D97706'),
+            ('31_60',   '31–60 days overdue',      '#EA580C'),
+            ('61_90',   '61–90 days overdue',      '#DC2626'),
             ('90plus',  'Over 90 days overdue',    '#7C3AED'),
           ] %}
           {% for key, label, color in ar_buckets %}
@@ -3089,7 +3089,7 @@ function viewReceipt(expId) {
     <span class="badge" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;font-size:11px;padding:5px 10px;border-radius:20px;">
       <i class="bi bi-funnel-fill me-1"></i>
       <span id="agingActiveChipText">Filtered</span>
-      <span onclick="clearAgingFilter()" style="cursor:pointer;opacity:.7;margin-left:6px;">?</span>
+      <span onclick="clearAgingFilter()" style="cursor:pointer;opacity:.7;margin-left:6px;">×</span>
     </span>
   </div>
 
@@ -3254,7 +3254,7 @@ function viewReceipt(expId) {
               <span class="badge" style="background:#0D9488;color:#fff;font-size:10px;">Full Time</span>
               {% elif sp.employee_type == 'contractor' %}
               <span class="badge" style="background:#7C3AED;color:#fff;font-size:10px;">Contractor</span>
-              {% else %}<span class="text-muted">?</span>{% endif %}
+              {% else %}<span class="text-muted">—</span>{% endif %}
             </td>
             <td class="text-center text-muted">{{ sp.commission_rate }}%</td>
             <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(sp.total_revenue) }}</td>

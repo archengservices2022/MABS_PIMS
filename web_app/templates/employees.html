@@ -1141,7 +1141,7 @@ function submitChangePassword() {
           <td>
             {% if u.region %}
             <span class="badge" style="background:{{ '#0D9488' if u.region == 'Inside America' else '#7C3AED' }};color:#fff;font-size:11px;">{{ u.region }}</span>
-            {% else %}<span class="text-muted">?</span>{% endif %}
+            {% else %}<span class="text-muted">—</span>{% endif %}
           </td>
           <td><span class="badge badge-role-{{ u.role or 'admin' }}">{{ (u.role or 'admin')|capitalize }}</span></td>
           <td>
@@ -1155,12 +1155,12 @@ function submitChangePassword() {
             {% if u.get('hourly_rate') %}<div class="fw-500">{{ currency_symbol }}{{ '%.2f'|format(u.hourly_rate|float) }}/hr</div>{% endif %}
             {% if u.get('monthly_salary') %}
             {% if u.get('region') == 'Outside America' %}
-            <div class="text-success">?{{ '{:,.0f}'.format((u.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT/mo</div>
+            <div class="text-success">৳{{ '{:,.0f}'.format((u.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT/mo</div>
             {% else %}
             <div class="text-success">{{ currency_symbol }}{{ '{:,.0f}'.format(u.monthly_salary|float) }}/mo</div>
             {% endif %}
             {% endif %}
-            {% if not u.get('hourly_rate') and not u.get('monthly_salary') %}<span class="text-muted">?</span>{% endif %}
+            {% if not u.get('hourly_rate') and not u.get('monthly_salary') %}<span class="text-muted">—</span>{% endif %}
           </td>
           <td>
             {% if open_entry %}
@@ -1168,7 +1168,7 @@ function submitChangePassword() {
               <i class="bi bi-record-circle-fill" style="color:#D97706;"></i>
               {{ (open_entry.project_name or open_entry.project_number or 'General / Admin')[:22] }}
             </span>
-            {% else %}<span class="text-muted small">?</span>{% endif %}
+            {% else %}<span class="text-muted small">—</span>{% endif %}
           </td>
           <td class="text-end">
             <button class="btn btn-xs btn-outline-secondary"
@@ -1193,7 +1193,7 @@ function submitChangePassword() {
     <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
       <h6 class="panel-title mb-0">
         <i class="bi bi-bar-chart me-1" style="color:#0D9488;"></i>
-        Team Hours by Project <span class="text-muted fw-normal">? {{ period_label }}</span>
+        Team Hours by Project <span class="text-muted fw-normal">— {{ period_label }}</span>
       </h6>
       <div class="d-flex align-items-center gap-2">
         <select id="periodSelect" class="form-select form-select-sm" style="width:auto;">
@@ -1703,7 +1703,7 @@ function submitChangePassword() {
               <i class="bi bi-paperclip"></i>
             </button>
             {% else %}
-            <span class="text-muted small">?</span>
+            <span class="text-muted small">—</span>
             {% endif %}
           </td>
           <td class="text-end">
@@ -1958,12 +1958,12 @@ function submitChangePassword() {
               <td class="text-muted">{{ c.provider or '?' }}</td>
               <td class="text-muted small">{{ c.get('description') or '?' }}</td>
               <td class="text-muted small">{{ c.get('receipt_ref') or '?' }}</td>
-              <td class="text-end fw-semibold">?{{ '%.2f'|format(c.amount_claimed|float) }}</td>
+              <td class="text-end fw-semibold">{{ currency_symbol }}{{ '%.2f'|format(c.amount_claimed|float) }}</td>
               <td class="text-end text-success fw-semibold">
                 {% set _amt_appr = c.get('amount_approved') %}
                 {% if _amt_appr is not none and _amt_appr != '' %}
-                  ?{{ '%.2f'|format(_amt_appr|float) }}
-                {% else %}?{% endif %}
+                  {{ currency_symbol }}{{ '%.2f'|format(_amt_appr|float) }}
+                {% else %}—{% endif %}
               </td>
               <td>
                 {% set cs = c.status or 'Pending' %}
@@ -2010,7 +2010,7 @@ function submitChangePassword() {
               <td class="text-muted">{{ c.provider or '?' }}</td>
               <td class="text-muted small">{{ c.get('description') or '?' }}</td>
               <td class="text-muted small">{{ c.get('receipt_ref') or '?' }}</td>
-              <td class="text-end fw-semibold">?{{ '%.2f'|format(c.amount_claimed|float) }}</td>
+              <td class="text-end fw-semibold">{{ currency_symbol }}{{ '%.2f'|format(c.amount_claimed|float) }}</td>
               <td>
                 {% set cs = c.status or 'Pending' %}
                 <span class="badge" style="font-size:11px;

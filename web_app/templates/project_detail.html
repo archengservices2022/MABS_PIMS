@@ -8,7 +8,7 @@
     <a href="{{ url_for('projects') }}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-arrow-left"></i>
     </a>
-    <h5 class="mb-0">{{ project.get('project_number','') }} ? {{ project.get('project_name','') }}</h5>
+    <h5 class="mb-0">{{ project.get('project_number','') }} — {{ project.get('project_name','') }}</h5>
     <button class="btn btn-xs btn-outline-secondary" title="Copy project number"
             onclick="copyNumber('{{ project.get('project_number','') }}', this)">
       <i class="bi bi-copy"></i>
@@ -509,8 +509,8 @@
             <tr>
               <td><i class="bi bi-people me-1 text-muted"></i>Subcontractor</td>
               <td class="text-end">{{ currency_symbol }}{{ "{:,.0f}".format(b_sub) }}</td>
-              <td class="text-end text-muted">?</td>
-              <td class="text-end text-muted">?</td>
+              <td class="text-end text-muted">—</td>
+              <td class="text-end text-muted">—</td>
               <td><span class="small text-muted">Not tracked yet</span></td>
             </tr>
             {% endif %}
@@ -522,7 +522,7 @@
               <td class="text-end {{ 'text-danger' if a_total > b_total else 'text-success' }}">{{ currency_symbol }}{{ "{:,.0f}".format(a_total) }}</td>
               <td class="text-end {{ 'text-danger' if a_total > b_total else '' }}">
                 {% if a_total > b_total %}
-                  <span class="text-danger">?{{ currency_symbol }}{{ "{:,.0f}".format(a_total - b_total) }} over</span>
+                  <span class="text-danger">{{ currency_symbol }}{{ "{:,.0f}".format(a_total - b_total) }} over</span>
                 {% else %}
                   {{ currency_symbol }}{{ "{:,.0f}".format(b_total - a_total) }} left
                 {% endif %}
@@ -1612,11 +1612,11 @@ function updateRedistributionPreview() {
       const perStage = difference / uninvoicedStages.length;
       uninvoicedStages.forEach(s => {
         const newStageAmount = (s.amount || 0) + perStage;
-        preview += `<div class="text-muted small">? ${s.name}: $${(s.amount || 0).toFixed(2)} ? $${newStageAmount.toFixed(2)}</div>`;
+        preview += `<div class="text-muted small">• ${s.name}: $${(s.amount || 0).toFixed(2)} → $${newStageAmount.toFixed(2)}</div>`;
       });
     }
   } else if (difference < -0.01) {
-    preview = `<div class="text-danger">?? Increasing by $${Math.abs(difference).toFixed(2)}</div>`;
+    preview = `<div class="text-danger">Increasing by $${Math.abs(difference).toFixed(2)}</div>`;
     preview += '<div class="text-muted small mt-2">This amount will be subtracted equally from remaining non-invoiced stages.</div>';
   } else {
     preview = '<div class="text-secondary">No change</div>';

@@ -183,10 +183,10 @@
           <i class="bi bi-funnel text-teal"></i>
           <span>
             {% if date_from and date_to %}{{ date_from }} to {{ date_to }}{% elif date_from %}From {{ date_from }}{% elif date_to %}Up to {{ date_to }}{% endif %}
-            {% if status_filter %} ? Status: <strong>{{ status_filter }}</strong>{% endif %}
-            {% if overdue_filter %} ? <strong class="text-danger">Overdue payments only</strong>{% endif %}
-            {% if client_filter %} ? Client: <strong>{{ client_filter }}</strong>{% endif %}
-            {% if plant_filter %} ? State: <strong>{{ plant_filter }}</strong>{% endif %}
+            {% if status_filter %} — Status: <strong>{{ status_filter }}</strong>{% endif %}
+            {% if overdue_filter %} — <strong class="text-danger">Overdue payments only</strong>{% endif %}
+            {% if client_filter %} — Client: <strong>{{ client_filter }}</strong>{% endif %}
+            {% if plant_filter %} — State: <strong>{{ plant_filter }}</strong>{% endif %}
             &nbsp;?&nbsp; {{ projects|length }} result{{ 's' if projects|length != 1 else '' }}
           </span>
         </div>
@@ -813,12 +813,12 @@ document.addEventListener('DOMContentLoaded', function() {
           </div>
           <div class="mb-3">
             <label class="form-label fw-semibold">Sheet Name <span class="text-muted fw-normal">(optional)</span></label>
-            <input type="text" name="sheet_name" class="form-control" placeholder="e.g. Dec 25 ? leave blank to import ALL sheets">
+            <input type="text" name="sheet_name" class="form-control" placeholder="e.g. Dec 25 — leave blank to import ALL sheets">
             <div class="form-text">Type the exact sheet tab name to import just one month. Leave blank to import all sheets at once.</div>
           </div>
           <div class="alert alert-warning" style="font-size:12px;">
             <i class="bi bi-exclamation-triangle-fill me-1"></i>
-            Importing all sheets (~354 projects) takes 30?60 seconds. One sheet at a time is faster and easier to verify.
+            Importing all sheets (~354 projects) takes 30–60 seconds. One sheet at a time is faster and easier to verify.
           </div>
         </div>
         <div class="modal-footer">
