@@ -16396,6 +16396,22 @@ def _fmt_time_12(t: str) -> str:
     except Exception:
         return t
 
+def _time_range(st: str, et: str) -> str:
+    """Build '7:00 AM – 3:00 PM' string, auto-correcting end-time AM/PM.
+    If end hour < 12 and end <= start in minutes, treat end as PM (add 12).
+    This fixes entries saved before the client-side PM correction was added."""
+    if not st or not et:
+        return ""
+    try:
+        sh, sm = int(st.split(":")[0]), int(st.split(":")[1])
+        eh, em = int(et.split(":")[0]), int(et.split(":")[1])
+        if eh < 12 and (eh * 60 + em) <= (sh * 60 + sm):
+            eh += 12
+        et_corrected = f"{eh:02d}:{em:02d}"
+    except Exception:
+        et_corrected = et
+    return f"{_fmt_time_12(st)} – {_fmt_time_12(et_corrected)}"
+
 def _week_monday(date_str: str = "") -> str:
     """Return Monday ISO date for given week (or current week if blank)."""
     try:
@@ -16476,7 +16492,7 @@ def timesheets():
                             st = entry.get("start_time", "")
                             et = entry.get("end_time", "")
                             cells[d] = {
-                                "time_range": f"{_fmt_time_12(st)} – {_fmt_time_12(et)}" if st and et else "",
+                                "time_range": _time_range(st, et),
                                 "hours":      hrs,
                                 "projects":   [entry.get("project_name", "")] if entry.get("project_name") else [],
                                 "status":     sheet.get("status", "Draft"),
@@ -16521,7 +16537,7 @@ def timesheets():
                         st = entry.get("start_time", "")
                         et = entry.get("end_time", "")
                         emp_cells[d] = {
-                            "time_range": f"{_fmt_time_12(st)} – {_fmt_time_12(et)}" if st and et else "",
+                            "time_range": _time_range(st, et),
                             "hours":      hrs,
                             "projects":   [entry.get("project_name", "")] if entry.get("project_name") else [],
                             "status":     week_sheet.get("status", "Draft"),
