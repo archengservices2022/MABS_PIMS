@@ -58,6 +58,10 @@ FIREBASE_DB_URL  = os.environ.get("FIREBASE_DB_URL", "https://invoice-7fe93-defa
 CURRENCY_SYMBOL = "৳" if "pims-955e3" in FIREBASE_DB_URL else "$"
 CURRENCY_CODE   = "BDT" if "pims-955e3" in FIREBASE_DB_URL else "USD"
 
+# Currency: MABS (Bangladesh) uses BDT ৳, Arch uses USD $
+CURRENCY_SYMBOL = "৳" if "pims-955e3" in FIREBASE_DB_URL else "$"
+CURRENCY_CODE   = "BDT" if "pims-955e3" in FIREBASE_DB_URL else "USD"
+
 FIREBASE_AVAILABLE = False
 db = None
 
