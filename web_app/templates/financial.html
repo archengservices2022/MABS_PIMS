@@ -1658,7 +1658,7 @@ function addExpense(event) {
         // Reset edit mode
         window.editingExpenseId = null;
         const submitBtn = document.querySelector('#expenseForm button[type="submit"]');
-        submitBtn.textContent = '? Add Expense';
+        submitBtn.textContent = '+ Add Expense';
         submitBtn.className = 'btn btn-primary';
         // Switch to expenses tab
         const expensesTab = new bootstrap.Tab(document.querySelector('a[data-bs-target="#tab-expenses"]'));
@@ -2090,7 +2090,7 @@ function previewReceipt() {
     if (file.type.startsWith('image/')) {
       preview.innerHTML = '<img src="' + e.target.result + '" style="max-width:100%;max-height:200px;" class="mt-2">';
     } else if (file.type === 'application/pdf') {
-      preview.innerHTML = '<small class="text-success">? PDF attached: ' + file.name + '</small>';
+      preview.innerHTML = '<small class="text-success">&#10003; PDF attached: ' + file.name + '</small>';
     }
   };
   reader.readAsDataURL(file);
@@ -3159,7 +3159,7 @@ function viewReceipt(expId) {
             <td style="padding:8px 12px;">{{ (e.invoice_date or '—') | format_date }}</td>
             <td style="padding:8px 12px;">{{ (e.due_date or '—') | format_date }}</td>
             <td style="padding:8px 12px; text-align:center;">
-              {% if e.net_terms %}Net {{ e.net_terms }}{% else %}?{% endif %}
+              {% if e.net_terms %}Net {{ e.net_terms }}{% else %}—{% endif %}
             </td>
             <td style="padding:8px 12px; text-align:center;">
               {% if e.days_overdue > 0 %}

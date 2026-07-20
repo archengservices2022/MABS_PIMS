@@ -520,7 +520,7 @@
               <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(sp_stat.revenue_generated if sp_stat else 0) }}</td>
               <td class="text-center text-muted">
                 {% set _cr = sp_stat.commission_rate if sp_stat else sp.commission_rate %}
-                {% if _cr > 0 %}{{ _cr }}%{% else %}?{% endif %}
+                {% if _cr > 0 %}{{ _cr }}%{% else %}—{% endif %}
               </td>
               <td class="text-end fw-bold" style="color:#7C3AED;">
                 {% set _cr = sp_stat.commission_rate if sp_stat else sp.commission_rate %}
