@@ -212,7 +212,7 @@
 <!-- Hero Header -->
 <div class="tsd-hero">
   <div class="d-flex align-items-center gap-3">
-    <div class="tsd-avatar">{{ sheet.employee_name[0].upper() if sheet.employee_name else '?' }}</div>
+    <div class="tsd-avatar">{{ sheet.employee_name[0].upper() if sheet.employee_name else '—' }}</div>
     <div>
       <div class="tsd-emp-name">{{ sheet.employee_name or 'Unknown Employee' }}</div>
       <div class="tsd-emp-week">Week of {{ sheet.week_of }}</div>
@@ -303,7 +303,7 @@
           {# ?? Entry row ?? #}
           {% set etype = entry.entry_type | default('work') | lower %}
           <tr>
-            <td style="color:#94a3b8;font-size:12px;white-space:nowrap;">{{ entry.date | format_date if entry.date else '?' }}</td>
+            <td style="color:#94a3b8;font-size:12px;white-space:nowrap;">{{ entry.date | format_date if entry.date else '—' }}</td>
             <td>
               {% if etype == 'holiday' %}
                 <span class="etype etype-holiday"><i class="bi bi-umbrella-fill"></i> Holiday</span>
@@ -348,7 +348,7 @@
             <td style="text-align:right;">
               <span class="val-tot">{{ "%.2f"|format(entry.total_hours | float) }}</span>
             </td>
-            <td style="color:#64748b;font-size:12px;max-width:180px;">{{ entry.notes or '?' }}</td>
+            <td style="color:#64748b;font-size:12px;max-width:180px;">{{ entry.notes or '—' }}</td>
           </tr>
           {% endfor %}
 

@@ -883,7 +883,7 @@ function recalc() {
   var lblDisp = document.getElementById('labelDisplay');
   var raiseHint = document.getElementById('raiseHint');
   var raiseRange = document.getElementById('raiseRange');
-  if (disp) disp.textContent = allSet ? total.toFixed(2) : '?';
+  if (disp) disp.textContent = allSet ? total.toFixed(2) : '—';
   var label = ''; var cls = ''; var lo = 0, hi = 0;
   if      (total >= 4.5) { label='Outstanding';          cls='score-outstanding'; lo=8;  hi=10; }
   else if (total >= 3.5) { label='Exceeds Expectations'; cls='score-exceeds';     lo=5;  hi=7;  }

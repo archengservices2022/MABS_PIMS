@@ -81,23 +81,23 @@
       <div class="row g-2">
         <div class="col-sm-4">
           <div class="info-label">Client</div>
-          <div class="info-value">{{ quote.get('company_name') or quote.get('client_name','?') }}</div>
+          <div class="info-value">{{ quote.get('company_name') or quote.get('client_name','—') }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Salesperson</div>
-          <div class="info-value">{{ quote.get('salesperson','?') }}</div>
+          <div class="info-value">{{ quote.get('salesperson','—') }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Date</div>
-          <div class="info-value">{{ quote.get('date','?') | format_date }}</div>
+          <div class="info-value">{{ quote.get('date','—') | format_date }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Valid Until</div>
-          <div class="info-value">{{ quote.get('valid_until','?') | format_date }}</div>
+          <div class="info-value">{{ quote.get('valid_until','—') | format_date }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Expected Completion</div>
-          <div class="info-value">{{ (quote.get('expected_completion') | format_date) if quote.get('expected_completion') else '?' }}</div>
+          <div class="info-value">{{ (quote.get('expected_completion') | format_date) if quote.get('expected_completion') else '—' }}</div>
         </div>
         <div class="col-sm-4">
           <div class="info-label">Priority</div>
@@ -151,7 +151,7 @@
         </div>
         <div class="col-sm-8">
           <div class="info-label">Project / Scope</div>
-          <div class="info-value">{{ quote.get('project_name','?') }}</div>
+          <div class="info-value">{{ quote.get('project_name','—') }}</div>
         </div>
         {% if quote.get('is_expedited') %}
         <div class="col-12">
@@ -281,11 +281,11 @@
     <div class="card-panel">
       <h6 class="section-heading">Metadata</h6>
       <div class="info-label">Created</div>
-      <div class="info-value small">{{ quote.get('created_at','?')[:10] | format_date }}</div>
+      <div class="info-value small">{{ quote.get('created_at','—')[:10] | format_date }}</div>
       <div class="info-label mt-2">Updated</div>
-      <div class="info-value small">{{ quote.get('updated_at','?')[:10] | format_date }}</div>
+      <div class="info-value small">{{ quote.get('updated_at','—')[:10] | format_date }}</div>
       <div class="info-label mt-2">Created By</div>
-      <div class="info-value small">{{ quote.get('created_by','?') }}</div>
+      <div class="info-value small">{{ quote.get('created_by','—') }}</div>
     </div>
   </div>
 </div>
@@ -359,8 +359,8 @@
         <p class="fw-bold mb-1">You are about to permanently delete:</p>
         <div class="p-3 bg-light rounded mb-3">
           <div class="fw-bold text-teal">{{ quote.get('job_number','') }}</div>
-          <div>{{ quote.get('project_name','?') }}</div>
-          <div class="text-muted small">Client: {{ quote.get('company_name') or quote.get('client_name','?') }}</div>
+          <div>{{ quote.get('project_name','—') }}</div>
+          <div class="text-muted small">Client: {{ quote.get('company_name') or quote.get('client_name','—') }}</div>
           <div class="text-muted small">Total: {{ currency_symbol }}{{ "{:,.0f}".format(quote.get('total',0)|float) }}</div>
         </div>
         <p class="text-muted small mb-2">Type the quote number to confirm:</p>

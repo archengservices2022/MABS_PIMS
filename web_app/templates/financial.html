@@ -473,7 +473,7 @@ a[href*="filter_expense"]:hover {
       <div class="card-panel w-100" style="padding:20px 24px;display:flex;flex-direction:column;">
         <div class="d-flex align-items-center justify-content-between mb-3">
           <h6 class="panel-title mb-0"><i class="bi bi-pie-chart me-1" style="color:#0D9488;"></i>Invoice Status Breakdown</h6>
-          <span class="badge" style="background:#f0fdf4;color:#0D9488;font-size:11px;font-weight:600;border-radius:8px;padding:4px 10px;" id="invStatusBadge">?</span>
+          <span class="badge" style="background:#f0fdf4;color:#0D9488;font-size:11px;font-weight:600;border-radius:8px;padding:4px 10px;" id="invStatusBadge">—</span>
         </div>
         <div class="d-flex align-items-center gap-4" style="flex:1;">
           <div style="position:relative;width:160px;height:160px;flex-shrink:0;">
@@ -491,7 +491,7 @@ a[href*="filter_expense"]:hover {
       <div class="card-panel w-100" style="padding:20px 24px;display:flex;flex-direction:column;">
         <div class="d-flex align-items-center justify-content-between mb-3">
           <h6 class="panel-title mb-0"><i class="bi bi-grid-3x3-gap me-1" style="color:#7C3AED;"></i>Expense by Category</h6>
-          <span class="badge" style="background:#faf5ff;color:#7C3AED;font-size:11px;font-weight:600;border-radius:8px;padding:4px 10px;" id="expCatBadge">?</span>
+          <span class="badge" style="background:#faf5ff;color:#7C3AED;font-size:11px;font-weight:600;border-radius:8px;padding:4px 10px;" id="expCatBadge">—</span>
         </div>
         <div class="d-flex align-items-center gap-4" style="flex:1;">
           <div style="position:relative;width:160px;height:160px;flex-shrink:0;">
@@ -630,7 +630,7 @@ a[href*="filter_expense"]:hover {
               data-tax="{{ r.get('tax_amount',0)|float }}"
               data-total="{{ r.get('total',0)|float }}"
               data-search="{{ r.get('company_name','')|lower }} {{ r.get('client_name','')|lower }} {{ r.get('invoice_number','')|lower }}">
-            <td class="text-muted small">{{ r.get('invoice_date', r.get('date','?')) | format_date }}</td>
+            <td class="text-muted small">{{ r.get('invoice_date', r.get('date','—')) | format_date }}</td>
             <td class="text-muted small">
               {% set cd = r.get('collection_date', '') %}
               {% if cd %}
@@ -642,18 +642,18 @@ a[href*="filter_expense"]:hover {
             <td style="white-space:nowrap;">
               {% if r.get('invoice_id') %}
               <a href="{{ url_for('invoice_detail', invoice_id=r.get('invoice_id','')) }}"
-                 class="fw-bold text-teal text-decoration-none">{{ r.get('invoice_number','?') }}</a>
+                 class="fw-bold text-teal text-decoration-none">{{ r.get('invoice_number','—') }}</a>
               {% else %}
-              <span class="fw-bold text-teal">{{ r.get('invoice_number','?') }}</span>
+              <span class="fw-bold text-teal">{{ r.get('invoice_number','—') }}</span>
               {% endif %}
             </td>
-            <td>{{ r.get('company_name') or r.get('client_name','?') }}</td>
+            <td>{{ r.get('company_name') or r.get('client_name','—') }}</td>
             <td class="text-muted small">
               {% set linked = r.get('linked_projects', [r.get('project_number', '')]) %}
               {% if linked and linked|length > 0 %}
                 {{ linked|join(', ') }}
               {% else %}
-                {{ r.get('project_number','?') or '?' }}
+                {{ r.get('project_number','—') or '—' }}
               {% endif %}
             </td>
             <td>{{ status_badge(r.get('status'), 'Paid') }}</td>
@@ -728,10 +728,10 @@ a[href*="filter_expense"]:hover {
         <tbody>
           {% for inv in prior_outstanding_invs %}
           <tr>
-            <td><span class="fw-600 text-teal">{{ inv.invoice_number or '?' }}</span></td>
+            <td><span class="fw-600 text-teal">{{ inv.invoice_number or '—' }}</span></td>
             <td class="text-muted small" style="white-space:nowrap;">{{ inv.invoice_date | format_date }}</td>
-            <td class="text-muted small">{{ inv.client or '?' }}</td>
-            <td class="text-muted small">{{ inv.project_number or '?' }}</td>
+            <td class="text-muted small">{{ inv.client or '—' }}</td>
+            <td class="text-muted small">{{ inv.project_number or '—' }}</td>
             <td>
               {% if inv.status == 'Partial' %}
                 <span class="badge" style="background:#f59e0b;color:#fff;">Partial</span>
@@ -811,7 +811,7 @@ a[href*="filter_expense"]:hover {
       <div class="kpi-card {{ 'kpi-red' if largest_exp else 'kpi-teal' }}">
         <div class="kpi-top"><span class="kpi-label">Largest Expense</span><i class="bi bi-graph-down kpi-icon-sm"></i></div>
         <div class="kpi-value text-danger">{{ currency_symbol }}{{ "{:,.2f}".format(largest_exp.get('amount',0)|float) if largest_exp else '0.00' }}</div>
-        <div class="kpi-sub">{{ (largest_exp.get('expense_name','') or largest_exp.get('description','?'))[:30] if largest_exp else '?' }}</div>
+        <div class="kpi-sub">{{ (largest_exp.get('expense_name','') or largest_exp.get('description','—'))[:30] if largest_exp else '—' }}</div>
       </div>
     </div>
   </div>
@@ -888,15 +888,15 @@ a[href*="filter_expense"]:hover {
             data-type="{{ exp.get('expense_type','') }}"
             data-vendor="{{ exp.get('vendor','') }}"
             data-date="{{ exp.get('date','') | format_date }}">
-            <td class="text-muted small">{{ exp.get('date','?') | format_date }}</td>
-            <td class="small text-muted">{{ exp.get('expense_type','?') }}</td>
-            <td class="small text-muted">{{ exp.get('expense_name','?') or exp.get('description','?') }}</td>
-            <td class="small text-muted">{{ exp.get('category','?') }}</td>
-            <td class="fw-medium">{{ exp.get('vendor','?') }}</td>
-            <td class="text-muted small">{{ exp.get('project_number','?') or '?' }}</td>
+            <td class="text-muted small">{{ exp.get('date','—') | format_date }}</td>
+            <td class="small text-muted">{{ exp.get('expense_type','—') }}</td>
+            <td class="small text-muted">{{ exp.get('expense_name','—') or exp.get('description','—') }}</td>
+            <td class="small text-muted">{{ exp.get('category','—') }}</td>
+            <td class="fw-medium">{{ exp.get('vendor','—') }}</td>
+            <td class="text-muted small">{{ exp.get('project_number','—') or '—' }}</td>
             <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(exp.get('amount',0)|float) }}</td>
             {% set _sub = exp.get('submitted_by_name','') or exp.get('created_by','') or '' %}
-            <td class="small text-muted">{{ _sub.split('@')[0].replace('.',' ').title() if '@' in _sub else (_sub or '?') }}</td>
+            <td class="small text-muted">{{ _sub.split('@')[0].replace('.',' ').title() if '@' in _sub else (_sub or '—') }}</td>
             <td>
               {% if exp.get('firebase_id') %}
               <div class="d-flex gap-1">
@@ -1353,7 +1353,7 @@ function updateExpenseSummaryCards() {
       // Also update the description below the card
       const subEl = card.querySelector('.kpi-sub');
       if (subEl) {
-        subEl.textContent = largestExpenseName ? largestExpenseName.substring(0, 30) : '?';
+        subEl.textContent = largestExpenseName ? largestExpenseName.substring(0, 30) : '—';
       }
     }
   });
@@ -1506,7 +1506,7 @@ function resetExpenseSummaryCards() {
       // Also update the description below the card
       const subEl = card.querySelector('.kpi-sub');
       if (subEl) {
-        subEl.textContent = largestExpenseName ? largestExpenseName.substring(0, 30) : '?';
+        subEl.textContent = largestExpenseName ? largestExpenseName.substring(0, 30) : '—';
       }
     }
   });
@@ -2644,7 +2644,7 @@ function viewReceipt(expId) {
 
     // Format date from YYYY-MM-DD to MM-DD-YYYY
     var formatDate = function(dateStr) {
-      if (!dateStr) return '?';
+      if (!dateStr) return '—';
       var parts = dateStr.split('-');
       if (parts.length === 3 && parts[0].length === 4) {
         return parts[1] + '-' + parts[2] + '-' + parts[0];  // MM-DD-YYYY
@@ -2682,8 +2682,8 @@ function viewReceipt(expId) {
         var rows = payments.map(function(p, idx) {
           var projLink = p.project_number === 'TAX'
             ? '<span class="badge" style="background:#fef3c7;color:#92400e;font-size:11px;padding:3px 8px;">TAX</span>'
-            : (p.project_id ? '<a href="/projects/'+encodeURIComponent(p.project_id)+'" style="color:#1d4ed8;font-weight:700;text-decoration:none;">'+(p.project_number||'?')+'</a>'
-                            : '<span class="text-muted">'+(p.project_number||'?')+'</span>');
+            : (p.project_id ? '<a href="/projects/'+encodeURIComponent(p.project_id)+'" style="color:#1d4ed8;font-weight:700;text-decoration:none;">'+(p.project_number||'—')+'</a>'
+                            : '<span class="text-muted">'+(p.project_number||'—')+'</span>');
           var invLink = p.invoice_id
             ? '<a href="/invoicing/'+encodeURIComponent(p.invoice_id)+'" style="color:#0369a1;font-weight:700;text-decoration:none;">'+(p.invoice_number||p.invoice_id)+'</a>'
             : '<span class="text-muted">—</span>';
@@ -2715,10 +2715,10 @@ function viewReceipt(expId) {
         var today = new Date(); today.setHours(0,0,0,0);
         var dRows = due.map(function(e, idx) {
           var invLink = e.firebase_id
-            ? '<a href="/invoicing/'+encodeURIComponent(e.firebase_id)+'" style="color:#D97706;font-weight:700;text-decoration:none;">'+(e.invoice_number||'?')+'</a>'
-            : (e.invoice_number||'?');
+            ? '<a href="/invoicing/'+encodeURIComponent(e.firebase_id)+'" style="color:#D97706;font-weight:700;text-decoration:none;">'+(e.invoice_number||'—')+'</a>'
+            : (e.invoice_number||'—');
           var dueDt = e.due_date ? new Date(e.due_date) : null;
-          var daysText = '?';
+          var daysText = '—';
           if (dueDt) {
             dueDt.setHours(0,0,0,0);
             var diff = Math.round((dueDt - today) / 86400000);
@@ -2728,14 +2728,14 @@ function viewReceipt(expId) {
           }
           var statusColor = {'Sent':'#0369a1','Viewed':'#D97706','Partial':'#D97706','Overdue':'#DC2626'}[e.status] || '#6b7280';
           var bg = idx%2===0?'#fffbeb':'#fef9ee';
-          var clientDisplay = (e.company_name || e.client_name || '?');
+          var clientDisplay = (e.company_name || e.client_name || '—');
           return '<tr style="background:'+bg+';border-bottom:1px solid #FED7AA;">'
             +'<td style="padding:8px 12px;">'+invLink+'</td>'
             +'<td style="padding:8px 12px;">'+clientDisplay+'</td>'
             +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(e.invoice_date)+'</td>'
-            +'<td style="padding:8px 12px;text-align:center;">'+(e.net_terms?'Net '+e.net_terms:'?')+'</td>'
+            +'<td style="padding:8px 12px;text-align:center;">'+(e.net_terms?'Net '+e.net_terms:'—')+'</td>'
             +'<td style="padding:8px 12px;text-align:center;color:#374151;">'+formatDate(e.due_date)+'</td>'
-            +'<td style="padding:8px 12px;text-align:center;"><span style="color:'+statusColor+';font-weight:600;">'+(e.status||'?')+'</span></td>'
+            +'<td style="padding:8px 12px;text-align:center;"><span style="color:'+statusColor+';font-weight:600;">'+(e.status||'—')+'</span></td>'
             +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#DC2626;">'+fmt(e.balance)+'</td></tr>';
         });
         document.getElementById('monthDueTbody').innerHTML = dRows.join('');
@@ -2755,8 +2755,8 @@ function viewReceipt(expId) {
           var bg = idx%2===0?'#fff':'#fef2f2';
           return '<tr style="background:'+bg+';border-bottom:1px solid #fee2e2;">'
             +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(e.date)+'</td>'
-            +'<td style="padding:8px 12px;font-weight:500;">'+(e.name||'?')+'</td>'
-            +'<td style="padding:8px 12px;color:#6b7280;">'+(e.category||'?')+'</td>'
+            +'<td style="padding:8px 12px;font-weight:500;">'+(e.name||'—')+'</td>'
+            +'<td style="padding:8px 12px;color:#6b7280;">'+(e.category||'—')+'</td>'
             +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#DC2626;">'+fmt(e.amount)+'</td></tr>';
         });
         document.getElementById('monthExpensesTbody').innerHTML = eRows.join('');
@@ -2777,12 +2777,12 @@ function viewReceipt(expId) {
           var bg = idx%2===0?'#fff':'#eff6ff';
           var roleKey = (s.role||'').toLowerCase();
           var roleColor = roleColors[roleKey] || '#64748b';
-          var roleBadge = s.role ? '<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;background:'+roleColor+'22;color:'+roleColor+';">'+s.role+'</span>' : '?';
+          var roleBadge = s.role ? '<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;background:'+roleColor+'22;color:'+roleColor+';">'+s.role+'</span>' : '—';
           return '<tr style="background:'+bg+';border-bottom:1px solid #bfdbfe;">'
             +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(s.date)+'</td>'
-            +'<td style="padding:8px 12px;font-weight:500;">'+(s.name||'?')+'</td>'
+            +'<td style="padding:8px 12px;font-weight:500;">'+(s.name||'—')+'</td>'
             +'<td style="padding:8px 12px;">'+roleBadge+'</td>'
-            +'<td style="padding:8px 12px;color:#6b7280;">'+(s.region||'?')+'</td>'
+            +'<td style="padding:8px 12px;color:#6b7280;">'+(s.region||'—')+'</td>'
             +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#1D4ED8;">'+fmt(s.amount)+'</td></tr>';
         });
         document.getElementById('monthSalariesTbody').innerHTML = sRows.join('');
@@ -2801,9 +2801,9 @@ function viewReceipt(expId) {
         var cRows = commissions.map(function(c, idx) {
           var bg = idx%2===0?'#fff':'#f5f3ff';
           return '<tr style="background:'+bg+';border-bottom:1px solid #ddd6fe;">'
-            +'<td style="padding:8px 12px;color:#6b7280;">'+(c.paid_at||'?')+'</td>'
-            +'<td style="padding:8px 12px;font-weight:500;">'+(c.salesperson||'?')+'</td>'
-            +'<td style="padding:8px 12px;color:#6b7280;">'+(c.period||'?')+'</td>'
+            +'<td style="padding:8px 12px;color:#6b7280;">'+(c.paid_at||'—')+'</td>'
+            +'<td style="padding:8px 12px;font-weight:500;">'+(c.salesperson||'—')+'</td>'
+            +'<td style="padding:8px 12px;color:#6b7280;">'+(c.period||'—')+'</td>'
             +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#7C3AED;">'+fmt(c.amount)+'</td></tr>';
         });
         document.getElementById('monthCommissionTbody').innerHTML = cRows.join('');
@@ -3155,9 +3155,9 @@ function viewReceipt(expId) {
                 {{ e.invoice_number }}
               </a>
             </td>
-            <td style="padding:8px 12px;">{{ e.company_name or e.client_name or '?' }}</td>
-            <td style="padding:8px 12px;">{{ (e.invoice_date or '?') | format_date }}</td>
-            <td style="padding:8px 12px;">{{ (e.due_date or '?') | format_date }}</td>
+            <td style="padding:8px 12px;">{{ e.company_name or e.client_name or '—' }}</td>
+            <td style="padding:8px 12px;">{{ (e.invoice_date or '—') | format_date }}</td>
+            <td style="padding:8px 12px;">{{ (e.due_date or '—') | format_date }}</td>
             <td style="padding:8px 12px; text-align:center;">
               {% if e.net_terms %}Net {{ e.net_terms }}{% else %}?{% endif %}
             </td>
@@ -3778,7 +3778,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
     if (chipTxt && hasFilter) {
       var parts = [];
       if (activeBucket !== 'all') parts.push('Bucket: ' + activeBucket);
-      if (agingDueFrom || agingDueTo) parts.push('Due: ' + (agingDueFrom ? fmtDate(agingDueFrom) : '?') + ' — ' + (agingDueTo ? fmtDate(agingDueTo) : '?'));
+      if (agingDueFrom || agingDueTo) parts.push('Due: ' + (agingDueFrom ? fmtDate(agingDueFrom) : '—') + ' — ' + (agingDueTo ? fmtDate(agingDueTo) : '—'));
       if (q) parts.push('"' + q + '"');
       chipTxt.textContent = parts.join(' — ') + ' (' + totalShown + ' shown)';
     }

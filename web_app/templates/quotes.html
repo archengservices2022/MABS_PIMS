@@ -181,11 +181,11 @@
                 data-search="{{ q.get('client_name','')|lower }} {{ q.get('job_number','')|lower }} {{ q.get('project_name','')|lower }}"
                 onclick="location.href='{{ url_for('quote_detail', quote_id=q.firebase_id) }}'"
                 style="cursor:pointer;">
-              <td><span class="fw-bold text-teal">{{ q.get('job_number','?') }}</span></td>
-              <td>{{ q.get('company_name') or q.get('client_name','?') }}</td>
-              <td class="text-muted">{{ (q.get('project_name','?') or '?')[:40] }}</td>
-              <td>{{ q.get('salesperson','?') }}</td>
-              <td>{{ q.get('date','?') | format_date }}</td>
+              <td><span class="fw-bold text-teal">{{ q.get('job_number','—') }}</span></td>
+              <td>{{ q.get('company_name') or q.get('client_name','—') }}</td>
+              <td class="text-muted">{{ (q.get('project_name','—') or '—')[:40] }}</td>
+              <td>{{ q.get('salesperson','—') }}</td>
+              <td>{{ q.get('date','—') | format_date }}</td>
               <td>
                 <span class="badge status-{{ q.get('status','Not Started')|lower|replace(' ','-') }}">
                   {{ q.get('status','Not Started') }}
@@ -682,12 +682,12 @@
               <td>
                 <a href="{{ url_for('quote_detail', quote_id=q.firebase_id) }}"
                    class="fw-bold text-teal text-decoration-none">
-                  {{ q.get('job_number','?') }}
+                  {{ q.get('job_number','—') }}
                 </a>
               </td>
-              <td>{{ q.get('client_name','?') }}</td>
-              <td class="text-muted small">{{ (q.get('project_name','') or '?')[:40] }}</td>
-              <td class="text-muted small">{{ q.get('salesperson','?') }}</td>
+              <td>{{ q.get('client_name','—') }}</td>
+              <td class="text-muted small">{{ (q.get('project_name','') or '—')[:40] }}</td>
+              <td class="text-muted small">{{ q.get('salesperson','—') }}</td>
               <td>
                 {% set fu = q.get('follow_up_date','') %}
                 {% set od = q.get('_fu_days_overdue', 0) %}
@@ -792,12 +792,12 @@
               <td>
                 <a href="{{ url_for('quote_detail', quote_id=q.firebase_id) }}"
                    class="fw-bold text-teal text-decoration-none">
-                  {{ q.get('job_number','?') }}
+                  {{ q.get('job_number','—') }}
                 </a>
               </td>
-              <td>{{ q.get('client_name','?') }}</td>
-              <td class="text-muted small">{{ (q.get('project_name','') or '?')[:40] }}</td>
-              <td class="text-muted small">{{ q.get('salesperson','?') }}</td>
+              <td>{{ q.get('client_name','—') }}</td>
+              <td class="text-muted small">{{ (q.get('project_name','') or '—')[:40] }}</td>
+              <td class="text-muted small">{{ q.get('salesperson','—') }}</td>
               <td>
                 {% if days_ahead == 1 %}
                   <span class="badge" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;">

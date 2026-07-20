@@ -677,7 +677,7 @@ function calcRow(id) {
     delete tr.dataset.worked;
     ['reg','ot','tot'].forEach(k => {
       const el = document.getElementById(`${k}-${id}`);
-      if (el) el.textContent = '?';
+      if (el) el.textContent = '—';
     });
     recalcWeek();
     return;
@@ -711,7 +711,7 @@ function recalcWeek() {
         const id = tr.dataset.rowId;
         const worked = parseFloat(tr.dataset.worked) || 0;
         document.getElementById(`reg-${id}`).textContent = '0.00';
-        document.getElementById(`ot-${id}`).textContent  = worked > 0 ? worked.toFixed(2) : '?';
+        document.getElementById(`ot-${id}`).textContent  = worked > 0 ? worked.toFixed(2) : '—';
       });
     } else {
       let remainingReg = Math.max(0, 40 - runningWeekdayTotal);
@@ -724,7 +724,7 @@ function recalcWeek() {
         const rowOt  = worked - rowReg;
         remainingReg -= rowReg;
         document.getElementById(`reg-${id}`).textContent = rowReg.toFixed(2);
-        document.getElementById(`ot-${id}`).textContent  = rowOt > 0 ? rowOt.toFixed(2) : '?';
+        document.getElementById(`ot-${id}`).textContent  = rowOt > 0 ? rowOt.toFixed(2) : '—';
       });
       runningWeekdayTotal += dayWorked;
     }
@@ -736,8 +736,8 @@ function recalcWeek() {
     const id = tr.dataset.rowId;
     const regEl = document.getElementById(`reg-${id}`);
     const otEl  = document.getElementById(`ot-${id}`);
-    if (regEl && regEl.textContent !== '?') totalReg += parseFloat(regEl.textContent)||0;
-    if (otEl  && otEl.textContent  !== '?') totalOT  += parseFloat(otEl.textContent)||0;
+    if (regEl && regEl.textContent !== '—') totalReg += parseFloat(regEl.textContent)||0;
+    if (otEl  && otEl.textContent  !== '—') totalOT  += parseFloat(otEl.textContent)||0;
     if (tr.dataset.date) activeDays.add(tr.dataset.date);
   });
   document.getElementById('sumReg').textContent   = totalReg.toFixed(2);

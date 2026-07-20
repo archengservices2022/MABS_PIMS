@@ -464,12 +464,12 @@
           </td>
           {% else %}
           <td class="text-muted">{{ e.clock_in[11:16] }}</td>
-          <td class="text-muted">{{ e.clock_out[11:16] if e.clock_out else '?' }}</td>
+          <td class="text-muted">{{ e.clock_out[11:16] if e.clock_out else '—' }}</td>
           {% endif %}
           <td class="text-end fw-700" style="color:#0D9488;">
             {{ "%.1f"|format(e.duration_minutes/60) }} h
           </td>
-          <td class="text-muted small">{{ e.notes or '?' }}</td>
+          <td class="text-muted small">{{ e.notes or '—' }}</td>
         </tr>
         {% endfor %}
         </tbody>
@@ -651,7 +651,7 @@
                   <div style="font-size:10px;color:#94a3b8;">{{ r.get('working_days', 0) }} day{{ 's' if r.get('working_days',1)|float != 1 }}</div>
                 {% else %}?{% endif %}
               </td>
-              <td class="text-muted small">{{ r.reason or '?' }}</td>
+              <td class="text-muted small">{{ r.reason or '—' }}</td>
               <td><span class="badge status-{{ r.status|lower }}">{{ r.status }}</span></td>
             </tr>
             {% endfor %}
@@ -763,7 +763,7 @@
             {% elif r_hours is not none %}{{ "%.1f" | format(r_hours | float) }} hrs
             {% else %}?{% endif %}
           </td>
-          <td class="text-muted small">{{ r.reason or '?' }}</td>
+          <td class="text-muted small">{{ r.reason or '—' }}</td>
           <td class="text-muted small">{{ r.requested_at[:10] | format_date }}</td>
           <td class="text-end">
             <form method="post" action="{{ url_for('employee_time_off_action', request_id=r.firebase_id, action='approve') }}" class="d-inline">
@@ -868,19 +868,19 @@
         </h6>
         <div class="profile-row">
           <div class="profile-row-label"><i class="bi bi-briefcase me-1"></i>Job Title</div>
-          <div class="profile-row-value">{{ profile_user.get('title') or '?' }}</div>
+          <div class="profile-row-value">{{ profile_user.get('title') or '—' }}</div>
         </div>
         <div class="profile-row">
           <div class="profile-row-label"><i class="bi bi-building me-1"></i>Department</div>
-          <div class="profile-row-value">{{ profile_user.get('department') or '?' }}</div>
+          <div class="profile-row-value">{{ profile_user.get('department') or '—' }}</div>
         </div>
         <div class="profile-row">
           <div class="profile-row-label"><i class="bi bi-geo-alt me-1"></i>Region</div>
-          <div class="profile-row-value">{{ profile_user.get('region') or '?' }}</div>
+          <div class="profile-row-value">{{ profile_user.get('region') or '—' }}</div>
         </div>
         <div class="profile-row">
           <div class="profile-row-label"><i class="bi bi-calendar3 me-1"></i>Hire Date</div>
-          <div class="profile-row-value">{{ (profile_user.get('hire_date') or '?') | format_date }}</div>
+          <div class="profile-row-value">{{ (profile_user.get('hire_date') or '—') | format_date }}</div>
         </div>
         <div class="profile-row">
           <div class="profile-row-label"><i class="bi bi-person-badge me-1"></i>Role</div>
@@ -1132,12 +1132,12 @@ function submitChangePassword() {
             <div class="d-flex align-items-center gap-2">
               <span class="emp-avatar">{{ (u.username or 'U')[0]|upper }}</span>
               <div>
-                <div class="fw-semibold">{{ u.username or '?' }}</div>
+                <div class="fw-semibold">{{ u.username or '—' }}</div>
                 <div class="text-muted" style="font-size:11px;">{{ u.email or '' }}</div>
               </div>
             </div>
           </td>
-          <td class="text-muted small">{{ u.title or '?' }}</td>
+          <td class="text-muted small">{{ u.title or '—' }}</td>
           <td>
             {% if u.region %}
             <span class="badge" style="background:{{ '#0D9488' if u.region == 'Inside America' else '#7C3AED' }};color:#fff;font-size:11px;">{{ u.region }}</span>
@@ -1149,8 +1149,8 @@ function submitChangePassword() {
               {{ u.get('employee_status','Active') }}
             </span>
           </td>
-          <td class="text-muted">{{ u.get('department') or '?' }}</td>
-          <td class="text-muted">{{ (u.get('hire_date') or '?') | format_date }}</td>
+          <td class="text-muted">{{ u.get('department') or '—' }}</td>
+          <td class="text-muted">{{ (u.get('hire_date') or '—') | format_date }}</td>
           <td class="text-end" style="font-size:12px;">
             {% if u.get('hourly_rate') %}<div class="fw-500">{{ currency_symbol }}{{ '%.2f'|format(u.hourly_rate|float) }}/hr</div>{% endif %}
             {% if u.get('monthly_salary') %}
@@ -1335,17 +1335,17 @@ function submitChangePassword() {
           <td>
             <div class="d-flex align-items-center gap-2">
               <span class="emp-avatar">{{ (u.username or 'U')[0]|upper }}</span>
-              <span class="fw-semibold">{{ u.username or '?' }}</span>
+              <span class="fw-semibold">{{ u.username or '—' }}</span>
             </div>
           </td>
-          <td class="text-muted">{{ u.title or '?' }}</td>
+          <td class="text-muted">{{ u.title or '—' }}</td>
           <td>
             {% if u.region %}
             <span class="badge" style="background:{{ '#0D9488' if u.region == 'Inside America' else '#7C3AED' }};color:#fff;font-size:11px;">{{ u.region }}</span>
             {% else %}?{% endif %}
           </td>
           <td><span class="badge badge-role-{{ u.role or 'admin' }}">{{ (u.role or 'admin')|capitalize }}</span></td>
-          <td class="text-end fw-500">{{ ('$%.2f/hr' % u.hourly_rate) if u.hourly_rate else '?' }}</td>
+          <td class="text-end fw-500">{{ ('$%.2f/hr' % u.hourly_rate) if u.hourly_rate else '—' }}</td>
           <td class="text-end">
             {% if u.monthly_salary %}
             {% if u.get('region') == 'Outside America' %}
@@ -1361,7 +1361,7 @@ function submitChangePassword() {
             {% endif %}
             {% else %}?{% endif %}
           </td>
-          <td class="text-muted small">{{ u.email or '?' }}</td>
+          <td class="text-muted small">{{ u.email or '—' }}</td>
           {% if user_role == 'admin' %}
           <td class="text-end">
             <button class="btn btn-xs btn-outline-secondary"
@@ -1567,13 +1567,13 @@ function submitChangePassword() {
             <tbody id="allSubmissionsTbody">
             {% for e in my_expenses %}
             <tr>
-              <td class="text-muted small">{{ e.get('date','?') | format_date }}</td>
+              <td class="text-muted small">{{ e.get('date','—') | format_date }}</td>
               <td>
-                <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','?') }}</div>
+                <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','—') }}</div>
                 <div class="text-muted" style="font-size:11px;">{{ e.get('expense_type','') }}</div>
               </td>
               <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</td>
-              <td class="text-muted small">{{ e.get('project_number','?') or '?' }}</td>
+              <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
               <td>
                 {% set st = e.get('status','Pending') %}
                 {% set edit_st = e.get('edit_status', '') %}
@@ -1675,7 +1675,7 @@ function submitChangePassword() {
             <div class="d-flex align-items-center gap-2">
               <span class="emp-avatar" style="width:28px;height:28px;font-size:11px;">{{ (e.submitted_by_name or 'U')[0]|upper }}</span>
               <div>
-                <div class="fw-500 small">{{ e.submitted_by_name or '?' }}</div>
+                <div class="fw-500 small">{{ e.submitted_by_name or '—' }}</div>
                 {% if e.get('edit_status') == 'pending' %}
                 <div style="font-size:10px;color:#0284c7;margin-top:2px;">
                   <span class="badge bg-info text-white" style="font-size:9px;padding:2px 5px;">Edited</span>
@@ -1685,15 +1685,15 @@ function submitChangePassword() {
               </div>
             </div>
           </td>
-          <td class="text-muted small">{{ e.get('date','?') | format_date }}</td>
-          <td class="text-muted small">{{ e.get('expense_type','?') }}</td>
+          <td class="text-muted small">{{ e.get('date','—') | format_date }}</td>
+          <td class="text-muted small">{{ e.get('expense_type','—') }}</td>
           <td>
-            <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','?') }}</div>
+            <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','—') }}</div>
             {% if e.get('project_number') %}
             <div class="text-muted" style="font-size:11px;">{{ e.project_number }}</div>
             {% endif %}
           </td>
-          <td class="text-muted small">{{ e.get('vendor','?') }}</td>
+          <td class="text-muted small">{{ e.get('vendor','—') }}</td>
           <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</td>
           <td class="text-center">
             {% if e.get('receipt_filename') %}
@@ -1953,11 +1953,11 @@ function submitChangePassword() {
             <tbody>
             {% for c in my_medical_claims %}
             <tr>
-              <td style="white-space:nowrap;">{{ c.claim_date or '?' }}</td>
-              <td>{{ c.expense_type or '?' }}</td>
-              <td class="text-muted">{{ c.provider or '?' }}</td>
-              <td class="text-muted small">{{ c.get('description') or '?' }}</td>
-              <td class="text-muted small">{{ c.get('receipt_ref') or '?' }}</td>
+              <td style="white-space:nowrap;">{{ c.claim_date or '—' }}</td>
+              <td>{{ c.expense_type or '—' }}</td>
+              <td class="text-muted">{{ c.provider or '—' }}</td>
+              <td class="text-muted small">{{ c.get('description') or '—' }}</td>
+              <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
               <td class="text-end fw-semibold">{{ currency_symbol }}{{ '%.2f'|format(c.amount_claimed|float) }}</td>
               <td class="text-end text-success fw-semibold">
                 {% set _amt_appr = c.get('amount_approved') %}
@@ -1974,7 +1974,7 @@ function submitChangePassword() {
                   {{ cs }}
                 </span>
               </td>
-              <td class="text-muted small">{{ c.admin_notes or '?' }}</td>
+              <td class="text-muted small">{{ c.admin_notes or '—' }}</td>
             </tr>
             {% endfor %}
             </tbody>
@@ -2004,12 +2004,12 @@ function submitChangePassword() {
             <tbody>
             {% for c in all_medical_claims %}
             <tr>
-              <td><strong>{{ c.employee_name or '?' }}</strong></td>
-              <td style="white-space:nowrap;">{{ c.claim_date or '?' }}</td>
-              <td>{{ c.expense_type or '?' }}</td>
-              <td class="text-muted">{{ c.provider or '?' }}</td>
-              <td class="text-muted small">{{ c.get('description') or '?' }}</td>
-              <td class="text-muted small">{{ c.get('receipt_ref') or '?' }}</td>
+              <td><strong>{{ c.employee_name or '—' }}</strong></td>
+              <td style="white-space:nowrap;">{{ c.claim_date or '—' }}</td>
+              <td>{{ c.expense_type or '—' }}</td>
+              <td class="text-muted">{{ c.provider or '—' }}</td>
+              <td class="text-muted small">{{ c.get('description') or '—' }}</td>
+              <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
               <td class="text-end fw-semibold">{{ currency_symbol }}{{ '%.2f'|format(c.amount_claimed|float) }}</td>
               <td>
                 {% set cs = c.status or 'Pending' %}

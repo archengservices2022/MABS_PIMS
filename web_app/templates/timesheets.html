@@ -489,7 +489,7 @@
           <tr>
             <td class="emp-col">
               <div class="emp-row">
-                <div class="emp-av">{{ row.name[0].upper() if row.name else '?' }}</div>
+                <div class="emp-av">{{ row.name[0].upper() if row.name else '—' }}</div>
                 <span class="emp-nm">{{ row.name }}</span>
               </div>
             </td>
@@ -617,7 +617,7 @@
 <div class="my-week-card">
   <div class="my-week-header">
     <div class="d-flex align-items-center gap-3">
-      <div class="emp-av" style="width:40px;height:40px;font-size:15px;">{{ user_name[0].upper() if user_name else '?' }}</div>
+      <div class="emp-av" style="width:40px;height:40px;font-size:15px;">{{ user_name[0].upper() if user_name else '—' }}</div>
       <div>
         <div class="my-week-user">{{ user_name }}</div>
         <div class="my-week-sub">Personal weekly summary</div>
@@ -727,7 +727,7 @@
         </td>
         <td><span class="sbadge sb-{{ sheet.status | lower }}">{{ sheet.status }}</span></td>
         <td style="color:#94a3b8;font-size:12px;">
-          {{ (sheet.submitted_at[:10] | format_date) if sheet.submitted_at else '?' }}
+          {{ (sheet.submitted_at[:10] | format_date) if sheet.submitted_at else '—' }}
         </td>
         <td>
           <div class="d-flex gap-2">

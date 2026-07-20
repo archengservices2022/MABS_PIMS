@@ -431,10 +431,10 @@
                   <!-- Name -->
                   <td>
                     <div class="fw-semibold">
-                      {{ u.get('username','?') }}
+                      {{ u.get('username','—') }}
                       {% if _is_me %}<span class="badge bg-secondary ms-1" style="font-size:9px;">You</span>{% endif %}
                     </div>
-                    <div class="text-muted" style="font-size:11px;">{{ u.get('email','?') }}</div>
+                    <div class="text-muted" style="font-size:11px;">{{ u.get('email','—') }}</div>
                   </td>
                   <!-- Role -->
                   <td>
@@ -451,7 +451,7 @@
                   </td>
                   <!-- Title / Region -->
                   <td>
-                    <div>{{ u.get('title') or '?' }}</div>
+                    <div>{{ u.get('title') or '—' }}</div>
                     {% if u.get('region') %}
                     <span class="badge" style="font-size:10px;background:{{ '#0D9488' if u.get('region')=='Inside America' else '#7C3AED' }};color:#fff;">{{ u.get('region') }}</span>
                     {% endif %}

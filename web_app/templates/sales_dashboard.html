@@ -153,11 +153,11 @@
           <tbody>
             {% for q in followups_due %}
             <tr onclick="location.href='{{ url_for('quote_detail', quote_id=q.firebase_id) }}'" style="cursor:pointer;">
-              <td><span class="fw-bold text-teal">{{ q.get('job_number','?') }}</span></td>
-              <td>{{ ((q.get('company_name') or q.get('client_name','?')) or '?')[:22] }}</td>
+              <td><span class="fw-bold text-teal">{{ q.get('job_number','—') }}</span></td>
+              <td>{{ ((q.get('company_name') or q.get('client_name','—')) or '—')[:22] }}</td>
               <td>
                 <span class="{% if q.get('follow_up_date','') < today_str %}text-danger fw-semibold{% else %}text-muted{% endif %}">
-                  {{ q.get('follow_up_date','?') | format_date }}
+                  {{ q.get('follow_up_date','—') | format_date }}
                 </span>
               </td>
               <td>
@@ -202,11 +202,11 @@
           <tbody>
             {% for q in expiring_soon %}
             <tr onclick="location.href='{{ url_for('quote_detail', quote_id=q.firebase_id) }}'" style="cursor:pointer;">
-              <td><span class="fw-bold text-teal">{{ q.get('job_number','?') }}</span></td>
-              <td>{{ ((q.get('company_name') or q.get('client_name','?')) or '?')[:22] }}</td>
+              <td><span class="fw-bold text-teal">{{ q.get('job_number','—') }}</span></td>
+              <td>{{ ((q.get('company_name') or q.get('client_name','—')) or '—')[:22] }}</td>
               <td>
                 {% set days_left = ((q.get('valid_until','') | string) | length) %}
-                <span class="fw-semibold" style="color:#D97706;">{{ q.get('valid_until','?') }}</span>
+                <span class="fw-semibold" style="color:#D97706;">{{ q.get('valid_until','—') }}</span>
               </td>
               <td class="text-end fw-semibold">{{ currency_symbol }}{{ '{:,.0f}'.format(q.get('total',0)|float) }}</td>
             </tr>
@@ -250,10 +250,10 @@
       <tbody>
         {% for q in recent_quotes %}
         <tr onclick="location.href='{{ url_for('quote_detail', quote_id=q.firebase_id) }}'" style="cursor:pointer;">
-          <td><span class="fw-bold text-teal">{{ q.get('job_number','?') }}</span></td>
-          <td>{{ ((q.get('company_name') or q.get('client_name','?')) or '?')[:30] }}</td>
-          <td class="text-muted">{{ (q.get('project_name','') or '?')[:35] }}</td>
-          <td class="text-muted">{{ q.get('date','?') | format_date }}</td>
+          <td><span class="fw-bold text-teal">{{ q.get('job_number','—') }}</span></td>
+          <td>{{ ((q.get('company_name') or q.get('client_name','—')) or '—')[:30] }}</td>
+          <td class="text-muted">{{ (q.get('project_name','') or '—')[:35] }}</td>
+          <td class="text-muted">{{ q.get('date','—') | format_date }}</td>
           <td>
             {% if q.get('valid_until') %}
               {% if q.get('valid_until') < today_str and q.get('status') not in ('Converted','Invoiced','Approved','Rejected','Cancelled','Expired') %}

@@ -220,21 +220,21 @@
                 onclick="selectProject(event, '{{ p.firebase_id }}')"
                 style="cursor:pointer;user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;">
               <td>
-                <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}" onclick="event.stopPropagation();" class="text-teal fw-bold" style="text-decoration:none;">{{ p.get('project_number','?') }}</a>
+                <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}" onclick="event.stopPropagation();" class="text-teal fw-bold" style="text-decoration:none;">{{ p.get('project_number','—') }}</a>
                 {% if p.get('_has_co') %}
                 <span title="Has Change Order(s)" style="display:inline-flex;align-items:center;gap:2px;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:4px;font-size:.6rem;font-weight:700;padding:1px 5px;margin-left:4px;vertical-align:middle;letter-spacing:.03em;">
                   <i class="bi bi-arrow-repeat"></i> CO
                 </span>
                 {% endif %}
               </td>
-              <td class="fw-500">{{ p.get('project_name','?') }}</td>
-              <td class="text-muted">{{ p.get('company_name') or p.get('client_name','?') }}</td>
+              <td class="fw-500">{{ p.get('project_name','—') }}</td>
+              <td class="text-muted">{{ p.get('company_name') or p.get('client_name','—') }}</td>
               <td>
                 {% if p.get('_plant_display') %}
                 <span class="badge" style="background:#0D9488;color:#fff;font-size:11px;font-weight:700;letter-spacing:.04em;">{{ p._plant_display }}</span>
                 {% else %}?{% endif %}
               </td>
-              <td>{{ p.get('date_received','?') | format_date }}</td>
+              <td>{{ p.get('date_received','—') | format_date }}</td>
               <td class="text-end fw-bold">{{ currency_symbol }}{{ "{:,.2f}".format(p.get('contract_value',0)|float) }}</td>
               <td class="text-end text-success">{{ currency_symbol }}{{ "{:,.2f}".format(p.get('amount_paid',0)|float) }}</td>
               {% set _owed = [p.get('contract_value',0)|float - p.get('amount_paid',0)|float, 0]|max %}
@@ -622,8 +622,8 @@ function openLoadModal() {
           const reasonColor = isBlocked ? '#b45309' : '#0f766e';
 
           html += `<tr style="border-bottom:1px solid #f1f5f9;background:${proj.firebase_id % 2 === 0 ? '#ffffff' : '#f8fafc'};">
-            <td style="padding:12px;color:#1e293b;"><strong>${proj.project_number || '?'}</strong></td>
-            <td style="padding:12px;color:#1e293b;">${proj.project_name || '?'}</td>
+            <td style="padding:12px;color:#1e293b;"><strong>${proj.project_number || '—'}</strong></td>
+            <td style="padding:12px;color:#1e293b;">${proj.project_name || '—'}</td>
             <td style="padding:12px;color:${stageColor};font-weight:600;">${nextStage}</td>
             <td style="padding:12px;text-align:right;color:#1e293b;"><strong>${CURRENCY_SYMBOL}${amount.toFixed(2)}</strong></td>
             <td style="padding:12px;color:${reasonColor};font-size:11px;">${reason}</td>

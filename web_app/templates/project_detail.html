@@ -108,10 +108,10 @@
         <div class="card-panel mb-3">
           <h6 class="section-heading">Project Info</h6>
           <div class="row g-2">
-            <div class="col-sm-4"><div class="info-label">Client</div><div class="info-value">{{ project.get('company_name') or project.get('company') or project.get('client_name','?') }}</div></div>
-            <div class="col-sm-4"><div class="info-label">Start Date</div><div class="info-value">{{ project.get('start_date','?') | format_date }}</div></div>
-            <div class="col-sm-4"><div class="info-label">End Date</div><div class="info-value">{{ (project.get('end_date','?') | format_date) if project.get('end_date') else '?' }}</div></div>
-            <div class="col-sm-4"><div class="info-label">Sales Person</div><div class="info-value">{{ project.get('sales') or project.get('assigned_to','?') or '?' }}</div></div>
+            <div class="col-sm-4"><div class="info-label">Client</div><div class="info-value">{{ project.get('company_name') or project.get('company') or project.get('client_name','—') }}</div></div>
+            <div class="col-sm-4"><div class="info-label">Start Date</div><div class="info-value">{{ project.get('start_date','—') | format_date }}</div></div>
+            <div class="col-sm-4"><div class="info-label">End Date</div><div class="info-value">{{ (project.get('end_date','—') | format_date) if project.get('end_date') else '—' }}</div></div>
+            <div class="col-sm-4"><div class="info-label">Sales Person</div><div class="info-value">{{ project.get('sales') or project.get('assigned_to','—') or '—' }}</div></div>
             {% set svcs = project.get('service_types') or [] %}
             {% if svcs %}
             <div class="col-12">
@@ -130,7 +130,7 @@
               </div>
             </div>
             {% endif %}
-            <div class="col-sm-4"><div class="info-label">Payment Stage</div><div class="info-value">{{ project.get('payment_category','?') or '?' }}</div></div>
+            <div class="col-sm-4"><div class="info-label">Payment Stage</div><div class="info-value">{{ project.get('payment_category','—') or '—' }}</div></div>
             {% if project.get('quote_number') or project.get('job_number') %}
             <div class="col-sm-4"><div class="info-label">Quote Number</div><div class="info-value">{{ project.get('quote_number') or project.get('job_number') }}</div></div>
             {% endif %}
@@ -369,9 +369,9 @@
         <div class="card-panel">
           <h6 class="section-heading">Metadata</h6>
           <div class="info-label">Created</div>
-          <div class="info-value small">{{ project.get('created_at','?')[:10] | format_date }}</div>
+          <div class="info-value small">{{ project.get('created_at','—')[:10] | format_date }}</div>
           <div class="info-label mt-2">Updated</div>
-          <div class="info-value small">{{ project.get('updated_at','?')[:10] | format_date }}</div>
+          <div class="info-value small">{{ project.get('updated_at','—')[:10] | format_date }}</div>
         </div>
       </div>
     </div>
@@ -570,14 +570,14 @@
                 <tr onclick="location.href='{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}'"
                     style="cursor:pointer;">
                   <td>
-                    <span class="fw-bold text-teal">{{ m.get('invoice_number','?') }}</span>
+                    <span class="fw-bold text-teal">{{ m.get('invoice_number','—') }}</span>
                     {% if share < 0.999 %}
                     <span class="badge bg-secondary ms-1" title="This invoice spans multiple projects — only this project's share is counted here">
                       {{ "%.0f"|format(share * 100) }}% share
                     </span>
                     {% endif %}
                   </td>
-                  <td>{{ m.get('invoice_date','?') | format_date }}</td>
+                  <td>{{ m.get('invoice_date','—') | format_date }}</td>
                   <td><span class="badge status-{{ inv.get('_display_status', m.get('status','Draft'))|lower|replace(' ','-') }}">{{ inv.get('_display_status', m.get('status','Draft')) }}</span></td>
                   <td class="text-end">
                     {{ currency_symbol }}{{ "{:,.0f}".format(m.get('total',0)|float * share) }}
@@ -627,9 +627,9 @@
               <tbody>
                 {% for exp in project_expenses %}
                 <tr>
-                  <td>{{ exp.get('date','?') | format_date }}</td>
-                  <td>{{ exp.get('description','?') }}</td>
-                  <td><span class="badge bg-light text-dark border">{{ exp.get('category','?') }}</span></td>
+                  <td>{{ exp.get('date','—') | format_date }}</td>
+                  <td>{{ exp.get('description','—') }}</td>
+                  <td><span class="badge bg-light text-dark border">{{ exp.get('category','—') }}</span></td>
                   <td class="text-end text-danger">{{ currency_symbol }}{{ "{:,.0f}".format(exp.get('amount',0)|float) }}</td>
                 </tr>
                 {% endfor %}
@@ -753,9 +753,9 @@
                 {% for co in change_orders %}
                 {% set co_idx = loop.index0 %}
                 <tr>
-                  <td class="fw-600 text-teal">{{ co.get('co_number','?') }}</td>
+                  <td class="fw-600 text-teal">{{ co.get('co_number','—') }}</td>
                   <td>
-                    <div class="fw-500">{{ co.get('title','?') }}</div>
+                    <div class="fw-500">{{ co.get('title','—') }}</div>
                     {% if co.get('description') %}
                     <div class="text-muted small">{{ co.get('description') }}</div>
                     {% endif %}
@@ -869,13 +869,13 @@
             <div class="flex-shrink-0">
               <div style="width:34px;height:34px;border-radius:50%;background:#0D9488;color:#fff;
                           display:flex;align-items:center;justify-content:center;font-size:0.8rem;font-weight:700;">
-                {{ (note.get('created_by','?')[0])|upper }}
+                {{ (note.get('created_by','—')[0])|upper }}
               </div>
             </div>
             <div class="flex-grow-1">
               <div class="d-flex justify-content-between align-items-start">
                 <div>
-                  <span class="fw-600 small">{{ note.get('created_by','?') }}</span>
+                  <span class="fw-600 small">{{ note.get('created_by','—') }}</span>
                   <span class="text-muted small ms-2">
                     {{ note.get('created_at','')[:10] | format_date }}
                     {{ note.get('created_at','')[11:16] }}
@@ -960,7 +960,7 @@
         <div class="p-3 bg-light rounded mb-3">
           <div class="fw-bold text-teal">{{ project.get('project_number','') }}</div>
           <div>{{ project.get('project_name','') }}</div>
-          <div class="text-muted small">Client: {{ project.get('company_name') or project.get('client_name','?') }}</div>
+          <div class="text-muted small">Client: {{ project.get('company_name') or project.get('client_name','—') }}</div>
           <div class="text-muted small">Contract: {{ currency_symbol }}{{ "{:,.0f}".format(project.get('contract_value',0)|float) }}</div>
         </div>
         {% if project_invoices %}

@@ -8302,8 +8302,6 @@ def financial():
                 total_collected += _safe_float(tp.get("amount", 0))
 
     # Filter Income tab: show ONLY invoices created in current & previous years
-    # All 5 invoices are from 2026 (current year), so they should all be included
-    print(f"[INCOME_FILTER] stat_card_year={stat_card_year}, prev_year={prev_year}, rev_list count before filter={len(rev_list)}", flush=True)
     rev_list_filtered = []
     for r in rev_list:
         inv_id = r.get("invoice_id")
@@ -8311,11 +8309,9 @@ def financial():
             continue
         inv_meta = invoices.get(inv_id, {}).get("meta", {}) or {}
         inv_year = _extract_year_from_date(inv_meta.get("invoice_date", ""))
-        print(f"[INCOME_FILTER] Invoice {r.get('invoice_number')}: date={inv_meta.get('invoice_date')}, year={inv_year}", flush=True)
         if inv_year in [stat_card_year, prev_year]:
             rev_list_filtered.append(r)
     rev_list = rev_list_filtered
-    print(f"[INCOME_FILTER] rev_list count after filter={len(rev_list)}", flush=True)
 
     # Sort by invoice date descending (newest to oldest), then by invoice number descending (higher number = newer)
     # Convert dates to YYYY-MM-DD format for proper string sorting (handles MM-DD-YYYY format)
