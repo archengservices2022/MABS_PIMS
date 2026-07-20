@@ -11443,6 +11443,13 @@ def reviews():
         displayed = [r for r in all_reviews if r.get("employee_uid") == uid]
 
     all_users = [u for u in _load_all_users() if u.get("active", True) != False]
+
+    # Backfill missing employee_name for reviews saved before the JS-fix
+    _uid_to_name = {u.get("firebase_uid", ""): (u.get("username") or u.get("name") or u.get("email", "")).strip()
+                    for u in all_users if u.get("firebase_uid")}
+    for _r in displayed:
+        if not _r.get("employee_name") and _r.get("employee_uid"):
+            _r["employee_name"] = _uid_to_name.get(_r["employee_uid"], "")
     periods   = _review_periods()
     return render_template("reviews.html", reviews=displayed, all_users=all_users,
                            periods=periods, role=role, my_uid=uid)
@@ -11480,6 +11487,12 @@ def reviews_new():
         emp_uid  = f.get("employee_uid", "").strip()
         emp_name = f.get("employee_name", "").strip()
         period   = f.get("review_period", "").strip()
+        # Fallback: if JS didn't populate the hidden name field, look it up server-side
+        if not emp_name and emp_uid:
+            for _u in _load_all_users():
+                if _u.get("firebase_uid", "") == emp_uid:
+                    emp_name = (_u.get("username") or _u.get("name") or _u.get("email", "")).strip()
+                    break
         if not emp_uid or not period:
             flash("Please select an employee and review period.", "danger")
             return render_template("reviews.html", view="new", all_users=all_users,
