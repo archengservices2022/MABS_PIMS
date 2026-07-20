@@ -803,6 +803,12 @@
                       <button class="btn btn-xs btn-outline-danger">Reject</button>
                     </form>
                     {% endif %}
+                    <form method="POST" action="{{ url_for('co_delete', project_id=project.firebase_id, co_idx=co_idx) }}" class="d-inline ms-1"
+                          onsubmit="return confirm('Delete this change order? This will update the project contract value and financial totals.');">
+                      <button class="btn btn-xs btn-outline-danger" title="Delete CO">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </form>
                   </td>
                   {% endif %}
                 </tr>

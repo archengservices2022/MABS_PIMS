@@ -3373,6 +3373,91 @@ def co_update_amount(project_id, co_idx):
     flash(f"{co.get('co_number', 'CO')} updated.", "success")
     return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
 
+@app.route("/projects/<project_id>/change-orders/<int:co_idx>/delete", methods=["POST"])
+@role_required("projects")
+def co_delete(project_id, co_idx):
+    project = fb_get(f"/projects/{project_id}") or {}
+    if not project:
+        abort(404)
+    cos = _normalise_list(project.get("change_orders"))
+    if co_idx >= len(cos) or not isinstance(cos[co_idx], dict):
+        abort(404)
+
+    co = cos[co_idx]
+    co_number = str(co.get("co_number", "") or "").strip()
+    stages = _normalise_list(project.get("payment_stages"))
+    linked_stage_idx = None
+    linked_stage = None
+    for idx, stage in enumerate(stages):
+        if not isinstance(stage, dict):
+            continue
+        stage_name = str(stage.get("name", "") or "")
+        if stage.get("co_index") == co_idx or (co_number and (stage.get("co_number") == co_number or co_number in stage_name)):
+            linked_stage_idx = idx
+            linked_stage = stage
+            break
+
+    raw_invoices = fb_get("/invoices") or {}
+    linked_invoice_numbers = []
+    if isinstance(raw_invoices, dict):
+        project_number = project.get("project_number", "")
+        for inv in raw_invoices.values():
+            if not isinstance(inv, dict):
+                continue
+            meta = inv.get("meta", {}) or {}
+            if co_number and meta.get("co_number") == co_number:
+                linked_invoice_numbers.append(meta.get("invoice_number", "invoice"))
+                continue
+            if linked_stage_idx is not None and meta.get("project_number") == project_number:
+                try:
+                    if int(meta.get("payment_stage_index", -1)) == linked_stage_idx:
+                        linked_invoice_numbers.append(meta.get("invoice_number", "invoice"))
+                        continue
+                except Exception:
+                    pass
+            for item in inv.get("line_items", []) or []:
+                if isinstance(item, dict) and co_number and co_number in str(item.get("description", "")):
+                    linked_invoice_numbers.append(meta.get("invoice_number", "invoice"))
+                    break
+
+    if linked_invoice_numbers:
+        flash(
+            "This CO is linked to invoice(s) "
+            + ", ".join(sorted(set(linked_invoice_numbers)))
+            + ". Delete or cancel the invoice first so Financial stays accurate.",
+            "warning",
+        )
+        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+
+    if linked_stage and (
+        linked_stage.get("invoice_id")
+        or linked_stage.get("invoice_number")
+        or linked_stage.get("status") in ("Invoiced", "Paid", "Partially Paid", "Overdue")
+    ):
+        flash("This CO has an invoiced payment stage. Delete or cancel the linked invoice first.", "warning")
+        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+
+    base_value = _base_contract_value(project, cos)
+    deleted_number = co_number or co.get("title", "CO")
+    cos.pop(co_idx)
+    if linked_stage_idx is not None:
+        stages.pop(linked_stage_idx)
+    for stage in stages:
+        if isinstance(stage, dict) and isinstance(stage.get("co_index"), int) and stage["co_index"] > co_idx:
+            stage["co_index"] -= 1
+
+    update_data = {
+        "change_orders": cos,
+        "payment_stages": stages,
+        "base_contract_value": base_value,
+        "contract_value": base_value + _approved_co_total(cos),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    fb_update(f"/projects/{project_id}", update_data)
+    cache_bust("projects_list")
+    flash(f"{deleted_number} deleted and project financial totals updated.", "success")
+    return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+
 @app.route("/projects/<project_id>/edit", methods=["GET", "POST"])
 @role_required("projects")
 def project_edit(project_id):
