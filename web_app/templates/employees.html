@@ -1,12 +1,12 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Employees{% endblock %}
 {% block page_title %}Employees{% endblock %}
 
 {% block head %}
 <style>
-/* ── Employees page ─────────────────────────────────────────────────────── */
+/* â”€â”€ Employees page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-/* ── Clock panel ── */
+/* â”€â”€ Clock panel â”€â”€ */
 .clock-circle {
   width: 88px; height: 88px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
@@ -72,7 +72,7 @@
   transition: width .5s ease;
 }
 
-/* ── Profile/Directory avatar ── */
+/* â”€â”€ Profile/Directory avatar â”€â”€ */
 .emp-avatar {
   width: 36px; height: 36px; border-radius: 50%;
   background: #CCFBF1; color: #0F766E;
@@ -86,7 +86,7 @@
   display: flex; align-items: center; justify-content: center;
 }
 
-/* ── Profile rows ── */
+/* â”€â”€ Profile rows â”€â”€ */
 .profile-row {
   display: flex; align-items: flex-start; gap: 12px;
   padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px;
@@ -98,7 +98,7 @@
 }
 .profile-row-value { color: #0f172a; font-weight: 500; }
 
-/* ── Currently working badge ── */
+/* â”€â”€ Currently working badge â”€â”€ */
 .badge-working {
   display: inline-flex; align-items: center; gap: 4px;
   background: #FEF3C7; color: #92400E;
@@ -106,12 +106,12 @@
   font-size: 11px; font-weight: 600; padding: 2px 8px;
 }
 
-/* ── Compensation cards ── */
+/* â”€â”€ Compensation cards â”€â”€ */
 .comp-card { padding: 14px 16px; border-radius: 10px; }
 .comp-card.amber { background: #FFFBEB; border: 1px solid #FDE68A; }
 .comp-card.green  { background: #F0FDF4; border: 1px solid #BBF7D0; }
 
-/* ── Stat chip (compact KPI) ── */
+/* â”€â”€ Stat chip (compact KPI) â”€â”€ */
 .stat-chip {
   display: flex; flex-direction: column; gap: 2px;
   background: #fff; border: 1px solid #F1F5F9; border-radius: 12px;
@@ -127,7 +127,7 @@
 
 {% block content %}
 
-<!-- ── Tab bar ─────────────────────────────────────────────────────────────── -->
+<!-- â”€â”€ Tab bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <ul class="nav nav-tabs mb-4" id="empTabs">
   <li class="nav-item">
     <a class="nav-link active" data-bs-toggle="tab" href="#tab-time-off">
@@ -189,9 +189,9 @@
 
 <div class="tab-content">
 
-<!-- ══════════════════════════════════════════════════════════════════════════
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
      MY TIME CLOCK
-══════════════════════════════════════════════════════════════════════════ -->
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <div class="tab-pane fade" id="tab-clock" style="display:none!important;">
 
   <!-- Compact stat chips -->
@@ -228,14 +228,14 @@
 
   <div class="row g-3 mb-3">
 
-    <!-- ── Clock panel ── -->
+    <!-- â”€â”€ Clock panel â”€â”€ -->
     <div class="col-lg-4">
       <div class="card-panel h-100 d-flex flex-column">
 
         {% if my_open_entry and my_open_entry.date < today_str %}
         <div class="alert alert-warning py-2 mb-3 text-start" style="font-size:13px;">
           <i class="bi bi-exclamation-triangle-fill me-1"></i>
-          Still clocked in from <strong>{{ my_open_entry.date | format_date }}</strong> —
+          Still clocked in from <strong>{{ my_open_entry.date | format_date }}</strong> â€”
           {{ my_open_entry.project_name or my_open_entry.project_number or 'General / Admin' }}.
           <form method="post" action="{{ url_for('employee_close_entry', entry_id=my_open_entry.firebase_id) }}" class="d-flex gap-2 mt-2">
             <input type="datetime-local" name="clock_out" value="{{ my_open_entry.date }}T17:00"
@@ -281,7 +281,7 @@
               {% if my_open_entry.project_number %}<option value="">General / Admin</option>{% endif %}
               {% for p in active_projects %}
               {% if p.project_number != my_open_entry.project_number %}
-              <option value="{{ p.project_number }}">{{ p.project_number }} — {{ p.project_name }}</option>
+              <option value="{{ p.project_number }}">{{ p.project_number }} â€” {{ p.project_name }}</option>
               {% endif %}
               {% endfor %}
             </select>
@@ -310,7 +310,7 @@
               <option value="" {% if not last_project_number %}selected{% endif %}>General / Admin</option>
               {% for p in active_projects %}
               <option value="{{ p.project_number }}" {% if p.project_number == last_project_number %}selected{% endif %}>
-                {{ p.project_number }} — {{ p.project_name }}
+                {{ p.project_number }} â€” {{ p.project_name }}
               </option>
               {% endfor %}
             </select>
@@ -347,7 +347,7 @@
                 <select name="project_number" class="form-select form-select-sm">
                   <option value="">General / Admin</option>
                   {% for p in active_projects %}
-                  <option value="{{ p.project_number }}">{{ p.project_number }} — {{ p.project_name }}</option>
+                  <option value="{{ p.project_number }}">{{ p.project_number }} â€” {{ p.project_name }}</option>
                   {% endfor %}
                 </select>
               </div>
@@ -366,7 +366,7 @@
       </div>
     </div>
 
-    <!-- ── Hours by project ── -->
+    <!-- â”€â”€ Hours by project â”€â”€ -->
     <div class="col-lg-8">
       <div class="card-panel h-100">
         <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
@@ -464,12 +464,12 @@
           </td>
           {% else %}
           <td class="text-muted">{{ e.clock_in[11:16] }}</td>
-          <td class="text-muted">{{ e.clock_out[11:16] if e.clock_out else '—' }}</td>
+          <td class="text-muted">{{ e.clock_out[11:16] if e.clock_out else 'â€”' }}</td>
           {% endif %}
           <td class="text-end fw-700" style="color:#0D9488;">
             {{ "%.1f"|format(e.duration_minutes/60) }} h
           </td>
-          <td class="text-muted small">{{ e.notes or '—' }}</td>
+          <td class="text-muted small">{{ e.notes or 'â€”' }}</td>
         </tr>
         {% endfor %}
         </tbody>
@@ -495,9 +495,9 @@
 </div><!-- /tab-clock -->
 
 
-<!-- ══════════════════════════════════════════════════════════════════════════
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
      TIME OFF
-══════════════════════════════════════════════════════════════════════════ -->
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <div class="tab-pane fade show active" id="tab-time-off">
 
   {% set bal = my_time_off_balance %}
@@ -638,7 +638,7 @@
               </td>
               <td class="text-muted small">
                 {{ r.start_date | format_date }}
-                {% if r.start_date != r.end_date %} → {{ r.end_date | format_date }}{% endif %}
+                {% if r.start_date != r.end_date %} â†’ {{ r.end_date | format_date }}{% endif %}
                 {% if r.get('hours_per_day') and r.get('hours_per_day') | float < 8 %}
                 <span class="text-muted" style="font-size:10px;">({{ r.hours_per_day }}h/day)</span>
                 {% endif %}
@@ -649,9 +649,9 @@
                 {% elif r_hours is not none %}
                   {{ "%.1f" | format(r_hours | float) }} hrs
                   <div style="font-size:10px;color:#94a3b8;">{{ r.get('working_days', 0) }} day{{ 's' if r.get('working_days',1)|float != 1 }}</div>
-                {% else %}—{% endif %}
+                {% else %}â€”{% endif %}
               </td>
-              <td class="text-muted small">{{ r.reason or '—' }}</td>
+              <td class="text-muted small">{{ r.reason or 'â€”' }}</td>
               <td><span class="badge status-{{ r.status|lower }}">{{ r.status }}</span></td>
             </tr>
             {% endfor %}
@@ -672,7 +672,7 @@
   <!-- Admin: All Employees Balance -->
   <div class="card-panel mt-3">
     <h6 class="panel-title mb-3">
-      <i class="bi bi-people me-1" style="color:#0D9488;"></i>All Employees — {{ current_year }} Time Off Balance
+      <i class="bi bi-people me-1" style="color:#0D9488;"></i>All Employees â€” {{ current_year }} Time Off Balance
     </h6>
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0 align-middle">
@@ -753,7 +753,7 @@
           </td>
           <td>{{ r.type }}</td>
           <td class="text-muted small">
-            {{ r.start_date | format_date }}{% if r.start_date != r.end_date %} → {{ r.end_date | format_date }}{% endif %}
+            {{ r.start_date | format_date }}{% if r.start_date != r.end_date %} â†’ {{ r.end_date | format_date }}{% endif %}
             {% if r.get('hours_per_day') and r.get('hours_per_day') | float < 8 %}
             <span class="text-muted" style="font-size:10px;">({{ r.hours_per_day }}h/day)</span>
             {% endif %}
@@ -761,9 +761,9 @@
           <td class="text-center small fw-600">
             {% if r.type == 'Unpaid' %}<span class="text-muted">unpaid</span>
             {% elif r_hours is not none %}{{ "%.1f" | format(r_hours | float) }} hrs
-            {% else %}—{% endif %}
+            {% else %}â€”{% endif %}
           </td>
-          <td class="text-muted small">{{ r.reason or '—' }}</td>
+          <td class="text-muted small">{{ r.reason or 'â€”' }}</td>
           <td class="text-muted small">{{ r.requested_at[:10] | format_date }}</td>
           <td class="text-end">
             <form method="post" action="{{ url_for('employee_time_off_action', request_id=r.firebase_id, action='approve') }}" class="d-inline">
@@ -781,7 +781,7 @@
     {% else %}
     <div class="text-center text-muted py-3">
       <i class="bi bi-check-circle" style="font-size:28px;opacity:.3;"></i>
-      <div class="mt-2 small">No pending requests — all caught up.</div>
+      <div class="mt-2 small">No pending requests â€” all caught up.</div>
     </div>
     {% endif %}
   </div>
@@ -790,9 +790,9 @@
 </div><!-- /tab-time-off -->
 
 
-<!-- ══════════════════════════════════════════════════════════════════════════
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
      MY PROFILE
-══════════════════════════════════════════════════════════════════════════ -->
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <div class="tab-pane fade" id="tab-profile">
   <div class="row g-3">
     <div class="col-lg-4">
@@ -828,7 +828,7 @@
           <div class="comp-card amber">
             <div class="text-muted small fw-semibold mb-1">Hourly Rate</div>
             <div class="fw-800" style="font-size:22px;color:#92400E;">
-              ${{ "%.2f"|format(profile_user.hourly_rate|float) }}<span class="text-muted fw-normal" style="font-size:13px;">/hr</span>
+              {{ currency_symbol }}{{ "%.2f"|format(profile_user.hourly_rate|float) }}<span class="text-muted fw-normal" style="font-size:13px;">/hr</span>
             </div>
           </div>
           {% endif %}
@@ -837,20 +837,20 @@
             <div class="text-muted small fw-semibold mb-1">Monthly Salary</div>
             {% if profile_user.get('region') == 'Outside America' %}
             <div class="fw-800" style="font-size:22px;color:#15803D;">
-              ৳{{ "{:,.0f}".format((profile_user.monthly_salary|float) * (bdt_exchange_rate or 110)) }}<span class="text-muted fw-normal" style="font-size:13px;"> BDT/mo</span>
+              à§³{{ "{:,.0f}".format((profile_user.monthly_salary|float) * (bdt_exchange_rate or 110)) }}<span class="text-muted fw-normal" style="font-size:13px;"> BDT/mo</span>
             </div>
             {% if user_role == 'admin' %}
             <div class="text-muted" style="font-size:12px;margin-top:2px;">
-              ≈ ${{ "{:,.0f}".format(profile_user.monthly_salary|float) }} USD/mo
+              â‰ˆ {{ currency_symbol }}{{ "{:,.0f}".format(profile_user.monthly_salary|float) }} USD/mo
             </div>
             {% endif %}
             {% else %}
             <div class="fw-800" style="font-size:22px;color:#15803D;">
-              ${{ "{:,.0f}".format(profile_user.monthly_salary|float) }}<span class="text-muted fw-normal" style="font-size:13px;">/mo</span>
+              {{ currency_symbol }}{{ "{:,.0f}".format(profile_user.monthly_salary|float) }}<span class="text-muted fw-normal" style="font-size:13px;">/mo</span>
             </div>
             {% if user_role == 'admin' %}
             <div class="text-muted" style="font-size:12px;margin-top:2px;">
-              ≈ ৳{{ "{:,.0f}".format((profile_user.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT/mo
+              â‰ˆ à§³{{ "{:,.0f}".format((profile_user.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT/mo
             </div>
             {% endif %}
             {% endif %}
@@ -868,19 +868,19 @@
         </h6>
         <div class="profile-row">
           <div class="profile-row-label"><i class="bi bi-briefcase me-1"></i>Job Title</div>
-          <div class="profile-row-value">{{ profile_user.get('title') or '—' }}</div>
+          <div class="profile-row-value">{{ profile_user.get('title') or 'â€”' }}</div>
         </div>
         <div class="profile-row">
           <div class="profile-row-label"><i class="bi bi-building me-1"></i>Department</div>
-          <div class="profile-row-value">{{ profile_user.get('department') or '—' }}</div>
+          <div class="profile-row-value">{{ profile_user.get('department') or 'â€”' }}</div>
         </div>
         <div class="profile-row">
           <div class="profile-row-label"><i class="bi bi-geo-alt me-1"></i>Region</div>
-          <div class="profile-row-value">{{ profile_user.get('region') or '—' }}</div>
+          <div class="profile-row-value">{{ profile_user.get('region') or 'â€”' }}</div>
         </div>
         <div class="profile-row">
           <div class="profile-row-label"><i class="bi bi-calendar3 me-1"></i>Hire Date</div>
-          <div class="profile-row-value">{{ (profile_user.get('hire_date') or '—') | format_date }}</div>
+          <div class="profile-row-value">{{ (profile_user.get('hire_date') or 'â€”') | format_date }}</div>
         </div>
         <div class="profile-row">
           <div class="profile-row-label"><i class="bi bi-person-badge me-1"></i>Role</div>
@@ -909,7 +909,7 @@
   </div>
 </div><!-- /tab-profile -->
 
-<!-- ── My Reviews Tab ────────────────────────────────────────────────────── -->
+<!-- â”€â”€ My Reviews Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="tab-pane fade" id="tab-my-reviews">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h6 class="fw-semibold mb-0"><i class="bi bi-clipboard-check me-2 text-primary"></i>My Performance Reviews</h6>
@@ -946,7 +946,7 @@
             background:{% if score>=4.5 %}#2E7D32{% elif score>=3.5 %}#558B2F{% elif score>=2.5 %}#C9920A{% elif score>=1.5 %}#E65100{% else %}#C0392B{% endif %};">
           </div>
         </div>
-        <div class="text-muted small mt-1">{{ "%.2f"|format(score) }}/5.00 — {{ r.rating_label or '' }}</div>
+        <div class="text-muted small mt-1">{{ "%.2f"|format(score) }}/5.00 â€” {{ r.rating_label or '' }}</div>
         {% endif %}
         {% if (rstatus == 'completed' or acked) and r.approved_raise_pct and r.approved_raise_pct|float > 0 %}
         <div class="mt-2 text-success small fw-semibold">
@@ -966,7 +966,7 @@
   {% endif %}
 </div><!-- /tab-my-reviews -->
 
-<!-- ── Change Password Modal ─────────────────────────────────────────────── -->
+<!-- â”€â”€ Change Password Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="modal fade" id="changePasswordModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered" style="max-width:420px;">
     <div class="modal-content">
@@ -1033,9 +1033,9 @@ function submitChangePassword() {
 
 
 {% if user_role == 'admin' %}
-<!-- ══════════════════════════════════════════════════════════════════════════
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
      TEAM  (admin only)
-══════════════════════════════════════════════════════════════════════════ -->
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <div class="tab-pane fade" id="tab-team">
 
   <div class="row g-3 mb-3">
@@ -1132,16 +1132,16 @@ function submitChangePassword() {
             <div class="d-flex align-items-center gap-2">
               <span class="emp-avatar">{{ (u.username or 'U')[0]|upper }}</span>
               <div>
-                <div class="fw-semibold">{{ u.username or '—' }}</div>
+                <div class="fw-semibold">{{ u.username or 'â€”' }}</div>
                 <div class="text-muted" style="font-size:11px;">{{ u.email or '' }}</div>
               </div>
             </div>
           </td>
-          <td class="text-muted small">{{ u.title or '—' }}</td>
+          <td class="text-muted small">{{ u.title or 'â€”' }}</td>
           <td>
             {% if u.region %}
             <span class="badge" style="background:{{ '#0D9488' if u.region == 'Inside America' else '#7C3AED' }};color:#fff;font-size:11px;">{{ u.region }}</span>
-            {% else %}<span class="text-muted">—</span>{% endif %}
+            {% else %}<span class="text-muted">â€”</span>{% endif %}
           </td>
           <td><span class="badge badge-role-{{ u.role or 'admin' }}">{{ (u.role or 'admin')|capitalize }}</span></td>
           <td>
@@ -1149,18 +1149,18 @@ function submitChangePassword() {
               {{ u.get('employee_status','Active') }}
             </span>
           </td>
-          <td class="text-muted">{{ u.get('department') or '—' }}</td>
-          <td class="text-muted">{{ (u.get('hire_date') or '—') | format_date }}</td>
+          <td class="text-muted">{{ u.get('department') or 'â€”' }}</td>
+          <td class="text-muted">{{ (u.get('hire_date') or 'â€”') | format_date }}</td>
           <td class="text-end" style="font-size:12px;">
-            {% if u.get('hourly_rate') %}<div class="fw-500">${{ '%.2f'|format(u.hourly_rate|float) }}/hr</div>{% endif %}
+            {% if u.get('hourly_rate') %}<div class="fw-500">{{ currency_symbol }}{{ '%.2f'|format(u.hourly_rate|float) }}/hr</div>{% endif %}
             {% if u.get('monthly_salary') %}
             {% if u.get('region') == 'Outside America' %}
-            <div class="text-success">৳{{ '{:,.0f}'.format((u.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT/mo</div>
+            <div class="text-success">à§³{{ '{:,.0f}'.format((u.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT/mo</div>
             {% else %}
-            <div class="text-success">${{ '{:,.0f}'.format(u.monthly_salary|float) }}/mo</div>
+            <div class="text-success">{{ currency_symbol }}{{ '{:,.0f}'.format(u.monthly_salary|float) }}/mo</div>
             {% endif %}
             {% endif %}
-            {% if not u.get('hourly_rate') and not u.get('monthly_salary') %}<span class="text-muted">—</span>{% endif %}
+            {% if not u.get('hourly_rate') and not u.get('monthly_salary') %}<span class="text-muted">â€”</span>{% endif %}
           </td>
           <td>
             {% if open_entry %}
@@ -1168,7 +1168,7 @@ function submitChangePassword() {
               <i class="bi bi-record-circle-fill" style="color:#D97706;"></i>
               {{ (open_entry.project_name or open_entry.project_number or 'General / Admin')[:22] }}
             </span>
-            {% else %}<span class="text-muted small">—</span>{% endif %}
+            {% else %}<span class="text-muted small">â€”</span>{% endif %}
           </td>
           <td class="text-end">
             <button class="btn btn-xs btn-outline-secondary"
@@ -1193,7 +1193,7 @@ function submitChangePassword() {
     <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
       <h6 class="panel-title mb-0">
         <i class="bi bi-bar-chart me-1" style="color:#0D9488;"></i>
-        Team Hours by Project <span class="text-muted fw-normal">— {{ period_label }}</span>
+        Team Hours by Project <span class="text-muted fw-normal">â€” {{ period_label }}</span>
       </h6>
       <div class="d-flex align-items-center gap-2">
         <select id="periodSelect" class="form-select form-select-sm" style="width:auto;">
@@ -1286,7 +1286,7 @@ function submitChangePassword() {
           </div>
           <p class="text-muted small mt-3 mb-0">
             <i class="bi bi-info-circle me-1"></i>
-            Name, email, role, title, or region → <a href="{{ url_for('settings') }}?tab=users" target="_blank">Settings → Users</a>.
+            Name, email, role, title, or region â†’ <a href="{{ url_for('settings') }}?tab=users" target="_blank">Settings â†’ Users</a>.
           </p>
         </div>
         <div class="modal-footer">
@@ -1335,33 +1335,33 @@ function submitChangePassword() {
           <td>
             <div class="d-flex align-items-center gap-2">
               <span class="emp-avatar">{{ (u.username or 'U')[0]|upper }}</span>
-              <span class="fw-semibold">{{ u.username or '—' }}</span>
+              <span class="fw-semibold">{{ u.username or 'â€”' }}</span>
             </div>
           </td>
-          <td class="text-muted">{{ u.title or '—' }}</td>
+          <td class="text-muted">{{ u.title or 'â€”' }}</td>
           <td>
             {% if u.region %}
             <span class="badge" style="background:{{ '#0D9488' if u.region == 'Inside America' else '#7C3AED' }};color:#fff;font-size:11px;">{{ u.region }}</span>
-            {% else %}—{% endif %}
+            {% else %}â€”{% endif %}
           </td>
           <td><span class="badge badge-role-{{ u.role or 'admin' }}">{{ (u.role or 'admin')|capitalize }}</span></td>
-          <td class="text-end fw-500">{{ ('$%.2f/hr' % u.hourly_rate) if u.hourly_rate else '—' }}</td>
+          <td class="text-end fw-500">{{ ('$%.2f/hr' % u.hourly_rate) if u.hourly_rate else 'â€”' }}</td>
           <td class="text-end">
             {% if u.monthly_salary %}
             {% if u.get('region') == 'Outside America' %}
             <span class="badge" style="background:#EDE9FE;color:#5B21B6;border:1px solid #C4B5FD;font-size:11px;"
-                  title="≈ ${{ '{:,.0f}'.format(u.monthly_salary|float) }} USD">
-              ৳{{ '{:,.0f}'.format((u.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT/mo
+                  title="â‰ˆ {{ currency_symbol }}{{ '{:,.0f}'.format(u.monthly_salary|float) }} USD">
+              à§³{{ '{:,.0f}'.format((u.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT/mo
             </span>
             {% else %}
             <span class="badge" style="background:#ECFDF5;color:#065F46;border:1px solid #A7F3D0;font-size:11px;"
-                  title="≈ ৳{{ '{:,.0f}'.format((u.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT">
-              ${{ '{:,.0f}'.format(u.monthly_salary|float) }}/mo
+                  title="â‰ˆ à§³{{ '{:,.0f}'.format((u.monthly_salary|float) * (bdt_exchange_rate or 110)) }} BDT">
+              {{ currency_symbol }}{{ '{:,.0f}'.format(u.monthly_salary|float) }}/mo
             </span>
             {% endif %}
-            {% else %}—{% endif %}
+            {% else %}â€”{% endif %}
           </td>
-          <td class="text-muted small">{{ u.email or '—' }}</td>
+          <td class="text-muted small">{{ u.email or 'â€”' }}</td>
           {% if user_role == 'admin' %}
           <td class="text-end">
             <button class="btn btn-xs btn-outline-secondary"
@@ -1378,7 +1378,7 @@ function submitChangePassword() {
     <div class="text-center text-muted py-5">
       <i class="bi bi-person-plus" style="font-size:40px;opacity:.3;"></i>
       <div class="mt-2">No employees yet.
-        {% if user_role == 'admin' %}<a href="{{ url_for('settings') }}?tab=users">Add in Settings →</a>{% endif %}
+        {% if user_role == 'admin' %}<a href="{{ url_for('settings') }}?tab=users">Add in Settings â†’</a>{% endif %}
       </div>
     </div>
     {% endif %}
@@ -1401,7 +1401,7 @@ function submitChangePassword() {
           <div class="mb-2">
             <label class="form-label fw-semibold" style="font-size:12px;">Region</label>
             <select id="dirEditRegion" class="form-select form-select-sm">
-              <option value="">— None —</option>
+              <option value="">â€” None â€”</option>
               <option value="Inside America">Inside America</option>
               <option value="Outside America">Outside America</option>
             </select>
@@ -1427,9 +1427,9 @@ function submitChangePassword() {
 </div><!-- /tab-directory-removed -->
 {% endif %}
 
-<!-- ══════════════════════════════════════════════════════════════════════════
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
      EMPLOYEE EXPENSES
-══════════════════════════════════════════════════════════════════════════ -->
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <div class="tab-pane fade" id="tab-emp-expenses">
 
   <div class="row g-3">
@@ -1467,7 +1467,7 @@ function submitChangePassword() {
             <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
             <select name="category" id="empExpCategory" class="form-select form-select-sm" required
                     onchange="empUpdateNames(this.value,'empExpName')">
-              <option value="">— Select type first —</option>
+              <option value="">â€” Select type first â€”</option>
             </select>
           </div>
           <div class="mb-2" id="empCatTextWrap" style="display:none;">
@@ -1480,7 +1480,7 @@ function submitChangePassword() {
           <div class="mb-2" id="empNameSelectWrap">
             <label class="form-label small fw-semibold">Expense Name <span class="text-danger">*</span></label>
             <select name="expense_name" id="empExpName" class="form-select form-select-sm" required>
-              <option value="">— Select category first —</option>
+              <option value="">â€” Select category first â€”</option>
             </select>
           </div>
           <div class="mb-2" id="empNameTextWrap" style="display:none;">
@@ -1505,9 +1505,9 @@ function submitChangePassword() {
           <div class="mb-2">
             <label class="form-label small fw-semibold">Link to Project <span class="text-muted fw-normal">(optional)</span></label>
             <select name="project_number" class="form-select form-select-sm">
-              <option value="">— Optional —</option>
+              <option value="">â€” Optional â€”</option>
               {% for p in active_projects %}
-              <option value="{{ p.project_number }}">{{ p.project_number }}{% if p.project_name %} — {{ p.project_name[:35] }}{% endif %}</option>
+              <option value="{{ p.project_number }}">{{ p.project_number }}{% if p.project_name %} â€” {{ p.project_name[:35] }}{% endif %}</option>
               {% endfor %}
             </select>
           </div>
@@ -1518,7 +1518,7 @@ function submitChangePassword() {
                       placeholder="Any additional details..."></textarea>
           </div>
 
-          <!-- Receipt — REQUIRED -->
+          <!-- Receipt â€” REQUIRED -->
           <div class="mb-3">
             <label class="form-label small fw-semibold">
               Receipt <span class="text-danger">*</span>
@@ -1532,7 +1532,7 @@ function submitChangePassword() {
               <span class="badge bg-success"><i class="bi bi-paperclip me-1"></i><span id="empReceiptName"></span></span>
             </div>
             <div class="form-text text-danger fw-semibold" style="font-size:11px;">
-              <i class="bi bi-info-circle me-1"></i>Receipt is required — expenses without a receipt will not be accepted.
+              <i class="bi bi-info-circle me-1"></i>Receipt is required â€” expenses without a receipt will not be accepted.
             </div>
           </div>
 
@@ -1567,13 +1567,13 @@ function submitChangePassword() {
             <tbody id="allSubmissionsTbody">
             {% for e in my_expenses %}
             <tr>
-              <td class="text-muted small">{{ e.get('date','—') | format_date }}</td>
+              <td class="text-muted small">{{ e.get('date','â€”') | format_date }}</td>
               <td>
-                <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','—') }}</div>
+                <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','â€”') }}</div>
                 <div class="text-muted" style="font-size:11px;">{{ e.get('expense_type','') }}</div>
               </td>
-              <td class="text-end fw-semibold">${{ "{:,.2f}".format(e.get('amount',0)|float) }}</td>
-              <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
+              <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</td>
+              <td class="text-muted small">{{ e.get('project_number','â€”') or 'â€”' }}</td>
               <td>
                 {% set st = e.get('status','Pending') %}
                 {% set edit_st = e.get('edit_status', '') %}
@@ -1601,7 +1601,7 @@ function submitChangePassword() {
                         title="View: {{ e.receipt_filename }}">
                   <i class="bi bi-paperclip"></i>
                 </button>
-                {% else %}—{% endif %}
+                {% else %}â€”{% endif %}
               </td>
               <td>
                 {% if user_role == 'admin' %}
@@ -1675,7 +1675,7 @@ function submitChangePassword() {
             <div class="d-flex align-items-center gap-2">
               <span class="emp-avatar" style="width:28px;height:28px;font-size:11px;">{{ (e.submitted_by_name or 'U')[0]|upper }}</span>
               <div>
-                <div class="fw-500 small">{{ e.submitted_by_name or '—' }}</div>
+                <div class="fw-500 small">{{ e.submitted_by_name or 'â€”' }}</div>
                 {% if e.get('edit_status') == 'pending' %}
                 <div style="font-size:10px;color:#0284c7;margin-top:2px;">
                   <span class="badge bg-info text-white" style="font-size:9px;padding:2px 5px;">Edited</span>
@@ -1685,16 +1685,16 @@ function submitChangePassword() {
               </div>
             </div>
           </td>
-          <td class="text-muted small">{{ e.get('date','—') | format_date }}</td>
-          <td class="text-muted small">{{ e.get('expense_type','—') }}</td>
+          <td class="text-muted small">{{ e.get('date','â€”') | format_date }}</td>
+          <td class="text-muted small">{{ e.get('expense_type','â€”') }}</td>
           <td>
-            <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','—') }}</div>
+            <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','â€”') }}</div>
             {% if e.get('project_number') %}
             <div class="text-muted" style="font-size:11px;">{{ e.project_number }}</div>
             {% endif %}
           </td>
-          <td class="text-muted small">{{ e.get('vendor','—') }}</td>
-          <td class="text-end fw-bold text-success">${{ "{:,.2f}".format(e.get('amount',0)|float) }}</td>
+          <td class="text-muted small">{{ e.get('vendor','â€”') }}</td>
+          <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</td>
           <td class="text-center">
             {% if e.get('receipt_filename') %}
             <button class="btn btn-xs btn-outline-primary"
@@ -1703,7 +1703,7 @@ function submitChangePassword() {
               <i class="bi bi-paperclip"></i>
             </button>
             {% else %}
-            <span class="text-muted small">—</span>
+            <span class="text-muted small">â€”</span>
             {% endif %}
           </td>
           <td class="text-end">
@@ -1780,7 +1780,7 @@ function submitChangePassword() {
             <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
             <select name="category" id="editExpCategory" class="form-select form-select-sm"
                     onchange="empUpdateNames(this.value,'editExpName')">
-              <option value="">— Select type first —</option>
+              <option value="">â€” Select type first â€”</option>
             </select>
           </div>
           <div class="mb-2" id="editCatTextWrap" style="display:none;">
@@ -1791,7 +1791,7 @@ function submitChangePassword() {
           <div class="mb-2" id="editNameSelectWrap">
             <label class="form-label small fw-semibold">Expense Name <span class="text-danger">*</span></label>
             <select name="expense_name" id="editExpName" class="form-select form-select-sm">
-              <option value="">— Select category first —</option>
+              <option value="">â€” Select category first â€”</option>
             </select>
           </div>
           <div class="mb-2" id="editNameTextWrap" style="display:none;">
@@ -1812,9 +1812,9 @@ function submitChangePassword() {
           <div class="mb-2">
             <label class="form-label small fw-semibold">Link to Project <span class="text-muted fw-normal">(optional)</span></label>
             <select name="project_number" id="editExpProject" class="form-select form-select-sm">
-              <option value="">— Optional —</option>
+              <option value="">â€” Optional â€”</option>
               {% for p in active_projects %}
-              <option value="{{ p.project_number }}">{{ p.project_number }}{% if p.project_name %} — {{ p.project_name[:35] }}{% endif %}</option>
+              <option value="{{ p.project_number }}">{{ p.project_number }}{% if p.project_name %} â€” {{ p.project_name[:35] }}{% endif %}</option>
               {% endfor %}
             </select>
           </div>
@@ -1878,9 +1878,9 @@ function submitChangePassword() {
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════════════════════════
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
      MEDICAL ALLOWANCE
-══════════════════════════════════════════════════════════════════════════ -->
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <div class="tab-pane fade" id="tab-medical">
   <div class="row g-3">
 
@@ -1905,10 +1905,10 @@ function submitChangePassword() {
             </select>
           </div>
           <div class="mb-2">
-            <label class="form-label fw-semibold" style="font-size:12px;">Amount Claimed (৳ BDT)</label>
+            <label class="form-label fw-semibold" style="font-size:12px;">Amount Claimed (à§³ BDT)</label>
             <input type="number" name="amount_claimed" class="form-control form-control-sm"
                    min="0.01" max="50000" step="0.01" placeholder="0.00" required>
-            <div class="form-text text-muted" style="font-size:11px;">Maximum claim: ৳50,000 BDT</div>
+            <div class="form-text text-muted" style="font-size:11px;">Maximum claim: à§³50,000 BDT</div>
           </div>
           <div class="mb-2">
             <label class="form-label fw-semibold" style="font-size:12px;">Provider / Hospital</label>
@@ -1953,17 +1953,17 @@ function submitChangePassword() {
             <tbody>
             {% for c in my_medical_claims %}
             <tr>
-              <td style="white-space:nowrap;">{{ c.claim_date or '—' }}</td>
-              <td>{{ c.expense_type or '—' }}</td>
-              <td class="text-muted">{{ c.provider or '—' }}</td>
-              <td class="text-muted small">{{ c.get('description') or '—' }}</td>
-              <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
-              <td class="text-end fw-semibold">৳{{ '%.2f'|format(c.amount_claimed|float) }}</td>
+              <td style="white-space:nowrap;">{{ c.claim_date or 'â€”' }}</td>
+              <td>{{ c.expense_type or 'â€”' }}</td>
+              <td class="text-muted">{{ c.provider or 'â€”' }}</td>
+              <td class="text-muted small">{{ c.get('description') or 'â€”' }}</td>
+              <td class="text-muted small">{{ c.get('receipt_ref') or 'â€”' }}</td>
+              <td class="text-end fw-semibold">à§³{{ '%.2f'|format(c.amount_claimed|float) }}</td>
               <td class="text-end text-success fw-semibold">
                 {% set _amt_appr = c.get('amount_approved') %}
                 {% if _amt_appr is not none and _amt_appr != '' %}
-                  ৳{{ '%.2f'|format(_amt_appr|float) }}
-                {% else %}—{% endif %}
+                  à§³{{ '%.2f'|format(_amt_appr|float) }}
+                {% else %}â€”{% endif %}
               </td>
               <td>
                 {% set cs = c.status or 'Pending' %}
@@ -1974,7 +1974,7 @@ function submitChangePassword() {
                   {{ cs }}
                 </span>
               </td>
-              <td class="text-muted small">{{ c.admin_notes or '—' }}</td>
+              <td class="text-muted small">{{ c.admin_notes or 'â€”' }}</td>
             </tr>
             {% endfor %}
             </tbody>
@@ -2004,13 +2004,13 @@ function submitChangePassword() {
             <tbody>
             {% for c in all_medical_claims %}
             <tr>
-              <td><strong>{{ c.employee_name or '—' }}</strong></td>
-              <td style="white-space:nowrap;">{{ c.claim_date or '—' }}</td>
-              <td>{{ c.expense_type or '—' }}</td>
-              <td class="text-muted">{{ c.provider or '—' }}</td>
-              <td class="text-muted small">{{ c.get('description') or '—' }}</td>
-              <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
-              <td class="text-end fw-semibold">৳{{ '%.2f'|format(c.amount_claimed|float) }}</td>
+              <td><strong>{{ c.employee_name or 'â€”' }}</strong></td>
+              <td style="white-space:nowrap;">{{ c.claim_date or 'â€”' }}</td>
+              <td>{{ c.expense_type or 'â€”' }}</td>
+              <td class="text-muted">{{ c.provider or 'â€”' }}</td>
+              <td class="text-muted small">{{ c.get('description') or 'â€”' }}</td>
+              <td class="text-muted small">{{ c.get('receipt_ref') or 'â€”' }}</td>
+              <td class="text-end fw-semibold">à§³{{ '%.2f'|format(c.amount_claimed|float) }}</td>
               <td>
                 {% set cs = c.status or 'Pending' %}
                 <span class="badge" style="font-size:11px;
@@ -2059,7 +2059,7 @@ function submitChangePassword() {
         <div class="modal-body py-2">
           <input type="hidden" name="action" id="medReviewAction">
           <div class="mb-2" id="medApprovedRow">
-            <label class="form-label fw-semibold" style="font-size:12px;">Amount Approved (৳ BDT)</label>
+            <label class="form-label fw-semibold" style="font-size:12px;">Amount Approved (à§³ BDT)</label>
             <input type="number" name="amount_approved" id="medApprovedAmt"
                    class="form-control form-control-sm" min="0" step="0.01">
           </div>
@@ -2195,7 +2195,7 @@ window.saveDirEdit = async function() {
     hourly_rate:    parseFloat(document.getElementById('dirEditRate').value)   || 0,
     monthly_salary: parseFloat(document.getElementById('dirEditSalary').value) || 0,
   };
-  msg.innerHTML = '<span class="text-muted">Saving…</span>';
+  msg.innerHTML = '<span class="text-muted">Savingâ€¦</span>';
   try {
     const res  = await fetch('/api/users/' + uid + '/details', {
       method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
@@ -2208,7 +2208,7 @@ window.saveDirEdit = async function() {
 };
 </script>
 <script>
-// Time Off — working days preview
+// Time Off â€” working days preview
 function countWorkingDays(startStr, endStr) {
   if (!startStr || !endStr) return 0;
   var s = new Date(startStr + 'T00:00:00');
@@ -2257,12 +2257,12 @@ window.calcRequestedDays = function() {
   var hrsLabel = hoursPerDay + ' hr' + (hoursPerDay !== 1 ? 's' : '') + '/day';
   if (!isUnpaid && totalHours > remainingHours) {
     infoDiv.style.cssText = 'display:block;padding:8px 10px;border-radius:6px;margin-bottom:8px;border:1px solid #FECACA;background:#FEF2F2;';
-    infoText.innerHTML = '<i class="bi bi-x-circle me-1" style="color:#DC2626;"></i><span style="color:#DC2626;"><strong>' + days + ' day' + (days!==1?'s':'') + ' × ' + hrsLabel + ' = ' + totalHours + ' hrs</strong> — exceeds your <strong>' + remainingHours + ' ' + poolLabel + ' hrs</strong> remaining. Use Unpaid leave instead.</span>';
+    infoText.innerHTML = '<i class="bi bi-x-circle me-1" style="color:#DC2626;"></i><span style="color:#DC2626;"><strong>' + days + ' day' + (days!==1?'s':'') + ' Ã— ' + hrsLabel + ' = ' + totalHours + ' hrs</strong> â€” exceeds your <strong>' + remainingHours + ' ' + poolLabel + ' hrs</strong> remaining. Use Unpaid leave instead.</span>';
     if (submitBtn) submitBtn.disabled = true;
   } else {
     var leftHrs = isUnpaid ? null : Math.round((remainingHours - totalHours) * 10) / 10;
     var leftDays = leftHrs !== null ? Math.round(leftHrs / 8 * 10) / 10 : null;
-    infoText.innerHTML = '<i class="bi bi-calendar-check me-1" style="color:#16A34A;"></i><span style="color:#16A34A;"><strong>' + days + ' day' + (days!==1?'s':'') + ' × ' + hrsLabel + ' = <span style="font-size:1.05em;">' + totalHours + ' hrs</span></strong> ' + poolLabel + ' requested.' + (leftHrs !== null ? ' You will have <strong>' + leftDays + ' days (' + leftHrs + ' hrs)</strong> left.' : '') + '</span>';
+    infoText.innerHTML = '<i class="bi bi-calendar-check me-1" style="color:#16A34A;"></i><span style="color:#16A34A;"><strong>' + days + ' day' + (days!==1?'s':'') + ' Ã— ' + hrsLabel + ' = <span style="font-size:1.05em;">' + totalHours + ' hrs</span></strong> ' + poolLabel + ' requested.' + (leftHrs !== null ? ' You will have <strong>' + leftDays + ' days (' + leftHrs + ' hrs)</strong> left.' : '') + '</span>';
     if (submitBtn) submitBtn.disabled = false;
   }
 };
@@ -2274,7 +2274,7 @@ document.addEventListener('DOMContentLoaded', function() {
   if (hpdEl)  hpdEl.addEventListener('input',  calcRequestedDays);
 });
 
-// Employee Expenses — cascading dropdowns
+// Employee Expenses â€” cascading dropdowns
 const empCatsByType = {{ emp_categories_by_type|safe }};
 const empNamesByCat = {{ emp_names_by_cat|safe }};
 
@@ -2361,8 +2361,8 @@ window.empUpdateCategories = function(typeVal, catId, nameId) {
   var catSel  = document.getElementById(catId);
   var nameSel = document.getElementById(nameId);
   if (!catSel) return;
-  catSel.innerHTML = '<option value="">— Select category —</option>';
-  if (nameSel) nameSel.innerHTML = '<option value="">— Select category first —</option>';
+  catSel.innerHTML = '<option value="">â€” Select category â€”</option>';
+  if (nameSel) nameSel.innerHTML = '<option value="">â€” Select category first â€”</option>';
   var cats = empCatsByType[typeVal] || [];
   cats.forEach(function(c) {
     var o = document.createElement('option');
@@ -2374,7 +2374,7 @@ window.empUpdateCategories = function(typeVal, catId, nameId) {
 window.empUpdateNames = function(catVal, nameId) {
   var nameSel = document.getElementById(nameId);
   if (!nameSel) return;
-  nameSel.innerHTML = '<option value="">— Select expense name —</option>';
+  nameSel.innerHTML = '<option value="">â€” Select expense name â€”</option>';
   var names = (empNamesByCat[catVal] && empNamesByCat[catVal].length)
     ? empNamesByCat[catVal] : (empNamesFallback[catVal] || []);
   names.forEach(function(n) {
@@ -2395,7 +2395,7 @@ window.onEmpReceiptChange = function(input) {
   }
 };
 
-// ── All Submissions pagination ────────────────────────────────────────────────
+// â”€â”€ All Submissions pagination â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 (function() {
   var PAGE_SIZE = 7;
   var currentPage = 1;
@@ -2588,7 +2588,7 @@ window.openEmpExpenseReject = function(expId, empName) {
 
 window.viewEmpReceipt = function(expId) {
   var body = document.getElementById('empReceiptViewBody');
-  body.innerHTML = '<div class="text-muted">Loading…</div>';
+  body.innerHTML = '<div class="text-muted">Loadingâ€¦</div>';
   new bootstrap.Modal(document.getElementById('empReceiptViewModal')).show();
   fetch('/employees/expenses/' + expId + '/receipt')
     .then(r => r.json())
@@ -2671,7 +2671,7 @@ window.openMedReview = function(claimId, empName, amtClaimed, action) {
   form.action = '/employees/medical-claims/' + claimId + '/review';
   document.getElementById('medReviewAction').value = action;
   document.getElementById('medReviewTitle').textContent =
-    (action === 'approve' ? 'Approve' : 'Reject') + ' claim — ' + empName;
+    (action === 'approve' ? 'Approve' : 'Reject') + ' claim â€” ' + empName;
   const approvedRow = document.getElementById('medApprovedRow');
   const submitBtn   = document.getElementById('medReviewSubmitBtn');
   if (action === 'approve') {

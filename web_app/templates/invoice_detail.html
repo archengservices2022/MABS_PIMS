@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% set meta = invoice.get('meta', {}) %}
 {% block title %}Invoice {{ meta.get('invoice_number','') }}{% endblock %}
 {% block page_title %}Invoice Detail{% endblock %}
@@ -144,14 +144,14 @@
               {{ company.name }}
             </div>
             <div style="color:rgba(255,255,255,.75); font-size:0.8rem; margin-top:4px; line-height:1.6; white-space:pre-line;">{{ company.address }}</div>
-            <div style="color:rgba(255,255,255,.75); font-size:0.8rem;">{{ company.phone }} &nbsp;·&nbsp; {{ company.email }}</div>
+            <div style="color:rgba(255,255,255,.75); font-size:0.8rem;">{{ company.phone }} &nbsp;Â·&nbsp; {{ company.email }}</div>
           </div>
           <div class="text-end">
             <div style="font-size:2rem; font-weight:900; color:#fff; letter-spacing:.08em;">INVOICE</div>
             <div style="color:rgba(255,255,255,.9); font-weight:700; font-size:1rem;">{{ meta.get('invoice_number','') }}</div>
             <div style="color:rgba(255,255,255,.7); font-size:0.78rem; margin-top:4px;">
-              Date: {{ meta.get('invoice_date','—') | format_date }}<br>
-              Due: {{ meta.get('due_date','—') | format_date }}{% if meta.get('net_terms') %} <span style="opacity:.7;">(Net {{ meta.get('net_terms') }})</span>{% endif %}
+              Date: {{ meta.get('invoice_date','â€”') | format_date }}<br>
+              Due: {{ meta.get('due_date','â€”') | format_date }}{% if meta.get('net_terms') %} <span style="opacity:.7;">(Net {{ meta.get('net_terms') }})</span>{% endif %}
             </div>
           </div>
         </div>
@@ -161,10 +161,10 @@
       <div style="padding:20px 32px; background:#F8FAFC; border-bottom:1px solid #E2E8F0; display:flex; justify-content:space-between; align-items:flex-start; position:relative; z-index:1;">
         <div>
           <div style="font-size:0.65rem; font-weight:700; color:#94A3B8; letter-spacing:.1em; margin-bottom:4px;">BILL TO</div>
-          <div style="font-weight:700; font-size:1rem; color:#0F172A;">{{ meta.get('company_name') or meta.get('client_name','—') }}</div>
+          <div style="font-weight:700; font-size:1rem; color:#0F172A;">{{ meta.get('company_name') or meta.get('client_name','â€”') }}</div>
           {% if meta.get('project_number') %}
           <div style="font-size:0.8rem; color:#64748B;">Project: {{ meta.get('project_number') }}
-            {% if linked_project %} — {{ linked_project.get('project_name','') }}{% endif %}
+            {% if linked_project %} â€” {{ linked_project.get('project_name','') }}{% endif %}
           </div>
           {% endif %}
           {% if meta.get('payment_stage') %}
@@ -180,7 +180,7 @@
           {% if meta.get('payment_method') %}
           <div style="font-size:0.75rem; color:#64748B; margin-top:4px;">
             <i class="bi bi-credit-card me-1"></i>{{ meta.get('payment_method') }}
-            {% if meta.get('payment_reference') %} · {{ meta.get('payment_reference') }}{% endif %}
+            {% if meta.get('payment_reference') %} Â· {{ meta.get('payment_reference') }}{% endif %}
           </div>
           {% endif %}
         </div>
@@ -202,8 +202,8 @@
             <tr style="border-bottom:1px solid #F1F5F9;">
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">{{ item.get('description','') }}</td>
               <td style="padding:14px 16px; color:#64748B; text-align:center;">{{ item.get('quantity','1') }}</td>
-              <td style="padding:14px 16px; color:#64748B; text-align:right;">${{ "{:,.2f}".format(item.get('unit_price',0)|float) }}</td>
-              <td style="padding:14px 16px; color:#1E293B; font-weight:600; text-align:right;">${{ "{:,.2f}".format(item.get('amount',0)|float) }}</td>
+              <td style="padding:14px 16px; color:#64748B; text-align:right;">{{ currency_symbol }}{{ "{:,.2f}".format(item.get('unit_price',0)|float) }}</td>
+              <td style="padding:14px 16px; color:#1E293B; font-weight:600; text-align:right;">{{ currency_symbol }}{{ "{:,.2f}".format(item.get('amount',0)|float) }}</td>
             </tr>
             {% else %}
             <tr><td colspan="4" style="padding:24px; text-align:center; color:#94A3B8;">No line items.</td></tr>
@@ -217,24 +217,24 @@
         <div style="min-width:260px;">
           {% if meta.get('tax_rate',0)|float > 0 %}
           <div style="display:flex; justify-content:space-between; padding:6px 0; color:#64748B; font-size:0.85rem;">
-            <span>Subtotal</span><span>${{ "{:,.2f}".format(meta.get('subtotal',0)|float) }}</span>
+            <span>Subtotal</span><span>{{ currency_symbol }}{{ "{:,.2f}".format(meta.get('subtotal',0)|float) }}</span>
           </div>
           <div style="display:flex; justify-content:space-between; padding:6px 0; color:#64748B; font-size:0.85rem; border-bottom:1px solid #E2E8F0;">
-            <span>Tax ({{ meta.get('tax_rate','0') }}%)</span><span>${{ "{:,.2f}".format(meta.get('tax_amount',0)|float) }}</span>
+            <span>Tax ({{ meta.get('tax_rate','0') }}%)</span><span>{{ currency_symbol }}{{ "{:,.2f}".format(meta.get('tax_amount',0)|float) }}</span>
           </div>
           {% endif %}
           <div style="display:flex; justify-content:space-between; padding:10px 0; font-weight:700; font-size:1rem; border-bottom:2px solid #0D9488; margin-bottom:4px;">
             <span>Total</span>
-            <span style="color:#0D9488;">${{ "{:,.2f}".format(meta.get('total',0)|float) }}</span>
+            <span style="color:#0D9488;">{{ currency_symbol }}{{ "{:,.2f}".format(meta.get('total',0)|float) }}</span>
           </div>
           {% if amt_paid > 0 or tax_paid > 0 %}
           <div style="display:flex; justify-content:space-between; padding:6px 0; color:#10B981; font-size:0.85rem;">
-            <span>Amount Paid</span><span>${{ "{:,.2f}".format(amt_paid + tax_paid) }}</span>
+            <span>Amount Paid</span><span>{{ currency_symbol }}{{ "{:,.2f}".format(amt_paid + tax_paid) }}</span>
           </div>
           <div style="display:flex; justify-content:space-between; padding:8px 12px; border-radius:6px; font-weight:700; font-size:1rem;
                       background:{{ '#F0FDF4' if balance <= 0 else '#FEF2F2' }}; margin-top:4px;">
             <span style="color:{{ '#16A34A' if balance <= 0 else '#DC2626' }};">Balance Due</span>
-            <span style="color:{{ '#16A34A' if balance <= 0 else '#DC2626' }};">${{ "{:,.2f}".format(balance) }}</span>
+            <span style="color:{{ '#16A34A' if balance <= 0 else '#DC2626' }};">{{ currency_symbol }}{{ "{:,.2f}".format(balance) }}</span>
           </div>
           {% endif %}
         </div>
@@ -254,7 +254,7 @@
       <!-- Footer -->
       <div style="background:#F8FAFC; border-top:1px solid #E2E8F0; padding:14px 32px; text-align:center; position:relative; z-index:1;">
         <div style="font-size:0.75rem; color:#94A3B8;">
-          Thank you for your business · {{ company.email }} · {{ company.phone }}
+          Thank you for your business Â· {{ company.email }} Â· {{ company.phone }}
         </div>
       </div>
 
@@ -304,7 +304,7 @@
           {% endif %}
           {% endif %}
 
-          <div class="mb-3"><label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Payment Method</label><select name="method" class="form-select form-select-sm"><option value="">— Select Method —</option>{% for m in ['Check','Wire Transfer','ACH','Cash','Credit Card','Other'] %}<option value="{{ m }}">{{ m }}</option>{% endfor %}</select></div>
+          <div class="mb-3"><label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Payment Method</label><select name="method" class="form-select form-select-sm"><option value="">â€” Select Method â€”</option>{% for m in ['Check','Wire Transfer','ACH','Cash','Credit Card','Other'] %}<option value="{{ m }}">{{ m }}</option>{% endfor %}</select></div>
           <div class="mb-3"><label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Payment Date</label><input type="date" name="date" class="form-control form-control-sm" value="{{ today_date }}"></div>
           <div class="mb-0"><label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Reference #</label><input type="text" name="reference" class="form-control form-control-sm" placeholder="Check #, Wire ref, etc."></div>
         </div>
@@ -353,10 +353,10 @@
       <div class="info-label mt-2">Created</div>
       <div class="info-value small">
         {%- set created = meta.get('created_at') or meta.get('updated_at') or meta.get('invoice_date') %}
-        {{ (created[:10] | format_date) if created else '—' }}
+        {{ (created[:10] | format_date) if created else 'â€”' }}
       </div>
       <div class="info-label mt-2">Updated</div>
-      <div class="info-value small">{{ meta.get('updated_at','—')[:10] | format_date }}</div>
+      <div class="info-value small">{{ meta.get('updated_at','â€”')[:10] | format_date }}</div>
     </div>
   </div>
 </div>
@@ -386,19 +386,19 @@
               <td style="padding:10px 12px; color:#1E293B; font-weight:500;">
                 {% if payment.get('project_firebase_id') %}
                 <a href="{{ url_for('project_detail', project_id=payment.get('project_firebase_id')) }}" class="text-decoration-none text-teal fw-bold" title="View project details">
-                  {{ payment.get('project_number','—') }}
+                  {{ payment.get('project_number','â€”') }}
                 </a>
                 {% else %}
-                <div>{{ payment.get('project_number','—') }}</div>
+                <div>{{ payment.get('project_number','â€”') }}</div>
                 {% endif %}
                 {% if payment.get('project_name') %}
                 <div style="font-size:0.8rem; color:#6B7280;">{{ payment.get('project_name') }}</div>
                 {% endif %}
               </td>
-              <td style="padding:10px 12px; color:#475569;">{{ payment.get('date','—') | format_date }}</td>
-              <td style="padding:10px 12px; text-align:right; font-weight:600; color:#15803D;">${{ "{:,.2f}".format(payment.get('amount',0)|float) }}</td>
+              <td style="padding:10px 12px; color:#475569;">{{ payment.get('date','â€”') | format_date }}</td>
+              <td style="padding:10px 12px; text-align:right; font-weight:600; color:#15803D;">{{ currency_symbol }}{{ "{:,.2f}".format(payment.get('amount',0)|float) }}</td>
               <td style="padding:10px 12px; color:#475569;">{{ payment.get('stage_name', 'Invoice Payment') }}</td>
-              <td style="padding:10px 12px; color:#475569;">{{ payment.get('method','—') }}</td>
+              <td style="padding:10px 12px; color:#475569;">{{ payment.get('method','â€”') }}</td>
               <td style="padding:10px 12px; text-align:center;">
                 <button type="button" class="btn btn-xs btn-outline-primary" title="Edit"
                   data-payment-type="invoice"
@@ -418,10 +418,10 @@
             {% for payment in enriched_tax_payments %}
             <tr style="border-bottom:1px solid #F1F5F9; background:#F0FFFE;">
               <td style="padding:10px 12px; color:#0D7C7C; font-weight:600;">Tax</td>
-              <td style="padding:10px 12px; color:#475569;">{{ payment.get('date','—') | format_date }}</td>
-              <td style="padding:10px 12px; text-align:right; font-weight:600; color:#0D7C7C;">${{ "{:,.2f}".format(payment.get('amount',0)|float) }}</td>
+              <td style="padding:10px 12px; color:#475569;">{{ payment.get('date','â€”') | format_date }}</td>
+              <td style="padding:10px 12px; text-align:right; font-weight:600; color:#0D7C7C;">{{ currency_symbol }}{{ "{:,.2f}".format(payment.get('amount',0)|float) }}</td>
               <td style="padding:10px 12px; color:#0D7C7C; font-weight:500;">Tax Payment</td>
-              <td style="padding:10px 12px; color:#475569;">{{ payment.get('method','—') }}</td>
+              <td style="padding:10px 12px; color:#475569;">{{ payment.get('method','â€”') }}</td>
               <td style="padding:10px 12px; text-align:center;">
                 <button type="button" class="btn btn-xs btn-outline-primary" title="Edit"
                   data-payment-type="tax"
@@ -443,15 +443,15 @@
                 <div style="display:flex; justify-content:space-between; gap:20px; color:#1E40AF;">
                   <div>
                     <div style="font-size:0.75rem; color:#0D7C7C;">Total Due</div>
-                    <div style="font-size:1rem;">${{ "{:,.2f}".format(meta.get('total',0)|float) }}</div>
+                    <div style="font-size:1rem;">{{ currency_symbol }}{{ "{:,.2f}".format(meta.get('total',0)|float) }}</div>
                   </div>
                   <div>
                     <div style="font-size:0.75rem; color:#10B981;">Paid Amount</div>
-                    <div style="font-size:1rem;">${{ "{:,.2f}".format(meta.get('amount_paid',0)|float + meta.get('tax_paid',0)|float) }}</div>
+                    <div style="font-size:1rem;">{{ currency_symbol }}{{ "{:,.2f}".format(meta.get('amount_paid',0)|float + meta.get('tax_paid',0)|float) }}</div>
                   </div>
                   <div>
                     <div style="font-size:0.75rem; color:#DC2626;">Remaining</div>
-                    <div style="font-size:1rem;">${{ "{:,.2f}".format([0, meta.get('total',0)|float - meta.get('amount_paid',0)|float - meta.get('tax_paid',0)|float]|max) }}</div>
+                    <div style="font-size:1rem;">{{ currency_symbol }}{{ "{:,.2f}".format([0, meta.get('total',0)|float - meta.get('amount_paid',0)|float - meta.get('tax_paid',0)|float]|max) }}</div>
                   </div>
                 </div>
               </td>
@@ -476,9 +476,9 @@
         <p class="fw-bold mb-1">You are about to permanently delete:</p>
         <div class="p-3 bg-light rounded mb-3">
           <div class="fw-bold text-teal">{{ meta.get('invoice_number','') }}</div>
-          <div class="text-muted small">Client: {{ meta.get('company_name') or meta.get('client_name','—') }}</div>
-          <div class="text-muted small">Total: ${{ "{:,.2f}".format(meta.get('total',0)|float) }}</div>
-          <div class="text-muted small">Status: {{ meta.get('status','—') }}</div>
+          <div class="text-muted small">Client: {{ meta.get('company_name') or meta.get('client_name','â€”') }}</div>
+          <div class="text-muted small">Total: {{ currency_symbol }}{{ "{:,.2f}".format(meta.get('total',0)|float) }}</div>
+          <div class="text-muted small">Status: {{ meta.get('status','â€”') }}</div>
         </div>
         <p class="text-muted small mb-2">Type the invoice number to confirm:</p>
         <input type="text" id="deleteConfirmInput" class="form-control mb-1"
@@ -488,7 +488,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-          <i class="bi bi-x-lg me-1"></i>Cancel — Keep Invoice
+          <i class="bi bi-x-lg me-1"></i>Cancel â€” Keep Invoice
         </button>
         <form method="POST" action="{{ url_for('invoice_delete', invoice_id=invoice.firebase_id) }}">
           <button type="submit" id="deleteConfirmBtn" class="btn btn-danger" disabled>
@@ -593,7 +593,7 @@ function validatePaymentAmount() {
 
   if (amount > maxAmount && maxAmount > 0) {
     errorDiv.style.display = 'block';
-    errorDiv.textContent = `Amount cannot exceed maximum of $${maxAmount.toFixed(2)}`;
+    errorDiv.textContent = `Amount cannot exceed maximum of ${CURRENCY_SYMBOL}${maxAmount.toFixed(2)}`;
     amountInput.value = maxAmount.toFixed(2);
     return false;
   } else {
@@ -629,7 +629,7 @@ function updatePaymentTypeProject() {
     invoiceFields.style.display = 'block';
     invoiceAmountInput.dataset.max = remaining;
     invoiceAmountInput.max = remaining;
-    invoiceAmountInput.placeholder = `Max: $${remaining.toFixed(2)}`;
+    invoiceAmountInput.placeholder = `Max: ${CURRENCY_SYMBOL}${remaining.toFixed(2)}`;
     invoiceAmountInput.value = '';
     invoiceAmountInput.dataset.projectNumber = projectNumber;
     validateAmountInput();
@@ -657,7 +657,7 @@ function updatePaymentTypeProject() {
     if (taxFields) taxFields.style.display = 'block';
     if (taxAmountInput) {
       taxAmountInput.dataset.max = remaining;
-      taxAmountInput.placeholder = `Max: $${remaining.toFixed(2)}`;
+      taxAmountInput.placeholder = `Max: ${CURRENCY_SYMBOL}${remaining.toFixed(2)}`;
       taxAmountInput.value = '';
     }
   } else {
@@ -674,7 +674,7 @@ function validateTaxAmountInput() {
 
   if (amount > maxAmount) {
     taxInput.value = maxAmount.toFixed(2);
-    errorDiv.textContent = `Cannot add more than $${maxAmount.toFixed(2)}`;
+    errorDiv.textContent = `Cannot add more than ${CURRENCY_SYMBOL}${maxAmount.toFixed(2)}`;
     errorDiv.style.display = 'block';
     taxInput.style.borderColor = '#DC2626';
     return false;
@@ -732,7 +732,7 @@ function deletePayment(type, index) {
       });
     }
   })
-  .catch(err => alert('❌ Error: ' + err.message));
+  .catch(err => alert('âŒ Error: ' + err.message));
 }
 
 function scrollToEditPaymentForm(button) {
@@ -824,7 +824,7 @@ function validateAmountInput() {
   // Validate
   if (maxAmount && amount > maxAmount) {
     amountInput.value = maxAmount.toFixed(2);
-    errorDiv.textContent = `Cannot add more than $${maxAmount.toFixed(2)}`;
+    errorDiv.textContent = `Cannot add more than ${CURRENCY_SYMBOL}${maxAmount.toFixed(2)}`;
     errorDiv.style.display = 'block';
     amountInput.style.borderColor = '#DC2626';
     return false;
@@ -925,12 +925,12 @@ function handleStatusUpdate() {
         } else {
           const data = await res.json();
           console.error('Payment failed:', data);
-          alert('❌ Payment recording failed: ' + (data.error || 'Unknown error'));
+          alert('âŒ Payment recording failed: ' + (data.error || 'Unknown error'));
         }
       })
       .catch(err => {
         console.error('Payment submission error:', err);
-        alert('❌ Error: ' + err.message);
+        alert('âŒ Error: ' + err.message);
       });
     }
     return;
@@ -1014,7 +1014,7 @@ if (sendReminderBtn) {
     const invoiceId = sendReminderBtn.dataset.invoiceId;
     const origHtml  = sendReminderBtn.innerHTML;
     sendReminderBtn.disabled = true;
-    sendReminderBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending…';
+    sendReminderBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sendingâ€¦';
     try {
       const res  = await fetch(`/invoicing/${invoiceId}/send-reminder`, { method: 'POST' });
       const data = await res.json();
@@ -1045,7 +1045,7 @@ if (sendAiReminderBtn) {
     if (!invoiceId) return;
     const origHtml = sendAiReminderBtn.innerHTML;
     sendAiReminderBtn.disabled = true;
-    sendAiReminderBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending…';
+    sendAiReminderBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sendingâ€¦';
     try {
       const res  = await fetch(`/invoicing/${invoiceId}/send-reminder`, { method: 'POST' });
       const data = await res.json();

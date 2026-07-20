@@ -1,10 +1,10 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Invoicing{% endblock %}
 {% block page_title %}Invoicing{% endblock %}
 
 {% set status_icons = {
   'Draft':     ('bi-pencil',                'Not sent to client yet'),
-  'Sent':      ('bi-send',                  'Sent — awaiting payment'),
+  'Sent':      ('bi-send',                  'Sent â€” awaiting payment'),
   'Viewed':    ('bi-eye',                   'Client opened the invoice'),
   'Paid':      ('bi-check-circle-fill',     'Payment received in full'),
   'Partial':   ('bi-circle-half',           'Part payment received'),
@@ -25,27 +25,27 @@
 
 {% block content %}
 
-<!-- ── Invoices Overview ────────────────────────────────────────────────────── -->
+<!-- â”€â”€ Invoices Overview â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="row g-3 mb-4">
   <div class="col-6 col-xl">
     <div class="kpi-card" style="border-left:4px solid #7C3AED;">
       <div class="kpi-top"><span class="kpi-label">Total Invoices</span><i class="bi bi-receipt kpi-icon-sm" style="color:#7C3AED;"></i></div>
       <div class="kpi-value" style="color:#7C3AED;">{{ i_total }}</div>
-      <div class="kpi-sub">{{ i_draft_count }} draft · {{ i_sent_count }} sent</div>
+      <div class="kpi-sub">{{ i_draft_count }} draft Â· {{ i_sent_count }} sent</div>
     </div>
   </div>
   {% if 'financial' in allowed_pages %}
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-blue">
       <div class="kpi-top"><span class="kpi-label">Total Billed</span><i class="bi bi-currency-dollar kpi-icon-sm"></i></div>
-      <div class="kpi-value">${{ "{:,.2f}".format(i_total_val) }}</div>
+      <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(i_total_val) }}</div>
       <div class="kpi-sub">across all invoices</div>
     </div>
   </div>
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-green">
       <div class="kpi-top"><span class="kpi-label">Collected</span><i class="bi bi-check-circle-fill kpi-icon-sm"></i></div>
-      <div class="kpi-value">${{ "{:,.2f}".format(i_total_paid_in_range) }}</div>
+      <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(i_total_paid_in_range) }}</div>
       <div class="kpi-sub">{{ i_coll_rate }}% collection rate</div>
       <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ i_coll_rate }}%"></div></div>
     </div>
@@ -53,21 +53,21 @@
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-amber">
       <div class="kpi-top"><span class="kpi-label">Outstanding</span><i class="bi bi-hourglass-split kpi-icon-sm"></i></div>
-      <div class="kpi-value">${{ "{:,.2f}".format(i_outstanding) }}</div>
-      <div class="kpi-sub">{{ i_paid_count }} paid · {{ i_sent_count }} pending</div>
+      <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(i_outstanding) }}</div>
+      <div class="kpi-sub">{{ i_paid_count }} paid Â· {{ i_sent_count }} pending</div>
     </div>
   </div>
   <div class="col-6 col-xl">
     <div class="kpi-card kpi-red">
       <div class="kpi-top"><span class="kpi-label">Overdue</span><i class="bi bi-exclamation-triangle-fill kpi-icon-sm"></i></div>
-      <div class="kpi-value">${{ "{:,.2f}".format(i_overdue_amt) }}</div>
+      <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(i_overdue_amt) }}</div>
       <div class="kpi-sub">{{ i_over_count }} overdue invoice{{ 's' if i_over_count != 1 }}</div>
     </div>
   </div>
   {% endif %}
 </div>
 
-<!-- ── Tab nav -->
+<!-- â”€â”€ Tab nav -->
 <ul class="nav nav-tabs mb-4" id="invoiceTabs">
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-all-invoices">
@@ -89,14 +89,14 @@
 
 <div class="tab-content">
 
-  <!-- ── Tab 1: All Invoices ────────────────────────────────────────────── -->
+  <!-- â”€â”€ Tab 1: All Invoices â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div class="tab-pane fade" id="tab-all-invoices">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <form method="GET" id="invFilterForm">
         <input type="hidden" name="tab" value="all-invoices">
         <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
           <input type="text" name="q" value="{{ search }}" class="form-control form-control-sm"
-                 placeholder="Search invoices…" style="width:200px;">
+                 placeholder="Search invoicesâ€¦" style="width:200px;">
           <select name="status" class="form-select form-select-sm" style="width:150px;">
             <option value="">All Statuses</option>
             {% for s in statuses %}
@@ -141,9 +141,9 @@
           <i class="bi bi-funnel text-teal"></i>
           <span>
             {% if date_from and date_to %}{{ date_from }} to {{ date_to }}{% elif date_from %}From {{ date_from }}{% elif date_to %}Up to {{ date_to }}{% endif %}
-            {% if status_filter %} · Status: <strong>{{ status_filter }}</strong>{% endif %}
-            {% if client_filter %} · Client: <strong>{{ client_filter }}</strong>{% endif %}
-            {% if plant_filter %} · State: <strong>{{ plant_filter }}</strong>{% endif %}
+            {% if status_filter %} Â· Status: <strong>{{ status_filter }}</strong>{% endif %}
+            {% if client_filter %} Â· Client: <strong>{{ client_filter }}</strong>{% endif %}
+            {% if plant_filter %} Â· State: <strong>{{ plant_filter }}</strong>{% endif %}
           </span>
         </div>
         {% endif %}
@@ -173,9 +173,9 @@
             <tr class="inv-row" onclick="location.href='{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}'"
                 style="cursor:pointer;">
               <td style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
-                <span class="fw-bold text-teal" style="text-decoration:none;white-space:nowrap;">{{ meta.get('invoice_number','—') }}</span>
+                <span class="fw-bold text-teal" style="text-decoration:none;white-space:nowrap;">{{ meta.get('invoice_number','â€”') }}</span>
               </td>
-              <td>{{ meta.get('company_name') or meta.get('client_name','—') }}</td>
+              <td>{{ meta.get('company_name') or meta.get('client_name','â€”') }}</td>
               <td class="text-muted small">
                 {%- set main_proj = meta.get('project_number','') %}
                 {%- if main_proj %}
@@ -184,23 +184,23 @@
                   {%- set line_projs = inv.get('line_items', []) | map(attribute='project_number') | select | unique | list %}
                   {%- if line_projs %}
                     <span title="{{ line_projs | join(', ') }}">{{ line_projs | join(', ') }}</span>
-                  {%- else %}—{%- endif %}
+                  {%- else %}â€”{%- endif %}
                 {%- endif %}
               </td>
               <td>
                 {%- if inv.plant_state %}
                   <span class="badge" style="background:#0D9488;color:#fff;font-size:11px;font-weight:700;letter-spacing:.04em;">{{ inv.plant_state }}</span>
                 {%- else %}
-                  <span class="text-muted small">—</span>
+                  <span class="text-muted small">â€”</span>
                 {%- endif %}
               </td>
-              <td>{{ meta.get('invoice_date','—') | format_date_invoice }}</td>
-              <td>{{ meta.get('due_date','—') | format_date_invoice }}{% if meta.get('net_terms') %}<br><span class="text-muted small">Net {{ meta.get('net_terms') }}</span>{% endif %}</td>
-              <td class="text-end fw-bold">${{ "{:,.2f}".format(meta.get('total',0)|float) }}</td>
+              <td>{{ meta.get('invoice_date','â€”') | format_date_invoice }}</td>
+              <td>{{ meta.get('due_date','â€”') | format_date_invoice }}{% if meta.get('net_terms') %}<br><span class="text-muted small">Net {{ meta.get('net_terms') }}</span>{% endif %}</td>
+              <td class="text-end fw-bold">{{ currency_symbol }}{{ "{:,.2f}".format(meta.get('total',0)|float) }}</td>
               <td class="text-end text-success">
                 {%- set line_paid = meta.get('amount_paid',0)|float -%}
                 {%- set tax_paid = inv.get('tax_payments',[])|map(attribute='amount')|map('float')|sum -%}
-                ${{ "{:,.2f}".format(line_paid + tax_paid) }}
+                {{ currency_symbol }}{{ "{:,.2f}".format(line_paid + tax_paid) }}
               </td>
               <td>{{ status_badge(meta.get('status')) }}</td>
               <td onclick="event.stopPropagation()" class="text-end" style="white-space:nowrap;">
@@ -236,8 +236,8 @@
             {% if invoices %}
             <tr style="font-weight:700; border-top:2px solid #E2E8F0;">
               <td colspan="6">Totals</td>
-              <td class="text-end">${{ "{:,.2f}".format(total_all) }}</td>
-              <td class="text-end text-success">${{ "{:,.2f}".format(total_paid_with_tax) }}</td>
+              <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(total_all) }}</td>
+              <td class="text-end text-success">{{ currency_symbol }}{{ "{:,.2f}".format(total_paid_with_tax) }}</td>
               <td colspan="2"></td>
             </tr>
             {% endif %}
@@ -248,8 +248,8 @@
     </div>
   </div>
 
-  <!-- ── Tab 2: New Invoice ──────────────────────────────────────────────── -->
-  <!-- ── Tab 3: Export ───────────────────────────────────────────────────── -->
+  <!-- â”€â”€ Tab 2: New Invoice â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+  <!-- â”€â”€ Tab 3: Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div class="tab-pane fade" id="tab-export">
     <div class="card-panel mb-4">
       <h6 class="section-heading mb-3">Filter Export</h6>
@@ -330,17 +330,17 @@
 <script>
 const TODAY_ISO = {{ now.strftime('%Y-%m-%d') | tojson }}; // company-timezone "today", not the browser's local/UTC date
 
-// ── Quick Pay ────────────────────────────────────────────────────────────────
+// â”€â”€ Quick Pay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function quickPay(invoiceId, total, amountPaid, btn) {
-  const fmt = v => '$' + parseFloat(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const fmt = v => CURRENCY_SYMBOL + parseFloat(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
   const remaining = Math.max(0, total - amountPaid);
 
   if (remaining <= 0.01) {
-    alert('✅ Invoice is already fully paid');
+    alert('âœ… Invoice is already fully paid');
     return;
   }
 
-  if (!confirm(`Record $${remaining.toFixed(2)} payment to complete invoice?`)) return;
+  if (!confirm(`Record ${CURRENCY_SYMBOL}${remaining.toFixed(2)} payment to complete invoice?`)) return;
 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
@@ -357,11 +357,11 @@ async function quickPay(invoiceId, total, amountPaid, btn) {
   } else {
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-check-circle"></i>';
-    alert('❌ Error recording payment');
+    alert('âŒ Error recording payment');
   }
 }
 
-// ── Invoice filter quick-range ───────────────────────────────────────────────
+// â”€â”€ Invoice filter quick-range â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function localDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
@@ -384,7 +384,7 @@ function setInvRange(type) {
   form.submit();
 }
 
-// ── Export link builder ──────────────────────────────────────────────────────
+// â”€â”€ Export link builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const INV_PDF_BASE   = "{{ url_for('invoicing_export_pdf') }}";
 const INV_EXCEL_BASE = "{{ url_for('invoicing_export_excel') }}";
 const INV_CSV_BASE   = "{{ url_for('invoicing_export_csv') }}";
@@ -426,7 +426,7 @@ function clearInvExportFilters() {
   buildInvExportLinks();
 }
 
-// ── Tab activation ───────────────────────────────────────────────────────────
+// â”€â”€ Tab activation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const invTabParam = "{{ active_tab }}";
 const invAllTabs  = ["all-invoices", "export"];
 const invTarget   = invAllTabs.includes(invTabParam) ? invTabParam : "all-invoices";

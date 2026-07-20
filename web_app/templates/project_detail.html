@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Project {{ project.get('project_number','') }}{% endblock %}
 {% block page_title %}Project Detail{% endblock %}
 
@@ -8,7 +8,7 @@
     <a href="{{ url_for('projects') }}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-arrow-left"></i>
     </a>
-    <h5 class="mb-0">{{ project.get('project_number','') }} — {{ project.get('project_name','') }}</h5>
+    <h5 class="mb-0">{{ project.get('project_number','') }} â€” {{ project.get('project_name','') }}</h5>
     <button class="btn btn-xs btn-outline-secondary" title="Copy project number"
             onclick="copyNumber('{{ project.get('project_number','') }}', this)">
       <i class="bi bi-copy"></i>
@@ -101,17 +101,17 @@
 
 <div class="tab-content">
 
-  <!-- ── Overview Tab ───────────────────────────────────────────────────── -->
+  <!-- â”€â”€ Overview Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div class="tab-pane fade show active" id="tab-overview">
     <div class="row g-3">
       <div class="col-lg-8">
         <div class="card-panel mb-3">
           <h6 class="section-heading">Project Info</h6>
           <div class="row g-2">
-            <div class="col-sm-4"><div class="info-label">Client</div><div class="info-value">{{ project.get('company_name') or project.get('company') or project.get('client_name','—') }}</div></div>
-            <div class="col-sm-4"><div class="info-label">Start Date</div><div class="info-value">{{ project.get('start_date','—') | format_date }}</div></div>
-            <div class="col-sm-4"><div class="info-label">End Date</div><div class="info-value">{{ (project.get('end_date','—') | format_date) if project.get('end_date') else '—' }}</div></div>
-            <div class="col-sm-4"><div class="info-label">Sales Person</div><div class="info-value">{{ project.get('sales') or project.get('assigned_to','—') or '—' }}</div></div>
+            <div class="col-sm-4"><div class="info-label">Client</div><div class="info-value">{{ project.get('company_name') or project.get('company') or project.get('client_name','â€”') }}</div></div>
+            <div class="col-sm-4"><div class="info-label">Start Date</div><div class="info-value">{{ project.get('start_date','â€”') | format_date }}</div></div>
+            <div class="col-sm-4"><div class="info-label">End Date</div><div class="info-value">{{ (project.get('end_date','â€”') | format_date) if project.get('end_date') else 'â€”' }}</div></div>
+            <div class="col-sm-4"><div class="info-label">Sales Person</div><div class="info-value">{{ project.get('sales') or project.get('assigned_to','â€”') or 'â€”' }}</div></div>
             {% set svcs = project.get('service_types') or [] %}
             {% if svcs %}
             <div class="col-12">
@@ -130,7 +130,7 @@
               </div>
             </div>
             {% endif %}
-            <div class="col-sm-4"><div class="info-label">Payment Stage</div><div class="info-value">{{ project.get('payment_category','—') or '—' }}</div></div>
+            <div class="col-sm-4"><div class="info-label">Payment Stage</div><div class="info-value">{{ project.get('payment_category','â€”') or 'â€”' }}</div></div>
             {% if project.get('quote_number') or project.get('job_number') %}
             <div class="col-sm-4"><div class="info-label">Quote Number</div><div class="info-value">{{ project.get('quote_number') or project.get('job_number') }}</div></div>
             {% endif %}
@@ -153,7 +153,7 @@
             <div class="col-12"><div class="info-label">Scope of Work</div><div class="info-value">{{ project.get('scope_of_work') }}</div></div>
             {% endif %}
             {% if project.get('expedite') == 'Yes' %}
-            <div class="col-sm-4"><div class="info-label">Expedite</div><div class="info-value"><span class="badge bg-warning text-dark">Yes — +50% Extra</span></div></div>
+            <div class="col-sm-4"><div class="info-label">Expedite</div><div class="info-value"><span class="badge bg-warning text-dark">Yes â€” +50% Extra</span></div></div>
             {% endif %}
             {% if project.get('description') %}
             <div class="col-12"><div class="info-label">Description</div><div class="info-value">{{ project.get('description') }}</div></div>
@@ -169,25 +169,25 @@
           {% if change_orders and co_approved_total > 0 %}
           <div class="d-flex align-items-center gap-2 mb-3 p-2 rounded" style="background:#F0FDF4;border:1px solid #BBF7D0;">
             <i class="bi bi-arrow-repeat text-success"></i>
-            <span class="small text-muted">Base <strong>${{ "{:,.0f}".format(base_contract) }}</strong></span>
+            <span class="small text-muted">Base <strong>{{ currency_symbol }}{{ "{:,.0f}".format(base_contract) }}</strong></span>
             <span class="small text-muted">+</span>
-            <span class="small text-success fw-600">COs ${{ "{:,.0f}".format(co_contract_increase) }}</span>
+            <span class="small text-success fw-600">COs {{ currency_symbol }}{{ "{:,.0f}".format(co_contract_increase) }}</span>
             <span class="small text-muted">=</span>
-            <span class="small fw-bold text-teal">${{ "{:,.0f}".format(project.get('contract_value',0)|float) }}</span>
+            <span class="small fw-bold text-teal">{{ currency_symbol }}{{ "{:,.0f}".format(project.get('contract_value',0)|float) }}</span>
           </div>
           {% endif %}
           <div class="row g-3">
             <div class="col-4 text-center">
-              <div class="fs-4 fw-bold text-teal">${{ "{:,.0f}".format(project.get('contract_value',0)|float) }}</div>
+              <div class="fs-4 fw-bold text-teal">{{ currency_symbol }}{{ "{:,.0f}".format(project.get('contract_value',0)|float) }}</div>
               <div class="text-muted small">Contract Value</div>
             </div>
             <div class="col-4 text-center">
-              <div class="fs-4 fw-bold text-success">${{ "{:,.0f}".format(project.get('amount_paid',0)|float) }}</div>
+              <div class="fs-4 fw-bold text-success">{{ currency_symbol }}{{ "{:,.0f}".format(project.get('amount_paid',0)|float) }}</div>
               <div class="text-muted small">Amount Paid</div>
             </div>
             <div class="col-4 text-center">
               {% set outstanding = project.get('contract_value',0)|float - project.get('amount_paid',0)|float %}
-              <div class="fs-4 fw-bold {{ 'text-danger' if outstanding > 0 else 'text-success' }}">${{ "{:,.0f}".format(outstanding) }}</div>
+              <div class="fs-4 fw-bold {{ 'text-danger' if outstanding > 0 else 'text-success' }}">{{ currency_symbol }}{{ "{:,.0f}".format(outstanding) }}</div>
               <div class="text-muted small">Outstanding</div>
             </div>
           </div>
@@ -265,7 +265,7 @@
                   <td class="text-end">
                     <span id="amountDisplay_{{ loop.index0 }}" style="display:inline-flex; align-items:center; gap:8px;">
                       <span id="stageAmount_{{ loop.index0 }}" style="cursor:pointer;" onclick="{% if st == 'Pending Invoice' %}toggleInlineEdit({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ st }}', '{{ inv_id }}'){% endif %}">
-                        ${{ "{:,.2f}".format(s.get('amount',0)|float) }}
+                        {{ currency_symbol }}{{ "{:,.2f}".format(s.get('amount',0)|float) }}
                       </span>
                       {% if st in ('Pending Invoice', 'Invoiced', 'Partially Paid', 'Overdue') %}
                       <button type="button" class="btn btn-xs btn-outline-primary"
@@ -284,8 +284,8 @@
                     </span>
                   </td>
                   <td><span class="badge status-{{ status_class.get(st, st|lower|replace(' ','-')) }}">{{ st }}</span></td>
-                  <td class="text-end">{% set paid_amount = s.get('amount_paid', 0)|float %}{% if paid_amount > 0 %}${{ "{:,.2f}".format(paid_amount) }}{% else %}—{% endif %}</td>
-                  <td>{% if inv_id and (inv_num or inv_data.get('number')) %}<a href="{{ url_for('invoice_detail', invoice_id=inv_id) }}" class="text-decoration-none">{{ inv_num or inv_data.get('number') }}</a>{% else %}—{% endif %}</td>
+                  <td class="text-end">{% set paid_amount = s.get('amount_paid', 0)|float %}{% if paid_amount > 0 %}{{ currency_symbol }}{{ "{:,.2f}".format(paid_amount) }}{% else %}â€”{% endif %}</td>
+                  <td>{% if inv_id and (inv_num or inv_data.get('number')) %}<a href="{{ url_for('invoice_detail', invoice_id=inv_id) }}" class="text-decoration-none">{{ inv_num or inv_data.get('number') }}</a>{% else %}â€”{% endif %}</td>
                   <td class="text-center">
                     {% if st == 'Pending Invoice' %}
                     <button type="button" class="btn btn-xs btn-outline-teal" onclick="quickInvoiceStage({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ project.firebase_id }}')"
@@ -342,7 +342,7 @@
           </form>
         </div>
 
-        <!-- Invoice prompt modal — shown when status set to Sent out_Not Invoiced -->
+        <!-- Invoice prompt modal â€” shown when status set to Sent out_Not Invoiced -->
         <div class="modal fade" id="invoicePromptModal" tabindex="-1" aria-hidden="true">
           <div class="modal-dialog modal-dialog-centered modal-sm">
             <div class="modal-content">
@@ -352,7 +352,7 @@
               </div>
               <div class="modal-body pt-1 pb-2">
                 <p class="text-muted small mb-0">
-                  You're marking this project as <strong>Sent Out — Not Invoiced</strong>.<br>
+                  You're marking this project as <strong>Sent Out â€” Not Invoiced</strong>.<br>
                   Do you want to create the invoice now?
                 </p>
               </div>
@@ -369,15 +369,15 @@
         <div class="card-panel">
           <h6 class="section-heading">Metadata</h6>
           <div class="info-label">Created</div>
-          <div class="info-value small">{{ project.get('created_at','—')[:10] | format_date }}</div>
+          <div class="info-value small">{{ project.get('created_at','â€”')[:10] | format_date }}</div>
           <div class="info-label mt-2">Updated</div>
-          <div class="info-value small">{{ project.get('updated_at','—')[:10] | format_date }}</div>
+          <div class="info-value small">{{ project.get('updated_at','â€”')[:10] | format_date }}</div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ── P&L Tab ────────────────────────────────────────────────────────── -->
+  <!-- â”€â”€ P&L Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div class="tab-pane fade" id="tab-pnl">
 
     <!-- P&L KPI row -->
@@ -385,28 +385,28 @@
       <div class="col-6 col-xl-3">
         <div class="kpi-card kpi-teal">
           <div class="kpi-top"><span class="kpi-label">Total Invoiced</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
-          <div class="kpi-value">${{ "{:,.0f}".format(inv_total) }}</div>
+          <div class="kpi-value">{{ currency_symbol }}{{ "{:,.0f}".format(inv_total) }}</div>
           <div class="kpi-sub">{{ project_invoices|length }} invoice{{ 's' if project_invoices|length != 1 }}</div>
         </div>
       </div>
       <div class="col-6 col-xl-3">
         <div class="kpi-card kpi-green">
           <div class="kpi-top"><span class="kpi-label">Collected</span><i class="bi bi-check-circle-fill kpi-icon-sm"></i></div>
-          <div class="kpi-value">${{ "{:,.0f}".format(inv_paid) }}</div>
+          <div class="kpi-value">{{ currency_symbol }}{{ "{:,.0f}".format(inv_paid) }}</div>
           <div class="kpi-sub">{{ "%.0f"|format((inv_paid/inv_total*100) if inv_total > 0 else 0) }}% collected</div>
         </div>
       </div>
       <div class="col-6 col-xl-3">
         <div class="kpi-card kpi-amber">
           <div class="kpi-top"><span class="kpi-label">Expenses</span><i class="bi bi-arrow-down-circle kpi-icon-sm"></i></div>
-          <div class="kpi-value">${{ "{:,.0f}".format(exp_total) }}</div>
+          <div class="kpi-value">{{ currency_symbol }}{{ "{:,.0f}".format(exp_total) }}</div>
           <div class="kpi-sub">{{ project_expenses|length }} entr{{ 'ies' if project_expenses|length != 1 else 'y' }}</div>
         </div>
       </div>
       <div class="col-6 col-xl-3">
         <div class="kpi-card {{ 'kpi-green' if gross_profit >= 0 else 'kpi-blue' }}">
           <div class="kpi-top"><span class="kpi-label">Gross Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
-          <div class="kpi-value {{ 'text-success' if gross_profit >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(gross_profit) }}</div>
+          <div class="kpi-value {{ 'text-success' if gross_profit >= 0 else 'text-danger' }}">{{ currency_symbol }}{{ "{:,.0f}".format(gross_profit) }}</div>
           <div class="kpi-sub">collected minus expenses</div>
         </div>
       </div>
@@ -417,14 +417,14 @@
       <div class="col-6 col-xl-3">
         <div class="kpi-card kpi-amber">
           <div class="kpi-top"><span class="kpi-label">Labor Cost</span><i class="bi bi-person-badge kpi-icon-sm"></i></div>
-          <div class="kpi-value">${{ "{:,.0f}".format(labor_total_cost) }}</div>
+          <div class="kpi-value">{{ currency_symbol }}{{ "{:,.0f}".format(labor_total_cost) }}</div>
           <div class="kpi-sub">{{ "%.1f"|format(labor_total_minutes/60) }} hrs logged</div>
         </div>
       </div>
       <div class="col-6 col-xl-3">
         <div class="kpi-card {{ 'kpi-green' if net_profit >= 0 else 'kpi-blue' }}">
           <div class="kpi-top"><span class="kpi-label">Net Profit</span><i class="bi bi-graph-up kpi-icon-sm"></i></div>
-          <div class="kpi-value {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">${{ "{:,.0f}".format(net_profit) }}</div>
+          <div class="kpi-value {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">{{ currency_symbol }}{{ "{:,.0f}".format(net_profit) }}</div>
           <div class="kpi-sub">gross profit minus labor</div>
         </div>
       </div>
@@ -465,13 +465,13 @@
               <td>
                 <i class="bi bi-person-badge me-1 text-muted"></i>Labor
                 {% if manual_labor_cost > 0 and labor_total_minutes == 0 %}
-                <span class="badge bg-light text-secondary border ms-1" title="Manually entered — no time entries logged">manual</span>
+                <span class="badge bg-light text-secondary border ms-1" title="Manually entered â€” no time entries logged">manual</span>
                 {% endif %}
               </td>
-              <td class="text-end">${{ "{:,.0f}".format(b_labor) }}</td>
-              <td class="text-end {{ 'text-danger fw-bold' if l_over else 'text-success' }}">${{ "{:,.0f}".format(labor_total_cost) }}</td>
+              <td class="text-end">{{ currency_symbol }}{{ "{:,.0f}".format(b_labor) }}</td>
+              <td class="text-end {{ 'text-danger fw-bold' if l_over else 'text-success' }}">{{ currency_symbol }}{{ "{:,.0f}".format(labor_total_cost) }}</td>
               <td class="text-end {{ 'text-danger' if l_over else '' }}">
-                {{ ('−$' + "{:,.0f}".format(labor_total_cost - b_labor)) if l_over else ('$' + "{:,.0f}".format(b_labor - labor_total_cost)) }}
+                {{ (‘âˆ’’ + currency_symbol + "{:,.0f}".format(labor_total_cost - b_labor)) if l_over else (currency_symbol + "{:,.0f}".format(b_labor - labor_total_cost)) }}
               </td>
               <td>
                 <div class="d-flex align-items-center gap-2">
@@ -489,10 +489,10 @@
             {% set e_over = exp_total > b_exp %}
             <tr>
               <td><i class="bi bi-receipt me-1 text-muted"></i>Expenses</td>
-              <td class="text-end">${{ "{:,.0f}".format(b_exp) }}</td>
-              <td class="text-end {{ 'text-danger fw-bold' if e_over else 'text-success' }}">${{ "{:,.0f}".format(exp_total) }}</td>
+              <td class="text-end">{{ currency_symbol }}{{ "{:,.0f}".format(b_exp) }}</td>
+              <td class="text-end {{ 'text-danger fw-bold' if e_over else 'text-success' }}">{{ currency_symbol }}{{ "{:,.0f}".format(exp_total) }}</td>
               <td class="text-end {{ 'text-danger' if e_over else '' }}">
-                {{ ('−$' + "{:,.0f}".format(exp_total - b_exp)) if e_over else ('$' + "{:,.0f}".format(b_exp - exp_total)) }}
+                {{ (‘âˆ’’ + currency_symbol + "{:,.0f}".format(exp_total - b_exp)) if e_over else (currency_symbol + "{:,.0f}".format(b_exp - exp_total)) }}
               </td>
               <td>
                 <div class="d-flex align-items-center gap-2">
@@ -504,13 +504,13 @@
               </td>
             </tr>
             {% endif %}
-            <!-- Subcontractor row (budget only — no tracking yet) -->
+            <!-- Subcontractor row (budget only â€” no tracking yet) -->
             {% if b_sub > 0 %}
             <tr>
               <td><i class="bi bi-people me-1 text-muted"></i>Subcontractor</td>
-              <td class="text-end">${{ "{:,.0f}".format(b_sub) }}</td>
-              <td class="text-end text-muted">—</td>
-              <td class="text-end text-muted">—</td>
+              <td class="text-end">{{ currency_symbol }}{{ "{:,.0f}".format(b_sub) }}</td>
+              <td class="text-end text-muted">â€”</td>
+              <td class="text-end text-muted">â€”</td>
               <td><span class="small text-muted">Not tracked yet</span></td>
             </tr>
             {% endif %}
@@ -518,13 +518,13 @@
           <tfoot class="table-light fw-bold">
             <tr>
               <td>Total</td>
-              <td class="text-end">${{ "{:,.0f}".format(b_total) }}</td>
-              <td class="text-end {{ 'text-danger' if a_total > b_total else 'text-success' }}">${{ "{:,.0f}".format(a_total) }}</td>
+              <td class="text-end">{{ currency_symbol }}{{ "{:,.0f}".format(b_total) }}</td>
+              <td class="text-end {{ 'text-danger' if a_total > b_total else 'text-success' }}">{{ currency_symbol }}{{ "{:,.0f}".format(a_total) }}</td>
               <td class="text-end {{ 'text-danger' if a_total > b_total else '' }}">
                 {% if a_total > b_total %}
-                  <span class="text-danger">−${{ "{:,.0f}".format(a_total - b_total) }} over</span>
+                  <span class="text-danger">âˆ’{{ currency_symbol }}{{ "{:,.0f}".format(a_total - b_total) }} over</span>
                 {% else %}
-                  ${{ "{:,.0f}".format(b_total - a_total) }} left
+                  {{ currency_symbol }}{{ "{:,.0f}".format(b_total - a_total) }} left
                 {% endif %}
               </td>
               <td>
@@ -570,30 +570,30 @@
                 <tr onclick="location.href='{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}'"
                     style="cursor:pointer;">
                   <td>
-                    <span class="fw-bold text-teal">{{ m.get('invoice_number','—') }}</span>
+                    <span class="fw-bold text-teal">{{ m.get('invoice_number','â€”') }}</span>
                     {% if share < 0.999 %}
-                    <span class="badge bg-secondary ms-1" title="This invoice spans multiple projects — only this project's share is counted here">
+                    <span class="badge bg-secondary ms-1" title="This invoice spans multiple projects â€” only this project's share is counted here">
                       {{ "%.0f"|format(share * 100) }}% share
                     </span>
                     {% endif %}
                   </td>
-                  <td>{{ m.get('invoice_date','—') | format_date }}</td>
+                  <td>{{ m.get('invoice_date','â€”') | format_date }}</td>
                   <td><span class="badge status-{{ inv.get('_display_status', m.get('status','Draft'))|lower|replace(' ','-') }}">{{ inv.get('_display_status', m.get('status','Draft')) }}</span></td>
                   <td class="text-end">
-                    ${{ "{:,.0f}".format(m.get('total',0)|float * share) }}
+                    {{ currency_symbol }}{{ "{:,.0f}".format(m.get('total',0)|float * share) }}
                     {% if share < 0.999 %}
-                    <div class="text-muted" style="font-size:0.75em;">of ${{ "{:,.0f}".format(m.get('total',0)|float) }} invoice total</div>
+                    <div class="text-muted" style="font-size:0.75em;">of {{ currency_symbol }}{{ "{:,.0f}".format(m.get('total',0)|float) }} invoice total</div>
                     {% endif %}
                   </td>
-                  <td class="text-end text-success">${{ "{:,.0f}".format(inv.get('_project_paid', 0)|float) }}</td>
+                  <td class="text-end text-success">{{ currency_symbol }}{{ "{:,.0f}".format(inv.get('_project_paid', 0)|float) }}</td>
                 </tr>
                 {% endfor %}
               </tbody>
               <tfoot class="table-light fw-bold">
                 <tr>
                   <td colspan="3">Totals</td>
-                  <td class="text-end">${{ "{:,.0f}".format(inv_total) }}</td>
-                  <td class="text-end text-success">${{ "{:,.0f}".format(inv_paid) }}</td>
+                  <td class="text-end">{{ currency_symbol }}{{ "{:,.0f}".format(inv_total) }}</td>
+                  <td class="text-end text-success">{{ currency_symbol }}{{ "{:,.0f}".format(inv_paid) }}</td>
                 </tr>
               </tfoot>
             </table>
@@ -610,7 +610,7 @@
           <div class="panel-header d-flex justify-content-between align-items-center">
             <h6 class="panel-title mb-0">Expenses</h6>
             {% if 'financial' in allowed_pages %}
-            <a href="{{ url_for('financial') }}" class="text-teal small">Add expense →</a>
+            <a href="{{ url_for('financial') }}" class="text-teal small">Add expense â†’</a>
             {% endif %}
           </div>
           {% if project_expenses %}
@@ -627,17 +627,17 @@
               <tbody>
                 {% for exp in project_expenses %}
                 <tr>
-                  <td>{{ exp.get('date','—') | format_date }}</td>
-                  <td>{{ exp.get('description','—') }}</td>
-                  <td><span class="badge bg-light text-dark border">{{ exp.get('category','—') }}</span></td>
-                  <td class="text-end text-danger">${{ "{:,.0f}".format(exp.get('amount',0)|float) }}</td>
+                  <td>{{ exp.get('date','â€”') | format_date }}</td>
+                  <td>{{ exp.get('description','â€”') }}</td>
+                  <td><span class="badge bg-light text-dark border">{{ exp.get('category','â€”') }}</span></td>
+                  <td class="text-end text-danger">{{ currency_symbol }}{{ "{:,.0f}".format(exp.get('amount',0)|float) }}</td>
                 </tr>
                 {% endfor %}
               </tbody>
               <tfoot class="table-light fw-bold">
                 <tr>
                   <td colspan="3">Total</td>
-                  <td class="text-end text-danger">${{ "{:,.0f}".format(exp_total) }}</td>
+                  <td class="text-end text-danger">{{ currency_symbol }}{{ "{:,.0f}".format(exp_total) }}</td>
                 </tr>
               </tfoot>
             </table>
@@ -656,7 +656,7 @@
           <div class="panel-header d-flex justify-content-between align-items-center">
             <h6 class="panel-title mb-0">Labor</h6>
             {% if 'employees' in allowed_pages %}
-            <a href="{{ url_for('employees') }}#team" class="text-teal small">Employees →</a>
+            <a href="{{ url_for('employees') }}#team" class="text-teal small">Employees â†’</a>
             {% endif %}
           </div>
           {% if labor_by_employee %}
@@ -675,8 +675,8 @@
                 <tr>
                   <td>{{ emp }}</td>
                   <td class="text-end">{{ "%.1f"|format(d.minutes/60) }} h</td>
-                  <td class="text-end">${{ "{:,.2f}".format(d.rate) }}/h</td>
-                  <td class="text-end text-danger">${{ "{:,.0f}".format(d.cost) }}</td>
+                  <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(d.rate) }}/h</td>
+                  <td class="text-end text-danger">{{ currency_symbol }}{{ "{:,.0f}".format(d.cost) }}</td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -685,7 +685,7 @@
                   <td>Total</td>
                   <td class="text-end">{{ "%.1f"|format(labor_total_minutes/60) }} h</td>
                   <td></td>
-                  <td class="text-end text-danger">${{ "{:,.0f}".format(labor_total_cost) }}</td>
+                  <td class="text-end text-danger">{{ currency_symbol }}{{ "{:,.0f}".format(labor_total_cost) }}</td>
                 </tr>
               </tfoot>
             </table>
@@ -698,7 +698,7 @@
     </div>
   </div>
 
-  <!-- ── Change Orders Tab ────────────────────────────────────────────────── -->
+  <!-- â”€â”€ Change Orders Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div class="tab-pane fade" id="tab-change-orders">
     <div class="row g-3">
       <div class="col-lg-8">
@@ -720,7 +720,7 @@
             <div class="fw-bold fs-5 text-warning">{{ co_submitted }}</div><div class="text-muted small">Pending</div>
           </div></div>
           <div class="col-3"><div class="card-panel text-center py-2">
-            <div class="fw-bold fs-5 text-teal">${{ "{:,.0f}".format(co_approved_total) }}</div><div class="text-muted small">Approved $</div>
+            <div class="fw-bold fs-5 text-teal">{{ currency_symbol }}{{ "{:,.0f}".format(co_approved_total) }}</div><div class="text-muted small">Approved $</div>
           </div></div>
         </div>
         {% endif %}
@@ -753,14 +753,14 @@
                 {% for co in change_orders %}
                 {% set co_idx = loop.index0 %}
                 <tr>
-                  <td class="fw-600 text-teal">{{ co.get('co_number','—') }}</td>
+                  <td class="fw-600 text-teal">{{ co.get('co_number','â€”') }}</td>
                   <td>
-                    <div class="fw-500">{{ co.get('title','—') }}</div>
+                    <div class="fw-500">{{ co.get('title','â€”') }}</div>
                     {% if co.get('description') %}
                     <div class="text-muted small">{{ co.get('description') }}</div>
                     {% endif %}
                   </td>
-                  <td class="text-end fw-600">${{ "{:,.0f}".format(co.get('amount',0)|float) }}</td>
+                  <td class="text-end fw-600">{{ currency_symbol }}{{ "{:,.0f}".format(co.get('amount',0)|float) }}</td>
                   <td>
                     {% if co.get('status') == 'Approved' %}
                     <span class="badge" style="background:#DCFCE7;color:#166534;">Approved</span>
@@ -783,7 +783,7 @@
                     {% elif co.get('status') == 'Submitted' %}
                     <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}" class="d-inline">
                       <input type="hidden" name="status" value="Approved">
-                      <button class="btn btn-xs btn-success" title="Approve — adds to contract value">Approve</button>
+                      <button class="btn btn-xs btn-success" title="Approve â€” adds to contract value">Approve</button>
                     </form>
                     <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}" class="d-inline ms-1">
                       <input type="hidden" name="status" value="Rejected">
@@ -799,7 +799,7 @@
               <tfoot>
                 <tr class="table-light fw-bold">
                   <td colspan="2">Approved Total</td>
-                  <td class="text-end text-success">${{ "{:,.0f}".format(co_approved_total) }}</td>
+                  <td class="text-end text-success">{{ currency_symbol }}{{ "{:,.0f}".format(co_approved_total) }}</td>
                   <td colspan="{{ 3 if user_role in ('admin','projects') else 2 }}"></td>
                 </tr>
               </tfoot>
@@ -832,7 +832,7 @@
             </div>
             <div class="d-flex gap-2 align-items-start">
               <span class="badge" style="background:#DCFCE7;color:#166534;margin-top:2px;">3</span>
-              <span class="small text-muted">Approve — contract value updates automatically and a new payment stage is added for invoicing.</span>
+              <span class="small text-muted">Approve â€” contract value updates automatically and a new payment stage is added for invoicing.</span>
             </div>
           </div>
         </div>
@@ -840,7 +840,7 @@
     </div>
   </div>
 
-  <!-- ── Notes / Activity Log Tab ─────────────────────────────────────────── -->
+  <!-- â”€â”€ Notes / Activity Log Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
   <div class="tab-pane fade" id="tab-notes">
     <div class="row g-3">
       <div class="col-lg-8">
@@ -851,7 +851,7 @@
             <label class="form-label fw-600">Add Note</label>
             <div class="d-flex gap-2">
               <textarea name="note_text" class="form-control" rows="2"
-                        placeholder="Log a call, site visit, submission, client update…" required></textarea>
+                        placeholder="Log a call, site visit, submission, client updateâ€¦" required></textarea>
               <button type="submit" class="btn btn-teal px-4 align-self-end">
                 <i class="bi bi-plus-lg me-1"></i>Add
               </button>
@@ -875,7 +875,7 @@
             <div class="flex-grow-1">
               <div class="d-flex justify-content-between align-items-start">
                 <div>
-                  <span class="fw-600 small">{{ note.get('created_by','—') }}</span>
+                  <span class="fw-600 small">{{ note.get('created_by','â€”') }}</span>
                   <span class="text-muted small ms-2">
                     {{ note.get('created_at','')[:10] | format_date }}
                     {{ note.get('created_at','')[11:16] }}
@@ -906,7 +906,7 @@
 
 </div>
 
-<!-- ── New Change Order Modal ────────────────────────────────────────────── -->
+<!-- â”€â”€ New Change Order Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="modal fade" id="newCOModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -927,11 +927,11 @@
           <div class="mb-3">
             <label class="form-label fw-600">Description</label>
             <textarea name="description" class="form-control" rows="3"
-                      placeholder="Describe the additional scope of work…"></textarea>
+                      placeholder="Describe the additional scope of workâ€¦"></textarea>
           </div>
           <div class="mb-3">
             <label class="form-label fw-600">Notes</label>
-            <input type="text" name="notes" class="form-control" placeholder="Internal notes…">
+            <input type="text" name="notes" class="form-control" placeholder="Internal notesâ€¦">
           </div>
           <div class="alert alert-info py-2 small mb-0">
             <i class="bi bi-info-circle me-1"></i>
@@ -947,7 +947,7 @@
   </div>
 </div>
 
-<!-- ── Delete Confirmation Modal ─────────────────────────────────────────── -->
+<!-- â”€â”€ Delete Confirmation Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="modal fade" id="deleteModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content border-danger">
@@ -960,8 +960,8 @@
         <div class="p-3 bg-light rounded mb-3">
           <div class="fw-bold text-teal">{{ project.get('project_number','') }}</div>
           <div>{{ project.get('project_name','') }}</div>
-          <div class="text-muted small">Client: {{ project.get('company_name') or project.get('client_name','—') }}</div>
-          <div class="text-muted small">Contract: ${{ "{:,.0f}".format(project.get('contract_value',0)|float) }}</div>
+          <div class="text-muted small">Client: {{ project.get('company_name') or project.get('client_name','â€”') }}</div>
+          <div class="text-muted small">Contract: {{ currency_symbol }}{{ "{:,.0f}".format(project.get('contract_value',0)|float) }}</div>
         </div>
         {% if project_invoices %}
         <div class="alert alert-warning py-2 mb-3">
@@ -977,7 +977,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-          <i class="bi bi-x-lg me-1"></i>Cancel — Keep Project
+          <i class="bi bi-x-lg me-1"></i>Cancel â€” Keep Project
         </button>
         <form method="POST" action="{{ url_for('project_delete', project_id=project.firebase_id) }}">
           <button type="submit" id="deleteConfirmBtn" class="btn btn-danger" disabled>
@@ -1051,7 +1051,7 @@
             </div>
           </div>
           <div class="alert alert-info small mt-3">
-            <strong>📊 Redistribution Preview:</strong>
+            <strong>ðŸ“Š Redistribution Preview:</strong>
             <div id="redistributionPreview" class="mt-2"></div>
           </div>
         </form>
@@ -1243,7 +1243,7 @@ function openEditPaymentPlanModal() {
     messageEl.style.setProperty('display', 'block', 'important');
   }
 
-  document.getElementById('editContractValue').textContent = '$' + contractValue.toFixed(2);
+  document.getElementById('editContractValue').textContent = CURRENCY_SYMBOL + contractValue.toFixed(2);
 
   updateRemainingStages();
 }
@@ -1350,7 +1350,7 @@ function calculateEditPlanTotal() {
   document.getElementById('downPaymentPercentageDisplay').textContent = `${dpPercentage}%`;
 
   const totalEl = document.getElementById('editPlanTotal');
-  const totalText = '$' + total.toFixed(2);
+  const totalText = CURRENCY_SYMBOL + total.toFixed(2);
   totalEl.textContent = totalText;
 
   if (Math.abs(total - contractValue) > 0.01) {
@@ -1374,7 +1374,7 @@ function saveEditedPaymentPlan() {
   });
 
   if (Math.abs(total - contractValue) > 0.01) {
-    alert(`❌ Error: Total ($${total.toFixed(2)}) must equal contract value ($${contractValue.toFixed(2)})`);
+    alert(`âŒ Error: Total (${CURRENCY_SYMBOL}${total.toFixed(2)}) must equal contract value (${CURRENCY_SYMBOL}${contractValue.toFixed(2)})`);
     return;
   }
 
@@ -1407,12 +1407,12 @@ function saveEditedPaymentPlan() {
         location.reload();
       }, 300);
     } else {
-      alert('❌ Error: ' + (data.error || 'Could not update'));
+      alert('âŒ Error: ' + (data.error || 'Could not update'));
     }
   })
   .catch(e => {
     console.error('Payment plan update error:', e);
-    alert('❌ Error: ' + e.message);
+    alert('âŒ Error: ' + e.message);
   });
 }
 
@@ -1432,17 +1432,17 @@ function updateRemainingForStage() {
 
   const remainingEl = document.getElementById('updateStageRemainingDisplay');
   if (diff > 0.01) {
-    remainingEl.innerHTML = `<span class="text-warning">⚠️ Amount reduced by $${diff.toFixed(2)}</span>`;
+    remainingEl.innerHTML = `<span class="text-warning">âš ï¸ Amount reduced by ${CURRENCY_SYMBOL}${diff.toFixed(2)}</span>`;
   } else if (diff < -0.01) {
-    remainingEl.innerHTML = `<span class="text-danger">⚠️ Amount increased by $${Math.abs(diff).toFixed(2)}</span>`;
+    remainingEl.innerHTML = `<span class="text-danger">âš ï¸ Amount increased by ${CURRENCY_SYMBOL}${Math.abs(diff).toFixed(2)}</span>`;
   } else {
     remainingEl.textContent = 'No change';
   }
 }
 
-// ── Quick Update Invoiced Stage ────────────────────────────────────────────
+// â”€â”€ Quick Update Invoiced Stage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function quickUpdateInvoicedStage(stageIdx, invoiceId, newAmount, projectNumber) {
-  if (!invoiceId) { alert('❌ No invoice linked'); return; }
+  if (!invoiceId) { alert('âŒ No invoice linked'); return; }
 
   try {
     const form = new FormData();
@@ -1461,10 +1461,10 @@ async function quickUpdateInvoicedStage(stageIdx, invoiceId, newAmount, projectN
       }, 100);
     } else {
       const data = await resp.json();
-      alert('❌ Error: ' + (data.error || 'Could not update invoice'));
+      alert('âŒ Error: ' + (data.error || 'Could not update invoice'));
     }
   } catch (e) {
-    alert('❌ Error: ' + e.message);
+    alert('âŒ Error: ' + e.message);
   }
 }
 
@@ -1486,7 +1486,7 @@ function updateStagedPayment() {
   .then(r => r.json())
   .then(data => {
     if (data.success) {
-      alert('✅ Payment updated successfully');
+      alert('âœ… Payment updated successfully');
       bootstrap.Modal.getInstance(document.getElementById('updateStageModal')).hide();
       // Preserve current tab before reload
       const activeTab = document.querySelector('.nav-tabs .nav-link.active');
@@ -1498,10 +1498,10 @@ function updateStagedPayment() {
       }
       location.reload();
     } else {
-      alert('❌ Error: ' + (data.error || 'Could not update'));
+      alert('âŒ Error: ' + (data.error || 'Could not update'));
     }
   })
-  .catch(e => alert('❌ Error: ' + e.message));
+  .catch(e => alert('âŒ Error: ' + e.message));
 }
 
 function toggleInlineEdit(idx, name, amount, status, invoiceId) {
@@ -1604,7 +1604,7 @@ function updateRedistributionPreview() {
 
   let preview = '';
   if (difference > 0.01) {
-    preview = `<div class="text-success">✓ Reducing by $${difference.toFixed(2)}</div>`;
+    preview = `<div class="text-success">âœ“ Reducing by ${CURRENCY_SYMBOL}${difference.toFixed(2)}</div>`;
     preview += '<div class="text-muted small mt-2">This amount will be distributed equally among remaining non-invoiced stages:</div>';
 
     const uninvoicedStages = currentStages.filter((s, i) => i > idx && s.status === 'Pending Invoice');
@@ -1612,11 +1612,11 @@ function updateRedistributionPreview() {
       const perStage = difference / uninvoicedStages.length;
       uninvoicedStages.forEach(s => {
         const newStageAmount = (s.amount || 0) + perStage;
-        preview += `<div class="text-muted small">• ${s.name}: $${(s.amount || 0).toFixed(2)} → $${newStageAmount.toFixed(2)}</div>`;
+        preview += `<div class="text-muted small">â€¢ ${s.name}: ${CURRENCY_SYMBOL}${(s.amount || 0).toFixed(2)} â†’ ${CURRENCY_SYMBOL}${newStageAmount.toFixed(2)}</div>`;
       });
     }
   } else if (difference < -0.01) {
-    preview = `<div class="text-danger">⚠️ Increasing by $${Math.abs(difference).toFixed(2)}</div>`;
+    preview = `<div class="text-danger">âš ï¸ Increasing by ${CURRENCY_SYMBOL}${Math.abs(difference).toFixed(2)}</div>`;
     preview += '<div class="text-muted small mt-2">This amount will be subtracted equally from remaining non-invoiced stages.</div>';
   } else {
     preview = '<div class="text-secondary">No change</div>';
@@ -1674,10 +1674,10 @@ function updateInvoicedStage() {
       // Redirect to invoice detail page
       window.location.href = `/invoicing/${invoiceId}`;
     } else {
-      alert('❌ Error: ' + (data.error || 'Could not update'));
+      alert('âŒ Error: ' + (data.error || 'Could not update'));
     }
   })
-  .catch(e => alert('❌ Error: ' + e.message));
+  .catch(e => alert('âŒ Error: ' + e.message));
 }
 
 function quickInvoiceStage(idx, stageName, amount, projectId) {
@@ -1692,13 +1692,13 @@ function quickInvoiceStage(idx, stageName, amount, projectId) {
       // Redirect to invoice detail page
       window.location.href = `/invoicing/${data.invoice_id}`;
     } else {
-      alert('❌ Error: ' + (data.error || 'Could not create invoice'));
+      alert('âŒ Error: ' + (data.error || 'Could not create invoice'));
     }
   })
-  .catch(e => alert('❌ Error: ' + e.message));
+  .catch(e => alert('âŒ Error: ' + e.message));
 }
 
-// ── Permission Modal Handler ────────────────────────────────────────────
+// â”€â”€ Permission Modal Handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function showContractValuePermission(message, newContractValue, onApprove, onDeny, inputEl) {
   // Disable input blur to prevent re-triggering save
   if (inputEl) {
@@ -1720,7 +1720,7 @@ function showContractValuePermission(message, newContractValue, onApprove, onDen
           <div class="modal-body">
             <p class="text-muted mb-3">${message}</p>
             <div class="alert alert-warning alert-sm mb-0">
-              <strong>New Contract Value:</strong> $${newContractValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+              <strong>New Contract Value:</strong> ${CURRENCY_SYMBOL}${newContractValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
             </div>
           </div>
           <div class="modal-footer">
@@ -1812,7 +1812,7 @@ function saveAmountChangeWithPermission(idx, contractValue, originalAmount, edit
   .then(data => {
     if (data.success) {
       // Update UI and reload
-      stageAmountDisplay.textContent = '$' + newAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      stageAmountDisplay.textContent = CURRENCY_SYMBOL + newAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
       input.dataset.originalAmount = newAmount;
       displaySpan.style.display = 'inline-flex';
       editSpan.style.display = 'none';
@@ -1847,7 +1847,7 @@ function saveAmountChangeWithPermission(idx, contractValue, originalAmount, edit
           .then(r => r.json())
           .then(data => {
             if (data.success) {
-              stageAmountDisplay.textContent = '$' + newAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+              stageAmountDisplay.textContent = CURRENCY_SYMBOL + newAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               input.dataset.originalAmount = newAmount;
               displaySpan.style.display = 'inline-flex';
               editSpan.style.display = 'none';
@@ -1863,13 +1863,13 @@ function saveAmountChangeWithPermission(idx, contractValue, originalAmount, edit
                 location.reload();
               }, 300);
             } else {
-              alert('❌ Error: ' + (data.error || 'Could not update'));
+              alert('âŒ Error: ' + (data.error || 'Could not update'));
               displaySpan.style.display = 'inline-flex';
               editSpan.style.display = 'none';
             }
           })
           .catch(e => {
-            alert('❌ Error: ' + e.message);
+            alert('âŒ Error: ' + e.message);
             displaySpan.style.display = 'inline-flex';
             editSpan.style.display = 'none';
           });
@@ -1884,13 +1884,13 @@ function saveAmountChangeWithPermission(idx, contractValue, originalAmount, edit
         input
       );
     } else {
-      alert('❌ Error: ' + (data.error || 'Could not update'));
+      alert('âŒ Error: ' + (data.error || 'Could not update'));
       displaySpan.style.display = 'inline-flex';
       editSpan.style.display = 'none';
     }
   })
   .catch(e => {
-    alert('❌ Error: ' + e.message);
+    alert('âŒ Error: ' + e.message);
     displaySpan.style.display = 'inline-flex';
     editSpan.style.display = 'none';
   });
