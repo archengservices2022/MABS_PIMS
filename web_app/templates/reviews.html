@@ -49,6 +49,14 @@
   }
   .review-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,.08); border-color: #C9920A; }
   .review-card.action-required { border-left: 4px solid #EAB308; }
+  .review-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .review-kpi {
+    background: #fff; border: 1px solid #E5E7EB; border-radius: 10px;
+    padding: 14px 16px; box-shadow: 0 1px 4px rgba(15,23,42,.05);
+  }
+  .review-kpi-label { font-size: 11px; color: #94A3B8; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+  .review-kpi-value { font-size: 24px; line-height: 1.1; font-weight: 800; margin-top: 6px; color: #0F172A; }
+  .review-kpi-sub { font-size: 12px; color: #64748B; margin-top: 4px; }
   .review-actions { display: inline-flex; align-items: center; gap: 6px; }
   .review-action-btn {
     width: 30px; height: 30px; border-radius: 6px; border: 1px solid #D1D5DB;
@@ -91,11 +99,16 @@
 
   @media (prefers-color-scheme: dark) {
     .review-card { background: #1e293b; border-color: #334155; }
+    .review-kpi { background: #1e293b; border-color: #334155; }
+    .review-kpi-value { color: #e2e8f0; }
     .star-btn    { background: #1e293b; border-color: #475569; color: #94a3b8; }
     .review-action-btn { background: #1e293b; border-color: #475569; color: #cbd5e1; }
     .cat-label   { color: #e2e8f0; }
     .cat-desc    { color: #94a3b8; }
     .raise-suggest { background: #0f2e1a; border-color: #166534; color: #4ade80; }
+  }
+  @media (max-width: 900px) {
+    .review-kpi-grid { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
   }
 </style>
 
@@ -130,6 +143,44 @@
 
 {% if reviews %}
 {% if role == 'admin' %}
+{% set ns = namespace(completed=0, pending=0, raise_count=0, raise_total=0.0) %}
+{% for r in reviews %}
+  {% set st = r.status or 'Submitted' %}
+  {% if st == 'completed' %}
+    {% set ns.completed = ns.completed + 1 %}
+  {% else %}
+    {% set ns.pending = ns.pending + 1 %}
+  {% endif %}
+  {% set raise_pct = r.approved_raise_pct | float if r.approved_raise_pct else 0 %}
+  {% if raise_pct > 0 %}
+    {% set ns.raise_count = ns.raise_count + 1 %}
+    {% set ns.raise_total = ns.raise_total + raise_pct %}
+  {% endif %}
+{% endfor %}
+<div class="review-kpi-grid">
+  <div class="review-kpi">
+    <div class="review-kpi-label">Total Reviews</div>
+    <div class="review-kpi-value">{{ reviews|length }}</div>
+    <div class="review-kpi-sub">all periods</div>
+  </div>
+  <div class="review-kpi">
+    <div class="review-kpi-label">Employees Done</div>
+    <div class="review-kpi-value text-success">{{ ns.completed }}</div>
+    <div class="review-kpi-sub">completed reviews</div>
+  </div>
+  <div class="review-kpi">
+    <div class="review-kpi-label">Need Review</div>
+    <div class="review-kpi-value text-warning">{{ ns.pending }}</div>
+    <div class="review-kpi-sub">pending workflow</div>
+  </div>
+  <div class="review-kpi">
+    <div class="review-kpi-label">Budget Increase</div>
+    <div class="review-kpi-value text-teal">
+      {% if ns.raise_count > 0 %}{{ "%.1f"|format(ns.raise_total / ns.raise_count) }}%{% else %}0.0%{% endif %}
+    </div>
+    <div class="review-kpi-sub">{{ ns.raise_count }} raise{{ 's' if ns.raise_count != 1 }} approved</div>
+  </div>
+</div>
 <div class="d-flex gap-2 mb-3 flex-wrap">
   <input type="text" id="reviewSearch" class="form-control form-control-sm" style="max-width:220px;" placeholder="Search employee?">
   <select id="reviewPeriodFilter" class="form-select form-select-sm" style="max-width:160px;">
