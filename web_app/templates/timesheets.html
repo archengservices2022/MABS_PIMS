@@ -202,7 +202,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 0;
   padding: 6px 4px;
   cursor: pointer;
   transition: box-shadow .15s, transform .15s;
@@ -225,10 +225,10 @@
   line-height: 1.2;
 }
 .dc-hrs {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 800;
   line-height: 1;
-  margin-top: 1px;
+  margin-top: 0;
 }
 /* Status-based cell colours */
 .dc-approved { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
@@ -500,8 +500,6 @@
                   <div class="dc dc-{{ cell.status | lower }}"
                        title="{{ cell.projects | join(', ') or 'No project' }} — {{ cell.time_range }} — {{ '%.1f'|format(cell.hours) }}h"
                        {% if cell.sheet_id %}onclick="window.location='{{ url_for('timesheet_detail', sheet_id=cell.sheet_id) }}'"{% endif %}>
-                    {% if cell.time_range %}<div class="dc-time">{{ cell.time_range }}</div>{% endif %}
-                    {% if cell.projects %}<div class="dc-proj">{{ cell.projects[0] }}{% if cell.projects|length > 1 %} +{{ cell.projects|length - 1 }}{% endif %}</div>{% endif %}
                     <div class="dc-hrs">{{ "%.1f"|format(cell.hours) }}h</div>
                   </div>
                 {% else %}
@@ -671,8 +669,6 @@
                 <div class="dc dc-{{ cell.status | lower }}"
                      title="{{ cell.projects | join(', ') or 'General' }} — {{ cell.time_range }} — {{ '%.1f'|format(cell.hours) }}h"
                      {% if cell.sheet_id %}onclick="window.location='{{ url_for('timesheet_detail', sheet_id=cell.sheet_id) }}'"{% endif %}>
-                  {% if cell.time_range %}<div class="dc-time">{{ cell.time_range }}</div>{% endif %}
-                  {% if cell.projects %}<div class="dc-proj">{{ cell.projects[0] }}{% if cell.projects|length > 1 %} +{{ cell.projects|length - 1 }}{% endif %}</div>{% endif %}
                   <div class="dc-hrs">{{ "%.1f"|format(cell.hours) }}h</div>
                 </div>
               {% else %}
