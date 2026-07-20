@@ -9657,6 +9657,37 @@ def financial():
                     _fin_sp_totals[_sp]["periods"][_period] = {"earned": 0.0, "paid": False}
                 _fin_sp_totals[_sp]["periods"][_period]["earned"] += _qval * _rate / 100
 
+    # Also include direct projects (no linked quote) — same logic as Quotes Sales People tab
+    if isinstance(_all_proj_fin, dict):
+        for _pid, _pd in _all_proj_fin.items():
+            if not _pd or not isinstance(_pd, dict): continue
+            if _pd.get("status", "") == "Cancelled": continue
+            if (_pd.get("quote_number") or "").strip(): continue  # already counted via quote
+            _sp = (_pd.get("sales") or _pd.get("sales_person") or "").strip()
+            if not _sp or _sp not in _sales_users_fin: continue
+            _rate = _sales_users_fin[_sp]["commission_rate"]
+            if not _rate: continue
+            _pval = _safe_float(_pd.get("contract_value", 0))
+            if not _pval: continue
+            _period = (_pd.get("start_date") or _pd.get("created_at") or "")[:7]
+            if _sp not in _fin_sp_totals:
+                _fin_sp_totals[_sp] = {
+                    "name":            _sp,
+                    "email":           _sales_users_fin[_sp]["email"],
+                    "employee_type":   _sales_users_fin[_sp]["employee_type"],
+                    "commission_rate": _rate,
+                    "total_revenue":   0.0,
+                    "total_earned":    0.0,
+                    "total_paid":      0.0,
+                    "periods":         {},
+                }
+            _fin_sp_totals[_sp]["total_revenue"] += _pval
+            _fin_sp_totals[_sp]["total_earned"]  += _pval * _rate / 100
+            if _period:
+                if _period not in _fin_sp_totals[_sp]["periods"]:
+                    _fin_sp_totals[_sp]["periods"][_period] = {"earned": 0.0, "paid": False}
+                _fin_sp_totals[_sp]["periods"][_period]["earned"] += _pval * _rate / 100
+
     # Apply payment records
     _comm_pay_fin = fb_get("/commission_payments") or {}
     if isinstance(_comm_pay_fin, dict):
