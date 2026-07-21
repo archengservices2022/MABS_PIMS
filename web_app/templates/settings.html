@@ -625,8 +625,6 @@
       </div>
 
       {% if activity_summary %}
-      {% set max_open = (activity_summary | map(attribute='today_open') | list | max) or 1 %}
-      {% set max_oper = (activity_summary | map(attribute='today_operated') | list | max) or 1 %}
       <div class="table-responsive">
         <table class="table align-middle mb-0" style="font-size:13px;">
           <thead>
@@ -653,8 +651,8 @@
             {% set open_h   = (open_m  / 60) | int %}{% set open_mn  = (open_m  % 60) | int %}
             {% set oper_h   = (oper_m  / 60) | int %}{% set oper_mn  = (oper_m  % 60) | int %}
             {% set wopen_h  = (wopen_m / 60) | int %}{% set wopen_mn = (wopen_m % 60) | int %}
-            {% set open_bar = ((open_m / max_open) * 100) | int %}
-            {% set oper_bar = ((oper_m / max_oper) * 100) | int %}
+            {% set open_bar = ((open_m / act_max_open) * 100) | int %}
+            {% set oper_bar = ((oper_m / act_max_oper) * 100) | int %}
             <tr style="border-bottom:1px solid #f1f5f9;">
               <td style="padding:12px 14px;">
                 <div class="d-flex align-items-center gap-2">

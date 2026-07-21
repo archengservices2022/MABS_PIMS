@@ -294,15 +294,19 @@ def _start_activity_session(uid: str, name: str) -> str:
 def _touch_activity_session(sid: str):
     if not sid:
         return
-    now = datetime.now(COMPANY_TZ)
-    current_minute = now.strftime("%Y-%m-%d %H:%M")
-    existing = fb_get(f"/activity_sessions/{sid}") or {}
-    update = {"last_seen_at": now.isoformat()}
-    # Increment operated_minutes only when entering a new minute (not same minute twice)
-    if current_minute != existing.get("last_active_minute", ""):
-        update["last_active_minute"] = current_minute
-        update["operated_minutes"] = int(existing.get("operated_minutes", 0) or 0) + 1
-    fb_update(f"/activity_sessions/{sid}", update)
+    try:
+        now = datetime.now(COMPANY_TZ)
+        current_minute = now.strftime("%Y-%m-%d %H:%M")
+        update = {"last_seen_at": now.isoformat()}
+        # Track operated minutes using Flask session to avoid an extra Firebase read per request
+        if current_minute != session.get("_act_last_minute", ""):
+            session["_act_last_minute"] = current_minute
+            count = session.get("_act_operated_count", 0) + 1
+            session["_act_operated_count"] = count
+            update["operated_minutes"] = count
+        fb_update(f"/activity_sessions/{sid}", update)
+    except Exception:
+        pass
 
 @app.before_request
 def check_session_timeout():
@@ -11733,9 +11737,16 @@ def settings():
         if isinstance(_u, dict) and _u.get("role"):
             _u["role"] = normalize_role(_u["role"])
     settings_data = load_settings()
+    try:
+        _act_summary = _activity_usage_summary()
+    except Exception:
+        _act_summary = []
+    _act_max_open = max((a.get("today_open", 0) for a in _act_summary), default=1) or 1
+    _act_max_oper = max((a.get("today_operated", 0) for a in _act_summary), default=1) or 1
     return render_template("settings.html", users=all_users, settings=settings_data,
                            role_pages=ROLE_PAGES, all_pages=ALL_PAGES, page_labels=PAGE_LABELS,
-                           activity_summary=_activity_usage_summary(),
+                           activity_summary=_act_summary,
+                           act_max_open=_act_max_open, act_max_oper=_act_max_oper,
                            now=datetime.now(COMPANY_TZ))
 
 @app.route("/settings/company", methods=["POST"])
