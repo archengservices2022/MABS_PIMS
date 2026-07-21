@@ -2322,8 +2322,8 @@ function viewReceipt(expId) {
         </tfoot>
       </table>
     </div>
+    <div id="byProjectPager_pager" class="mt-2"></div>
   </div>
-  <div id="byProjectPager_pager"></div>
   {% else %}
   <div class="card-panel">
     <div class="empty-state py-5">
@@ -3874,7 +3874,7 @@ document.addEventListener('DOMContentLoaded', function() {
     _PAGERS['incomePager'].refresh();
   }
   if (document.getElementById('byProjectTableBody')) {
-    new TablePager('byProjectPager', '#byProjectTableBody', 'tr.bp-row', 15);
+    new TablePager('byProjectPager', '#byProjectTableBody', 'tr.bp-row', 20);
     _PAGERS['byProjectPager'].refresh();
   }
 });
