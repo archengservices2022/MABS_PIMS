@@ -294,9 +294,15 @@ def _start_activity_session(uid: str, name: str) -> str:
 def _touch_activity_session(sid: str):
     if not sid:
         return
-    fb_update(f"/activity_sessions/{sid}", {
-        "last_seen_at": datetime.now(COMPANY_TZ).isoformat(),
-    })
+    now = datetime.now(COMPANY_TZ)
+    current_minute = now.strftime("%Y-%m-%d %H:%M")
+    existing = fb_get(f"/activity_sessions/{sid}") or {}
+    update = {"last_seen_at": now.isoformat()}
+    # Increment operated_minutes only when entering a new minute (not same minute twice)
+    if current_minute != existing.get("last_active_minute", ""):
+        update["last_active_minute"] = current_minute
+        update["operated_minutes"] = int(existing.get("operated_minutes", 0) or 0) + 1
+    fb_update(f"/activity_sessions/{sid}", update)
 
 @app.before_request
 def check_session_timeout():
@@ -13460,15 +13466,23 @@ def _activity_usage_summary() -> List[dict]:
             except (ValueError, TypeError):
                 continue
 
+            operated = float(s.get("operated_minutes", 0) or 0)
             entry = by_employee.setdefault(uid, {
-                "employee_uid": uid, "employee_name": s.get("employee_name", "—"),
-                "today_minutes": 0.0, "week_minutes": 0.0, "last_seen_at": "",
+                "employee_uid":          uid,
+                "employee_name":         s.get("employee_name", "—"),
+                "today_open":            0.0,
+                "today_operated":        0.0,
+                "week_open":             0.0,
+                "week_operated":         0.0,
+                "last_seen_at":          "",
             })
             s_date = s.get("date", "")
             if s_date == today:
-                entry["today_minutes"] += minutes
+                entry["today_open"]     += minutes
+                entry["today_operated"] += operated
             if s_date >= week_start:
-                entry["week_minutes"] += minutes
+                entry["week_open"]      += minutes
+                entry["week_operated"]  += operated
             if s.get("last_seen_at", "") > entry["last_seen_at"]:
                 entry["last_seen_at"] = s.get("last_seen_at", "")
 
