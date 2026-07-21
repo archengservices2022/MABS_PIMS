@@ -1731,25 +1731,30 @@ def quotes():
     # Load existing commission payments
     _comm_payments_raw = fb_get("/commission_payments") or {}
     _paid_set: set = set()  # (period, sp_name)
+    _paid_amounts: Dict[str, float] = {}  # (period, sp_name) -> paid amount
     _comm_payments_list = []
     if isinstance(_comm_payments_raw, dict):
         for _cpid, _cp in _comm_payments_raw.items():
             if _cp and isinstance(_cp, dict):
-                _paid_set.add((_cp.get("period", ""), _cp.get("salesperson", "")))
+                _pk = (_cp.get("period", ""), _cp.get("salesperson", ""))
+                _paid_set.add(_pk)
+                _paid_amounts[_pk] = _safe_float(_cp.get("amount", 0))
                 _comm_payments_list.append({**_cp, "id": _cpid})
 
     # Build sorted monthly rows for template
     monthly_payroll = []
     for _period in sorted(_monthly_comm.keys(), reverse=True):
         for _sp_name, _vals in sorted(_monthly_comm[_period].items()):
+            _pk = (_period, _sp_name)
+            _is_paid = _pk in _paid_set
             monthly_payroll.append({
-                "period":    _period,
-                "sp_name":   _sp_name,
-                "earned":    _vals["earned"],
-                "revenue":   _vals["revenue"],
-                "paid":      (_period, _sp_name) in _paid_set,
-                "rate":      _sp_stats[_sp_name]["commission_rate"],
-                "emp_type":  _sp_stats[_sp_name]["employee_type"],
+                "period":      _period,
+                "sp_name":     _sp_name,
+                "earned":      _paid_amounts[_pk] if _is_paid else _vals["earned"],
+                "revenue":     _vals["revenue"],
+                "paid":        _is_paid,
+                "rate":        _sp_stats[_sp_name]["commission_rate"],
+                "emp_type":    _sp_stats[_sp_name]["employee_type"],
             })
 
     return render_template("quotes.html", quotes=items, statuses=statuses,
@@ -7255,16 +7260,20 @@ def payroll():
             commission_by_period[_sp][_period] = \
                 commission_by_period[_sp].get(_period, 0.0) + _earned
 
-    # Load which periods are marked paid
+    # Load which periods are marked paid + how much was paid
     _cpay_raw = fb_get("/commission_payments") or {}
     comm_paid_set: set = set()
+    comm_paid_amounts: Dict[str, float] = {}
     if isinstance(_cpay_raw, dict):
         for _cpid, _cp in _cpay_raw.items():
             if _cp and isinstance(_cp, dict):
                 _name   = _cp.get("salesperson", "").strip().lower()
                 _period = _cp.get("period", "").strip()
+                _amt    = _safe_float(_cp.get("amount", 0))
                 if _name and _period:
-                    comm_paid_set.add(f"{_name}|{_period}")
+                    _k = f"{_name}|{_period}"
+                    comm_paid_set.add(_k)
+                    comm_paid_amounts[_k] = _amt
 
     return render_template("payroll.html",
         employee_filter=employee_filter,
@@ -7273,7 +7282,8 @@ def payroll():
         employee_profiles=employee_profiles,
         salaries=salaries,
         commission_by_period=commission_by_period,
-        comm_paid_set=list(comm_paid_set))
+        comm_paid_set=list(comm_paid_set),
+        comm_paid_amounts=comm_paid_amounts)
 
 # ── Payroll Export Routes ─────────────────────────────────────────────────────
 def _build_commission_payroll_rows():
@@ -8761,19 +8771,25 @@ def financial():
     exp_list_prev_year = [e for e in exp_list if _extract_year_from_date(e.get("date", "")) == prev_year]
     prev_year_total_expenses = sum(_safe_float(e.get("amount", 0)) for e in exp_list_prev_year)
 
-    # Monthly breakdown for chart (last 6 months)
+    # Monthly breakdown for chart (last 6 months) — use payment dates for accuracy
     monthly_revenue  = {}
     monthly_expenses = {}
     for inv in inv_list:
-        ds = inv.get("meta", {}).get("invoice_date", "") or ""
-        try:
-            key = datetime.fromisoformat(ds[:10]).strftime("%b %Y")
-            line_paid = _safe_float(inv.get("meta", {}).get("amount_paid", 0))
-            tax_paid = sum(_safe_float(p.get("amount", 0)) for p in inv.get("tax_payments", []))
-            monthly_revenue[key] = monthly_revenue.get(key, 0) + line_paid + tax_paid
-        except Exception:
-            pass
-    for exp in exp_list:
+        for pay in (inv.get("payment_log") or []):
+            ds = pay.get("date", "") or ""
+            try:
+                key = datetime.fromisoformat(ds[:10]).strftime("%b %Y")
+                monthly_revenue[key] = monthly_revenue.get(key, 0) + _safe_float(pay.get("amount", 0))
+            except Exception:
+                pass
+        for tax_pay in (inv.get("tax_payments") or []):
+            ds = tax_pay.get("date", "") or ""
+            try:
+                key = datetime.fromisoformat(ds[:10]).strftime("%b %Y")
+                monthly_revenue[key] = monthly_revenue.get(key, 0) + _safe_float(tax_pay.get("amount", 0))
+            except Exception:
+                pass
+    for exp in exp_list_all:  # use all raw expenses (not grouped/year-filtered)
         ds = exp.get("date", "") or ""
         try:
             key = datetime.fromisoformat(ds[:10]).strftime("%b %Y")
@@ -11792,10 +11808,15 @@ def settings_logo():
             except Exception:
                 pass
         save_path = ASSETS_DIR / f"company_logo{ext}"
-        logo_file.save(str(save_path))
+        logo_bytes = logo_file.read()
+        save_path.write_bytes(logo_bytes)
+        import base64 as _b64
+        mime_type = "image/png" if ext == ".png" else "image/jpeg"
+        logo_data_uri = f"data:{mime_type};base64," + _b64.b64encode(logo_bytes).decode("utf-8")
         existing = load_settings()
         co = existing.get("company", {})
         co["logo_path"] = str(save_path.resolve())
+        co["logo_data"] = logo_data_uri
         fb_update("/settings", {"company": co})
         cache_bust("settings")
         _save_local_settings_key("company", co)
@@ -12216,9 +12237,10 @@ def _get_company_logo_path():
 # ── Route: serve company logo ─────────────────────────────────────────────────
 @app.route("/logo")
 def company_logo():
-    """Serve the company logo from its configured path."""
+    """Serve the company logo from its configured path, restoring from Firebase if file is missing."""
     settings = load_settings()
-    logo_path = settings.get("company", {}).get("logo_path", "")
+    co = settings.get("company", {})
+    logo_path = co.get("logo_path", "")
     candidates = [
         Path(logo_path) if logo_path else None,
         DATA_DIR / "company_logo.png",
@@ -12231,6 +12253,26 @@ def company_logo():
         if p and p.exists():
             mime = "image/png" if p.suffix.lower() == ".png" else "image/jpeg"
             return send_file(str(p), mimetype=mime)
+    # File not found — try to restore from base64 stored in Firebase
+    logo_data_uri = co.get("logo_data", "")
+    if logo_data_uri and logo_data_uri.startswith("data:"):
+        try:
+            import base64 as _b64, re as _re
+            from flask import Response as _Resp
+            m = _re.match(r"data:(image/[\w]+);base64,(.+)", logo_data_uri, _re.DOTALL)
+            if m:
+                mime_type = m.group(1)
+                raw = _b64.b64decode(m.group(2))
+                ext = ".png" if mime_type == "image/png" else ".jpg"
+                try:
+                    ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+                    restore_path = ASSETS_DIR / f"company_logo{ext}"
+                    restore_path.write_bytes(raw)
+                except Exception:
+                    pass
+                return _Resp(raw, mimetype=mime_type)
+        except Exception:
+            pass
     abort(404)
 
 # ── API: invoice number ───────────────────────────────────────────────────────

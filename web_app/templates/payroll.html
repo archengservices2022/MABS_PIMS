@@ -267,10 +267,14 @@
               {% for sal in salaries %}
               {% set sal_emp  = sal.employee_name or sal.get('employee','') %}
               {% set sal_period = sal.date[:7] if sal.date and sal.date|length >= 7 else '' %}
-              {% set sal_comm = commission_by_period.get(sal_emp, {}).get(sal_period, 0) | float %}
-              {% set sal_total = sal.amount | float + sal_comm %}
               {% set _sal_emp_lc = sal_emp | lower %}
-              {% set comm_paid = (_sal_emp_lc + '|' + sal_period) in comm_paid_set %}
+              {% set _comm_key = _sal_emp_lc + '|' + sal_period %}
+              {% set comm_paid = _comm_key in comm_paid_set %}
+              {% set _paid_comm = comm_paid_amounts.get(_comm_key) %}
+              {% set sal_comm = ((_paid_comm | float) if (comm_paid and _paid_comm is not none) else (commission_by_period.get(sal_emp, {}).get(sal_period, 0) | float)) %}
+              {% set sal_total = sal.amount | float + sal_comm %}
+              {% set ss = sal.get('salary_status','Pending') %}
+              {% set _comm_pending_warn = ss == 'Paid' and sal_comm > 0 and not comm_paid %}
               <tr data-salary="1" data-employee="{{ sal_emp | lower }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}" data-amount="{{ sal.amount | float }}">
                 <td><strong>{{ sal_emp or '—' }}</strong></td>
                 <td>{{ sal.date[5:7] + '-' + sal.date[8:10] + '-' + sal.date[0:4] if sal.date and sal.date|length >= 10 else '—' }}</td>
@@ -280,7 +284,7 @@
                   {% if sal_comm > 0 %}
                   <div style="color:#7C3AED;font-weight:700;">{{ currency_symbol }}{{ "{:,.2f}".format(sal_comm) }}</div>
                   <div style="font-size:10px;color:#94a3b8;">
-                    {% if comm_paid %}<span style="font-size:10px;font-weight:700;color:#16a34a;">✓ Paid</span>{% else %}<span style="font-size:10px;color:#94a3b8;">Pending</span>{% endif %}
+                    {% if comm_paid %}<span style="font-size:10px;font-weight:700;color:#16a34a;">&#10003; Paid</span>{% else %}<span style="font-size:10px;color:#94a3b8;">Pending</span>{% endif %}
                   </div>
                   {% else %}
                   <span class="text-muted">—</span>
@@ -288,11 +292,13 @@
                 </td>
                 <td style="font-weight:700;color:#0369a1;">{{ currency_symbol }}{{ "{:,.2f}".format(sal_total) }}</td>
                 <td>
-                  {% set ss = sal.get('salary_status','Pending') %}
                   <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;
                     {% if ss == 'Paid' %}background:#dcfce7;color:#15803d;
                     {% elif ss == 'Pending' %}background:#fef9c3;color:#92400e;
                     {% else %}background:#dbeafe;color:#1d4ed8;{% endif %}">{{ ss }}</span>
+                  {% if _comm_pending_warn %}
+                  <div style="font-size:9px;color:#b45309;margin-top:2px;">comm. pending</div>
+                  {% endif %}
                 </td>
                 <td><span class="region-badge {{ 'region-usa' if sal.region == 'Inside America' else 'region-intl' }}">{{ sal.region or '—' }}</span></td>
                 <td>{{ sal.notes or '—' }}</td>
@@ -590,8 +596,8 @@ document.addEventListener('DOMContentLoaded', function() {
   if (employeeFilter || regionFilter || yearFilter) {
     applySalaryFilters();
   } else {
-    // Default: show current month
-    setDateRange('month');
+    // Default: show current year so previous months are visible
+    setDateRange('year');
   }
 });
 
