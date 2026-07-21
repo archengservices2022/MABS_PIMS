@@ -452,10 +452,15 @@ def load_settings() -> dict:
         if isinstance(data, dict):
             # Strip any large logo_data blob accidentally stored here (migration)
             co = data.get("company")
-            if isinstance(co, dict) and "logo_data" in co:
+            has_stale = isinstance(co, dict) and "logo_data" in co
+            if has_stale:
                 co.pop("logo_data")
-                fb_delete("/settings/company/logo_data")
-            _cache_set("settings", data, 300)  # 5-minute TTL
+            _cache_set("settings", data, 300)  # cache before cleanup so a failed delete doesn't block caching
+            if has_stale:
+                try:
+                    fb_delete("/settings/company/logo_data")
+                except Exception:
+                    pass
             return data
     except Exception:
         pass
@@ -12252,6 +12257,8 @@ def company_logo():
     logo_path = co.get("logo_path", "")
     candidates = [
         Path(logo_path) if logo_path else None,
+        ASSETS_DIR / "company_logo.png",
+        ASSETS_DIR / "company_logo.jpg",
         DATA_DIR / "company_logo.png",
         DATA_DIR / "company_logo.jpg",
         DATA_DIR / "logo.png",
