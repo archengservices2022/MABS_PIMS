@@ -450,6 +450,11 @@ def load_settings() -> dict:
     try:
         data = fb_get("/settings") or {}
         if isinstance(data, dict):
+            # Strip any large logo_data blob accidentally stored here (migration)
+            co = data.get("company")
+            if isinstance(co, dict) and "logo_data" in co:
+                co.pop("logo_data")
+                fb_delete("/settings/company/logo_data")
             _cache_set("settings", data, 300)  # 5-minute TTL
             return data
     except Exception:
@@ -11816,8 +11821,12 @@ def settings_logo():
         existing = load_settings()
         co = existing.get("company", {})
         co["logo_path"] = str(save_path.resolve())
-        co["logo_data"] = logo_data_uri
+        co.pop("logo_data", None)  # remove stale blob from settings if present
         fb_update("/settings", {"company": co})
+        # Remove any previously-stored blob from settings (migration cleanup)
+        fb_delete("/settings/company/logo_data")
+        # Store base64 at a SEPARATE path so /settings stays small
+        fb_update("/company_logo_data", {"data": logo_data_uri})
         cache_bust("settings")
         _save_local_settings_key("company", co)
         flash("Logo uploaded successfully.", "success")
@@ -12253,8 +12262,9 @@ def company_logo():
         if p and p.exists():
             mime = "image/png" if p.suffix.lower() == ".png" else "image/jpeg"
             return send_file(str(p), mimetype=mime)
-    # File not found — try to restore from base64 stored in Firebase
-    logo_data_uri = co.get("logo_data", "")
+    # File not found — try to restore from base64 stored at separate Firebase path
+    logo_raw = fb_get("/company_logo_data") or {}
+    logo_data_uri = logo_raw.get("data", "") if isinstance(logo_raw, dict) else ""
     if logo_data_uri and logo_data_uri.startswith("data:"):
         try:
             import base64 as _b64, re as _re
