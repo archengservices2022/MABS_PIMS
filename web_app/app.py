@@ -2977,13 +2977,6 @@ def project_detail(project_id):
     data["firebase_id"] = project_id
     proj_num = data.get("project_number", "")
 
-    # Debug: Log what we loaded from Firebase
-    stages = data.get("payment_stages", [])
-    if isinstance(stages, list):
-        for idx, stage in enumerate(stages):
-            if isinstance(stage, dict):
-                pass  # debug print removed
-
     # Older projects stored "payment_stages" as a flat list of stage-name
     # strings (no per-stage amount/status tracking). Only the structured
     # list-of-dicts format produced by _compute_payment_stages should drive
@@ -6057,6 +6050,394 @@ def invoice_delete(invoice_id):
 
                             # Update stage with recalculated amount_paid
                             stage["amount_paid"] = str(stage_paid)
+                            print(f"[DELETE] Recalculated stage {stage_idx} amount_paid: {stage_paid}")
+
+                    # Save updated stages
+                    fb_update(f"/projects/{proj_id}", {
+                        "payment_stages": stages,
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    })
+
+    flash("Invoice deleted successfully", "success")
+    return redirect(url_for("invoicing"))
+
+@app.route("/invoicing/<invoice_id>/pdf")
+@role_required("invoicing")
+def invoice_pdf(invoice_id):
+    try:
+        from reportlab.lib.pagesizes import A4
+    except ImportError:
+        flash("reportlab not installed.", "danger")
+        return redirect(url_for("invoice_detail", invoice_id=invoice_id))
+
+    pdf_bytes = _generate_invoice_pdf_bytes(invoice_id)
+    if not pdf_bytes:
+        abort(404)
+
+    invoice = fb_get(f"/invoices/{invoice_id}")
+    meta = invoice.get("meta", {}) if invoice else {}
+
+    from flask import Response
+    fname = f"Invoice_{meta.get('invoice_number','')}.pdf"
+    return Response(pdf_bytes, mimetype="application/pdf",
+                    headers={"Content-Disposition": f"inline;filename={fname}"})
+
+# ── Routes: Invoicing Export ──────────────────────────────────────────────────
+def _filter_invoices_export(items):
+    if request.args.get("status"):
+        items = [i for i in items if i.get("meta",{}).get("status","") == request.args["status"]]
+    if request.args.get("client"):
+        items = [i for i in items if (i.get("meta",{}).get("company_name","") or i.get("meta",{}).get("client_name","")) == request.args["client"]]
+    date_from = request.args.get("from","")
+    date_to   = request.args.get("to","")
+    if date_from:
+        items = [i for i in items if (i.get("meta",{}).get("invoice_date") or "") >= date_from]
+    if date_to:
+        items = [i for i in items if (i.get("meta",{}).get("invoice_date") or "") <= date_to]
+    return items
+
+@app.route("/invoicing/export/csv")
+@role_required("invoicing")
+def invoicing_export_csv():
+    import csv
+    import io
+    raw = fb_get("/invoices") or {}
+    items = []
+    for iid, idata in (raw.items() if isinstance(raw, dict) else []):
+        if idata and isinstance(idata, dict):
+            items.append(idata)
+    items.sort(key=lambda x: x.get("meta", {}).get("created_at", ""), reverse=True)
+    items = _filter_invoices_export(items)
+    output = io.StringIO()
+    w = csv.writer(output)
+    co = company_info()
+
+    def fmt_csv_date(d):
+        if not d or d == "—":
+            return ""
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    # Add company header and blank row
+    w.writerow([f"{co.get('name','')} - Invoices Report"])
+    w.writerow([])
+
+    headers = ["Invoice Number", "Client", "Project", "Date", "Due Date", "Status", "Subtotal", "Tax", "Total", "Amount Paid", "Outstanding"]
+    w.writerow(headers)
+
+    from collections import defaultdict
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+
+    for inv in items:
+        m = inv.get("meta", {})
+        date_str = m.get("invoice_date", "")
+        if date_str:
+            year = date_str[:4]
+            month = date_str[5:7]
+            day = date_str[8:10]
+            grouped[year][month][day].append((inv, m))
+
+    # Sort by created_at within each day (first created at top)
+    for year in grouped:
+        for month in grouped[year]:
+            for day in grouped[year][month]:
+                grouped[year][month][day].sort(key=lambda x: x[1].get("created_at", ""))
+
+    for year in sorted(grouped.keys()):
+        for month in sorted(grouped[year].keys()):
+            for day in sorted(grouped[year][month].keys()):
+                for inv, m in grouped[year][month][day]:
+                    total = _safe_float(m.get("total", 0))
+                    paid = _safe_float(m.get("amount_paid", 0))
+                    tax_paid = _safe_float(m.get("tax_paid", 0))
+                    total_paid = paid + tax_paid
+                    subtotal = _safe_float(m.get("subtotal", 0))
+                    tax = _safe_float(m.get("tax_amount", 0))
+                    linked_projects = _invoice_linked_projects(inv)
+                    projects_str = ", ".join(sorted(linked_projects)) if linked_projects else ""
+                    row = [
+                        m.get("invoice_number",""),
+                        m.get("company_name","") or m.get("client_name",""),
+                        projects_str,
+                        fmt_csv_date(m.get("invoice_date","")),
+                        fmt_csv_date(m.get("due_date","")),
+                        m.get("status",""),
+                        f"{subtotal:.2f}",
+                        f"{tax:.2f}",
+                        f"{total:.2f}",
+                        f"{total_paid:.2f}",
+                        f"{total-total_paid:.2f}"
+                    ]
+                    # Clean any "—" placeholders (replace with empty string)
+                    row = ["" if str(cell).strip() == "—" else cell for cell in row]
+                    w.writerow(row)
+
+    output.seek(0)
+    from flask import Response
+    fname = f"invoices_{datetime.now(COMPANY_TZ).strftime('%Y%m%d')}.csv"
+    return Response(output.getvalue(), mimetype="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f"attachment;filename={fname}"})
+
+@app.route("/invoicing/export/excel")
+@role_required("invoicing")
+def invoicing_export_excel():
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    import io as _io
+    raw = fb_get("/invoices") or {}
+    items = []
+    for iid, idata in (raw.items() if isinstance(raw, dict) else []):
+        if idata and isinstance(idata, dict):
+            items.append(idata)
+    items.sort(key=lambda x: x.get("meta", {}).get("created_at", ""), reverse=True)
+    items = _filter_invoices_export(items)
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Invoices"
+    hdr_fill = PatternFill(start_color="FF0F172A", end_color="FF0F172A", fill_type="solid")
+    hdr_font = Font(color="FFFFFFFF", bold=True, size=11)
+    title_font = Font(bold=True, size=13, color="FF0F766E")
+    alt_fill = PatternFill(start_color="FFF8FAFC", end_color="FFF8FAFC", fill_type="solid")
+    ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    # Add title row
+    co = company_info()
+    ws.merge_cells('A1:K1')
+    title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} - Invoices Report")
+    title_cell.font = title_font
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 20
+
+    headers = ["Invoice Number","Client","Project","Date","Due Date",
+               "Subtotal ($)","Tax ($)","Total ($)","Paid ($)","Outstanding ($)","Status"]
+    header_row = 2
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=header_row, column=col, value=h)
+        cell.fill = hdr_fill; cell.font = hdr_font; cell.alignment = ctr
+
+    def fmt_inv_excel_date(d):
+        if not d or d == "—":
+            return ""
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    from collections import defaultdict
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    for inv in items:
+        m = inv.get("meta", {})
+        date_str = m.get("invoice_date", "")
+        if date_str:
+            year = date_str[:4]
+            month = date_str[5:7]
+            day = date_str[8:10]
+            grouped[year][month][day].append(inv)
+
+    # Sort by created_at within each day (first created at top)
+    for year in grouped:
+        for month in grouped[year]:
+            for day in grouped[year][month]:
+                grouped[year][month][day].sort(key=lambda x: x.get("meta", {}).get("created_at", ""))
+
+    ri = header_row + 1
+
+    for year in sorted(grouped.keys()):
+        for month in sorted(grouped[year].keys()):
+            for day in sorted(grouped[year][month].keys()):
+                for inv in grouped[year][month][day]:
+                    m = inv.get("meta", {})
+                    total = _safe_float(m.get("total", 0))
+                    paid  = _safe_float(m.get("amount_paid", 0))
+                    tax_paid = _safe_float(m.get("tax_paid", 0))
+                    total_paid = paid + tax_paid
+                    subtotal = _safe_float(m.get("subtotal", 0))
+                    tax = _safe_float(m.get("tax_amount", 0))
+                    linked_projects = _invoice_linked_projects(inv)
+                    projects_str = ", ".join(sorted(linked_projects)) if linked_projects else ""
+                    row = [m.get("invoice_number",""), m.get("company_name","") or m.get("client_name",""),
+                           projects_str, fmt_inv_excel_date(m.get("invoice_date","")), fmt_inv_excel_date(m.get("due_date","")),
+                           subtotal, tax, total, total_paid, total - total_paid, m.get("status","")]
+                    # Clean any "—" placeholders (replace with empty string)
+                    row = ["" if str(cell).strip() == "—" else cell for cell in row]
+                    for ci, val in enumerate(row, 1):
+                        cell = ws.cell(row=ri, column=ci, value=val)
+                        if ri % 2 == 0:
+                            cell.fill = alt_fill
+                        if ci in (7, 8, 9, 10, 11):
+                            cell.number_format = '"$"#,##0.00'
+                        cell.alignment = ctr
+                    ri += 1
+
+    # Increase column widths
+    col_widths = [22, 25, 44, 14, 14, 14, 16, 14, 16, 14, 12]
+    for ci, w in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(ci)].width = w
+    ws.freeze_panes = f"A{header_row + 1}"
+    buf = _io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    from flask import Response
+    fname = f"invoices_{datetime.now(COMPANY_TZ).strftime('%Y%m%d')}.xlsx"
+    return Response(buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment;filename={fname}"})
+
+@app.route("/invoicing/export/pdf")
+@role_required("invoicing")
+def invoicing_export_pdf():
+    try:
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+    except ImportError:
+        flash("reportlab not installed.", "danger")
+        return redirect(url_for("invoicing", tab="export"))
+    import io as _io
+    raw = fb_get("/invoices") or {}
+    items = []
+    for iid, idata in (raw.items() if isinstance(raw, dict) else []):
+        if idata and isinstance(idata, dict):
+            items.append(idata)
+    items.sort(key=lambda x: x.get("meta", {}).get("created_at", ""), reverse=True)
+    items = _filter_invoices_export(items)
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
+                            leftMargin=0.2*inch, rightMargin=0.2*inch,
+                            topMargin=0.5*inch, bottomMargin=0.5*inch)
+    styles = getSampleStyleSheet()
+    co = company_info()
+    elems = []
+    from reportlab.lib.units import inch
+    from reportlab.platypus import Spacer
+
+    title_s = ParagraphStyle("T", parent=styles["Normal"], fontSize=15,
+                              fontName="Helvetica-Bold",
+                              textColor=colors.HexColor("#0F766E"), spaceAfter=3,
+                              alignment=1)  # CENTER
+
+    elems.append(Paragraph(f"{co.get('name','')} — Invoices Report", title_s))
+    elems.append(Spacer(1, 0.2*inch))
+    hdrs = ["Invoice Number", "Client", "Project", "Date", "Due Date", "Subtotal", "Tax", "Total", "Paid", "Outstanding", "Status"]
+    data = [hdrs]
+    def fmt_inv_date(d):
+        if not d or d == "—":
+            return ""
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
+    group_style = ParagraphStyle("group", parent=styles["Normal"], fontSize=9, fontName="Helvetica-Bold", alignment=1, leading=10, textColor=colors.HexColor("#0F172A"))
+
+    from collections import defaultdict
+    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    for inv in items:
+        m = inv.get("meta", {})
+        date_str = m.get("invoice_date", "")
+        if date_str:
+            year = date_str[:4]
+            month = date_str[5:7]
+            day = date_str[8:10]
+            grouped[year][month][day].append(inv)
+
+    # Sort by created_at within each day (first created at top)
+    for year in grouped:
+        for month in grouped[year]:
+            for day in grouped[year][month]:
+                grouped[year][month][day].sort(key=lambda x: x.get("meta", {}).get("created_at", ""))
+
+    for year in sorted(grouped.keys()):
+        for month in sorted(grouped[year].keys()):
+            for day in sorted(grouped[year][month].keys()):
+                for inv in grouped[year][month][day]:
+                    m = inv.get("meta", {})
+                    total = _safe_float(m.get("total", 0))
+                    paid  = _safe_float(m.get("amount_paid", 0))
+                    tax_paid = _safe_float(m.get("tax_paid", 0))
+                    total_paid = paid + tax_paid
+                    subtotal = _safe_float(m.get("subtotal", 0))
+                    tax = _safe_float(m.get("tax_amount", 0))
+                    linked_projects = _invoice_linked_projects(inv)
+                    projects_str = "\n".join(sorted(linked_projects)) if linked_projects else "—"
+                    data.append([
+                        Paragraph(m.get("invoice_number","—"), cell_style),
+                        Paragraph(m.get("company_name","") or m.get("client_name","—"), cell_style),
+                        Paragraph(projects_str, cell_style),
+                        Paragraph(fmt_inv_date(m.get("invoice_date","")), cell_style),
+                        Paragraph(fmt_inv_date(m.get("due_date","")), cell_style),
+                        Paragraph(f"${subtotal:,.0f}", cell_style),
+                        Paragraph(f"${tax:,.0f}", cell_style),
+                        Paragraph(f"${total:,.0f}", cell_style),
+                        Paragraph(f"${total_paid:,.0f}", cell_style),
+                        Paragraph(f"${total-total_paid:,.0f}", cell_style),
+                        Paragraph(m.get("status","—"), cell_style),
+                    ])
+    cw = [1.3*inch, 1.5*inch, 1.7*inch, 0.8*inch, 0.8*inch, 0.7*inch, 0.65*inch, 0.7*inch, 0.7*inch, 0.95*inch, 0.8*inch]
+    tbl = Table(data, colWidths=cw, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
+        ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+        ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0,0), (-1,0), 9),
+        ("ALIGN",         (0,0), (-1,0), "CENTER"),
+        ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
+        ("TOPPADDING",    (0,0), (-1,0), 8),
+        ("BOTTOMPADDING", (0,0), (-1,0), 8),
+        ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
+        ("FONTSIZE",      (0,1), (-1,-1), 8),
+        ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")]),
+        ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
+        ("TOPPADDING",    (0,1), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,1), (-1,-1), 5),
+        ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
+    ]))
+    elems.append(tbl)
+    doc.build(elems)
+    buf.seek(0)
+    from flask import Response
+    fname = f"invoices_{datetime.now(COMPANY_TZ).strftime('%Y%m%d')}.pdf"
+    return Response(buf.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": f"attachment;filename={fname}"})
+
+# ── Routes: Clients ───────────────────────────────────────────────────────────
+@app.route("/clients")
+@role_required("clients")
+def clients():
+    raw = fb_get("/clients") or {}
+    items = []
+    if isinstance(raw, dict):
+        for company_name, cdata in raw.items():
+            if cdata and isinstance(cdata, dict):
+                # Ensure company_name is set from the Firebase key (primary identifier)
+                cdata["company_name"] = company_name
+                items.append(cdata)
+    items.sort(key=lambda x: x.get("client_name", "").lower())
+    search = request.args.get("q", "").strip().lower()
+    tag_filter = request.args.get("tag", "")
+    # Collect all tags from full list before filtering so chips always show
+    all_tags = sorted({t for i in items for t in (i.get("tags") or []) if t})
+    if search:
+        items = [i for i in items if search in (
+            (i.get("client_name","") + " " + i.get("company_name","") + " " +
+             i.get("email","") + " " + i.get("phone",""))).lower()]
+    if tag_filter:
+        items = [i for i in items if tag_filter in (i.get("tags") or [])]
+    active_tab = request.args.get("tab", "all-clients")
+    return render_template("clients.html", clients=items, active_tab=active_tab,
+                           search=search, tag_filter=tag_filter, all_tags=all_tags)
+
+def _sync_client_changes(old_company_name, new_company_name, new_client_name):
+    """Sync client changes to all related invoices, quotes, and projects by client_id.
+    Also migrates legacy records (without client_id) to use client_id."""
+    # Get the client_id from the new client record
+    client_data = fb_get(f"/clients/{new_company_name}") or {}
+    client_id = client_data.get("client_id")
+
+    if not client_id:
         # Fallback to old method for legacy records without client_id
         _sync_client_changes_by_name(old_company_name, new_company_name, new_client_name)
         return
@@ -7950,9 +8331,14 @@ def delete_salary(sal_id):
 @app.route("/financial")
 @role_required("financial")
 def financial():
-    invoices = fb_get("/invoices") or {}
-    expenses = fb_get("/balance_sheet_expenses") or {}
-    revenue  = fb_get("/balance_sheet_revenue") or {}
+    from concurrent.futures import ThreadPoolExecutor as _TPE
+    with _TPE(max_workers=3) as _ex:
+        _fi = _ex.submit(fb_get, "/invoices")
+        _fe = _ex.submit(fb_get, "/balance_sheet_expenses")
+        _fr = _ex.submit(fb_get, "/balance_sheet_revenue")
+    invoices = _fi.result() or {}
+    expenses = _fe.result() or {}
+    revenue  = _fr.result() or {}
 
     # Get filter parameters from URL
     filter_expense = request.args.get("filter_expense", "")
@@ -8745,7 +9131,7 @@ def financial():
         inv_status_counts[st] = inv_status_counts.get(st, 0) + 1
 
     exp_cats = {}
-    for e in exp_list_all:  # all-time expenses so chart is never empty due to year filter
+    for e in exp_list_all:  # all-time so chart isn't empty when current year has no expenses
         cat = e.get("category", "Other") or "Other"
         exp_cats[cat] = exp_cats.get(cat, 0) + _safe_float(e.get("amount", 0))
 
@@ -12090,6 +12476,7 @@ def _calculate_invoice_status(inv_data: dict) -> str:
     due_date   = meta.get("due_date", "")
     today      = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     is_overdue = bool(due_date and due_date < today)
+
 
     if invoice_total > 0 and total_paid >= invoice_total - 0.01:
         return "Paid"
