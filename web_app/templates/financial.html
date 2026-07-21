@@ -3877,6 +3877,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ?? By Project standalone pagination ???????????????????????????????????????????
 (function() {
+  // Inject CSS — use !important so it wins over Bootstrap table-row rules
+  var _bpStyle = document.createElement('style');
+  _bpStyle.textContent = '#byProjectTableBody tr.bp-row.bp-hidden{display:none!important;}';
+  document.head.appendChild(_bpStyle);
+
   var BP_PAGE_SIZE = 20;
   var bpPage = 1;
 
@@ -3891,56 +3896,48 @@ document.addEventListener('DOMContentLoaded', function() {
     var totalPages = Math.max(1, Math.ceil(total / BP_PAGE_SIZE));
     if (bpPage > totalPages) bpPage = 1;
     var start = (bpPage - 1) * BP_PAGE_SIZE;
+
+    // Toggle class instead of inline style — !important in CSS beats Bootstrap
     rows.forEach(function(r, i) {
-      r.style.display = (i >= start && i < start + BP_PAGE_SIZE) ? '' : 'none';
+      if (i >= start && i < start + BP_PAGE_SIZE) r.classList.remove('bp-hidden');
+      else r.classList.add('bp-hidden');
     });
+
     var pager = document.getElementById('byProjectPager_pager');
     if (!pager) return;
     if (total <= BP_PAGE_SIZE) { pager.innerHTML = ''; return; }
     var prevDis = bpPage <= 1;
     var nextDis = bpPage >= totalPages;
-    var btnStyle = 'display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:14px;color:#374151;text-decoration:none;';
-    var disBtnStyle = btnStyle + 'opacity:0.4;cursor:default;pointer-events:none;';
-    var inputStyle = 'width:52px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;font-size:14px;color:#374151;font-weight:600;text-align:center;padding:0 4px;outline:none;';
+    var btn = 'display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:14px;color:#374151;text-decoration:none;';
+    var dis = btn + 'opacity:.4;cursor:default;pointer-events:none;';
+    var inp = 'width:52px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;font-size:14px;color:#374151;font-weight:600;text-align:center;padding:0 4px;outline:none;';
     pager.innerHTML =
       '<div class="d-flex align-items-center justify-content-between mt-2 pt-2" style="border-top:1px solid #e2e8f0;">' +
-        '<span class="text-muted small">Showing ' + (start+1) + '–' + Math.min(start+BP_PAGE_SIZE, total) + ' of ' + total + ' projects</span>' +
+        '<span class="text-muted small">Showing '+(start+1)+'–'+Math.min(start+BP_PAGE_SIZE,total)+' of '+total+' projects</span>' +
         '<div class="d-flex align-items-center gap-2">' +
-          '<a href="#" onclick="event.preventDefault();' + (prevDis ? '' : 'bpGo(' + (bpPage-1) + ')') + '" style="' + (prevDis ? disBtnStyle : btnStyle) + '">&#8249;</a>' +
-          '<input type="number" min="1" max="' + totalPages + '" value="' + bpPage + '" style="' + inputStyle + '" onkeydown="if(event.key===\'Enter\')bpGo(+this.value)" onblur="bpGo(+this.value)">' +
-          '<span class="text-muted small">of ' + totalPages + '</span>' +
-          '<a href="#" onclick="event.preventDefault();' + (nextDis ? '' : 'bpGo(' + (bpPage+1) + ')') + '" style="' + (nextDis ? disBtnStyle : btnStyle) + '">&#8250;</a>' +
+          '<a href="#" onclick="event.preventDefault();'+(!prevDis?'bpGo('+(bpPage-1)+')':'')+'" style="'+(prevDis?dis:btn)+'">&#8249;</a>' +
+          '<input type="number" min="1" max="'+totalPages+'" value="'+bpPage+'" style="'+inp+'" onkeydown="if(event.key===\'Enter\')bpGo(+this.value)" onblur="bpGo(+this.value)">' +
+          '<span class="text-muted small">of '+totalPages+'</span>' +
+          '<a href="#" onclick="event.preventDefault();'+(!nextDis?'bpGo('+(bpPage+1)+')':'')+'" style="'+(nextDis?dis:btn)+'">&#8250;</a>' +
         '</div>' +
       '</div>';
   }
 
   window.bpGo = function(p) {
-    var rows = bpRows();
-    var totalPages = Math.max(1, Math.ceil(rows.length / BP_PAGE_SIZE));
-    if (!p || p < 1) p = 1;
-    if (p > totalPages) p = totalPages;
-    bpPage = p;
+    var total = bpRows().length;
+    p = parseInt(p) || 1;
+    bpPage = Math.max(1, Math.min(p, Math.ceil(total / BP_PAGE_SIZE)));
     bpRender();
   };
 
-  function bpInit() {
-    bpPage = 1;
-    bpRender();
-  }
-
-  // Init on load
-  document.addEventListener('DOMContentLoaded', bpInit);
-
-  // Re-init whenever By Project tab becomes visible
+  // Run immediately — DOM above this script is already parsed
+  bpRender();
+  // Also cover DOMContentLoaded in case script order shifts
+  document.addEventListener('DOMContentLoaded', bpRender);
+  // Re-run when By Project tab is activated
   document.addEventListener('shown.bs.tab', function(e) {
-    var href = (e.target.getAttribute('href') || e.target.getAttribute('data-bs-target') || '');
-    if (href === '#tab-by-project') { bpPage = 1; bpRender(); }
-  });
-
-  // If By Project is already the active tab on load, run after a short delay
-  document.addEventListener('DOMContentLoaded', function() {
-    var active = document.querySelector('#tab-by-project.show.active');
-    if (active) { setTimeout(bpInit, 50); }
+    var target = e.target.getAttribute('href') || e.target.getAttribute('data-bs-target') || '';
+    if (target === '#tab-by-project') { bpPage = 1; bpRender(); }
   });
 })();
 </script>
