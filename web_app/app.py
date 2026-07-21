@@ -7148,6 +7148,9 @@ def client_statement(company_name):
 
 # ── Routes: Payroll ───────────────────────────────────────────────────────────
 def _load_employee_profiles() -> list:
+    cached, hit = _cache_get("employee_profiles")
+    if hit:
+        return cached
     raw = fb_get("/employee_profiles") or {}
     profiles = []
     if isinstance(raw, dict):
@@ -7156,6 +7159,7 @@ def _load_employee_profiles() -> list:
                 pdata["firebase_id"] = pid
                 profiles.append(pdata)
     profiles.sort(key=lambda x: x.get("name", "").lower())
+    _cache_set("employee_profiles", profiles, 60)
     return profiles
 
 def _auto_generate_monthly_salaries() -> int:
@@ -8423,9 +8427,14 @@ def delete_salary(sal_id):
 @app.route("/financial")
 @role_required("financial")
 def financial():
-    invoices = fb_get("/invoices") or {}
-    expenses = fb_get("/balance_sheet_expenses") or {}
-    revenue  = fb_get("/balance_sheet_revenue") or {}
+    from concurrent.futures import ThreadPoolExecutor as _TPE
+    with _TPE(max_workers=3) as _ex:
+        _fi = _ex.submit(fb_get, "/invoices")
+        _fe = _ex.submit(fb_get, "/balance_sheet_expenses")
+        _fr = _ex.submit(fb_get, "/balance_sheet_revenue")
+    invoices = _fi.result() or {}
+    expenses = _fe.result() or {}
+    revenue  = _fr.result() or {}
 
     # Get filter parameters from URL
     filter_expense = request.args.get("filter_expense", "")
@@ -8718,7 +8727,6 @@ def financial():
                     "date": inv_meta.get("invoice_date", ""),
                 }
                 rev_list.append(new_rev_entry)
-                print(f"[INCOME_TAB] Added missing invoice {new_rev_entry['invoice_number']} to rev_list", flush=True)
 
     # Re-sort after adding missing invoices
     rev_list = sorted(rev_list, key=sort_key_invoice, reverse=True)
@@ -8905,9 +8913,8 @@ def financial():
         p_invoiced = 0
         p_collected = 0
 
-        raw_inv = fb_get("/invoices") or {}
-        if isinstance(raw_inv, dict):
-            for inv_id, inv_data in raw_inv.items():
+        if isinstance(invoices, dict):
+            for inv_id, inv_data in invoices.items():
                 if not isinstance(inv_data, dict):
                     continue
                 if pnum not in _invoice_linked_projects(inv_data):
@@ -13500,6 +13507,9 @@ def _load_projects_list() -> List[dict]:
     return []
 
 def _load_all_users() -> List[dict]:
+    cached, hit = _cache_get("all_users")
+    if hit:
+        return cached
     raw = fb_get("/users") or {}
     if isinstance(raw, dict):
         users = []
@@ -13512,7 +13522,9 @@ def _load_all_users() -> List[dict]:
                 elif not isinstance(cp, list):
                     udata["custom_pages"] = None
                 users.append(udata)
-        return sorted(users, key=lambda x: x.get("username", "").lower())
+        result = sorted(users, key=lambda x: x.get("username", "").lower())
+        _cache_set("all_users", result, 30)
+        return result
     return []
 
 def _activity_usage_summary() -> List[dict]:
