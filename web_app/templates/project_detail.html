@@ -785,30 +785,32 @@
                   <td class="text-muted small">{{ co.get('created_at','')[:10] | format_date }}</td>
                   {% if can_manage_projects %}
                   <td>
-                    <button type="submit" form="coAmountForm{{ co_idx }}" class="btn btn-xs btn-outline-primary me-1" title="Save CO amount">
+                    <div class="d-flex align-items-center flex-wrap gap-1">
+                    <button type="submit" form="coAmountForm{{ co_idx }}" class="btn btn-xs btn-outline-primary" title="Save CO amount">
                       <i class="bi bi-floppy"></i>
                     </button>
                     {% if co.get('status') == 'Draft' %}
-                    <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}" class="d-inline">
+                    <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}">
                       <input type="hidden" name="status" value="Submitted">
                       <button class="btn btn-xs btn-outline-warning" title="Submit to client">Submit</button>
                     </form>
                     {% elif co.get('status') == 'Submitted' %}
-                    <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}" class="d-inline">
+                    <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}">
                       <input type="hidden" name="status" value="Approved">
                       <button class="btn btn-xs btn-success" title="Approve — adds to contract value">Approve</button>
                     </form>
-                    <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}" class="d-inline ms-1">
+                    <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}">
                       <input type="hidden" name="status" value="Rejected">
                       <button class="btn btn-xs btn-outline-danger">Reject</button>
                     </form>
                     {% endif %}
-                    <form method="POST" action="{{ url_for('co_delete', project_id=project.firebase_id, co_idx=co_idx) }}" class="d-inline ms-1"
+                    <form method="POST" action="{{ url_for('co_delete', project_id=project.firebase_id, co_idx=co_idx) }}"
                           onsubmit="return confirm('Delete this change order? This will update the project contract value and financial totals.');">
                       <button class="btn btn-xs btn-outline-danger" title="Delete CO">
                         <i class="bi bi-trash"></i>
                       </button>
                     </form>
+                    </div>
                   </td>
                   {% endif %}
                 </tr>
