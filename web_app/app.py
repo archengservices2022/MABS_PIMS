@@ -8331,14 +8331,10 @@ def delete_salary(sal_id):
 @app.route("/financial")
 @role_required("financial")
 def financial():
-    from concurrent.futures import ThreadPoolExecutor as _TPE
-    with _TPE(max_workers=3) as _ex:
-        _fi = _ex.submit(fb_get, "/invoices")
-        _fe = _ex.submit(fb_get, "/balance_sheet_expenses")
-        _fr = _ex.submit(fb_get, "/balance_sheet_revenue")
-    invoices = _fi.result() or {}
-    expenses = _fe.result() or {}
-    revenue  = _fr.result() or {}
+    # Sequential — Firebase Admin SDK shares one HTTP session; concurrent ThreadPoolExecutor calls return empty dicts
+    invoices = fb_get("/invoices") or {}
+    expenses = fb_get("/balance_sheet_expenses") or {}
+    revenue  = fb_get("/balance_sheet_revenue") or {}
 
     # Get filter parameters from URL
     filter_expense = request.args.get("filter_expense", "")
