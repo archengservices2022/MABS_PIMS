@@ -3363,6 +3363,11 @@ def co_update_amount(project_id, co_idx):
         co["title"] = request.form.get("title", "").strip()
     if request.form.get("description") is not None:
         co["description"] = request.form.get("description", "").strip()
+    co_date = request.form.get("co_date", "").strip()
+    if co_date:
+        existing = co.get("created_at", "")
+        time_part = existing[10:] if len(existing) > 10 else "T00:00:00+00:00"
+        co["created_at"] = co_date + time_part
     co["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     stages = _normalise_list(project.get("payment_stages"))

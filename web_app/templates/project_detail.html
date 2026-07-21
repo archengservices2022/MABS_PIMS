@@ -782,7 +782,15 @@
                     <span class="badge bg-secondary">Draft</span>
                     {% endif %}
                   </td>
-                  <td class="text-muted small">{{ co.get('created_at','')[:10] | format_date }}</td>
+                  <td>
+                    {% if can_manage_projects %}
+                    <input type="date" name="co_date" form="coAmountForm{{ co_idx }}"
+                           value="{{ co.get('created_at','')[:10] }}"
+                           class="form-control form-control-sm" style="width:130px;">
+                    {% else %}
+                    <span class="text-muted small">{{ co.get('created_at','')[:10] | format_date }}</span>
+                    {% endif %}
+                  </td>
                   {% if can_manage_projects %}
                   <td>
                     <div class="d-flex align-items-center flex-wrap gap-1">
