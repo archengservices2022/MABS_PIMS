@@ -754,11 +754,41 @@
                 {% for co in change_orders %}
                 {% set co_idx = loop.index0 %}
                 <tr>
-                  <td class="fw-600 text-teal">{{ co.get('co_number','—') }}</td>
+                  <td class="fw-600 text-teal">
+                    {{ co.get('co_number','—') }}
+                    {% if can_manage_projects %}
+                    <div class="mt-1">
+                      <input type="text" name="po_wo_number" form="coAmountForm{{ co_idx }}"
+                             value="{{ co.get('po_wo_number','') }}"
+                             class="form-control form-control-sm" style="width:105px;"
+                             placeholder="PO/WO #">
+                    </div>
+                    {% elif co.get('po_wo_number') %}
+                    <div class="text-muted small fw-400">{{ co.get('po_wo_number') }}</div>
+                    {% endif %}
+                  </td>
                   <td>
                     <div class="fw-500">{{ co.get('title','—') }}</div>
                     {% if co.get('description') %}
                     <div class="text-muted small">{{ co.get('description') }}</div>
+                    {% endif %}
+                    {% if can_manage_projects %}
+                    <div class="mt-1">
+                      <span class="text-muted small co-addr-display" id="addrDisplay{{ co_idx }}">
+                        <i class="bi bi-geo-alt"></i>
+                        {{ co.get('shipping_address') or 'Add shipping address' }}
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-1" style="font-size:11px;"
+                                onclick="toggleCoAddr({{ co_idx }})" title="Edit shipping address">
+                          <i class="bi bi-pencil"></i>
+                        </button>
+                      </span>
+                      <textarea name="shipping_address" form="coAmountForm{{ co_idx }}"
+                                class="form-control form-control-sm mt-1 d-none"
+                                id="addrEdit{{ co_idx }}" rows="2"
+                                placeholder="Shipping address for this CO">{{ co.get('shipping_address','') }}</textarea>
+                    </div>
+                    {% elif co.get('shipping_address') %}
+                    <div class="text-muted small mt-1"><i class="bi bi-geo-alt me-1"></i>{{ co.get('shipping_address') }}</div>
                     {% endif %}
                   </td>
                   <td class="text-end fw-600">
@@ -812,6 +842,10 @@
                       <button class="btn btn-xs btn-outline-danger">Reject</button>
                     </form>
                     {% endif %}
+                    <a href="{{ url_for('co_pdf', project_id=project.firebase_id, co_idx=co_idx) }}"
+                       target="_blank" class="btn btn-xs btn-outline-secondary" title="Download CO PDF">
+                      <i class="bi bi-file-earmark-pdf"></i>
+                    </a>
                     <form method="POST" action="{{ url_for('co_delete', project_id=project.firebase_id, co_idx=co_idx) }}"
                           onsubmit="return confirm('Delete this change order? This will update the project contract value and financial totals.');">
                       <button class="btn btn-xs btn-outline-danger" title="Delete CO">
@@ -945,22 +979,34 @@
       </div>
       <form method="POST" action="{{ url_for('co_new', project_id=project.firebase_id) }}">
         <div class="modal-body">
-          <div class="mb-3">
-            <label class="form-label fw-600">Title <span class="text-danger">*</span></label>
-            <input type="text" name="title" class="form-control" placeholder="e.g. Additional MEP Calculations" required>
+          <div class="row g-3 mb-3">
+            <div class="col-md-7">
+              <label class="form-label fw-600">Title <span class="text-danger">*</span></label>
+              <input type="text" name="title" class="form-control" placeholder="e.g. Additional MEP Calculations" required>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label fw-600">Amount ($) <span class="text-danger">*</span></label>
+              <input type="number" name="amount" class="form-control" step="0.01" min="0" placeholder="0.00" required>
+            </div>
           </div>
           <div class="mb-3">
-            <label class="form-label fw-600">Amount ($) <span class="text-danger">*</span></label>
-            <input type="number" name="amount" class="form-control" step="0.01" min="0" placeholder="0.00" required>
+            <label class="form-label fw-600">PO / WO Number <span class="text-danger">*</span></label>
+            <input type="text" name="po_wo_number" class="form-control" placeholder="Enter PO or WO number" required autocomplete="off">
+            <div class="form-text">Must be unique — different from the project PO/WO and all other change orders.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-600">Shipping Address</label>
+            <textarea name="shipping_address" class="form-control" rows="2"
+                      placeholder="Shipping address for this change order"></textarea>
           </div>
           <div class="mb-3">
             <label class="form-label fw-600">Description</label>
-            <textarea name="description" class="form-control" rows="3"
-                      placeholder="Describe the additional scope of work?"></textarea>
+            <textarea name="description" class="form-control" rows="2"
+                      placeholder="Describe the additional scope of work"></textarea>
           </div>
           <div class="mb-3">
             <label class="form-label fw-600">Notes</label>
-            <input type="text" name="notes" class="form-control" placeholder="Internal notes?">
+            <input type="text" name="notes" class="form-control" placeholder="Internal notes">
           </div>
           <div class="alert alert-info py-2 small mb-0">
             <i class="bi bi-info-circle me-1"></i>
@@ -1961,6 +2007,14 @@ function submitStatusOnly() {
   const modal = bootstrap.Modal.getInstance(document.getElementById('invoicePromptModal'));
   if (modal) modal.hide();
   document.getElementById('statusForm').submit();
+}
+
+function toggleCoAddr(idx) {
+  const display = document.getElementById('addrDisplay' + idx);
+  const edit    = document.getElementById('addrEdit'    + idx);
+  display.classList.toggle('d-none');
+  edit.classList.toggle('d-none');
+  if (!edit.classList.contains('d-none')) edit.focus();
 }
 </script>
 {% endblock %}

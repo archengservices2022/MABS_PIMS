@@ -3266,19 +3266,42 @@ def co_new(project_id):
     cos = project.get("change_orders") or []
     if not isinstance(cos, list):
         cos = list(cos.values()) if isinstance(cos, dict) else []
+
+    co_po_wo = request.form.get("po_wo_number", "").strip()
+    co_shipping = request.form.get("shipping_address", "").strip()
+
+    # Validate PO/WO required and unique across all projects and their COs
+    if not co_po_wo:
+        flash("PO/WO number is required for Change Orders.", "danger")
+        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+    all_projects = fb_get("/projects") or {}
+    if isinstance(all_projects, dict):
+        for pid, pdata in all_projects.items():
+            if not isinstance(pdata, dict):
+                continue
+            if pdata.get("po_wo_number", "").strip() == co_po_wo:
+                flash(f"PO/WO number '{co_po_wo}' is already used by project {pdata.get('project_number','?')}.", "danger")
+                return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+            for xco in _normalise_list(pdata.get("change_orders")):
+                if isinstance(xco, dict) and xco.get("po_wo_number", "").strip() == co_po_wo:
+                    flash(f"PO/WO number '{co_po_wo}' is already used by {xco.get('co_number','a CO')} on project {pdata.get('project_number','?')}.", "danger")
+                    return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+
     co_num = f"CO-{len(cos)+1:03d}"
     now_str = datetime.now(timezone.utc).isoformat()
     new_co = {
-        "co_number":    co_num,
-        "title":        request.form.get("title", "").strip(),
-        "description":  request.form.get("description", "").strip(),
-        "amount":       _safe_float(request.form.get("amount", 0)),
-        "status":       "Draft",
-        "created_at":   now_str,
-        "created_by":   session.get("user_email", ""),
-        "submitted_at": "",
-        "approved_at":  "",
-        "notes":        request.form.get("notes", "").strip(),
+        "co_number":        co_num,
+        "title":            request.form.get("title", "").strip(),
+        "description":      request.form.get("description", "").strip(),
+        "amount":           _safe_float(request.form.get("amount", 0)),
+        "status":           "Draft",
+        "created_at":       now_str,
+        "created_by":       session.get("user_email", ""),
+        "submitted_at":     "",
+        "approved_at":      "",
+        "notes":            request.form.get("notes", "").strip(),
+        "po_wo_number":     co_po_wo,
+        "shipping_address": co_shipping,
     }
     cos.append(new_co)
     # Save base contract value on first CO creation
@@ -3356,6 +3379,24 @@ def co_update_amount(project_id, co_idx):
         flash("CO amount cannot be negative.", "danger")
         return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
 
+    # Validate PO/WO uniqueness (skip if unchanged)
+    new_po_wo = request.form.get("po_wo_number", "").strip()
+    if new_po_wo and new_po_wo != cos[co_idx].get("po_wo_number", "").strip():
+        all_projects = fb_get("/projects") or {}
+        if isinstance(all_projects, dict):
+            for pid, pdata in all_projects.items():
+                if not isinstance(pdata, dict):
+                    continue
+                if pdata.get("po_wo_number", "").strip() == new_po_wo:
+                    flash(f"PO/WO number '{new_po_wo}' is already used by project {pdata.get('project_number','?')}.", "danger")
+                    return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+                for xidx, xco in enumerate(_normalise_list(pdata.get("change_orders"))):
+                    if isinstance(xco, dict) and xco.get("po_wo_number", "").strip() == new_po_wo:
+                        if pid == project_id and xidx == co_idx:
+                            continue  # same CO, skip
+                        flash(f"PO/WO number '{new_po_wo}' is already used by {xco.get('co_number','a CO')} on project {pdata.get('project_number','?')}.", "danger")
+                        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+
     base_value = _base_contract_value(project, cos)
     co = cos[co_idx]
     co["amount"] = new_amount
@@ -3368,6 +3409,11 @@ def co_update_amount(project_id, co_idx):
         existing = co.get("created_at", "")
         time_part = existing[10:] if len(existing) > 10 else "T00:00:00+00:00"
         co["created_at"] = co_date + time_part
+    if new_po_wo:
+        co["po_wo_number"] = new_po_wo
+    new_shipping = request.form.get("shipping_address", None)
+    if new_shipping is not None:
+        co["shipping_address"] = new_shipping.strip()
     co["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     stages = _normalise_list(project.get("payment_stages"))
@@ -3477,6 +3523,213 @@ def co_delete(project_id, co_idx):
     cache_bust("projects_list")
     flash(f"{deleted_number} deleted and project financial totals updated.", "success")
     return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+
+@app.route("/projects/<project_id>/change-orders/<int:co_idx>/pdf")
+@login_required
+def co_pdf(project_id, co_idx):
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import mm, inch
+    except ImportError:
+        flash("reportlab not installed.", "danger")
+        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+
+    import io as _io
+    from pathlib import Path
+    from flask import Response
+
+    project = fb_get(f"/projects/{project_id}") or {}
+    if not project:
+        abort(404)
+    cos = _normalise_list(project.get("change_orders"))
+    if co_idx >= len(cos) or not isinstance(cos[co_idx], dict):
+        abort(404)
+    co = cos[co_idx]
+    ci = company_info()
+
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=15*mm, rightMargin=15*mm,
+                            topMargin=10*mm, bottomMargin=10*mm)
+    styles = getSampleStyleSheet()
+    W = doc.width
+
+    def ps(name, **kw):
+        return ParagraphStyle(name, parent=styles["Normal"], **kw)
+
+    h16  = ps("h16",  fontName="Helvetica-Bold", fontSize=16, leading=20)
+    h12  = ps("h12",  fontName="Helvetica-Bold", fontSize=12, leading=15)
+    b10  = ps("b10",  fontName="Helvetica-Bold", fontSize=10, leading=13)
+    n10  = ps("n10",  fontName="Helvetica",      fontSize=10, leading=13)
+    n9   = ps("n9",   fontName="Helvetica",      fontSize=9,  leading=11)
+    b9   = ps("b9",   fontName="Helvetica-Bold", fontSize=9,  leading=11)
+    gray = ps("gray", fontName="Helvetica",       fontSize=9,  leading=11, textColor=colors.grey)
+
+    story = []
+
+    # ── Company header ────────────────────────────────────────────────────────
+    logo_path = _get_company_logo_path()
+    logo_img = None
+    if logo_path:
+        try:
+            lp = Path(logo_path)
+            if lp.exists():
+                logo_img = Image(str(lp.resolve()), width=0.9*inch, height=0.9*inch)
+        except Exception:
+            pass
+
+    company_name = ci.get("name", "")
+    addr_html = ci.get("address", "").replace("\n", "<br/>")
+    contact_html = f"Phone: {ci.get('phone','')}  |  Email: {ci.get('email','')}  |  {ci.get('website','')}"
+    hdr_html = f"<b><font size=15>{company_name}</font></b><br/><font size=9>{addr_html}<br/>{contact_html}</font>"
+
+    if logo_img:
+        ht = Table([[logo_img, Paragraph(hdr_html, ps("hc", fontName="Helvetica", fontSize=10, alignment=1))]],
+                   colWidths=[0.95*inch, W - 0.95*inch])
+        ht.setStyle(TableStyle([
+            ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
+            ("LEFTPADDING",  (0,0), (-1,-1), 0),
+            ("RIGHTPADDING", (0,0), (-1,-1), 0),
+            ("BOTTOMPADDING",(0,0), (-1,-1), 0),
+            ("TOPPADDING",   (0,0), (-1,-1), 0),
+            ("LINEBELOW",    (0,0), (-1,-1), 0.75, colors.black),
+        ]))
+        story.append(ht)
+    else:
+        story.append(Paragraph(hdr_html, ps("hc2", fontName="Helvetica", fontSize=10, alignment=1)))
+        story.append(Table([['']], colWidths=[W],
+                           style=[("LINEBELOW", (0,0), (-1,-1), 0.75, colors.black)]))
+    story.append(Spacer(1, 4*mm))
+
+    # ── Title bar ─────────────────────────────────────────────────────────────
+    story.append(Paragraph("CHANGE ORDER", h16))
+    story.append(Spacer(1, 3*mm))
+
+    # ── Info grid ─────────────────────────────────────────────────────────────
+    def _fmt_date(d):
+        if not d:
+            return "—"
+        d = str(d)[:10]
+        parts = d.split("-")
+        return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
+
+    co_date     = _fmt_date(co.get("created_at", ""))
+    co_number   = co.get("co_number", "—")
+    co_po_wo    = co.get("po_wo_number", "—") or "—"
+    co_status   = co.get("status", "Draft")
+    proj_num    = project.get("project_number", "—")
+    proj_name   = project.get("project_name", "—")
+    client_name = project.get("company_name") or project.get("client_name", "—")
+    proj_po_wo  = project.get("po_wo_number", "—") or "—"
+    shipping    = co.get("shipping_address", "") or "—"
+
+    half = W / 2 - 3*mm
+    info = Table([
+        [Paragraph("<b>CO Number:</b>", n10),  Paragraph(co_number, n10),
+         Paragraph("<b>Date:</b>", n10),        Paragraph(co_date, n10)],
+        [Paragraph("<b>PO / WO #:</b>", n10),  Paragraph(co_po_wo, n10),
+         Paragraph("<b>Status:</b>", n10),      Paragraph(co_status, n10)],
+        [Paragraph("<b>Project:</b>", n10),     Paragraph(f"{proj_num} — {proj_name}", n10),
+         Paragraph("<b>Project PO/WO:</b>", n10), Paragraph(proj_po_wo, n10)],
+        [Paragraph("<b>Client:</b>", n10),      Paragraph(client_name, n10),
+         Paragraph("", n10),                    Paragraph("", n10)],
+    ], colWidths=[1.1*inch, half - 1.1*inch, 1.1*inch, half - 1.1*inch])
+    info.setStyle(TableStyle([
+        ("VALIGN",       (0,0), (-1,-1), "TOP"),
+        ("LEFTPADDING",  (0,0), (-1,-1), 2),
+        ("RIGHTPADDING", (0,0), (-1,-1), 2),
+        ("TOPPADDING",   (0,0), (-1,-1), 3),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 3),
+        ("LINEBELOW",    (0,0), (-1,-1), 0.5, colors.lightgrey),
+        ("BOX",          (0,0), (-1,-1), 0.75, colors.black),
+    ]))
+    story.append(info)
+    story.append(Spacer(1, 4*mm))
+
+    # ── Shipping address ──────────────────────────────────────────────────────
+    ship_table = Table([
+        [Paragraph("<b>Shipping Address:</b>", b10)],
+        [Paragraph(shipping.replace("\n", "<br/>"), n10)],
+    ], colWidths=[W])
+    ship_table.setStyle(TableStyle([
+        ("LEFTPADDING",  (0,0), (-1,-1), 4),
+        ("RIGHTPADDING", (0,0), (-1,-1), 4),
+        ("TOPPADDING",   (0,0), (-1,-1), 3),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 3),
+        ("BOX",          (0,0), (-1,-1), 0.75, colors.black),
+        ("LINEBELOW",    (0,0), (0,0),   0.5,  colors.lightgrey),
+    ]))
+    story.append(ship_table)
+    story.append(Spacer(1, 4*mm))
+
+    # ── Scope / description ────────────────────────────────────────────────────
+    story.append(Paragraph("<b>Scope of Work</b>", b10))
+    story.append(Spacer(1, 1*mm))
+    story.append(Paragraph(co.get("title", ""), n10))
+    if co.get("description"):
+        story.append(Spacer(1, 1*mm))
+        story.append(Paragraph(co.get("description", "").replace("\n", "<br/>"), n10))
+    story.append(Spacer(1, 4*mm))
+
+    # ── Amount table ──────────────────────────────────────────────────────────
+    currency_sym = ci.get("currency_symbol", "$")
+    amount = _safe_float(co.get("amount", 0))
+    amt_table = Table([
+        [Paragraph("<b>Description</b>", b9), Paragraph("<b>Amount</b>", ps("ra", fontName="Helvetica-Bold", fontSize=9, alignment=2))],
+        [Paragraph(co.get("title","Change Order"), n9),
+         Paragraph(f"{currency_sym}{amount:,.2f}", ps("rn", fontName="Helvetica", fontSize=9, alignment=2))],
+        ["", ""],
+        [Paragraph("<b>TOTAL</b>", b9),
+         Paragraph(f"<b>{currency_sym}{amount:,.2f}</b>", ps("rb", fontName="Helvetica-Bold", fontSize=9, alignment=2))],
+    ], colWidths=[W * 0.7, W * 0.3])
+    amt_table.setStyle(TableStyle([
+        ("BACKGROUND",   (0,0), (-1,0), colors.HexColor("#0F172A")),
+        ("TEXTCOLOR",    (0,0), (-1,0), colors.white),
+        ("LINEBELOW",    (0,-2), (-1,-2), 0.5, colors.lightgrey),
+        ("LINEABOVE",    (0,-1), (-1,-1), 0.75, colors.black),
+        ("BACKGROUND",   (0,-1), (-1,-1), colors.HexColor("#F0FDF4")),
+        ("BOX",          (0,0), (-1,-1), 0.75, colors.black),
+        ("LEFTPADDING",  (0,0), (-1,-1), 5),
+        ("RIGHTPADDING", (0,0), (-1,-1), 5),
+        ("TOPPADDING",   (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 4),
+        ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
+    ]))
+    story.append(amt_table)
+    story.append(Spacer(1, 4*mm))
+
+    # ── Notes ─────────────────────────────────────────────────────────────────
+    if co.get("notes"):
+        story.append(Paragraph("<b>Notes:</b>", b10))
+        story.append(Paragraph(co.get("notes","").replace("\n","<br/>"), n9))
+        story.append(Spacer(1, 4*mm))
+
+    # ── Signature block ────────────────────────────────────────────────────────
+    story.append(Spacer(1, 8*mm))
+    sig = Table([
+        [Paragraph("Authorized by:", gray), Paragraph("Client Approval:", gray)],
+        [Paragraph("", n10), Paragraph("", n10)],
+        [Table([['']], colWidths=[W*0.4], style=[("LINEABOVE",(0,0),(-1,-1),0.75,colors.black)]),
+         Table([['']], colWidths=[W*0.4], style=[("LINEABOVE",(0,0),(-1,-1),0.75,colors.black)])],
+        [Paragraph("Signature / Date", gray), Paragraph("Signature / Date", gray)],
+    ], colWidths=[W/2, W/2])
+    sig.setStyle(TableStyle([
+        ("VALIGN",       (0,0), (-1,-1), "BOTTOM"),
+        ("LEFTPADDING",  (0,0), (-1,-1), 0),
+        ("RIGHTPADDING", (0,0), (-1,-1), 0),
+        ("TOPPADDING",   (0,0), (-1,-1), 3),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 0),
+    ]))
+    story.append(sig)
+
+    doc.build(story)
+    buf.seek(0)
+    fname = f"CO_{co_number}_{proj_num}.pdf".replace("/", "-")
+    return Response(buf.read(), mimetype="application/pdf",
+                    headers={"Content-Disposition": f"inline;filename={fname}"})
 
 @app.route("/projects/<project_id>/edit", methods=["GET", "POST"])
 @role_required("projects")
