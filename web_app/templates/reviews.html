@@ -98,7 +98,8 @@
   }
 
   @media (prefers-color-scheme: dark) {
-    .review-card { background: #1e293b; border-color: #334155; }
+    .review-card { background: #1e293b; border-color: #334155; color: #e2e8f0; }
+    .review-card .text-muted { color: #94a3b8 !important; }
     .review-kpi { background: #1e293b; border-color: #334155; }
     .review-kpi-value { color: #e2e8f0; }
     .star-btn    { background: #1e293b; border-color: #475569; color: #94a3b8; }
@@ -107,6 +108,8 @@
     .cat-desc    { color: #94a3b8; }
     .raise-suggest { background: #0f2e1a; border-color: #166534; color: #4ade80; }
   }
+  :root[data-theme="dark"] .review-card { background: #1e293b; border-color: #334155; color: #e2e8f0; }
+  :root[data-theme="dark"] .review-card .text-muted { color: #94a3b8 !important; }
   @media (max-width: 900px) {
     .review-kpi-grid { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
   }
