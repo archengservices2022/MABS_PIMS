@@ -625,8 +625,8 @@
       </div>
 
       {% if activity_summary %}
-      {% set max_open = activity_summary | map(attribute='today_open') | max %}
-      {% set max_oper = activity_summary | map(attribute='today_operated') | max %}
+      {% set max_open = (activity_summary | map(attribute='today_open') | list | max) or 1 %}
+      {% set max_oper = (activity_summary | map(attribute='today_operated') | list | max) or 1 %}
       <div class="table-responsive">
         <table class="table align-middle mb-0" style="font-size:13px;">
           <thead>
@@ -647,12 +647,14 @@
           </thead>
           <tbody>
             {% for a in activity_summary %}
-            {% set open_m  = a.today_open     | float %}
-            {% set oper_m  = a.today_operated | float %}
-            {% set wopen_m = a.week_open      | float %}
-            {% macro fmt(m) %}{% set h=(m/60)|int %}{% set mn=(m%60)|int %}{% if h > 0 %}{{ h }}h {{ mn }}m{% elif mn > 0 %}{{ mn }}m{% else %}—{% endif %}{% endmacro %}
-            {% set open_bar = ((open_m / (max_open or 1)) * 100) | int %}
-            {% set oper_bar = ((oper_m / (max_oper or 1)) * 100) | int %}
+            {% set open_m   = a.get('today_open', 0)     | float %}
+            {% set oper_m   = a.get('today_operated', 0) | float %}
+            {% set wopen_m  = a.get('week_open', 0)      | float %}
+            {% set open_h   = (open_m  / 60) | int %}{% set open_mn  = (open_m  % 60) | int %}
+            {% set oper_h   = (oper_m  / 60) | int %}{% set oper_mn  = (oper_m  % 60) | int %}
+            {% set wopen_h  = (wopen_m / 60) | int %}{% set wopen_mn = (wopen_m % 60) | int %}
+            {% set open_bar = ((open_m / max_open) * 100) | int %}
+            {% set oper_bar = ((oper_m / max_oper) * 100) | int %}
             <tr style="border-bottom:1px solid #f1f5f9;">
               <td style="padding:12px 14px;">
                 <div class="d-flex align-items-center gap-2">
@@ -678,7 +680,7 @@
                   <div style="flex:1;background:#e2e8f0;border-radius:4px;height:8px;min-width:100px;">
                     <div style="width:{{ open_bar }}%;background:#0D9488;height:8px;border-radius:4px;"></div>
                   </div>
-                  <span class="fw-semibold" style="min-width:55px;text-align:right;color:{% if open_m > 0 %}#0f172a{% else %}#94a3b8{% endif %};">{{ fmt(open_m) }}</span>
+                  <span class="fw-semibold" style="min-width:55px;text-align:right;color:{% if open_m > 0 %}#0f172a{% else %}#94a3b8{% endif %};">{% if open_h > 0 %}{{ open_h }}h {{ open_mn }}m{% elif open_mn > 0 %}{{ open_mn }}m{% else %}—{% endif %}</span>
                 </div>
               </td>
               <td style="padding:12px 14px;">
@@ -686,10 +688,10 @@
                   <div style="flex:1;background:#e2e8f0;border-radius:4px;height:8px;min-width:100px;">
                     <div style="width:{{ oper_bar }}%;background:#6366f1;height:8px;border-radius:4px;"></div>
                   </div>
-                  <span class="fw-semibold" style="min-width:55px;text-align:right;color:{% if oper_m > 0 %}#0f172a{% else %}#94a3b8{% endif %};">{{ fmt(oper_m) }}</span>
+                  <span class="fw-semibold" style="min-width:55px;text-align:right;color:{% if oper_m > 0 %}#0f172a{% else %}#94a3b8{% endif %};">{% if oper_h > 0 %}{{ oper_h }}h {{ oper_mn }}m{% elif oper_mn > 0 %}{{ oper_mn }}m{% else %}—{% endif %}</span>
                 </div>
               </td>
-              <td style="padding:12px 14px;color:#475569;">{{ fmt(wopen_m) }}</td>
+              <td style="padding:12px 14px;color:#475569;">{% if wopen_h > 0 %}{{ wopen_h }}h {{ wopen_mn }}m{% elif wopen_mn > 0 %}{{ wopen_mn }}m{% else %}—{% endif %}</td>
               <td style="padding:12px 14px;color:#64748b;font-size:12px;">
                 {{ a.last_seen_at[11:16] if a.last_seen_at and a.last_seen_at[:10] == now.strftime('%Y-%m-%d') else (a.last_seen_at[:10] if a.last_seen_at else '—') }}
               </td>
