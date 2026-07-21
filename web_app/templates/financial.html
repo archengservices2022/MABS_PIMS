@@ -3877,6 +3877,16 @@ document.addEventListener('DOMContentLoaded', function() {
     new TablePager('byProjectPager', '#byProjectTableBody', 'tr.bp-row', 20);
     _PAGERS['byProjectPager'].refresh();
   }
+
+  // Re-run pager when By Project tab is clicked so controls always render
+  document.querySelectorAll('[href="#tab-by-project"], [data-bs-target="#tab-by-project"]').forEach(function(el) {
+    el.addEventListener('shown.bs.tab', function() {
+      if (_PAGERS['byProjectPager']) {
+        _PAGERS['byProjectPager'].page = 1;
+        _PAGERS['byProjectPager'].refresh();
+      }
+    });
+  });
 });
 </script>
 {% endblock %}
