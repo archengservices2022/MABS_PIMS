@@ -151,7 +151,7 @@
           </select>
           {% if all_plants %}
           <select name="plant" class="form-select form-select-sm" style="width:140px;">
-            <option value="">All States</option>
+            <option value="">All Plants</option>
             {% for pl in all_plants %}
             <option value="{{ pl }}" {{ 'selected' if plant_filter == pl }}>{{ pl }}</option>
             {% endfor %}
@@ -186,7 +186,7 @@
             {% if status_filter %} — Status: <strong>{{ status_filter }}</strong>{% endif %}
             {% if overdue_filter %} — <strong class="text-danger">Overdue payments only</strong>{% endif %}
             {% if client_filter %} — Client: <strong>{{ client_filter }}</strong>{% endif %}
-            {% if plant_filter %} — State: <strong>{{ plant_filter }}</strong>{% endif %}
+            {% if plant_filter %} — Plant: <strong>{{ plant_filter }}</strong>{% endif %}
             &nbsp;?&nbsp; {{ projects|length }} result{{ 's' if projects|length != 1 else '' }}
           </span>
         </div>
@@ -202,7 +202,7 @@
               <th>Project #</th>
               <th>Name</th>
               <th>Client</th>
-              <th>State</th>
+              <th>Plant</th>
               <th>Received Date</th>
               <th class="text-end">Contract Value</th>
               <th class="text-end">Paid</th>
