@@ -13497,7 +13497,7 @@ def _activity_usage_summary() -> List[dict]:
             if s.get("last_seen_at", "") > entry["last_seen_at"]:
                 entry["last_seen_at"] = s.get("last_seen_at", "")
 
-    return sorted(by_employee.values(), key=lambda x: x["week_minutes"], reverse=True)
+    return sorted(by_employee.values(), key=lambda x: x["week_open"], reverse=True)
 
 def _load_time_entries() -> List[dict]:
     cached, hit = _cache_get("time_entries")
