@@ -40,6 +40,11 @@
       <i class="bi bi-robot me-1"></i>AI
     </a>
   </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'activity' }}" data-bs-toggle="tab" href="#tab-activity">
+      <i class="bi bi-bar-chart-line me-1"></i>Activity
+    </a>
+  </li>
 </ul>
 
 <div class="tab-content">
@@ -607,6 +612,40 @@
             <li class="mb-2"><i class="bi bi-heart-pulse text-blue me-2"></i><strong>Project Health</strong> — one-line status summary for each active project</li>
           </ul>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACTIVITY -->
+  <div class="tab-pane fade {{ 'show active' if active_tab == 'activity' }}" id="tab-activity">
+    <div class="card-panel">
+      <h6 class="section-heading mb-3"><i class="bi bi-bar-chart-line me-1" style="color:#0D9488;"></i>Employee App Activity</h6>
+      <p class="text-muted small mb-3">Shows how long each employee has been active in the app today and this week.</p>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle" style="font-size:13px;">
+          <thead style="background:#f8fafc;">
+            <tr>
+              <th>Employee</th>
+              <th class="text-end">Today (min)</th>
+              <th class="text-end">This Week (min)</th>
+              <th class="text-end">Last Seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if activity_summary %}
+            {% for a in activity_summary %}
+            <tr>
+              <td class="fw-semibold">{{ a.employee_name }}</td>
+              <td class="text-end">{{ '%.0f'|format(a.today_minutes) }}</td>
+              <td class="text-end">{{ '%.0f'|format(a.week_minutes) }}</td>
+              <td class="text-end text-muted small">{{ a.last_seen_at[:16].replace('T',' ') if a.last_seen_at else '—' }}</td>
+            </tr>
+            {% endfor %}
+            {% else %}
+            <tr><td colspan="4" class="text-center text-muted py-4">No activity recorded yet.</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
