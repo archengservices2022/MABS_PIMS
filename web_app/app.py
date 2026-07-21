@@ -294,9 +294,19 @@ def _start_activity_session(uid: str, name: str) -> str:
 def _touch_activity_session(sid: str):
     if not sid:
         return
-    fb_update(f"/activity_sessions/{sid}", {
-        "last_seen_at": datetime.now(COMPANY_TZ).isoformat(),
-    })
+    try:
+        now = datetime.now(COMPANY_TZ)
+        current_minute = now.strftime("%Y-%m-%d %H:%M")
+        update = {"last_seen_at": now.isoformat()}
+        # Track operated minutes using Flask session to avoid an extra Firebase read per request
+        if current_minute != session.get("_act_last_minute", ""):
+            session["_act_last_minute"] = current_minute
+            count = session.get("_act_operated_count", 0) + 1
+            session["_act_operated_count"] = count
+            update["operated_minutes"] = count
+        fb_update(f"/activity_sessions/{sid}", update)
+    except Exception:
+        pass
 
 @app.before_request
 def check_session_timeout():
@@ -11727,9 +11737,17 @@ def settings():
         if isinstance(_u, dict) and _u.get("role"):
             _u["role"] = normalize_role(_u["role"])
     settings_data = load_settings()
+    try:
+        _act_summary = _activity_usage_summary()
+    except Exception:
+        _act_summary = []
+    _act_max_open = max((a.get("today_open", 0) for a in _act_summary), default=1) or 1
+    _act_max_oper = max((a.get("today_operated", 0) for a in _act_summary), default=1) or 1
     return render_template("settings.html", users=all_users, settings=settings_data,
                            role_pages=ROLE_PAGES, all_pages=ALL_PAGES, page_labels=PAGE_LABELS,
-                           activity_summary=_activity_usage_summary())
+                           activity_summary=_act_summary,
+                           act_max_open=_act_max_open, act_max_oper=_act_max_oper,
+                           now=datetime.now(COMPANY_TZ))
 
 @app.route("/settings/company", methods=["POST"])
 @role_required("settings")
@@ -13459,19 +13477,27 @@ def _activity_usage_summary() -> List[dict]:
             except (ValueError, TypeError):
                 continue
 
+            operated = float(s.get("operated_minutes", 0) or 0)
             entry = by_employee.setdefault(uid, {
-                "employee_uid": uid, "employee_name": s.get("employee_name", "—"),
-                "today_minutes": 0.0, "week_minutes": 0.0, "last_seen_at": "",
+                "employee_uid":          uid,
+                "employee_name":         s.get("employee_name", "—"),
+                "today_open":            0.0,
+                "today_operated":        0.0,
+                "week_open":             0.0,
+                "week_operated":         0.0,
+                "last_seen_at":          "",
             })
             s_date = s.get("date", "")
             if s_date == today:
-                entry["today_minutes"] += minutes
+                entry["today_open"]     += minutes
+                entry["today_operated"] += operated
             if s_date >= week_start:
-                entry["week_minutes"] += minutes
+                entry["week_open"]      += minutes
+                entry["week_operated"]  += operated
             if s.get("last_seen_at", "") > entry["last_seen_at"]:
                 entry["last_seen_at"] = s.get("last_seen_at", "")
 
-    return sorted(by_employee.values(), key=lambda x: x["week_minutes"], reverse=True)
+    return sorted(by_employee.values(), key=lambda x: x["week_open"], reverse=True)
 
 def _load_time_entries() -> List[dict]:
     cached, hit = _cache_get("time_entries")
