@@ -13948,7 +13948,7 @@ def _next_project_number() -> str:
                     except ValueError:
                         pass
     next_n = (max(nums) + 1) if nums else 1
-    return f"{base}-{next_n:03d}"
+    return f"{base}{next_n:03d}"
 
 def _parse_service_types(form) -> list:
     """Return service_types list, substituting 'Other' with 'Other: {specify}' when filled."""
