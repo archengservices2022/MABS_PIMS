@@ -11729,7 +11729,8 @@ def settings():
     settings_data = load_settings()
     return render_template("settings.html", users=all_users, settings=settings_data,
                            role_pages=ROLE_PAGES, all_pages=ALL_PAGES, page_labels=PAGE_LABELS,
-                           activity_summary=_activity_usage_summary())
+                           activity_summary=_activity_usage_summary(),
+                           now=datetime.now(COMPANY_TZ))
 
 @app.route("/settings/company", methods=["POST"])
 @role_required("settings")
