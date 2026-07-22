@@ -2342,7 +2342,8 @@ function viewReceipt(expId) {
         +'<span style="font-size:13px;color:#6b7280;">Showing '+(s+1)+'–'+Math.min(s+PS,tot)+' of '+tot+' projects</span>'
         +'<div style="display:flex;align-items:center;gap:6px;">'
         +'<a href="#" onclick="event.preventDefault();'+(pg>1?'bpGo('+(pg-1)+')':'')+'" style="'+(pg<=1?d:b)+'">&#8249;</a>'
-        +'<span style="font-size:13px;color:#374151;">Page '+pg+' of '+tp+'</span>'
+        +'<input type="number" min="1" max="'+tp+'" value="'+pg+'" title="Type page and press Enter" style="width:46px;height:30px;border:1px solid #d1d5db;border-radius:6px;text-align:center;font-size:13px;font-weight:600;color:#374151;padding:0 4px;outline:none;" onkeydown="if(event.key===\'Enter\')bpGo(parseInt(this.value))" onblur="bpGo(parseInt(this.value))">'
+        +'<span style="font-size:13px;color:#6b7280;">of '+tp+'</span>'
         +'<a href="#" onclick="event.preventDefault();'+(pg<tp?'bpGo('+(pg+1)+')':'')+'" style="'+(pg>=tp?d:b)+'">&#8250;</a>'
         +'</div></div>';
     }
