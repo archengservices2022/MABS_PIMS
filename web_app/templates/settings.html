@@ -45,6 +45,13 @@
       <i class="bi bi-bar-chart-line me-1"></i>Activity
     </a>
   </li>
+  {% if user_role == 'admin' %}
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'tools' }}" data-bs-toggle="tab" href="#tab-tools">
+      <i class="bi bi-tools me-1"></i>Tools
+    </a>
+  </li>
+  {% endif %}
 </ul>
 
 <div class="tab-content">
@@ -706,6 +713,32 @@
       {% endif %}
     </div>
   </div>
+
+  {% if user_role == 'admin' %}
+  <!-- ?? TOOLS ??????????????????????????????????????????????????????????????? -->
+  <div class="tab-pane fade {{ 'show active' if active_tab == 'tools' }}" id="tab-tools">
+    <div class="card-panel">
+      <h6 class="section-heading mb-3"><i class="bi bi-tools me-1" style="color:#0D9488;"></i>Admin Tools</h6>
+
+      <!-- Fix project numbers -->
+      <div class="d-flex align-items-start justify-content-between py-3 border-bottom">
+        <div>
+          <div class="fw-600" style="font-size:14px;">Fix Project Numbers</div>
+          <div class="text-muted small mt-1">
+            Removes the extra dash from project numbers that were created with the old format.<br>
+            Example: <code>MABS-202607-136</code> &rarr; <code>MABS-202607136</code>
+          </div>
+        </div>
+        <form method="post" action="/settings/fix-project-numbers" class="ms-4 flex-shrink-0"
+              onsubmit="return confirm('Fix all project numbers? This cannot be undone.');">
+          <button type="submit" class="btn btn-sm btn-outline-teal">
+            <i class="bi bi-wrench me-1"></i>Run Fix
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
 <!-- ?? Customize User Pages Modal ???????????????????????????????????????????? -->
 <div class="modal fade" id="userPagesModal" tabindex="-1">

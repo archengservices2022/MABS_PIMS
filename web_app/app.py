@@ -12047,6 +12047,33 @@ def settings_ai():
     return redirect(url_for("settings") + "?tab=ai")
 
 
+@app.route("/settings/fix-project-numbers", methods=["POST"])
+@role_required("settings")
+def fix_project_numbers():
+    """One-time migration: remove extra dash from project numbers like MABS-202607-136 → MABS-202607136."""
+    if normalize_role(session.get("user_role", "")) != "admin":
+        flash("Admin access required.", "danger")
+        return redirect(url_for("settings"))
+    import re as _re
+    _bad = _re.compile(r'^(MABS-\d{6})-(\d+)$')
+    projects = fb_get("/projects") or {}
+    fixed = 0
+    skipped = 0
+    for pid, pdata in projects.items():
+        if not isinstance(pdata, dict):
+            continue
+        num = pdata.get("project_number", "")
+        m = _bad.match(num)
+        if m:
+            new_num = m.group(1) + m.group(2)
+            fb_update(f"/projects/{pid}", {"project_number": new_num})
+            fixed += 1
+        else:
+            skipped += 1
+    flash(f"Done. Fixed {fixed} project number(s); {skipped} already correct.", "success")
+    return redirect(url_for("settings") + "?tab=tools")
+
+
 # ── AI Routes ─────────────────────────────────────────────────────────────────
 
 @app.route("/ai/extract-pdf", methods=["POST"])
