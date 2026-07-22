@@ -2716,7 +2716,7 @@ def projects_import_excel():
         col_idx = {}
         for ci, h in enumerate(header_row):
             for key, field in HEADER_MAP.items():
-                if key in h and field not in col_idx:
+                if (h == key or h.startswith(key)) and field not in col_idx:
                     col_idx[field] = ci
 
         if "project_number" not in col_idx:
