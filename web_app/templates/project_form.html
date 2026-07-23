@@ -252,15 +252,13 @@
           {% set existing_stages = project.get('payment_stages') if project else None %}
           {% set has_invoiced = existing_stages and (existing_stages|selectattr('status', 'in', ['Invoiced', 'Paid', 'Partially Paid', 'Overdue'])|list|length > 0) %}
           {% set contract_val = project.get('contract_value','0') if project else '0' %}
-          {# Hidden input to preserve value when field is disabled (disabled fields don't submit) #}
-          {% if has_invoiced %}<input type="hidden" name="contract_value" value="{{ contract_val }}">{% endif %}
           <input type="number" id="contractValue" name="contract_value" class="form-control"
                  value="{{ contract_val }}"
-                 min="0.01" step="0.01" oninput="(function() { try { handleContractValueChange(); } catch(e) { console.error('handleContractValueChange error:', e); } updatePlanPreview(); })();"
-                 data-original-value="{{ contract_val|float }}"
-                 {% if has_invoiced %}disabled title="Cannot edit: payment stages are invoiced"{% else %}required{% endif %}>
+                 min="0.01" step="0.01" required
+                 oninput="(function() { try { handleContractValueChange(); } catch(e) { console.error('handleContractValueChange error:', e); } updatePlanPreview(); })();"
+                 data-original-value="{{ contract_val|float }}">
           {% if has_invoiced %}
-          <small class="text-muted d-block mt-1"><i class="bi bi-lock me-1"></i>Contract value is locked because payment stages are invoiced.</small>
+          <small class="text-warning d-block mt-1"><i class="bi bi-exclamation-triangle me-1"></i>Payment stages are invoiced — update contract value with care.</small>
           {% endif %}
         </div>
         {% if not is_new %}
