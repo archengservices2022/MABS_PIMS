@@ -51,6 +51,13 @@
       <i class="bi bi-tools me-1"></i>Tools
     </a>
   </li>
+  <li class="nav-item">
+    {% set _perm_pending = permission_requests | selectattr('status','equalto','pending') | list | length %}
+    <a class="nav-link {{ 'active' if active_tab == 'permissions' }}" data-bs-toggle="tab" href="#tab-permissions">
+      <i class="bi bi-shield-lock me-1"></i>Permissions
+      {% if _perm_pending > 0 %}<span class="badge bg-danger ms-1" style="font-size:10px;">{{ _perm_pending }}</span>{% endif %}
+    </a>
+  </li>
   {% endif %}
 </ul>
 
@@ -738,6 +745,66 @@
       </div>
     </div>
   </div>
+
+  <!-- ?? PERMISSIONS ????????????????????????????????????????????????????????? -->
+  <div class="tab-pane fade {{ 'show active' if active_tab == 'permissions' }}" id="tab-permissions">
+    <div class="card-panel">
+      <h6 class="section-heading mb-3"><i class="bi bi-shield-lock me-1" style="color:#0D9488;"></i>Permission Requests</h6>
+      {% if permission_requests %}
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle" style="font-size:13px;">
+          <thead class="table-light">
+            <tr>
+              <th>Requested By</th>
+              <th>Action Requested</th>
+              <th>Notes</th>
+              <th>Page</th>
+              <th>Date</th>
+              <th>Status</th>
+              <th class="text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for req in permission_requests %}
+          <tr id="permrow-{{ req.firebase_id }}">
+            <td class="fw-semibold">{{ req.get('requested_by_name','—') }}</td>
+            <td>{{ req.get('action','—') }}</td>
+            <td class="text-muted">{{ req.get('notes','—') or '—' }}</td>
+            <td>{% if req.get('page_url') %}<a href="{{ req.page_url }}" target="_blank" class="text-truncate d-inline-block" style="max-width:120px;" title="{{ req.page_url }}"><i class="bi bi-box-arrow-up-right"></i> Page</a>{% else %}—{% endif %}</td>
+            <td class="text-muted text-nowrap">{{ (req.get('requested_at','')[:10] | format_date) if req.get('requested_at') else '—' }}</td>
+            <td>
+              {% if req.get('status') == 'pending' %}
+                <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
+              {% elif req.get('status') == 'approved' %}
+                <span class="badge bg-success">Approved</span>
+                {% if req.get('admin_notes') %}<div class="text-muted" style="font-size:11px;">{{ req.admin_notes }}</div>{% endif %}
+              {% else %}
+                <span class="badge bg-danger">Denied</span>
+                {% if req.get('admin_notes') %}<div class="text-muted" style="font-size:11px;">{{ req.admin_notes }}</div>{% endif %}
+              {% endif %}
+            </td>
+            <td class="text-center text-nowrap">
+              {% if req.get('status') == 'pending' %}
+              <button class="btn btn-xs btn-outline-success me-1" onclick="resolvePermRequest('{{ req.firebase_id }}','approve')" title="Approve">
+                <i class="bi bi-check2"></i> Approve
+              </button>
+              <button class="btn btn-xs btn-outline-danger" onclick="resolvePermRequest('{{ req.firebase_id }}','deny')" title="Deny">
+                <i class="bi bi-x-lg"></i> Deny
+              </button>
+              {% else %}
+              <span class="text-muted small">Resolved by {{ req.get('reviewed_by','—') }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-muted text-center py-4"><i class="bi bi-shield-check" style="font-size:32px;display:block;margin-bottom:8px;opacity:.4;"></i>No permission requests yet.</div>
+      {% endif %}
+    </div>
+  </div>
   {% endif %}
 
 <!-- ?? Customize User Pages Modal ???????????????????????????????????????????? -->
@@ -1011,6 +1078,26 @@ async function saveUserPages() {
     msg.innerHTML = '<span class="text-success">Saved!</span>';
     setTimeout(function(){ location.reload(); }, 600);
   } catch(e) { msg.innerHTML = '<span class="text-danger">Request failed.</span>'; }
+}
+
+function resolvePermRequest(reqId, action) {
+  var label = action === 'approve' ? 'Approve' : 'Deny';
+  var notes = '';
+  if (action === 'deny') {
+    notes = prompt('Reason for denying (optional):') || '';
+    if (notes === null) return;
+  }
+  fetch('/api/permission-requests/' + reqId + '/resolve', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: action, notes: notes})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.success) location.reload();
+    else alert('Error: ' + (d.error || 'Unknown'));
+  })
+  .catch(function() { alert('Network error. Please try again.'); });
 }
 </script>
 {% endblock %}

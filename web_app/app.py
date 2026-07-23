@@ -12003,6 +12003,63 @@ def api_notifications_mark_read():
                 fb_update(f"/notifications/{uid}/{n}", {"read": True})
     return jsonify({"ok": True})
 
+# ── Permission Requests ───────────────────────────────────────────────────────
+@app.route("/api/permission-request", methods=["POST"])
+@login_required
+def api_permission_request():
+    data     = request.get_json(force=True) or {}
+    action   = (data.get("action") or "Delete action").strip()[:200]
+    notes    = (data.get("notes") or "").strip()[:500]
+    page_url = (data.get("page_url") or "").strip()[:500]
+    req = {
+        "action":            action,
+        "notes":             notes,
+        "page_url":          page_url,
+        "requested_by_uid":  session.get("user_uid", ""),
+        "requested_by_name": session.get("user_name", ""),
+        "requested_at":      datetime.now(timezone.utc).isoformat(),
+        "status":            "pending",
+        "reviewed_by":       None,
+        "reviewed_at":       None,
+        "admin_notes":       None,
+    }
+    fb_push("/permission_requests", req)
+    requester = session.get("user_name", "Someone")
+    for u in _load_all_users():
+        if normalize_role(u.get("role", "")) == "admin":
+            auid = u.get("firebase_uid", "")
+            if auid:
+                _push_notification(auid, "permission_request",
+                    "Permission Request",
+                    f"{requester} requested: {action[:80]}",
+                    link=url_for("settings") + "?tab=permissions")
+    return jsonify({"success": True})
+
+
+@app.route("/api/permission-requests/<req_id>/resolve", methods=["POST"])
+@role_required("settings")
+def api_permission_request_resolve(req_id):
+    if normalize_role(session.get("user_role", "")) != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    data   = request.get_json(force=True) or {}
+    status = "approved" if data.get("action") == "approve" else "denied"
+    notes  = (data.get("notes") or "").strip()
+    req    = fb_get(f"/permission_requests/{req_id}") or {}
+    fb_update(f"/permission_requests/{req_id}", {
+        "status":      status,
+        "reviewed_by": session.get("user_name", ""),
+        "reviewed_at": datetime.now(timezone.utc).isoformat(),
+        "admin_notes": notes,
+    })
+    requester_uid = req.get("requested_by_uid", "")
+    if requester_uid:
+        verb = "approved" if status == "approved" else "denied"
+        _push_notification(requester_uid, "permission_response",
+            f"Permission Request {status.capitalize()}",
+            f"Admin has {verb} your request to: {req.get('action','')[:80]}")
+    return jsonify({"success": True, "status": status})
+
+
 # ── Routes: Settings ──────────────────────────────────────────────────────────
 @app.route("/settings")
 @role_required("settings")
@@ -12019,10 +12076,21 @@ def settings():
         _act_summary = []
     _act_max_open = max((a.get("today_open", 0) for a in _act_summary), default=1) or 1
     _act_max_oper = max((a.get("today_operated", 0) for a in _act_summary), default=1) or 1
+    _perm_reqs = []
+    if normalize_role(session.get("user_role", "")) == "admin":
+        _raw_reqs = fb_get("/permission_requests") or {}
+        if isinstance(_raw_reqs, dict):
+            for _rid, _rd in _raw_reqs.items():
+                if _rd and isinstance(_rd, dict):
+                    _rd["firebase_id"] = _rid
+                    _perm_reqs.append(_rd)
+        _perm_reqs.sort(key=lambda x: x.get("requested_at", ""), reverse=True)
+    active_tab = request.args.get("tab", "company")
     return render_template("settings.html", users=all_users, settings=settings_data,
                            role_pages=ROLE_PAGES, all_pages=ALL_PAGES, page_labels=PAGE_LABELS,
                            activity_summary=_act_summary,
                            act_max_open=_act_max_open, act_max_oper=_act_max_oper,
+                           permission_requests=_perm_reqs,
                            now=datetime.now(COMPANY_TZ))
 
 @app.route("/settings/company", methods=["POST"])
