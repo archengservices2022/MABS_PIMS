@@ -3679,7 +3679,7 @@ def co_pdf(project_id, co_idx):
     amount = _safe_float(co.get("amount", 0))
     amt_table = Table([
         [Paragraph("<b>Description</b>", b9), Paragraph("<b>Amount</b>", ps("ra", fontName="Helvetica-Bold", fontSize=9, alignment=2))],
-        [Paragraph(co.get("title","Change Order"), n9),
+        [Paragraph(co_po_wo if co_po_wo != "—" else co.get("title","Change Order"), n9),
          Paragraph(f"{currency_sym}{amount:,.2f}", ps("rn", fontName="Helvetica", fontSize=9, alignment=2))],
         ["", ""],
         [Paragraph("<b>TOTAL</b>", b9),
@@ -14654,6 +14654,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
 
         po_wo = ""
         site_address = ""
+        co_po_wo_from_stage = ""
         if project_number:
             try:
                 raw_proj = fb_get("/projects") or {}
@@ -14674,6 +14675,12 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                             stage_data = payment_stages[int(payment_stage_index)]
                             if isinstance(stage_data, dict):
                                 payment_stage = stage_data.get("name", "")
+                                if payment_stage and "CO-" in payment_stage.upper():
+                                    co_num_match = payment_stage.split()[0] if " " in payment_stage else payment_stage
+                                    for _co in _normalise_list(pdata.get("change_orders")):
+                                        if isinstance(_co, dict) and _co.get("co_number", "").upper() == co_num_match.upper():
+                                            co_po_wo_from_stage = _co.get("po_wo_number", "")
+                                            break
                         break
             except Exception:
                 pass
@@ -14711,8 +14718,14 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
             project_number_display = f"{project_number}<br/><font size=8>{payment_stage}</font>"
             project_cell = Paragraph(project_number_display, left_style)
 
+        is_co_stage = bool(
+            (description and "co-" in description.lower()) or
+            (payment_stage and "CO-" in payment_stage.upper())
+        )
         description_display = ""
-        if po_wo or site_address:
+        if is_co_stage:
+            description_display = co_po_wo_from_stage or po_wo or ""
+        elif po_wo or site_address:
             if site_address:
                 import re
                 us_states_abbr = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"]
@@ -14763,6 +14776,8 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                         if site_address.endswith("–"):
                             site_address = site_address[:-1].strip()
 
+                site_address = site_address.rstrip(",").strip()
+
                 if po_wo and site_address:
                     description_display = f"{po_wo} - {site_address}"
                 elif site_address:
@@ -14771,8 +14786,6 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                     description_display = po_wo
             else:
                 description_display = po_wo
-        else:
-            description_display = ""
 
         total_due_val = qty_val * unit_price_val
         total_due = f"${total_due_val:,.2f}"
