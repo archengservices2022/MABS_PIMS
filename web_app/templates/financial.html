@@ -2228,21 +2228,43 @@ function viewReceipt(expId) {
   <div class="card-panel">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h6 class="panel-title mb-0">Profit &amp; Loss by Project</h6>
-      <div class="d-flex align-items-center gap-2">
-        <input type="text" id="byProjectSearch" placeholder="Search project, client, status..."
-             class="form-control form-control-sm" style="width:240px;"
-             oninput="bpFilter()">
-        <div class="dropdown">
-          <button class="btn btn-xs btn-outline-teal dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-download me-1"></i>Export</button>
-          <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-            <li><h6 class="dropdown-header" style="font-size:10px;">EXPORT OPTIONS</h6></li>
-            <li><a class="dropdown-item" href="{{ url_for('financial_byproject_export', fmt='pdf') }}?year={{ stat_card_year }}"><i class="bi bi-file-earmark-pdf text-danger me-2"></i>PDF Report</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('financial_byproject_export', fmt='excel') }}?year={{ stat_card_year }}"><i class="bi bi-file-earmark-excel text-success me-2"></i>Excel (.xlsx)</a></li>
-            <li><hr class="dropdown-divider my-1"></li>
-            <li><a class="dropdown-item" href="#" onclick="exportByProjectCSV();return false;"><i class="bi bi-filetype-csv me-2" style="color:#0F766E;"></i>CSV (all rows)</a></li>
-          </ul>
-        </div>
+      <div class="dropdown">
+        <button class="btn btn-xs btn-outline-teal dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-download me-1"></i>Export</button>
+        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+          <li><h6 class="dropdown-header" style="font-size:10px;">EXPORT OPTIONS</h6></li>
+          <li><a class="dropdown-item" href="{{ url_for('financial_byproject_export', fmt='pdf') }}?year={{ stat_card_year }}"><i class="bi bi-file-earmark-pdf text-danger me-2"></i>PDF Report</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('financial_byproject_export', fmt='excel') }}?year={{ stat_card_year }}"><i class="bi bi-file-earmark-excel text-success me-2"></i>Excel (.xlsx)</a></li>
+          <li><hr class="dropdown-divider my-1"></li>
+          <li><a class="dropdown-item" href="#" onclick="exportByProjectCSV();return false;"><i class="bi bi-filetype-csv me-2" style="color:#0F766E;"></i>CSV (all rows)</a></li>
+        </ul>
       </div>
+    </div>
+
+    <!-- By Project Filters -->
+    <div style="margin-bottom:16px;">
+      <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+        <input type="text" id="bpSearch" placeholder="Search project, client..."
+               class="form-control form-control-sm" style="width:200px;" oninput="bpApplyFilters()">
+        <select id="bpStatusFilter" class="form-select form-select-sm" style="width:180px;" onchange="bpApplyFilters()">
+          <option value="">All Statuses</option>
+          {% for s in bp_statuses %}<option value="{{ s|lower }}">{{ s }}</option>{% endfor %}
+        </select>
+        <select id="bpClientFilter" class="form-select form-select-sm" style="width:180px;" onchange="bpApplyFilters()">
+          <option value="">All Clients</option>
+          {% for c in bp_clients %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="d-flex gap-2 align-items-center flex-wrap">
+        <span class="text-muted small">Date:</span>
+        <input type="date" id="bpDateFrom" class="form-control form-control-sm" style="width:150px;" onchange="bpApplyFilters()">
+        <span class="text-muted small">to</span>
+        <input type="date" id="bpDateTo"   class="form-control form-control-sm" style="width:150px;" onchange="bpApplyFilters()">
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="bpSetDateRange('month')">This Month</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="bpSetDateRange('year')">This Year</button>
+        <button type="button" class="btn btn-xs btn-outline-secondary" onclick="bpSetDateRange('last30')">Last 30 Days</button>
+        <button type="button" class="btn btn-xs btn-outline-danger"   onclick="bpClearFilters()"><i class="bi bi-x me-1"></i>Clear</button>
+      </div>
+      <div id="bpFilterAlert" class="alert alert-info py-2 px-3 mt-2 mb-0 small" style="display:none;"></div>
     </div>
     <div class="table-responsive">
       <table class="table table-hover table-sm mb-0 align-middle">
@@ -2268,7 +2290,11 @@ function viewReceipt(expId) {
         <tbody id="byProjectTableBody">
           {% for row in project_pnl|sort(attribute='project_number', reverse=True) %}
           {% set margin = [[100.0, ((row.paid / row.contract_value * 100) if row.contract_value > 0 else 0)] | min, 0] | max %}
-          <tr class="bp-row" data-search="{{ (row.project_number ~ ' ' ~ row.project_name ~ ' ' ~ (row.company_name or row.client_name or '') ~ ' ' ~ (row.status or ''))|lower }}" onclick="location.href='{{ url_for('project_detail', project_id=row.firebase_id) }}'" style="cursor:pointer;">
+          <tr class="bp-row"
+              data-search="{{ (row.project_number ~ ' ' ~ row.project_name ~ ' ' ~ (row.company_name or row.client_name or ''))|lower }}"
+              data-status="{{ row.status|lower }}"
+              data-date="{{ row.start_date or '' }}"
+              onclick="location.href='{{ url_for('project_detail', project_id=row.firebase_id) }}'" style="cursor:pointer;">
             <td><span class="fw-bold text-teal">{{ row.project_number }}</span></td>
             <td class="fw-medium">{{ row.project_name }}</td>
             <td class="text-muted small">{{ row.company_name or row.client_name }}</td>
@@ -2334,13 +2360,56 @@ function viewReceipt(expId) {
   (function(){
     var PS=20, pg=1;
     function rows(){return Array.from(document.querySelectorAll('#byProjectTableBody tr.bp-row:not(.bp-filtered)'));}
-    window.bpFilter=function(){
-      var q=(document.getElementById('byProjectSearch')?.value||'').toLowerCase().trim();
+    window.bpApplyFilters=function(){
+      var q      =(document.getElementById('bpSearch')?.value||'').toLowerCase().trim();
+      var status =(document.getElementById('bpStatusFilter')?.value||'').toLowerCase();
+      var client =(document.getElementById('bpClientFilter')?.value||'');
+      var from   = document.getElementById('bpDateFrom')?.value||'';
+      var to     = document.getElementById('bpDateTo')?.value||'';
+      var matched=0;
       document.querySelectorAll('#byProjectTableBody tr.bp-row').forEach(function(r){
-        var txt=(r.dataset.search||'').toLowerCase();
-        (q&&!txt.includes(q))?r.classList.add('bp-filtered'):r.classList.remove('bp-filtered');
+        var txt  =(r.dataset.search||'').toLowerCase();
+        var rst  =(r.dataset.status||'').toLowerCase();
+        var rdt  = r.dataset.date||'';
+        var rclnt=(r.dataset.search||''); // client is part of search
+        var hide = false;
+        if(q && !txt.includes(q)) hide=true;
+        if(!hide && status && rst!==status) hide=true;
+        if(!hide && client){
+          var clientLower=client.toLowerCase();
+          if(!txt.includes(clientLower)) hide=true;
+        }
+        if(!hide && from && rdt && rdt<from) hide=true;
+        if(!hide && to   && rdt && rdt>to)   hide=true;
+        hide?r.classList.add('bp-filtered'):r.classList.remove('bp-filtered');
+        if(!hide) matched++;
       });
+      var total=document.querySelectorAll('#byProjectTableBody tr.bp-row').length;
+      var alert=document.getElementById('bpFilterAlert');
+      if(alert){
+        if(matched<total){
+          alert.style.display='';
+          alert.textContent='Showing '+matched+' of '+total+' projects matching current filters.';
+        } else { alert.style.display='none'; }
+      }
       pg=1; render();
+    };
+    window.bpSetDateRange=function(range){
+      var now=new Date(), from,to;
+      var pad=function(n){return String(n).padStart(2,'0');};
+      var fmt=function(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());};
+      to=fmt(now);
+      if(range==='month'){from=fmt(new Date(now.getFullYear(),now.getMonth(),1));}
+      else if(range==='year'){from=fmt(new Date(now.getFullYear(),0,1));}
+      else{var d30=new Date(now);d30.setDate(d30.getDate()-30);from=fmt(d30);}
+      document.getElementById('bpDateFrom').value=from;
+      document.getElementById('bpDateTo').value=to;
+      bpApplyFilters();
+    };
+    window.bpClearFilters=function(){
+      ['bpSearch','bpDateFrom','bpDateTo'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
+      ['bpStatusFilter','bpClientFilter'].forEach(function(id){var el=document.getElementById(id);if(el)el.selectedIndex=0;});
+      bpApplyFilters();
     };
     function render(){
       var all=rows(), tot=all.length; if(!tot)return;
