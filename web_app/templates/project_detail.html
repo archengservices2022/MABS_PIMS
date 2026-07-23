@@ -1216,7 +1216,13 @@ document.addEventListener('DOMContentLoaded', function () {
     window.history.replaceState({}, '', window.location.pathname + window.location.search);
     sessionStorage.removeItem('lastActiveTab');
   } else {
-    // Clear hash - don't auto-navigate to tabs on normal page loads
+    // If URL has a tab hash (e.g. redirect after CO save), activate that tab first
+    const hash = window.location.hash;
+    if (hash) {
+      const link = document.querySelector(`.nav-link[href="${hash}"]`);
+      if (link) new bootstrap.Tab(link).show();
+    }
+    // Then clear hash from URL
     window.history.replaceState({}, '', window.location.pathname + window.location.search);
   }
 
