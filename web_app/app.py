@@ -3860,19 +3860,29 @@ def project_edit(project_id):
             existing_stages = data.get("payment_stages") or []
             plan_in_progress = any(s.get("status") != "Pending Invoice" for s in existing_stages if isinstance(s, dict))
 
-            if plan_in_progress:
-                # Stages already have invoices/payments against them — keep the plan intact
-                flash("Payment plan kept as-is because one or more stages are already invoiced.", "info")
+            if plan_in_progress and not contract_value_changed:
+                # Stages already invoiced and contract value unchanged — keep plan intact
+                updated["payment_stages"] = existing_stages
             elif existing_stages and not payment_plan_changed and not contract_value_changed:
                 # Payment plan structure and contract value unchanged — preserve all stages as-is
                 updated["payment_stages"] = existing_stages
             else:
                 # Recalculate base stages only; separate out and re-append any CO stages so they
                 # are never wiped when the user edits installment count or down-payment %
-                co_stages = [s for s in existing_stages if isinstance(s, dict) and "CO-" in s.get("name", "")]
-                co_total  = sum(_safe_float(s.get("amount", 0)) for s in co_stages)
-                base_cv   = max(0.0, _safe_float(updated["contract_value"]) - co_total)
-                new_stages = _compute_payment_stages(base_cv, down_pct, installments, custom_amounts=custom_amounts)
+                co_stages    = [s for s in existing_stages if isinstance(s, dict) and "CO-" in s.get("name", "")]
+                base_existing = [s for s in existing_stages if isinstance(s, dict) and "CO-" not in s.get("name", "")]
+                co_total     = sum(_safe_float(s.get("amount", 0)) for s in co_stages)
+                base_cv      = max(0.0, _safe_float(updated["contract_value"]) - co_total)
+                new_stages   = _compute_payment_stages(base_cv, down_pct, installments, custom_amounts=custom_amounts)
+                # When contract value changes on an invoiced plan, preserve invoice/status info
+                if plan_in_progress:
+                    for i, new_s in enumerate(new_stages):
+                        if i < len(base_existing):
+                            old_s = base_existing[i]
+                            new_s["status"]         = old_s.get("status", "Pending Invoice")
+                            new_s["invoice_id"]     = old_s.get("invoice_id", "")
+                            new_s["invoice_number"] = old_s.get("invoice_number", "")
+                            new_s["amount_paid"]    = old_s.get("amount_paid", 0)
                 updated["payment_stages"] = new_stages + co_stages
 
         # Sync payment stages with change order amounts
