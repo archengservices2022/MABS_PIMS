@@ -300,11 +300,12 @@
   transition: all .15s;
 }
 .act-btn:hover { transform: translateY(-1px); }
-.act-btn.approve:hover { background: #16a34a; border-color: #16a34a; color: #fff; }
-.act-btn.reject:hover  { background: #dc2626; border-color: #dc2626; color: #fff; }
-.act-btn.view:hover    { background: #0D9488; border-color: #0D9488; color: #fff; }
-.act-btn.remind:hover  { background: #f59e0b; border-color: #f59e0b; color: #fff; }
-.act-btn.del:hover     { background: #dc2626; border-color: #dc2626; color: #fff; }
+.act-btn.approve:hover   { background: #16a34a; border-color: #16a34a; color: #fff; }
+.act-btn.reject:hover    { background: #dc2626; border-color: #dc2626; color: #fff; }
+.act-btn.sendback:hover  { background: #7c3aed; border-color: #7c3aed; color: #fff; }
+.act-btn.view:hover      { background: #0D9488; border-color: #0D9488; color: #fff; }
+.act-btn.remind:hover    { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+.act-btn.del:hover       { background: #dc2626; border-color: #dc2626; color: #fff; }
 
 /* ?? My Timesheets — personal grid card ??????????????????????? */
 .my-week-card {
@@ -528,6 +529,9 @@
                   </button>
                   <button class="act-btn reject" onclick="approveSheet('{{ row.sheet.firebase_id }}','reject')" title="Reject">
                     <i class="bi bi-x-lg"></i>
+                  </button>
+                  <button class="act-btn sendback" onclick="sendBackSheet('{{ row.sheet.firebase_id }}', {{ row.name|tojson }})" title="Send Back to Employee">
+                    <i class="bi bi-arrow-counterclockwise"></i>
                   </button>
                 {% endif %}
                 {% if row.sheet.status == 'Draft' %}
@@ -781,6 +785,18 @@ function approveSheet(sheetId, action) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({action, notes})
   })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) location.reload();
+    else alert('Error: ' + (d.error || 'Unknown'));
+  })
+  .catch(() => alert('Network error. Please try again.'));
+}
+
+function sendBackSheet(sheetId, name) {
+  const who = name ? ` for ${name}` : '';
+  if (!confirm(`Send this timesheet${who} back to the employee for correction?`)) return;
+  fetch(`/api/timesheets/${sheetId}/send-back`, {method: 'POST'})
   .then(r => r.json())
   .then(d => {
     if (d.success) location.reload();

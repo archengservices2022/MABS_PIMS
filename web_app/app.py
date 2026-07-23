@@ -17461,6 +17461,27 @@ def api_admin_reset_timesheets():
     return jsonify({"success": True, "message": "All timesheets deleted."})
 
 
+@app.route("/api/timesheets/<sheet_id>/send-back", methods=["POST"])
+@role_required("timesheets")
+def api_timesheets_send_back(sheet_id):
+    if normalize_role(session.get("user_role", "")) not in ("admin", "finance"):
+        return jsonify({"error": "Admin access required"}), 403
+    sheet = fb_get(f"/timesheets/{sheet_id}")
+    if not sheet:
+        return jsonify({"error": "Timesheet not found"}), 404
+    if sheet.get("status") not in ("Submitted", "Approved", "Rejected"):
+        return jsonify({"error": "Timesheet is already in draft state"}), 400
+    fb_update(f"/timesheets/{sheet_id}", {
+        "status":          "Draft",
+        "sent_back_by":    session.get("user_name", ""),
+        "sent_back_at":    datetime.now(timezone.utc).isoformat(),
+        "approved_by":     None,
+        "approved_at":     None,
+        "rejection_notes": None,
+    })
+    return jsonify({"success": True})
+
+
 @app.route("/api/timesheets/<sheet_id>/delete", methods=["POST"])
 @login_required
 def api_timesheet_delete(sheet_id):
