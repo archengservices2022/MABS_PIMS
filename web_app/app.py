@@ -3971,7 +3971,42 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
     due_date   = (datetime.now(COMPANY_TZ) + timedelta(days=30)).strftime("%Y-%m-%d")
     inv_num    = _next_invoice_number()
     inv_status = "Paid" if mark_paid else "Draft"
-    amt_paid   = str(amount) if mark_paid else "0"
+
+    # Collect any approved CO stages that are also pending invoice
+    co_pending = []
+    for ci, s in enumerate(stages):
+        if ci == stage_idx:
+            continue
+        if (isinstance(s, dict) and
+                s.get("status") == "Pending Invoice" and
+                "CO-" in s.get("name", "").upper()):
+            co_pending.append((ci, s))
+
+    # Build line items: base stage first, then CO stages
+    line_items = [{
+        "description": stage.get("name", f"Payment Stage {stage_idx + 1}"),
+        "quantity":    "1",
+        "unit_price":  str(amount),
+        "amount":      str(amount),
+        "project_number": proj_num,
+    }]
+    linked_projects = [{"project_number": proj_num, "payment_stage_index": stage_idx}]
+    total_amount = amount
+
+    for co_idx, co_stage in co_pending:
+        co_name = co_stage.get("name", f"CO Stage {co_idx + 1}")
+        co_amt  = _safe_float(co_stage.get("amount", 0))
+        line_items.append({
+            "description":    co_name,
+            "quantity":       "1",
+            "unit_price":     str(co_amt),
+            "amount":         str(co_amt),
+            "project_number": proj_num,
+        })
+        linked_projects.append({"project_number": proj_num, "payment_stage_index": co_idx})
+        total_amount += co_amt
+
+    amt_paid = str(total_amount) if mark_paid else "0"
 
     invoice_data = {
         "meta": {
@@ -3983,32 +4018,29 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
             "client_id":           client_id,
             "project_number":      proj_num,
             "status":              inv_status,
-            "subtotal":            str(amount),
+            "subtotal":            str(total_amount),
             "tax_rate":            "0",
             "tax_amount":          "0",
-            "total":               str(amount),
+            "total":               str(total_amount),
             "amount_paid":         amt_paid,
             "notes":               "",
             "terms":               "",
             "payment_method":      "",
             "payment_stage_index": stage_idx,
             "payment_stage":       stage.get("name", ""),
-            "linked_projects":     [{"project_number": proj_num, "payment_stage_index": stage_idx}],
+            "linked_projects":     linked_projects,
             "created_at":          now_str,
             "updated_at":          now_str,
             "created_by":          session.get("user_email", ""),
         },
-        "line_items": [{
-            "description": stage.get("name", f"Payment Stage {stage_idx + 1}"),
-            "quantity":    "1",
-            "unit_price":  str(amount),
-            "amount":      str(amount),
-            "project_number": proj_num,
-        }],
+        "line_items": line_items,
     }
     iid = fb_push("/invoices", invoice_data)
     stage_status = "Paid" if mark_paid else "Invoiced"
-    _mark_project_stage(proj_num, stage_idx, stage_status, invoice_id=iid, amount=_safe_float(amount))
+    _mark_project_stage(proj_num, stage_idx, stage_status, invoice_id=iid, amount=amount)
+    for co_idx, co_stage in co_pending:
+        co_amt = _safe_float(co_stage.get("amount", 0))
+        _mark_project_stage(proj_num, co_idx, stage_status, invoice_id=iid, amount=co_amt)
     if project.get("status", "Not Started") == "Not Started":
         fb_update(f"/projects/{project_id}", {"status": "In Progress"})
     if mark_paid:
@@ -16960,6 +16992,40 @@ def quick_invoice_stage(project_id, stage_idx):
         stage_name = stage.get("name", f"Stage {stage_idx + 1}")
         stage_amount = _safe_float(stage.get("amount", 0))
 
+        # Collect any approved CO stages that are also pending invoice
+        co_pending = []
+        for ci, s in enumerate(stages):
+            if ci == stage_idx:
+                continue
+            if (isinstance(s, dict) and
+                    s.get("status") == "Pending Invoice" and
+                    "CO-" in s.get("name", "").upper()):
+                co_pending.append((ci, s))
+
+        # Build line items: base stage first, then CO stages
+        line_items = [{
+            "description": stage_name,
+            "project_number": proj_num,
+            "quantity": "1",
+            "unit_price": str(stage_amount),
+            "amount": str(stage_amount),
+        }]
+        linked_projects = [{"project_number": proj_num, "payment_stage_index": stage_idx}]
+        total_amount = stage_amount
+
+        for co_idx, co_stage in co_pending:
+            co_name = co_stage.get("name", f"CO Stage {co_idx + 1}")
+            co_amount = _safe_float(co_stage.get("amount", 0))
+            line_items.append({
+                "description": co_name,
+                "project_number": proj_num,
+                "quantity": "1",
+                "unit_price": str(co_amount),
+                "amount": str(co_amount),
+            })
+            linked_projects.append({"project_number": proj_num, "payment_stage_index": co_idx})
+            total_amount += co_amount
+
         # Create invoice using invoice_new logic (with ALL proper fields)
         invoice_data = {
             "meta": {
@@ -16974,33 +17040,32 @@ def quick_invoice_stage(project_id, stage_idx):
                 "updated_at": datetime.now(timezone.utc).isoformat(),
                 "created_by": session.get("user_email", ""),
                 "status": "Draft",
-                "subtotal": str(stage_amount),
+                "subtotal": str(total_amount),
                 "tax_rate": "0",
                 "tax_amount": "0",
-                "total": str(stage_amount),
+                "total": str(total_amount),
                 "amount_paid": "0",
                 "notes": "",
                 "terms": "",
                 "payment_method": "",
                 "payment_stage_index": stage_idx,
                 "payment_stage": stage_name,
-                "linked_projects": [{"project_number": proj_num, "payment_stage_index": stage_idx}],
+                "linked_projects": linked_projects,
             },
-            "line_items": [{
-                "description": stage_name,
-                "project_number": proj_num,
-                "quantity": "1",
-                "unit_price": str(stage_amount),
-                "amount": str(stage_amount),
-            }],
+            "line_items": line_items,
         }
 
         # Create invoice
         invoice_id = fb_push("/invoices", invoice_data)
         invoice_number = invoice_data["meta"].get("invoice_number", "")
 
-        # Mark stage as invoiced with the stage amount
+        # Mark base stage as invoiced
         _mark_project_stage(proj_num, stage_idx, "Invoiced", invoice_id=invoice_id, invoice_number=invoice_number, amount=stage_amount)
+
+        # Mark CO stages as invoiced in the same invoice
+        for co_idx, co_stage in co_pending:
+            co_amount = _safe_float(co_stage.get("amount", 0))
+            _mark_project_stage(proj_num, co_idx, "Invoiced", invoice_id=invoice_id, invoice_number=invoice_number, amount=co_amount)
 
         return {"success": True, "invoice_id": invoice_id, "invoice_number": invoice_number}, 200
     except Exception as e:
