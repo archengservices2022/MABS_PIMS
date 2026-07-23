@@ -10872,9 +10872,41 @@ def medical_claim_new():
         "reviewed_at":     None,
         "submitted_at":    datetime.now(timezone.utc).isoformat(),
     }
-    fb_push("/medical_claims", claim)
+    claim_id = fb_push("/medical_claims", claim)
+    # Handle receipt file upload
+    receipt_file = request.files.get("receipt")
+    if receipt_file and receipt_file.filename:
+        try:
+            file_content = receipt_file.read()
+            receipt_b64  = base64.b64encode(file_content).decode("utf-8")
+            fb_update(f"/medical_claim_receipts/{claim_id}", {
+                "receipt_base64":   receipt_b64,
+                "receipt_filename": receipt_file.filename,
+                "receipt_type":     receipt_file.content_type or "application/octet-stream",
+            })
+        except Exception as _e:
+            log.error(f"Medical claim receipt upload error: {_e}")
     flash("Medical allowance claim submitted successfully.", "success")
     return redirect(url_for("employees") + "#medical")
+
+@app.route("/employees/medical-claims/<claim_id>/receipt")
+@role_required("employees")
+def medical_claim_receipt(claim_id):
+    """Serve the uploaded receipt for a medical claim."""
+    from flask import Response as _Resp
+    rec = fb_get(f"/medical_claim_receipts/{claim_id}") or {}
+    b64  = rec.get("receipt_base64", "")
+    mime = rec.get("receipt_type", "application/octet-stream")
+    fname = rec.get("receipt_filename", "receipt")
+    if not b64:
+        abort(404)
+    try:
+        content = base64.b64decode(b64)
+    except Exception:
+        abort(404)
+    return _Resp(content, mimetype=mime,
+                 headers={"Content-Disposition": f'inline; filename="{fname}"'})
+
 
 @app.route("/employees/medical-claims/<claim_id>/review", methods=["POST"])
 @role_required("employees")
