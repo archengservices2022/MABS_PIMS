@@ -227,6 +227,70 @@
   background: #f0fdfa;
 }
 
+/* ?? Searchable project dropdown ?????????????????????????????????????? */
+.proj-wrap { position: relative; width: 100%; }
+.proj-input {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 7px 28px 7px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  width: 100%;
+  background: #fff;
+  color: #1e293b;
+  transition: border-color .15s, box-shadow .15s;
+  height: 36px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.proj-input:focus {
+  border-color: #0D9488;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(13,148,136,.12);
+}
+.proj-input:disabled {
+  background: #f8fafc;
+  color: #94a3b8;
+  border-color: #f1f5f9;
+  cursor: not-allowed;
+}
+.proj-input::placeholder { color: #94a3b8; }
+.proj-caret {
+  position: absolute; right: 8px; top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none; color: #94a3b8; font-size: 10px;
+}
+.proj-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 2px); left: 0; right: 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.12);
+  z-index: 9999;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.proj-dropdown.open { display: block; }
+.proj-dd-item {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1e293b;
+  cursor: pointer;
+  border-bottom: 1px solid #f8fafc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.proj-dd-item:last-child { border-bottom: none; }
+.proj-dd-item:hover { background: #f0fdfa; color: #0D9488; }
+.proj-dd-item.general { color: #64748b; font-style: italic; }
+.proj-dd-none { padding: 10px 12px; font-size: 12px; color: #94a3b8; text-align: center; }
+
 /* ?? Delete row button ????????????????????????????????????????? */
 .del-btn {
   background: none;
@@ -460,11 +524,70 @@ function isWeekend(date) {
   return day === 0 || day === 6;
 }
 
+// ?? Work-like type check ???????????????????????????????????????????????????????
+const _WORK_LIKE_SET = new Set(['work','ext_int_rel','biz_dev','eng_research','design_rev','accounts']);
+function isWorkLike(type) { return _WORK_LIKE_SET.has(type || 'work'); }
+
+// ?? Searchable project dropdown ????????????????????????????????????????????????
+function initProjSearch(id) {
+  const wrap  = document.getElementById('proj-wrap-' + id);
+  if (!wrap) return;
+  const input = wrap.querySelector('.proj-input');
+  const dd    = wrap.querySelector('.proj-dropdown');
+  const sel   = wrap.querySelector('.entry-proj');
+  if (!input || !dd || !sel) return;
+
+  const allItems = [{value:'', label:'— General / Admin —', general:true}].concat(
+    PROJECTS.map(function(p) {
+      return {
+        value: (p.project_number||'') + '|' + (p.project_name||'') + '|' + (p.firebase_id||''),
+        label: p.project_number ? p.project_number + ' — ' + (p.project_name||'') : (p.project_name||'Unnamed'),
+        general: false
+      };
+    })
+  );
+
+  function syncInput() {
+    const opt = sel.options[sel.selectedIndex];
+    input.value = (opt && opt.value) ? opt.text : '';
+  }
+
+  function buildList(q) {
+    q = (q||'').toLowerCase().trim();
+    const filtered = q ? allItems.filter(function(i){ return i.label.toLowerCase().includes(q); }) : allItems;
+    dd.innerHTML = filtered.length ? filtered.map(function(i) {
+      return '<div class="proj-dd-item' + (i.general ? ' general' : '') + '" data-val="' + escHtml(i.value) + '">' + escHtml(i.label) + '</div>';
+    }).join('') : '<div class="proj-dd-none">No matching projects</div>';
+    dd.querySelectorAll('.proj-dd-item').forEach(function(item) {
+      item.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        sel.value = this.dataset.val;
+        input.value = this.dataset.val ? this.textContent : '';
+        dd.classList.remove('open');
+      });
+    });
+  }
+
+  syncInput(); // show pre-selected project label on load
+
+  input.addEventListener('focus',  function()   { if (!this.disabled) { buildList(''); dd.classList.add('open'); } });
+  input.addEventListener('input',  function()   { if (!this.disabled) { buildList(this.value); dd.classList.add('open'); } });
+  input.addEventListener('blur',   function()   { setTimeout(function(){ dd.classList.remove('open'); }, 150); syncInput(); });
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { dd.classList.remove('open'); syncInput(); }
+    if (e.key === 'Enter') {
+      var first = dd.querySelector('.proj-dd-item');
+      if (first) first.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
+      e.preventDefault();
+    }
+  });
+}
+
 // ?? Build one entry row ???????????????????????????????????????????????????????
 function buildEntryRow(id, date, entry, locked) {
   entry = entry || {};
   const entryType = entry.entry_type || 'work';
-  const isWork = entryType === 'work';
+  const isWork = isWorkLike(entryType);
   const dis = (locked || !isWork) ? 'disabled' : '';
   const disDirect = locked ? 'disabled' : '';
 
@@ -491,11 +614,18 @@ function buildEntryRow(id, date, entry, locked) {
         ${typeOpts}
       </select>
     </td>
-    <td style="min-width:180px;">
-      <select class="entry-proj" ${dis}>
-        <option value="">— General / Admin —</option>
-        ${projOpts}
-      </select>
+    <td style="min-width:200px;">
+      <div class="proj-wrap" id="proj-wrap-${id}">
+        <input type="text" class="proj-input" id="proj-input-${id}"
+               placeholder="— General / Admin —" autocomplete="off"
+               ${dis ? 'disabled' : ''}>
+        <i class="bi bi-chevron-down proj-caret"></i>
+        <div class="proj-dropdown" id="proj-dd-${id}"></div>
+        <select class="entry-proj" style="display:none">
+          <option value="">— General / Admin —</option>
+          ${projOpts}
+        </select>
+      </div>
     </td>
     <td style="min-width:88px;">
       <input type="text" class="entry-start"
@@ -526,8 +656,8 @@ function onTypeChange(id) {
   const tr = document.getElementById(`row-${id}`);
   if (!tr) return;
   const type = tr.querySelector('.entry-type').value;
-  const isWork = type === 'work';
-  tr.querySelectorAll('.entry-proj, .entry-start, .entry-end').forEach(el => {
+  const isWork = isWorkLike(type);
+  tr.querySelectorAll('.proj-input, .entry-start, .entry-end').forEach(el => {
     el.disabled = !isWork;
     el.style.background = isWork ? '' : '#f8fafc';
     el.style.color = isWork ? '' : '#94a3b8';
@@ -603,6 +733,7 @@ function renderDayBlock(date, entries) {
   (entries && entries.length ? entries : [{}]).forEach(e => {
     const id = ++rowId;
     tbody.appendChild(buildEntryRow(id, date, e, locked));
+    initProjSearch(id);
     calcRow(id);
   });
 }
@@ -613,6 +744,7 @@ function addProjectForDay(date) {
   if (!tbody) return;
   const id = ++rowId;
   tbody.appendChild(buildEntryRow(id, date, {}, false));
+  initProjSearch(id);
   calcRow(id);
 }
 
