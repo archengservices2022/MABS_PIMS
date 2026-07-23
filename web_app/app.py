@@ -9069,7 +9069,7 @@ def financial():
             except Exception:
                 pass
 
-    for exp in exp_list:
+    for exp in exp_list_raw_filtered:
         ds = exp.get("date", "") or ""
         try:
             exp_date = datetime.fromisoformat(ds[:10])
