@@ -790,7 +790,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 Update existing projects
               </label>
             </div>
-            <div class="form-text">When enabled, projects that already exist will have their <strong>empty fields filled in</strong> from Excel (e.g. PO/WO, Plant). Fields you've already filled manually will not be overwritten.</div>
+            <div class="form-text mb-2">When enabled, projects that already exist will have their <strong>empty fields filled in</strong> from Excel (e.g. PO/WO, Plant). Fields you've already filled manually will not be overwritten.</div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" name="force_overwrite" id="forceOverwriteCheck" value="1">
+              <label class="form-check-label fw-semibold text-warning" for="forceOverwriteCheck">
+                Force overwrite all fields
+              </label>
+            </div>
+            <div class="form-text text-warning-emphasis">Overwrites <strong>all</strong> fields on existing projects with the Excel values — use this to fix data that was imported incorrectly (e.g. wrong Plant/State values from old import). Implies "Update existing".</div>
           </div>
           <div class="mb-3">
             <label class="form-label fw-semibold">Expected columns in each sheet:</label>

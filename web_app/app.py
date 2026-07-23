@@ -2590,7 +2590,8 @@ def projects_import_excel():
                 if num:
                     existing_nums[num.strip()] = pid
 
-    update_existing = request.form.get("update_existing") == "1"
+    update_existing  = request.form.get("update_existing")  == "1"
+    force_overwrite  = request.form.get("force_overwrite")  == "1"
 
     now_ts   = datetime.now(timezone.utc).isoformat()
     imported = 0
@@ -2737,8 +2738,7 @@ def projects_import_excel():
                 continue
 
             if proj_num in existing_nums:
-                if update_existing:
-                    # Fill only empty fields on the existing project
+                if update_existing or force_overwrite:
                     pid_existing = existing_nums[proj_num]
                     existing_data = existing_raw.get(pid_existing, {}) or {}
                     d = _parse_row(row, col_idx)
@@ -2746,8 +2746,15 @@ def projects_import_excel():
                     for field in ("po_wo_number", "plant", "site_address", "mail_address",
                                   "client_name", "date_received", "final_date",
                                   "contract_value", "engineer", "project_type", "notes"):
-                        if not existing_data.get(field) and d.get(field):
-                            patch[field] = d[field]
+                        xl_val = d.get(field)
+                        if force_overwrite:
+                            # Overwrite all fields that have a value in Excel
+                            if xl_val:
+                                patch[field] = xl_val
+                        else:
+                            # Fill only empty fields (original behaviour)
+                            if not existing_data.get(field) and xl_val:
+                                patch[field] = xl_val
                     if patch:
                         patch["updated_at"] = now_ts
                         fb_update(f"/projects/{pid_existing}", patch)
