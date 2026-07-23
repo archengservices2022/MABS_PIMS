@@ -288,7 +288,8 @@
 }
 .proj-dd-item:last-child { border-bottom: none; }
 .proj-dd-item:hover { background: #f0fdfa; color: #0D9488; }
-.proj-dd-item.general { color: #64748b; font-style: italic; }
+.proj-dd-item.general  { color: #64748b; font-style: italic; }
+.proj-dd-item.internal { color: #7c3aed; }
 .proj-dd-none { padding: 10px 12px; font-size: 12px; color: #94a3b8; text-align: center; }
 
 /* ?? Delete row button ????????????????????????????????????????? */
@@ -467,15 +468,18 @@ const TODAY_ISO = {{ now.strftime('%Y-%m-%d') | tojson }}; // company-timezone "
 const WEEKDAYS = WEEK_DAYS; // All 7 days allowed
 
 const ENTRY_TYPES = [
-  { value: 'work',         label: 'Work' },
-  { value: 'ext_int_rel',  label: 'Ext/Int Relationship Buildup' },
-  { value: 'biz_dev',      label: 'Business Dev/Project Meeting' },
-  { value: 'eng_research', label: 'Engineering Research/Study' },
-  { value: 'design_rev',   label: 'Design Review/Internal Meeting' },
-  { value: 'accounts',     label: 'Accounts/Finance/Research' },
-  { value: 'holiday',      label: 'Holiday' },
-  { value: 'sick',         label: 'Sick Leave' },
-  { value: 'pto',          label: 'PTO' },
+  { value: 'work',    label: 'Work' },
+  { value: 'holiday', label: 'Holiday' },
+  { value: 'sick',    label: 'Sick Leave' },
+  { value: 'pto',     label: 'PTO' },
+];
+
+const INTERNAL_ACTIVITIES = [
+  'Ext/Int Relationship Buildup',
+  'Business Dev/Project Meeting',
+  'Engineering Research/Study',
+  'Design Review/Internal Meeting',
+  'Accounts/Finance/Research',
 ];
 
 function escHtml(s) {
@@ -524,10 +528,6 @@ function isWeekend(date) {
   return day === 0 || day === 6;
 }
 
-// ?? Work-like type check ???????????????????????????????????????????????????????
-const _WORK_LIKE_SET = new Set(['work','ext_int_rel','biz_dev','eng_research','design_rev','accounts']);
-function isWorkLike(type) { return _WORK_LIKE_SET.has(type || 'work'); }
-
 // ?? Searchable project dropdown ????????????????????????????????????????????????
 function initProjSearch(id) {
   const wrap  = document.getElementById('proj-wrap-' + id);
@@ -537,15 +537,17 @@ function initProjSearch(id) {
   const sel   = wrap.querySelector('.entry-proj');
   if (!input || !dd || !sel) return;
 
-  const allItems = [{value:'', label:'— General / Admin —', general:true}].concat(
-    PROJECTS.map(function(p) {
+  const allItems = [{value:'', label:'— General / Admin —', general:true}]
+    .concat(INTERNAL_ACTIVITIES.map(function(name) {
+      return { value: '|' + name + '|', label: name, general: false, internal: true };
+    }))
+    .concat(PROJECTS.map(function(p) {
       return {
         value: (p.project_number||'') + '|' + (p.project_name||'') + '|' + (p.firebase_id||''),
         label: p.project_number ? p.project_number + ' — ' + (p.project_name||'') : (p.project_name||'Unnamed'),
-        general: false
+        general: false, internal: false
       };
-    })
-  );
+    }));
 
   function syncInput() {
     const opt = sel.options[sel.selectedIndex];
@@ -556,7 +558,8 @@ function initProjSearch(id) {
     q = (q||'').toLowerCase().trim();
     const filtered = q ? allItems.filter(function(i){ return i.label.toLowerCase().includes(q); }) : allItems;
     dd.innerHTML = filtered.length ? filtered.map(function(i) {
-      return '<div class="proj-dd-item' + (i.general ? ' general' : '') + '" data-val="' + escHtml(i.value) + '">' + escHtml(i.label) + '</div>';
+      var cls = i.general ? ' general' : (i.internal ? ' internal' : '');
+      return '<div class="proj-dd-item' + cls + '" data-val="' + escHtml(i.value) + '">' + escHtml(i.label) + '</div>';
     }).join('') : '<div class="proj-dd-none">No matching projects</div>';
     dd.querySelectorAll('.proj-dd-item').forEach(function(item) {
       item.addEventListener('mousedown', function(e) {
@@ -587,7 +590,7 @@ function initProjSearch(id) {
 function buildEntryRow(id, date, entry, locked) {
   entry = entry || {};
   const entryType = entry.entry_type || 'work';
-  const isWork = isWorkLike(entryType);
+  const isWork = entryType === 'work';
   const dis = (locked || !isWork) ? 'disabled' : '';
   const disDirect = locked ? 'disabled' : '';
 
@@ -656,7 +659,7 @@ function onTypeChange(id) {
   const tr = document.getElementById(`row-${id}`);
   if (!tr) return;
   const type = tr.querySelector('.entry-type').value;
-  const isWork = isWorkLike(type);
+  const isWork = type === 'work';
   tr.querySelectorAll('.proj-input, .entry-start, .entry-end').forEach(el => {
     el.disabled = !isWork;
     el.style.background = isWork ? '' : '#f8fafc';
@@ -935,9 +938,8 @@ function saveSheet(action) {
   }
   if (action==='submit') {
     const tot = parseFloat(document.getElementById('sumTotal').textContent)||0;
-    const _WORK_LIKE = new Set(['work','ext_int_rel','biz_dev','eng_research','design_rev','accounts']);
-    const nonWorkEntries = entries.filter(e => !_WORK_LIKE.has(e.entry_type));
-    const workEntries    = entries.filter(e =>  _WORK_LIKE.has(e.entry_type));
+    const nonWorkEntries = entries.filter(e => e.entry_type !== 'work');
+    const workEntries    = entries.filter(e => e.entry_type === 'work');
     if (workEntries.length > 0 && tot === 0) {
       alert('Total hours are 0.00. Please enter valid start and end times.');
       return;
