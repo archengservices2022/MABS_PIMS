@@ -960,9 +960,11 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 <script>
 function openDeleteModal() {
-  document.getElementById('deleteConfirmInput').value = '';
-  document.getElementById('deleteConfirmBtn').disabled = true;
-  new bootstrap.Modal(document.getElementById('deleteModal')).show();
+  _guardedDelete('Delete invoice {{ meta.get("invoice_number","") }}', function () {
+    document.getElementById('deleteConfirmInput').value = '';
+    document.getElementById('deleteConfirmBtn').disabled = true;
+    new bootstrap.Modal(document.getElementById('deleteModal')).show();
+  });
 }
 function checkDeleteInput(input) {
   const expected = '{{ meta.get("invoice_number","") }}';

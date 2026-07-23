@@ -1286,9 +1286,11 @@ function toggleAmtEdit(idx) {
 }
 
 function openDeleteModal() {
-  document.getElementById('deleteConfirmInput').value = '';
-  document.getElementById('deleteConfirmBtn').disabled = true;
-  new bootstrap.Modal(document.getElementById('deleteModal')).show();
+  _guardedDelete('Delete project {{ project.get("project_number","") }}', function () {
+    document.getElementById('deleteConfirmInput').value = '';
+    document.getElementById('deleteConfirmBtn').disabled = true;
+    new bootstrap.Modal(document.getElementById('deleteModal')).show();
+  });
 }
 function checkDeleteInput(input) {
   const expected = '{{ project.get("project_number","") }}';

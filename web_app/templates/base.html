@@ -550,10 +550,6 @@ function copyNumber(text, btn) {
 // ── Permission Guard: intercept delete confirmations for non-admin ────────────
 (function () {
   var _isAdmin = {{ 'true' if user_role == 'admin' else 'false' }};
-  if (_isAdmin) return;
-
-  var _origConfirm = window.confirm;
-  var _DEL_RE = /delete|remove/i;
   var _permModal = null;
 
   function _showPermModal(msg) {
@@ -564,6 +560,21 @@ function copyNumber(text, btn) {
     if (!_permModal) _permModal = new bootstrap.Modal(document.getElementById('_permReqModal'));
     _permModal.show();
   }
+
+  // Global helper: call from any custom delete button/modal
+  // If admin, runs proceedFn immediately; if not admin, shows permission modal
+  window._guardedDelete = function (label, proceedFn) {
+    if (_isAdmin) {
+      if (proceedFn) proceedFn();
+    } else {
+      _showPermModal(label || 'Delete action');
+    }
+  };
+
+  if (_isAdmin) return;
+
+  var _origConfirm = window.confirm;
+  var _DEL_RE = /delete|remove/i;
 
   window.confirm = function (msg) {
     if (_DEL_RE.test(msg || '')) {
