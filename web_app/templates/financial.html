@@ -2229,7 +2229,9 @@ function viewReceipt(expId) {
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h6 class="panel-title mb-0">Profit &amp; Loss by Project</h6>
       <div class="d-flex align-items-center gap-2">
-        <span class="text-muted small">Click a row to open the project</span>
+        <input type="text" id="byProjectSearch" placeholder="Search project, client, status..."
+             class="form-control form-control-sm" style="width:240px;"
+             oninput="bpFilter()">
         <div class="dropdown">
           <button class="btn btn-xs btn-outline-teal dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-download me-1"></i>Export</button>
           <ul class="dropdown-menu dropdown-menu-end shadow-sm">
@@ -2266,7 +2268,7 @@ function viewReceipt(expId) {
         <tbody id="byProjectTableBody">
           {% for row in project_pnl|sort(attribute='project_number', reverse=True) %}
           {% set margin = [[100.0, ((row.paid / row.contract_value * 100) if row.contract_value > 0 else 0)] | min, 0] | max %}
-          <tr class="bp-row" onclick="location.href='{{ url_for('project_detail', project_id=row.firebase_id) }}'" style="cursor:pointer;">
+          <tr class="bp-row" data-search="{{ (row.project_number ~ ' ' ~ row.project_name ~ ' ' ~ (row.company_name or row.client_name or '') ~ ' ' ~ (row.status or ''))|lower }}" onclick="location.href='{{ url_for('project_detail', project_id=row.firebase_id) }}'" style="cursor:pointer;">
             <td><span class="fw-bold text-teal">{{ row.project_number }}</span></td>
             <td class="fw-medium">{{ row.project_name }}</td>
             <td class="text-muted small">{{ row.company_name or row.client_name }}</td>
@@ -2324,11 +2326,22 @@ function viewReceipt(expId) {
     </div>
     <div id="byProjectPager_pager" class="mt-2"></div>
   </div>
-  <style>#byProjectTableBody tr.bp-row.bp-hidden{display:none!important;}</style>
+  <style>
+    #byProjectTableBody tr.bp-row.bp-hidden{display:none!important;}
+    #byProjectTableBody tr.bp-row.bp-filtered{display:none!important;}
+  </style>
   <script>
   (function(){
     var PS=20, pg=1;
-    function rows(){return Array.from(document.querySelectorAll('#byProjectTableBody tr.bp-row'));}
+    function rows(){return Array.from(document.querySelectorAll('#byProjectTableBody tr.bp-row:not(.bp-filtered)'));}
+    window.bpFilter=function(){
+      var q=(document.getElementById('byProjectSearch')?.value||'').toLowerCase().trim();
+      document.querySelectorAll('#byProjectTableBody tr.bp-row').forEach(function(r){
+        var txt=(r.dataset.search||'').toLowerCase();
+        (q&&!txt.includes(q))?r.classList.add('bp-filtered'):r.classList.remove('bp-filtered');
+      });
+      pg=1; render();
+    };
     function render(){
       var all=rows(), tot=all.length; if(!tot)return;
       var tp=Math.max(1,Math.ceil(tot/PS)); if(pg>tp)pg=1;
