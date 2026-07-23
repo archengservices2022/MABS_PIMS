@@ -264,13 +264,12 @@
 }
 .proj-dropdown {
   display: none;
-  position: absolute;
-  top: calc(100% + 2px); left: 0; right: 0;
+  position: absolute; /* top/left/width set by JS portal */
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   box-shadow: 0 6px 20px rgba(0,0,0,.12);
-  z-index: 9999;
+  z-index: 99999;
   max-height: 220px;
   overflow-y: auto;
 }
@@ -528,14 +527,26 @@ function isWeekend(date) {
   return day === 0 || day === 6;
 }
 
-// ?? Searchable project dropdown ????????????????????????????????????????????????
+// ?? Searchable project dropdown (body-portal to escape overflow:hidden) ?????????
 function initProjSearch(id) {
   const wrap  = document.getElementById('proj-wrap-' + id);
   if (!wrap) return;
   const input = wrap.querySelector('.proj-input');
-  const dd    = wrap.querySelector('.proj-dropdown');
   const sel   = wrap.querySelector('.entry-proj');
-  if (!input || !dd || !sel) return;
+  if (!input || !sel) return;
+
+  // Append dropdown to <body> so it escapes all overflow:hidden parents
+  const dd = document.createElement('div');
+  dd.className = 'proj-dropdown';
+  document.body.appendChild(dd);
+  wrap._projDd = dd;
+
+  function positionDd() {
+    const r = input.getBoundingClientRect();
+    dd.style.top   = (r.bottom + window.scrollY + 2) + 'px';
+    dd.style.left  = (r.left  + window.scrollX) + 'px';
+    dd.style.width = r.width + 'px';
+  }
 
   const allItems = [{value:'', label:'— General / Admin —', general:true}]
     .concat(INTERNAL_ACTIVITIES.map(function(name) {
@@ -571,10 +582,18 @@ function initProjSearch(id) {
     });
   }
 
-  syncInput(); // show pre-selected project label on load
+  function openDd() {
+    if (input.disabled) return;
+    positionDd();
+    buildList('');
+    dd.classList.add('open');
+  }
 
-  input.addEventListener('focus',  function()   { if (!this.disabled) { buildList(''); dd.classList.add('open'); } });
-  input.addEventListener('input',  function()   { if (!this.disabled) { buildList(this.value); dd.classList.add('open'); } });
+  syncInput();
+
+  input.addEventListener('focus',  function()   { openDd(); });
+  input.addEventListener('click',  function()   { if (!dd.classList.contains('open')) openDd(); });
+  input.addEventListener('input',  function()   { if (!this.disabled) { positionDd(); buildList(this.value); dd.classList.add('open'); } });
   input.addEventListener('blur',   function()   { setTimeout(function(){ dd.classList.remove('open'); }, 150); syncInput(); });
   input.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') { dd.classList.remove('open'); syncInput(); }
@@ -623,7 +642,6 @@ function buildEntryRow(id, date, entry, locked) {
                placeholder="— General / Admin —" autocomplete="off"
                ${dis ? 'disabled' : ''}>
         <i class="bi bi-chevron-down proj-caret"></i>
-        <div class="proj-dropdown" id="proj-dd-${id}"></div>
         <select class="entry-proj" style="display:none">
           <option value="">— General / Admin —</option>
           ${projOpts}
@@ -770,6 +788,8 @@ function updateAddDayBtn() {
 }
 
 function delRow(id, date) {
+  const wrap = document.getElementById('proj-wrap-' + id);
+  if (wrap && wrap._projDd) wrap._projDd.remove();
   const tr = document.getElementById(`row-${id}`);
   if (tr) tr.remove();
   recalcWeek();
