@@ -412,6 +412,13 @@ def fb_push(path: str, data: dict) -> Optional[str]:
     new_ref.set(data)
     return new_ref.key
 
+def fb_get_shallow(path: str):
+    """Return just the top-level keys of a Firebase node (no values)."""
+    ref = fb_ref(path)
+    if not ref:
+        return None
+    return ref.get(shallow=True)
+
 def fb_update(path: str, data: dict) -> bool:
     ref = fb_ref(path)
     if not ref:
@@ -10750,11 +10757,14 @@ def employees():
             "period_label":        period_label,
         })
     # Medical allowance claims
-    all_medical_raw = fb_get("/medical_claims") or {}
+    all_medical_raw  = fb_get("/medical_claims") or {}
+    receipt_keys     = fb_get_shallow("/medical_claim_receipts") or {}
     all_medical_list = []
     for cid, cdata in (all_medical_raw.items() if isinstance(all_medical_raw, dict) else []):
         if cdata and isinstance(cdata, dict):
             cdata["firebase_id"] = cid
+            # has_receipt: stored flag (new uploads) OR key present in receipt store (old uploads)
+            cdata["has_receipt"] = bool(cdata.get("has_receipt") or cid in receipt_keys)
             all_medical_list.append(cdata)
     all_medical_list.sort(key=lambda x: x.get("submitted_at", ""), reverse=True)
     context["my_medical_claims"] = [c for c in all_medical_list if c.get("employee_uid") == uid]
@@ -10891,6 +10901,8 @@ def medical_claim_new():
                 "receipt_filename": receipt_file.filename,
                 "receipt_type":     receipt_file.content_type or "application/octet-stream",
             })
+            # Mark the claim so the UI knows a receipt is available
+            fb_update(f"/medical_claims/{claim_id}", {"has_receipt": True})
         except Exception as _e:
             log.error(f"Medical claim receipt upload error: {_e}")
     flash("Medical allowance claim submitted successfully.", "success")
@@ -10906,11 +10918,13 @@ def medical_claim_receipt(claim_id):
     mime = rec.get("receipt_type", "application/octet-stream")
     fname = rec.get("receipt_filename", "receipt")
     if not b64:
-        abort(404)
+        flash("Receipt file not found for this claim.", "warning")
+        return redirect(url_for("employees") + "#medical")
     try:
         content = base64.b64decode(b64)
     except Exception:
-        abort(404)
+        flash("Receipt file could not be read.", "danger")
+        return redirect(url_for("employees") + "#medical")
     return _Resp(content, mimetype=mime,
                  headers={"Content-Disposition": f'inline; filename="{fname}"'})
 

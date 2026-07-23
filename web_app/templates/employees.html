@@ -1982,7 +1982,7 @@ function submitChangePassword() {
               </td>
               <td class="text-muted small">{{ c.admin_notes or '—' }}</td>
               <td>
-                {% if c.get('firebase_id') %}
+                {% if c.get('has_receipt') and c.get('firebase_id') %}
                 <a href="{{ url_for('medical_claim_receipt', claim_id=c.firebase_id) }}" target="_blank"
                    class="btn btn-xs btn-outline-secondary" title="View receipt">
                   <i class="bi bi-paperclip"></i>
@@ -2035,7 +2035,7 @@ function submitChangePassword() {
                 </span>
               </td>
               <td>
-                {% if c.get('firebase_id') %}
+                {% if c.get('has_receipt') and c.get('firebase_id') %}
                 <a href="{{ url_for('medical_claim_receipt', claim_id=c.firebase_id) }}" target="_blank"
                    class="btn btn-xs btn-outline-secondary" title="View receipt">
                   <i class="bi bi-paperclip"></i>
