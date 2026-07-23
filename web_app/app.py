@@ -17448,6 +17448,8 @@ def timesheet_detail(sheet_id):
         sheet=sheet, by_date=by_date, is_admin=is_admin)
 
 
+_WORK_LIKE_TYPES = {"work", "ext_int_rel", "biz_dev", "eng_research", "design_rev", "accounts"}
+
 def _recalc_timesheet_hours(entries):
     """Classify each work entry's hours as regular/overtime: Sat/Sun hours are
     always overtime; Mon-Fri hours are regular up to a running weekly total of
@@ -17466,7 +17468,7 @@ def _recalc_timesheet_hours(entries):
 
         if is_weekend:
             for e in day_entries:
-                if e.get("entry_type", "work") != "work":
+                if e.get("entry_type", "work") not in _WORK_LIKE_TYPES:
                     e["regular_hours"] = 0
                     e["overtime_hours"] = 0
                     continue
@@ -17477,7 +17479,7 @@ def _recalc_timesheet_hours(entries):
             remaining_reg = max(0.0, 40.0 - running_weekday_total)
             day_worked = 0.0
             for e in day_entries:
-                if e.get("entry_type", "work") != "work":
+                if e.get("entry_type", "work") not in _WORK_LIKE_TYPES:
                     e["regular_hours"] = 0
                     e["overtime_hours"] = 0
                     continue

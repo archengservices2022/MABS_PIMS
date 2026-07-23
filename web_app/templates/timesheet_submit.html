@@ -403,10 +403,15 @@ const TODAY_ISO = {{ now.strftime('%Y-%m-%d') | tojson }}; // company-timezone "
 const WEEKDAYS = WEEK_DAYS; // All 7 days allowed
 
 const ENTRY_TYPES = [
-  { value: 'work',    label: 'Work' },
-  { value: 'holiday', label: 'Holiday' },
-  { value: 'sick',    label: 'Sick Leave' },
-  { value: 'pto',     label: 'PTO' },
+  { value: 'work',         label: 'Work' },
+  { value: 'ext_int_rel',  label: 'Ext/Int Relationship Buildup' },
+  { value: 'biz_dev',      label: 'Business Dev/Project Meeting' },
+  { value: 'eng_research', label: 'Engineering Research/Study' },
+  { value: 'design_rev',   label: 'Design Review/Internal Meeting' },
+  { value: 'accounts',     label: 'Accounts/Finance/Research' },
+  { value: 'holiday',      label: 'Holiday' },
+  { value: 'sick',         label: 'Sick Leave' },
+  { value: 'pto',          label: 'PTO' },
 ];
 
 function escHtml(s) {
@@ -798,8 +803,9 @@ function saveSheet(action) {
   }
   if (action==='submit') {
     const tot = parseFloat(document.getElementById('sumTotal').textContent)||0;
-    const nonWorkEntries = entries.filter(e => e.entry_type !== 'work');
-    const workEntries    = entries.filter(e => e.entry_type === 'work');
+    const _WORK_LIKE = new Set(['work','ext_int_rel','biz_dev','eng_research','design_rev','accounts']);
+    const nonWorkEntries = entries.filter(e => !_WORK_LIKE.has(e.entry_type));
+    const workEntries    = entries.filter(e =>  _WORK_LIKE.has(e.entry_type));
     if (workEntries.length > 0 && tot === 0) {
       alert('Total hours are 0.00. Please enter valid start and end times.');
       return;
