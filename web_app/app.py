@@ -3452,10 +3452,15 @@ def co_update_amount(project_id, co_idx):
         stage_name = str(stage.get("name", ""))
         if stage_co_idx == co_idx or (old_co_num and (stage_co_num == old_co_num or old_co_num in stage_name)):
             stage["amount"] = new_amount
+            curr_co_num = co.get("co_number", old_co_num)
             if new_co_num_req:
                 stage["co_number"] = new_co_num_req
-                if old_co_num and old_co_num in stage_name:
-                    stage["name"] = stage_name.replace(old_co_num, new_co_num_req, 1)
+            # Rebuild stage name to reflect current CO number and title
+            curr_title = co.get("title", "")
+            if curr_title:
+                stage["name"] = f"{curr_co_num} – {curr_title}"
+            elif new_co_num_req and old_co_num and old_co_num in stage_name:
+                stage["name"] = stage_name.replace(old_co_num, new_co_num_req, 1)
 
     update_data = {
         "base_contract_value": base_value,
