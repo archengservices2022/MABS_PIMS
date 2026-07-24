@@ -617,6 +617,13 @@ function buildEntryRow(id, date, entry, locked) {
     `<option value="${t.value}"${entryType===t.value?' selected':''}>${t.label}</option>`
   ).join('');
 
+  const internalOpts = INTERNAL_ACTIVITIES.map(name => {
+    const val = `|${escHtml(name)}|`;
+    // Internal activity stored as project_name with no project_number/id
+    const isSel = (!entry.project_id && !entry.project_number && entry.project_name === name) ? 'selected' : '';
+    return `<option value="${val}" ${isSel}>${escHtml(name)}</option>`;
+  }).join('');
+
   const projOpts = PROJECTS.map(p => {
     const val = `${escHtml(p.project_number||'')}|${escHtml(p.project_name||'')}|${escHtml(p.firebase_id||'')}`;
     const lbl = p.project_number ? `${p.project_number} — ${p.project_name||''}` : (p.project_name||'Unnamed');
@@ -644,6 +651,7 @@ function buildEntryRow(id, date, entry, locked) {
         <i class="bi bi-chevron-down proj-caret"></i>
         <select class="entry-proj" style="display:none">
           <option value="">— General / Admin —</option>
+          ${internalOpts}
           ${projOpts}
         </select>
       </div>
