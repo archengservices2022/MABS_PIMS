@@ -248,6 +248,16 @@ def _sync_contract_value_from_cos(project_id: str, project: dict, change_orders=
     })
     return True
 
+def _is_co_stage(s: dict) -> bool:
+    """True if a payment stage was created from a Change Order.
+    Uses the co_number field when available (set by co_status, _heal_co_stages,
+    and Excel import) so stages with non-standard CO numbers like
+    'MABS-202601122-CO1 – Title' are still detected correctly."""
+    if not isinstance(s, dict):
+        return False
+    return bool(s.get("co_number")) or "CO-" in s.get("name", "")
+
+
 def _heal_co_stages(project_id: str, project: dict) -> bool:
     """Create missing payment stages for approved COs that have no linked stage.
     Called on project page load to silently fix Excel-imported projects."""
@@ -256,6 +266,27 @@ def _heal_co_stages(project_id: str, project: dict) -> bool:
     if not cos:
         return False
     changed = False
+
+    # Total approved CO amount — base stages should never include this
+    approved_co_amt = _approved_co_total(cos)
+    contract_value  = _safe_float(project.get("contract_value", 0))
+    base_value      = _safe_float(project.get("base_contract_value") or (contract_value - approved_co_amt))
+
+    # Fix base stages whose amount incorrectly includes CO amounts
+    # (happens when project edit recomputed stages from full contract_value)
+    base_stages = [s for s in stages if not _is_co_stage(s)]
+    base_stage_total = sum(_safe_float(s.get("amount", 0)) for s in base_stages)
+    if base_stages and approved_co_amt > 0 and abs(base_stage_total - base_value) > 0.01:
+        # Proportionally rescale base stage amounts to match base_value
+        if base_stage_total > 0:
+            scale = base_value / base_stage_total
+            for s in base_stages:
+                s["amount"] = round(_safe_float(s.get("amount", 0)) * scale, 2)
+            # Absorb rounding in last base stage
+            remainder = round(base_value - sum(_safe_float(s.get("amount", 0)) for s in base_stages[:-1]), 2)
+            base_stages[-1]["amount"] = remainder
+            changed = True
+
     for co_idx, co in enumerate(cos):
         if not isinstance(co, dict):
             continue
@@ -3897,7 +3928,7 @@ def project_edit(project_id):
                     if custom_stage_amounts:  # Only process if list is not empty
                         existing_stages = data.get("payment_stages") or []
                         # Isolate CO stages — the frontend never sends these, so we must preserve them manually
-                        co_stages = [s for s in existing_stages if isinstance(s, dict) and "CO-" in s.get("name", "")]
+                        co_stages = [s for s in existing_stages if _is_co_stage(s)]
                         co_total  = sum(_safe_float(s.get("amount", 0)) for s in co_stages)
 
                         # If custom amounts has name and amount fields (from preview),
@@ -3955,8 +3986,8 @@ def project_edit(project_id):
             else:
                 # Recalculate base stages only; separate out and re-append any CO stages so they
                 # are never wiped when the user edits installment count or down-payment %
-                co_stages    = [s for s in existing_stages if isinstance(s, dict) and "CO-" in s.get("name", "")]
-                base_existing = [s for s in existing_stages if isinstance(s, dict) and "CO-" not in s.get("name", "")]
+                co_stages    = [s for s in existing_stages if _is_co_stage(s)]
+                base_existing = [s for s in existing_stages if not _is_co_stage(s)]
                 co_total     = sum(_safe_float(s.get("amount", 0)) for s in co_stages)
                 base_cv      = max(0.0, _safe_float(updated["contract_value"]) - co_total)
                 new_stages   = _compute_payment_stages(base_cv, down_pct, installments, custom_amounts=custom_amounts)
@@ -3979,11 +4010,11 @@ def project_edit(project_id):
             change_orders_to_sync = list(change_orders_to_sync.values()) if isinstance(change_orders_to_sync, dict) else []
 
         for stage in updated_stages:
-            if isinstance(stage, dict):
+            if isinstance(stage, dict) and _is_co_stage(stage):
                 stage_name = stage.get("name", "")
-                if "CO-" in stage_name:
-                    # Extract CO number from stage name
-                    co_num = stage_name.split(" ")[0] if " " in stage_name else stage_name
+                if True:
+                    # Prefer co_number field; fall back to extracting from name
+                    co_num = stage.get("co_number") or (stage_name.split(" ")[0] if " " in stage_name else stage_name)
                     stage_amount = _safe_float(stage.get("amount", 0))
                     # Find and update matching change order
                     for co in change_orders_to_sync:
@@ -4092,7 +4123,7 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
             continue
         if (isinstance(s, dict) and
                 s.get("status") == "Pending Invoice" and
-                "CO-" in s.get("name", "").upper()):
+                _is_co_stage(s)):
             co_pending.append((ci, s))
 
     # Build line items: base stage first, then CO stages
@@ -4210,7 +4241,7 @@ def project_stage_set_amount(project_id, stage_idx):
     co_total = sum(
         _safe_float(s.get("amount", 0))
         for s in stages
-        if isinstance(s, dict) and "CO-" in s.get("name", "")
+        if _is_co_stage(s)
     )
     base_contract = max(0.0, contract_value - co_total)
 
@@ -16934,7 +16965,7 @@ def update_project_payment_plan(project_id):
         edited_stage_invoiced = stages[edited_idx].get("status") in ["Invoiced", "Paid", "Partially Paid", "Overdue"]
 
         # Identify CO stages — these are fixed approved amounts, never auto-adjust them
-        co_indices = {i for i in range(len(stages)) if "CO-" in stages[i].get("name", "")}
+        co_indices = {i for i in range(len(stages)) if _is_co_stage(stages[i])}
         edited_is_co = edited_idx in co_indices
 
         # Find non-invoiced BASE stages to auto-adjust (exclude the edited stage and all CO stages)
@@ -17226,7 +17257,7 @@ def quick_invoice_stage(project_id, stage_idx):
                 continue
             if (isinstance(s, dict) and
                     s.get("status") == "Pending Invoice" and
-                    "CO-" in s.get("name", "").upper()):
+                    _is_co_stage(s)):
                 co_pending.append((ci, s))
 
         # Build line items: base stage first, then CO stages
