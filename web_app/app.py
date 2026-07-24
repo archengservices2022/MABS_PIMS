@@ -248,6 +248,48 @@ def _sync_contract_value_from_cos(project_id: str, project: dict, change_orders=
     })
     return True
 
+def _heal_co_stages(project_id: str, project: dict) -> bool:
+    """Create missing payment stages for approved COs that have no linked stage.
+    Called on project page load to silently fix Excel-imported projects."""
+    cos    = _normalise_list(project.get("change_orders"))
+    stages = _normalise_list(project.get("payment_stages"))
+    if not cos:
+        return False
+    changed = False
+    for co_idx, co in enumerate(cos):
+        if not isinstance(co, dict):
+            continue
+        if co.get("status") not in ("Approved", "Invoiced", "Paid"):
+            continue
+        co_num = co.get("co_number", "")
+        # Check if a payment stage already exists for this CO
+        has_stage = any(
+            isinstance(s, dict) and (
+                s.get("co_index") == co_idx or
+                (co_num and s.get("co_number") == co_num)
+            )
+            for s in stages
+        )
+        if not has_stage:
+            co_title = co.get("title", co_num)
+            stages.append({
+                "name":         f"{co_num} – {co_title}" if co_title else co_num,
+                "amount":       _safe_float(co.get("amount", 0)),
+                "amount_paid":  "0",
+                "status":       "Pending Invoice",
+                "co_number":    co_num,
+                "co_index":     co_idx,
+            })
+            changed = True
+    if changed:
+        fb_update(f"/projects/{project_id}", {
+            "payment_stages": stages,
+            "updated_at":     datetime.now(timezone.utc).isoformat(),
+        })
+        project["payment_stages"] = stages
+    return changed
+
+
 def normalize_role(role: str) -> str:
     r = str(role or "sales").strip().lower()
     return r if r in ROLE_PAGES else "sales"
@@ -2838,17 +2880,38 @@ def projects_import_excel():
             "approved_at":  d["record_ts"],
             "notes":        d["notes"],
         }
+        co_idx = len(cos)
         cos.append(co_entry)
-        # Save base_contract_value if not set
-        base_value = _base_contract_value(parent, cos)
-        if not parent.get("base_contract_value"):
+        # Create payment stage for this approved CO (mirrors co_status approval flow)
+        stages = _normalise_list(parent.get("payment_stages"))
+        co_title = co_entry.get("title", co_num)
+        # Only add stage if one doesn't already exist for this CO number
+        if not any(isinstance(s, dict) and s.get("co_number") == co_num for s in stages):
+            stages.append({
+                "name":        f"{co_num} – {co_title}" if co_title else co_num,
+                "amount":      co_entry["amount"],
+                "amount_paid": "0",
+                "status":      "Pending Invoice",
+                "co_number":   co_num,
+                "co_index":    co_idx,
+            })
+        # base_contract_value: use the stored value if already set, else current contract_value (before CO)
+        if parent.get("base_contract_value"):
+            base_value = _safe_float(parent.get("base_contract_value"))
+        else:
             base_value = _safe_float(parent.get("contract_value", 0))
         fb_update(f"/projects/{parent_id}", {
             "base_contract_value": base_value,
-            "contract_value": base_value + _approved_co_total(cos),
-            "change_orders": cos,
-            "updated_at": now_ts,
+            "contract_value":      base_value + _approved_co_total(cos),
+            "change_orders":       cos,
+            "payment_stages":      stages,
+            "updated_at":          now_ts,
         })
+        # Keep parent in sync for subsequent COs on the same project in this batch
+        parent["base_contract_value"] = base_value
+        parent["contract_value"]      = base_value + _approved_co_total(cos)
+        parent["change_orders"]       = cos
+        parent["payment_stages"]      = stages
         co_added += 1
 
     cache_bust("projects_list")
@@ -3237,6 +3300,8 @@ def project_detail(project_id):
 
     # Change orders
     change_orders = _normalise_list(data.get("change_orders"))
+    # Auto-heal: create missing payment stages for approved COs (fixes Excel imports)
+    _heal_co_stages(project_id, data)
     # Actual sum of approved CO amounts — used in the CO table and KPI card.
     # Include Approved, Invoiced, and Paid statuses (all active/completed COs)
     co_approved_total = _approved_co_total(change_orders)
