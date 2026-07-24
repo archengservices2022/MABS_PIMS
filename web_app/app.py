@@ -11074,13 +11074,43 @@ def medical_claim_review(claim_id):
         amt_approved = float(request.form.get("amount_approved", 0) or 0)
     except ValueError:
         amt_approved = 0.0
+    now_str = datetime.now(timezone.utc).isoformat()
     fb_update(f"/medical_claims/{claim_id}", {
         "status":          status,
         "amount_approved": amt_approved if status == "Approved" else None,
         "admin_notes":     request.form.get("admin_notes", "").strip(),
         "reviewed_by":     session.get("user_name", ""),
-        "reviewed_at":     datetime.now(timezone.utc).isoformat(),
+        "reviewed_at":     now_str,
     })
+
+    if status == "Approved" and amt_approved > 0:
+        claim = fb_get(f"/medical_claims/{claim_id}") or {}
+        exp_data = {
+            "expense_type":       "Medical",
+            "expense_name":       claim.get("description") or "Medical Allowance",
+            "description":        claim.get("description") or "Medical Allowance",
+            "amount":             amt_approved,
+            "category":           "Medical/Benefits",
+            "date":               claim.get("claim_date") or now_str[:10],
+            "vendor":             claim.get("provider", "").strip() or claim.get("employee_name", ""),
+            "notes":              f"Medical claim by {claim.get('employee_name', '')}. {(claim.get('admin_notes') or '').strip()}".strip(". "),
+            "submitted_by_name":  claim.get("employee_name", ""),
+            "submitted_by_uid":   claim.get("employee_uid", ""),
+            "submitted_by_email": "",
+            "status":             "Approved",
+            "reviewed_by":        session.get("user_name", ""),
+            "reviewed_at":        now_str,
+            "created_at":         claim.get("submitted_at", now_str),
+            "updated_at":         now_str,
+            "source":             "medical_claim",
+            "medical_claim_id":   claim_id,
+            "firebase_id":        claim_id,
+            "created_by":         claim.get("employee_name", ""),
+        }
+        # Use claim_id as key so re-approval overwrites, not duplicates
+        fb_update(f"/expenses/{claim_id}", exp_data)
+        fb_update(f"/balance_sheet_expenses/{claim_id}", exp_data)
+
     flash(f"Claim {status.lower()} successfully.", "success")
     return redirect(url_for("employees") + "#medical")
 
