@@ -857,7 +857,7 @@ function updatePlanPreview() {
   const rows = [];
 
   // Separate CO stages from base stages — CO stages must always be preserved
-  const coStages = (stageAmountsData || []).filter(s => s.name && s.name.includes('CO-'));
+  const coStages = (stageAmountsData || []).filter(s => s.co_number || (s.name && s.name.includes('CO-')));
   const coTotal  = coStages.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
 
   // Only preserve custom amounts if user explicitly customized them via the dialog
@@ -868,6 +868,7 @@ function updatePlanPreview() {
       amount: s.amount,
       status: s.status || 'Pending Invoice',
       invoice_id: s.invoice_id || '',
+      co_number: s.co_number || '',
       index: s.index
     }));
 
@@ -920,6 +921,7 @@ function updatePlanPreview() {
         amount: parseFloat(co.amount) || 0,
         status: co.status || 'Pending Invoice',
         invoice_id: co.invoice_id || '',
+        co_number: co.co_number || '',
         index: previewStagesData.length
       });
       rows.push(`<div class="d-flex justify-content-between py-1 ${!isLast?'border-bottom':''}"><span>${co.name}</span><span class="fw-600">${fmt(parseFloat(co.amount)||0)}</span></div>`);
@@ -1274,7 +1276,7 @@ function initPaymentStagesData() {
   {% if existing_stages %}
   stageAmountsData = [
     {% for s in existing_stages %}
-    { index: {{ loop.index0 }}, name: '{{ s.get('name','') }}', amount: {{ s.get('amount',0)|float }}, status: '{{ s.get('status','Pending') }}' },
+    { index: {{ loop.index0 }}, name: '{{ s.get('name','') | e }}', amount: {{ s.get('amount',0)|float }}, status: '{{ s.get('status','Pending') }}', co_number: '{{ s.get('co_number','') }}', invoice_id: '{{ s.get('invoice_id','') }}' },
     {% endfor %}
   ];
 
@@ -1310,6 +1312,7 @@ function initPaymentStagesData() {
       amount: s.amount,
       status: s.status || 'Pending Invoice',
       invoice_id: s.invoice_id || '',
+      co_number: s.co_number || '',
       index: s.index
     }));
 
