@@ -2167,10 +2167,22 @@ function viewReceipt(expId) {
         const base64 = data.receipt;
         const fileType = data.fileType || 'image/jpeg';
 
-        if (fileType.startsWith('image/')) {
-          viewer.innerHTML = '<img src="data:' + fileType + ';base64,' + base64 + '" style="max-width:100%;height:auto;" class="img-fluid">';
-        } else if (fileType === 'application/pdf') {
-          viewer.innerHTML = '<iframe src="data:application/pdf;base64,' + base64 + '" style="width:100%;height:600px;border:none;"></iframe>';
+        const fname = data.filename || 'receipt';
+        const ext = fname.split('.').pop().toLowerCase();
+        // Detect type from filename extension when content-type is generic
+        let resolvedType = fileType;
+        if (fileType === 'application/octet-stream' || !fileType) {
+          if (['jpg','jpeg','png','gif','webp'].includes(ext)) resolvedType = 'image/' + (ext === 'jpg' ? 'jpeg' : ext);
+          else if (ext === 'pdf') resolvedType = 'application/pdf';
+        }
+        const dataUrl = 'data:' + resolvedType + ';base64,' + base64;
+        if (resolvedType.startsWith('image/')) {
+          viewer.innerHTML = '<img src="' + dataUrl + '" style="max-width:100%;height:auto;" class="img-fluid">';
+        } else if (resolvedType === 'application/pdf') {
+          viewer.innerHTML = '<iframe src="' + dataUrl + '" style="width:100%;height:600px;border:none;"></iframe>';
+        } else {
+          viewer.innerHTML = '<div class="text-center py-4"><p class="text-muted mb-3">Preview not available.</p>'
+            + '<a href="' + dataUrl + '" download="' + fname + '" class="btn btn-primary"><i class="bi bi-download me-1"></i>Download Receipt</a></div>';
         }
       } else {
         viewer.innerHTML = '<div class="alert alert-warning">Receipt not found</div>';
