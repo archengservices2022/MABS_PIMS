@@ -145,7 +145,7 @@
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-emp-expenses">
       <i class="bi bi-receipt me-1"></i>Expenses
-      {% if user_role == 'admin' and pending_expenses %}
+      {% if user_role in ('admin', 'accountant') and pending_expenses %}
       <span class="badge bg-danger ms-1">{{ pending_expenses|length }}</span>
       {% endif %}
     </a>
@@ -1604,7 +1604,7 @@ function submitChangePassword() {
                 {% else %}?{% endif %}
               </td>
               <td>
-                {% if user_role == 'admin' %}
+                {% if user_role in ('admin', 'accountant') %}
                 <div class="d-flex gap-1">
                   <button class="btn btn-xs btn-outline-secondary"
                           onclick='openEmpExpenseEdit({{ e|tojson }})'
@@ -1640,15 +1640,15 @@ function submitChangePassword() {
         {% else %}
         <div class="text-center text-muted py-5">
           <i class="bi bi-receipt" style="font-size:2rem;opacity:.3;display:block;margin-bottom:8px;"></i>
-          {% if user_role == 'admin' %}No expense submissions found.{% else %}No expense submissions yet. Use the form to submit your first expense.{% endif %}
+          {% if user_role in ('admin', 'accountant') %}No expense submissions found.{% else %}No expense submissions yet. Use the form to submit your first expense.{% endif %}
         </div>
         {% endif %}
       </div>
     </div>
   </div>
 
-  {% if user_role == 'admin' %}
-  <!-- Admin: Pending Expense Approvals (includes new submissions and edits) -->
+  {% if user_role in ('admin', 'accountant') %}
+  <!-- Admin/Accountant: Pending Expense Approvals (includes new submissions and edits) -->
   <div class="card-panel mt-4">
     <div class="d-flex align-items-center justify-content-between mb-3">
       <h6 class="panel-title mb-0">
@@ -2004,8 +2004,8 @@ function submitChangePassword() {
         {% endif %}
       </div>
 
-      <!-- Admin: All Claims -->
-      {% if user_role == 'admin' %}
+      <!-- Admin/Accountant: All Claims -->
+      {% if user_role in ('admin', 'accountant') %}
       <div class="card-panel mt-3">
         <h6 class="panel-title mb-3"><i class="bi bi-people me-1" style="color:#7C3AED;"></i>All Employee Claims</h6>
         {% if all_medical_claims %}
@@ -2080,8 +2080,8 @@ function submitChangePassword() {
   </div>
 </div>
 
-<!-- Medical Review Modal (admin) -->
-{% if user_role == 'admin' %}
+<!-- Medical Review Modal (admin/accountant) -->
+{% if user_role in ('admin', 'accountant') %}
 <div class="modal fade" id="medReviewModal" tabindex="-1">
   <div class="modal-dialog modal-sm">
     <div class="modal-content">
@@ -2117,8 +2117,8 @@ function submitChangePassword() {
   </div>
 </div>
 {% endif %}
-<!-- Medical Claim Approved Amount Edit Modal (admin) -->
-{% if user_role == 'admin' %}
+<!-- Medical Claim Approved Amount Edit Modal (admin/accountant) -->
+{% if user_role in ('admin', 'accountant') %}
 <div class="modal fade" id="medAmtEditModal" tabindex="-1">
   <div class="modal-dialog modal-sm">
     <div class="modal-content">

@@ -106,6 +106,7 @@ ROLE_PAGES = {
     "finance":        ["financial", "payroll", "employees", "timesheets"],
     "engineer":       ["employees", "timesheets"],
     "administration": ["dashboard", "projects", "invoicing", "clients", "employees", "timesheets"],
+    "accountant":     ["dashboard", "employees", "projects", "invoicing", "financial"],
 }
 
 ALL_PAGES = ["dashboard", "sales_dashboard", "quotes", "projects", "invoicing", "clients", "payroll",
@@ -118,7 +119,7 @@ PAGE_LABELS = {
     "invoicing":      "Invoicing",
     "clients":        "Clients",
     "payroll":        "Payroll",
-    "financial":      "Financial",
+    "financial":      "Finance",
     "settings":       "Settings",
     "employees":      "Employees",
     "sales_dashboard":"Sales Dashboard",
@@ -10815,7 +10816,7 @@ def export_balance_sheet():
 def employees():
     uid        = session.get("user_uid", "")
     _role      = normalize_role(session.get("user_role", ""))
-    is_admin   = _role == "admin"
+    is_admin   = _role in ("admin", "accountant")
     is_finance = _role == "finance"
 
     all_entries = _load_time_entries()
@@ -11099,7 +11100,7 @@ def medical_claim_receipt(claim_id):
 @app.route("/employees/medical-claims/<claim_id>/review", methods=["POST"])
 @role_required("employees")
 def medical_claim_review(claim_id):
-    if normalize_role(session.get("user_role", "")) != "admin":
+    if normalize_role(session.get("user_role", "")) not in ("admin", "accountant"):
         flash("Admin access required.", "danger")
         return redirect(url_for("employees") + "#medical")
     action = request.form.get("action", "")
@@ -11169,7 +11170,7 @@ def medical_claim_review(claim_id):
 @app.route("/employees/medical-claims/<claim_id>/update-amount", methods=["POST"])
 @role_required("employees")
 def medical_claim_update_amount(claim_id):
-    if normalize_role(session.get("user_role", "")) != "admin":
+    if normalize_role(session.get("user_role", "")) not in ("admin", "accountant"):
         flash("Admin access required.", "danger")
         return redirect(url_for("employees") + "#medical")
     try:
@@ -11344,8 +11345,8 @@ def employee_expense_submit():
 @app.route("/employees/expenses/<exp_id>/edit/review", methods=["POST"])
 @role_required("employees")
 def employee_expense_edit_review(exp_id):
-    """Admin approve/reject pending edits to an expense"""
-    if normalize_role(session.get("user_role", "")) != "admin":
+    """Approve/reject pending edits to an expense"""
+    if normalize_role(session.get("user_role", "")) not in ("admin", "accountant"):
         flash("Admin access required.", "danger")
         return redirect(url_for("employees") + "#expenses")
 
@@ -11402,7 +11403,7 @@ def employee_expense_edit_review(exp_id):
 @app.route("/employees/expenses/<exp_id>/review", methods=["POST"])
 @role_required("employees")
 def employee_expense_review(exp_id):
-    if normalize_role(session.get("user_role", "")) != "admin":
+    if normalize_role(session.get("user_role", "")) not in ("admin", "accountant"):
         flash("Admin access required.", "danger")
         return redirect(url_for("employees") + "#expenses")
 
