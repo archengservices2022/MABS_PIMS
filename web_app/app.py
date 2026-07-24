@@ -8279,9 +8279,9 @@ def financial_income_export(fmt):
             else:
                 status = "Unpaid"
             if status not in ("Paid", "Partial"): continue
-            coll_date = (max(pay_log, key=lambda p: p.get("date", "")).get("date", rdata.get("date", ""))
+            coll_date = (max(pay_log, key=lambda p: p.get("date") or "").get("date", rdata.get("date", ""))
                          if pay_log else rdata.get("date", ""))
-            method    = ((max(pay_log, key=lambda p: p.get("date", "")).get("method", "") if pay_log else "")
+            method    = ((max(pay_log, key=lambda p: p.get("date") or "").get("method", "") if pay_log else "")
                          or inv_meta.get("payment_method", ""))
             # Convert "—" placeholder to empty string
             if method == "—":
