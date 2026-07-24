@@ -11147,21 +11147,54 @@ def medical_claim_update_amount(claim_id):
         return redirect(url_for("employees") + "#medical")
 
     now_str = datetime.now(timezone.utc).isoformat()
+    claim = fb_get(f"/medical_claims/{claim_id}") or {}
+
     # Update claim record
     fb_update(f"/medical_claims/{claim_id}", {
         "amount_approved": new_usd,
         "reviewed_by":     session.get("user_name", ""),
         "reviewed_at":     now_str,
     })
-    # Update expense entries (only amount fields — keep all other metadata)
-    for path in (f"/expenses/{claim_id}", f"/balance_sheet_expenses/{claim_id}"):
-        fb_update(path, {
-            "amount":     new_usd,
-            "amount_usd": new_usd,
-            "updated_at": now_str,
-        })
 
-    flash("Approved amount updated successfully.", "success")
+    # Build full expense record (same shape as medical_claim_review) so that old
+    # claims that were approved before /balance_sheet_expenses writing was added
+    # get properly created — not just 3-field partial updates.
+    _emp_cfg  = load_settings().get("employee", {})
+    bdt_rate  = _safe_float(_emp_cfg.get("bdt_exchange_rate", 110)) or 110
+    orig_currency = claim.get("amount_currency", "BDT")
+    orig_bdt  = _safe_float(claim.get("amount_claimed", 0))
+    notes_parts = [f"Medical claim by {claim.get('employee_name', '')}"]
+    if orig_currency == "BDT":
+        notes_parts.append(f"Original claim: ৳{orig_bdt:,.0f} BDT (at ৳{bdt_rate:.0f}/$1)")
+    exp_data = {
+        "expense_type":       "Medical",
+        "expense_name":       claim.get("description") or "Medical Allowance",
+        "description":        claim.get("description") or "Medical Allowance",
+        "amount":             new_usd,
+        "amount_usd":         new_usd,
+        "amount_original":    orig_bdt,
+        "amount_currency":    orig_currency,
+        "category":           "Medical/Benefits",
+        "date":               claim.get("claim_date") or now_str[:10],
+        "vendor":             claim.get("provider", "").strip() or claim.get("employee_name", ""),
+        "notes":              " | ".join(notes_parts),
+        "submitted_by_name":  claim.get("employee_name", ""),
+        "submitted_by_uid":   claim.get("employee_uid", ""),
+        "submitted_by_email": "",
+        "status":             "Approved",
+        "reviewed_by":        session.get("user_name", ""),
+        "reviewed_at":        now_str,
+        "created_at":         claim.get("submitted_at", now_str),
+        "updated_at":         now_str,
+        "source":             "medical_claim",
+        "medical_claim_id":   claim_id,
+        "firebase_id":        claim_id,
+        "created_by":         claim.get("employee_name", ""),
+    }
+    fb_update(f"/expenses/{claim_id}", exp_data)
+    fb_update(f"/balance_sheet_expenses/{claim_id}", exp_data)
+
+    flash("Approved amount updated and expense synced to Financial.", "success")
     return redirect(url_for("employees") + "#medical")
 
 
