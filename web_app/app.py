@@ -10293,7 +10293,10 @@ def expense_edit(exp_id):
                     data['receipt_type'] = file.content_type
                 except Exception as e:
                     app.logger.error(f"Receipt upload error: {e}")
+        # Read existing record to detect origin before overwriting
+        existing = fb_get(f"/balance_sheet_expenses/{exp_id}") or {}
         fb_update(f"/balance_sheet_expenses/{exp_id}", data)
+
         # If this expense originated as an employee submission, keep it in sync
         emp_rec = fb_get(f"/expenses/{exp_id}")
         if isinstance(emp_rec, dict):
@@ -10308,6 +10311,18 @@ def expense_edit(exp_id):
                                if k in ("receipt_base64","receipt_filename","receipt_type")}
                 if receipt_sync.get("receipt_base64"):
                     fb_update(f"/expense_receipts/{exp_id}", receipt_sync)
+
+        # If this expense originated from a medical claim, sync amount_approved back
+        if existing.get("source") == "medical_claim":
+            new_amt = _safe_float(data.get("amount", 0))
+            now_str = datetime.now(timezone.utc).isoformat()
+            fb_update(f"/medical_claims/{exp_id}", {
+                "amount_approved": new_amt,
+                "reviewed_by":     session.get("user_name", ""),
+                "reviewed_at":     now_str,
+                "updated_at":      now_str,
+            })
+
         return jsonify({"success": True, "expense_id": exp_id})
     except Exception as e:
         app.logger.error(f"Expense edit error: {e}", exc_info=True)
