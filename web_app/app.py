@@ -10268,17 +10268,16 @@ def export_balance_sheet():
         if isinstance(expenses_data, dict):
             for eid, edata in expenses_data.items():
                 if isinstance(edata, dict):
-                    date_str = edata.get("date", "")
+                    date_str = edata.get("date") or ""
                     try:
                         e_year = int(date_str[:4])
                         e_month = int(date_str[5:7])
                         if e_year == year and 1 <= e_month <= 12:
                             amt = _safe_float(edata.get("amount", 0))
                             monthly_expenses[e_month-1] += amt
-                            # Use vendor name for breakdown, fallback to expense_name if no vendor
-                            vendor_name = edata.get("vendor", "").strip() or edata.get("expense_name", "") or edata.get("description", "—")
+                            vendor_name = (edata.get("vendor") or "").strip() or (edata.get("expense_name") or "") or (edata.get("description") or "—")
                             expense_breakdown[vendor_name] = expense_breakdown.get(vendor_name, 0) + amt
-                    except (ValueError, IndexError):
+                    except (ValueError, IndexError, TypeError):
                         pass
 
         # Build salary data
@@ -10655,9 +10654,10 @@ def export_balance_sheet():
         )
 
     except Exception as e:
-        log.error(f"Export error: {e}")
+        import traceback as _tb
+        log.error(f"Balance sheet export error: {_tb.format_exc()}")
         flash(f"Export failed: {str(e)}", "danger")
-        return redirect(url_for("financial", tab="balance-sheet"))
+        return redirect(url_for("financial") + "?tab=balance-sheet")
 
 # ── Routes: Employees ─────────────────────────────────────────────────────────
 @app.route("/employees")
