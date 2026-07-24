@@ -1905,10 +1905,12 @@ function submitChangePassword() {
             </select>
           </div>
           <div class="mb-2">
-            <label class="form-label fw-semibold" style="font-size:12px;">Amount Claimed ({{ currency_symbol }})</label>
-            <input type="number" name="amount_claimed" class="form-control form-control-sm"
-                   min="0.01" max="50000" step="0.01" placeholder="0.00" required>
-            <div class="form-text text-muted" style="font-size:11px;">Maximum claim: {{ currency_symbol }}50,000</div>
+            <label class="form-label fw-semibold" style="font-size:12px;">Amount Claimed (৳ BDT)</label>
+            <input type="number" name="amount_claimed" id="medClaimAmtBdt" class="form-control form-control-sm"
+                   min="0.01" max="50000" step="0.01" placeholder="0.00" required oninput="updateMedUsdHint()">
+            <input type="hidden" name="amount_currency" value="BDT">
+            <div class="form-text" id="medUsdHint" style="color:#0D9488;font-size:11px;"></div>
+            <div class="form-text text-muted" style="font-size:11px;">Maximum claim: ৳50,000 BDT</div>
           </div>
           <div class="mb-2">
             <label class="form-label fw-semibold" style="font-size:12px;">Provider / Hospital</label>
@@ -2081,9 +2083,14 @@ function submitChangePassword() {
         <div class="modal-body py-2">
           <input type="hidden" name="action" id="medReviewAction">
           <div class="mb-2" id="medApprovedRow">
-            <label class="form-label fw-semibold" style="font-size:12px;">Amount Approved (? BDT)</label>
-            <input type="number" name="amount_approved" id="medApprovedAmt"
-                   class="form-control form-control-sm" min="0" step="0.01">
+            <div class="alert alert-info py-2 mb-2" style="font-size:12px;" id="medBdtInfo"></div>
+            <label class="form-label fw-semibold" style="font-size:12px;">Amount to Approve ($USD)</label>
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">$</span>
+              <input type="number" name="amount_approved" id="medApprovedAmt"
+                     class="form-control form-control-sm" min="0" step="0.01" placeholder="0.00">
+            </div>
+            <div class="form-text text-muted" style="font-size:11px;" id="medRateNote"></div>
           </div>
           <div class="mb-2">
             <label class="form-label fw-semibold" style="font-size:12px;">Notes</label>
@@ -2686,6 +2693,18 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 
+const _BDT_RATE = {{ bdt_exchange_rate or 110 }};
+
+function updateMedUsdHint() {
+  const bdt = parseFloat(document.getElementById('medClaimAmtBdt').value) || 0;
+  const hint = document.getElementById('medUsdHint');
+  if (bdt > 0) {
+    hint.textContent = '≈ $' + (bdt / _BDT_RATE).toFixed(2) + ' USD (at ৳' + _BDT_RATE + ' per $1)';
+  } else {
+    hint.textContent = '';
+  }
+}
+
 // Medical Allowance review modal
 window.openMedReview = function(claimId, empName, amtClaimed, action) {
   const form  = document.getElementById('medReviewForm');
@@ -2698,7 +2717,14 @@ window.openMedReview = function(claimId, empName, amtClaimed, action) {
   const submitBtn   = document.getElementById('medReviewSubmitBtn');
   if (action === 'approve') {
     approvedRow.style.display = '';
-    document.getElementById('medApprovedAmt').value = parseFloat(amtClaimed) || '';
+    const bdtAmt = parseFloat(amtClaimed) || 0;
+    const usdAmt = bdtAmt / _BDT_RATE;
+    document.getElementById('medBdtInfo').innerHTML =
+      '<strong>Claimed:</strong> ৳' + bdtAmt.toLocaleString() + ' BDT' +
+      ' &nbsp;≈&nbsp; <strong>$' + usdAmt.toFixed(2) + ' USD</strong>';
+    document.getElementById('medRateNote').textContent =
+      'Exchange rate: ৳' + _BDT_RATE + ' = $1 USD. Adjust if needed.';
+    document.getElementById('medApprovedAmt').value = usdAmt.toFixed(2);
     submitBtn.className = 'btn btn-sm btn-success';
     submitBtn.textContent = 'Approve';
   } else {

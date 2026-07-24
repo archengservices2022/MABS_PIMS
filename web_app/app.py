@@ -11007,20 +11007,21 @@ def medical_claim_new():
         flash("Medical claim cannot exceed ৳50,000 BDT.", "danger")
         return redirect(url_for("employees") + "#medical")
     claim = {
-        "employee_uid":    uid,
-        "employee_name":   name,
-        "claim_date":      request.form.get("claim_date", ""),
-        "expense_type":    request.form.get("expense_type", "Medical"),
-        "amount_claimed":  amount,
-        "description":     request.form.get("description", "").strip(),
-        "provider":        request.form.get("provider", "").strip(),
-        "receipt_ref":     request.form.get("receipt_ref", "").strip(),
-        "status":          "Pending",
-        "amount_approved": None,
-        "admin_notes":     None,
-        "reviewed_by":     None,
-        "reviewed_at":     None,
-        "submitted_at":    datetime.now(timezone.utc).isoformat(),
+        "employee_uid":      uid,
+        "employee_name":     name,
+        "claim_date":        request.form.get("claim_date", ""),
+        "expense_type":      request.form.get("expense_type", "Medical"),
+        "amount_claimed":    amount,
+        "amount_currency":   request.form.get("amount_currency", "BDT"),
+        "description":       request.form.get("description", "").strip(),
+        "provider":          request.form.get("provider", "").strip(),
+        "receipt_ref":       request.form.get("receipt_ref", "").strip(),
+        "status":            "Pending",
+        "amount_approved":   None,
+        "admin_notes":       None,
+        "reviewed_by":       None,
+        "reviewed_at":       None,
+        "submitted_at":      datetime.now(timezone.utc).isoformat(),
     }
     claim_id = fb_push("/medical_claims", claim)
     # Handle receipt file upload
@@ -11085,27 +11086,42 @@ def medical_claim_review(claim_id):
 
     if status == "Approved" and amt_approved > 0:
         claim = fb_get(f"/medical_claims/{claim_id}") or {}
+        # amt_approved is in USD (admin entered USD after seeing BDT→USD conversion)
+        # Record original BDT amount for reference
+        _emp_cfg   = load_settings().get("employee", {})
+        bdt_rate   = _safe_float(_emp_cfg.get("bdt_exchange_rate", 110)) or 110
+        orig_currency = claim.get("amount_currency", "BDT")
+        orig_bdt   = _safe_float(claim.get("amount_claimed", 0))
+        admin_note = request.form.get("admin_notes", "").strip()
+        notes_parts = [f"Medical claim by {claim.get('employee_name', '')}"]
+        if orig_currency == "BDT":
+            notes_parts.append(f"Original claim: ৳{orig_bdt:,.0f} BDT (at ৳{bdt_rate:.0f}/$1)")
+        if admin_note:
+            notes_parts.append(admin_note)
         exp_data = {
-            "expense_type":       "Medical",
-            "expense_name":       claim.get("description") or "Medical Allowance",
-            "description":        claim.get("description") or "Medical Allowance",
-            "amount":             amt_approved,
-            "category":           "Medical/Benefits",
-            "date":               claim.get("claim_date") or now_str[:10],
-            "vendor":             claim.get("provider", "").strip() or claim.get("employee_name", ""),
-            "notes":              f"Medical claim by {claim.get('employee_name', '')}. {(claim.get('admin_notes') or '').strip()}".strip(". "),
-            "submitted_by_name":  claim.get("employee_name", ""),
-            "submitted_by_uid":   claim.get("employee_uid", ""),
-            "submitted_by_email": "",
-            "status":             "Approved",
-            "reviewed_by":        session.get("user_name", ""),
-            "reviewed_at":        now_str,
-            "created_at":         claim.get("submitted_at", now_str),
-            "updated_at":         now_str,
-            "source":             "medical_claim",
-            "medical_claim_id":   claim_id,
-            "firebase_id":        claim_id,
-            "created_by":         claim.get("employee_name", ""),
+            "expense_type":         "Medical",
+            "expense_name":         claim.get("description") or "Medical Allowance",
+            "description":          claim.get("description") or "Medical Allowance",
+            "amount":               amt_approved,           # USD
+            "amount_usd":           amt_approved,
+            "amount_original":      orig_bdt,
+            "amount_currency":      orig_currency,
+            "category":             "Medical/Benefits",
+            "date":                 claim.get("claim_date") or now_str[:10],
+            "vendor":               claim.get("provider", "").strip() or claim.get("employee_name", ""),
+            "notes":                " | ".join(notes_parts),
+            "submitted_by_name":    claim.get("employee_name", ""),
+            "submitted_by_uid":     claim.get("employee_uid", ""),
+            "submitted_by_email":   "",
+            "status":               "Approved",
+            "reviewed_by":          session.get("user_name", ""),
+            "reviewed_at":          now_str,
+            "created_at":           claim.get("submitted_at", now_str),
+            "updated_at":           now_str,
+            "source":               "medical_claim",
+            "medical_claim_id":     claim_id,
+            "firebase_id":          claim_id,
+            "created_by":           claim.get("employee_name", ""),
         }
         # Use claim_id as key so re-approval overwrites, not duplicates
         fb_update(f"/expenses/{claim_id}", exp_data)
