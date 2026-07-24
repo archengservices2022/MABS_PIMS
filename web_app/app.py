@@ -3413,6 +3413,7 @@ def co_update_amount(project_id, co_idx):
 
     base_value = _base_contract_value(project, cos)
     co = cos[co_idx]
+    old_co_num = co.get("co_number", "")
     co["amount"] = new_amount
     if request.form.get("title") is not None:
         co["title"] = request.form.get("title", "").strip()
@@ -3428,18 +3429,33 @@ def co_update_amount(project_id, co_idx):
     new_shipping = request.form.get("shipping_address", None)
     if new_shipping is not None:
         co["shipping_address"] = new_shipping.strip()
+
+    # CO number rename — check uniqueness within project first
+    new_co_num_req = request.form.get("new_co_number", "").strip()
+    if new_co_num_req and new_co_num_req != old_co_num:
+        if any(c.get("co_number") == new_co_num_req for i, c in enumerate(cos) if i != co_idx):
+            flash(f"CO number '{new_co_num_req}' is already in use on this project.", "danger")
+            return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+        co["co_number"] = new_co_num_req
+    else:
+        new_co_num_req = None  # no rename
+
     co["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     stages = _normalise_list(project.get("payment_stages"))
-    co_number = co.get("co_number", "")
+    # use old CO number to locate linked stages, then update them
     for idx, stage in enumerate(stages):
         if not isinstance(stage, dict):
             continue
         stage_co_idx = stage.get("co_index")
         stage_co_num = stage.get("co_number", "")
         stage_name = str(stage.get("name", ""))
-        if stage_co_idx == co_idx or (co_number and (stage_co_num == co_number or co_number in stage_name)):
+        if stage_co_idx == co_idx or (old_co_num and (stage_co_num == old_co_num or old_co_num in stage_name)):
             stage["amount"] = new_amount
+            if new_co_num_req:
+                stage["co_number"] = new_co_num_req
+                if old_co_num and old_co_num in stage_name:
+                    stage["name"] = stage_name.replace(old_co_num, new_co_num_req, 1)
 
     update_data = {
         "base_contract_value": base_value,

@@ -755,22 +755,36 @@
                 {% set co_idx = loop.index0 %}
                 <tr>
                   <td class="fw-600 text-teal">
-                    {{ co.get('co_number','—') }}
                     {% if can_manage_projects %}
-                    <div class="mt-1">
-                      <input type="text" name="po_wo_number" form="coAmountForm{{ co_idx }}"
-                             value="{{ co.get('po_wo_number','') }}"
-                             class="form-control form-control-sm" style="width:105px;"
-                             placeholder="PO/WO #">
-                    </div>
-                    {% elif co.get('po_wo_number') %}
+                    <input type="text" name="new_co_number" form="coAmountForm{{ co_idx }}"
+                           value="{{ co.get('co_number','') }}"
+                           class="form-control form-control-sm fw-600 mb-1" style="width:95px;"
+                           placeholder="CO #">
+                    <input type="text" name="po_wo_number" form="coAmountForm{{ co_idx }}"
+                           value="{{ co.get('po_wo_number','') }}"
+                           class="form-control form-control-sm" style="width:95px;"
+                           placeholder="PO/WO #">
+                    {% else %}
+                    {{ co.get('co_number','—') }}
+                    {% if co.get('po_wo_number') %}
                     <div class="text-muted small fw-400">{{ co.get('po_wo_number') }}</div>
+                    {% endif %}
                     {% endif %}
                   </td>
                   <td>
+                    {% if can_manage_projects %}
+                    <input type="text" name="title" form="coAmountForm{{ co_idx }}"
+                           value="{{ co.get('title','') }}"
+                           class="form-control form-control-sm fw-500 mb-1" placeholder="Title">
+                    <input type="text" name="description" form="coAmountForm{{ co_idx }}"
+                           value="{{ co.get('description','') }}"
+                           class="form-control form-control-sm" style="font-size:0.82em;"
+                           placeholder="Description (optional)">
+                    {% else %}
                     <div class="fw-500">{{ co.get('title','—') }}</div>
                     {% if co.get('description') %}
                     <div class="text-muted small">{{ co.get('description') }}</div>
+                    {% endif %}
                     {% endif %}
                     {% if can_manage_projects %}
                     <div class="mt-1">
@@ -846,12 +860,14 @@
                        target="_blank" class="btn btn-xs btn-outline-secondary" title="Download CO PDF">
                       <i class="bi bi-file-earmark-pdf"></i>
                     </a>
+                    {% if user_role == 'admin' %}
                     <form method="POST" action="{{ url_for('co_delete', project_id=project.firebase_id, co_idx=co_idx) }}"
                           onsubmit="return confirm('Delete {{ co.get("co_number","CO") }} on project {{ project.get("project_number","") }}? This will update the contract value and financial totals.');">
                       <button class="btn btn-xs btn-outline-danger" title="Delete CO">
                         <i class="bi bi-trash"></i>
                       </button>
                     </form>
+                    {% endif %}
                     </div>
                   </td>
                   {% endif %}
