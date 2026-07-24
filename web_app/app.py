@@ -10319,6 +10319,16 @@ def get_expense_receipt(exp_id):
             "filename": receipt_data.get('receipt_filename', 'receipt')
         })
 
+    # Fallback: check /medical_claim_receipts (expenses sourced from medical claims)
+    med_receipt = fb_get(f"/medical_claim_receipts/{exp_id}") or {}
+    if isinstance(med_receipt, dict) and med_receipt.get("receipt_base64"):
+        return jsonify({
+            "success": True,
+            "receipt": med_receipt.get("receipt_base64"),
+            "fileType": med_receipt.get("receipt_type", "image/jpeg"),
+            "filename": med_receipt.get("receipt_filename", "receipt"),
+        })
+
     # Fallback: check if receipt is stored in expense data (legacy entries)
     expenses = fb_get("/balance_sheet_expenses") or {}
     if isinstance(expenses, dict) and exp_id in expenses:
@@ -11122,6 +11132,8 @@ def medical_claim_review(claim_id):
             "medical_claim_id":     claim_id,
             "firebase_id":          claim_id,
             "created_by":           claim.get("employee_name", ""),
+            "has_receipt":          bool(claim.get("has_receipt")),
+            "receipt_filename":     claim.get("receipt_filename", ""),
         }
         # Use claim_id as key so re-approval overwrites, not duplicates
         fb_update(f"/expenses/{claim_id}", exp_data)
@@ -11190,6 +11202,8 @@ def medical_claim_update_amount(claim_id):
         "medical_claim_id":   claim_id,
         "firebase_id":        claim_id,
         "created_by":         claim.get("employee_name", ""),
+        "has_receipt":        bool(claim.get("has_receipt")),
+        "receipt_filename":   claim.get("receipt_filename", ""),
     }
     fb_update(f"/expenses/{claim_id}", exp_data)
     fb_update(f"/balance_sheet_expenses/{claim_id}", exp_data)

@@ -903,7 +903,7 @@ a[href*="filter_expense"]:hover {
                 <button type="button" class="btn btn-xs btn-outline-secondary" onclick='editExpenseModal("{{ exp.firebase_id }}", {{ exp|tojson }})' title="Edit">
                   <i class="bi bi-pencil"></i>
                 </button>
-                {% if exp.get('receipt_filename') %}
+                {% if exp.get('receipt_filename') or exp.get('has_receipt') %}
                 <button type="button" class="btn btn-xs btn-outline-primary" onclick="viewReceipt('{{ exp.firebase_id }}')" title="View Receipt">
                   <i class="bi bi-paperclip"></i>
                 </button>
