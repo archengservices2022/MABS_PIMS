@@ -11298,12 +11298,24 @@ def employee_expense_submit():
             # (don't pop it from data - preserve it)
             pass
 
+        # Read existing record to detect origin before writing
+        existing_exp = fb_get(f"/expenses/{editing_expense_id}") or {}
+
         # Update employee expense record directly (no approval needed for edits)
         fb_update(f"/expenses/{editing_expense_id}", data)
 
         # Also update /balance_sheet_expenses (Finance tab) if it exists (for approved expenses)
         if fb_get(f"/balance_sheet_expenses/{editing_expense_id}"):
             fb_update(f"/balance_sheet_expenses/{editing_expense_id}", data)
+
+        # If this expense came from a medical claim, sync amount_approved back
+        if existing_exp.get("source") == "medical_claim":
+            new_amt = _safe_float(data.get("amount", 0))
+            fb_update(f"/medical_claims/{editing_expense_id}", {
+                "amount_approved": new_amt,
+                "reviewed_by":     session.get("user_name", ""),
+                "reviewed_at":     datetime.now(timezone.utc).isoformat(),
+            })
 
         flash("Expense updated successfully.", "success")
     else:
@@ -11493,6 +11505,13 @@ def employee_expense_edit(exp_id):
     # Also sync to balance_sheet_expenses if it exists there
     if fb_get(f"/balance_sheet_expenses/{exp_id}"):
         fb_update(f"/balance_sheet_expenses/{exp_id}", updates)
+    # If this expense came from a medical claim, sync amount_approved back
+    if exp_data.get("source") == "medical_claim":
+        fb_update(f"/medical_claims/{exp_id}", {
+            "amount_approved": _safe_float(updates.get("amount", 0)),
+            "reviewed_by":     session.get("user_name", ""),
+            "reviewed_at":     datetime.now(timezone.utc).isoformat(),
+        })
     flash("Expense updated successfully.", "success")
     return redirect(url_for("employees") + "#expenses")
 

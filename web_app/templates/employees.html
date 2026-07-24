@@ -2518,6 +2518,17 @@ document.querySelectorAll('.emp-view-receipt-btn').forEach(function(btn) {
 });
 
 window.openEmpExpenseEdit = function(exp) {
+  // Medical claim expenses have their own correction modal
+  if (exp.source === 'medical_claim' && typeof openMedAmtEdit === 'function') {
+    openMedAmtEdit(
+      exp.firebase_id,
+      exp.submitted_by_name || exp.created_by || '',
+      exp.amount_original || exp.amount || '',
+      exp.amount || ''
+    );
+    return;
+  }
+
   var form = document.getElementById('empExpenseForm');
   // Scroll down a little bit (75px)
   setTimeout(function() {
