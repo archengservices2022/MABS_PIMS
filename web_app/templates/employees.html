@@ -2014,7 +2014,7 @@ function submitChangePassword() {
             <thead style="background:#f8fafc;">
               <tr>
                 <th>Employee</th><th style="white-space:nowrap;">Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
-                <th class="text-end">Claimed</th><th>Status</th><th>Receipt</th><th>Actions</th>
+                <th class="text-end">Claimed (৳ BDT)</th><th class="text-end">Approved ($USD)</th><th>Status</th><th>Receipt</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -2026,7 +2026,12 @@ function submitChangePassword() {
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
               <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
-              <td class="text-end fw-semibold">{{ currency_symbol }}{{ '%.2f'|format(c.amount_claimed|float) }}</td>
+              <td class="text-end fw-semibold">৳{{ '%.2f'|format(c.amount_claimed|float) }}</td>
+              <td class="text-end fw-semibold">
+                {% if c.status == 'Approved' and c.get('amount_approved') %}
+                  {{ currency_symbol }}{{ '%.2f'|format(c.amount_approved|float) }}
+                {% else %}—{% endif %}
+              </td>
               <td>
                 {% set cs = c.status or 'Pending' %}
                 <span class="badge" style="font-size:11px;
@@ -2053,7 +2058,12 @@ function submitChangePassword() {
                         onclick="openMedReview('{{ c.firebase_id }}','{{ c.employee_name }}','{{ c.amount_claimed }}','reject')"
                         title="Reject"><i class="bi bi-x-lg"></i></button>
                 {% else %}
-                <span class="text-muted small">{{ c.reviewed_by or '' }}</span>
+                <span class="text-muted small me-1">{{ c.reviewed_by or '' }}</span>
+                {% if c.status == 'Approved' and c.get('firebase_id') %}
+                <button class="btn btn-xs btn-outline-secondary"
+                        onclick="openMedAmtEdit('{{ c.firebase_id }}','{{ c.employee_name }}','{{ c.amount_claimed }}','{{ c.get("amount_approved","") }}')"
+                        title="Correct USD amount"><i class="bi bi-pencil"></i></button>
+                {% endif %}
                 {% endif %}
               </td>
             </tr>
@@ -2101,6 +2111,36 @@ function submitChangePassword() {
         <div class="modal-footer py-2">
           <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
           <button type="submit" class="btn btn-sm" id="medReviewSubmitBtn">Confirm</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<!-- Medical Claim Approved Amount Edit Modal (admin) -->
+{% if user_role == 'admin' %}
+<div class="modal fade" id="medAmtEditModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="medAmtEditTitle">Correct Approved Amount</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="medAmtEditForm">
+        <div class="modal-body py-2">
+          <div class="alert alert-info py-2 mb-2" style="font-size:12px;" id="medAmtEditInfo"></div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold" style="font-size:12px;">Corrected Amount ($USD)</label>
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">$</span>
+              <input type="number" name="amount_approved_usd" id="medAmtEditUsd"
+                     class="form-control form-control-sm" min="0" step="0.01" placeholder="0.00" required>
+            </div>
+            <div class="form-text text-muted" style="font-size:11px;" id="medAmtEditRate"></div>
+          </div>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-primary">Save Corrected Amount</button>
         </div>
       </form>
     </div>
@@ -2733,6 +2773,24 @@ window.openMedReview = function(claimId, empName, amtClaimed, action) {
     submitBtn.textContent = 'Reject';
   }
   new bootstrap.Modal(document.getElementById('medReviewModal')).show();
+};
+
+window.openMedAmtEdit = function(claimId, empName, amtClaimed, amtApproved) {
+  const form = document.getElementById('medAmtEditForm');
+  if (!form) return;
+  form.action = '/employees/medical-claims/' + claimId + '/update-amount';
+  document.getElementById('medAmtEditTitle').textContent = 'Correct Amount — ' + empName;
+  const bdtAmt = parseFloat(amtClaimed) || 0;
+  const suggestedUsd = bdtAmt / _BDT_RATE;
+  document.getElementById('medAmtEditInfo').innerHTML =
+    '<strong>Claimed:</strong> ৳' + bdtAmt.toLocaleString() + ' BDT' +
+    ' &nbsp;≈&nbsp; <strong>$' + suggestedUsd.toFixed(2) + ' USD</strong>' +
+    (amtApproved ? '<br><strong>Currently stored:</strong> $' + parseFloat(amtApproved).toFixed(2) + ' USD' : '');
+  document.getElementById('medAmtEditRate').textContent =
+    'Rate: ৳' + _BDT_RATE + ' = $1 USD';
+  document.getElementById('medAmtEditUsd').value =
+    amtApproved ? parseFloat(amtApproved).toFixed(2) : suggestedUsd.toFixed(2);
+  new bootstrap.Modal(document.getElementById('medAmtEditModal')).show();
 };
 </script>
 {% endblock %}

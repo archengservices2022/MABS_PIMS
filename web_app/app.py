@@ -11130,6 +11130,41 @@ def medical_claim_review(claim_id):
     flash(f"Claim {status.lower()} successfully.", "success")
     return redirect(url_for("employees") + "#medical")
 
+
+@app.route("/employees/medical-claims/<claim_id>/update-amount", methods=["POST"])
+@role_required("employees")
+def medical_claim_update_amount(claim_id):
+    if normalize_role(session.get("user_role", "")) != "admin":
+        flash("Admin access required.", "danger")
+        return redirect(url_for("employees") + "#medical")
+    try:
+        new_usd = round(float(request.form.get("amount_approved_usd", 0) or 0), 2)
+    except ValueError:
+        flash("Invalid amount.", "danger")
+        return redirect(url_for("employees") + "#medical")
+    if new_usd <= 0:
+        flash("Amount must be greater than zero.", "danger")
+        return redirect(url_for("employees") + "#medical")
+
+    now_str = datetime.now(timezone.utc).isoformat()
+    # Update claim record
+    fb_update(f"/medical_claims/{claim_id}", {
+        "amount_approved": new_usd,
+        "reviewed_by":     session.get("user_name", ""),
+        "reviewed_at":     now_str,
+    })
+    # Update expense entries (only amount fields — keep all other metadata)
+    for path in (f"/expenses/{claim_id}", f"/balance_sheet_expenses/{claim_id}"):
+        fb_update(path, {
+            "amount":     new_usd,
+            "amount_usd": new_usd,
+            "updated_at": now_str,
+        })
+
+    flash("Approved amount updated successfully.", "success")
+    return redirect(url_for("employees") + "#medical")
+
+
 @app.route("/employees/expenses/submit", methods=["POST"])
 @role_required("employees")
 def employee_expense_submit():
