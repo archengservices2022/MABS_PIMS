@@ -8779,6 +8779,10 @@ def financial():
         selected_year = datetime.now(COMPANY_TZ).year
 
     inv_list  = [v for v in invoices.values() if isinstance(v, dict)] if isinstance(invoices, dict) else []
+    # Lightweight set of claim IDs that have uploaded receipts — used to show
+    # the receipt button for medical claim expenses written before has_receipt was added.
+    _med_receipt_ids = set(fb_get_shallow("/medical_claim_receipts") or {})
+
     exp_list_raw  = []
     if isinstance(expenses, dict):
         for eid, edata in expenses.items():
@@ -8786,6 +8790,10 @@ def financial():
                 edata["firebase_id"] = eid
                 # Ensure amount is always a float (some old entries might be strings)
                 edata["amount"] = _safe_float(edata.get("amount", 0))
+                # Mark receipt available for medical claim expenses even if written before has_receipt field existed
+                if not edata.get("has_receipt") and not edata.get("receipt_filename"):
+                    if eid in _med_receipt_ids:
+                        edata["has_receipt"] = True
                 exp_list_raw.append(edata)
 
     # Group expenses by name and sum amounts
