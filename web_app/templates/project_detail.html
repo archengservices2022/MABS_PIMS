@@ -754,15 +754,15 @@
                 {% for co in change_orders %}
                 {% set co_idx = loop.index0 %}
                 <tr>
-                  <td class="fw-600 text-teal">
+                  <td class="fw-600 text-teal" style="min-width:120px;">
                     {% if can_manage_projects %}
                     <input type="text" name="new_co_number" form="coAmountForm{{ co_idx }}"
                            value="{{ co.get('co_number','') }}"
-                           class="form-control form-control-sm fw-600 mb-1" style="width:95px;"
+                           class="form-control form-control-sm fw-600 mb-1 w-100"
                            placeholder="CO #">
                     <input type="text" name="po_wo_number" form="coAmountForm{{ co_idx }}"
                            value="{{ co.get('po_wo_number','') }}"
-                           class="form-control form-control-sm" style="width:95px;"
+                           class="form-control form-control-sm w-100"
                            placeholder="PO/WO #">
                     {% else %}
                     {{ co.get('co_number','—') }}
@@ -771,14 +771,14 @@
                     {% endif %}
                     {% endif %}
                   </td>
-                  <td>
+                  <td style="min-width:200px;">
                     {% if can_manage_projects %}
                     <input type="text" name="title" form="coAmountForm{{ co_idx }}"
                            value="{{ co.get('title','') }}"
-                           class="form-control form-control-sm fw-500 mb-1" placeholder="Title">
+                           class="form-control form-control-sm fw-500 mb-1 w-100" placeholder="Title">
                     <input type="text" name="description" form="coAmountForm{{ co_idx }}"
                            value="{{ co.get('description','') }}"
-                           class="form-control form-control-sm" style="font-size:0.82em;"
+                           class="form-control form-control-sm w-100" style="font-size:0.82em;"
                            placeholder="Description (optional)">
                     {% else %}
                     <div class="fw-500">{{ co.get('title','—') }}</div>
