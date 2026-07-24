@@ -1595,10 +1595,10 @@ function submitChangePassword() {
                 {% endif %}
               </td>
               <td class="text-center">
-                {% if e.get('receipt_filename') %}
+                {% if e.get('receipt_filename') or e.get('has_receipt') %}
                 <button class="btn btn-xs btn-outline-teal emp-view-receipt-btn"
                         data-exp-id="{{ e.firebase_id }}"
-                        title="View: {{ e.receipt_filename }}">
+                        title="View receipt">
                   <i class="bi bi-paperclip"></i>
                 </button>
                 {% else %}?{% endif %}
@@ -1696,10 +1696,10 @@ function submitChangePassword() {
           <td class="text-muted small">{{ e.get('vendor','—') }}</td>
           <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</td>
           <td class="text-center">
-            {% if e.get('receipt_filename') %}
+            {% if e.get('receipt_filename') or e.get('has_receipt') %}
             <button class="btn btn-xs btn-outline-primary"
                     onclick="viewEmpReceipt('{{ e.firebase_id }}')"
-                    title="{{ e.receipt_filename }}">
+                    title="View receipt">
               <i class="bi bi-paperclip"></i>
             </button>
             {% else %}

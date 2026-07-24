@@ -11413,6 +11413,12 @@ def employee_expense_receipt(exp_id):
     receipt_b64      = receipt_rec.get("receipt_base64")      or exp_data.get("receipt_base64", "")
     receipt_filename = receipt_rec.get("receipt_filename")     or exp_data.get("receipt_filename", "receipt")
     receipt_type     = receipt_rec.get("receipt_type")         or exp_data.get("receipt_type", "application/octet-stream")
+    # Fall back to /medical_claim_receipts (expenses sourced from medical claims)
+    if not receipt_b64:
+        med_rec = fb_get(f"/medical_claim_receipts/{exp_id}") or {}
+        receipt_b64      = med_rec.get("receipt_base64", "")
+        receipt_filename = med_rec.get("receipt_filename", receipt_filename)
+        receipt_type     = med_rec.get("receipt_type", receipt_type)
     if not receipt_b64:
         return jsonify({"error": "No receipt found"}), 404
     data_url = f"data:{receipt_type};base64,{receipt_b64}"
