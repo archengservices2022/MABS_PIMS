@@ -770,7 +770,7 @@
             <td class="fw-semibold">{{ req.get('requested_by_name','—') }}</td>
             <td>{{ req.get('action','—') }}</td>
             <td class="text-muted">{{ req.get('notes','—') or '—' }}</td>
-            <td>{% if req.get('page_url') %}<a href="{{ req.page_url }}" target="_blank" class="text-truncate d-inline-block" style="max-width:120px;" title="{{ req.page_url }}"><i class="bi bi-box-arrow-up-right"></i> Page</a>{% else %}—{% endif %}</td>
+            <td>{% if req.get('page_url') %}<a href="{{ req.page_url }}" target="_blank" class="btn btn-xs btn-outline-secondary" title="{{ req.page_url }}"><i class="bi bi-box-arrow-up-right me-1"></i>Open Page</a>{% else %}—{% endif %}</td>
             <td class="text-muted text-nowrap">{{ (req.get('requested_at','')[:10] | format_date) if req.get('requested_at') else '—' }}</td>
             <td>
               {% if req.get('status') == 'pending' %}
@@ -785,10 +785,10 @@
             </td>
             <td class="text-center text-nowrap">
               {% if req.get('status') == 'pending' %}
-              <button class="btn btn-xs btn-outline-success me-1" onclick="resolvePermRequest('{{ req.firebase_id }}','approve')" title="Approve">
-                <i class="bi bi-check2"></i> Approve
+              <button class="btn btn-xs btn-success me-1" onclick="resolvePermRequest('{{ req.firebase_id }}','approve','{{ req.get("page_url","") }}')" title="Approve — opens the page so you can perform the action">
+                <i class="bi bi-check2"></i> Approve &amp; Open Page
               </button>
-              <button class="btn btn-xs btn-outline-danger" onclick="resolvePermRequest('{{ req.firebase_id }}','deny')" title="Deny">
+              <button class="btn btn-xs btn-outline-danger" onclick="resolvePermRequest('{{ req.firebase_id }}','deny','')" title="Deny">
                 <i class="bi bi-x-lg"></i> Deny
               </button>
               {% else %}
@@ -1080,8 +1080,7 @@ async function saveUserPages() {
   } catch(e) { msg.innerHTML = '<span class="text-danger">Request failed.</span>'; }
 }
 
-function resolvePermRequest(reqId, action) {
-  var label = action === 'approve' ? 'Approve' : 'Deny';
+function resolvePermRequest(reqId, action, pageUrl) {
   var notes = '';
   if (action === 'deny') {
     notes = prompt('Reason for denying (optional):') || '';
@@ -1094,8 +1093,12 @@ function resolvePermRequest(reqId, action) {
   })
   .then(function(r) { return r.json(); })
   .then(function(d) {
-    if (d.success) location.reload();
-    else alert('Error: ' + (d.error || 'Unknown'));
+    if (!d.success) { alert('Error: ' + (d.error || 'Unknown')); return; }
+    if (action === 'approve' && pageUrl) {
+      // Open the page so admin can perform the action directly
+      window.open(pageUrl, '_blank');
+    }
+    location.reload();
   })
   .catch(function() { alert('Network error. Please try again.'); });
 }

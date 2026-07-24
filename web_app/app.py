@@ -12085,10 +12085,14 @@ def api_permission_request_resolve(req_id):
     })
     requester_uid = req.get("requested_by_uid", "")
     if requester_uid:
-        verb = "approved" if status == "approved" else "denied"
-        _push_notification(requester_uid, "permission_response",
-            f"Permission Request {status.capitalize()}",
-            f"Admin has {verb} your request to: {req.get('action','')[:80]}")
+        if status == "approved":
+            _push_notification(requester_uid, "permission_response",
+                "Permission Request Approved",
+                f"Admin has approved your request: {req.get('action','')[:80]}. Admin will perform this action directly.")
+        else:
+            _push_notification(requester_uid, "permission_response",
+                "Permission Request Denied",
+                f"Admin has denied your request to: {req.get('action','')[:80]}" + (f" — {notes}" if notes else ""))
     return jsonify({"success": True, "status": status})
 
 
