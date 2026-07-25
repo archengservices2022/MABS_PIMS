@@ -3827,7 +3827,7 @@ document.getElementById('cashFlowBtn').addEventListener('click', async () => {
       }
       function numCell(i) {
         if (!cells[i]) return '0.00';
-        var t = cells[i].textContent.trim().replace(/[$,]/g,'').replace(/?/g,'0');
+        var t = cells[i].textContent.trim().replace(/[$,]/g,'').replace(/—/g,'0');
         return parseFloat(t||0).toFixed(2);
       }
       var idx = 0;
