@@ -2468,9 +2468,16 @@ function viewReceipt(expId) {
       <h4 class="mb-1">Balance Sheet</h4>
       <p class="text-muted small mb-0">Revenue, expenses &amp; salaries for <strong>{{ selected_year }}</strong> &nbsp;—&nbsp; <span id="bsPeriodLabel" style="color:#0D9488;font-weight:600;">Full Year</span></p>
     </div>
-    <button class="btn btn-sm btn-outline-success" onclick="exportBalanceSheet()">
-      <i class="bi bi-download me-1"></i>Export
-    </button>
+    <div class="dropdown">
+      <button class="btn btn-sm btn-outline-success dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-download me-1"></i>Export</button>
+      <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+        <li><h6 class="dropdown-header" style="font-size:10px;">EXPORT OPTIONS</h6></li>
+        <li><a class="dropdown-item" href="{{ url_for('export_balance_sheet', fmt='pdf') }}?year={{ selected_year }}"><i class="bi bi-file-earmark-pdf text-danger me-2"></i>PDF Report</a></li>
+        <li><a class="dropdown-item" href="{{ url_for('export_balance_sheet', fmt='excel') }}?year={{ selected_year }}"><i class="bi bi-file-earmark-excel text-success me-2"></i>Excel (.xlsx)</a></li>
+        <li><hr class="dropdown-divider my-1"></li>
+        <li><a class="dropdown-item" href="{{ url_for('export_balance_sheet', fmt='csv') }}?year={{ selected_year }}"><i class="bi bi-filetype-csv me-2" style="color:#0F766E;"></i>CSV (monthly rows)</a></li>
+      </ul>
+    </div>
   </div>
 
   <!-- Filter Bar -->
@@ -3983,11 +3990,6 @@ function exportAgingCSV() {
   URL.revokeObjectURL(url);
 }
 
-// Export Balance Sheet to Excel
-function exportBalanceSheet() {
-  const year = new URLSearchParams(window.location.search).get('year') || new Date().getFullYear();
-  window.location.href = `/export/balance-sheet?year=${year}`;
-}
 
 // ?? Table Pager Inits ????????????????????????????????????????????????????????
 document.addEventListener('DOMContentLoaded', function() {

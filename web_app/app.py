@@ -10366,91 +10366,252 @@ def get_expense_receipt(exp_id):
             })
     return jsonify({"success": False, "error": "Receipt not found"})
 
-@app.route("/export/balance-sheet", methods=["GET"])
-@role_required("financial")
-def export_balance_sheet():
-    """Export Balance Sheet to Excel - PIMS Format"""
-    try:
-        from openpyxl import Workbook
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-        from openpyxl.worksheet.pagebreak import Break
-        from io import BytesIO
+def _compute_balance_sheet_data(year: int) -> dict:
+    """Shared data computation for Balance Sheet exports (Excel/PDF/CSV)."""
+    invoices_data = fb_get("/invoices") or {}
+    expenses_data = fb_get("/balance_sheet_expenses") or {}
+    salaries_data = fb_get("/balance_sheet_salary") or {}
 
+    monthly_revenue = [0] * 12
+    monthly_expenses = [0] * 12
+    salary_inside = {}
+    salary_outside = {}
+    expense_breakdown = {}
+
+    # Build revenue data from invoices based on PAYMENT DATES (not invoice dates)
+    if isinstance(invoices_data, dict):
+        for iid, inv_data in invoices_data.items():
+            if isinstance(inv_data, dict):
+                for pay in (inv_data.get("payment_log", []) or []):
+                    pay_ds = pay.get("date", "") or ""
+                    try:
+                        pay_date = datetime.fromisoformat(pay_ds[:10])
+                        if pay_date.year == year:
+                            monthly_revenue[pay_date.month - 1] += _safe_float(pay.get("amount", 0))
+                    except Exception:
+                        pass
+                for tax_pay in (inv_data.get("tax_payments", []) or []):
+                    tax_ds = tax_pay.get("date", "") or ""
+                    try:
+                        tax_date = datetime.fromisoformat(tax_ds[:10])
+                        if tax_date.year == year:
+                            monthly_revenue[tax_date.month - 1] += _safe_float(tax_pay.get("amount", 0))
+                    except Exception:
+                        pass
+
+    # Build expense data
+    if isinstance(expenses_data, dict):
+        for eid, edata in expenses_data.items():
+            if isinstance(edata, dict):
+                date_str = edata.get("date") or ""
+                try:
+                    e_year = int(date_str[:4])
+                    e_month = int(date_str[5:7])
+                    if e_year == year and 1 <= e_month <= 12:
+                        amt = _safe_float(edata.get("amount", 0))
+                        monthly_expenses[e_month-1] += amt
+                        vendor_name = (edata.get("vendor") or "").strip() or (edata.get("expense_name") or "") or (edata.get("description") or "—")
+                        expense_breakdown[vendor_name] = expense_breakdown.get(vendor_name, 0) + amt
+                except (ValueError, IndexError, TypeError):
+                    pass
+
+    # Build salary data
+    if isinstance(salaries_data, dict):
+        for salary_id, sal_data in salaries_data.items():
+            if isinstance(sal_data, dict):
+                date_str = sal_data.get("date", "")
+                try:
+                    s_year = int(date_str[:4])
+                    if s_year == year:
+                        name = sal_data.get("name") or sal_data.get("employee_name", "—")
+                        amt = _safe_float(sal_data.get("amount", 0))
+                        region = sal_data.get("region", "").lower()
+                        target_dict = salary_inside if "inside" in region or "usa" in region else salary_outside
+                        target_dict[name] = target_dict.get(name, 0) + amt
+                except (ValueError, IndexError, TypeError):
+                    pass
+
+    total_revenue = sum(monthly_revenue)
+    total_expenses = sum(monthly_expenses)
+    total_salaries = sum(salary_inside.values()) + sum(salary_outside.values())
+    net_profit = total_revenue - total_expenses
+
+    return {
+        "year": year,
+        "monthly_revenue": monthly_revenue,
+        "monthly_expenses": monthly_expenses,
+        "salary_inside": salary_inside,
+        "salary_outside": salary_outside,
+        "expense_breakdown": expense_breakdown,
+        "total_revenue": total_revenue,
+        "total_expenses": total_expenses,
+        "total_salaries": total_salaries,
+        "net_profit": net_profit,
+    }
+
+
+def _balance_sheet_summary_table(title: str, items: dict, total: float, styles_kw: dict):
+    """Build one Employee/Amount reportlab Table for a salary or expense breakdown section."""
+    from reportlab.platypus import Table, TableStyle
+    from reportlab.lib import colors
+    from reportlab.lib.units import inch
+    rows = [[n, f"${amt:,.2f}"] for n, amt in sorted(items.items())] if items else [["No records", ""]]
+    rows.append(["Total", f"${total:,.2f}"])
+    tbl = Table([[title, "Amount"]] + rows, colWidths=[3.2*inch, 2*inch])
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#1F4E79")),
+        ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+        ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTNAME",      (0,-1), (-1,-1), "Helvetica-Bold"),
+        ("BACKGROUND",    (0,-1), (-1,-1), colors.HexColor("#DCFCE7")),
+        ("FONTSIZE",      (0,0), (-1,-1), 8.5),
+        ("ALIGN",         (1,0), (1,-1), "RIGHT"),
+        ("GRID",          (0,0), (-1,-1), 0.3, colors.HexColor("#E2E8F0")),
+        ("TOPPADDING",    (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+    ]))
+    return tbl
+
+
+def _build_balance_sheet_pdf(data: dict):
+    """Balance Sheet PDF report - same content as the Excel export (monthly summary,
+    net profit, salary breakdown by region, vendor expense breakdown)."""
+    import io as _io
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+    except ImportError:
+        return None
+
+    year = data["year"]
+    months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=0.5*inch, rightMargin=0.5*inch,
+                            topMargin=0.4*inch, bottomMargin=0.4*inch)
+    styles = getSampleStyleSheet()
+    co = company_info()
+    title_s = ParagraphStyle("T", parent=styles["Normal"], fontSize=15, fontName="Helvetica-Bold",
+                              textColor=colors.HexColor("#0F766E"), spaceAfter=2, alignment=1)
+    sub_s = ParagraphStyle("Sub2", parent=styles["Normal"], fontSize=11, alignment=1,
+                            textColor=colors.HexColor("#334155"), spaceAfter=10)
+    section_s = ParagraphStyle("Sec", parent=styles["Normal"], fontSize=11, fontName="Helvetica-Bold",
+                                textColor=colors.HexColor("#1F4E79"), spaceBefore=14, spaceAfter=6)
+
+    elems = [
+        Paragraph(f"{co.get('name','')}", title_s),
+        Paragraph(f"Annual Financial Summary — {year}", sub_s),
+    ]
+
+    # Monthly revenue/expense table
+    tdata = [
+        ["", *months],
+        ["Revenue"] + [f"${v:,.0f}" for v in data["monthly_revenue"]],
+        ["Expense"] + [f"${v:,.0f}" for v in data["monthly_expenses"]],
+    ]
+    tbl = Table(tdata, colWidths=[0.7*inch] + [0.535*inch]*12)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
+        ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+        ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTNAME",      (0,1), (0,2), "Helvetica-Bold"),
+        ("FONTSIZE",      (0,0), (-1,-1), 7.3),
+        ("ALIGN",         (0,0), (-1,-1), "CENTER"),
+        ("GRID",          (0,0), (-1,-1), 0.3, colors.HexColor("#E2E8F0")),
+        ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")]),
+        ("TOPPADDING",    (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+    ]))
+    elems.append(tbl)
+    elems.append(Spacer(1, 0.2*inch))
+
+    # Totals summary
+    net_bg = colors.HexColor("#DCFCE7") if data["net_profit"] > 0 else colors.HexColor("#F1F5F9")
+    summary_tbl = Table([
+        ["Total Revenue",  f"${data['total_revenue']:,.2f}"],
+        ["Total Expenses", f"${data['total_expenses']:,.2f}"],
+        ["Net Profit",     f"${data['net_profit']:,.2f}"],
+    ], colWidths=[2.2*inch, 2.2*inch])
+    summary_tbl.setStyle(TableStyle([
+        ("FONTNAME",   (0,0), (0,-1), "Helvetica-Bold"),
+        ("FONTNAME",   (1,0), (1,-1), "Helvetica"),
+        ("FONTSIZE",   (0,0), (-1,-1), 10),
+        ("ALIGN",      (1,0), (1,-1), "RIGHT"),
+        ("GRID",       (0,0), (-1,-1), 0.3, colors.HexColor("#E2E8F0")),
+        ("BACKGROUND", (0,2), (-1,2), net_bg),
+        ("FONTNAME",   (0,2), (-1,2), "Helvetica-Bold"),
+        ("TOPPADDING", (0,0), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+    ]))
+    elems.append(summary_tbl)
+
+    elems.append(Paragraph("Salary — Inside America", section_s))
+    elems.append(_balance_sheet_summary_table("Employee", data["salary_inside"],
+                 sum(data["salary_inside"].values()), {}))
+
+    elems.append(Paragraph("Salary — Outside America", section_s))
+    elems.append(_balance_sheet_summary_table("Employee", data["salary_outside"],
+                 sum(data["salary_outside"].values()), {}))
+
+    elems.append(Paragraph("Expense Breakdown", section_s))
+    elems.append(_balance_sheet_summary_table("Expense Item", data["expense_breakdown"],
+                 data["total_expenses"], {}))
+
+    doc.build(elems)
+    buf.seek(0)
+    return buf
+
+
+@app.route("/financial/balance-sheet/export/<fmt>", methods=["GET"])
+@role_required("financial")
+def export_balance_sheet(fmt):
+    """Export Balance Sheet as Excel (detailed PIMS-format workbook), PDF, or CSV (monthly rows)."""
+    try:
         year_param = request.args.get("year", str(datetime.now(COMPANY_TZ).year))
         try:
             year = int(year_param)
         except (ValueError, TypeError):
             year = datetime.now(COMPANY_TZ).year
 
-        # Get financial data
-        invoices_data = fb_get("/invoices") or {}
-        expenses_data = fb_get("/balance_sheet_expenses") or {}
-        salaries_data = fb_get("/balance_sheet_salary") or {}
+        data = _compute_balance_sheet_data(year)
 
-        # Calculate monthly data
-        monthly_revenue = [0] * 12
-        monthly_expenses = [0] * 12
-        salary_inside = {}
-        salary_outside = {}
-        expense_breakdown = {}
+        if fmt == "csv":
+            import csv, io as _io
+            months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+            out = _io.StringIO()
+            w = csv.writer(out)
+            w.writerow(["Month", "Revenue", "Expenses", "Net Profit"])
+            for i, m in enumerate(months):
+                rev = data["monthly_revenue"][i]
+                exp = data["monthly_expenses"][i]
+                w.writerow([m, f"{rev:.2f}", f"{exp:.2f}", f"{rev - exp:.2f}"])
+            w.writerow(["Total", f"{data['total_revenue']:.2f}", f"{data['total_expenses']:.2f}", f"{data['net_profit']:.2f}"])
+            return _export_response(out, "csv", f"balance_sheet_{year}")
 
-        # Build revenue data from invoices based on PAYMENT DATES (not invoice dates)
-        if isinstance(invoices_data, dict):
-            for iid, inv_data in invoices_data.items():
-                if isinstance(inv_data, dict):
-                    for pay in (inv_data.get("payment_log", []) or []):
-                        pay_ds = pay.get("date", "") or ""
-                        try:
-                            pay_date = datetime.fromisoformat(pay_ds[:10])
-                            if pay_date.year == year:
-                                monthly_revenue[pay_date.month - 1] += _safe_float(pay.get("amount", 0))
-                        except Exception:
-                            pass
-                    for tax_pay in (inv_data.get("tax_payments", []) or []):
-                        tax_ds = tax_pay.get("date", "") or ""
-                        try:
-                            tax_date = datetime.fromisoformat(tax_ds[:10])
-                            if tax_date.year == year:
-                                monthly_revenue[tax_date.month - 1] += _safe_float(tax_pay.get("amount", 0))
-                        except Exception:
-                            pass
+        if fmt == "pdf":
+            buf = _build_balance_sheet_pdf(data)
+            if not buf:
+                flash("PDF export is unavailable on this server.", "danger")
+                return redirect(url_for("financial") + "?tab=balance-sheet")
+            return _export_response(buf, "pdf", f"balance_sheet_{year}")
 
-        # Build expense data
-        if isinstance(expenses_data, dict):
-            for eid, edata in expenses_data.items():
-                if isinstance(edata, dict):
-                    date_str = edata.get("date") or ""
-                    try:
-                        e_year = int(date_str[:4])
-                        e_month = int(date_str[5:7])
-                        if e_year == year and 1 <= e_month <= 12:
-                            amt = _safe_float(edata.get("amount", 0))
-                            monthly_expenses[e_month-1] += amt
-                            vendor_name = (edata.get("vendor") or "").strip() or (edata.get("expense_name") or "") or (edata.get("description") or "—")
-                            expense_breakdown[vendor_name] = expense_breakdown.get(vendor_name, 0) + amt
-                    except (ValueError, IndexError, TypeError):
-                        pass
+        # fmt == "excel" — detailed PIMS-format workbook (unpack shared data first)
+        monthly_revenue   = data["monthly_revenue"]
+        monthly_expenses  = data["monthly_expenses"]
+        salary_inside     = data["salary_inside"]
+        salary_outside    = data["salary_outside"]
+        expense_breakdown = data["expense_breakdown"]
+        total_revenue     = data["total_revenue"]
+        total_expenses    = data["total_expenses"]
+        net_profit        = data["net_profit"]
 
-        # Build salary data
-        if isinstance(salaries_data, dict):
-            for salary_id, sal_data in salaries_data.items():
-                if isinstance(sal_data, dict):
-                    date_str = sal_data.get("date", "")
-                    try:
-                        s_year = int(date_str[:4])
-                        if s_year == year:
-                            name = sal_data.get("name") or sal_data.get("employee_name", "—")
-                            amt = _safe_float(sal_data.get("amount", 0))
-                            region = sal_data.get("region", "").lower()
-                            target_dict = salary_inside if "inside" in region or "usa" in region else salary_outside
-                            target_dict[name] = target_dict.get(name, 0) + amt
-                    except (ValueError, IndexError, TypeError):
-                        pass
-
-        total_revenue = sum(monthly_revenue)
-        total_expenses = sum(monthly_expenses)
-        total_salaries = sum(salary_inside.values()) + sum(salary_outside.values())
-        net_profit = total_revenue - total_expenses
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.worksheet.pagebreak import Break
+        from io import BytesIO
 
         # Create workbook
         wb = Workbook()
