@@ -467,6 +467,7 @@ body {
 .badge-role-sales    { background:#F3E8FF; color:#6D28D9; }
 .badge-role-engineer { background:#E0F2FE; color:#0369A1; }
 .badge-role-administration { background:#FEF3C7; color:#92400E; }
+.badge-role-accountant { background:#E0E7FF; color:#3730A3; }
 
 /* ══ BUTTONS ════════════════════════════════════════════════════════════════ */
 .btn-teal {

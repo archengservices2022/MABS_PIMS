@@ -302,9 +302,10 @@
               <select name="role" class="form-select form-select-sm" id="createUserRole" onchange="toggleCreateCommission()">
                 <option value="sales">Sales — Quotes only</option>
                 <option value="projects">Projects — Projects &amp; Invoicing</option>
-                <option value="finance">Finance and Accountant — Financial overview</option>
+                <option value="finance">Finance — Financial overview</option>
                 <option value="engineer">Engineer — Employee tab only</option>
                 <option value="administration">Administration — Projects, Invoicing, Clients &amp; Employees</option>
+                <option value="accountant">Accountant — Expense/Claim Approvals, Projects &amp; Invoicing</option>
                 <option value="admin">Admin — Full access</option>
               </select>
             </div>
@@ -370,6 +371,7 @@
           {% set _g_engineer = users | selectattr('role','equalto','engineer') | list %}
           {% set _g_projects = users | selectattr('role','equalto','projects') | list %}
           {% set _g_administration = users | selectattr('role','equalto','administration') | list %}
+          {% set _g_accountant = users | selectattr('role','equalto','accountant') | list %}
 
           <ul class="nav nav-pills mb-3 gap-1" id="userRoleTabs" style="flex-wrap:wrap;">
             <li class="nav-item">
@@ -389,7 +391,7 @@
             {% if _g_finance %}
             <li class="nav-item">
               <a class="nav-link py-1 px-3" data-bs-toggle="pill" href="#urole-finance" style="font-size:12px;">
-                <i class="bi bi-bar-chart-line me-1"></i>Finance &amp; Accountant
+                <i class="bi bi-bar-chart-line me-1"></i>Finance
                 <span class="badge ms-1 bg-secondary" style="font-size:10px;">{{ _g_finance|length }}</span>
               </a>
             </li>
@@ -426,6 +428,14 @@
               </a>
             </li>
             {% endif %}
+            {% if _g_accountant %}
+            <li class="nav-item">
+              <a class="nav-link py-1 px-3" data-bs-toggle="pill" href="#urole-accountant" style="font-size:12px;">
+                <i class="bi bi-calculator me-1"></i>Accountant
+                <span class="badge ms-1 bg-secondary" style="font-size:10px;">{{ _g_accountant|length }}</span>
+              </a>
+            </li>
+            {% endif %}
           </ul>
 
           {% macro user_table(group, label) %}
@@ -457,8 +467,7 @@
                   </td>
                   <!-- Role -->
                   <td>
-                    {% set _role_labels = {'finance': 'Finance & Accountant', 'administration': 'Administration'} %}
-                    <span class="badge badge-role-{{ _role }}">{{ _role_labels.get(_role, _role|capitalize) }}</span>
+                    <span class="badge badge-role-{{ _role }}">{{ _role|capitalize }}</span>
                     {% if _role == 'sales' %}
                       {% set _cr = u.get('commission_rate', 0)|float %}
                       {% set _et = u.get('employee_type', '') %}
@@ -583,6 +592,11 @@
             {% if _g_administration %}
             <div class="tab-pane fade" id="urole-administration">
               {{ user_table(_g_administration, 'administration') }}
+            </div>
+            {% endif %}
+            {% if _g_accountant %}
+            <div class="tab-pane fade" id="urole-accountant">
+              {{ user_table(_g_accountant, 'accountant') }}
             </div>
             {% endif %}
           </div><!-- /tab-content -->
@@ -871,9 +885,10 @@
             <select id="editRole" class="form-select form-select-sm" onchange="onEditRoleChange()">
               <option value="sales">Sales</option>
               <option value="projects">Projects</option>
-              <option value="finance">Finance and Accountant</option>
+              <option value="finance">Finance</option>
               <option value="engineer">Engineer</option>
               <option value="administration">Administration</option>
+              <option value="accountant">Accountant</option>
               <option value="admin">Admin</option>
             </select>
           </div>
@@ -992,8 +1007,8 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('pagesUserName').textContent = name;
       document.getElementById('pagesMsg').innerHTML   = '';
       var badge = document.getElementById('pagesRoleBadge');
-      badge.textContent = {finance:'Finance & Accountant'}[role] || (role.charAt(0).toUpperCase() + role.slice(1));
-      badge.style.background = {admin:'#dc2626',finance:'#0D9488',projects:'#7C3AED',engineer:'#0369a1',sales:'#d97706',administration:'#92400E'}[role] || '#6b7280';
+      badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+      badge.style.background = {admin:'#dc2626',finance:'#0D9488',projects:'#7C3AED',engineer:'#0369a1',sales:'#d97706',administration:'#92400E',accountant:'#3730A3'}[role] || '#6b7280';
       badge.style.color = '#fff';
       buildPagesCheckboxes(role, saved);
       new bootstrap.Modal(document.getElementById('userPagesModal')).show();

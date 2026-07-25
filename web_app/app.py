@@ -11816,7 +11816,7 @@ def user_details_update(uid):
         if field in data:
             updates[field] = _safe_float(data[field])
     if "role" in data:
-        allowed_roles = {"sales", "projects", "finance", "engineer", "admin", "administration"}
+        allowed_roles = {"sales", "projects", "finance", "engineer", "admin", "administration", "accountant"}
         r = str(data["role"]).strip().lower()
         if r in allowed_roles:
             updates["role"] = r
