@@ -11602,8 +11602,8 @@ def employee_expense_receipt(exp_id):
     exp_data = fb_get(f"/expenses/{exp_id}") or {}
     uid = session.get("user_uid", "")
     role = normalize_role(session.get("user_role", ""))
-    # Only admin or the submitter can view
-    if role != "admin" and exp_data.get("submitted_by_uid") != uid:
+    # Only admin/accountant or the submitter can view
+    if role not in ("admin", "accountant") and exp_data.get("submitted_by_uid") != uid:
         return jsonify({"error": "Not authorized"}), 403
     # Check separate receipt store first (new), fall back to inline field (legacy)
     receipt_rec = fb_get(f"/expense_receipts/{exp_id}") or {}
@@ -11628,8 +11628,8 @@ def employee_expense_edit(exp_id):
     uid = session.get("user_uid", "")
     role = normalize_role(session.get("user_role", ""))
     exp_data = fb_get(f"/expenses/{exp_id}") or {}
-    # Only admins can edit expenses
-    if role != "admin":
+    # Only admin/accountant can edit expenses
+    if role not in ("admin", "accountant"):
         flash("Only admins can edit expenses.", "danger")
         return redirect(url_for("employees") + "#expenses")
 
@@ -11684,11 +11684,11 @@ def employee_expense_delete(exp_id):
     uid = session.get("user_uid", "")
     role = normalize_role(session.get("user_role", ""))
     exp_data = fb_get(f"/expenses/{exp_id}") or {}
-    # Submitter can delete their own Pending; admin can delete anything
-    if role != "admin" and exp_data.get("submitted_by_uid") != uid:
+    # Submitter can delete their own Pending; admin/accountant can delete anything
+    if role not in ("admin", "accountant") and exp_data.get("submitted_by_uid") != uid:
         flash("You can only delete your own expenses.", "danger")
         return redirect(url_for("employees") + "#expenses")
-    if role != "admin" and exp_data.get("status", "Pending") != "Pending":
+    if role not in ("admin", "accountant") and exp_data.get("status", "Pending") != "Pending":
         flash("Only pending expenses can be deleted.", "danger")
         return redirect(url_for("employees") + "#expenses")
 
