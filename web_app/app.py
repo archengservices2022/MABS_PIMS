@@ -106,7 +106,7 @@ ROLE_PAGES = {
     "finance":        ["financial", "payroll", "employees", "timesheets"],
     "engineer":       ["employees", "timesheets"],
     "administration": ["dashboard", "projects", "invoicing", "clients", "employees", "timesheets"],
-    "accountant":     ["dashboard", "employees", "projects", "invoicing", "financial"],
+    "accountant":     ["dashboard", "employees", "projects", "invoicing", "financial", "payroll", "timesheets"],
 }
 
 ALL_PAGES = ["dashboard", "sales_dashboard", "quotes", "projects", "invoicing", "clients", "payroll",
@@ -17733,7 +17733,7 @@ def _load_timesheets(week_of: str = "", employee_uid: str = "") -> list:
 @app.route("/timesheets")
 @role_required("timesheets")
 def timesheets():
-    is_admin = normalize_role(session.get("user_role", "")) in ("admin", "finance")
+    is_admin = normalize_role(session.get("user_role", "")) in ("admin", "finance", "accountant")
     uid = session.get("user_uid", "")
 
     week_of    = _week_monday(request.args.get("week", ""))
@@ -17894,7 +17894,7 @@ def timesheet_detail(sheet_id):
     sheet["entries"] = sorted(entries, key=lambda e: (e.get("date", ""), e.get("start_time", "")))
 
     uid      = session.get("user_uid", "")
-    is_admin = normalize_role(session.get("user_role", "")) in ("admin", "finance")
+    is_admin = normalize_role(session.get("user_role", "")) in ("admin", "finance", "accountant")
     if not is_admin and sheet.get("employee_uid") != uid:
         flash("You don't have permission to view this timesheet.", "danger")
         return redirect(url_for("timesheets"))
@@ -18001,7 +18001,7 @@ def api_timesheets_save():
 @app.route("/api/timesheets/<sheet_id>/approve", methods=["POST"])
 @role_required("timesheets")
 def api_timesheets_approve(sheet_id):
-    if normalize_role(session.get("user_role", "")) not in ("admin", "finance"):
+    if normalize_role(session.get("user_role", "")) not in ("admin", "finance", "accountant"):
         return jsonify({"error": "Admin access required"}), 403
     data   = request.get_json(force=True) or {}
     action = data.get("action", "approve")
@@ -18028,7 +18028,7 @@ def api_admin_reset_timesheets():
 @app.route("/api/timesheets/<sheet_id>/send-back", methods=["POST"])
 @role_required("timesheets")
 def api_timesheets_send_back(sheet_id):
-    if normalize_role(session.get("user_role", "")) not in ("admin", "finance"):
+    if normalize_role(session.get("user_role", "")) not in ("admin", "finance", "accountant"):
         return jsonify({"error": "Admin access required"}), 403
     sheet = fb_get(f"/timesheets/{sheet_id}")
     if not sheet:
@@ -18061,7 +18061,7 @@ def api_timesheet_delete(sheet_id):
 @app.route("/api/timesheets/remind", methods=["POST"])
 @role_required("timesheets")
 def api_timesheet_remind():
-    if normalize_role(session.get("user_role", "")) not in ("admin", "finance"):
+    if normalize_role(session.get("user_role", "")) not in ("admin", "finance", "accountant"):
         return jsonify({"success": False, "error": "Admin access required"}), 403
     data = request.get_json(silent=True) or {}
     employee_uid = str(data.get("employee_uid", "")).strip()
