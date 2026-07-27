@@ -2378,27 +2378,44 @@ function viewReceipt(expId) {
   (function(){
     var PS=20, pg=1;
     var BP_SYM = {{ currency_symbol | tojson }};
+    /* Index every bp-row by its position so we can look up numbers later */
+    var BP_ROWS = [];
+    document.querySelectorAll('#byProjectTableBody tr.bp-row').forEach(function(r,i){
+      r.setAttribute('data-bp-idx', i);
+      BP_ROWS.push({
+        invoiced:    parseFloat(r.dataset.invoiced    || 0) || 0,
+        paid:        parseFloat(r.dataset.paid        || 0) || 0,
+        expenses:    parseFloat(r.dataset.expenses    || 0) || 0,
+        gp:          parseFloat(r.dataset.gp          || 0) || 0,
+        contract:    parseFloat(r.dataset.contract    || 0) || 0,
+        outstanding: parseFloat(r.dataset.outstanding || 0) || 0
+      });
+    });
     function rows(){return Array.from(document.querySelectorAll('#byProjectTableBody tr.bp-row:not(.bp-filtered)'));}
-    function bpFmt(v){return Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
-    function bpSetEl(id, val){var el=document.getElementById(id);if(el)el.textContent=BP_SYM+bpFmt(val);}
+    function bpFmt(v){
+      var abs = Math.abs(v);
+      var s = abs.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+      return (v < 0 ? '-' : '') + BP_SYM + s;
+    }
+    function bpSetEl(id, v){var el=document.getElementById(id);if(el)el.textContent=bpFmt(v);}
     function bpUpdateTotals(){
-      var inv=0,paid=0,exp=0,gp=0,contract=0,outstanding=0,labor=0,np=0;
-      document.querySelectorAll('#byProjectTableBody tr.bp-row:not(.bp-filtered)').forEach(function(r){
-        inv         +=parseFloat(r.dataset.invoiced    ||0);
-        paid        +=parseFloat(r.dataset.paid        ||0);
-        exp         +=parseFloat(r.dataset.expenses    ||0);
-        gp          +=parseFloat(r.dataset.gp          ||0);
-        contract    +=parseFloat(r.dataset.contract    ||0);
-        outstanding +=parseFloat(r.dataset.outstanding ||0);
-        labor       +=parseFloat(r.dataset.labor       ||0);
-        np          +=parseFloat(r.dataset.np          ||0);
+      var inv=0,paid=0,exp=0,gp=0,contract=0,outstanding=0;
+      document.querySelectorAll('#byProjectTableBody tr.bp-row').forEach(function(r){
+        if(r.classList.contains('bp-filtered')) return;
+        var d = BP_ROWS[parseInt(r.getAttribute('data-bp-idx'))||0] || {};
+        inv         += d.invoiced    || 0;
+        paid        += d.paid        || 0;
+        exp         += d.expenses    || 0;
+        gp          += d.gp          || 0;
+        contract    += d.contract    || 0;
+        outstanding += d.outstanding || 0;
       });
       // KPI tiles
       bpSetEl('bp-kpi-invoiced', inv);
       bpSetEl('bp-kpi-paid',     paid);
       bpSetEl('bp-kpi-expenses', exp);
       var gpEl=document.getElementById('bp-kpi-gp');
-      if(gpEl){gpEl.textContent=BP_SYM+bpFmt(gp);gpEl.className='kpi-value '+(gp>=0?'text-success':'text-danger');}
+      if(gpEl){gpEl.textContent=bpFmt(gp);gpEl.className='kpi-value '+(gp>=0?'text-success':'text-danger');}
       // Tfoot
       bpSetEl('bp-foot-contract',    contract);
       bpSetEl('bp-foot-invoiced',    inv);
@@ -2406,10 +2423,7 @@ function viewReceipt(expId) {
       bpSetEl('bp-foot-outstanding', outstanding);
       bpSetEl('bp-foot-expenses',    exp);
       var gpFoot=document.getElementById('bp-foot-gp');
-      if(gpFoot){gpFoot.textContent=BP_SYM+bpFmt(gp);gpFoot.className='text-end fw-bold '+(gp>=0?'text-success':'text-danger');}
-      bpSetEl('bp-foot-labor', labor);
-      var npFoot=document.getElementById('bp-foot-np');
-      if(npFoot){npFoot.textContent=BP_SYM+bpFmt(np);npFoot.className='text-end fw-bold '+(np>=0?'text-success':'text-danger');}
+      if(gpFoot){gpFoot.textContent=bpFmt(gp);gpFoot.className='text-end fw-bold '+(gp>=0?'text-success':'text-danger');}
     }
     window.bpApplyFilters=function(){
       var q      =(document.getElementById('bpSearch')?.value||'').toLowerCase().trim();
