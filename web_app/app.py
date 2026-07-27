@@ -9834,11 +9834,12 @@ def financial():
     for inv in inv_list:
         m = inv.get("meta", {}) or {}
         status = m.get("status", "Draft")
-        if status not in ("Sent", "Viewed", "Partial", "Overdue"):
+        if status in ("Paid", "Cancelled", "Draft"):
             continue
-        total   = _safe_float(m.get("total", 0))
-        paid    = _safe_float(m.get("amount_paid", 0))
-        balance = total - paid
+        total    = _safe_float(m.get("total", 0))
+        paid     = sum(_safe_float(p.get("amount", 0)) for p in (inv.get("payment_log") or []) if isinstance(p, dict))
+        tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in (inv.get("tax_payments") or []) if isinstance(tp, dict))
+        balance  = total - paid - tax_paid
         if balance <= 0.01:
             continue
         due_str = m.get("due_date", "")
@@ -10086,8 +10087,12 @@ def financial():
             _amt = _safe_float(_cp.get("amount", 0))
             if _sp in _fin_sp_totals:
                 _fin_sp_totals[_sp]["total_paid"] += _amt
-                if _per in _fin_sp_totals[_sp]["periods"]:
-                    _fin_sp_totals[_sp]["periods"][_per]["paid"] = True
+                if _per:
+                    if _per not in _fin_sp_totals[_sp]["periods"]:
+                        # Payment for a period not yet in the generated list — add it
+                        _fin_sp_totals[_sp]["periods"][_per] = {"earned": _amt, "paid": True}
+                    else:
+                        _fin_sp_totals[_sp]["periods"][_per]["paid"] = True
 
     for _s in _fin_sp_totals.values():
         _s["outstanding"] = max(_s["total_earned"] - _s["total_paid"], 0.0)

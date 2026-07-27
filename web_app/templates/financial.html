@@ -2209,30 +2209,30 @@ function viewReceipt(expId) {
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-teal">
         <div class="kpi-top"><span class="kpi-label">Invoice Total</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
-        <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='invoiced')) }}</div>
-        <div class="kpi-sub"><small style="color:#94a3b8;">All projects — {{ stat_card_year }}</small></div>
+        <div class="kpi-value" id="bp-kpi-invoiced">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='invoiced')) }}</div>
+        <div class="kpi-sub" id="bp-kpi-invoiced-sub"><small style="color:#94a3b8;">All projects — {{ stat_card_year }}</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-green">
         <div class="kpi-top"><span class="kpi-label">Total Collected</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
-        <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='paid')) }}</div>
-        <div class="kpi-sub"><small style="color:#94a3b8;">All projects — {{ stat_card_year }}</small></div>
+        <div class="kpi-value" id="bp-kpi-paid">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='paid')) }}</div>
+        <div class="kpi-sub" id="bp-kpi-paid-sub"><small style="color:#94a3b8;">All projects — {{ stat_card_year }}</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
-        <div class="kpi-value text-danger">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='expenses')) }}</div>
-        <div class="kpi-sub"><small style="color:#94a3b8;">{{ stat_card_year }} across all projects</small></div>
+        <div class="kpi-value text-danger" id="bp-kpi-expenses">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='expenses')) }}</div>
+        <div class="kpi-sub" id="bp-kpi-expenses-sub"><small style="color:#94a3b8;">Across all projects</small></div>
       </div>
     </div>
     <div class="col-6 col-xl-3">
       {% set total_gp = project_pnl|sum(attribute='gross_profit') %}
       <div class="kpi-card {{ 'kpi-green' if total_gp >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">{{ stat_card_year }} Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
-        <div class="kpi-value {{ 'text-success' if total_gp >= 0 else 'text-danger' }}">{{ currency_symbol }}{{ "{:,.2f}".format(total_gp) }}</div>
-        <div class="kpi-sub"><small style="color:#94a3b8;">collected minus expense</small></div>
+        <div class="kpi-value {{ 'text-success' if total_gp >= 0 else 'text-danger' }}" id="bp-kpi-gp">{{ currency_symbol }}{{ "{:,.2f}".format(total_gp) }}</div>
+        <div class="kpi-sub" id="bp-kpi-gp-sub"><small style="color:#94a3b8;">Collected minus expense</small></div>
       </div>
     </div>
   </div>
@@ -2306,6 +2306,12 @@ function viewReceipt(expId) {
               data-search="{{ (row.project_number ~ ' ' ~ row.project_name ~ ' ' ~ (row.company_name or row.client_name or ''))|lower }}"
               data-status="{{ row.status|lower }}"
               data-date="{{ row.start_date or '' }}"
+              data-invoiced="{{ row.invoiced }}"
+              data-paid="{{ row.paid }}"
+              data-expenses="{{ row.expenses }}"
+              data-gp="{{ row.gross_profit }}"
+              data-contract="{{ row.contract_value }}"
+              data-outstanding="{{ row.outstanding }}"
               onclick="location.href='{{ url_for('project_detail', project_id=row.firebase_id) }}'" style="cursor:pointer;">
             <td><span class="fw-bold text-teal">{{ row.project_number }}</span></td>
             <td class="fw-medium">{{ row.project_name }}</td>
@@ -2343,17 +2349,17 @@ function viewReceipt(expId) {
         <tfoot class="fw-bold" style="background:#F8FAFC;border-top:2px solid #E2E8F0;">
           <tr>
             <td colspan="4" class="text-end text-muted small">Totals</td>
-            <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='contract_value')) }}</td>
-            <td class="text-end text-teal">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='invoiced')) }}</td>
-            <td class="text-end text-success fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='paid')) }}</td>
-            <td class="text-end text-danger">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='outstanding')) }}</td>
-            <td class="text-end text-danger">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='expenses')) }}</td>
-            <td class="text-end {{ 'text-success' if project_pnl|sum(attribute='gross_profit') >= 0 else 'text-danger' }}">
+            <td class="text-end" id="bp-foot-contract">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='contract_value')) }}</td>
+            <td class="text-end text-teal" id="bp-foot-invoiced">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='invoiced')) }}</td>
+            <td class="text-end text-success fw-semibold" id="bp-foot-paid">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='paid')) }}</td>
+            <td class="text-end text-danger" id="bp-foot-outstanding">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='outstanding')) }}</td>
+            <td class="text-end text-danger" id="bp-foot-expenses">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='expenses')) }}</td>
+            <td class="text-end {{ 'text-success' if project_pnl|sum(attribute='gross_profit') >= 0 else 'text-danger' }}" id="bp-foot-gp">
               {{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='gross_profit')) }}
             </td>
             {% if total_labor_cost and total_labor_cost > 0 %}
-            <td class="text-end text-danger">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='labor_cost')) }}</td>
-            <td class="text-end {{ 'text-success' if project_pnl|sum(attribute='net_profit') >= 0 else 'text-danger' }}">
+            <td class="text-end text-danger" id="bp-foot-labor">{{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='labor_cost')) }}</td>
+            <td class="text-end {{ 'text-success' if project_pnl|sum(attribute='net_profit') >= 0 else 'text-danger' }}" id="bp-foot-np">
               {{ currency_symbol }}{{ "{:,.2f}".format(project_pnl|sum(attribute='net_profit')) }}
             </td>
             {% endif %}
@@ -2371,7 +2377,40 @@ function viewReceipt(expId) {
   <script>
   (function(){
     var PS=20, pg=1;
+    var BP_SYM = {{ currency_symbol | tojson }};
     function rows(){return Array.from(document.querySelectorAll('#byProjectTableBody tr.bp-row:not(.bp-filtered)'));}
+    function bpFmt(v){return Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+    function bpSetEl(id, val){var el=document.getElementById(id);if(el)el.textContent=BP_SYM+bpFmt(val);}
+    function bpUpdateTotals(){
+      var inv=0,paid=0,exp=0,gp=0,contract=0,outstanding=0,labor=0,np=0;
+      document.querySelectorAll('#byProjectTableBody tr.bp-row:not(.bp-filtered)').forEach(function(r){
+        inv         +=parseFloat(r.dataset.invoiced    ||0);
+        paid        +=parseFloat(r.dataset.paid        ||0);
+        exp         +=parseFloat(r.dataset.expenses    ||0);
+        gp          +=parseFloat(r.dataset.gp          ||0);
+        contract    +=parseFloat(r.dataset.contract    ||0);
+        outstanding +=parseFloat(r.dataset.outstanding ||0);
+        labor       +=parseFloat(r.dataset.labor       ||0);
+        np          +=parseFloat(r.dataset.np          ||0);
+      });
+      // KPI tiles
+      bpSetEl('bp-kpi-invoiced', inv);
+      bpSetEl('bp-kpi-paid',     paid);
+      bpSetEl('bp-kpi-expenses', exp);
+      var gpEl=document.getElementById('bp-kpi-gp');
+      if(gpEl){gpEl.textContent=BP_SYM+bpFmt(gp);gpEl.className='kpi-value '+(gp>=0?'text-success':'text-danger');}
+      // Tfoot
+      bpSetEl('bp-foot-contract',    contract);
+      bpSetEl('bp-foot-invoiced',    inv);
+      bpSetEl('bp-foot-paid',        paid);
+      bpSetEl('bp-foot-outstanding', outstanding);
+      bpSetEl('bp-foot-expenses',    exp);
+      var gpFoot=document.getElementById('bp-foot-gp');
+      if(gpFoot){gpFoot.textContent=BP_SYM+bpFmt(gp);gpFoot.className='text-end fw-bold '+(gp>=0?'text-success':'text-danger');}
+      bpSetEl('bp-foot-labor', labor);
+      var npFoot=document.getElementById('bp-foot-np');
+      if(npFoot){npFoot.textContent=BP_SYM+bpFmt(np);npFoot.className='text-end fw-bold '+(np>=0?'text-success':'text-danger');}
+    }
     window.bpApplyFilters=function(){
       var q      =(document.getElementById('bpSearch')?.value||'').toLowerCase().trim();
       var status =(document.getElementById('bpStatusFilter')?.value||'').toLowerCase();
@@ -2404,6 +2443,7 @@ function viewReceipt(expId) {
           alert.textContent='Showing '+matched+' of '+total+' projects matching current filters.';
         } else { alert.style.display='none'; }
       }
+      bpUpdateTotals();
       pg=1; render();
     };
     window.bpSetDateRange=function(range){
