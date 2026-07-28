@@ -1310,6 +1310,7 @@ function toggleAmtEdit(idx) {
   if (open) form.querySelector('input').focus();
 }
 
+window._userCanDelete = {{ 'true' if user_has_delete_perm else 'false' }};
 function openDeleteModal() {
   _guardedDelete('Delete project {{ project.get("project_number","") }}', function () {
     document.getElementById('deleteConfirmInput').value = '';

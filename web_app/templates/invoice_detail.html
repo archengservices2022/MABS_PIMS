@@ -967,6 +967,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 <script>
+window._userCanDelete = {{ 'true' if user_has_delete_perm else 'false' }};
 function openDeleteModal() {
   _guardedDelete('Delete invoice {{ meta.get("invoice_number","") }}', function () {
     document.getElementById('deleteConfirmInput').value = '';

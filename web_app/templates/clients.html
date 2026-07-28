@@ -199,6 +199,7 @@
 
 {% block scripts %}
 <script>
+window._userCanDelete = {{ 'true' if client_delete_perms else 'false' }};
 const clientTabParam = "{{ active_tab }}";
 const clientAllTabs  = ["all-clients", "new-client"];
 const clientTarget   = clientAllTabs.includes(clientTabParam) ? clientTabParam : "all-clients";

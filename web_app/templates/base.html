@@ -562,9 +562,9 @@ function copyNumber(text, btn) {
   }
 
   // Global helper: call from any custom delete button/modal
-  // If admin, runs proceedFn immediately; if not admin, shows permission modal
+  // If admin or user has an approved delete permission, runs proceedFn immediately; otherwise shows permission modal
   window._guardedDelete = function (label, proceedFn) {
-    if (_isAdmin) {
+    if (_isAdmin || window._userCanDelete) {
       if (proceedFn) proceedFn();
     } else {
       _showPermModal(label || 'Delete action');
@@ -574,10 +574,11 @@ function copyNumber(text, btn) {
   if (_isAdmin) return;
 
   var _origConfirm = window.confirm;
+  window._nativeConfirm = _origConfirm;
   var _DEL_RE = /delete|remove/i;
 
   window.confirm = function (msg) {
-    if (_DEL_RE.test(msg || '')) {
+    if (_DEL_RE.test(msg || '') && !window._userCanDelete) {
       _showPermModal(msg);
       return false;
     }
