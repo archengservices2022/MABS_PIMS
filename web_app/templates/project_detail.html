@@ -261,17 +261,28 @@
                 {% set inv_num = s.get('invoice_number', '') %}
                 {% set inv_data = invoice_map.get(inv_id, {}) %}
                 {% set stage_name = s.get('name','') %}
-                {# Auto-calculate correct percentage for first stage #}
-                {% if loop.index0 == 0 and 'Down Payment' in stage_name %}
+                {# If this is a change order stage, display only the CO number #}
+                {% if s.get('co_number') %}
+                  {% set display_stage_name = s.get('co_number') %}
+                {% elif 'CO' in stage_name and ' – ' in stage_name %}
+                  {# For legacy stages, extract CO number (before the dash) #}
+                  {% set co_part = stage_name.split(' – ')[0].strip() %}
+                  {% set display_stage_name = co_part %}
+                {% elif loop.index0 == 0 and 'Down Payment' in stage_name %}
+                  {# Auto-calculate correct percentage for first stage #}
                   {% set contract_val = project.get('contract_value',0)|float %}
                   {% set stage_amount = s.get('amount',0)|float %}
                   {% if contract_val > 0 %}
                     {% set correct_pct = ((stage_amount / contract_val) * 100)|round|int %}
-                    {% set stage_name = 'Down Payment (' + correct_pct|string + '%)' %}
+                    {% set display_stage_name = 'Down Payment (' + correct_pct|string + '%)' %}
+                  {% else %}
+                    {% set display_stage_name = stage_name %}
                   {% endif %}
+                {% else %}
+                  {% set display_stage_name = stage_name %}
                 {% endif %}
                 <tr>
-                  <td>{{ stage_name }}</td>
+                  <td>{{ display_stage_name }}</td>
                   <td class="text-end">
                     <span id="amountDisplay_{{ loop.index0 }}" style="display:inline-flex; align-items:center; gap:8px;">
                       <span id="stageAmount_{{ loop.index0 }}" style="cursor:pointer;" onclick="{% if st == 'Pending Invoice' %}toggleInlineEdit({{ loop.index0 }}, '{{ s.get('name','') }}', {{ s.get('amount',0)|float }}, '{{ st }}', '{{ inv_id }}'){% endif %}">
