@@ -51,8 +51,26 @@ DATA_DIR = BASE_DIR / "data"
 ASSETS_DIR = BASE_DIR / "assets"
 
 # ── Firebase config ───────────────────────────────────────────────────────────
-FIREBASE_API_KEY = os.environ.get("FIREBASE_API_KEY", "AIzaSyBZIG4Gj_ZRRCqI1DXcf8DSXpO_9PkTgeY")
-FIREBASE_DB_URL  = os.environ.get("FIREBASE_DB_URL",  "https://pims-955e3-default-rtdb.firebaseio.com")
+# Select which project to use: "mabs" or "arch" (default: "mabs")
+FIREBASE_PROJECT = os.environ.get("FIREBASE_PROJECT", "mabs").lower()
+
+# Firebase credentials for both projects
+_FIREBASE_CONFIG = {
+    "mabs": {
+        "api_key": "AIzaSyBZIG4Gj_ZRRCqI1DXcf8DSXpO_9PkTgeY",
+        "db_url": "https://pims-955e3-default-rtdb.firebaseio.com",
+        "service_key": "servicekey_mabs.json",
+    },
+    "arch": {
+        "api_key": "AIzaSyD6F6T_KIZ90TkCOL03-jSXTeuPM5WVwJY",
+        "db_url": "https://invoice-7fe93-default-rtdb.firebaseio.com",
+        "service_key": "servicekey_arch.json",
+    },
+}
+
+_project_config = _FIREBASE_CONFIG.get(FIREBASE_PROJECT, _FIREBASE_CONFIG["mabs"])
+FIREBASE_API_KEY = os.environ.get("FIREBASE_API_KEY", _project_config["api_key"])
+FIREBASE_DB_URL  = os.environ.get("FIREBASE_DB_URL",  _project_config["db_url"])
 
 # Both MABS and Arch use USD $
 CURRENCY_SYMBOL = "$"
@@ -75,9 +93,14 @@ try:
             firebase_admin.initialize_app(cred, {"databaseURL": FIREBASE_DB_URL})
         db = firebase_db
         FIREBASE_AVAILABLE = True
-        log.info("Firebase initialised from environment variable")
+        log.info("Firebase initialised from environment variable (Project: %s)", FIREBASE_PROJECT.upper())
     else:
+        # Try project-specific key first, then fallback to generic names
+        _service_key_file = _project_config["service_key"]
         _service_key_candidates = [
+            Path.home() / ".mabs" / _service_key_file,
+            DATA_DIR / _service_key_file,
+            BASE_DIR / _service_key_file,
             Path.home() / ".mabs" / "servicekey.json",
             DATA_DIR / "servicekey.json",
             BASE_DIR / "servicekey.json",
@@ -90,7 +113,7 @@ try:
                 firebase_admin.initialize_app(cred, {"databaseURL": FIREBASE_DB_URL})
             db = firebase_db
             FIREBASE_AVAILABLE = True
-            log.info("Firebase initialised from %s", _key_path)
+            log.info("Firebase initialised from %s (Project: %s)", _key_path, FIREBASE_PROJECT.upper())
         else:
             log.warning("No Firebase service key found — Firebase disabled")
 except ImportError:

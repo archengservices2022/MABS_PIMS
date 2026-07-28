@@ -6,7 +6,7 @@
 {% set can_manage_projects = user_role in ('admin', 'projects', 'administration') %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div class="d-flex align-items-center gap-2">
-    <a href="{{ url_for('projects') }}" class="btn btn-sm btn-outline-secondary">
+    <a href="{{ url_for('projects', page=request.args.get('page', '')) }}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-arrow-left"></i>
     </a>
     <h5 class="mb-0">{{ project.get('project_number','') }} — {{ project.get('project_name','') }}</h5>

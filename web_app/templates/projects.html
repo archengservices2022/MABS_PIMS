@@ -219,7 +219,7 @@
                 onclick="selectProject(event, '{{ p.firebase_id }}')"
                 style="cursor:pointer;user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;">
               <td>
-                <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}" onclick="event.stopPropagation();" class="text-teal fw-bold" style="text-decoration:none;">{{ p.get('project_number','—') }}</a>
+                <a href="javascript:void(0);" onclick="event.stopPropagation(); location.href=getProjectDetailUrl('{{ p.firebase_id }}');" class="text-teal fw-bold" style="text-decoration:none;">{{ p.get('project_number','—') }}</a>
                 {% if p.get('_has_co') %}
                 <span title="Has Change Order(s)" style="display:inline-flex;align-items:center;gap:2px;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:4px;font-size:.6rem;font-weight:700;padding:1px 5px;margin-left:4px;vertical-align:middle;letter-spacing:.03em;">
                   <i class="bi bi-arrow-repeat"></i> CO
@@ -248,9 +248,9 @@
                 </span>
                 {% endif %}
               </td>
-              <td onclick="event.stopPropagation(); location.href='{{ url_for('project_detail', project_id=p.firebase_id) }}'">
-                <a href="{{ url_for('project_detail', project_id=p.firebase_id) }}"
-                   class="btn btn-xs btn-outline-secondary" onclick="event.stopPropagation()">
+              <td onclick="event.stopPropagation();">
+                <a href="javascript:void(0);"
+                   class="btn btn-xs btn-outline-secondary" onclick="event.stopPropagation(); location.href=getProjectDetailUrl('{{ p.firebase_id }}');">
                   <i class="bi bi-eye"></i>
                 </a>
               </td>
@@ -566,6 +566,15 @@ function updateLoadButton() {
   }
 }
 
+function getCurrentPage() {
+  return _PAGERS['projectsPager'] ? _PAGERS['projectsPager'].page : 1;
+}
+
+function getProjectDetailUrl(projectId) {
+  const page = getCurrentPage();
+  return `{{ url_for('project_detail', project_id='') }}${projectId}?page=${page}`;
+}
+
 function openLoadModal() {
   try {
     if (window.selectedProjects.length === 0) {
@@ -710,6 +719,18 @@ document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('projectsTableBody')) {
     new TablePager('projectsPager', '#projectsTableBody', 'tr.project-row', 15);
     _PAGERS['projectsPager'].refresh();
+
+    // Restore page from URL parameter if present
+    const urlParams = new URLSearchParams(window.location.search);
+    const pageNum = urlParams.get('page');
+    if (pageNum && !isNaN(pageNum)) {
+      const pager = _PAGERS['projectsPager'];
+      const pageInt = parseInt(pageNum);
+      if (pageInt >= 1) {
+        pager.page = pageInt;
+        pager._paginate();
+      }
+    }
   }
 });
 </script>
