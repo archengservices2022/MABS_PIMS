@@ -15498,10 +15498,9 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                 title_part = co_parts[1].strip() if len(co_parts) > 1 else ""
 
             if co_part.upper().startswith("CO"):
-                co_display = f"{co_part}_{title_part}" if title_part else co_part
-                project_number_display = f"{project_number}<br/><font size=8>{co_display}</font>"
+                project_number_display = f"{project_number}<br/><font size=8>{co_part}</font>"
                 project_cell = Paragraph(project_number_display, left_style)
-        elif payment_stage and "change order" in payment_stage.lower():
+        elif payment_stage and "CO" in payment_stage.upper():
             project_number_display = f"{project_number}<br/><font size=8>{payment_stage}</font>"
             project_cell = Paragraph(project_number_display, left_style)
 
