@@ -3497,11 +3497,11 @@ def co_status(project_id, co_idx):
         if not isinstance(stages, list):
             stages = []
         stages.append({
-            "name":   f"{cos[co_idx]['co_number']} – {co_title}",
+            "name":   co_title,
             "amount": co_amount,
             "amount_paid": "0",  # Track payments same as regular installments
             "status": "Pending Invoice",
-            "co_number": cos[co_idx]['co_number'],  # Link back to change order
+            "co_number": cos[co_idx]['co_number'],  # Link back to change order (stored but not displayed)
             "co_index": co_idx,  # Store CO index for reference
         })
         update_data = {
