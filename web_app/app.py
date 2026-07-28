@@ -12600,12 +12600,24 @@ def api_permission_request_resolve(req_id):
     status = "approved" if data.get("action") == "approve" else "denied"
     notes  = (data.get("notes") or "").strip()
     req    = fb_get(f"/permission_requests/{req_id}") or {}
-    fb_update(f"/permission_requests/{req_id}", {
+
+    # Backfill entity_type/entity_id from page_url for old-style requests that lack them
+    e_type = req.get("entity_type", "")
+    e_id   = req.get("entity_id", "")
+    if (not e_type or not e_id) and status == "approved":
+        e_type, e_id = _extract_entity_from_url(req.get("page_url", ""))
+
+    update_payload = {
         "status":      status,
         "reviewed_by": session.get("user_name", ""),
         "reviewed_at": datetime.now(timezone.utc).isoformat(),
         "admin_notes": notes,
-    })
+    }
+    if e_type and e_id:
+        update_payload["entity_type"] = e_type
+        update_payload["entity_id"]   = e_id
+    fb_update(f"/permission_requests/{req_id}", update_payload)
+
     requester_uid = req.get("requested_by_uid", "")
     entity_label  = req.get("entity_label", "") or req.get("action", "")
     page_url      = req.get("page_url", "")
@@ -12621,6 +12633,26 @@ def api_permission_request_resolve(req_id):
                 f"Admin denied your request to delete: {entity_label[:80]}" + (f" — {notes}" if notes else ""),
                 link=page_url or "")
     return jsonify({"success": True, "status": status})
+
+
+def _extract_entity_from_url(url):
+    """Parse a page URL and return (entity_type, entity_id) if detectable, else ('', '')."""
+    import re as _re
+    if not url:
+        return "", ""
+    m = _re.search(r'/projects/([^/?#]+)', url)
+    if m and not m.group(1).startswith('clear'):
+        return "project", m.group(1)
+    m = _re.search(r'/invoicing/([^/?#]+)', url)
+    if m:
+        return "invoice", m.group(1)
+    m = _re.search(r'/quotes/([^/?#]+)', url)
+    if m:
+        return "quote", m.group(1)
+    m = _re.search(r'/clients/([^/?#]+)', url)
+    if m:
+        return "client", m.group(1)
+    return "", ""
 
 
 def _has_approved_delete_request(uid, entity_type, entity_id):
