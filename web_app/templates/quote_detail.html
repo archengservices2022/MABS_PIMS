@@ -64,7 +64,10 @@
     </button>
     {% else %}
     <button type="button" class="btn btn-sm btn-outline-warning"
-            onclick="openDeleteRequestModal('quote','{{ quote.firebase_id }}','Quote #{{ quote.get(\"quote_number\",\"\") }} — {{ quote.get(\"client_name\",\"\") }}')">
+            data-quote-id="{{ quote.firebase_id }}"
+            data-quote-num="{{ quote.get('quote_number','') }}"
+            data-quote-client="{{ quote.get('client_name','') }}"
+            onclick="openDeleteRequestModal('quote',this.dataset.quoteId,'Quote #'+this.dataset.quoteNum+' — '+this.dataset.quoteClient)">
       <i class="bi bi-send me-1"></i>Request Delete
     </button>
     {% endif %}

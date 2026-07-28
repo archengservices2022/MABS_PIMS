@@ -51,7 +51,10 @@
     </button>
     {% else %}
     <button type="button" class="btn btn-sm btn-outline-warning"
-            onclick="openDeleteRequestModal('project','{{ project.firebase_id }}','Project #{{ project.get(\"project_number\",\"\") }} — {{ (project.get(\"client_name\",\"\") or project.get(\"company_name\",\"\")) }}')">
+            data-proj-id="{{ project.firebase_id }}"
+            data-proj-num="{{ project.get('project_number','') }}"
+            data-proj-client="{{ project.get('client_name','') or project.get('company_name','') }}"
+            onclick="openDeleteRequestModal('project',this.dataset.projId,'Project #'+this.dataset.projNum+' — '+this.dataset.projClient)">
       <i class="bi bi-send me-1"></i>Request Delete
     </button>
     {% endif %}

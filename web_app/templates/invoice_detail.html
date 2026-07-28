@@ -46,7 +46,9 @@
     </button>
     {% else %}
     <button type="button" class="btn btn-sm btn-outline-warning"
-            onclick="openDeleteRequestModal('invoice','{{ invoice.firebase_id }}','Invoice #{{ meta.get(\"invoice_number\",\"\") }}')">
+            data-inv-id="{{ invoice.firebase_id }}"
+            data-inv-num="{{ meta.get('invoice_number','') }}"
+            onclick="openDeleteRequestModal('invoice',this.dataset.invId,'Invoice #'+this.dataset.invNum)">
       <i class="bi bi-send me-1"></i>Request Delete
     </button>
     {% endif %}
