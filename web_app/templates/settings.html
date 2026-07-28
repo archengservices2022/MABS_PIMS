@@ -782,7 +782,12 @@
           {% for req in permission_requests %}
           <tr id="permrow-{{ req.firebase_id }}">
             <td class="fw-semibold">{{ req.get('requested_by_name','—') }}</td>
-            <td>{{ req.get('action','—') }}</td>
+            <td>
+              {{ req.get('action','—') }}
+              {% if req.get('entity_label') %}
+              <div class="text-muted" style="font-size:11px;">{{ req.entity_label }}</div>
+              {% endif %}
+            </td>
             <td class="text-muted">{{ req.get('notes','—') or '—' }}</td>
             <td>{% if req.get('page_url') %}<a href="{{ req.page_url }}" target="_blank" class="btn btn-xs btn-outline-secondary" title="{{ req.page_url }}"><i class="bi bi-box-arrow-up-right me-1"></i>Open Page</a>{% else %}—{% endif %}</td>
             <td class="text-muted text-nowrap">{{ (req.get('requested_at','')[:10] | format_date) if req.get('requested_at') else '—' }}</td>
@@ -792,6 +797,9 @@
               {% elif req.get('status') == 'approved' %}
                 <span class="badge bg-success">Approved</span>
                 {% if req.get('admin_notes') %}<div class="text-muted" style="font-size:11px;">{{ req.admin_notes }}</div>{% endif %}
+              {% elif req.get('status') == 'completed' %}
+                <span class="badge bg-secondary">Completed</span>
+                <div class="text-muted" style="font-size:11px;">Deleted by {{ req.get('requested_by_name','—') }}</div>
               {% else %}
                 <span class="badge bg-danger">Denied</span>
                 {% if req.get('admin_notes') %}<div class="text-muted" style="font-size:11px;">{{ req.admin_notes }}</div>{% endif %}
@@ -799,14 +807,17 @@
             </td>
             <td class="text-center text-nowrap">
               {% if req.get('status') == 'pending' %}
-              <button class="btn btn-xs btn-success me-1" onclick="resolvePermRequest('{{ req.firebase_id }}','approve','{{ req.get("page_url","") }}')" title="Approve — opens the page so you can perform the action">
-                <i class="bi bi-check2"></i> Approve &amp; Open Page
+              <button class="btn btn-xs btn-success me-1" onclick="resolvePermRequest('{{ req.firebase_id }}','approve','{{ req.get("page_url","") }}')" title="Approve — requester will be notified and can perform the delete">
+                <i class="bi bi-check2"></i> Approve
               </button>
               <button class="btn btn-xs btn-outline-danger" onclick="resolvePermRequest('{{ req.firebase_id }}','deny','')" title="Deny">
                 <i class="bi bi-x-lg"></i> Deny
               </button>
               {% else %}
-              <span class="text-muted small">Resolved by {{ req.get('reviewed_by','—') }}</span>
+              <span class="text-muted small">
+                {% if req.get('status') == 'completed' %}Completed{% else %}Resolved{% endif %}
+                by {{ req.get('reviewed_by','—') }}
+              </span>
               {% endif %}
             </td>
           </tr>
@@ -1109,10 +1120,6 @@ function resolvePermRequest(reqId, action, pageUrl) {
   .then(function(r) { return r.json(); })
   .then(function(d) {
     if (!d.success) { alert('Error: ' + (d.error || 'Unknown')); return; }
-    if (action === 'approve' && pageUrl) {
-      // Open the page so admin can perform the action directly
-      window.open(pageUrl, '_blank');
-    }
     location.reload();
   })
   .catch(function() { alert('Network error. Please try again.'); });

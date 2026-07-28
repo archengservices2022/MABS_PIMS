@@ -2340,9 +2340,15 @@ def quote_detail(quote_id):
                 linked_invoice = idata
                 break
 
+    _uid  = session.get("user_uid", "")
+    _role = normalize_role(session.get("user_role", ""))
+    _has_q_del_perm = _role in ("admin", "accountant") or bool(
+        _has_approved_delete_request(_uid, "quote", quote_id)
+    )
     return render_template("quote_detail.html", quote=data,
                            linked_project=linked_project, linked_invoice=linked_invoice,
-                           ai_enabled=bool(_get_ai_client()))
+                           ai_enabled=bool(_get_ai_client()),
+                           user_has_delete_perm=_has_q_del_perm)
 
 @app.route("/quotes/<quote_id>/followup-done", methods=["POST"])
 @role_required("quotes")
@@ -2411,7 +2417,17 @@ def quote_edit(quote_id):
 @app.route("/quotes/<quote_id>/delete", methods=["POST"])
 @role_required("quotes")
 def quote_delete(quote_id):
+    _role = normalize_role(session.get("user_role", ""))
+    _uid  = session.get("user_uid", "")
+    _perm = None
+    if _role not in ("admin", "accountant"):
+        _perm = _has_approved_delete_request(_uid, "quote", quote_id)
+        if not _perm:
+            flash("You need admin approval to delete this quote. Use the 'Request Delete' button.", "danger")
+            return redirect(url_for("quote_detail", quote_id=quote_id))
     fb_delete(f"/job_forms/{quote_id}")
+    if _perm:
+        fb_update(f"/permission_requests/{_perm['firebase_id']}", {"status": "completed"})
     flash("Quote deleted.", "success")
     return redirect(url_for("quotes"))
 
@@ -3346,6 +3362,11 @@ def project_detail(project_id):
     # Base + co_contract_increase always equals contract_value exactly.
     co_contract_increase = max(0.0, _safe_float(data.get("contract_value", 0)) - base_contract)
 
+    _uid  = session.get("user_uid", "")
+    _role = normalize_role(session.get("user_role", ""))
+    _has_del_perm = _role in ("admin", "accountant") or bool(
+        _has_approved_delete_request(_uid, "project", project_id)
+    )
     return render_template("project_detail.html", project=data,
                            project_invoices=project_invoices,
                            project_expenses=project_expenses,
@@ -3364,7 +3385,8 @@ def project_detail(project_id):
                            change_orders=change_orders,
                            co_approved_total=co_approved_total,
                            co_contract_increase=co_contract_increase,
-                           base_contract=base_contract)
+                           base_contract=base_contract,
+                           user_has_delete_perm=_has_del_perm)
 
 # ── Change Order Routes ───────────────────────────────────────────────────────
 
@@ -4280,6 +4302,14 @@ def project_stage_set_amount(project_id, stage_idx):
 @app.route("/projects/<project_id>/delete", methods=["POST"])
 @role_required("projects")
 def project_delete(project_id):
+    _role = normalize_role(session.get("user_role", ""))
+    _uid  = session.get("user_uid", "")
+    _perm = None
+    if _role not in ("admin", "accountant"):
+        _perm = _has_approved_delete_request(_uid, "project", project_id)
+        if not _perm:
+            flash("You need admin approval to delete this project. Use the 'Request Delete' button.", "danger")
+            return redirect(url_for("project_detail", project_id=project_id))
     project = fb_get(f"/projects/{project_id}") or {}
     if not project:
         flash("Project not found.", "warning")
@@ -4313,6 +4343,8 @@ def project_delete(project_id):
             "updated_at": datetime.now(timezone.utc).isoformat()
         })
 
+    if _perm:
+        fb_update(f"/permission_requests/{_perm['firebase_id']}", {"status": "completed"})
     flash("Project deleted and archived for recovery.", "success")
     return redirect(url_for("projects"))
 
@@ -5648,11 +5680,17 @@ def invoice_detail(invoice_id):
             if source_quote:
                 source_quote["firebase_id"] = sq_id
 
+    _uid  = session.get("user_uid", "")
+    _role = normalize_role(session.get("user_role", ""))
+    _has_inv_del_perm = _role in ("admin", "accountant") or bool(
+        _has_approved_delete_request(_uid, "invoice", invoice_id)
+    )
     return render_template("invoice_detail.html", invoice=data, company=company_info(),
                            today_date=datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
                            linked_project=linked_project, linked_projects=linked_projects,
                            source_quote=source_quote, enriched_payment_log=enriched_payment_log,
-                           enriched_tax_payments=enriched_tax_payments)
+                           enriched_tax_payments=enriched_tax_payments,
+                           user_has_delete_perm=_has_inv_del_perm)
 
 @app.route("/invoicing/<invoice_id>/edit", methods=["GET", "POST"])
 @role_required("invoicing")
@@ -6319,6 +6357,14 @@ def invoice_update_amount(invoice_id):
 @app.route("/invoicing/<invoice_id>/delete", methods=["POST"])
 @role_required("invoicing")
 def invoice_delete(invoice_id):
+    _role = normalize_role(session.get("user_role", ""))
+    _uid  = session.get("user_uid", "")
+    _perm = None
+    if _role not in ("admin", "accountant"):
+        _perm = _has_approved_delete_request(_uid, "invoice", invoice_id)
+        if not _perm:
+            flash("You need admin approval to delete this invoice. Use the 'Request Delete' button.", "danger")
+            return redirect(url_for("invoice_detail", invoice_id=invoice_id))
     # Get invoice data before deleting
     inv_data = fb_get(f"/invoices/{invoice_id}") or {}
     meta = inv_data.get("meta", {})
@@ -6493,6 +6539,8 @@ def invoice_delete(invoice_id):
                         "updated_at": datetime.now(timezone.utc).isoformat()
                     })
 
+    if _perm:
+        fb_update(f"/permission_requests/{_perm['firebase_id']}", {"status": "completed"})
     flash("Invoice deleted successfully", "success")
     return redirect(url_for("invoicing"))
 
@@ -6862,8 +6910,23 @@ def clients():
     if tag_filter:
         items = [i for i in items if tag_filter in (i.get("tags") or [])]
     active_tab = request.args.get("tab", "all-clients")
+    _uid  = session.get("user_uid", "")
+    _role = normalize_role(session.get("user_role", ""))
+    if _role in ("admin", "accountant"):
+        _client_del_perms = {c.get("company_name","") for c in items}
+    else:
+        _all_reqs = fb_get("/permission_requests") or {}
+        _client_del_perms = set()
+        if isinstance(_all_reqs, dict):
+            for _r in _all_reqs.values():
+                if (isinstance(_r, dict) and
+                        _r.get("requested_by_uid") == _uid and
+                        _r.get("entity_type") == "client" and
+                        _r.get("status") == "approved"):
+                    _client_del_perms.add(_r.get("entity_id", ""))
     return render_template("clients.html", clients=items, active_tab=active_tab,
-                           search=search, tag_filter=tag_filter, all_tags=all_tags)
+                           search=search, tag_filter=tag_filter, all_tags=all_tags,
+                           client_delete_perms=_client_del_perms)
 
 def _sync_client_changes(old_company_name, new_company_name, new_client_name):
     """Sync client changes to all related invoices, quotes, and projects by client_id.
@@ -7304,9 +7367,19 @@ def client_edit(company_name):
 @app.route("/clients/<company_name>/delete", methods=["POST"])
 @role_required("clients")
 def delete_client(company_name):
+    _role = normalize_role(session.get("user_role", ""))
+    _uid  = session.get("user_uid", "")
+    _perm = None
+    if _role not in ("admin", "accountant"):
+        _perm = _has_approved_delete_request(_uid, "client", company_name)
+        if not _perm:
+            flash("You need admin approval to delete this client. Use the 'Request Delete' button.", "danger")
+            return redirect(url_for("clients"))
     # Only delete the client record - do NOT cascade delete quotes/projects/invoices
     # They keep the client information (company_name, client_name, client_id) for historical reference
     fb_delete(f"/clients/{company_name}")
+    if _perm:
+        fb_update(f"/permission_requests/{_perm['firebase_id']}", {"status": "completed"})
     flash(f"Client '{company_name}' deleted.", "success")
     return redirect(url_for("clients"))
 
@@ -12483,14 +12556,20 @@ def api_notifications_mark_read():
 @app.route("/api/permission-request", methods=["POST"])
 @login_required
 def api_permission_request():
-    data     = request.get_json(force=True) or {}
-    action   = (data.get("action") or "Delete action").strip()[:200]
-    notes    = (data.get("notes") or "").strip()[:500]
-    page_url = (data.get("page_url") or "").strip()[:500]
+    data         = request.get_json(force=True) or {}
+    action       = (data.get("action") or "Delete action").strip()[:200]
+    notes        = (data.get("notes") or "").strip()[:500]
+    page_url     = (data.get("page_url") or "").strip()[:500]
+    entity_type  = (data.get("entity_type") or "").strip()[:50]
+    entity_id    = (data.get("entity_id") or "").strip()[:200]
+    entity_label = (data.get("entity_label") or "").strip()[:200]
     req = {
         "action":            action,
         "notes":             notes,
         "page_url":          page_url,
+        "entity_type":       entity_type,
+        "entity_id":         entity_id,
+        "entity_label":      entity_label,
         "requested_by_uid":  session.get("user_uid", ""),
         "requested_by_name": session.get("user_name", ""),
         "requested_at":      datetime.now(timezone.utc).isoformat(),
@@ -12506,8 +12585,8 @@ def api_permission_request():
             auid = u.get("firebase_uid", "")
             if auid:
                 _push_notification(auid, "permission_request",
-                    "Permission Request",
-                    f"{requester} requested: {action[:80]}",
+                    "Delete Permission Request",
+                    f"{requester} requested to delete: {entity_label or action[:80]}",
                     link=url_for("settings") + "?tab=permissions")
     return jsonify({"success": True})
 
@@ -12528,16 +12607,36 @@ def api_permission_request_resolve(req_id):
         "admin_notes": notes,
     })
     requester_uid = req.get("requested_by_uid", "")
+    entity_label  = req.get("entity_label", "") or req.get("action", "")
+    page_url      = req.get("page_url", "")
     if requester_uid:
         if status == "approved":
             _push_notification(requester_uid, "permission_response",
-                "Permission Request Approved",
-                f"Admin has approved your request: {req.get('action','')[:80]}. Admin will perform this action directly.")
+                "Delete Request Approved",
+                f"Admin approved your request to delete: {entity_label[:80]}. You can now go to the page and delete it.",
+                link=page_url or "")
         else:
             _push_notification(requester_uid, "permission_response",
-                "Permission Request Denied",
-                f"Admin has denied your request to: {req.get('action','')[:80]}" + (f" — {notes}" if notes else ""))
+                "Delete Request Denied",
+                f"Admin denied your request to delete: {entity_label[:80]}" + (f" — {notes}" if notes else ""),
+                link=page_url or "")
     return jsonify({"success": True, "status": status})
+
+
+def _has_approved_delete_request(uid, entity_type, entity_id):
+    """Return the first approved (not yet completed) delete request for this user+entity, or None."""
+    all_reqs = fb_get("/permission_requests") or {}
+    if not isinstance(all_reqs, dict):
+        return None
+    for rid, r in all_reqs.items():
+        if (isinstance(r, dict) and
+                r.get("requested_by_uid") == uid and
+                r.get("entity_type") == entity_type and
+                r.get("entity_id") == entity_id and
+                r.get("status") == "approved"):
+            r["firebase_id"] = rid
+            return r
+    return None
 
 
 # ── Routes: Settings ──────────────────────────────────────────────────────────

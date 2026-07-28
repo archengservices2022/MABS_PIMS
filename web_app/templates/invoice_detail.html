@@ -40,10 +40,16 @@
       </button>
       {% endif %}
     </form>
-    <button type="button" class="btn btn-sm btn-outline-danger"
-            onclick="openDeleteModal()">
+    {% if user_has_delete_perm %}
+    <button type="button" class="btn btn-sm btn-outline-danger" onclick="openDeleteModal()">
       <i class="bi bi-trash me-1"></i>Delete
     </button>
+    {% else %}
+    <button type="button" class="btn btn-sm btn-outline-warning"
+            onclick="openDeleteRequestModal('invoice','{{ invoice.firebase_id }}','Invoice #{{ meta.get(\"invoice_number\",\"\") }}')">
+      <i class="bi bi-send me-1"></i>Request Delete
+    </button>
+    {% endif %}
     {% if meta.get('status') not in ('Paid', 'Cancelled', 'Draft') %}
       {% set is_overdue_inv = meta.get('due_date') and meta.get('due_date') < today_date %}
       <button type="button"

@@ -58,10 +58,16 @@
     <a href="{{ url_for('quote_edit', quote_id=quote.firebase_id) }}" class="btn btn-sm btn-outline-primary">
       <i class="bi bi-pencil me-1"></i>Edit
     </a>
-    <button type="button" class="btn btn-sm btn-outline-danger"
-            onclick="openDeleteModal()">
+    {% if user_has_delete_perm %}
+    <button type="button" class="btn btn-sm btn-outline-danger" onclick="openDeleteModal()">
       <i class="bi bi-trash me-1"></i>Delete
     </button>
+    {% else %}
+    <button type="button" class="btn btn-sm btn-outline-warning"
+            onclick="openDeleteRequestModal('quote','{{ quote.firebase_id }}','Quote #{{ quote.get(\"quote_number\",\"\") }} — {{ quote.get(\"client_name\",\"\") }}')">
+      <i class="bi bi-send me-1"></i>Request Delete
+    </button>
+    {% endif %}
   </div>
 </div>
 
