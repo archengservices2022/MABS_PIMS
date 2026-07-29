@@ -1016,18 +1016,14 @@
       <form method="POST" action="{{ url_for('co_new', project_id=project.firebase_id) }}">
         <div class="modal-body">
           <div class="row g-3 mb-3">
-            <div class="col-md-6">
-              <label class="form-label fw-600">CO Number <span class="text-danger">*</span></label>
-              <input type="text" name="co_number" class="form-control" placeholder="e.g. CO-001" required autocomplete="off">
+            <div class="col-md-7">
+              <label class="form-label fw-600">Title <span class="text-danger">*</span></label>
+              <input type="text" name="title" class="form-control" placeholder="e.g. Additional MEP Calculations" required>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-5">
               <label class="form-label fw-600">Amount ($) <span class="text-danger">*</span></label>
               <input type="number" name="amount" class="form-control" step="0.01" min="0" placeholder="0.00" required>
             </div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-600">Title</label>
-            <input type="text" name="title" class="form-control" placeholder="e.g. Additional MEP Calculations">
           </div>
           <div class="mb-3">
             <label class="form-label fw-600">PO / WO Number <span class="text-danger">*</span></label>
