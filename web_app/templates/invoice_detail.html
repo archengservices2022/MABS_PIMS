@@ -208,7 +208,15 @@
           <tbody>
             {% for item in invoice.get('line_items',[]) %}
             <tr style="border-bottom:1px solid #F1F5F9;">
-              <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">{{ item.get('description','') }}</td>
+              <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
+                {%- set desc = item.get('description','') -%}
+                {%- if 'CO' in desc and ' – ' in desc -%}
+                  {%- set co_part = desc.split(' – ')[0].strip() -%}
+                  {{ co_part }}
+                {%- else -%}
+                  {{ desc }}
+                {%- endif -%}
+              </td>
               <td style="padding:14px 16px; color:#64748B; text-align:center;">{{ item.get('quantity','1') }}</td>
               <td style="padding:14px 16px; color:#64748B; text-align:right;">{{ currency_symbol }}{{ "{:,.2f}".format(item.get('unit_price',0)|float) }}</td>
               <td style="padding:14px 16px; color:#1E293B; font-weight:600; text-align:right;">{{ currency_symbol }}{{ "{:,.2f}".format(item.get('amount',0)|float) }}</td>
