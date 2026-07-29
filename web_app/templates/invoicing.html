@@ -86,7 +86,7 @@
     </a>
   </li>
   <li class="nav-item">
-    <a class="nav-link {{ 'active' if active_tab == 'archived' else '' }}" data-bs-toggle="tab" href="#tab-archived-invoices">
+    <a class="nav-link {{ 'active' if active_tab in ('archived', 'archived-invoices') else '' }}" data-bs-toggle="tab" href="#tab-archived-invoices">
       <i class="bi bi-archive me-1"></i>Archived
       {% if deleted_invoices %}<span class="badge bg-secondary ms-1">{{ deleted_invoices|length }}</span>{% endif %}
     </a>
@@ -329,7 +329,7 @@
 
 
   <!-- ?? Tab: Archived Invoices -->
-  <div class="tab-pane fade {{ 'show active' if active_tab == 'archived' else '' }}" id="tab-archived-invoices">
+  <div class="tab-pane fade {{ 'show active' if active_tab in ('archived', 'archived-invoices') else '' }}" id="tab-archived-invoices">
     <div class="card-panel">
       <h6 class="section-heading mb-3"><i class="bi bi-archive me-2"></i>Archived Invoices</h6>
       {% if deleted_invoices %}
@@ -492,7 +492,7 @@ function clearInvExportFilters() {
 
 // ?? Tab activation ???????????????????????????????????????????????????????????
 const invTabParam = "{{ active_tab }}";
-const invAllTabs  = ["all-invoices", "export"];
+const invAllTabs  = ["all-invoices", "export", "archived-invoices"];
 const invTarget   = invAllTabs.includes(invTabParam) ? invTabParam : "all-invoices";
 const invEl = document.querySelector('[href="#tab-' + invTarget + '"]');
 if (invEl) new bootstrap.Tab(invEl).show();

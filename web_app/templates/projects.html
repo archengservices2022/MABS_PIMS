@@ -76,7 +76,7 @@
     </a>
   </li>
   <li class="nav-item">
-    <a class="nav-link {{ 'active' if active_tab == 'archived' else '' }}" data-bs-toggle="tab" href="#tab-archived-projects">
+    <a class="nav-link {{ 'active' if active_tab in ('archived', 'archived-projects') else '' }}" data-bs-toggle="tab" href="#tab-archived-projects">
       <i class="bi bi-archive me-1"></i>Archived
       {% if deleted_projects %}<span class="badge bg-secondary ms-1">{{ deleted_projects|length }}</span>{% endif %}
     </a>
@@ -363,7 +363,7 @@
 
 
   <!-- ?? Tab: Archived Projects -->
-  <div class="tab-pane fade {{ 'show active' if active_tab == 'archived' else '' }}" id="tab-archived-projects">
+  <div class="tab-pane fade {{ 'show active' if active_tab in ('archived', 'archived-projects') else '' }}" id="tab-archived-projects">
     <div class="card-panel">
       <h6 class="section-heading mb-3"><i class="bi bi-archive me-2"></i>Archived Projects</h6>
       {% if deleted_projects %}
@@ -755,7 +755,7 @@ function loadToInvoice() {
 
 // Activate tab from URL param or server active_tab
 const tabParam = "{{ active_tab }}";
-const allTabs  = ["all-projects", "export"];
+const allTabs  = ["all-projects", "export", "archived-projects"];
 const target   = allTabs.includes(tabParam) ? tabParam : "all-projects";
 const el = document.querySelector('[href="#tab-' + target + '"]');
 if (el) new bootstrap.Tab(el).show();

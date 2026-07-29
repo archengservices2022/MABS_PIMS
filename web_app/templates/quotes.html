@@ -86,7 +86,7 @@
     </a>
   </li>
   <li class="nav-item">
-    <a class="nav-link {{ 'active' if active_tab == 'archived' else '' }}" data-bs-toggle="tab" href="#tab-archived-quotes" id="nav-archived-quotes">
+    <a class="nav-link {{ 'active' if active_tab in ('archived', 'archived-quotes') else '' }}" data-bs-toggle="tab" href="#tab-archived-quotes" id="nav-archived-quotes">
       <i class="bi bi-archive me-1"></i>Archived
       {% if deleted_quotes %}<span class="badge bg-secondary ms-1">{{ deleted_quotes|length }}</span>{% endif %}
     </a>
@@ -938,7 +938,7 @@
 
 
   <!-- ?? TAB: ARCHIVED QUOTES -->
-  <div class="tab-pane fade {{ 'show active' if active_tab == 'archived' else '' }}" id="tab-archived-quotes">
+  <div class="tab-pane fade {{ 'show active' if active_tab in ('archived', 'archived-quotes') else '' }}" id="tab-archived-quotes">
     <div class="card-panel">
       <h6 class="section-heading mb-3"><i class="bi bi-archive me-2"></i>Archived Quotes</h6>
       {% if deleted_quotes %}
@@ -994,7 +994,7 @@
 <script>
 // ?? Activate correct tab from ?tab= URL param ?????????????????????????????????
 (function() {
-  const map = { all:'#tab-all', new:'#tab-new', salespeople:'#tab-salespeople', followups:'#tab-followups', export:'#tab-export' };
+  const map = { all:'#tab-all', new:'#tab-new', salespeople:'#tab-salespeople', followups:'#tab-followups', export:'#tab-export', archived:'#tab-archived-quotes', 'archived-quotes':'#tab-archived-quotes' };
   const key    = new URLSearchParams(location.search).get('tab') || 'all';
   if (key === 'new') {
     window.location.replace('{{ url_for("quotes_new") }}');
