@@ -2448,10 +2448,33 @@ def quote_delete(quote_id):
         if not _perm:
             flash("You need admin approval to delete this quote. Use the 'Request Delete' button.", "danger")
             return redirect(url_for("quote_detail", quote_id=quote_id))
+
+    quote_data = fb_get(f"/job_forms/{quote_id}") or {}
+
+    # Archive before deleting
+    archive = dict(quote_data)
+    archive.update({
+        "firebase_id": quote_id,
+        "deleted_at": datetime.now(timezone.utc).isoformat(),
+        "deleted_by": session.get("user_name") or session.get("user_email", ""),
+        "deleted_by_uid": session.get("user_uid", ""),
+    })
+    fb_update(f"/deleted_quotes/{quote_id}", archive)
+
+    # Clear orphan link: if a project was created from this quote, remove the back-reference
+    linked_project_id = quote_data.get("linked_project_id")
+    if linked_project_id:
+        proj = fb_get(f"/projects/{linked_project_id}") or {}
+        if proj.get("source_quote_id") == quote_id:
+            fb_update(f"/projects/{linked_project_id}", {
+                "source_quote_id": None,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            })
+
     fb_delete(f"/job_forms/{quote_id}")
     if _perm:
         fb_update(f"/permission_requests/{_perm['firebase_id']}", {"status": "completed"})
-    flash("Quote deleted.", "success")
+    flash("Quote deleted and archived for recovery.", "success")
     return redirect(url_for("quotes"))
 
 @app.route("/quotes/<quote_id>/status", methods=["POST"])
@@ -6471,6 +6494,16 @@ def invoice_delete(invoice_id):
 
                     _mark_project_stage(lp_proj_num, lp_stage_idx, "Pending Invoice", amount_paid=0)
 
+    # Archive before deleting
+    archive_inv = dict(inv_data)
+    archive_inv.update({
+        "firebase_id": invoice_id,
+        "deleted_at": datetime.now(timezone.utc).isoformat(),
+        "deleted_by": session.get("user_name") or session.get("user_email", ""),
+        "deleted_by_uid": session.get("user_uid", ""),
+    })
+    fb_update(f"/deleted_invoices/{invoice_id}", archive_inv)
+
     # Delete the invoice
     delete_result = fb_delete(f"/invoices/{invoice_id}")
 
@@ -10336,7 +10369,21 @@ def expense_new():
 @role_required("financial")
 def expense_delete(exp_id):
     # Check if this is an employee expense (in /expenses) or finance-only (just in /balance_sheet_expenses)
-    is_emp_expense = fb_get(f"/expenses/{exp_id}") is not None
+    emp_data = fb_get(f"/expenses/{exp_id}")
+    is_emp_expense = emp_data is not None
+    bs_data = fb_get(f"/balance_sheet_expenses/{exp_id}") or {}
+
+    # Archive before deleting (merge both sources for a complete record)
+    archive_exp = dict(bs_data)
+    if is_emp_expense and isinstance(emp_data, dict):
+        archive_exp.update({k: v for k, v in emp_data.items() if k not in archive_exp})
+    archive_exp.update({
+        "firebase_id": exp_id,
+        "deleted_at": datetime.now(timezone.utc).isoformat(),
+        "deleted_by": session.get("user_name") or session.get("user_email", ""),
+        "deleted_by_uid": session.get("user_uid", ""),
+    })
+    fb_update(f"/deleted_expenses/{exp_id}", archive_exp)
 
     # Always delete from balance_sheet_expenses
     fb_delete(f"/balance_sheet_expenses/{exp_id}")
@@ -10345,7 +10392,7 @@ def expense_delete(exp_id):
     if is_emp_expense:
         fb_delete(f"/expenses/{exp_id}")
 
-    flash("Expense deleted.", "success")
+    flash("Expense deleted and archived for recovery.", "success")
     return redirect(url_for("financial", tab="expenses"))
 
 @app.route("/financial/expense/<exp_id>/remove-receipt", methods=["POST"])

@@ -503,6 +503,16 @@
           <div class="text-muted small">Total: {{ currency_symbol }}{{ "{:,.2f}".format(meta.get('total',0)|float) }}</div>
           <div class="text-muted small">Status: {{ meta.get('status','—') }}</div>
         </div>
+        {% set amt_paid = meta.get('amount_paid', 0)|float %}
+        {% set tax_paid = meta.get('tax_paid', 0)|float %}
+        {% set total_paid = amt_paid + tax_paid %}
+        {% if total_paid > 0 %}
+        <div class="alert alert-warning py-2 mb-3 small">
+          <i class="bi bi-exclamation-triangle-fill me-1"></i>
+          <strong>Finance impact:</strong> This invoice has <strong>{{ currency_symbol }}{{ "{:,.2f}".format(total_paid) }}</strong> in recorded payments.
+          Deleting it will remove this amount from Finance revenue and revert the linked project payment stage(s) to <em>Pending Invoice</em>.
+        </div>
+        {% endif %}
         <p class="text-muted small mb-2">Type the invoice number to confirm:</p>
         <input type="text" id="deleteConfirmInput" class="form-control mb-1"
                placeholder="{{ meta.get('invoice_number','') }}"
