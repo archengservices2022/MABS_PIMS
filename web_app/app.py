@@ -13681,9 +13681,10 @@ def _mark_project_stage(project_number: str, stage_index: int, status: str, invo
         stages[stage_index]["amount"] = amount
     if amount_paid is not None:
         stages[stage_index]["amount_paid"] = str(amount_paid)
-    # When reverting to "Pending Invoice", clear the invoice tracking fields
+    # When reverting to "Pending Invoice", clear only the display field
+    # PRESERVE invoice_id for restoration - needed when invoice is restored
     if status == "Pending Invoice":
-        stages[stage_index].pop("invoice_id", None)
+        # stages[stage_index].pop("invoice_id", None)  # KEEP THIS - needed for restoration
         stages[stage_index].pop("invoice_number", None)
 
     proj_updates = {"payment_stages": stages, "updated_at": datetime.now(timezone.utc).isoformat()}
