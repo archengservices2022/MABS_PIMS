@@ -14096,12 +14096,15 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
         # IMPORTANT: Always preserve existing invoice_id unless replaced with a new one
         # Store existing invoice_id BEFORE any updates
         existing_invoice_id = stage.get("invoice_id")
+        log.info(f"[PRESERVE_ID] stage_idx={stage_index}, existing_id={existing_invoice_id}, linked_id={linked_invoice_id}")
 
         if linked_invoice_id:
             stage["invoice_id"] = linked_invoice_id
+            log.info(f"[PRESERVE_ID_SET_NEW] Set to linked invoice: {linked_invoice_id}")
         elif existing_invoice_id:
             # Explicitly preserve existing invoice_id if not being replaced
             stage["invoice_id"] = existing_invoice_id
+            log.info(f"[PRESERVE_ID_RESTORE] Preserved existing invoice_id: {existing_invoice_id}")
 
         if linked_invoice_number:
             stage["invoice_number"] = linked_invoice_number
