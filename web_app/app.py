@@ -14106,13 +14106,16 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
 
         # Fallback: if stage has invoice_id but no invoice_number, look it up
         if stage.get("invoice_id") and not stage.get("invoice_number"):
-            fallback_inv = fb_get(f"/invoices/{stage['invoice_id']}") or {}
+            fallback_inv_id = stage['invoice_id']
+            fallback_inv = fb_get(f"/invoices/{fallback_inv_id}") or {}
             if isinstance(fallback_inv, dict):
                 fallback_meta = fallback_inv.get("meta", {}) or {}
-                fallback_number = fallback_meta.get("invoice_number") or fallback_inv.get("invoice_number", "")
+                # Try both meta.invoice_number and top-level invoice_number
+                fallback_number = fallback_meta.get("invoice_number", "") or fallback_inv.get("invoice_number", "")
+                log.info(f"[FALLBACK_LOOKUP] inv_id={fallback_inv_id}, found_number={fallback_number}, meta_keys={list(fallback_meta.keys())}")
                 if fallback_number:
                     stage["invoice_number"] = fallback_number
-                    log.info(f"[FALLBACK] Set invoice_number from lookup: {fallback_number}")
+                    log.info(f"[FALLBACK_SET] Set invoice_number={fallback_number} for stage {stage_index}")
 
         log.info(f"[SAVE_STATUS] Saving stage {stage_index} status={new_status} to project {pid}")
         log.info(f"[SAVE_STAGE] Full stage data: {stage}, amount_paid={stage.get('amount_paid')}, invoice_number={stage.get('invoice_number')}")
