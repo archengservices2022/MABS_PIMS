@@ -6533,8 +6533,8 @@ def invoice_delete(invoice_id):
                         if isinstance(stage, dict):
                             # Check by invoice_id first
                             if stage.get("invoice_id") == invoice_id:
-                                # Clear invoice references
-                                stage.pop("invoice_id", None)
+                                # Clear invoice number and date, but PRESERVE invoice_id for restoration
+                                # stage.pop("invoice_id", None)  # KEEP THIS - needed to restore link
                                 stage.pop("invoice_number", None)
                                 stage.pop("invoice_date", None)
                                 # CRITICAL: Set status to "Pending Invoice"
