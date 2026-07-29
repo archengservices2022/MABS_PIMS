@@ -3238,8 +3238,9 @@ def project_detail(project_id):
             # Calculate amount paid from all invoices for this stage
             amount_paid = 0
             due_date = ""
-            invoice_id = ""
-            invoice_number = ""
+            # Preserve existing stage invoice info (e.g., from restoration)
+            invoice_id = stage.get("invoice_id", "")
+            invoice_number = stage.get("invoice_number", "")
             if idx in stage_invoices:
                 for inv in stage_invoices[idx]:
                     # Sum invoice payments using payment_log filtered by project_number (not share-based)
@@ -6677,20 +6678,27 @@ def invoice_delete(invoice_id):
 @app.route("/invoicing/<invoice_id>/restore", methods=["POST"])
 @role_required("invoicing")
 def invoice_restore(invoice_id):
+    print(f"[RESTORE_START] Restore endpoint called for invoice_id={invoice_id}")
     archive = fb_get(f"/deleted_invoices/{invoice_id}") or {}
+    print(f"[RESTORE_ARCHIVE] Found archive data: {bool(archive)}")
     if not archive:
         flash("Archived invoice not found.", "warning")
         return redirect(url_for("invoicing", tab="archived"))
     restored = {k: v for k, v in archive.items()
                 if k not in ("deleted_at", "deleted_by", "deleted_by_uid", "firebase_id")}
     # Restore invoice record
+    print(f"[RESTORE_UPDATE] Writing to /invoices/{invoice_id}")
     fb_update(f"/invoices/{invoice_id}", restored)
+    print(f"[RESTORE_DELETE] Deleting from /deleted_invoices/{invoice_id}")
     fb_delete(f"/deleted_invoices/{invoice_id}")
     # Re-create revenue entry if the invoice has payments
     meta = restored.get("meta", {}) or {}
+    print(f"[RESTORE_REVENUE] Calling _upsert_revenue_entry")
     _upsert_revenue_entry(invoice_id, meta)
     # Re-link project payment stages
+    print(f"[RESTORE_UPDATE_STAGE] About to call _update_project_stage_payment_status")
     _update_project_stage_payment_status(invoice_id)
+    print(f"[RESTORE_UPDATE_STAGE_DONE] _update_project_stage_payment_status returned")
     # Re-sync payment amounts for all linked projects
     project_numbers = set()
     if meta.get("project_number"):
@@ -6702,7 +6710,17 @@ def invoice_restore(invoice_id):
             project_numbers.add(lp)
     for proj_num in project_numbers:
         if proj_num:
+            print(f"[RESTORE_SYNC] Calling _sync_project_payment for {proj_num}")
             _sync_project_payment(proj_num)
+    # Verify the stage data was saved correctly
+    proj_number = meta.get("project_number")
+    if proj_number:
+        pid, pdata = _find_project_by_number(proj_number)
+        if pid and pdata:
+            stages = pdata.get("payment_stages", [])
+            for stage in stages:
+                if stage.get("invoice_id") == invoice_id:
+                    print(f"[RESTORE_VERIFY] Final stage for {invoice_id}: invoice_id={stage.get('invoice_id')}, invoice_number={stage.get('invoice_number')}")
     flash("Invoice restored and Finance re-synced successfully.", "success")
     return redirect(url_for("invoicing"))
 
@@ -9003,6 +9021,9 @@ def delete_salary(sal_id):
 def financial():
     # Sequential — Firebase Admin SDK shares one HTTP session; concurrent ThreadPoolExecutor calls return empty dicts
     invoices = fb_get("/invoices") or {}
+    deleted_invoices = fb_get("/deleted_invoices") or {}
+    # Merge both active and deleted invoices so lookups work for restored invoices
+    all_invoices = {**deleted_invoices, **invoices}  # Active invoices override deleted ones
     expenses = fb_get("/balance_sheet_expenses") or {}
     revenue  = fb_get("/balance_sheet_revenue") or {}
 
@@ -9014,7 +9035,7 @@ def financial():
     except (ValueError, TypeError):
         selected_year = datetime.now(COMPANY_TZ).year
 
-    inv_list  = [v for v in invoices.values() if isinstance(v, dict)] if isinstance(invoices, dict) else []
+    inv_list  = [dict(v, firebase_id=k) for k, v in invoices.items() if isinstance(v, dict)] if isinstance(invoices, dict) else []
     # Lightweight set of claim IDs that have uploaded receipts — used to show
     # the receipt button for medical claim expenses written before has_receipt was added.
     _med_receipt_ids = set(fb_get_shallow("/medical_claim_receipts") or {})
@@ -9099,10 +9120,10 @@ def financial():
     if isinstance(revenue, dict):
         for rid, rdata in revenue.items():
             if isinstance(rdata, dict):
-                # Check if the invoice still exists (not deleted)
+                # Check if the invoice exists (in active or deleted)
                 invoice_id = rdata.get("invoice_id")
-                if invoice_id and invoice_id not in invoices:
-                    # Skip deleted invoices - their revenue entries should not display
+                if invoice_id and invoice_id not in all_invoices:
+                    # Skip if invoice not found in either active or deleted
                     continue
 
                 rdata["firebase_id"] = rid
@@ -9116,37 +9137,80 @@ def financial():
                 rdata.setdefault("tax_amount", rdata.get("tax_amount", 0))
 
                 # Get linked projects and tax info from actual invoice
-                if invoice_id and invoice_id in invoices:
-                    inv_data = invoices[invoice_id]
-                    if isinstance(inv_data, dict):
-                        inv_meta = inv_data.get("meta", {}) or {}
-                        # Get all linked projects for multi-project invoices
-                        linked = _invoice_linked_projects(inv_data)
-                        rdata["linked_projects"] = linked
-                        # Update tax_amount and total from invoice meta
-                        rdata["tax_amount"] = _safe_float(inv_meta.get("tax_amount", 0))
-                        rdata["total"] = _safe_float(inv_meta.get("total", 0))
-                        # Get synced company_name and client_name from invoice meta
-                        rdata["company_name"] = inv_meta.get("company_name", "")
-                        rdata["client_name"] = inv_meta.get("client_name", rdata.get("client_name", ""))
+                inv_data = None
+                if invoice_id and invoice_id in all_invoices:
+                    inv_data = all_invoices[invoice_id]
+                # Fallback: if invoice_id not found, try to find by invoice_number
+                elif rdata.get("invoice_number") and not inv_data:
+                    for inv_id, inv_d in (all_invoices.items() if isinstance(all_invoices, dict) else []):
+                        if isinstance(inv_d, dict):
+                            inv_m = inv_d.get("meta", {}) or {}
+                            if inv_m.get("invoice_number") == rdata.get("invoice_number"):
+                                inv_data = inv_d
+                                break
+
+                if inv_data and isinstance(inv_data, dict):
+                    inv_meta = inv_data.get("meta", {}) or {}
+                    # Get all linked projects for multi-project invoices
+                    linked = _invoice_linked_projects(inv_data)
+                    rdata["linked_projects"] = linked
+                    # Update tax_amount and total from invoice meta
+                    rdata["tax_amount"] = _safe_float(inv_meta.get("tax_amount", 0))
+                    rdata["total"] = _safe_float(inv_meta.get("total", 0))
+                    # Get synced company_name and client_name from invoice meta
+                    rdata["company_name"] = inv_meta.get("company_name", "")
+                    rdata["client_name"] = inv_meta.get("client_name", rdata.get("client_name", ""))
+                    # Preserve revenue entry's invoice_number if it exists; only use invoice meta if missing
+                    rdata["invoice_number"] = rdata.get("invoice_number", "") or inv_meta.get("invoice_number", "")
 
                 rev_list.append(rdata)
     rev_list.sort(key=lambda x: x.get("date", ""), reverse=True)
 
     # Filter to show only Paid and Partial invoices (present/active invoices only)
     # This matches the Invoicing tab display
-    rev_list = [r for r in rev_list if r.get("status") in ["Paid", "Partial"]]
+    # Don't filter by status - revenue entries represent payments regardless of invoice status
+    print(f"[FINANCIAL_INIT] rev_list has {len(rev_list)} entries (no status filter)")
 
     # Enrich rev_list with current amount_paid from invoice meta (fixes stale revenue entries)
     updated_rev_list = []
     for r in rev_list:
+        print(f"[FINANCIAL_LOOP] Processing rev entry: project={r.get('project_number')}, has_inv_id={bool(r.get('invoice_id'))}, rev_inv_num={r.get('invoice_number', 'MISSING')}")
         inv_id = r.get("invoice_id")
-        if not inv_id or inv_id not in invoices:
-            continue
-        inv_data = invoices[inv_id]
-        if not isinstance(inv_data, dict):
+        inv_data = None
+
+        # Try to find invoice by invoice_id first
+        if inv_id and inv_id in all_invoices:
+            inv_data = all_invoices[inv_id]
+            print(f"[LOOKUP_ID] Found by invoice_id={inv_id}")
+        # Fallback 1: match by invoice_number if invoice_id lookup failed
+        elif r.get("invoice_number"):
+            print(f"[LOOKUP_INV_NUM] Searching for invoice with invoice_number={r.get('invoice_number')}")
+            for iid, inv_d in (all_invoices.items() if isinstance(all_invoices, dict) else []):
+                if isinstance(inv_d, dict):
+                    inv_m = inv_d.get("meta", {}) or {}
+                    if inv_m.get("invoice_number") == r.get("invoice_number"):
+                        inv_data = inv_d
+                        print(f"[LOOKUP_INV_NUM_FOUND] Found invoice with invoice_number={r.get('invoice_number')}")
+                        break
+
+        # Fallback 2: match by project_number + amount_paid + date (for old entries without invoice_id/number)
+        if not inv_data and r.get("project_number") and r.get("amount_paid"):
+            print(f"[LOOKUP_FALLBACK2] Searching by project={r.get('project_number')}, amount={r.get('amount_paid')}, date={r.get('date')}")
+            for iid, inv_d in (all_invoices.items() if isinstance(all_invoices, dict) else []):
+                if isinstance(inv_d, dict):
+                    inv_m = inv_d.get("meta", {}) or {}
+                    if (inv_m.get("project_number") == r.get("project_number") and
+                        _safe_float(inv_m.get("amount_paid", 0)) == _safe_float(r.get("amount_paid", 0)) and
+                        inv_m.get("invoice_date") == r.get("date")):
+                        inv_data = inv_d
+                        print(f"[LOOKUP_FALLBACK2_FOUND] Found invoice with invoice_number={inv_m.get('invoice_number')}")
+                        break
+
+        if not inv_data or not isinstance(inv_data, dict):
+            print(f"[FINANCIAL_SKIP] Skipping rev entry: project={r.get('project_number')}, inv_id={inv_id}, inv_num={r.get('invoice_number')}")
             continue
         inv_meta = inv_data.get("meta", {}) or {}
+        print(f"[FINANCIAL_FOUND] Found invoice for revenue entry: project={r.get('project_number')}, inv_meta_num={inv_meta.get('invoice_number')}")
         inv_total = _safe_float(inv_meta.get("total", 0))
         amount_paid = _safe_float(inv_meta.get("amount_paid", 0))
         tax_paid = sum(_safe_float(tp.get("amount", 0)) for tp in (inv_data.get("tax_payments", []) or []))
@@ -9156,6 +9220,9 @@ def financial():
         r["tax_paid"]      = tax_paid
         r["total"]         = inv_total
         r["tax_amount"]    = _safe_float(inv_meta.get("tax_amount", 0))
+        # Preserve revenue entry's invoice_number if it exists; only use invoice meta if missing
+        r["invoice_number"] = r.get("invoice_number", "") or inv_meta.get("invoice_number", "")
+        print(f"[FINANCIAL_SET] Set invoice_number for {r.get('project_number')}: {r.get('invoice_number')}")
         r["invoice_date"]  = inv_meta.get("invoice_date", "") or r.get("date", "")
         # Collection date = latest payment_log entry date, fallback to revenue record date
         pay_log = inv_data.get("payment_log", []) or []
@@ -13881,7 +13948,9 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
     For each project linked to the invoice, sum payments made FOR THAT PROJECT
     and update the stage status to Paid/Partially Paid/Invoiced.
     """
+    print(f"[UPDATE_STAGE_ENTRY] Called with invoice_id={invoice_id}")
     inv_data = fb_get(f"/invoices/{invoice_id}") or {}
+    print(f"[UPDATE_STAGE_FOUND] Fetched invoice data, keys={list(inv_data.keys()) if inv_data else 'EMPTY'}")
     meta = inv_data.get("meta", {}) or {}
 
     # Get linked projects from invoice
@@ -14016,19 +14085,19 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
 
                     # First, check if this is the current invoice being updated (most direct match)
                     if inv_id == invoice_id:
-                        log.info(f"[CURRENT_INV] Found current invoice {inv_id} for project {project_number}, inv_meta.project={inv_meta.get('project_number')}")
+                        print(f"[CURRENT_INV] Found current invoice {inv_id} for project {project_number}, inv_meta.project={inv_meta.get('project_number')}")
                         # For the current invoice, if it's linked to this project, include it
                         if inv_meta.get("project_number") == project_number:
-                            log.info(f"[CURRENT_INV_MATCH] Project matches! Setting linked_invoice_id and invoice_number")
+                            print(f"[CURRENT_INV_MATCH] Project matches! Setting linked_invoice_id and invoice_number")
                             # Always preserve the current invoice's number, even if no payments found
                             if not linked_invoice_number:
                                 linked_invoice_id = inv_id
                                 # Invoice number might be in meta or at top level
                                 linked_invoice_number = inv_meta.get("invoice_number") or inv.get("invoice_number", "")
-                                log.info(f"[CURRENT_INV_SET] Set linked_invoice_id={linked_invoice_id}, linked_invoice_number={linked_invoice_number}")
+                                print(f"[CURRENT_INV_SET] Set linked_invoice_id={linked_invoice_id}, linked_invoice_number={linked_invoice_number}")
                             is_for_this_project = True
                         else:
-                            log.info(f"[CURRENT_INV_NO_MATCH] Project does NOT match: {inv_meta.get('project_number')} != {project_number}")
+                            print(f"[CURRENT_INV_NO_MATCH] Project does NOT match: {inv_meta.get('project_number')} != {project_number}")
                     else:
                         # For other invoices, use the standard matching logic
                         # Single-project invoices use project_number
@@ -14467,13 +14536,38 @@ def _upsert_revenue_entry(invoice_id: str, inv_meta: dict) -> None:
     raw_rev = fb_get("/balance_sheet_revenue") or {}
     existing_key = None
     if isinstance(raw_rev, dict):
+        invoice_number = inv_meta.get("invoice_number", "")
+        print(f"[REVENUE_LOOKUP] Looking for invoice_id={invoice_id}, invoice_number={invoice_number}, total entries={len(raw_rev)}")
         for rk, rv in raw_rev.items():
-            if isinstance(rv, dict) and rv.get("invoice_id") == invoice_id:
-                existing_key = rk
-                break
+            if isinstance(rv, dict):
+                print(f"[REVENUE_DEBUG] Entry: invoice_id={rv.get('invoice_id')}, invoice_number={rv.get('invoice_number')}")
+
+                # Match by invoice_id (primary)
+                if rv.get("invoice_id") == invoice_id:
+                    print(f"[REVENUE_LOOKUP] FOUND by invoice_id in key={rk}")
+                    existing_key = rk
+                    break
+                # Fallback 1: Match by invoice_number if not empty
+                elif invoice_number and rv.get("invoice_number") == invoice_number:
+                    print(f"[REVENUE_LOOKUP] FOUND by invoice_number in key={rk}")
+                    existing_key = rk
+                    if not rv.get("invoice_id"):
+                        entry["invoice_id"] = invoice_id
+                    break
+                # Fallback 2: Match by project_number + date (for entries created without invoice_id/number)
+                elif not existing_key and entry.get("project_number") and rv.get("project_number") == entry.get("project_number") and rv.get("date") == entry.get("date"):
+                    if not rv.get("invoice_id"):
+                        print(f"[REVENUE_LOOKUP] FOUND by project+date in key={rk}")
+                        existing_key = rk
+                        entry["invoice_id"] = invoice_id
+                        if invoice_number:
+                            entry["invoice_number"] = invoice_number
+                        break
     if existing_key:
+        print(f"[REVENUE] Updating existing entry key={existing_key} with invoice_number={entry.get('invoice_number')}")
         fb_update(f"/balance_sheet_revenue/{existing_key}", entry)
     else:
+        print(f"[REVENUE] Creating new entry with invoice_number={entry.get('invoice_number')}")
         fb_push("/balance_sheet_revenue", entry)
 
 def _advance_project_to_in_progress(project_number: str) -> None:
