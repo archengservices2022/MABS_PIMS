@@ -1018,7 +1018,7 @@
           <div class="row g-3 mb-3">
             <div class="col-md-6">
               <label class="form-label fw-600">CO Number</label>
-              <input type="text" class="form-control" value="CO-{{ change_orders|length + 1 | string | rjust(3, '0') }}" disabled style="background-color:#f3f4f6; cursor:not-allowed;">
+              <input type="text" class="form-control" value="CO-{{'%03d'|format(change_orders|length + 1)}}" disabled style="background-color:#f3f4f6; cursor:not-allowed;">
               <div class="form-text">Auto-generated</div>
             </div>
             <div class="col-md-6">
