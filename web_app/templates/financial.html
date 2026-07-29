@@ -648,9 +648,9 @@ a[href*="filter_expense"]:hover {
             <td style="white-space:nowrap;">
               {% if r.get('invoice_id') %}
               <a href="{{ url_for('invoice_detail', invoice_id=r.get('invoice_id','')) }}"
-                 class="fw-bold text-teal text-decoration-none">{{ r.get('invoice_number','—') }}</a>
+                 class="fw-bold text-teal text-decoration-none">{{ r['invoice_number']|default('—') }}</a>
               {% else %}
-              <span class="fw-bold text-teal">{{ r.get('invoice_number','—') }}</span>
+              <span class="fw-bold text-teal">{{ r['invoice_number']|default('—') }}</span>
               {% endif %}
             </td>
             <td>{{ r.get('company_name') or r.get('client_name','—') }}</td>
