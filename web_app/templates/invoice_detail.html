@@ -175,11 +175,6 @@
             {% if linked_project %} — {{ linked_project.get('project_name','') }}{% endif %}
           </div>
           {% endif %}
-          {% if meta.get('payment_stage') %}
-          <div style="font-size:0.78rem; color:#0D9488; margin-top:2px;">
-            <i class="bi bi-layers me-1"></i>{{ meta.get('payment_stage') }}
-          </div>
-          {% endif %}
         </div>
         <div class="text-end">
           <span class="badge status-{{ inv_status|lower|replace(' ','-') }}" style="font-size:0.75rem; padding:5px 12px;">
