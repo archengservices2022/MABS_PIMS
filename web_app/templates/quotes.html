@@ -961,7 +961,7 @@
               <td class="fw-bold">{{ q.get('job_number','—') }}</td>
               <td>{{ q.get('company_name') or q.get('client_name','—') }}</td>
               <td>{{ currency_symbol }}{{ "{:,.2f}".format(q.get('total',0)|float) }}</td>
-              <td><span class="badge bg-secondary">{{ q.get('status','—') }}</span></td>
+              <td><span class="badge" style="background:#64748b;">Archived</span></td>
               <td class="text-muted small">{{ q.get('deleted_by','—') }}</td>
               <td class="text-muted small">{{ q.get('deleted_at','')[:10] }}</td>
               <td>

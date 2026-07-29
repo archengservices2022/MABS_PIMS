@@ -362,7 +362,7 @@
                 <span class="text-muted">—</span>
                 {% endif %}
               </td>
-              <td><span class="badge status-{{ m.get('status','Draft')|lower|replace(' ','-') }}">{{ m.get('status','Draft') }}</span></td>
+              <td><span class="badge" style="background:#64748b;">Archived</span></td>
               <td class="text-muted small">{{ inv.get('deleted_by','—') }}</td>
               <td class="text-muted small">{{ inv.get('deleted_at','')[:10] }}</td>
               <td>
@@ -491,18 +491,20 @@ function clearInvExportFilters() {
 }
 
 // ?? Tab activation ???????????????????????????????????????????????????????????
-const invTabParam = "{{ active_tab }}";
-const invAllTabs  = ["all-invoices", "export", "archived-invoices"];
-const invTarget   = invAllTabs.includes(invTabParam) ? invTabParam : "all-invoices";
-const invEl = document.querySelector('[href="#tab-' + invTarget + '"]');
-if (invEl) new bootstrap.Tab(invEl).show();
+document.addEventListener('DOMContentLoaded', function () {
+  const invTabParam = "{{ active_tab }}";
+  const invAllTabs  = ["all-invoices", "export", "archived-invoices"];
+  const invTarget   = invAllTabs.includes(invTabParam) ? invTabParam : "all-invoices";
+  const invEl = document.querySelector('[href="#tab-' + invTarget + '"]');
+  if (invEl) new bootstrap.Tab(invEl).show();
 
-document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
-  el.addEventListener('shown.bs.tab', e => {
-    const id = e.target.getAttribute('href').replace('#tab-', '');
-    const url = new URL(window.location);
-    url.searchParams.set('tab', id);
-    window.history.replaceState({}, '', url);
+  document.querySelectorAll('[data-bs-toggle="tab"]').forEach(function(link) {
+    link.addEventListener('shown.bs.tab', function(e) {
+      const id = e.target.getAttribute('href').replace('#tab-', '');
+      const url = new URL(window.location);
+      url.searchParams.set('tab', id);
+      window.history.replaceState({}, '', url);
+    });
   });
 });
 
