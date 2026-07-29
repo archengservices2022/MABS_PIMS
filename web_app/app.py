@@ -14093,13 +14093,15 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
                 project_paid = inv_amount_paid
                 log.info(f"[FALLBACK] Using invoice amount_paid: {inv_amount_paid}")
 
+        # IMPORTANT: Always preserve existing invoice_id unless replaced with a new one
+        # Store existing invoice_id BEFORE any updates
+        existing_invoice_id = stage.get("invoice_id")
+
         if linked_invoice_id:
             stage["invoice_id"] = linked_invoice_id
-        # IMPORTANT: If stage already has an invoice_id (from creation), PRESERVE it
-        # Only clear if we found a different invoice to link to
-        elif stage.get("invoice_id"):
-            # Keep the existing invoice_id
-            pass
+        elif existing_invoice_id:
+            # Explicitly preserve existing invoice_id if not being replaced
+            stage["invoice_id"] = existing_invoice_id
 
         if linked_invoice_number:
             stage["invoice_number"] = linked_invoice_number
