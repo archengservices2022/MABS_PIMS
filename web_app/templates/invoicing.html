@@ -85,6 +85,12 @@
       <i class="bi bi-download me-1"></i>Export
     </a>
   </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab in ('archived', 'archived-invoices') else '' }}" data-bs-toggle="tab" href="#tab-archived-invoices">
+      <i class="bi bi-archive me-1"></i>Archived
+      {% if deleted_invoices %}<span class="badge bg-secondary ms-1">{{ deleted_invoices|length }}</span>{% endif %}
+    </a>
+  </li>
 </ul>
 
 <div class="tab-content">
@@ -321,6 +327,66 @@
     </div>
   </div>
 
+
+  <!-- ?? Tab: Archived Invoices -->
+  <div class="tab-pane fade {{ 'show active' if active_tab in ('archived', 'archived-invoices') else '' }}" id="tab-archived-invoices">
+    <div class="card-panel">
+      <h6 class="section-heading mb-3"><i class="bi bi-archive me-2"></i>Archived Invoices</h6>
+      {% if deleted_invoices %}
+      <div class="table-responsive">
+        <table class="table table-hover table-sm align-middle mb-0">
+          <thead style="background:#1e293b;">
+            <tr>
+              <th style="color:#fff;">Invoice #</th>
+              <th style="color:#fff;">Client</th>
+              <th style="color:#fff;">Total</th>
+              <th style="color:#fff;">Paid</th>
+              <th style="color:#fff;">Status</th>
+              <th style="color:#fff;">Deleted By</th>
+              <th style="color:#fff;">Deleted At</th>
+              <th style="color:#fff;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for inv in deleted_invoices %}
+            {% set m = inv.get('meta', {}) %}
+            {% set amt_paid = (m.get('amount_paid',0)|float) + (m.get('tax_paid',0)|float) %}
+            <tr>
+              <td class="fw-bold">{{ m.get('invoice_number','—') }}</td>
+              <td>{{ m.get('company_name') or m.get('client_name','—') }}</td>
+              <td>{{ currency_symbol }}{{ "{:,.2f}".format(m.get('total',0)|float) }}</td>
+              <td>
+                {% if amt_paid > 0 %}
+                <span class="text-success fw-bold">{{ currency_symbol }}{{ "{:,.2f}".format(amt_paid) }}</span>
+                {% else %}
+                <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td><span class="badge" style="background:#64748b;">Archived</span></td>
+              <td class="text-muted small">{{ inv.get('deleted_by','—') }}</td>
+              <td class="text-muted small">{{ inv.get('deleted_at','')[:10] }}</td>
+              <td>
+                <form method="POST" action="{{ url_for('invoice_restore', invoice_id=inv.firebase_id) }}"
+                      onsubmit="return confirm('Restore invoice {{ m.get('invoice_number','') }}? Finance will be re-synced automatically.');">
+                  <button type="submit" class="btn btn-xs btn-outline-success">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Restore
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-center text-muted py-5">
+        <i class="bi bi-archive" style="font-size:2rem;"></i>
+        <p class="mt-2 mb-0">No archived invoices.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div><!-- /tab-archived-invoices -->
+
 </div>
 {% endblock %}
 
@@ -425,18 +491,20 @@ function clearInvExportFilters() {
 }
 
 // ?? Tab activation ???????????????????????????????????????????????????????????
-const invTabParam = "{{ active_tab }}";
-const invAllTabs  = ["all-invoices", "export"];
-const invTarget   = invAllTabs.includes(invTabParam) ? invTabParam : "all-invoices";
-const invEl = document.querySelector('[href="#tab-' + invTarget + '"]');
-if (invEl) new bootstrap.Tab(invEl).show();
+document.addEventListener('DOMContentLoaded', function () {
+  const invTabParam = "{{ active_tab }}";
+  const invAllTabs  = ["all-invoices", "export", "archived-invoices"];
+  const invTarget   = invAllTabs.includes(invTabParam) ? invTabParam : "all-invoices";
+  const invEl = document.querySelector('[href="#tab-' + invTarget + '"]');
+  if (invEl) new bootstrap.Tab(invEl).show();
 
-document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
-  el.addEventListener('shown.bs.tab', e => {
-    const id = e.target.getAttribute('href').replace('#tab-', '');
-    const url = new URL(window.location);
-    url.searchParams.set('tab', id);
-    window.history.replaceState({}, '', url);
+  document.querySelectorAll('[data-bs-toggle="tab"]').forEach(function(link) {
+    link.addEventListener('shown.bs.tab', function(e) {
+      const id = e.target.getAttribute('href').replace('#tab-', '');
+      const url = new URL(window.location);
+      url.searchParams.set('tab', id);
+      window.history.replaceState({}, '', url);
+    });
   });
 });
 

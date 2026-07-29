@@ -75,6 +75,12 @@
       <i class="bi bi-download me-1"></i>Export
     </a>
   </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab in ('archived', 'archived-projects') else '' }}" data-bs-toggle="tab" href="#tab-archived-projects">
+      <i class="bi bi-archive me-1"></i>Archived
+      {% if deleted_projects %}<span class="badge bg-secondary ms-1">{{ deleted_projects|length }}</span>{% endif %}
+    </a>
+  </li>
 </ul>
 
 <div class="tab-content">
@@ -354,6 +360,56 @@
       </div>
     </div>
   </div>
+
+
+  <!-- ?? Tab: Archived Projects -->
+  <div class="tab-pane fade {{ 'show active' if active_tab in ('archived', 'archived-projects') else '' }}" id="tab-archived-projects">
+    <div class="card-panel">
+      <h6 class="section-heading mb-3"><i class="bi bi-archive me-2"></i>Archived Projects</h6>
+      {% if deleted_projects %}
+      <div class="table-responsive">
+        <table class="table table-hover table-sm align-middle mb-0">
+          <thead style="background:#1e293b;">
+            <tr>
+              <th style="color:#fff;">Project #</th>
+              <th style="color:#fff;">Client</th>
+              <th style="color:#fff;">Status</th>
+              <th style="color:#fff;">Contract Value</th>
+              <th style="color:#fff;">Deleted By</th>
+              <th style="color:#fff;">Deleted At</th>
+              <th style="color:#fff;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in deleted_projects %}
+            <tr>
+              <td class="fw-bold">{{ p.get('project_number','—') }}</td>
+              <td>{{ p.get('company_name') or p.get('client_name','—') }}</td>
+              <td><span class="badge" style="background:#64748b;">Archived</span></td>
+              <td>{{ currency_symbol }}{{ "{:,.2f}".format(p.get('contract_value',0)|float) }}</td>
+              <td class="text-muted small">{{ p.get('deleted_by','—') }}</td>
+              <td class="text-muted small">{{ p.get('deleted_at','')[:10] }}</td>
+              <td>
+                <form method="POST" action="{{ url_for('project_restore', project_id=p.firebase_id) }}"
+                      onsubmit="return confirm('Restore project {{ p.get('project_number','') }}?');">
+                  <button type="submit" class="btn btn-xs btn-outline-success">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Restore
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-center text-muted py-5">
+        <i class="bi bi-archive" style="font-size:2rem;"></i>
+        <p class="mt-2 mb-0">No archived projects.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div><!-- /tab-archived-projects -->
 
 </div>
 {% endblock %}
@@ -698,19 +754,21 @@ function loadToInvoice() {
 }
 
 // Activate tab from URL param or server active_tab
-const tabParam = "{{ active_tab }}";
-const allTabs  = ["all-projects", "export"];
-const target   = allTabs.includes(tabParam) ? tabParam : "all-projects";
-const el = document.querySelector('[href="#tab-' + target + '"]');
-if (el) new bootstrap.Tab(el).show();
+document.addEventListener('DOMContentLoaded', function () {
+  const tabParam = "{{ active_tab }}";
+  const allTabs  = ["all-projects", "export", "archived-projects"];
+  const target   = allTabs.includes(tabParam) ? tabParam : "all-projects";
+  const el = document.querySelector('[href="#tab-' + target + '"]');
+  if (el) new bootstrap.Tab(el).show();
 
-// Sync URL when tab changes
-document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
-  el.addEventListener('shown.bs.tab', e => {
-    const id = e.target.getAttribute('href').replace('#tab-', '');
-    const url = new URL(window.location);
-    url.searchParams.set('tab', id);
-    window.history.replaceState({}, '', url);
+  // Sync URL when tab changes
+  document.querySelectorAll('[data-bs-toggle="tab"]').forEach(function(link) {
+    link.addEventListener('shown.bs.tab', function(e) {
+      const id = e.target.getAttribute('href').replace('#tab-', '');
+      const url = new URL(window.location);
+      url.searchParams.set('tab', id);
+      window.history.replaceState({}, '', url);
+    });
   });
 });
 
