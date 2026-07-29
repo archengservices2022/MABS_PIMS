@@ -14097,6 +14097,16 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
         if linked_invoice_number:
             stage["invoice_number"] = linked_invoice_number
 
+        # Fallback: if stage has invoice_id but no invoice_number, look it up
+        if stage.get("invoice_id") and not stage.get("invoice_number"):
+            fallback_inv = fb_get(f"/invoices/{stage['invoice_id']}") or {}
+            if isinstance(fallback_inv, dict):
+                fallback_meta = fallback_inv.get("meta", {}) or {}
+                fallback_number = fallback_meta.get("invoice_number") or fallback_inv.get("invoice_number", "")
+                if fallback_number:
+                    stage["invoice_number"] = fallback_number
+                    log.info(f"[FALLBACK] Set invoice_number from lookup: {fallback_number}")
+
         log.info(f"[SAVE_STATUS] Saving stage {stage_index} status={new_status} to project {pid}")
         log.info(f"[SAVE_STAGE] Full stage data: {stage}, amount_paid={stage.get('amount_paid')}, invoice_number={stage.get('invoice_number')}")
 
