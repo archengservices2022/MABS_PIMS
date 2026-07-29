@@ -3423,8 +3423,14 @@ def co_new(project_id):
     if not isinstance(cos, list):
         cos = list(cos.values()) if isinstance(cos, dict) else []
 
+    co_num = request.form.get("co_number", "").strip()
     co_po_wo = request.form.get("po_wo_number", "").strip()
     co_shipping = request.form.get("shipping_address", "").strip()
+
+    # Validate CO Number is required
+    if not co_num:
+        flash("CO Number is required.", "danger")
+        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
 
     # Validate PO/WO required and unique across all projects and their COs
     if not co_po_wo:
@@ -3443,7 +3449,6 @@ def co_new(project_id):
                     flash(f"PO/WO number '{co_po_wo}' is already used by {xco.get('co_number','a CO')} on project {pdata.get('project_number','?')}.", "danger")
                     return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
 
-    co_num = f"CO-{len(cos)+1:03d}"
     now_str = datetime.now(timezone.utc).isoformat()
     new_co = {
         "co_number":        co_num,

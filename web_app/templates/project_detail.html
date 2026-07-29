@@ -1017,9 +1017,8 @@
         <div class="modal-body">
           <div class="row g-3 mb-3">
             <div class="col-md-6">
-              <label class="form-label fw-600">CO Number</label>
-              <input type="text" class="form-control" value="CO-{{'%03d'|format(change_orders|length + 1)}}" disabled style="background-color:#f3f4f6; cursor:not-allowed;">
-              <div class="form-text">Auto-generated</div>
+              <label class="form-label fw-600">CO Number <span class="text-danger">*</span></label>
+              <input type="text" name="co_number" class="form-control" placeholder="e.g. CO-001" required autocomplete="off">
             </div>
             <div class="col-md-6">
               <label class="form-label fw-600">Amount ($) <span class="text-danger">*</span></label>
@@ -1027,13 +1026,13 @@
             </div>
           </div>
           <div class="mb-3">
-            <label class="form-label fw-600">Title <span class="text-danger">*</span></label>
-            <input type="text" name="title" class="form-control" placeholder="e.g. Additional MEP Calculations" required>
-          </div>
-          <div class="mb-3">
             <label class="form-label fw-600">PO / WO Number <span class="text-danger">*</span></label>
             <input type="text" name="po_wo_number" class="form-control" placeholder="Enter PO or WO number" required autocomplete="off">
             <div class="form-text">Must be unique — different from the project PO/WO and all other change orders.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-600">Title</label>
+            <input type="text" name="title" class="form-control" placeholder="e.g. Additional MEP Calculations">
           </div>
           <div class="mb-3">
             <label class="form-label fw-600">Shipping Address</label>
