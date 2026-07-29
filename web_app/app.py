@@ -14095,6 +14095,12 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
 
         if linked_invoice_id:
             stage["invoice_id"] = linked_invoice_id
+        # IMPORTANT: If stage already has an invoice_id (from creation), PRESERVE it
+        # Only clear if we found a different invoice to link to
+        elif stage.get("invoice_id"):
+            # Keep the existing invoice_id
+            pass
+
         if linked_invoice_number:
             stage["invoice_number"] = linked_invoice_number
 
