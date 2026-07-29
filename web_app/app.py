@@ -1,4 +1,4 @@
-﻿"""MABS PIMS - Flask Web Application"""
+"""MABS PIMS - Flask Web Application"""
 import os
 import re
 import json
