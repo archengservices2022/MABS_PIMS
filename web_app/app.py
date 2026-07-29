@@ -14016,14 +14016,19 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
 
                     # First, check if this is the current invoice being updated (most direct match)
                     if inv_id == invoice_id:
+                        log.info(f"[CURRENT_INV] Found current invoice {inv_id} for project {project_number}, inv_meta.project={inv_meta.get('project_number')}")
                         # For the current invoice, if it's linked to this project, include it
                         if inv_meta.get("project_number") == project_number:
+                            log.info(f"[CURRENT_INV_MATCH] Project matches! Setting linked_invoice_id and invoice_number")
                             # Always preserve the current invoice's number, even if no payments found
                             if not linked_invoice_number:
                                 linked_invoice_id = inv_id
                                 # Invoice number might be in meta or at top level
                                 linked_invoice_number = inv_meta.get("invoice_number") or inv.get("invoice_number", "")
+                                log.info(f"[CURRENT_INV_SET] Set linked_invoice_id={linked_invoice_id}, linked_invoice_number={linked_invoice_number}")
                             is_for_this_project = True
+                        else:
+                            log.info(f"[CURRENT_INV_NO_MATCH] Project does NOT match: {inv_meta.get('project_number')} != {project_number}")
                     else:
                         # For other invoices, use the standard matching logic
                         # Single-project invoices use project_number
