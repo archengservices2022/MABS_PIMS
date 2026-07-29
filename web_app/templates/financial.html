@@ -271,6 +271,12 @@ a[href*="filter_expense"]:hover {
     </a>
   </li>
   <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'archived-expenses' else '' }}" data-bs-toggle="tab" href="#tab-archived-expenses">
+      <i class="bi bi-archive me-1"></i>Archived Expenses
+      {% if deleted_expenses %}<span class="badge bg-secondary ms-1">{{ deleted_expenses|length }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
     <a class="nav-link {{ 'active' if active_tab == 'by-project' else '' }}" data-bs-toggle="tab" href="#tab-by-project">
       <i class="bi bi-kanban me-1"></i>By Project
     </a>
@@ -940,6 +946,54 @@ a[href*="filter_expense"]:hover {
   </div>
 </div><!-- /tab-expenses -->
 
+<!-- ARCHIVED EXPENSES TAB ????????????????????????????????????????????????????? -->
+<div class="tab-pane fade {{ 'show active' if active_tab == 'archived-expenses' else '' }}" id="tab-archived-expenses">
+  <div class="card-panel">
+    <h6 class="section-heading mb-3"><i class="bi bi-archive me-2"></i>Archived Expenses</h6>
+    {% if deleted_expenses %}
+    <div class="table-responsive">
+      <table class="table table-hover table-sm align-middle mb-0">
+        <thead style="background:#1e293b;">
+          <tr>
+            <th style="color:#fff;">Date</th>
+            <th style="color:#fff;">Description</th>
+            <th style="color:#fff;">Category</th>
+            <th style="color:#fff;">Amount</th>
+            <th style="color:#fff;">Deleted By</th>
+            <th style="color:#fff;">Deleted At</th>
+            <th style="color:#fff;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for exp in deleted_expenses %}
+          <tr>
+            <td class="text-muted small">{{ exp.get('date','—') }}</td>
+            <td>{{ exp.get('description') or exp.get('name','—') }}</td>
+            <td><span class="badge bg-secondary">{{ exp.get('category','—') }}</span></td>
+            <td class="fw-bold">{{ currency_symbol }}{{ "{:,.2f}".format(exp.get('amount',0)|float) }}</td>
+            <td class="text-muted small">{{ exp.get('deleted_by','—') }}</td>
+            <td class="text-muted small">{{ exp.get('deleted_at','')[:10] }}</td>
+            <td>
+              <form method="POST" action="{{ url_for('expense_restore', exp_id=exp.firebase_id) }}"
+                    onsubmit="return confirm('Restore this expense?');">
+                <button type="submit" class="btn btn-xs btn-outline-success">
+                  <i class="bi bi-arrow-counterclockwise me-1"></i>Restore
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-archive" style="font-size:2rem;"></i>
+      <p class="mt-2 mb-0">No archived expenses.</p>
+    </div>
+    {% endif %}
+  </div>
+</div><!-- /tab-archived-expenses -->
 
 <!-- NEW EXPENSE TAB ???????????????????????????????????????????????? -->
 <div class="tab-pane fade {{ 'show active' if active_tab == 'new-expense' else '' }}" id="tab-new-expense">
