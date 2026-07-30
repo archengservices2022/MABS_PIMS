@@ -1346,6 +1346,12 @@ function saveSheet(action) {
 
   const now = getUserLocalNow();  // User's current LOCAL time
 
+  // Validate all entries BEFORE showing confirmation dialog
+  for (const entry of entries) {
+    // No client-side date/time restrictions - backend will validate
+    // Users can add entries for any date (past or future)
+  }
+
   if (action==='submit') {
     const tot = parseFloat(document.getElementById('sumTotal').textContent)||0;
     const nonWorkEntries = entries.filter(e => e.entry_type !== 'work');
