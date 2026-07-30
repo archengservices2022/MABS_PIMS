@@ -18045,17 +18045,7 @@ def quick_invoice_stage(project_id, stage_idx):
         stage_name = stage.get("name", f"Stage {stage_idx + 1}")
         stage_amount = _safe_float(stage.get("amount", 0))
 
-        # Collect any approved CO stages that are also pending invoice
-        co_pending = []
-        for ci, s in enumerate(stages):
-            if ci == stage_idx:
-                continue
-            if (isinstance(s, dict) and
-                    s.get("status") == "Pending Invoice" and
-                    _is_co_stage(s)):
-                co_pending.append((ci, s))
-
-        # Build line items: base stage first, then CO stages
+        # Build line items for only this specific stage
         line_items = [{
             "description": stage_name,
             "project_number": proj_num,
@@ -18065,19 +18055,6 @@ def quick_invoice_stage(project_id, stage_idx):
         }]
         linked_projects = [{"project_number": proj_num, "payment_stage_index": stage_idx}]
         total_amount = stage_amount
-
-        for co_idx, co_stage in co_pending:
-            co_name = co_stage.get("name", f"CO Stage {co_idx + 1}")
-            co_amount = _safe_float(co_stage.get("amount", 0))
-            line_items.append({
-                "description": co_name,
-                "project_number": proj_num,
-                "quantity": "1",
-                "unit_price": str(co_amount),
-                "amount": str(co_amount),
-            })
-            linked_projects.append({"project_number": proj_num, "payment_stage_index": co_idx})
-            total_amount += co_amount
 
         # Create invoice using invoice_new logic (with ALL proper fields)
         invoice_data = {
@@ -18112,13 +18089,8 @@ def quick_invoice_stage(project_id, stage_idx):
         invoice_id = fb_push("/invoices", invoice_data)
         invoice_number = invoice_data["meta"].get("invoice_number", "")
 
-        # Mark base stage as invoiced
+        # Mark stage as invoiced
         _mark_project_stage(proj_num, stage_idx, "Invoiced", invoice_id=invoice_id, invoice_number=invoice_number, amount=stage_amount)
-
-        # Mark CO stages as invoiced in the same invoice
-        for co_idx, co_stage in co_pending:
-            co_amount = _safe_float(co_stage.get("amount", 0))
-            _mark_project_stage(proj_num, co_idx, "Invoiced", invoice_id=invoice_id, invoice_number=invoice_number, amount=co_amount)
 
         return {"success": True, "invoice_id": invoice_id, "invoice_number": invoice_number}, 200
     except Exception as e:
