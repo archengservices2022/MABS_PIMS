@@ -1061,7 +1061,7 @@ async function saveUserDetails() {
     commission_rate: parseFloat(document.getElementById('editCommissionRate').value) || 0,
     active:          document.getElementById('editStatus').value === 'true',
   };
-  msg.innerHTML = '<span class="text-muted">Saving?</span>';
+  msg.innerHTML = '<span class="text-muted">Saving...</span>';
   try {
     var res  = await fetch('/api/users/' + uid + '/details', {
       method: 'PATCH',
@@ -1069,10 +1069,20 @@ async function saveUserDetails() {
       body: JSON.stringify(body)
     });
     var data = await res.json();
-    if (!res.ok || data.error) { msg.innerHTML = '<span class="text-danger">' + (data.error || 'Error') + '</span>'; return; }
+    if (!res.ok) {
+      msg.innerHTML = '<span class="text-danger">' + (data.error || 'Error: ' + res.status) + '</span>';
+      return;
+    }
+    if (data.error) {
+      msg.innerHTML = '<span class="text-danger">' + data.error + '</span>';
+      return;
+    }
     msg.innerHTML = '<span class="text-success">Saved!</span>';
-    setTimeout(function(){ location.reload(); }, 600);
-  } catch(e) { msg.innerHTML = '<span class="text-danger">Request failed.</span>'; }
+    setTimeout(function(){ location.reload(); }, 800);
+  } catch(e) {
+    console.error('Save error:', e);
+    msg.innerHTML = '<span class="text-danger">Request failed: ' + e.message + '</span>';
+  }
 }
 
 function buildPagesCheckboxes(role, selectedPages) {

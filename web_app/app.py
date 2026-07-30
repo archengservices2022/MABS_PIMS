@@ -12339,6 +12339,7 @@ def user_details_update(uid):
         updates["active"] = bool(data["active"])
 
     fb_update(f"/users/{uid}", updates)
+    cache_bust("all_users")
 
     # Sync name changes across timesheets, expenses, approvals, etc.
     if old_display_name and new_display_name:
