@@ -831,6 +831,8 @@ function calcRow(id) {
   if (!tr) return;
 
   const type = tr.querySelector('.entry-type') ? tr.querySelector('.entry-type').value : 'work';
+  const date = tr.dataset.date;  // Define date early so it can be used for validation
+
   if (type !== 'work') {
     delete tr.dataset.worked;
     ['reg','ot','tot'].forEach(k => {
@@ -889,7 +891,6 @@ function calcRow(id) {
   let mins = (e.h*60+e.min) - (s.h*60+s.min);
 
   // Validate that end time is not in the future (using USER'S LOCAL TIME)
-  const date = tr.dataset.date;
   const endInput = tr.querySelector('.entry-end');
 
   // Only validate if date is valid
