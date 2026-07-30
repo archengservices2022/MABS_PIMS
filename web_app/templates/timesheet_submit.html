@@ -1026,41 +1026,98 @@ function collectEntries() {
 }
 
 function showValidationError(message) {
-  // Remove any existing error message
-  const existingError = document.getElementById('validation-error-message');
-  if (existingError) existingError.remove();
-
-  // Create error message container
-  const errorContainer = document.createElement('div');
-  errorContainer.id = 'validation-error-message';
-  errorContainer.style.cssText = `
-    background: #fee2e2;
-    border: 2px solid #dc2626;
-    border-radius: 8px;
-    padding: 14px 16px;
-    margin-bottom: 16px;
-    color: #b91c1c;
-    font-weight: 500;
-    font-size: 14px;
+  // Create modal overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'validation-modal-overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: center;
+    z-index: 9999;
   `;
-  errorContainer.innerHTML = `<i class="bi bi-exclamation-circle-fill"></i>${message}`;
 
-  // Insert at top of form
-  const formContainer = document.querySelector('.p-3.p-md-4');
-  if (formContainer) {
-    formContainer.insertBefore(errorContainer, formContainer.firstChild);
-    errorContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }
+  // Create modal
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    max-width: 500px;
+    width: 90%;
+    overflow: hidden;
+  `;
 
-  // Auto-remove after 5 seconds
-  setTimeout(() => {
-    if (errorContainer && errorContainer.parentNode) {
-      errorContainer.remove();
-    }
-  }, 5000);
+  // Create header
+  const header = document.createElement('div');
+  header.style.cssText = `
+    background: #dc2626;
+    color: white;
+    padding: 18px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-weight: 700;
+    font-size: 16px;
+  `;
+  header.innerHTML = `<i class="bi bi-exclamation-circle-fill"></i>Validation Error`;
+
+  // Create body
+  const body = document.createElement('div');
+  body.style.cssText = `
+    padding: 24px;
+    color: #334155;
+    font-size: 14px;
+    line-height: 1.6;
+  `;
+  body.textContent = message;
+
+  // Create footer with buttons
+  const footer = document.createElement('div');
+  footer.style.cssText = `
+    padding: 18px 24px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    border-top: 1px solid #e2e8f0;
+  `;
+
+  const okBtn = document.createElement('button');
+  okBtn.textContent = 'OK';
+  okBtn.style.cssText = `
+    background: #dc2626;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s;
+  `;
+  okBtn.onmouseover = () => okBtn.style.background = '#b91c1c';
+  okBtn.onmouseout = () => okBtn.style.background = '#dc2626';
+  okBtn.onclick = () => {
+    overlay.remove();
+  };
+
+  footer.appendChild(okBtn);
+  modal.appendChild(header);
+  modal.appendChild(body);
+  modal.appendChild(footer);
+  overlay.appendChild(modal);
+
+  // Remove any existing modal
+  const existingModal = document.getElementById('validation-modal-overlay');
+  if (existingModal) existingModal.remove();
+
+  document.body.appendChild(overlay);
+  modal.id = 'validation-modal-overlay';
 }
 
 function saveSheet(action) {
