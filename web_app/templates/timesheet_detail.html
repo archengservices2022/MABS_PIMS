@@ -221,7 +221,7 @@
   <div class="d-flex align-items-center gap-3 flex-wrap">
     <span class="sbadge sb-{{ sheet.status | lower }}">{{ sheet.status }}</span>
     {% if is_admin or sheet.employee_uid == user_uid %}
-    <a href="{{ url_for('timesheets_submit', week=sheet.week_of, sheet_id=sheet.firebase_id) }}" class="tsd-btn edit">
+    <a href="{{ url_for('timesheets_submit', week=sheet.week_of, employee_uid=sheet.employee_uid) }}" class="tsd-btn edit">
       <i class="bi bi-pencil"></i> Edit
     </a>
     {% endif %}
