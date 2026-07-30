@@ -18348,6 +18348,16 @@ def timesheet_detail(sheet_id):
         flash("You don't have permission to view this timesheet.", "danger")
         return redirect(url_for("timesheets"))
 
+    # Ensure employee_name is populated (lookup from employees table if needed)
+    if not sheet.get("employee_name") and sheet.get("employee_uid"):
+        employees = fb_get("/employees") or {}
+        for emp_id, emp_data in employees.items():
+            if emp_data.get("uid") == sheet.get("employee_uid"):
+                sheet["employee_name"] = emp_data.get("name", "Unknown Employee")
+                break
+        if not sheet.get("employee_name"):
+            sheet["employee_name"] = "Unknown Employee"
+
     by_date = {}
     for entry in sheet["entries"]:
         d = entry.get("date", "")
