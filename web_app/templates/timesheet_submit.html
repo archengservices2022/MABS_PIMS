@@ -1303,7 +1303,6 @@ function showConfirmSubmission(entries) {
   const submitMsg = isEditingOther
     ? `You are about to submit ${EMPLOYEE_NAME}'s timesheet.`
     : 'You are about to submit your timesheet.';
-  const editMsg = 'Once submitted, your timesheet cannot be edited.';
 
   body.innerHTML = `
     <p style="margin-bottom: 12px;">${submitMsg}</p>
@@ -1318,7 +1317,6 @@ function showConfirmSubmission(entries) {
         <span style="font-weight: 600;">${weekRange}</span>
       </div>
     </div>
-    <p style="margin-top: 16px; color: #64748b; font-size: 13px;">${editMsg}</p>
   `;
 
   // Create footer with buttons
