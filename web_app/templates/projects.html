@@ -13,6 +13,18 @@
   #projFilterForm {
     margin-bottom: 15px;
   }
+  /* Prevent select dropdown from displaying outside container */
+  #projFilterForm .form-select {
+    overflow: hidden;
+  }
+  #projFilterForm {
+    position: relative;
+    overflow: visible;
+  }
+  /* Hide overflow from select dropdowns */
+  .d-flex.gap-2 > .form-select {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
 </style>
 
 <!-- ?? Projects Overview ?????????????????????????????????????????????????????? -->
@@ -796,14 +808,34 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // Close select dropdowns when clicking outside the filter form
-  document.addEventListener('click', function(e) {
-    const filterForm = document.getElementById('projFilterForm');
-    if (filterForm && !filterForm.contains(e.target)) {
-      const selects = filterForm.querySelectorAll('select');
-      selects.forEach(select => {
-        select.blur();
-      });
-    }
+  const filterForm = document.getElementById('projFilterForm');
+  if (filterForm) {
+    document.addEventListener('click', function(e) {
+      if (!filterForm.contains(e.target)) {
+        const selects = filterForm.querySelectorAll('select');
+        selects.forEach(select => {
+          if (document.activeElement === select) {
+            select.blur();
+            e.preventDefault();
+          }
+        });
+      }
+    }, true);
+
+    // Also prevent select from opening if clicked outside
+    filterForm.addEventListener('change', function(e) {
+      if (e.target.tagName === 'SELECT') {
+        const rect = filterForm.getBoundingClientRect();
+        const mouseY = window.lastMouseY || 0;
+        if (mouseY > rect.bottom) {
+          e.target.blur();
+        }
+      }
+    });
+  }
+
+  document.addEventListener('mousemove', function(e) {
+    window.lastMouseY = e.clientY;
   });
 });
 </script>
