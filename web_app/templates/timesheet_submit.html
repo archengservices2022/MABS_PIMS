@@ -445,7 +445,7 @@
     <!-- Action buttons -->
     <div class="ts-action-bar">
       <a href="{{ url_for('timesheets') }}" class="ts-btn cancel">Cancel</a>
-      {% if not (existing_sheet and existing_sheet.status == 'Approved') %}
+      {% if not existing_sheet or existing_sheet.status != 'Approved' or is_admin %}
       <button type="button" onclick="saveSheet('draft')" class="ts-btn draft">
         <i class="bi bi-floppy"></i> Save Draft
       </button>
