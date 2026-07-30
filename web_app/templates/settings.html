@@ -1080,12 +1080,19 @@ async function saveUserDetails() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body)
     });
-    var data = await res.json();
 
     clearTimeout(timeoutId);
 
+    var data = {};
+    try {
+      data = await res.json();
+    } catch(parseErr) {
+      console.error('Response parse error:', parseErr);
+    }
+
     if (!res.ok) {
-      msg.innerHTML = '<span class="text-danger">' + (data.error || 'Error: ' + res.status) + '</span>';
+      var errMsg = data.error || data.message || 'Error: ' + res.status;
+      msg.innerHTML = '<span class="text-danger">' + errMsg + '</span>';
       saveBtn.disabled = false;
       return;
     }
@@ -1100,7 +1107,7 @@ async function saveUserDetails() {
   } catch(e) {
     clearTimeout(timeoutId);
     console.error('Save error:', e);
-    msg.innerHTML = '<span class="text-danger">Request failed</span>';
+    msg.innerHTML = '<span class="text-danger">Request failed: ' + (e.message || 'Network error') + '</span>';
     saveBtn.disabled = false;
   }
 }
