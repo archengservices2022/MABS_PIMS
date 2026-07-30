@@ -858,19 +858,27 @@ function calcRow(id) {
   // Validate that end time is not in the future (accounting for overnight shifts)
   const date = tr.dataset.date;
   const endInput = tr.querySelector('.entry-end');
-  const now = new Date(NOW_ISO);
-  let entryDateTime = new Date(date + 'T' + String(e.h).padStart(2,'0') + ':' + String(e.min).padStart(2,'0') + ':00Z');
 
-  // If this is an overnight shift, add 1 day to the end time
-  let mins = (e.h*60+e.min) - (s.h*60+s.min);
-  if (mins < 0) {
-    entryDateTime = new Date(entryDateTime.getTime() + 24 * 60 * 60 * 1000);
-  }
+  // Only validate if date is valid
+  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const now = new Date(NOW_ISO);
+    let entryDateTime = new Date(date + 'T' + String(e.h).padStart(2,'0') + ':' + String(e.min).padStart(2,'0') + ':00Z');
 
-  if (entryDateTime > now) {
-    endInput.style.borderColor = '#dc2626';
-    endInput.style.backgroundColor = '#fee2e2';
-    endInput.title = 'End time cannot be in the future';
+    // If this is an overnight shift, add 1 day to the end time
+    let mins = (e.h*60+e.min) - (s.h*60+s.min);
+    if (mins < 0) {
+      entryDateTime = new Date(entryDateTime.getTime() + 24 * 60 * 60 * 1000);
+    }
+
+    if (entryDateTime > now) {
+      endInput.style.borderColor = '#dc2626';
+      endInput.style.backgroundColor = '#fee2e2';
+      endInput.title = 'End time cannot be in the future';
+    } else {
+      endInput.style.borderColor = '';
+      endInput.style.backgroundColor = '';
+      endInput.title = '';
+    }
   } else {
     endInput.style.borderColor = '';
     endInput.style.backgroundColor = '';
