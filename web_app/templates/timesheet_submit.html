@@ -919,16 +919,69 @@ function calcRow(id) {
     return;
   }
 
+  // Check if entry date is in the future (for work entries only)
+  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const entryDate = new Date(date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    entryDate.setHours(0, 0, 0, 0);
+
+    if (entryDate > today) {
+      // Disable inputs for future dates
+      startInput.disabled = true;
+      endInput.disabled = true;
+      startInput.value = '';
+      endInput.value = '';
+      startInput.style.borderColor = '#e2e8f0';
+      startInput.style.backgroundColor = '#f8fafc';
+      startInput.style.color = '#cbd5e1';
+      startInput.style.cursor = 'not-allowed';
+      startInput.title = 'Start time not allowed for future dates. Please select a past or current date.';
+      endInput.style.borderColor = '#e2e8f0';
+      endInput.style.backgroundColor = '#f8fafc';
+      endInput.style.color = '#cbd5e1';
+      endInput.style.cursor = 'not-allowed';
+      endInput.title = 'End time not allowed for future dates. Please select a past or current date.';
+      delete tr.dataset.worked;
+      ['reg','ot','tot'].forEach(k => {
+        const el = document.getElementById(`${k}-${id}`);
+        if (el) el.textContent = '—';
+      });
+      recalcWeek();
+      return;
+    } else {
+      // Enable inputs for past/current dates
+      startInput.disabled = false;
+      endInput.disabled = false;
+      startInput.style.color = '';
+      startInput.style.cursor = '';
+      endInput.style.color = '';
+      endInput.style.cursor = '';
+    }
+  }
+
   let s = parseTime(tr.querySelector('.entry-start').value);
   let e = parseTime(tr.querySelector('.entry-end').value);
 
-  // Clear any previous styling
-  startInput.style.borderColor = '';
-  startInput.style.backgroundColor = '';
-  startInput.title = '';
-  startInput.disabled = false;
-  startInput.style.color = '';
-  startInput.style.cursor = '';
+  // Validate start time is not in the future
+  if (s && date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const now = getUserLocalNow();
+    let startDateTime = new Date(date + 'T' + String(s.h).padStart(2,'0') + ':' + String(s.min).padStart(2,'0') + ':00');
+
+    if (startDateTime > now) {
+      startInput.style.borderColor = '#dc2626';
+      startInput.style.backgroundColor = '#fee2e2';
+      startInput.title = 'Start time cannot be in the future (based on your local time)';
+    } else {
+      startInput.style.borderColor = '';
+      startInput.style.backgroundColor = '';
+      startInput.title = '';
+    }
+  } else {
+    startInput.style.borderColor = '';
+    startInput.style.backgroundColor = '';
+    startInput.title = '';
+  }
 
   if (s && e && e.h < 12) {
     const raw = tr.querySelector('.entry-end').value.trim().toUpperCase();
@@ -953,13 +1006,34 @@ function calcRow(id) {
   // Calculate minutes difference (needed for both validation and hour calculation)
   let mins = (e.h*60+e.min) - (s.h*60+s.min);
 
+  // Validate that end time is not in the future (using USER'S LOCAL TIME)
   const endInput = tr.querySelector('.entry-end');
-  endInput.style.borderColor = '';
-  endInput.style.backgroundColor = '';
-  endInput.title = '';
-  endInput.disabled = false;
-  endInput.style.color = '';
-  endInput.style.cursor = '';
+
+  // Only validate if date is valid
+  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const now = getUserLocalNow();  // User's current local time
+    // Create datetime in user's local timezone (without 'Z' means local time)
+    let entryDateTime = new Date(date + 'T' + String(e.h).padStart(2,'0') + ':' + String(e.min).padStart(2,'0') + ':00');
+
+    // If this is an overnight shift, add 1 day to the end time
+    if (mins < 0) {
+      entryDateTime = new Date(entryDateTime.getTime() + 24 * 60 * 60 * 1000);
+    }
+
+    if (entryDateTime > now) {
+      endInput.style.borderColor = '#dc2626';
+      endInput.style.backgroundColor = '#fee2e2';
+      endInput.title = 'End time cannot be in the future (based on your local time)';
+    } else {
+      endInput.style.borderColor = '';
+      endInput.style.backgroundColor = '';
+      endInput.title = '';
+    }
+  } else {
+    endInput.style.borderColor = '';
+    endInput.style.backgroundColor = '';
+    endInput.title = '';
+  }
 
   // Overnight shift: treat an end time earlier than the start time as next day.
   // Example: 6 PM -> 12 AM should calculate as 6 hours, not 0.
@@ -1348,8 +1422,46 @@ function saveSheet(action) {
 
   // Validate all entries BEFORE showing confirmation dialog
   for (const entry of entries) {
-    // No client-side date/time restrictions - backend will validate
-    // Users can add entries for any date (past or future)
+    if (entry.entry_type === 'work' && entry.date) {
+      // Validate that work entries are not for future dates
+      const entryDate = new Date(entry.date);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      entryDate.setHours(0, 0, 0, 0);
+
+      if (entryDate > today) {
+        showValidationError(`Work entries cannot be added for future dates. Please remove the entry for ${entry.date}.`);
+        return;
+      }
+
+      // Validate start time
+      if (entry.start_time) {
+        let startDateTime = new Date(entry.date + 'T' + entry.start_time + ':00');
+        if (startDateTime > now) {
+          showValidationError(`Start time for ${entry.date} cannot be in the future. Please enter a valid start time.`);
+          return;
+        }
+      }
+
+      // Validate end time
+      if (entry.end_time) {
+        let endDateTime = new Date(entry.date + 'T' + entry.end_time + ':00');
+
+        // Handle overnight shifts: if end_time < start_time, end is next day
+        if (entry.start_time && entry.end_time) {
+          const [startH, startM] = entry.start_time.split(':').map(Number);
+          const [endH, endM] = entry.end_time.split(':').map(Number);
+          if ((endH * 60 + endM) < (startH * 60 + startM)) {
+            endDateTime = new Date(endDateTime.getTime() + 24 * 60 * 60 * 1000);
+          }
+        }
+
+        if (endDateTime > now) {
+          showValidationError(`End time for ${entry.date} cannot be in the future. Please enter a valid end time.`);
+          return;
+        }
+      }
+    }
   }
 
   if (action==='submit') {
