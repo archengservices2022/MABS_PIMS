@@ -860,6 +860,9 @@ function calcRow(id) {
     return;
   }
 
+  // Calculate minutes difference (needed for both validation and hour calculation)
+  let mins = (e.h*60+e.min) - (s.h*60+s.min);
+
   // Validate that end time is not in the future (using USER'S LOCAL TIME)
   const date = tr.dataset.date;
   const endInput = tr.querySelector('.entry-end');
@@ -871,7 +874,6 @@ function calcRow(id) {
     let entryDateTime = new Date(date + 'T' + String(e.h).padStart(2,'0') + ':' + String(e.min).padStart(2,'0') + ':00');
 
     // If this is an overnight shift, add 1 day to the end time
-    let mins = (e.h*60+e.min) - (s.h*60+s.min);
     if (mins < 0) {
       entryDateTime = new Date(entryDateTime.getTime() + 24 * 60 * 60 * 1000);
     }
