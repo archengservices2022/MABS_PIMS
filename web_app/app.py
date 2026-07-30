@@ -12335,6 +12335,8 @@ def user_details_update(uid):
             updates["role"] = r
             # Auto-reset custom_pages to role default when role changes
             updates["custom_pages"] = None
+    if "active" in data:
+        updates["active"] = bool(data["active"])
 
     fb_update(f"/users/{uid}", updates)
 
