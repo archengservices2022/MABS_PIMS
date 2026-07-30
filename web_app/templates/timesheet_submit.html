@@ -250,28 +250,6 @@
   outline: none;
   box-shadow: 0 0 0 3px rgba(13,148,136,.12);
 }
-.proj-input-internal {
-  background: #f3f0ff;
-  color: #6d28d9;
-  font-weight: 600;
-  border-color: #c084fc;
-  border-width: 2px;
-}
-.proj-input-internal:focus {
-  border-color: #c084fc;
-  box-shadow: 0 0 0 3px rgba(192,132,252,.15);
-}
-.proj-input-general {
-  background: #f8f6ff;
-  color: #6b21a8;
-  font-weight: 600;
-  border-color: #a78bfa;
-  border-width: 2px;
-}
-.proj-input-general:focus {
-  border-color: #a78bfa;
-  box-shadow: 0 0 0 3px rgba(167,139,250,.15);
-}
 .proj-input:disabled {
   background: #f8fafc;
   color: #94a3b8;
@@ -309,20 +287,8 @@
 }
 .proj-dd-item:last-child { border-bottom: none; }
 .proj-dd-item:hover { background: #f0fdfa; color: #0D9488; }
-.proj-dd-item.general  {
-  background: #f8f6ff;
-  color: #6b21a8;
-  font-weight: 600;
-  border-left: 3px solid #a78bfa;
-  padding-left: 9px;
-}
-.proj-dd-item.internal {
-  background: #f3f0ff;
-  color: #6d28d9;
-  font-weight: 600;
-  border-left: 3px solid #c084fc;
-  padding-left: 9px;
-}
+.proj-dd-item.general  { color: #64748b; font-style: italic; }
+.proj-dd-item.internal { color: #7c3aed; }
 .proj-dd-none { padding: 10px 12px; font-size: 12px; color: #94a3b8; text-align: center; }
 
 /* ?? Delete row button ????????????????????????????????????????? */
@@ -525,21 +491,11 @@ const ENTRY_TYPES = [
 ];
 
 const INTERNAL_ACTIVITIES = [
-  'Project Assignment/Planning',
-  'Project Listing/Documentation',
-  'Client Communication',
-  'Proposal Development',
-  'Business Development Meeting',
-  'Internal Team Meeting',
-  'Project Review/Analysis',
-  'Research & Development',
-  'Administrative Tasks',
-  'Financial/Accounting Review',
-  'Quality Assurance Review',
-  'Training & Development',
-  'Resource Planning',
-  'System Setup/Configuration',
-  'Client Relationship Management',
+  'Ext/Int Relationship Buildup',
+  'Business Dev/Project Meeting',
+  'Engineering Research/Study',
+  'Design Review/Internal Meeting',
+  'Accounts/Finance/Research',
 ];
 
 function escHtml(s) {
@@ -623,23 +579,7 @@ function initProjSearch(id) {
 
   function syncInput() {
     const opt = sel.options[sel.selectedIndex];
-    const selectedItem = allItems.find(i => i.value === sel.value);
     input.value = (opt && opt.value) ? opt.text : '';
-
-    // Add visual styling for internal activities
-    if (selectedItem) {
-      if (selectedItem.general) {
-        input.classList.add('proj-input-general');
-        input.classList.remove('proj-input-internal');
-      } else if (selectedItem.internal) {
-        input.classList.add('proj-input-internal');
-        input.classList.remove('proj-input-general');
-      } else {
-        input.classList.remove('proj-input-general', 'proj-input-internal');
-      }
-    } else {
-      input.classList.remove('proj-input-general', 'proj-input-internal');
-    }
   }
 
   function buildList(q) {
@@ -654,7 +594,6 @@ function initProjSearch(id) {
         e.preventDefault();
         sel.value = this.dataset.val;
         input.value = this.dataset.val ? this.textContent : '';
-        syncInput();  // Apply visual styling
         dd.classList.remove('open');
       });
     });
