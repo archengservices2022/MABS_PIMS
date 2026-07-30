@@ -18306,9 +18306,17 @@ def timesheets_submit():
     existing   = _load_timesheets(week_of=week_of, employee_uid=uid)
     existing_sheet = existing[0] if existing else None
 
-    # Override employee_name if admin is editing another user's timesheet
-    if existing_sheet and edited_employee_name:
-        existing_sheet["employee_name"] = edited_employee_name
+    # Ensure employee_name is populated correctly (lookup from employees table if needed)
+    if existing_sheet:
+        if edited_employee_name:
+            existing_sheet["employee_name"] = edited_employee_name
+        elif not existing_sheet.get("employee_name") and uid:
+            # Lookup employee name from employees table if not in timesheet
+            employees = fb_get("/employees") or {}
+            for emp_id, emp_data in employees.items():
+                if emp_data.get("uid") == uid:
+                    existing_sheet["employee_name"] = emp_data.get("name", "")
+                    break
 
     week_start = datetime.strptime(week_of, "%Y-%m-%d").date()
     week_end   = week_start + timedelta(days=6)
