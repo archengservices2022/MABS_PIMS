@@ -18284,7 +18284,8 @@ def timesheets():
 @login_required
 def timesheets_submit():
     week_of    = _week_monday(request.args.get("week", ""))
-    uid        = session.get("user_uid", "")
+    current_uid = session.get("user_uid", "")  # Always keep current user's UID
+    uid        = current_uid
     user_role = normalize_role(session.get("user_role", ""))
     is_admin = user_role in ("admin", "administration")
 
@@ -18293,12 +18294,10 @@ def timesheets_submit():
     edited_employee_name = None
     if edit_uid and is_admin:
         uid = edit_uid
-        # Get the edited user's name from employees table
-        employees = fb_get("/employees") or {}
-        for emp_id, emp_data in employees.items():
-            if emp_data.get("uid") == edit_uid:
-                edited_employee_name = emp_data.get("name", "")
-                break
+        # Get the edited user's name from users table
+        users = fb_get("/users") or {}
+        user_data = users.get(edit_uid, {})
+        edited_employee_name = user_data.get("username", "")
 
     all_projs  = _load_projects_list()
     active_projects = [p for p in all_projs
@@ -18306,17 +18305,15 @@ def timesheets_submit():
     existing   = _load_timesheets(week_of=week_of, employee_uid=uid)
     existing_sheet = existing[0] if existing else None
 
-    # Always lookup correct employee name from employees table based on employee uid
+    # Always lookup correct employee name from users table based on employee uid
     if existing_sheet and uid:
         if edited_employee_name:
             existing_sheet["employee_name"] = edited_employee_name
         else:
-            # Lookup employee name from employees table
-            employees = fb_get("/employees") or {}
-            for emp_id, emp_data in employees.items():
-                if emp_data.get("uid") == uid:
-                    existing_sheet["employee_name"] = emp_data.get("name", "")
-                    break
+            # Lookup employee name from users table
+            users = fb_get("/users") or {}
+            user_data = users.get(uid, {})
+            existing_sheet["employee_name"] = user_data.get("username", "")
 
     week_start = datetime.strptime(week_of, "%Y-%m-%d").date()
     week_end   = week_start + timedelta(days=6)
@@ -18332,7 +18329,7 @@ def timesheets_submit():
     return render_template("timesheet_submit.html",
         week_of=week_of, week_label=week_label,
         week_days=week_days, active_projects=active_projects,
-        existing_sheet=existing_sheet, is_admin=is_admin)
+        existing_sheet=existing_sheet, is_admin=is_admin, current_uid=current_uid)
 
 
 @app.route("/timesheets/<sheet_id>")
@@ -18356,15 +18353,11 @@ def timesheet_detail(sheet_id):
         flash("You don't have permission to view this timesheet.", "danger")
         return redirect(url_for("timesheets"))
 
-    # Always lookup correct employee name from employees table based on employee_uid
+    # Always lookup correct employee name from users table based on employee_uid
     if sheet.get("employee_uid"):
-        employees = fb_get("/employees") or {}
-        for emp_id, emp_data in employees.items():
-            if emp_data.get("uid") == sheet.get("employee_uid"):
-                sheet["employee_name"] = emp_data.get("name", "Unknown Employee")
-                break
-        else:
-            sheet["employee_name"] = "Unknown Employee"
+        users = fb_get("/users") or {}
+        user_data = users.get(sheet.get("employee_uid"), {})
+        sheet["employee_name"] = user_data.get("username", "Unknown Employee")
 
     by_date = {}
     for entry in sheet["entries"]:
@@ -18439,12 +18432,10 @@ def api_timesheets_save():
     edited_uid = data.get("edited_uid", "")
     if edited_uid and is_admin:
         uid = edited_uid
-        # Try to get the edited user's name
-        employees = fb_get("/employees") or {}
-        for emp_id, emp_data in employees.items():
-            if emp_data.get("uid") == edited_uid:
-                name = emp_data.get("name", "Unknown")
-                break
+        # Get the edited user's name from users table
+        users = fb_get("/users") or {}
+        user_data = users.get(edited_uid, {})
+        name = user_data.get("username", "Unknown")
 
     if not week_of:
         return jsonify({"error": "week_of is required"}), 400

@@ -445,7 +445,7 @@
     <!-- Action buttons -->
     <div class="ts-action-bar">
       <a href="{{ url_for('timesheets') }}" class="ts-btn cancel">Cancel</a>
-      {% if not existing_sheet or existing_sheet.status != 'Approved' or is_admin %}
+      {% if not existing_sheet or (existing_sheet.status not in ('Approved', 'Submitted') or is_admin) %}
       <button type="button" onclick="saveSheet('draft')" class="ts-btn draft">
         <i class="bi bi-floppy"></i> Save Draft
       </button>
@@ -469,6 +469,8 @@ const EXISTING  = {{ (existing_sheet.entries if existing_sheet else []) | tojson
 const IS_APPROVED = {{ 'true' if (existing_sheet and existing_sheet.status == 'Approved') else 'false' }};
 const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
 const EDITED_USER_UID = {{ (existing_sheet.employee_uid if existing_sheet else '') | tojson }};
+const CURRENT_USER_UID = {{ current_uid | tojson }};
+const EMPLOYEE_NAME = {{ (existing_sheet.employee_name if existing_sheet else '') | tojson }};
 
 // Get current date in user's LOCAL timezone for reference
 function getUserLocalToday() {
@@ -1297,8 +1299,14 @@ function showConfirmSubmission(entries) {
   const endFormatted = weekEnd.toLocaleDateString('en-US', options);
   const weekRange = `${startFormatted} — ${endFormatted}`;
 
+  const isEditingOther = EDITED_USER_UID && CURRENT_USER_UID && EDITED_USER_UID !== CURRENT_USER_UID;
+  const submitMsg = isEditingOther
+    ? `You are about to submit ${EMPLOYEE_NAME}'s timesheet.`
+    : 'You are about to submit your timesheet.';
+  const editMsg = 'Once submitted, your timesheet cannot be edited.';
+
   body.innerHTML = `
-    <p style="margin-bottom: 12px;">You are about to submit your timesheet.</p>
+    <p style="margin-bottom: 12px;">${submitMsg}</p>
     <div style="background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 8px; padding: 12px; margin: 14px 0;">
       <div style="font-weight: 600; color: #0D9488; margin-bottom: 8px;">Timesheet Summary:</div>
       <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
@@ -1310,7 +1318,7 @@ function showConfirmSubmission(entries) {
         <span style="font-weight: 600;">${weekRange}</span>
       </div>
     </div>
-    <p style="margin-top: 16px; color: #64748b; font-size: 13px;">Once submitted, your timesheet cannot be edited.</p>
+    <p style="margin-top: 16px; color: #64748b; font-size: 13px;">${editMsg}</p>
   `;
 
   // Create footer with buttons
