@@ -839,6 +839,27 @@ function calcRow(id) {
 
   let s = parseTime(tr.querySelector('.entry-start').value);
   let e = parseTime(tr.querySelector('.entry-end').value);
+  const startInput = tr.querySelector('.entry-start');
+
+  // Validate start time is not in the future
+  if (s && date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const now = getUserLocalNow();
+    let startDateTime = new Date(date + 'T' + String(s.h).padStart(2,'0') + ':' + String(s.min).padStart(2,'0') + ':00');
+
+    if (startDateTime > now) {
+      startInput.style.borderColor = '#dc2626';
+      startInput.style.backgroundColor = '#fee2e2';
+      startInput.title = 'Start time cannot be in the future (based on your local time)';
+    } else {
+      startInput.style.borderColor = '';
+      startInput.style.backgroundColor = '';
+      startInput.title = '';
+    }
+  } else {
+    startInput.style.borderColor = '';
+    startInput.style.backgroundColor = '';
+    startInput.title = '';
+  }
 
   if (s && e && e.h < 12) {
     const raw = tr.querySelector('.entry-end').value.trim().toUpperCase();
@@ -1008,22 +1029,33 @@ function saveSheet(action) {
 
   const now = getUserLocalNow();  // User's current LOCAL time
   for (const entry of entries) {
-    if (entry.entry_type === 'work' && entry.date && entry.end_time) {
-      // Create datetime in user's local timezone (without 'Z' means local time)
-      let entryDateTime = new Date(entry.date + 'T' + entry.end_time + ':00');
-
-      // Handle overnight shifts: if end_time < start_time, end is next day
-      if (entry.start_time && entry.end_time) {
-        const [startH, startM] = entry.start_time.split(':').map(Number);
-        const [endH, endM] = entry.end_time.split(':').map(Number);
-        if ((endH * 60 + endM) < (startH * 60 + startM)) {
-          entryDateTime = new Date(entryDateTime.getTime() + 24 * 60 * 60 * 1000);
+    if (entry.entry_type === 'work' && entry.date) {
+      // Validate start time
+      if (entry.start_time) {
+        let startDateTime = new Date(entry.date + 'T' + entry.start_time + ':00');
+        if (startDateTime > now) {
+          alert(`Start time for ${entry.date} cannot be in the future (based on your local time). Please enter a valid start time.`);
+          return;
         }
       }
 
-      if (entryDateTime > now) {
-        alert(`End time for ${entry.date} cannot be in the future (based on your local time). Please enter a valid end time.`);
-        return;
+      // Validate end time
+      if (entry.end_time) {
+        let endDateTime = new Date(entry.date + 'T' + entry.end_time + ':00');
+
+        // Handle overnight shifts: if end_time < start_time, end is next day
+        if (entry.start_time && entry.end_time) {
+          const [startH, startM] = entry.start_time.split(':').map(Number);
+          const [endH, endM] = entry.end_time.split(':').map(Number);
+          if ((endH * 60 + endM) < (startH * 60 + startM)) {
+            endDateTime = new Date(endDateTime.getTime() + 24 * 60 * 60 * 1000);
+          }
+        }
+
+        if (endDateTime > now) {
+          alert(`End time for ${entry.date} cannot be in the future (based on your local time). Please enter a valid end time.`);
+          return;
+        }
       }
     }
   }
