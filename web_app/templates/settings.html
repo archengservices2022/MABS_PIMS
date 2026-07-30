@@ -953,7 +953,7 @@
       </div>
       <div class="modal-footer py-2">
         <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-sm btn-teal" onclick="saveUserDetails()"><i class="bi bi-check-circle me-1"></i>Save</button>
+        <button id="editSaveBtn" class="btn btn-sm btn-teal" onclick="saveUserDetails()"><i class="bi bi-check-circle me-1"></i>Save</button>
       </div>
     </div>
   </div>
@@ -1050,10 +1050,10 @@ async function saveUserDetails() {
   var uid    = document.getElementById('editUid').value;
   var msg    = document.getElementById('editUserMsg');
   var role   = document.getElementById('editRole').value;
-  var saveBtn = document.querySelector('.btn-teal[onclick="saveUserDetails()"]');
+  var saveBtn = document.getElementById('editSaveBtn');
 
   if (!uid) { msg.innerHTML = '<span class="text-danger">Error: User ID missing</span>'; return; }
-  if (saveBtn.disabled) return;
+  if (!saveBtn || saveBtn.disabled) return;
 
   var body   = {
     username:        document.getElementById('editUsername').value.trim(),
