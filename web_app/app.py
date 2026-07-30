@@ -18306,12 +18306,12 @@ def timesheets_submit():
     existing   = _load_timesheets(week_of=week_of, employee_uid=uid)
     existing_sheet = existing[0] if existing else None
 
-    # Ensure employee_name is populated correctly (lookup from employees table if needed)
-    if existing_sheet:
+    # Always lookup correct employee name from employees table based on employee uid
+    if existing_sheet and uid:
         if edited_employee_name:
             existing_sheet["employee_name"] = edited_employee_name
-        elif not existing_sheet.get("employee_name") and uid:
-            # Lookup employee name from employees table if not in timesheet
+        else:
+            # Lookup employee name from employees table
             employees = fb_get("/employees") or {}
             for emp_id, emp_data in employees.items():
                 if emp_data.get("uid") == uid:
@@ -18356,14 +18356,14 @@ def timesheet_detail(sheet_id):
         flash("You don't have permission to view this timesheet.", "danger")
         return redirect(url_for("timesheets"))
 
-    # Ensure employee_name is populated (lookup from employees table if needed)
-    if not sheet.get("employee_name") and sheet.get("employee_uid"):
+    # Always lookup correct employee name from employees table based on employee_uid
+    if sheet.get("employee_uid"):
         employees = fb_get("/employees") or {}
         for emp_id, emp_data in employees.items():
             if emp_data.get("uid") == sheet.get("employee_uid"):
                 sheet["employee_name"] = emp_data.get("name", "Unknown Employee")
                 break
-        if not sheet.get("employee_name"):
+        else:
             sheet["employee_name"] = "Unknown Employee"
 
     by_date = {}
