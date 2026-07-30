@@ -13,17 +13,14 @@
   #projFilterForm {
     margin-bottom: 15px;
   }
-  /* Prevent select dropdown from displaying outside container */
-  #projFilterForm .form-select {
-    overflow: hidden;
+  /* Disable select interaction completely with pointer-events: none */
+  /* This is the most effective way to prevent dropdown from opening */
+  select {
+    pointer-events: none;
   }
-  #projFilterForm {
-    position: relative;
-    overflow: visible;
-  }
-  /* Hide overflow from select dropdowns */
-  .d-flex.gap-2 > .form-select {
-    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  /* Re-enable pointer events ONLY for selects inside the filter form */
+  #projFilterForm select {
+    pointer-events: auto;
   }
 </style>
 
