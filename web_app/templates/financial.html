@@ -646,8 +646,8 @@ a[href*="filter_expense"]:hover {
               {% endif %}
             </td>
             <td style="white-space:nowrap;">
-              {% if r.get('invoice_id') %}
-              <a href="{{ url_for('invoice_detail', invoice_id=r.get('invoice_id','')) }}"
+              {% if r['invoice_id']|default(false) %}
+              <a href="{{ url_for('invoice_detail', invoice_id=r['invoice_id']) }}"
                  class="fw-bold text-teal text-decoration-none">{{ r['invoice_number']|default('—') }}</a>
               {% else %}
               <span class="fw-bold text-teal">{{ r['invoice_number']|default('—') }}</span>
