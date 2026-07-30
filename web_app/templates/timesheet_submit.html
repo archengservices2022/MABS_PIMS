@@ -372,7 +372,7 @@
       </div>
       <div class="d-flex align-items-center gap-2">
         <label style="font-size:12px;opacity:.8;white-space:nowrap;font-weight:500;">Week:</label>
-        <input type="week" id="weekPicker" onchange="changeWeek(this.value)">
+        <input type="week" id="weekPicker">
       </div>
     </div>
   </div>
@@ -490,7 +490,111 @@ const ENTRY_TYPES = [
   { value: 'pto',     label: 'PTO' },
 ];
 
+// Helper: Convert week string (YYYY-Www) to Monday date (YYYY-MM-DD)
+function weekToMonday(weekStr) {
+  if (!weekStr) return null;
+  const [yearStr, weekStr2] = weekStr.split('-W');
+  const year = parseInt(yearStr);
+  const week = parseInt(weekStr2);
+
+  // ISO 8601: Jan 4 is always in week 1. Find Monday of week 1 first.
+  const jan4 = new Date(year, 0, 4);
+  const jan4DayOfWeek = jan4.getDay();  // 0=Sun, 1=Mon, 2=Tue, ... 6=Sat
+
+  // Calculate Monday of Week 1
+  // If Jan 4 is Monday (1), go back 0 days
+  // If Jan 4 is Tuesday (2), go back 1 day
+  // If Jan 4 is Sunday (0), go back 6 days (to prev Monday)
+  const daysToSubtract = jan4DayOfWeek === 0 ? 6 : jan4DayOfWeek - 1;
+
+  // Create date for Jan 4, then subtract days to get Monday of Week 1
+  const week1Monday = new Date(year, 0, 4 - daysToSubtract);
+
+  // Now add (week-1)*7 days to get Monday of target week
+  const resultDate = new Date(week1Monday.getTime() + (week - 1) * 7 * 24 * 60 * 60 * 1000);
+
+  return resultDate;
+}
+
+// Helper: Format date as YYYY-MM-DD
+function dateToString(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Handle week selection - navigate to the selected week
+function changeWeek(weekStr) {
+  if (!weekStr) return;
+
+  const selectedMonday = weekToMonday(weekStr);
+  const today = new Date();
+
+  console.log('=== Week Selection Debug ===');
+  console.log('Raw week value from input:', weekStr);
+  console.log('Calculated Monday:', selectedMonday.toDateString());
+  console.log('Today:', today.toDateString());
+
+  // Prevent selecting future weeks
+  if (selectedMonday > today) {
+    console.log('Week is in future, preventing navigation');
+    alert('Cannot select future weeks');
+    return;
+  }
+
+  const weekDate = dateToString(selectedMonday);
+  console.log('Final navigation to:', weekDate);
+  console.log('Current URL week param:', WEEK_OF);
+  console.log('=== End Debug ===');
+
+  // Only navigate if week changed
+  if (WEEK_OF !== weekDate) {
+    console.log('Week changed, navigating to:', weekDate);
+    window.location = `/timesheets/submit?week=${weekDate}`;
+  } else {
+    console.log('Week unchanged, not navigating');
+  }
+}
+
+// Initialize week picker
+(function initWeekPicker() {
+  const weekPicker = document.getElementById('weekPicker');
+  const d = new Date(WEEK_OF);
+  const jan4 = new Date(d.getFullYear(), 0, 4);
+  const dayOfWeek = jan4.getDay() || 7;
+  const mondayOfWeek1 = new Date(jan4);
+  mondayOfWeek1.setDate(jan4.getDate() - (dayOfWeek - 1));
+
+  const weeksDiff = Math.round((d - mondayOfWeek1) / (7 * 86400000));
+  const weekNum = weeksDiff + 1;
+
+  weekPicker.value = `${d.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+
+  // Set max week to current week
+  const today = new Date();
+  const jan4Today = new Date(today.getFullYear(), 0, 4);
+  const dayOfWeekToday = jan4Today.getDay() || 7;
+  const mondayOfWeek1Today = new Date(jan4Today);
+  mondayOfWeek1Today.setDate(jan4Today.getDate() - (dayOfWeekToday - 1));
+
+  const weeksDiffToday = Math.round((today - mondayOfWeek1Today) / (7 * 86400000));
+  const currentWeekNum = weeksDiffToday + 1;
+  const maxWeek = `${today.getFullYear()}-W${String(currentWeekNum).padStart(2, '0')}`;
+
+  weekPicker.max = maxWeek;
+  console.log('Week picker initialized to:', weekPicker.value, 'Max:', maxWeek);
+
+  // Add change event listener
+  weekPicker.addEventListener('change', function(e) {
+    console.log('=== WEEK CHANGE EVENT ===');
+    console.log('Raw input value:', this.value);
+    const mondayDate = weekToMonday(this.value);
+    console.log('Monday date calculated:', mondayDate ? mondayDate.toDateString() : 'null');
+    console.log('========================');
+    changeWeek(this.value);
+  });
+})();
+
 const INTERNAL_ACTIVITIES = [
+  'General / Admin',
   'Ext/Int Relationship Buildup',
   'Business Dev/Project Meeting',
   'Engineering Research/Study',
@@ -565,10 +669,9 @@ function initProjSearch(id) {
     dd.style.width = r.width + 'px';
   }
 
-  const allItems = [{value:'', label:'— General / Admin —', general:true}]
-    .concat(INTERNAL_ACTIVITIES.map(function(name) {
+  const allItems = INTERNAL_ACTIVITIES.map(function(name) {
       return { value: '|' + name + '|', label: name, general: false, internal: true };
-    }))
+    })
     .concat(PROJECTS.map(function(p) {
       return {
         value: (p.project_number||'') + '|' + (p.project_name||'') + '|' + (p.firebase_id||''),
@@ -627,7 +730,13 @@ function buildEntryRow(id, date, entry, locked) {
   entry = entry || {};
   const entryType = entry.entry_type || 'work';
   const isWork = entryType === 'work';
-  const dis = (locked || !isWork) ? 'disabled' : '';
+
+  // Check if date is in the future (disable time inputs for future dates)
+  // Both date and TODAY_LOCAL are in YYYY-MM-DD format, so string comparison works
+  const isFutureDate = date > TODAY_LOCAL;
+
+  // Disable time inputs if: locked OR non-work type OR future date
+  const dis = (locked || !isWork || isFutureDate) ? 'disabled' : '';
   const disDirect = locked ? 'disabled' : '';
 
   const typeOpts = ENTRY_TYPES.map(t =>
@@ -667,7 +776,6 @@ function buildEntryRow(id, date, entry, locked) {
                ${dis ? 'disabled' : ''}>
         <i class="bi bi-chevron-down proj-caret"></i>
         <select class="entry-proj" style="display:none">
-          <option value="">— General / Admin —</option>
           ${internalOpts}
           ${projOpts}
         </select>
