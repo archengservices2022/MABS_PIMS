@@ -766,12 +766,12 @@
           <td class="text-muted small">{{ r.reason or '—' }}</td>
           <td class="text-muted small">{{ r.requested_at[:10] | format_date }}</td>
           <td class="text-end">
-            <form method="post" action="{{ url_for('employee_time_off_action', request_id=r.firebase_id, action='approve') }}" class="d-inline">
-              <button type="submit" class="btn btn-xs btn-outline-success"><i class="bi bi-check-lg"></i> Approve</button>
-            </form>
-            <form method="post" action="{{ url_for('employee_time_off_action', request_id=r.firebase_id, action='reject') }}" class="d-inline">
-              <button type="submit" class="btn btn-xs btn-outline-danger"><i class="bi bi-x-lg"></i> Reject</button>
-            </form>
+            <button type="button" class="btn btn-xs btn-outline-success" onclick="confirmTimeOffAction('{{ r.firebase_id }}', 'approve', '{{ r.employee_name or 'this employee' }}')">
+              <i class="bi bi-check-lg"></i> Approve
+            </button>
+            <button type="button" class="btn btn-xs btn-outline-danger" onclick="confirmTimeOffAction('{{ r.firebase_id }}', 'reject', '{{ r.employee_name or 'this employee' }}')">
+              <i class="bi bi-x-lg"></i> Reject
+            </button>
           </td>
         </tr>
         {% endfor %}
@@ -999,6 +999,107 @@
   </div>
 </div>
 <script>
+function confirmTimeOffAction(requestId, action, employeeName) {
+  const isApprove = action === 'approve';
+  const headerBg = isApprove ? '#10b981' : '#ef4444';
+  const title = isApprove ? 'Approve Time Off' : 'Reject Time Off';
+  const message = isApprove
+    ? `You are about to <strong>approve</strong> <strong>${employeeName}</strong>'s time-off request. This action cannot be undone.`
+    : `You are about to <strong>reject</strong> <strong>${employeeName}</strong>'s time-off request. This action cannot be undone.`;
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  `;
+
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    max-width: 450px;
+    width: 90%;
+    overflow: hidden;
+  `;
+
+  const header = document.createElement('div');
+  header.style.cssText = `
+    background: ${headerBg};
+    color: white;
+    padding: 18px 24px;
+    font-weight: 700;
+    font-size: 16px;
+  `;
+  header.textContent = title;
+
+  const body = document.createElement('div');
+  body.style.cssText = `
+    padding: 24px;
+    color: #334155;
+    font-size: 14px;
+    line-height: 1.6;
+  `;
+  body.innerHTML = `<p>${message}</p>`;
+
+  const footer = document.createElement('div');
+  footer.style.cssText = `
+    padding: 18px 24px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    border-top: 1px solid #e2e8f0;
+  `;
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = `
+    padding: 9px 18px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: white;
+    color: #334155;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13px;
+  `;
+  cancelBtn.onclick = () => overlay.remove();
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.textContent = isApprove ? 'Approve' : 'Reject';
+  confirmBtn.style.cssText = `
+    padding: 9px 18px;
+    border: none;
+    border-radius: 6px;
+    background: ${headerBg};
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13px;
+  `;
+  confirmBtn.onclick = () => {
+    overlay.remove();
+    window.location = `/employee/time-off/${requestId}/${action}`;
+  };
+
+  footer.appendChild(cancelBtn);
+  footer.appendChild(confirmBtn);
+
+  modal.appendChild(header);
+  modal.appendChild(body);
+  modal.appendChild(footer);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
+
 function submitChangePassword() {
   var btn = document.getElementById('cpwSubmitBtn');
   var alert = document.getElementById('cpwAlert');
