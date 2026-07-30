@@ -61,7 +61,7 @@
 <!-- ?? Tab nav -->
 <ul class="nav nav-tabs mb-4" id="projectTabs">
   <li class="nav-item">
-    <a class="nav-link" data-bs-toggle="tab" href="#tab-all-projects">
+    <a class="nav-link {{ 'active' if active_tab in ('all-projects', 'all') else '' }}" data-bs-toggle="tab" href="#tab-all-projects">
       <i class="bi bi-kanban me-1"></i>All Projects
       <span class="badge bg-secondary ms-1">{{ projects|length }}</span>
     </a>
@@ -84,7 +84,7 @@
   </li>
   {% endif %}
   <li class="nav-item">
-    <a class="nav-link" data-bs-toggle="tab" href="#tab-export">
+    <a class="nav-link {{ 'active' if active_tab == 'export' else '' }}" data-bs-toggle="tab" href="#tab-export">
       <i class="bi bi-download me-1"></i>Export
     </a>
   </li>
@@ -99,7 +99,7 @@
 <div class="tab-content">
 
   <!-- ?? Tab 1: All Projects ??????????????????????????????????????????????? -->
-  <div class="tab-pane fade" id="tab-all-projects">
+  <div class="tab-pane fade {{ 'show active' if active_tab in ('all-projects', 'all') else '' }}" id="tab-all-projects">
     {% set status_styles = {
       'Not Started':           ('bi-hourglass-split',     'bg-slate'),
       'Active':                ('bi-lightning-charge',    'bg-blue'),
@@ -301,7 +301,7 @@
   </div>
 
   <!-- ?? Tab 3: Export ????????????????????????????????????????????????????? -->
-  <div class="tab-pane fade" id="tab-export">
+  <div class="tab-pane fade {{ 'show active' if active_tab == 'export' else '' }}" id="tab-export">
     <div class="card-panel mb-4">
       <h6 class="section-heading mb-3">Filter Export</h6>
       <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
