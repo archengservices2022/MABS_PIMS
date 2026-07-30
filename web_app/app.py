@@ -7373,6 +7373,15 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
                     for cp_id, _ in sorted_recs[1:]:
                         fb_delete(f"/commission_payments/{cp_id}")
 
+    # Update Activity Sessions (employee_name field)
+    activity_sessions = fb_get("/activity_sessions") or {}
+    if isinstance(activity_sessions, dict):
+        for session_id, session_data in activity_sessions.items():
+            if isinstance(session_data, dict):
+                if session_data.get("employee_name", "") == old_name:
+                    session_data["employee_name"] = new_name
+                    fb_update(f"/activity_sessions/{session_id}", session_data)
+
 
 @app.route("/clients/new", methods=["GET", "POST"])
 @role_required("clients")
@@ -13019,7 +13028,7 @@ def settings_logo():
         logo_data_uri = f"data:{mime_type};base64," + _b64.b64encode(logo_bytes).decode("utf-8")
         existing = load_settings()
         co = existing.get("company", {})
-        co["logo_path"] = str(save_path.resolve())
+        co["logo_path"] = str(Path("assets") / f"company_logo{ext}")
         co.pop("logo_data", None)  # remove stale blob from settings if present
         fb_update("/settings", {"company": co})
         # Remove any previously-stored blob from settings (migration cleanup)
@@ -13446,7 +13455,7 @@ def _get_company_logo_path():
         settings = load_settings()
         logo_path = settings.get("company", {}).get("logo_path", "")
         candidates = [
-            Path(logo_path) if logo_path else None,
+            (BASE_DIR / logo_path) if logo_path else None,
             ASSETS_DIR / "company_logo.jpg",
             ASSETS_DIR / "company_logo.png",
             ASSETS_DIR / "company_logo.jpeg",
@@ -13477,7 +13486,7 @@ def company_logo():
     co = settings.get("company", {})
     logo_path = co.get("logo_path", "")
     candidates = [
-        Path(logo_path) if logo_path else None,
+        (BASE_DIR / logo_path) if logo_path else None,
         ASSETS_DIR / "company_logo.png",
         ASSETS_DIR / "company_logo.jpg",
         DATA_DIR / "company_logo.png",
