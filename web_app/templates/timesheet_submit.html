@@ -462,13 +462,11 @@ const WEEK_DAYS = {{ week_days | tojson }};
 const PROJECTS  = {{ active_projects | tojson }};
 const EXISTING  = {{ (existing_sheet.entries if existing_sheet else []) | tojson }};
 const IS_APPROVED = {{ 'true' if (existing_sheet and existing_sheet.status == 'Approved') else 'false' }};
-const TODAY_ISO = {{ now.strftime('%Y-%m-%d') | tojson }}; // company-timezone "today", not the browser's local/UTC date
 
 // Get current time in user's LOCAL timezone (not server/company timezone)
 function getUserLocalNow() {
   return new Date();  // Browser's local time
 }
-const USER_LOCAL_NOW = getUserLocalNow();
 
 const WEEKDAYS = WEEK_DAYS; // All 7 days allowed
 
