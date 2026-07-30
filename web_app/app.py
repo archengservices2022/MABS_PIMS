@@ -18301,10 +18301,11 @@ def timesheets_submit():
          "date": (week_start + timedelta(days=i)).isoformat()}
         for i in range(7)
     ]
+    now = datetime.now(timezone.utc)
     return render_template("timesheet_submit.html",
         week_of=week_of, week_label=week_label,
         week_days=week_days, active_projects=active_projects,
-        existing_sheet=existing_sheet)
+        existing_sheet=existing_sheet, now=now)
 
 
 @app.route("/timesheets/<sheet_id>")
@@ -18396,6 +18397,20 @@ def api_timesheets_save():
 
     if not week_of:
         return jsonify({"error": "week_of is required"}), 400
+
+    now = datetime.now(timezone.utc)
+    for entry in entries:
+        if entry.get("entry_type") == "work" and entry.get("end_time"):
+            try:
+                entry_date = entry.get("date", "")
+                end_time_str = entry.get("end_time", "")
+                if entry_date and end_time_str:
+                    entry_datetime = datetime.fromisoformat(f"{entry_date}T{end_time_str}:00")
+                    entry_datetime_utc = entry_datetime.replace(tzinfo=timezone.utc)
+                    if entry_datetime_utc > now:
+                        return jsonify({"error": f"End time for {entry_date} cannot be in the future"}), 400
+            except (ValueError, TypeError):
+                pass
 
     entries   = _recalc_timesheet_hours(entries)
     total_reg = sum(_safe_float(e.get("regular_hours", 0)) for e in entries)
