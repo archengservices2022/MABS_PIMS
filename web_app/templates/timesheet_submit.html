@@ -838,8 +838,6 @@ function calcRow(id) {
 
   const type = tr.querySelector('.entry-type') ? tr.querySelector('.entry-type').value : 'work';
   const date = tr.dataset.date;  // Define date early so it can be used for validation
-  const startInput = tr.querySelector('.entry-start');
-  const endInput = tr.querySelector('.entry-end');
 
   if (type !== 'work') {
     delete tr.dataset.worked;
@@ -847,42 +845,13 @@ function calcRow(id) {
       const el = document.getElementById(`${k}-${id}`);
       if (el) el.textContent = '0.00';
     });
-    startInput.style.borderColor = '';
-    startInput.style.backgroundColor = '';
-    startInput.title = '';
-    endInput.style.borderColor = '';
-    endInput.style.backgroundColor = '';
-    endInput.title = '';
     recalcWeek();
     return;
   }
 
-  // Check if entry date is in the future (for work entries only)
-  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    const entryDate = new Date(date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    entryDate.setHours(0, 0, 0, 0);
-
-    if (entryDate > today) {
-      startInput.style.borderColor = '#dc2626';
-      startInput.style.backgroundColor = '#fee2e2';
-      startInput.title = 'Work entries cannot be added for future dates';
-      endInput.style.borderColor = '#dc2626';
-      endInput.style.backgroundColor = '#fee2e2';
-      endInput.title = 'Work entries cannot be added for future dates';
-      delete tr.dataset.worked;
-      ['reg','ot','tot'].forEach(k => {
-        const el = document.getElementById(`${k}-${id}`);
-        if (el) el.textContent = '—';
-      });
-      recalcWeek();
-      return;
-    }
-  }
-
   let s = parseTime(tr.querySelector('.entry-start').value);
   let e = parseTime(tr.querySelector('.entry-end').value);
+  const startInput = tr.querySelector('.entry-start');
 
   // Validate start time is not in the future
   if (s && date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -1341,17 +1310,6 @@ function saveSheet(action) {
   // Validate all entries BEFORE showing confirmation dialog
   for (const entry of entries) {
     if (entry.entry_type === 'work' && entry.date) {
-      // Validate that work entries are not for future dates
-      const entryDate = new Date(entry.date);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      entryDate.setHours(0, 0, 0, 0);
-
-      if (entryDate > today) {
-        showValidationError(`Work entries cannot be added for future dates. Please remove the entry for ${entry.date}.`);
-        return;
-      }
-
       // Validate start time
       if (entry.start_time) {
         let startDateTime = new Date(entry.date + 'T' + entry.start_time + ':00');
