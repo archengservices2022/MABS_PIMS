@@ -1117,7 +1117,7 @@ function confirmExpenseDelete(expId) {
   showConfirmationModal(title, message, 'Delete', '#dc2626', () => {
     const form = document.createElement('form');
     form.method = 'POST';
-    form.action = `/employee/expenses/${expId}/delete`;
+    form.action = `/employees/expenses/${expId}/delete`;
     document.body.appendChild(form);
     form.submit();
   });
@@ -1134,7 +1134,7 @@ function confirmExpenseReview(expId, action, empName) {
   showConfirmationModal(title, message, isApprove ? 'Approve' : 'Reject', headerBg, () => {
     const form = document.createElement('form');
     form.method = 'POST';
-    form.action = `/employee/expenses/${expId}/review`;
+    form.action = `/employees/expenses/${expId}/review`;
     const input = document.createElement('input');
     input.type = 'hidden';
     input.name = 'action';
@@ -1145,18 +1145,6 @@ function confirmExpenseReview(expId, action, empName) {
   });
 }
 
-function confirmMedicalClaimReview(claimId, action, empName) {
-  const isApprove = action === 'approve';
-  const headerBg = isApprove ? '#10b981' : '#ef4444';
-  const title = isApprove ? 'Approve Medical Claim' : 'Reject Medical Claim';
-  const message = isApprove
-    ? `You are about to <strong>approve</strong> <strong>${empName}</strong>'s medical claim. This action cannot be undone.`
-    : `You are about to <strong>reject</strong> <strong>${empName}</strong>'s medical claim. This action cannot be undone.`;
-
-  showConfirmationModal(title, message, isApprove ? 'Approve' : 'Reject', headerBg, () => {
-    openMedReview(claimId, empName, '', action);
-  });
-}
 
 function submitChangePassword() {
   var btn = document.getElementById('cpwSubmitBtn');
@@ -2207,10 +2195,10 @@ function submitChangePassword() {
               <td>
                 {% if c.status == 'Pending' %}
                 <button class="btn btn-xs btn-outline-success"
-                        onclick="confirmMedicalClaimReview('{{ c.firebase_id }}','approve','{{ c.employee_name }}')"
+                        onclick="openMedReview('{{ c.firebase_id }}','{{ c.employee_name }}','{{ c.amount_claimed }}','approve')"
                         title="Approve"><i class="bi bi-check-lg"></i></button>
                 <button class="btn btn-xs btn-outline-danger ms-1"
-                        onclick="confirmMedicalClaimReview('{{ c.firebase_id }}','reject','{{ c.employee_name }}')"
+                        onclick="openMedReview('{{ c.firebase_id }}','{{ c.employee_name }}','{{ c.amount_claimed }}','reject')"
                         title="Reject"><i class="bi bi-x-lg"></i></button>
                 {% else %}
                 <span class="text-muted small me-1">{{ c.reviewed_by or '' }}</span>
