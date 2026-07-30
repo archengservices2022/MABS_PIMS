@@ -1061,7 +1061,6 @@ async function saveUserDetails() {
     commission_rate: parseFloat(document.getElementById('editCommissionRate').value) || 0,
     active:          document.getElementById('editStatus').value === 'true',
   };
-  msg.innerHTML = '<span class="text-muted">Saving...</span>';
   try {
     var res  = await fetch('/api/users/' + uid + '/details', {
       method: 'PATCH',
@@ -1077,8 +1076,7 @@ async function saveUserDetails() {
       msg.innerHTML = '<span class="text-danger">' + data.error + '</span>';
       return;
     }
-    msg.innerHTML = '<span class="text-success">Saved! Reloading...</span>';
-    setTimeout(function(){ location.reload(); }, 300);
+    location.reload();
   } catch(e) {
     console.error('Save error:', e);
     msg.innerHTML = '<span class="text-danger">Request failed: ' + e.message + '</span>';
