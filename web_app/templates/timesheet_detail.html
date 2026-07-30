@@ -408,12 +408,148 @@
 
 {% block scripts %}
 <script>
-function approveSheet(sheetId, action) {
-  let notes = '';
-  if (action === 'reject') {
-    notes = prompt('Rejection reason (optional):') ?? '';
-    if (notes === null) return;
+function showConfirmationDialog(action, sheetId, employeeName) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  `;
+
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    max-width: 500px;
+    width: 90%;
+    overflow: hidden;
+  `;
+
+  let headerBg, headerText, titleText, bodyText;
+
+  if (action === 'approve') {
+    headerBg = '#10b981';
+    headerText = 'Confirm Approval';
+    titleText = `<i class="bi bi-check-circle-fill"></i> Approve Timesheet`;
+    bodyText = `You are about to approve <strong>${employeeName}'s</strong> timesheet. This action cannot be undone.`;
+  } else {
+    headerBg = '#ef4444';
+    headerText = 'Confirm Rejection';
+    titleText = `<i class="bi bi-x-circle-fill"></i> Reject Timesheet`;
+    bodyText = `You are about to reject <strong>${employeeName}'s</strong> timesheet. This action cannot be undone.`;
   }
+
+  const header = document.createElement('div');
+  header.style.cssText = `
+    background: ${headerBg};
+    color: white;
+    padding: 18px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-weight: 700;
+    font-size: 16px;
+  `;
+  header.innerHTML = titleText;
+
+  const body = document.createElement('div');
+  body.style.cssText = `
+    padding: 24px;
+    color: #334155;
+    font-size: 14px;
+    line-height: 1.6;
+  `;
+
+  if (action === 'reject') {
+    body.innerHTML = `
+      <p style="margin-bottom: 16px;">${bodyText}</p>
+      <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #1e293b;">
+        Rejection Reason (optional):
+      </label>
+      <textarea id="rejectionReason" style="
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        font-family: inherit;
+        font-size: 13px;
+        resize: vertical;
+        min-height: 80px;
+        box-sizing: border-box;
+      " placeholder="Enter reason for rejection..."></textarea>
+    `;
+  } else {
+    body.innerHTML = `<p>${bodyText}</p>`;
+  }
+
+  const footer = document.createElement('div');
+  footer.style.cssText = `
+    padding: 18px 24px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    border-top: 1px solid #e2e8f0;
+  `;
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = `
+    padding: 9px 18px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: white;
+    color: #334155;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13px;
+  `;
+  cancelBtn.onclick = () => overlay.remove();
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.textContent = action === 'approve' ? 'Approve' : 'Reject';
+  confirmBtn.style.cssText = `
+    padding: 9px 18px;
+    border: none;
+    border-radius: 6px;
+    background: ${headerBg};
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13px;
+  `;
+  confirmBtn.onclick = () => {
+    overlay.remove();
+    let notes = '';
+    if (action === 'reject') {
+      notes = document.getElementById('rejectionReason')?.value ?? '';
+    }
+    executeAction(sheetId, action, notes);
+  };
+
+  footer.appendChild(cancelBtn);
+  footer.appendChild(confirmBtn);
+
+  modal.appendChild(header);
+  modal.appendChild(body);
+  modal.appendChild(footer);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
+
+function approveSheet(sheetId, action) {
+  const employeeName = document.querySelector('.tsd h5')?.textContent?.trim() || 'Employee';
+  showConfirmationDialog(action, sheetId, employeeName);
+}
+
+function executeAction(sheetId, action, notes = '') {
   fetch(`/api/timesheets/${sheetId}/approve`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -421,8 +557,11 @@ function approveSheet(sheetId, action) {
   })
   .then(r => r.json())
   .then(d => {
-    if (d.success) location.reload();
-    else alert('Error: ' + (d.error || 'Unknown'));
+    if (d.success) {
+      location.reload();
+    } else {
+      alert('Error: ' + (d.error || 'Unknown error'));
+    }
   })
   .catch(() => alert('Network error. Please try again.'));
 }
