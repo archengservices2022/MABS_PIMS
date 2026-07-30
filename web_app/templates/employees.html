@@ -1860,20 +1860,21 @@ function submitChangePassword() {
           </td>
           <td class="text-end">
             <div class="d-flex gap-1 justify-content-end">
+              {% set emp_name = e.get('employee_name', 'Employee') %}
               {% if e.get('edit_status') == 'pending' %}
                 <!-- Pending Edit: use reviewExpenseEdit -->
                 <button class="btn btn-xs btn-outline-success"
-                        onclick="confirmExpenseReview('{{ e.firebase_id }}', 'approve', '{{ e.get(\"employee_name\", \"Employee\") }}')">
+                        onclick="confirmExpenseReview('{{ e.firebase_id }}', 'approve', '{{ emp_name }}')">
                   <i class="bi bi-check-lg"></i> Approve
                 </button>
                 <button class="btn btn-xs btn-outline-danger"
-                        onclick="confirmExpenseReview('{{ e.firebase_id }}', 'reject', '{{ e.get(\"employee_name\", \"Employee\") }}')">
+                        onclick="confirmExpenseReview('{{ e.firebase_id }}', 'reject', '{{ emp_name }}')">
                   <i class="bi bi-x-lg"></i> Reject
                 </button>
               {% else %}
                 <!-- New Submission: use regular review -->
                 <button type="button" class="btn btn-xs btn-outline-success"
-                        onclick="confirmExpenseReview('{{ e.firebase_id }}', 'approve', '{{ e.get(\"employee_name\", \"Employee\") }}')">
+                        onclick="confirmExpenseReview('{{ e.firebase_id }}', 'approve', '{{ emp_name }}')">
                   <i class="bi bi-check-lg"></i> Approve
                 </button>
                 <button class="btn btn-xs btn-outline-danger"
