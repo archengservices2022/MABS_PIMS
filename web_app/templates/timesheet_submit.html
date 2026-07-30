@@ -926,12 +926,21 @@ function calcRow(id) {
     entryDate.setHours(0, 0, 0, 0);
 
     if (entryDate > today) {
-      startInput.style.borderColor = '#dc2626';
-      startInput.style.backgroundColor = '#fee2e2';
-      startInput.title = 'Work entries cannot be added for future dates';
-      endInput.style.borderColor = '#dc2626';
-      endInput.style.backgroundColor = '#fee2e2';
-      endInput.title = 'Work entries cannot be added for future dates';
+      // Disable inputs for future dates
+      startInput.disabled = true;
+      endInput.disabled = true;
+      startInput.value = '';
+      endInput.value = '';
+      startInput.style.borderColor = '#e2e8f0';
+      startInput.style.backgroundColor = '#f8fafc';
+      startInput.style.color = '#cbd5e1';
+      startInput.style.cursor = 'not-allowed';
+      startInput.title = 'Start time not allowed for future dates. Please select a past or current date.';
+      endInput.style.borderColor = '#e2e8f0';
+      endInput.style.backgroundColor = '#f8fafc';
+      endInput.style.color = '#cbd5e1';
+      endInput.style.cursor = 'not-allowed';
+      endInput.title = 'End time not allowed for future dates. Please select a past or current date.';
       delete tr.dataset.worked;
       ['reg','ot','tot'].forEach(k => {
         const el = document.getElementById(`${k}-${id}`);
@@ -939,6 +948,14 @@ function calcRow(id) {
       });
       recalcWeek();
       return;
+    } else {
+      // Enable inputs for past/current dates
+      startInput.disabled = false;
+      endInput.disabled = false;
+      startInput.style.color = '';
+      startInput.style.cursor = '';
+      endInput.style.color = '';
+      endInput.style.cursor = '';
     }
   }
 
