@@ -1433,7 +1433,8 @@ function copyPrevWeek() {
   updateAddDayBtn();
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+// Initialize form immediately (script runs after DOM is loaded)
+(function initTimesheet() {
   if (EXISTING && EXISTING.length > 0) {
     const byDate={}, dateOrder=[];
     EXISTING.filter(e=>e.date).forEach(e=>{
@@ -1467,6 +1468,6 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('[data-row-id] button,.add-proj-btn').forEach(el=>el.disabled=true);
     document.getElementById('addDayBtn').style.display='none';
   }
-});
+})();
 </script>
 {% endblock %}
