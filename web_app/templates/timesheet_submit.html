@@ -463,6 +463,13 @@ const PROJECTS  = {{ active_projects | tojson }};
 const EXISTING  = {{ (existing_sheet.entries if existing_sheet else []) | tojson }};
 const IS_APPROVED = {{ 'true' if (existing_sheet and existing_sheet.status == 'Approved') else 'false' }};
 
+// Get current date in user's LOCAL timezone for reference
+function getUserLocalToday() {
+  const today = new Date();
+  return today.toISOString().split('T')[0];  // Returns YYYY-MM-DD in local time concept
+}
+const TODAY_LOCAL = getUserLocalToday();
+
 // Get current time in user's LOCAL timezone (not server/company timezone)
 function getUserLocalNow() {
   return new Date();  // Browser's local time
@@ -714,7 +721,8 @@ function onTypeChange(id) {
 // ?? Day block ????????????????????????????????????????????????????????????????
 function renderDayBlock(date, entries) {
   const container = document.getElementById('dayBlocksContainer');
-  const locked = date > TODAY_ISO;
+  // Note: No longer locking future dates. Time validation prevents future start/end times.
+  const locked = false;  // Allow adding entries for any date
   const info = getDayInfo(date);
   const dayName = info ? info.name : date;
   const dayAbbr = info ? info.abbr : date.slice(5);
@@ -727,9 +735,7 @@ function renderDayBlock(date, entries) {
   block.id = `day-block-${date}`;
   block.dataset.dayBlock = date;
 
-  const lockHtml = locked
-    ? `<span class="ts-day-lock"><i class="bi bi-lock-fill"></i> Future</span>`
-    : '';
+  const lockHtml = '';
 
   block.innerHTML = `
     <div class="ts-day-block-header">
@@ -772,7 +778,7 @@ function renderDayBlock(date, entries) {
 }
 
 function addProjectForDay(date) {
-  if (date > TODAY_ISO) return;
+  // Allow adding entries for any date (time validation prevents future times)
   const tbody = document.getElementById(`tbody-${date}`);
   if (!tbody) return;
   const id = ++rowId;
