@@ -18301,10 +18301,13 @@ def timesheets_submit():
          "date": (week_start + timedelta(days=i)).isoformat()}
         for i in range(7)
     ]
+    user_role = normalize_role(session.get("user_role", ""))
+    is_admin = user_role in ("admin", "administration")
+
     return render_template("timesheet_submit.html",
         week_of=week_of, week_label=week_label,
         week_days=week_days, active_projects=active_projects,
-        existing_sheet=existing_sheet)
+        existing_sheet=existing_sheet, is_admin=is_admin)
 
 
 @app.route("/timesheets/<sheet_id>")
