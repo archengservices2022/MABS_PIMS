@@ -502,7 +502,6 @@ const PROJECTS  = {{ active_projects | tojson }};
 const EXISTING  = {{ (existing_sheet.entries if existing_sheet else []) | tojson }};
 const IS_APPROVED = {{ 'true' if (existing_sheet and existing_sheet.status == 'Approved') else 'false' }};
 const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
-const EDIT_UID = {{ edit_uid | tojson }};
 
 // Get current date in user's LOCAL timezone for reference
 function getUserLocalToday() {
@@ -1386,13 +1385,10 @@ function performSubmit(entries) {
   btn.disabled = true;
   btn.innerHTML = '<i class="bi bi-send me-1"></i>Submitting?';
 
-  const payload = {week_of: WEEK_OF, action: 'submit', entries};
-  if (EDIT_UID) payload.employee_uid = EDIT_UID;
-
   fetch('/api/timesheets', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(payload)
+    body: JSON.stringify({week_of: WEEK_OF, action: 'submit', entries})
   })
   .then(r => r.json())
   .then(d => {
@@ -1479,14 +1475,10 @@ function saveSheet(action) {
   const btn = event.target;
   btn.disabled = true;
   btn.innerHTML = action==='submit' ? '<i class="bi bi-send me-1"></i>Submitting?' : '<i class="bi bi-floppy me-1"></i>Saving?';
-
-  const payload = {week_of: WEEK_OF, action, entries};
-  if (EDIT_UID) payload.employee_uid = EDIT_UID;
-
   fetch('/api/timesheets', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(payload)
+    body: JSON.stringify({week_of: WEEK_OF, action, entries})
   })
   .then(r => r.json())
   .then(d => {

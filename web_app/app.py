@@ -18285,19 +18285,10 @@ def timesheets():
 def timesheets_submit():
     week_of    = _week_monday(request.args.get("week", ""))
     uid        = session.get("user_uid", "")
-    user_role = normalize_role(session.get("user_role", ""))
-    is_admin = user_role in ("admin", "administration")
-
-    # Allow admins to edit another employee's timesheet
-    edit_uid = request.args.get("employee_uid", uid)
-    if not is_admin and edit_uid != uid:
-        # Non-admins can only edit their own timesheets
-        abort(403)
-
     all_projs  = _load_projects_list()
     active_projects = [p for p in all_projs
                        if p.get("status", "") not in ("Completed", "Cancelled")]
-    existing   = _load_timesheets(week_of=week_of, employee_uid=edit_uid)
+    existing   = _load_timesheets(week_of=week_of, employee_uid=uid)
     existing_sheet = existing[0] if existing else None
 
     week_start = datetime.strptime(week_of, "%Y-%m-%d").date()
@@ -18310,11 +18301,13 @@ def timesheets_submit():
          "date": (week_start + timedelta(days=i)).isoformat()}
         for i in range(7)
     ]
+    user_role = normalize_role(session.get("user_role", ""))
+    is_admin = user_role in ("admin", "administration")
 
     return render_template("timesheet_submit.html",
         week_of=week_of, week_label=week_label,
         week_days=week_days, active_projects=active_projects,
-        existing_sheet=existing_sheet, is_admin=is_admin, edit_uid=edit_uid)
+        existing_sheet=existing_sheet, is_admin=is_admin)
 
 
 @app.route("/timesheets/<sheet_id>")
@@ -18400,17 +18393,9 @@ def api_timesheets_save():
     data    = request.get_json(force=True) or {}
     uid     = session.get("user_uid", "")
     name    = session.get("user_name", "")
-    user_role = normalize_role(session.get("user_role", ""))
-    is_admin = user_role in ("admin", "administration")
-
     week_of = (data.get("week_of") or "").strip()
     action  = data.get("action", "draft")
     entries = data.get("entries") or []
-
-    # Allow admins to save to another employee's timesheet
-    edit_uid = data.get("employee_uid", uid)
-    if not is_admin and edit_uid != uid:
-        return jsonify({"error": "Admin access required to edit other timesheets"}), 403
 
     if not week_of:
         return jsonify({"error": "week_of is required"}), 400
@@ -18455,17 +18440,9 @@ def api_timesheets_save():
     total_ot  = sum(_safe_float(e.get("overtime_hours", 0)) for e in entries)
     now_iso   = datetime.now(timezone.utc).isoformat()
 
-    # Get the employee name if editing another employee's timesheet
-    employee_name = name
-    if edit_uid != uid and is_admin:
-        # Load employee name from existing timesheet or employee data
-        existing_for_edit = _load_timesheets(week_of=week_of, employee_uid=edit_uid)
-        if existing_for_edit:
-            employee_name = existing_for_edit[0].get("employee_name", name)
-
     sheet_data = {
-        "employee_uid":         edit_uid,
-        "employee_name":        employee_name,
+        "employee_uid":         uid,
+        "employee_name":        name,
         "week_of":              week_of,
         "status":               "Submitted" if action == "submit" else "Draft",
         "entries":              entries,
@@ -18477,7 +18454,7 @@ def api_timesheets_save():
     if action == "submit":
         sheet_data["submitted_at"] = now_iso
 
-    existing = _load_timesheets(week_of=week_of, employee_uid=edit_uid)
+    existing = _load_timesheets(week_of=week_of, employee_uid=uid)
     if existing:
         sheet_id = existing[0]["firebase_id"]
         fb_update(f"/timesheets/{sheet_id}", sheet_data)
