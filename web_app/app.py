@@ -18403,9 +18403,18 @@ def api_timesheets_save():
         if entry.get("entry_type") == "work" and entry.get("end_time"):
             try:
                 entry_date = entry.get("date", "")
+                start_time_str = entry.get("start_time", "")
                 end_time_str = entry.get("end_time", "")
                 if entry_date and end_time_str:
                     entry_datetime = datetime.fromisoformat(f"{entry_date}T{end_time_str}:00")
+
+                    # If this is an overnight shift (end_time < start_time), the end is next day
+                    if start_time_str and end_time_str:
+                        start_h, start_m = map(int, start_time_str.split(':')[:2])
+                        end_h, end_m = map(int, end_time_str.split(':')[:2])
+                        if (end_h * 60 + end_m) < (start_h * 60 + start_m):
+                            entry_datetime += timedelta(days=1)
+
                     entry_datetime_utc = entry_datetime.replace(tzinfo=timezone.utc)
                     if entry_datetime_utc > now:
                         return jsonify({"error": f"End time for {entry_date} cannot be in the future"}), 400
