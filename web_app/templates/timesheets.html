@@ -957,7 +957,7 @@ function sendBackSheet(sheetId, name) {
     font-size: 14px;
     line-height: 1.6;
   `;
-  body.innerHTML = `<p>You are about to send <strong>${name || 'this employee'}'s</strong> timesheet back for correction. This action cannot be undone.</p>`;
+  body.innerHTML = `<p>You are about to send <strong>${name || "this employee"}'s</strong> timesheet back for correction. This action cannot be undone.</p>`;
 
   const footer = document.createElement('div');
   footer.style.cssText = `
