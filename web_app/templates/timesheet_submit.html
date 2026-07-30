@@ -1025,10 +1025,48 @@ function collectEntries() {
   return entries;
 }
 
+function showValidationError(message) {
+  // Remove any existing error message
+  const existingError = document.getElementById('validation-error-message');
+  if (existingError) existingError.remove();
+
+  // Create error message container
+  const errorContainer = document.createElement('div');
+  errorContainer.id = 'validation-error-message';
+  errorContainer.style.cssText = `
+    background: #fee2e2;
+    border: 2px solid #dc2626;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    color: #b91c1c;
+    font-weight: 500;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  `;
+  errorContainer.innerHTML = `<i class="bi bi-exclamation-circle-fill"></i>${message}`;
+
+  // Insert at top of form
+  const formContainer = document.querySelector('.p-3.p-md-4');
+  if (formContainer) {
+    formContainer.insertBefore(errorContainer, formContainer.firstChild);
+    errorContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  // Auto-remove after 5 seconds
+  setTimeout(() => {
+    if (errorContainer && errorContainer.parentNode) {
+      errorContainer.remove();
+    }
+  }, 5000);
+}
+
 function saveSheet(action) {
   const entries = collectEntries();
   if (action==='submit' && entries.length===0) {
-    alert('Please add at least one entry before submitting.');
+    showValidationError('Please add at least one entry before submitting.');
     return;
   }
 
@@ -1039,7 +1077,7 @@ function saveSheet(action) {
       if (entry.start_time) {
         let startDateTime = new Date(entry.date + 'T' + entry.start_time + ':00');
         if (startDateTime > now) {
-          alert(`Start time for ${entry.date} cannot be in the future (based on your local time). Please enter a valid start time.`);
+          showValidationError(`Start time for ${entry.date} cannot be in the future. Please enter a valid start time.`);
           return;
         }
       }
@@ -1058,7 +1096,7 @@ function saveSheet(action) {
         }
 
         if (endDateTime > now) {
-          alert(`End time for ${entry.date} cannot be in the future (based on your local time). Please enter a valid end time.`);
+          showValidationError(`End time for ${entry.date} cannot be in the future. Please enter a valid end time.`);
           return;
         }
       }
@@ -1087,13 +1125,13 @@ function saveSheet(action) {
     if (d.success) {
       window.location = action==='submit' ? '/timesheets' : `/timesheets/${d.sheet_id}`;
     } else {
-      alert('Error: '+(d.error||'Unknown error'));
+      showValidationError('Error: '+(d.error||'Unknown error'));
       btn.disabled = false;
       btn.innerHTML = action==='submit' ? '<i class="bi bi-send me-1"></i>Submit Timesheet' : '<i class="bi bi-floppy me-1"></i>Save Draft';
     }
   })
   .catch(() => {
-    alert('Network error. Please try again.');
+    showValidationError('Network error. Please try again.');
     btn.disabled = false;
     btn.innerHTML = action==='submit' ? '<i class="bi bi-send me-1"></i>Submit Timesheet' : '<i class="bi bi-floppy me-1"></i>Save Draft';
   });
