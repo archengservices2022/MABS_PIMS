@@ -1068,28 +1068,39 @@ async function saveUserDetails() {
   };
 
   saveBtn.disabled = true;
+  msg.innerHTML = '<span class="text-muted">Saving...</span>';
+
+  var timeoutId = setTimeout(function(){
+    location.reload();
+  }, 1500);
 
   try {
-    fetch('/api/users/' + uid + '/details', {
+    var res = await fetch('/api/users/' + uid + '/details', {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body)
-    }).then(res => res.json()).then(data => {
-      if (!res.ok || data.error) {
-        msg.innerHTML = '<span class="text-danger">' + (data.error || 'Error') + '</span>';
-        saveBtn.disabled = false;
-      }
-    }).catch(e => {
-      console.error('Save error:', e);
-      msg.innerHTML = '<span class="text-danger">Request failed</span>';
-      saveBtn.disabled = false;
     });
+    var data = await res.json();
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      msg.innerHTML = '<span class="text-danger">' + (data.error || 'Error: ' + res.status) + '</span>';
+      saveBtn.disabled = false;
+      return;
+    }
+    if (data.error) {
+      msg.innerHTML = '<span class="text-danger">' + data.error + '</span>';
+      saveBtn.disabled = false;
+      return;
+    }
 
     msg.innerHTML = '<span class="text-success">Saved!</span>';
-    setTimeout(function(){ location.reload(); }, 50);
+    setTimeout(function(){ location.reload(); }, 200);
   } catch(e) {
+    clearTimeout(timeoutId);
     console.error('Save error:', e);
-    msg.innerHTML = '<span class="text-danger">Request failed: ' + e.message + '</span>';
+    msg.innerHTML = '<span class="text-danger">Request failed</span>';
     saveBtn.disabled = false;
   }
 }
