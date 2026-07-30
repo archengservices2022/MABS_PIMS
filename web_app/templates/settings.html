@@ -1077,8 +1077,8 @@ async function saveUserDetails() {
       msg.innerHTML = '<span class="text-danger">' + data.error + '</span>';
       return;
     }
-    msg.innerHTML = '<span class="text-success">Saved!</span>';
-    setTimeout(function(){ location.reload(); }, 800);
+    msg.innerHTML = '<span class="text-success">Saved! Reloading...</span>';
+    setTimeout(function(){ location.reload(); }, 300);
   } catch(e) {
     console.error('Save error:', e);
     msg.innerHTML = '<span class="text-danger">Request failed: ' + e.message + '</span>';
