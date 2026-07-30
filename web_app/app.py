@@ -1368,11 +1368,11 @@ def dashboard():
         }
 
     elif _dash_role == "admin":
-        # Admin summary: total commissions across all salespeople
+        # Admin summary: total commissions across all salespeople and admin users with commission rates
         _all_users = _load_all_users()
         _comm_map: Dict[str, float] = {}
         for _u in _all_users:
-            if normalize_role(_u.get("role", "")) == "sales":
+            if normalize_role(_u.get("role", "")) in ("sales", "admin"):
                 _uname = (_u.get("username") or "").strip()
                 if _uname:
                     _comm_map[_uname] = _safe_float(_u.get("commission_rate", 0))
@@ -1710,10 +1710,10 @@ def quotes():
     q_won_val   = sum(_safe_float(q.get("total", 0)) for q in items if q.get("status", "") in _CONVERTED_STATUSES or q.get("linked_project_id"))
 
     # ── Commission calculation (Sales People tab) ─────────────────────────────
-    # Build commission_rate lookup keyed by username (sales users only)
+    # Build commission_rate lookup keyed by username (sales and admin users)
     _comm_by_name: Dict[str, dict] = {}
     for _u in _load_all_users():
-        if normalize_role(_u.get("role", "")) == "sales":
+        if normalize_role(_u.get("role", "")) in ("sales", "admin"):
             _uname = (_u.get("username") or "").strip()
             if _uname:
                 _comm_by_name[_uname] = {

@@ -958,7 +958,7 @@ const ALL_PAGES   = {{ all_pages | tojson }};
 
 function toggleCreateCommission() {
   var role = document.getElementById('createUserRole').value;
-  document.getElementById('createCommissionSection').style.display = role === 'sales' ? '' : 'none';
+  document.getElementById('createCommissionSection').style.display = (role === 'sales' || role === 'admin') ? '' : 'none';
 }
 const PAGE_LABELS = {{ page_labels | tojson }};
 const ROLE_DEFAULTS = {{ role_pages | tojson }};
@@ -978,8 +978,8 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('editEmployeeType').value     = d.employeeType || '';
       document.getElementById('editCommissionRate').value   = parseFloat(d.commissionRate) > 0 ? parseFloat(d.commissionRate) : '';
       document.getElementById('editUserMsg').innerHTML      = '';
-      var isSales = (d.role || '').toLowerCase() === 'sales';
-      document.getElementById('editCommissionSection').style.display = isSales ? '' : 'none';
+      var isSalesOrAdmin = (d.role || '').toLowerCase() === 'sales' || (d.role || '').toLowerCase() === 'admin';
+      document.getElementById('editCommissionSection').style.display = isSalesOrAdmin ? '' : 'none';
       new bootstrap.Modal(document.getElementById('editUserModal')).show();
     });
   });
@@ -1028,8 +1028,9 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function onEditRoleChange() {
-  var isSales = document.getElementById('editRole').value === 'sales';
-  document.getElementById('editCommissionSection').style.display = isSales ? '' : 'none';
+  var role = document.getElementById('editRole').value;
+  var isSalesOrAdmin = role === 'sales' || role === 'admin';
+  document.getElementById('editCommissionSection').style.display = isSalesOrAdmin ? '' : 'none';
 }
 
 async function saveUserDetails() {
