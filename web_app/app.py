@@ -18300,6 +18300,15 @@ def timesheets_submit():
     existing   = _load_timesheets(week_of=week_of, employee_uid=edit_uid)
     existing_sheet = existing[0] if existing else None
 
+    # Convert entries from dict to list if needed (Firebase stores as dict)
+    if existing_sheet:
+        entries = existing_sheet.get("entries")
+        if isinstance(entries, dict):
+            entries = list(entries.values())
+        elif not isinstance(entries, list):
+            entries = []
+        existing_sheet["entries"] = entries
+
     week_start = datetime.strptime(week_of, "%Y-%m-%d").date()
     week_end   = week_start + timedelta(days=6)
     week_label = f"{week_start.strftime('%b %d')} — {week_end.strftime('%b %d, %Y')}"
