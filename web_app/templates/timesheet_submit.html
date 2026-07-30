@@ -1433,54 +1433,49 @@ function copyPrevWeek() {
   updateAddDayBtn();
 }
 
-// Initialize form after brief delay to ensure DOM is fully ready
-setTimeout(function initTimesheet() {
-  try {
-    // Ensure WEEKDAYS is available
-    if (!WEEKDAYS || WEEKDAYS.length === 0) {
-      console.error('WEEKDAYS not loaded');
-      return;
-    }
-
-    if (EXISTING && EXISTING.length > 0) {
-      const byDate={}, dateOrder=[];
-      EXISTING.filter(e=>e.date).forEach(e=>{
-        if (!byDate[e.date]){byDate[e.date]=[];dateOrder.push(e.date);}
-        byDate[e.date].push(e);
-      });
-      if (dateOrder.length>0) {
-        dateOrder.forEach(date => renderDayBlock(date, byDate[date]));
-      } else {
-        if (WEEKDAYS[0]) renderDayBlock(WEEKDAYS[0].date, [{}]);
-      }
+// Initialize form immediately (script runs after DOM is ready)
+try {
+  if (EXISTING && EXISTING.length > 0) {
+    const byDate={}, dateOrder=[];
+    EXISTING.filter(e=>e.date).forEach(e=>{
+      if (!byDate[e.date]){byDate[e.date]=[];dateOrder.push(e.date);}
+      byDate[e.date].push(e);
+    });
+    if (dateOrder.length>0) {
+      dateOrder.forEach(date => renderDayBlock(date, byDate[date]));
     } else {
-      // New timesheet - render first day
-      if (WEEKDAYS[0]) {
-        renderDayBlock(WEEKDAYS[0].date, [{}]);
-      }
-      if (!IS_APPROVED) {
-        fetch('/api/timesheets/previous?week='+encodeURIComponent(WEEK_OF))
-          .then(r=>r.json())
-          .then(data=>{
-            if (data.entries && data.entries.length>0) {
-              _prevWeekEntries = data.entries;
-              document.getElementById('prevWeekLabel').textContent = 'Week of '+(data.week_of||'');
-              document.getElementById('prevWeekBanner').style.display='block';
-            }
-          })
-          .catch(()=>{});
-      }
+      if (WEEKDAYS[0]) renderDayBlock(WEEKDAYS[0].date, [{}]);
     }
-    updateAddDayBtn();
-    // Lock approved timesheets, but allow admins to edit at any time
-    if (IS_APPROVED && !IS_ADMIN) {
-      document.querySelectorAll('[data-row-id] input,[data-row-id] select').forEach(el=>el.disabled=true);
-      document.querySelectorAll('[data-row-id] button,.add-proj-btn').forEach(el=>el.disabled=true);
-      document.getElementById('addDayBtn').style.display='none';
+  } else {
+    // New timesheet - render first day
+    if (WEEKDAYS && WEEKDAYS[0]) {
+      renderDayBlock(WEEKDAYS[0].date, [{}]);
     }
-  } catch (err) {
-    console.error('Timesheet initialization error:', err);
+    if (!IS_APPROVED) {
+      fetch('/api/timesheets/previous?week='+encodeURIComponent(WEEK_OF))
+        .then(r=>r.json())
+        .then(data=>{
+          if (data.entries && data.entries.length>0) {
+            _prevWeekEntries = data.entries;
+            const label = document.getElementById('prevWeekLabel');
+            const banner = document.getElementById('prevWeekBanner');
+            if (label) label.textContent = 'Week of '+(data.week_of||'');
+            if (banner) banner.style.display='block';
+          }
+        })
+        .catch(()=>{});
+    }
   }
-}, 100);
+  updateAddDayBtn();
+  // Lock approved timesheets, but allow admins to edit at any time
+  if (IS_APPROVED && !IS_ADMIN) {
+    document.querySelectorAll('[data-row-id] input,[data-row-id] select').forEach(el=>el.disabled=true);
+    document.querySelectorAll('[data-row-id] button,.add-proj-btn').forEach(el=>el.disabled=true);
+    const btn = document.getElementById('addDayBtn');
+    if (btn) btn.style.display='none';
+  }
+} catch (err) {
+  console.error('Error:', err);
+}
 </script>
 {% endblock %}
