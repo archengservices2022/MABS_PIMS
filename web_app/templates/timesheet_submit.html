@@ -1120,10 +1120,176 @@ function showValidationError(message) {
   modal.id = 'validation-modal-overlay';
 }
 
+function showConfirmSubmission(entries) {
+  // Create modal overlay
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  `;
+
+  // Create modal
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    max-width: 500px;
+    width: 90%;
+    overflow: hidden;
+  `;
+
+  // Create header
+  const header = document.createElement('div');
+  header.style.cssText = `
+    background: #0D9488;
+    color: white;
+    padding: 18px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-weight: 700;
+    font-size: 16px;
+  `;
+  header.innerHTML = `<i class="bi bi-check-circle-fill"></i>Confirm Submission`;
+
+  // Create body
+  const body = document.createElement('div');
+  body.style.cssText = `
+    padding: 24px;
+    color: #334155;
+    font-size: 14px;
+    line-height: 1.6;
+  `;
+  const totalHours = parseFloat(document.getElementById('sumTotal').textContent) || 0;
+  body.innerHTML = `
+    <p style="margin-bottom: 12px;">You are about to submit your timesheet.</p>
+    <div style="background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 8px; padding: 12px; margin: 14px 0;">
+      <div style="font-weight: 600; color: #0D9488; margin-bottom: 8px;">Timesheet Summary:</div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+        <span>Total Hours:</span>
+        <span style="font-weight: 600;">${totalHours.toFixed(2)} hrs</span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span>Week Of:</span>
+        <span style="font-weight: 600;">${WEEK_OF}</span>
+      </div>
+    </div>
+    <p style="margin-top: 16px; color: #64748b; font-size: 13px;">Once submitted, your timesheet cannot be edited until it's reviewed.</p>
+  `;
+
+  // Create footer with buttons
+  const footer = document.createElement('div');
+  footer.style.cssText = `
+    padding: 18px 24px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    border-top: 1px solid #e2e8f0;
+  `;
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = `
+    background: #f8fafc;
+    color: #64748b;
+    border: 1px solid #e2e8f0;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+  `;
+  cancelBtn.onmouseover = () => {
+    cancelBtn.style.background = '#f1f5f9';
+    cancelBtn.style.borderColor = '#cbd5e1';
+  };
+  cancelBtn.onmouseout = () => {
+    cancelBtn.style.background = '#f8fafc';
+    cancelBtn.style.borderColor = '#e2e8f0';
+  };
+  cancelBtn.onclick = () => {
+    overlay.remove();
+  };
+
+  const submitBtn = document.createElement('button');
+  submitBtn.innerHTML = '<i class="bi bi-send me-2"></i>Yes, Submit';
+  submitBtn.style.cssText = `
+    background: #0D9488;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s;
+  `;
+  submitBtn.onmouseover = () => submitBtn.style.background = '#0b8075';
+  submitBtn.onmouseout = () => submitBtn.style.background = '#0D9488';
+  submitBtn.onclick = () => {
+    overlay.remove();
+    performSubmit(entries);
+  };
+
+  footer.appendChild(cancelBtn);
+  footer.appendChild(submitBtn);
+  modal.appendChild(header);
+  modal.appendChild(body);
+  modal.appendChild(footer);
+  overlay.appendChild(modal);
+
+  document.body.appendChild(overlay);
+}
+
+function performSubmit(entries) {
+  const btn = event.target;
+  if (!btn) return;
+
+  btn.disabled = true;
+  btn.innerHTML = '<i class="bi bi-send me-1"></i>Submitting?';
+
+  fetch('/api/timesheets', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({week_of: WEEK_OF, action: 'submit', entries})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      window.location = '/timesheets';
+    } else {
+      showValidationError('Error: '+(d.error||'Unknown error'));
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-send me-1"></i>Submit Timesheet';
+    }
+  })
+  .catch(() => {
+    showValidationError('Network error. Please try again.');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-send me-1"></i>Submit Timesheet';
+  });
+}
+
 function saveSheet(action) {
   const entries = collectEntries();
   if (action==='submit' && entries.length===0) {
     showValidationError('Please add at least one entry before submitting.');
+    return;
+  }
+
+  // If submitting, show confirmation dialog first
+  if (action === 'submit') {
+    showConfirmSubmission(entries);
     return;
   }
 
