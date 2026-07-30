@@ -1102,7 +1102,11 @@ function confirmTimeOffAction(requestId, action, employeeName) {
     : `You are about to <strong>reject</strong> <strong>${employeeName}</strong>'s time-off request. This action cannot be undone.`;
 
   showConfirmationModal(title, message, isApprove ? 'Approve' : 'Reject', headerBg, () => {
-    window.location = `/employee/time-off/${requestId}/${action}`;
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `/employees/time-off/${requestId}/${action}`;
+    document.body.appendChild(form);
+    form.submit();
   });
 }
 
