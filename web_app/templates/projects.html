@@ -13,15 +13,6 @@
   #projFilterForm {
     margin-bottom: 15px;
   }
-  /* Disable select interaction completely with pointer-events: none */
-  /* This is the most effective way to prevent dropdown from opening */
-  select {
-    pointer-events: none;
-  }
-  /* Re-enable pointer events ONLY for selects inside the filter form */
-  #projFilterForm select {
-    pointer-events: auto;
-  }
 </style>
 
 <!-- ?? Projects Overview ?????????????????????????????????????????????????????? -->
@@ -804,36 +795,19 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  // Aggressively close/prevent select dropdowns from showing outside filter form
+  // Close select dropdowns when clicking outside filter form
   const filterForm = document.getElementById('projFilterForm');
   if (filterForm) {
     const selects = filterForm.querySelectorAll('select');
 
-    // Close any open selects when clicking anywhere on page
+    // Only blur selects when clicking OUTSIDE the filter form
     document.addEventListener('click', function(e) {
-      selects.forEach(select => {
-        select.blur();
-      });
-    });
-
-    // Also close on focus change
-    document.addEventListener('focusin', function(e) {
+      // If click is outside filter form, close any open selects
       if (!filterForm.contains(e.target)) {
         selects.forEach(select => {
           select.blur();
         });
       }
-    });
-
-    // Prevent mousedown on selects from opening dropdown outside form
-    selects.forEach(select => {
-      select.addEventListener('mousedown', function(e) {
-        const rect = filterForm.getBoundingClientRect();
-        if (e.clientY < rect.top || e.clientY > rect.bottom) {
-          e.preventDefault();
-          this.blur();
-        }
-      });
     });
   }
 });
