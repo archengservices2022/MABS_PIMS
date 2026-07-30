@@ -1435,12 +1435,6 @@ function copyPrevWeek() {
 
 // Initialize form immediately (script runs after DOM is loaded)
 (function initTimesheet() {
-  // Ensure WEEKDAYS is available
-  if (!WEEKDAYS || WEEKDAYS.length === 0) {
-    console.error('WEEKDAYS not loaded');
-    return;
-  }
-
   if (EXISTING && EXISTING.length > 0) {
     const byDate={}, dateOrder=[];
     EXISTING.filter(e=>e.date).forEach(e=>{
@@ -1453,10 +1447,7 @@ function copyPrevWeek() {
       renderDayBlock(WEEKDAYS[0].date, [{}]);
     }
   } else {
-    // New timesheet - render first day
-    if (WEEKDAYS[0]) {
-      renderDayBlock(WEEKDAYS[0].date, [{}]);
-    }
+    renderDayBlock(WEEKDAYS[0].date, [{}]);
     if (!IS_APPROVED) {
       fetch('/api/timesheets/previous?week='+encodeURIComponent(WEEK_OF))
         .then(r=>r.json())
