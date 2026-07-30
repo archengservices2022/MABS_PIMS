@@ -463,7 +463,12 @@ const PROJECTS  = {{ active_projects | tojson }};
 const EXISTING  = {{ (existing_sheet.entries if existing_sheet else []) | tojson }};
 const IS_APPROVED = {{ 'true' if (existing_sheet and existing_sheet.status == 'Approved') else 'false' }};
 const TODAY_ISO = {{ now.strftime('%Y-%m-%d') | tojson }}; // company-timezone "today", not the browser's local/UTC date
-const NOW_ISO = {{ now.isoformat() | tojson }}; // Full server time for validation
+
+// Get current time in user's LOCAL timezone (not server/company timezone)
+function getUserLocalNow() {
+  return new Date();  // Browser's local time
+}
+const USER_LOCAL_NOW = getUserLocalNow();
 
 const WEEKDAYS = WEEK_DAYS; // All 7 days allowed
 
@@ -855,14 +860,15 @@ function calcRow(id) {
     return;
   }
 
-  // Validate that end time is not in the future (accounting for overnight shifts)
+  // Validate that end time is not in the future (using USER'S LOCAL TIME)
   const date = tr.dataset.date;
   const endInput = tr.querySelector('.entry-end');
 
   // Only validate if date is valid
   if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    const now = new Date(NOW_ISO);
-    let entryDateTime = new Date(date + 'T' + String(e.h).padStart(2,'0') + ':' + String(e.min).padStart(2,'0') + ':00Z');
+    const now = getUserLocalNow();  // User's current local time
+    // Create datetime in user's local timezone (without 'Z' means local time)
+    let entryDateTime = new Date(date + 'T' + String(e.h).padStart(2,'0') + ':' + String(e.min).padStart(2,'0') + ':00');
 
     // If this is an overnight shift, add 1 day to the end time
     let mins = (e.h*60+e.min) - (s.h*60+s.min);
@@ -873,7 +879,7 @@ function calcRow(id) {
     if (entryDateTime > now) {
       endInput.style.borderColor = '#dc2626';
       endInput.style.backgroundColor = '#fee2e2';
-      endInput.title = 'End time cannot be in the future';
+      endInput.title = 'End time cannot be in the future (based on your local time)';
     } else {
       endInput.style.borderColor = '';
       endInput.style.backgroundColor = '';
@@ -998,10 +1004,11 @@ function saveSheet(action) {
     return;
   }
 
-  const now = new Date(NOW_ISO);
+  const now = getUserLocalNow();  // User's current LOCAL time
   for (const entry of entries) {
     if (entry.entry_type === 'work' && entry.date && entry.end_time) {
-      let entryDateTime = new Date(entry.date + 'T' + entry.end_time + ':00Z');
+      // Create datetime in user's local timezone (without 'Z' means local time)
+      let entryDateTime = new Date(entry.date + 'T' + entry.end_time + ':00');
 
       // Handle overnight shifts: if end_time < start_time, end is next day
       if (entry.start_time && entry.end_time) {
@@ -1013,7 +1020,7 @@ function saveSheet(action) {
       }
 
       if (entryDateTime > now) {
-        alert(`End time for ${entry.date} cannot be in the future. Please enter a valid end time.`);
+        alert(`End time for ${entry.date} cannot be in the future (based on your local time). Please enter a valid end time.`);
         return;
       }
     }
