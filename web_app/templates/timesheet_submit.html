@@ -1170,6 +1170,18 @@ function showConfirmSubmission(entries) {
     line-height: 1.6;
   `;
   const totalHours = parseFloat(document.getElementById('sumTotal').textContent) || 0;
+
+  // Calculate week end date (6 days after week start)
+  const weekStart = new Date(WEEK_OF);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+
+  // Format dates
+  const options = { month: 'short', day: 'numeric', year: 'numeric' };
+  const startFormatted = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const endFormatted = weekEnd.toLocaleDateString('en-US', options);
+  const weekRange = `${startFormatted} — ${endFormatted}`;
+
   body.innerHTML = `
     <p style="margin-bottom: 12px;">You are about to submit your timesheet.</p>
     <div style="background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 8px; padding: 12px; margin: 14px 0;">
@@ -1180,10 +1192,10 @@ function showConfirmSubmission(entries) {
       </div>
       <div style="display: flex; justify-content: space-between;">
         <span>Week Of:</span>
-        <span style="font-weight: 600;">${WEEK_OF}</span>
+        <span style="font-weight: 600;">${weekRange}</span>
       </div>
     </div>
-    <p style="margin-top: 16px; color: #64748b; font-size: 13px;">Once submitted, your timesheet cannot be edited until it's reviewed.</p>
+    <p style="margin-top: 16px; color: #64748b; font-size: 13px;">Once submitted, your timesheet cannot be edited.</p>
   `;
 
   // Create footer with buttons
@@ -1287,13 +1299,9 @@ function saveSheet(action) {
     return;
   }
 
-  // If submitting, show confirmation dialog first
-  if (action === 'submit') {
-    showConfirmSubmission(entries);
-    return;
-  }
-
   const now = getUserLocalNow();  // User's current LOCAL time
+
+  // Validate all entries BEFORE showing confirmation dialog
   for (const entry of entries) {
     if (entry.entry_type === 'work' && entry.date) {
       // Validate start time
@@ -1331,9 +1339,12 @@ function saveSheet(action) {
     const nonWorkEntries = entries.filter(e => e.entry_type !== 'work');
     const workEntries    = entries.filter(e => e.entry_type === 'work');
     if (workEntries.length > 0 && tot === 0) {
-      alert('Total hours are 0.00. Please enter valid start and end times.');
+      showValidationError('Total hours are 0.00. Please enter valid start and end times.');
       return;
     }
+    // If validation passes, show confirmation dialog
+    showConfirmSubmission(entries);
+    return;
   }
   const btn = event.target;
   btn.disabled = true;
