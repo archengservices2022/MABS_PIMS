@@ -18402,23 +18402,32 @@ def api_timesheets_save():
     max_future_allowed = now_utc + timedelta(hours=24)
 
     for entry in entries:
-        if entry.get("entry_type") == "work" and entry.get("end_time"):
+        if entry.get("entry_type") == "work":
             try:
                 entry_date = entry.get("date", "")
                 start_time_str = entry.get("start_time", "")
                 end_time_str = entry.get("end_time", "")
+
+                # Validate start time
+                if entry_date and start_time_str:
+                    start_datetime = datetime.fromisoformat(f"{entry_date}T{start_time_str}:00")
+                    start_datetime_utc = start_datetime.replace(tzinfo=timezone.utc)
+                    if start_datetime_utc > max_future_allowed:
+                        return jsonify({"error": f"Start time for {entry_date} cannot be more than 24 hours in the future"}), 400
+
+                # Validate end time
                 if entry_date and end_time_str:
-                    entry_datetime = datetime.fromisoformat(f"{entry_date}T{end_time_str}:00")
+                    end_datetime = datetime.fromisoformat(f"{entry_date}T{end_time_str}:00")
 
                     # If this is an overnight shift (end_time < start_time), the end is next day
                     if start_time_str and end_time_str:
                         start_h, start_m = map(int, start_time_str.split(':')[:2])
                         end_h, end_m = map(int, end_time_str.split(':')[:2])
                         if (end_h * 60 + end_m) < (start_h * 60 + start_m):
-                            entry_datetime += timedelta(days=1)
+                            end_datetime += timedelta(days=1)
 
-                    entry_datetime_utc = entry_datetime.replace(tzinfo=timezone.utc)
-                    if entry_datetime_utc > max_future_allowed:
+                    end_datetime_utc = end_datetime.replace(tzinfo=timezone.utc)
+                    if end_datetime_utc > max_future_allowed:
                         return jsonify({"error": f"End time for {entry_date} cannot be more than 24 hours in the future"}), 400
             except (ValueError, TypeError):
                 pass
