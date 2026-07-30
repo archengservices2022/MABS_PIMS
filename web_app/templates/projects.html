@@ -807,36 +807,38 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  // Close select dropdowns when clicking outside the filter form
+  // Aggressively close/prevent select dropdowns from showing outside filter form
   const filterForm = document.getElementById('projFilterForm');
   if (filterForm) {
+    const selects = filterForm.querySelectorAll('select');
+
+    // Close any open selects when clicking anywhere on page
     document.addEventListener('click', function(e) {
+      selects.forEach(select => {
+        select.blur();
+      });
+    });
+
+    // Also close on focus change
+    document.addEventListener('focusin', function(e) {
       if (!filterForm.contains(e.target)) {
-        const selects = filterForm.querySelectorAll('select');
         selects.forEach(select => {
-          if (document.activeElement === select) {
-            select.blur();
-            e.preventDefault();
-          }
+          select.blur();
         });
       }
-    }, true);
+    });
 
-    // Also prevent select from opening if clicked outside
-    filterForm.addEventListener('change', function(e) {
-      if (e.target.tagName === 'SELECT') {
+    // Prevent mousedown on selects from opening dropdown outside form
+    selects.forEach(select => {
+      select.addEventListener('mousedown', function(e) {
         const rect = filterForm.getBoundingClientRect();
-        const mouseY = window.lastMouseY || 0;
-        if (mouseY > rect.bottom) {
-          e.target.blur();
+        if (e.clientY < rect.top || e.clientY > rect.bottom) {
+          e.preventDefault();
+          this.blur();
         }
-      }
+      });
     });
   }
-
-  document.addEventListener('mousemove', function(e) {
-    window.lastMouseY = e.clientY;
-  });
 });
 </script>
 
