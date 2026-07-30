@@ -774,7 +774,7 @@
 
 {% block scripts %}
 <script>
-function showConfirmDialog(title, message, action, headerBg, onConfirm) {
+function showConfirmDialog(title, message, action, headerBg, onConfirm, includeReasonInput = false) {
   const overlay = document.createElement('div');
   overlay.style.cssText = `
     position: fixed;
@@ -818,6 +818,25 @@ function showConfirmDialog(title, message, action, headerBg, onConfirm) {
   `;
   body.innerHTML = message;
 
+  if (includeReasonInput) {
+    body.innerHTML += `
+      <label style="display: block; margin-top: 16px; margin-bottom: 8px; font-weight: 600; color: #1e293b;">
+        Rejection Reason (optional):
+      </label>
+      <textarea id="rejectionReason" style="
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        font-family: inherit;
+        font-size: 13px;
+        resize: vertical;
+        min-height: 80px;
+        box-sizing: border-box;
+      " placeholder="Enter reason for rejection..."></textarea>
+    `;
+  }
+
   const footer = document.createElement('div');
   footer.style.cssText = `
     padding: 18px 24px;
@@ -854,8 +873,12 @@ function showConfirmDialog(title, message, action, headerBg, onConfirm) {
     font-size: 13px;
   `;
   confirmBtn.onclick = () => {
+    let reasonText = '';
+    if (includeReasonInput) {
+      reasonText = document.getElementById('rejectionReason')?.value ?? '';
+    }
     overlay.remove();
-    onConfirm();
+    onConfirm(reasonText);
   };
 
   footer.appendChild(cancelBtn);
@@ -876,13 +899,8 @@ function approveSheet(sheetId, action) {
     ? 'You are about to <strong>approve</strong> this timesheet. This action cannot be undone.'
     : 'You are about to <strong>reject</strong> this timesheet. This action cannot be undone.';
 
-  showConfirmDialog(title, message, action === 'approve' ? 'Approve' : 'Reject', headerBg, () => {
-    let notes = '';
-    if (action === 'reject') {
-      const reason = prompt('Rejection reason (optional):');
-      if (reason === null) return;
-      notes = reason;
-    }
+  showConfirmDialog(title, message, action === 'approve' ? 'Approve' : 'Reject', headerBg, (reasonText) => {
+    let notes = reasonText || '';
     fetch(`/api/timesheets/${sheetId}/approve`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -894,7 +912,7 @@ function approveSheet(sheetId, action) {
       else alert('Error: ' + (d.error || 'Unknown'));
     })
     .catch(() => alert('Network error. Please try again.'));
-  });
+  }, action === 'reject');
 }
 
 function sendBackSheet(sheetId, name) {
