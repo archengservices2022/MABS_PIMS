@@ -336,7 +336,7 @@
             <div id="createCommissionSection" style="display:none;">
               <hr class="my-2">
               <p class="text-muted mb-2" style="font-size:11px;"><i class="bi bi-percent me-1"></i>Commission settings</p>
-              <div class="mb-2">
+              <div class="mb-2" id="createEmployeeTypeField">
                 <label class="form-label">Employee Type</label>
                 <select name="employee_type" class="form-select form-select-sm">
                   <option value="">— None —</option>
@@ -927,7 +927,7 @@
             <div class="col-12 mb-1">
               <span class="text-muted" style="font-size:11px;"><i class="bi bi-percent me-1"></i>Commission settings</span>
             </div>
-            <div class="col-6">
+            <div class="col-6" id="editEmployeeTypeField">
               <label class="form-label fw-semibold" style="font-size:12px;">Employee Type</label>
               <select id="editEmployeeType" class="form-select form-select-sm">
                 <option value="">— None —</option>
@@ -959,10 +959,7 @@ const ALL_PAGES   = {{ all_pages | tojson }};
 function toggleCreateCommission() {
   var role = document.getElementById('createUserRole').value;
   document.getElementById('createCommissionSection').style.display = (role === 'sales' || role === 'admin') ? '' : 'none';
-  if (role === 'admin') {
-    var empTypeSelect = document.querySelector('#createCommissionSection select[name="employee_type"]');
-    if (empTypeSelect) empTypeSelect.value = '';
-  }
+  document.getElementById('createEmployeeTypeField').style.display = role === 'sales' ? '' : 'none';
 }
 const PAGE_LABELS = {{ page_labels | tojson }};
 const ROLE_DEFAULTS = {{ role_pages | tojson }};
@@ -980,11 +977,12 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('editMonthlySalary').value    = parseFloat(d.salary) > 0 ? parseFloat(d.salary) : '';
       document.getElementById('editRole').value             = (d.role || 'sales').toLowerCase();
       var role = (d.role || '').toLowerCase();
-      document.getElementById('editEmployeeType').value     = role === 'admin' ? '' : (d.employeeType || '');
+      document.getElementById('editEmployeeType').value     = d.employeeType || '';
       document.getElementById('editCommissionRate').value   = parseFloat(d.commissionRate) > 0 ? parseFloat(d.commissionRate) : '';
       document.getElementById('editUserMsg').innerHTML      = '';
       var isSalesOrAdmin = role === 'sales' || role === 'admin';
       document.getElementById('editCommissionSection').style.display = isSalesOrAdmin ? '' : 'none';
+      document.getElementById('editEmployeeTypeField').style.display = role === 'sales' ? '' : 'none';
       new bootstrap.Modal(document.getElementById('editUserModal')).show();
     });
   });
@@ -1036,22 +1034,21 @@ function onEditRoleChange() {
   var role = document.getElementById('editRole').value;
   var isSalesOrAdmin = role === 'sales' || role === 'admin';
   document.getElementById('editCommissionSection').style.display = isSalesOrAdmin ? '' : 'none';
-  if (role === 'admin') {
-    document.getElementById('editEmployeeType').value = '';
-  }
+  document.getElementById('editEmployeeTypeField').style.display = role === 'sales' ? '' : 'none';
 }
 
 async function saveUserDetails() {
   var uid    = document.getElementById('editUid').value;
   var msg    = document.getElementById('editUserMsg');
+  var role   = document.getElementById('editRole').value;
   var body   = {
     username:        document.getElementById('editUsername').value.trim(),
-    role:            document.getElementById('editRole').value,
+    role:            role,
     title:           document.getElementById('editTitle').value.trim(),
     region:          document.getElementById('editRegion').value,
     hourly_rate:     parseFloat(document.getElementById('editHourlyRate').value)     || 0,
     monthly_salary:  parseFloat(document.getElementById('editMonthlySalary').value)  || 0,
-    employee_type:   document.getElementById('editEmployeeType').value,
+    employee_type:   role === 'admin' ? '' : document.getElementById('editEmployeeType').value,
     commission_rate: parseFloat(document.getElementById('editCommissionRate').value) || 0,
   };
   msg.innerHTML = '<span class="text-muted">Saving?</span>';
