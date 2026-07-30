@@ -18284,30 +18284,39 @@ def timesheets():
 @login_required
 def timesheets_submit():
     week_of    = _week_monday(request.args.get("week", ""))
+    sheet_id   = request.args.get("sheet_id", "")
     uid        = session.get("user_uid", "")
     user_role = normalize_role(session.get("user_role", ""))
     is_admin = user_role in ("admin", "administration")
 
-    # Allow admins to edit another employee's timesheet
-    edit_uid = request.args.get("employee_uid", uid)
-    if not is_admin and edit_uid != uid:
-        # Non-admins can only edit their own timesheets
-        abort(403)
-
     all_projs  = _load_projects_list()
     active_projects = [p for p in all_projs
                        if p.get("status", "") not in ("Completed", "Cancelled")]
-    existing   = _load_timesheets(week_of=week_of, employee_uid=edit_uid)
-    existing_sheet = existing[0] if existing else None
 
-    # Convert entries from dict to list if needed (Firebase stores as dict)
-    if existing_sheet:
-        entries = existing_sheet.get("entries")
-        if isinstance(entries, dict):
-            entries = list(entries.values())
-        elif not isinstance(entries, list):
-            entries = []
-        existing_sheet["entries"] = entries
+    existing_sheet = None
+
+    # If sheet_id provided, load that specific sheet (for admin edits)
+    if sheet_id:
+        sheet = fb_get(f"/timesheets/{sheet_id}")
+        if sheet and isinstance(sheet, dict):
+            sheet = dict(sheet)
+            sheet["firebase_id"] = sheet_id
+            # Check permission - allow admins to edit any timesheet
+            if not is_admin and sheet.get("employee_uid") != uid:
+                abort(403)
+            # Convert entries from dict to list if needed
+            entries = sheet.get("entries")
+            if isinstance(entries, dict):
+                entries = list(entries.values())
+            elif not isinstance(entries, list):
+                entries = []
+            sheet["entries"] = entries
+            existing_sheet = sheet
+
+    # Otherwise load by week and uid (for new timesheets or own edits)
+    if not existing_sheet:
+        existing = _load_timesheets(week_of=week_of, employee_uid=uid)
+        existing_sheet = existing[0] if existing else None
 
     week_start = datetime.strptime(week_of, "%Y-%m-%d").date()
     week_end   = week_start + timedelta(days=6)
@@ -18320,10 +18329,13 @@ def timesheets_submit():
         for i in range(7)
     ]
 
+    # Use the employee_uid from existing sheet if editing, otherwise current user
+    form_edit_uid = existing_sheet.get("employee_uid", uid) if existing_sheet else uid
+
     return render_template("timesheet_submit.html",
         week_of=week_of, week_label=week_label,
         week_days=week_days, active_projects=active_projects,
-        existing_sheet=existing_sheet, is_admin=is_admin, edit_uid=edit_uid)
+        existing_sheet=existing_sheet, is_admin=is_admin, edit_uid=form_edit_uid)
 
 
 @app.route("/timesheets/<sheet_id>")
