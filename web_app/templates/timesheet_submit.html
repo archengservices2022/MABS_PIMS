@@ -835,27 +835,6 @@ function calcRow(id) {
   let s = parseTime(tr.querySelector('.entry-start').value);
   let e = parseTime(tr.querySelector('.entry-end').value);
 
-  // Validate that end time is not in the future
-  const date = tr.dataset.date;
-  const endInput = tr.querySelector('.entry-end');
-  if (e && date && endInput.value.trim()) {
-    const now = new Date(NOW_ISO);
-    const entryDateTime = new Date(date + 'T' + String(e.h).padStart(2,'0') + ':' + String(e.min).padStart(2,'0') + ':00Z');
-    if (entryDateTime > now) {
-      endInput.style.borderColor = '#dc2626';
-      endInput.style.backgroundColor = '#fee2e2';
-      endInput.title = 'End time cannot be in the future';
-    } else {
-      endInput.style.borderColor = '';
-      endInput.style.backgroundColor = '';
-      endInput.title = '';
-    }
-  } else {
-    endInput.style.borderColor = '';
-    endInput.style.backgroundColor = '';
-    endInput.title = '';
-  }
-
   if (s && e && e.h < 12) {
     const raw = tr.querySelector('.entry-end').value.trim().toUpperCase();
     if (!/AM|PM/.test(raw) && (e.h*60+e.min) <= (s.h*60+s.min)) {
@@ -865,6 +844,9 @@ function calcRow(id) {
 
   if (!s || !e) {
     delete tr.dataset.worked;
+    tr.querySelector('.entry-end').style.borderColor = '';
+    tr.querySelector('.entry-end').style.backgroundColor = '';
+    tr.querySelector('.entry-end').title = '';
     ['reg','ot','tot'].forEach(k => {
       const el = document.getElementById(`${k}-${id}`);
       if (el) el.textContent = '—';
@@ -873,7 +855,28 @@ function calcRow(id) {
     return;
   }
 
+  // Validate that end time is not in the future (accounting for overnight shifts)
+  const date = tr.dataset.date;
+  const endInput = tr.querySelector('.entry-end');
+  const now = new Date(NOW_ISO);
+  let entryDateTime = new Date(date + 'T' + String(e.h).padStart(2,'0') + ':' + String(e.min).padStart(2,'0') + ':00Z');
+
+  // If this is an overnight shift, add 1 day to the end time
   let mins = (e.h*60+e.min) - (s.h*60+s.min);
+  if (mins < 0) {
+    entryDateTime = new Date(entryDateTime.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  if (entryDateTime > now) {
+    endInput.style.borderColor = '#dc2626';
+    endInput.style.backgroundColor = '#fee2e2';
+    endInput.title = 'End time cannot be in the future';
+  } else {
+    endInput.style.borderColor = '';
+    endInput.style.backgroundColor = '';
+    endInput.title = '';
+  }
+
   // Overnight shift: treat an end time earlier than the start time as next day.
   // Example: 6 PM -> 12 AM should calculate as 6 hours, not 0.
   if (mins < 0) mins += 24 * 60;
@@ -990,7 +993,17 @@ function saveSheet(action) {
   const now = new Date(NOW_ISO);
   for (const entry of entries) {
     if (entry.entry_type === 'work' && entry.date && entry.end_time) {
-      const entryDateTime = new Date(entry.date + 'T' + entry.end_time + ':00Z');
+      let entryDateTime = new Date(entry.date + 'T' + entry.end_time + ':00Z');
+
+      // Handle overnight shifts: if end_time < start_time, end is next day
+      if (entry.start_time && entry.end_time) {
+        const [startH, startM] = entry.start_time.split(':').map(Number);
+        const [endH, endM] = entry.end_time.split(':').map(Number);
+        if ((endH * 60 + endM) < (startH * 60 + startM)) {
+          entryDateTime = new Date(entryDateTime.getTime() + 24 * 60 * 60 * 1000);
+        }
+      }
+
       if (entryDateTime > now) {
         alert(`End time for ${entry.date} cannot be in the future. Please enter a valid end time.`);
         return;
