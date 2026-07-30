@@ -18399,9 +18399,23 @@ def api_timesheets_save():
     data    = request.get_json(force=True) or {}
     uid     = session.get("user_uid", "")
     name    = session.get("user_name", "")
+    user_role = normalize_role(session.get("user_role", ""))
+    is_admin = user_role in ("admin", "administration")
+
     week_of = (data.get("week_of") or "").strip()
     action  = data.get("action", "draft")
     entries = data.get("entries") or []
+
+    # If admin is editing another user's timesheet, use that UID
+    edited_uid = data.get("edited_uid", "")
+    if edited_uid and is_admin:
+        uid = edited_uid
+        # Try to get the edited user's name
+        employees = fb_get("/employees") or {}
+        for emp_id, emp_data in employees.items():
+            if emp_data.get("uid") == edited_uid:
+                name = emp_data.get("name", "Unknown")
+                break
 
     if not week_of:
         return jsonify({"error": "week_of is required"}), 400
