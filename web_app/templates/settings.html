@@ -1050,6 +1050,11 @@ async function saveUserDetails() {
   var uid    = document.getElementById('editUid').value;
   var msg    = document.getElementById('editUserMsg');
   var role   = document.getElementById('editRole').value;
+  var saveBtn = document.querySelector('.btn-teal[onclick="saveUserDetails()"]');
+
+  if (!uid) { msg.innerHTML = '<span class="text-danger">Error: User ID missing</span>'; return; }
+  if (saveBtn.disabled) return;
+
   var body   = {
     username:        document.getElementById('editUsername').value.trim(),
     role:            role,
@@ -1061,6 +1066,10 @@ async function saveUserDetails() {
     commission_rate: parseFloat(document.getElementById('editCommissionRate').value) || 0,
     active:          document.getElementById('editStatus').value === 'true',
   };
+
+  saveBtn.disabled = true;
+  msg.innerHTML = '<span class="text-muted">Saving...</span>';
+
   try {
     var res  = await fetch('/api/users/' + uid + '/details', {
       method: 'PATCH',
@@ -1070,16 +1079,20 @@ async function saveUserDetails() {
     var data = await res.json();
     if (!res.ok) {
       msg.innerHTML = '<span class="text-danger">' + (data.error || 'Error: ' + res.status) + '</span>';
+      saveBtn.disabled = false;
       return;
     }
     if (data.error) {
       msg.innerHTML = '<span class="text-danger">' + data.error + '</span>';
+      saveBtn.disabled = false;
       return;
     }
-    location.reload();
+    msg.innerHTML = '<span class="text-success">Saved!</span>';
+    setTimeout(function(){ location.reload(); }, 100);
   } catch(e) {
     console.error('Save error:', e);
     msg.innerHTML = '<span class="text-danger">Request failed: ' + e.message + '</span>';
+    saveBtn.disabled = false;
   }
 }
 
