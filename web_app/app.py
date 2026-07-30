@@ -18290,14 +18290,25 @@ def timesheets_submit():
 
     # If admin is editing another user's timesheet, use that UID
     edit_uid = request.args.get("edit_uid", "")
+    edited_employee_name = None
     if edit_uid and is_admin:
         uid = edit_uid
+        # Get the edited user's name from employees table
+        employees = fb_get("/employees") or {}
+        for emp_id, emp_data in employees.items():
+            if emp_data.get("uid") == edit_uid:
+                edited_employee_name = emp_data.get("name", "")
+                break
 
     all_projs  = _load_projects_list()
     active_projects = [p for p in all_projs
                        if p.get("status", "") not in ("Completed", "Cancelled")]
     existing   = _load_timesheets(week_of=week_of, employee_uid=uid)
     existing_sheet = existing[0] if existing else None
+
+    # Override employee_name if admin is editing another user's timesheet
+    if existing_sheet and edited_employee_name:
+        existing_sheet["employee_name"] = edited_employee_name
 
     week_start = datetime.strptime(week_of, "%Y-%m-%d").date()
     week_end   = week_start + timedelta(days=6)
