@@ -153,9 +153,7 @@
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-medical">
       <i class="bi bi-heart-pulse me-1"></i>Medical Allowance
-      {% if my_medical_claims | selectattr('status','equalto','Pending') | list | length %}
-      <span class="badge bg-warning text-dark ms-1" style="font-size:10px;">{{ my_medical_claims | selectattr('status','equalto','Pending') | list | length }}</span>
-      {% endif %}
+      {% if user_role in ('admin', 'accountant') and pending_medical_claims %}<span class="badge bg-warning text-dark ms-1" style="font-size:10px;">{{ pending_medical_claims|length }}</span>{% elif my_medical_claims | selectattr('status','equalto','Pending') | list | length %}<span class="badge bg-warning text-dark ms-1" style="font-size:10px;">{{ my_medical_claims | selectattr('status','equalto','Pending') | list | length }}</span>{% endif %}
     </a>
   </li>
   <li class="nav-item">

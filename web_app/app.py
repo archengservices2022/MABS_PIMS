@@ -11440,6 +11440,7 @@ def employees():
     context["my_medical_claims"] = [c for c in all_medical_list if c.get("employee_uid") == uid]
     if is_admin:
         context["all_medical_claims"] = all_medical_list
+        context["pending_medical_claims"] = [c for c in all_medical_list if c.get("status") == "Pending"]
 
     # Expense types / categories / names for employee submission form
     # "Other Expenses" (salary, tax, medical, bank charges) is excluded — those are admin/payroll entries
