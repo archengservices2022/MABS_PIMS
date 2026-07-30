@@ -959,6 +959,10 @@ const ALL_PAGES   = {{ all_pages | tojson }};
 function toggleCreateCommission() {
   var role = document.getElementById('createUserRole').value;
   document.getElementById('createCommissionSection').style.display = (role === 'sales' || role === 'admin') ? '' : 'none';
+  if (role === 'admin') {
+    var empTypeSelect = document.querySelector('#createCommissionSection select[name="employee_type"]');
+    if (empTypeSelect) empTypeSelect.value = '';
+  }
 }
 const PAGE_LABELS = {{ page_labels | tojson }};
 const ROLE_DEFAULTS = {{ role_pages | tojson }};
@@ -975,10 +979,11 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('editHourlyRate').value       = parseFloat(d.rate) > 0 ? parseFloat(d.rate) : '';
       document.getElementById('editMonthlySalary').value    = parseFloat(d.salary) > 0 ? parseFloat(d.salary) : '';
       document.getElementById('editRole').value             = (d.role || 'sales').toLowerCase();
-      document.getElementById('editEmployeeType').value     = d.employeeType || '';
+      var role = (d.role || '').toLowerCase();
+      document.getElementById('editEmployeeType').value     = role === 'admin' ? '' : (d.employeeType || '');
       document.getElementById('editCommissionRate').value   = parseFloat(d.commissionRate) > 0 ? parseFloat(d.commissionRate) : '';
       document.getElementById('editUserMsg').innerHTML      = '';
-      var isSalesOrAdmin = (d.role || '').toLowerCase() === 'sales' || (d.role || '').toLowerCase() === 'admin';
+      var isSalesOrAdmin = role === 'sales' || role === 'admin';
       document.getElementById('editCommissionSection').style.display = isSalesOrAdmin ? '' : 'none';
       new bootstrap.Modal(document.getElementById('editUserModal')).show();
     });
@@ -1031,6 +1036,9 @@ function onEditRoleChange() {
   var role = document.getElementById('editRole').value;
   var isSalesOrAdmin = role === 'sales' || role === 'admin';
   document.getElementById('editCommissionSection').style.display = isSalesOrAdmin ? '' : 'none';
+  if (role === 'admin') {
+    document.getElementById('editEmployeeType').value = '';
+  }
 }
 
 async function saveUserDetails() {
