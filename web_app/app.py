@@ -18304,14 +18304,13 @@ def timesheets_submit():
             # Check permission - allow admins to edit any timesheet
             if not is_admin and sheet.get("employee_uid") != uid:
                 abort(403)
-            # Convert entries from dict to list if needed and sort
+            # Convert entries from dict to list if needed
             entries = sheet.get("entries")
             if isinstance(entries, dict):
                 entries = list(entries.values())
             elif not isinstance(entries, list):
                 entries = []
-            # Sort entries by date and start time
-            sheet["entries"] = sorted(entries, key=lambda e: (e.get("date", ""), e.get("start_time", "")))
+            sheet["entries"] = entries
             existing_sheet = sheet
 
     # Otherwise load by week and uid (for new timesheets or own edits)
