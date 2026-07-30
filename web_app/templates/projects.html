@@ -9,19 +9,9 @@
     white-space: nowrap;
     min-width: 110px;
   }
-  /* Prevent select dropdown from covering blank areas */
+  /* Ensure proper spacing between filters and content */
   #projFilterForm {
-    position: relative;
-    z-index: 10;
-    margin-bottom: 0;
-  }
-  #projFilterForm .form-select {
-    position: relative;
-    z-index: 11;
-  }
-  /* Add bottom margin to prevent dropdown overlap with content below */
-  .card-panel {
-    margin-top: 10px;
+    margin-bottom: 15px;
   }
 </style>
 
@@ -152,7 +142,6 @@
       {% endif %}
     </div>
     {% endif %}
-    <div style="overflow: hidden; margin-bottom: 20px;">
     <form method="GET" id="projFilterForm">
       <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
         <div class="d-flex gap-2 align-items-center flex-wrap">
@@ -198,7 +187,6 @@
         {% endif %}
       </div>
     </form>
-    </div>
         {% if search or status_filter or overdue_filter or date_from or date_to or client_filter or plant_filter %}
         <div class="alert alert-light py-1 px-3 mt-2 small d-flex align-items-center gap-2"
              style="border-left:3px solid #0D9488;">
@@ -806,6 +794,17 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }
   }
+
+  // Close select dropdowns when clicking outside the filter form
+  document.addEventListener('click', function(e) {
+    const filterForm = document.getElementById('projFilterForm');
+    if (filterForm && !filterForm.contains(e.target)) {
+      const selects = filterForm.querySelectorAll('select');
+      selects.forEach(select => {
+        select.blur();
+      });
+    }
+  });
 });
 </script>
 
