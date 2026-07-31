@@ -530,6 +530,67 @@ def fb_delete(path: str) -> bool:
     ref.delete()
     return True
 
+# ── Employee Advance Finance Sync Helpers ────────────────────────────────────
+def _sync_advance_to_finance(advance_id: str, advance_data: dict):
+    """Create/update finance expense entry for an advance"""
+    try:
+        balance_due = float(advance_data.get("amount", 0)) - float(advance_data.get("adjusted", 0))
+
+        # Don't create finance entry if balance due is 0
+        if balance_due <= 0:
+            _delete_advance_finance_entry(advance_id)
+            return
+
+        expense_data = {
+            "expense_type": "Employee Advance",
+            "expense_name": f"Advance - {advance_data.get('employee_name', 'Unknown')}",
+            "description": f"Employee Advance #{advance_data.get('advance_no', '')} - {advance_data.get('reason', '')}",
+            "amount": balance_due,
+            "category": "Employee Advance",
+            "date": advance_data.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
+            "vendor": advance_data.get("employee_name", ""),
+            "notes": f"Original: ${float(advance_data.get('amount', 0)):.2f} | Adjusted: ${float(advance_data.get('adjusted', 0)):.2f}",
+            "advance_id": advance_id,
+            "advance_no": advance_data.get("advance_no", ""),
+            "employee_name": advance_data.get("employee_name", ""),
+            "status": "Approved",
+            "created_by": advance_data.get("created_by", ""),
+            "submitted_by_name": advance_data.get("created_by", ""),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Check if finance entry already exists for this advance
+        expenses = fb_get("/balance_sheet_expenses") or {}
+        finance_entry_id = None
+
+        if isinstance(expenses, dict):
+            for exp_id, exp_data in expenses.items():
+                if isinstance(exp_data, dict) and exp_data.get("advance_id") == advance_id:
+                    finance_entry_id = exp_id
+                    break
+
+        if finance_entry_id:
+            # Update existing entry
+            fb_update(f"/balance_sheet_expenses/{finance_entry_id}", expense_data)
+        else:
+            # Create new entry
+            fb_push("/balance_sheet_expenses", expense_data)
+    except Exception as e:
+        log.error(f"Error syncing advance to finance: {e}")
+
+def _delete_advance_finance_entry(advance_id: str):
+    """Delete finance expense entry associated with an advance"""
+    try:
+        expenses = fb_get("/balance_sheet_expenses") or {}
+
+        if isinstance(expenses, dict):
+            for exp_id, exp_data in expenses.items():
+                if isinstance(exp_data, dict) and exp_data.get("advance_id") == advance_id:
+                    fb_delete(f"/balance_sheet_expenses/{exp_id}")
+                    break
+    except Exception as e:
+        log.error(f"Error deleting advance finance entry: {e}")
+
 # ── In-memory TTL cache (avoids repeated Firebase reads on every page load) ───
 import time as _time
 _CACHE: Dict[str, dict] = {}
@@ -7309,8 +7370,7 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
                                 new_description = new_description.replace(f"Salary for {old_name}", f"Employee Salary for {new_name}")
                             update_data["description"] = new_description
 
-                    if update_data.get("employee_name") or update_data.get("submitted_by_name"):
-                        fb_update(f"/balance_sheet_expenses/{exp_id}", update_data)
+                    fb_update(f"/balance_sheet_expenses/{exp_id}", update_data)
 
     # Update Archived/Deleted Finance Expenses (/deleted_expenses)
     deleted_expenses = fb_get("/deleted_expenses") or {}
@@ -9373,6 +9433,9 @@ def add_employee_advance():
         advance_id = fb_push("/employee_advances", advance_data)
         log.info(f"Employee advance created: {advance_data['advance_no']}")
 
+        # Sync advance to finance expenses
+        _sync_advance_to_finance(advance_id, advance_data)
+
         return jsonify({"success": True, "advance_id": advance_id})
     except Exception as e:
         log.error(f"Error adding advance: {e}")
@@ -9421,6 +9484,10 @@ def update_employee_advance():
 
         fb_update(f"/employee_advances/{advance_id}", update_fields)
         log.info(f"Employee advance updated: {data.get('advance_no', '')}")
+
+        # Sync updated advance to finance expenses
+        updated_advance = {**advance_data, **update_fields}
+        _sync_advance_to_finance(advance_id, updated_advance)
 
         return jsonify({"success": True})
     except Exception as e:
@@ -9489,6 +9556,10 @@ def add_advance_adjustment():
         fb_update(f"/employee_advances/{advance_id}", update_data)
 
         log.info(f"Adjustment added to advance {advance_no}: {adjustment['amount']}")
+
+        # Sync updated advance to finance expenses
+        updated_advance = {**advance_data, **update_data}
+        _sync_advance_to_finance(advance_id, updated_advance)
 
         return jsonify({"success": True})
     except Exception as e:
@@ -9563,6 +9634,10 @@ def update_advance_adjustment():
 
         log.info(f"Adjustment updated for advance {advance_no}: {new_amount}")
 
+        # Sync updated advance to finance expenses
+        updated_advance = {**advance_data, **update_data}
+        _sync_advance_to_finance(advance_id, updated_advance)
+
         return jsonify({"success": True})
     except Exception as e:
         log.error(f"Error updating adjustment: {e}")
@@ -9616,6 +9691,10 @@ def delete_advance_adjustment():
 
         log.info(f"Adjustment deleted from advance {advance_no}: {deleted_amount}")
 
+        # Sync updated advance to finance expenses
+        updated_advance = {**advance_data, **update_data}
+        _sync_advance_to_finance(advance_id, updated_advance)
+
         return jsonify({"success": True})
     except Exception as e:
         log.error(f"Error deleting adjustment: {e}")
@@ -9641,6 +9720,9 @@ def delete_employee_advance():
 
         if not advance_id:
             return jsonify({"success": False, "error": "Advance not found"}), 404
+
+        # Delete from finance expenses first
+        _delete_advance_finance_entry(advance_id)
 
         fb_delete(f"/employee_advances/{advance_id}")
         log.info(f"Employee advance deleted: {advance_no}")
@@ -9679,6 +9761,12 @@ def financial():
     if isinstance(expenses, dict):
         for eid, edata in expenses.items():
             if isinstance(edata, dict):
+                # Skip advances with balance due = 0 (automatically closed)
+                if edata.get("expense_type") == "Employee Advance":
+                    advance_amount = _safe_float(edata.get("amount", 0))
+                    if advance_amount <= 0:
+                        continue
+
                 edata["firebase_id"] = eid
                 # Ensure amount is always a float (some old entries might be strings)
                 edata["amount"] = _safe_float(edata.get("amount", 0))
