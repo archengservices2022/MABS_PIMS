@@ -1288,11 +1288,11 @@ function refreshAdvanceTable() {
   });
 
   const totalsRow = `
-    <tr class="totals-row" style="background:#f0f9ff;border-top:2px solid #cbd5e1;font-weight:600;color:#1f2937;">
-      <td colspan="3" style="text-align:right;padding:12px 10px;">Totals (${sortedAdvances.length} advances)</td>
-      <td style="padding:12px 10px;">{{ currency_symbol }}${parseFloat(totalAmount).toFixed(2)}</td>
-      <td style="padding:12px 10px;">{{ currency_symbol }}${parseFloat(totalAdjusted).toFixed(2)}</td>
-      <td style="padding:12px 10px;">{{ currency_symbol }}${parseFloat(totalBalance).toFixed(2)}</td>
+    <tr class="totals-row" style="background:#f0f9ff;border-top:2px solid #cbd5e1;font-weight:600;">
+      <td colspan="3" style="text-align:right;padding:12px 10px;color:#1f2937;">Totals (${sortedAdvances.length} advances)</td>
+      <td style="padding:12px 10px;color:#1f2937;">{{ currency_symbol }}${parseFloat(totalAmount).toFixed(2)}</td>
+      <td style="padding:12px 10px;color:#10b981;">{{ currency_symbol }}${parseFloat(totalAdjusted).toFixed(2)}</td>
+      <td style="padding:12px 10px;color:#ef4444;">{{ currency_symbol }}${parseFloat(totalBalance).toFixed(2)}</td>
       <td colspan="2"></td>
     </tr>
   `;
@@ -1391,8 +1391,8 @@ function filterAdvanceTable() {
         totalsRow.innerHTML = `
           <td colspan="3" style="text-align:right;padding:12px 10px;font-weight:600;color:#1f2937;">Totals (${visibleCount} advances)</td>
           <td style="padding:12px 10px;font-weight:600;color:#1f2937;">{{ currency_symbol }}${parseFloat(filteredTotal).toFixed(2)}</td>
-          <td style="padding:12px 10px;font-weight:600;color:#1f2937;">{{ currency_symbol }}${parseFloat(filteredAdjusted).toFixed(2)}</td>
-          <td style="padding:12px 10px;font-weight:600;color:#1f2937;">{{ currency_symbol }}${parseFloat(filteredBalance).toFixed(2)}</td>
+          <td style="padding:12px 10px;font-weight:600;color:#10b981;">{{ currency_symbol }}${parseFloat(filteredAdjusted).toFixed(2)}</td>
+          <td style="padding:12px 10px;font-weight:600;color:#ef4444;">{{ currency_symbol }}${parseFloat(filteredBalance).toFixed(2)}</td>
           <td colspan="2"></td>
         `;
       }
