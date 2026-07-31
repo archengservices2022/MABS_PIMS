@@ -7483,7 +7483,7 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
     deleted_expenses = fb_get("/deleted_expenses") or {}
     if isinstance(deleted_expenses, dict):
         for exp_id, exp_data in deleted_expenses.items():
-            if isinstance(exp_data, dict) and (exp_data.get("category") == "Salary" or "Employee Compensation" in exp_data.get("expense_type", "")):
+            if isinstance(exp_data, dict) and (exp_data.get("category") == "Salary" or "Employee Salary" in exp_data.get("expense_type", "")):
                 emp_name = exp_data.get("employee_name", "")
                 if emp_name:
                     expected_desc = f"Employee Salary for {emp_name}"
@@ -7495,7 +7495,7 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
     active_expenses = fb_get("/balance_sheet_expenses") or {}
     if isinstance(active_expenses, dict):
         for exp_id, exp_data in active_expenses.items():
-            if isinstance(exp_data, dict) and (exp_data.get("category") == "Salary" or "Employee Compensation" in exp_data.get("expense_type", "")) and not exp_data.get("submitted_by_name"):
+            if isinstance(exp_data, dict) and (exp_data.get("category") == "Salary" or "Employee Salary" in exp_data.get("expense_type", "")) and not exp_data.get("submitted_by_name"):
                 fb_update(f"/balance_sheet_expenses/{exp_id}", {"submitted_by_name": "System"})
 
     # Update Pending Approvals
@@ -9251,7 +9251,7 @@ def create_salary():
             "employee_name": employee_name,
             "date": date_str,
             "amount": float(data.get("amount", 0)),
-            "expense_type": "Employee Compensation",
+            "expense_type": "Employee Salary",
             "expense_name": f"Employee Salary - {employee_name}",
             "category": "Salary",
             "vendor": "Employee Payroll",
@@ -9313,7 +9313,7 @@ def update_salary(sal_id):
                         "employee_name": employee_name,
                         "date": date_str,
                         "amount": float(data.get("amount", 0)),
-                        "expense_type": "Employee Compensation",
+                        "expense_type": "Employee Salary",
                         "expense_name": f"Employee Salary - {employee_name}",
                         "category": "Salary",
                         "vendor": "Employee Payroll",
@@ -9334,7 +9334,7 @@ def update_salary(sal_id):
             "employee_name": employee_name,
             "date": date_str,
             "amount": float(data.get("amount", 0)),
-            "expense_type": "Employee Compensation",
+            "expense_type": "Employee Salary",
             "expense_name": f"Employee Salary - {employee_name}",
             "category": "Salary",
             "vendor": "Employee Payroll",
@@ -11332,7 +11332,7 @@ def expense_delete(exp_id):
         archive_exp.update({k: v for k, v in emp_data.items() if k not in archive_exp})
 
     # Standardize description for salary expenses
-    if archive_exp.get("expense_type") == "Employee Compensation" or archive_exp.get("category") == "Salary":
+    if archive_exp.get("expense_type") == "Employee Salary" or archive_exp.get("category") == "Salary":
         emp_name = archive_exp.get("employee_name", "")
         if emp_name:
             archive_exp["description"] = f"Employee Salary for {emp_name}"
@@ -11397,7 +11397,7 @@ def expense_restore(exp_id):
                 if k not in ("deleted_at", "deleted_by", "deleted_by_uid", "firebase_id")}
 
     # Standardize description for salary expenses
-    if restored.get("expense_type") == "Employee Compensation" or restored.get("category") == "Salary":
+    if restored.get("expense_type") == "Employee Salary" or restored.get("category") == "Salary":
         emp_name = restored.get("employee_name", "")
         if emp_name:
             restored["description"] = f"Employee Salary for {emp_name}"
@@ -13286,7 +13286,7 @@ def user_details_update(uid):
                 is_salary_expense = (
                     exp_data.get("salary_id") or
                     exp_data.get("category") == "Salary" or
-                    "Employee Compensation" in exp_data.get("expense_type", "")
+                    "Employee Salary" in exp_data.get("expense_type", "")
                 )
 
                 if is_salary_expense:
@@ -13349,7 +13349,7 @@ def sync_submitted_by():
     expenses = fb_get("/balance_sheet_expenses") or {}
     if isinstance(expenses, dict):
         for exp_id, exp_data in expenses.items():
-            if isinstance(exp_data, dict) and (exp_data.get("category") == "Salary" or "Employee Compensation" in exp_data.get("expense_type", "")):
+            if isinstance(exp_data, dict) and (exp_data.get("category") == "Salary" or "Employee Salary" in exp_data.get("expense_type", "")):
                 submitted_by = exp_data.get("submitted_by_name", "")
                 # Check if submitted_by exists in current users list, if not try to match variations
                 if submitted_by and submitted_by not in user_display_map:
@@ -13365,7 +13365,7 @@ def sync_submitted_by():
     deleted_expenses = fb_get("/deleted_expenses") or {}
     if isinstance(deleted_expenses, dict):
         for exp_id, exp_data in deleted_expenses.items():
-            if isinstance(exp_data, dict) and (exp_data.get("category") == "Salary" or "Employee Compensation" in exp_data.get("expense_type", "")):
+            if isinstance(exp_data, dict) and (exp_data.get("category") == "Salary" or "Employee Salary" in exp_data.get("expense_type", "")):
                 submitted_by = exp_data.get("submitted_by_name", "")
                 if submitted_by and submitted_by not in user_display_map:
                     for current_display_name in user_display_map.keys():
