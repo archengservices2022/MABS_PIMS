@@ -397,16 +397,16 @@
   <!-- ?? Employee Advance Tab ?????????????????????????????????????? -->
   <div id="employee-advance" class="payroll-tab-content">
     <div>
-      <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Employee Advance Entry</h5>
+      <h5 style="margin-bottom:15px;font-weight:700;color:#0f172a;">Employee Advance Entry</h5>
 
       <!-- Advance Entry Form -->
-      <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:18px;margin-bottom:30px;">
-        <h6 style="margin:0 0 16px 0;font-weight:700;color:#1f2937;font-size:14px;">Employee Advance Entry</h6>
+      <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:20px;">
+        <h6 style="margin:0 0 12px 0;font-weight:700;color:#1f2937;font-size:14px;">Employee Advance Entry</h6>
         <form id="advanceForm" onsubmit="addAdvance(event)">
           <input type="hidden" id="advance_id" value="">
 
           <!-- Row 1: Advance No, Date, Employee -->
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px;">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px;">
             <div class="form-group">
               <label for="adv_no" style="font-size:12px;margin-bottom:4px;">Advance No</label>
               <input type="text" id="adv_no" readonly style="background:#f8fafc;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;" />
@@ -427,7 +427,7 @@
           </div>
 
           <!-- Row 2: Advance Amount, Reason, Payment Method -->
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px;">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px;">
             <div class="form-group">
               <label for="adv_amount" style="font-size:12px;margin-bottom:4px;">Advance Amount</label>
               <input type="number" id="adv_amount" step="0.01" min="0" required style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;" />
@@ -449,7 +449,7 @@
           </div>
 
           <!-- Row 3: Status -->
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px;">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px;">
             <div class="form-group">
               <label for="adv_status" style="font-size:12px;margin-bottom:4px;">Status</label>
               <input type="text" id="adv_status" value="Open" readonly style="width:100%;background:#f8fafc;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;" />
@@ -457,7 +457,7 @@
           </div>
 
           <!-- Buttons -->
-          <div style="display:flex;gap:10px;margin-top:14px;justify-content:flex-end;">
+          <div style="display:flex;gap:10px;margin-top:8px;justify-content:flex-end;">
             <button type="submit" class="btn-primary" id="submitAdvanceBtn" style="background:#2563eb;color:white;padding:8px 16px;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;gap:6px;">
               💾 <span id="submitAdvanceBtnText">Save</span>
             </button>
