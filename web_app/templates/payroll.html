@@ -475,21 +475,15 @@
 
         <!-- Filters -->
         <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-          <!-- Status Filter -->
+          <!-- Status Filter Dropdown -->
           <div style="display:flex;gap:8px;align-items:center;">
-            <span style="font-size:12px;font-weight:500;color:#6b7280;">Status:</span>
-            <button onclick="filterAdvanceByStatus('All')" id="statusFilterAll"
-                    style="padding:6px 12px;border:1px solid #cbd5e1;background:white;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;color:#374151;transition:all 0.2s;">
-              All
-            </button>
-            <button onclick="filterAdvanceByStatus('Open')" id="statusFilterOpen"
-                    style="padding:6px 12px;border:1px solid #cbd5e1;background:white;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;color:#374151;transition:all 0.2s;">
-              Open
-            </button>
-            <button onclick="filterAdvanceByStatus('Closed')" id="statusFilterClosed"
-                    style="padding:6px 12px;border:1px solid #cbd5e1;background:white;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;color:#374151;transition:all 0.2s;">
-              Closed
-            </button>
+            <label for="advanceStatusDropdown" style="font-size:12px;font-weight:500;color:#6b7280;">Status:</label>
+            <select id="advanceStatusDropdown" onchange="filterAdvanceByStatus(this.value)"
+                    style="padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;color:#374151;background:white;font-family:inherit;">
+              <option value="All">All</option>
+              <option value="Open">Open</option>
+              <option value="Closed">Closed</option>
+            </select>
           </div>
 
           <!-- Search Bar -->
@@ -1240,7 +1234,7 @@ function refreshAdvanceTable() {
   // Clear search input and reset status filter when refreshing
   document.getElementById('advanceSearchInput').value = '';
   advanceStatusFilter = 'All';
-  filterAdvanceByStatus('All');
+  document.getElementById('advanceStatusDropdown').value = 'All';
 
   tbody.innerHTML = sortedAdvances.map((adv, idx) => {
     const balance = (adv.amount || 0) - (adv.adjusted || 0);
@@ -1312,20 +1306,8 @@ let advanceStatusFilter = 'All';
 
 function filterAdvanceByStatus(status) {
   advanceStatusFilter = status;
-
-  // Update button styles
-  document.getElementById('statusFilterAll').style.background = status === 'All' ? '#2563eb' : 'white';
-  document.getElementById('statusFilterAll').style.color = status === 'All' ? 'white' : '#374151';
-  document.getElementById('statusFilterAll').style.borderColor = status === 'All' ? '#2563eb' : '#cbd5e1';
-
-  document.getElementById('statusFilterOpen').style.background = status === 'Open' ? '#3b82f6' : 'white';
-  document.getElementById('statusFilterOpen').style.color = status === 'Open' ? 'white' : '#374151';
-  document.getElementById('statusFilterOpen').style.borderColor = status === 'Open' ? '#3b82f6' : '#cbd5e1';
-
-  document.getElementById('statusFilterClosed').style.background = status === 'Closed' ? '#10b981' : 'white';
-  document.getElementById('statusFilterClosed').style.color = status === 'Closed' ? 'white' : '#374151';
-  document.getElementById('statusFilterClosed').style.borderColor = status === 'Closed' ? '#10b981' : '#cbd5e1';
-
+  // Update dropdown value
+  document.getElementById('advanceStatusDropdown').value = status;
   filterAdvanceTable();
 }
 
