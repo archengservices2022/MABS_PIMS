@@ -1314,7 +1314,7 @@ function filterAdvanceByStatus(status) {
 function filterAdvanceTable() {
   const searchInput = document.getElementById('advanceSearchInput').value.toLowerCase();
   const tbody = document.getElementById('advanceTableBody');
-  const rows = tbody.querySelectorAll('tr:not(.no-results)');
+  const rows = tbody.querySelectorAll('tr:not(.no-results):not(.totals-row)');
   let visibleCount = 0;
 
   rows.forEach(row => {
