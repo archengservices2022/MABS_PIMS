@@ -468,7 +468,14 @@
       </div>
 
       <!-- Advance List -->
-      <h6 style="margin-bottom:15px;font-weight:600;color:#374151;font-size:14px;">Advance List</h6>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h6 style="margin:0;font-weight:600;color:#374151;font-size:14px;">Advance List</h6>
+        <div style="flex:1;max-width:300px;margin-left:auto;">
+          <input type="text" id="advanceSearchInput" placeholder="Search by Advance No, Employee, Date..."
+                 style="width:100%;padding:8px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;background:white;"
+                 oninput="filterAdvanceTable()" />
+        </div>
+      </div>
       <div class="table-wrapper">
         <table class="payroll-table">
           <thead>
@@ -1199,7 +1206,17 @@ function refreshAdvanceTable() {
     return;
   }
 
-  tbody.innerHTML = allAdvances.map((adv, idx) => {
+  // Sort by date descending (newest first)
+  const sortedAdvances = [...allAdvances].sort((a, b) => {
+    const dateA = new Date(a.date || '');
+    const dateB = new Date(b.date || '');
+    return dateB - dateA;
+  });
+
+  // Clear search input when refreshing
+  document.getElementById('advanceSearchInput').value = '';
+
+  tbody.innerHTML = sortedAdvances.map((adv, idx) => {
     const balance = (adv.amount || 0) - (adv.adjusted || 0);
     const advanceId = adv.id || '';
     const detailUrl = `{{ url_for('advance_detail', advance_id='ADVANCE_ID') }}`.replace('ADVANCE_ID', advanceId);
@@ -1240,6 +1257,42 @@ function refreshAdvanceTable() {
   }).join('');
 
   document.getElementById('advanceTotal').textContent = `Total: ${allAdvances.length} Record(s)`;
+}
+
+function filterAdvanceTable() {
+  const searchInput = document.getElementById('advanceSearchInput').value.toLowerCase();
+  const tbody = document.getElementById('advanceTableBody');
+  const rows = tbody.querySelectorAll('tr:not(.no-results)');
+  let visibleCount = 0;
+
+  rows.forEach(row => {
+    const advanceNo = row.cells[0]?.textContent.toLowerCase() || '';
+    const date = row.cells[1]?.textContent.toLowerCase() || '';
+    const employee = row.cells[2]?.textContent.toLowerCase() || '';
+
+    const matches = advanceNo.includes(searchInput) ||
+                   date.includes(searchInput) ||
+                   employee.includes(searchInput);
+
+    row.style.display = matches ? '' : 'none';
+    if (matches) visibleCount++;
+  });
+
+  // Show or hide "no results" message
+  if (visibleCount === 0 && allAdvances.length > 0) {
+    const noResults = tbody.querySelector('.no-results');
+    if (!noResults) {
+      const noResultsRow = document.createElement('tr');
+      noResultsRow.className = 'no-results';
+      noResultsRow.innerHTML = `<td colspan="8" style="text-align:center;color:#94a3b8;padding:30px;">
+        No advances match your search.
+      </td>`;
+      tbody.appendChild(noResultsRow);
+    }
+  } else {
+    const noResults = tbody.querySelector('.no-results');
+    if (noResults) noResults.remove();
+  }
 }
 
 function deleteAdvance(advanceNo) {
