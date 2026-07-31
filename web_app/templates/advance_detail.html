@@ -1,0 +1,926 @@
+{% extends "base.html" %}
+{% block title %}Advance {{ advance_no }}{% endblock %}
+{% block page_title %}Employee Advance Details{% endblock %}
+
+{% block head %}
+<style>
+.advance-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 28px;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  border: none;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.advance-title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.advance-no-badge {
+  background: #0d9488;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.status-open {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.status-closed {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.action-buttons-header {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: #2563eb;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #1d4ed8;
+}
+
+.btn-danger {
+  background: #ef4444;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+}
+
+.btn-secondary {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.btn-secondary:hover {
+  background: #cbd5e1;
+}
+
+.content-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr;
+  gap: 24px;
+  margin-bottom: 30px;
+}
+
+.info-card {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 24px;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.info-label {
+  font-size: 12px;
+  color: #6b7280;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+}
+
+.info-value {
+  font-size: 15px;
+  color: #1f2937;
+  font-weight: 500;
+}
+
+.summary-boxes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.summary-box {
+  padding: 14px 12px;
+  border-radius: 8px;
+  text-align: center;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.summary-box:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.summary-box-label {
+  font-size: 10px;
+  color: #64748b;
+  font-weight: 700;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.summary-box-value {
+  font-size: 18px;
+  font-weight: 800;
+  color: #1e293b;
+}
+
+.summary-box.total {
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  border: 1px solid #7dd3fc;
+}
+
+.summary-box.adjusted {
+  background: linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%);
+  border: 1px solid #fbbf24;
+}
+
+.summary-box.balance {
+  background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+  border: 1px solid #86efac;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #1e293b;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #e2e8f0;
+  letter-spacing: 0.2px;
+}
+
+.adjustment-form {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 18px;
+  margin-bottom: 30px;
+  box-shadow: none;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 6px;
+  letter-spacing: 0.3px;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  padding: 9px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  font-size: 13px;
+  font-family: inherit;
+  background: white;
+  transition: all 0.2s;
+}
+
+.form-group input:hover,
+.form-group select:hover,
+.form-group textarea:hover {
+  border-color: #94a3b8;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: #0d9488;
+  box-shadow: 0 0 0 3px rgba(13,148,136,.1);
+  background: #f8fafc;
+}
+
+.form-group.full {
+  grid-column: 1 / -1;
+}
+
+.table-wrapper {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+thead {
+  background: #f8fafc;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+th {
+  padding: 14px;
+  text-align: left;
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+td {
+  padding: 14px;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 13px;
+  color: #1f2937;
+}
+
+tbody tr:hover {
+  background: #f8fafc;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.info-banner {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-left: 3px solid #10b981;
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+}
+
+.info-banner-icon {
+  color: #10b981;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.info-banner-text {
+  font-size: 13px;
+  color: #047857;
+}
+
+.right-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.detail-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.detail-box h6 {
+  font-size: 12px;
+  font-weight: 800;
+  color: #64748b;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+  letter-spacing: 1px;
+  display: block;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border-bottom: none;
+  font-size: 13px;
+  gap: 0;
+  margin-bottom: 14px;
+}
+
+.detail-item:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.detail-label {
+  color: #94a3b8;
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 6px;
+}
+
+.detail-value {
+  color: #1e293b;
+  font-weight: 700;
+  font-size: 15px;
+  text-align: left;
+}
+
+.back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #0d9488;
+  text-decoration: none;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+.back-button:hover {
+  color: #0a7860;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <!-- Back Button -->
+  <a href="{{ url_for('payroll') }}#employee-advance" style="display: inline-flex; align-items: center; gap: 6px; color: #0d9488; text-decoration: none; font-weight: 600; font-size: 13px; margin-bottom: 20px;">
+    ← Back to Advance List
+  </a>
+
+  <!-- Top Action Bar -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding: 16px; background: #f8fafc; border-radius: 10px; border: 1px solid #e2e8f0;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <select id="advanceHeaderSelect" onchange="navigateToAdvance(this.value)" style="background: #0d9488; color: white; padding: 8px 12px; border-radius: 6px; font-weight: 700; border: none; cursor: pointer; font-size: 13px; min-width: 180px;">
+        <option value="{{ advance_id }}" selected>{{ advance_no }} - {{ employee_name }}</option>
+      </select>
+      <span class="status-badge {% if status == 'Closed' %}status-closed{% else %}status-open{% endif %}" style="padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 700;">
+        {{ status }}
+      </span>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button class="btn btn-secondary" onclick="window.print()" style="background: #e2e8f0; color: #0f172a;">
+        🖨 Print
+      </button>
+      <button class="btn btn-primary" id="downloadBtn" style="background: #2563eb; color: white;">
+        ⬇ Download PDF
+      </button>
+      <button class="btn btn-danger" onclick="deleteAdvance('{{ advance_no }}')" style="background: #ef4444; color: white;">
+        🗑 Delete
+      </button>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <div class="advance-header">
+    <div class="advance-title">
+      <h2 style="margin: 0; font-size: 20px; font-weight: 700; color: #1e293b;">Employee Advance Adjustment</h2>
+      <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">Adjust advance amount through Payroll or Manual Entry</p>
+    </div>
+  </div>
+
+  <!-- Main Content Grid -->
+  <div class="content-grid">
+    <!-- Left Panel - Details Card -->
+    <div>
+      <div class="detail-box" style="padding: 28px;">
+        <!-- Header -->
+        <h6 style="font-size: 11px; font-weight: 800; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #e2e8f0;">Details</h6>
+
+        <!-- Two Column Layout -->
+        <div>
+          <!-- Row 1: Advance No -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 12px 0; border-bottom: 1px solid #f1f5f9; align-items: center;">
+            <span style="color: #94a3b8; font-size: 13px; font-weight: 600;">Advance No</span>
+            <span style="color: #1e293b; font-size: 14px; font-weight: 700;">{{ advance_no }}</span>
+          </div>
+
+          <!-- Row 2: Employee -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 12px 0; border-bottom: 1px solid #f1f5f9; align-items: center;">
+            <span style="color: #94a3b8; font-size: 13px; font-weight: 600;">Employee</span>
+            <span style="color: #1e293b; font-size: 14px; font-weight: 700;" data-employee-name>{{ employee_name }}</span>
+          </div>
+
+          <!-- Row 3: Status -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 12px 0; border-bottom: 1px solid #f1f5f9; align-items: center;">
+            <span style="color: #94a3b8; font-size: 13px; font-weight: 600;">Status</span>
+            <span style="color: {% if status == 'Closed' %}#15803d{% else %}#1d4ed8{% endif %}; font-size: 14px; font-weight: 700;">{{ status }}</span>
+          </div>
+
+          <!-- Row 4: Advance Date -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 12px 0; border-bottom: 1px solid #f1f5f9; align-items: center;">
+            <span style="color: #94a3b8; font-size: 13px; font-weight: 600;">Advance Date</span>
+            <span style="color: #1e293b; font-size: 14px; font-weight: 700;">
+              {% set date_parts = date.split('-') %}
+              {% if date_parts|length == 3 %}
+                {{ date_parts[1] }}-{{ date_parts[2] }}-{{ date_parts[0] }}
+              {% else %}
+                {{ date }}
+              {% endif %}
+            </span>
+          </div>
+
+          <!-- Row 5: Date Created -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 12px 0; border-bottom: 1px solid #f1f5f9; align-items: center;">
+            <span style="color: #94a3b8; font-size: 13px; font-weight: 600;">Date Created</span>
+            <span style="color: #1e293b; font-size: 14px; font-weight: 700;">
+              {% set date_parts = date.split('-') %}
+              {% if date_parts|length == 3 %}
+                {{ date_parts[1] }}-{{ date_parts[2] }}-{{ date_parts[0] }}
+              {% else %}
+                {{ date }}
+              {% endif %}
+            </span>
+          </div>
+
+          <!-- Row 6: Advance Amount -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 12px 0; border-bottom: 1px solid #f1f5f9; align-items: center;">
+            <span style="color: #94a3b8; font-size: 13px; font-weight: 600;">Advance Amount</span>
+            <span style="color: #1e293b; font-size: 14px; font-weight: 700;">{{ currency_symbol }}{{ "{:,.2f}".format(amount | float) }}</span>
+          </div>
+
+          <!-- Row 7: Total Adjusted -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 12px 0; border-bottom: 1px solid #f1f5f9; align-items: center;">
+            <span style="color: #94a3b8; font-size: 13px; font-weight: 600;">Total Adjusted</span>
+            <span style="color: #1e293b; font-size: 14px; font-weight: 700;">{{ currency_symbol }}{{ "{:,.2f}".format(adjusted | float) }}</span>
+          </div>
+
+          <!-- Row 8: Balance -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 12px 0; align-items: center;">
+            <span style="color: #94a3b8; font-size: 13px; font-weight: 600;">Balance</span>
+            <span style="color: {% if ((amount | float) - (adjusted | float)) == 0 %}#15803d{% else %}#dc2626{% endif %}; font-size: 14px; font-weight: 700;">{{ currency_symbol }}{{ "{:,.2f}".format((amount | float) - (adjusted | float)) }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Panel - Summary & Form -->
+    <div>
+      <!-- Summary Cards -->
+      <div class="summary-boxes" style="margin-bottom: 20px;" id="summaryBoxesContainer">
+        <div class="summary-box total">
+          <div class="summary-box-label">Total Advance Amount</div>
+          <div class="summary-box-value" id="totalAmountDisplay">{{ currency_symbol }}{{ "{:,.2f}".format(amount | float) }}</div>
+        </div>
+        <div class="summary-box adjusted">
+          <div class="summary-box-label">Total Adjusted</div>
+          <div class="summary-box-value" id="totalAdjustedDisplay">{{ currency_symbol }}{{ "{:,.2f}".format(adjusted | float) }}</div>
+        </div>
+        <div class="summary-box balance">
+          <div class="summary-box-label">Current Balance</div>
+          <div class="summary-box-value" id="currentBalanceDisplay">{{ currency_symbol }}{{ "{:,.2f}".format((amount | float) - (adjusted | float)) }}</div>
+        </div>
+      </div>
+
+      <!-- Add Adjustment Form -->
+      <div class="adjustment-form" id="adjustmentForm">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px;">
+          <h5 class="section-title" style="margin: 0;">Add Adjustment</h5>
+          <button type="button" id="clearFormBtn" class="btn btn-secondary" style="display: none;" onclick="clearAdjustmentForm()">
+            ✕ Clear
+          </button>
+        </div>
+        <div id="closedAdvanceMessage" style="display: none; background: #fef3c7; border: 1px solid #fcd34d; border-left: 3px solid #f59e0b; padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; color: #92400e; font-size: 12px;">
+          ⚠️ Advance is closed. Edit existing adjustments only.
+        </div>
+        <form id="adjustmentFormElement" onsubmit="saveAdjustment(event)">
+          <input type="hidden" id="editingAdjustmentId" value="">
+          <input type="hidden" id="advanceNoForAdjustment" value="{{ advance_no }}">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Adjustment Date *</label>
+              <input type="date" id="adjDate" required />
+            </div>
+            <div class="form-group">
+              <label>Adjustment Amount *</label>
+              <input type="number" id="adjAmount" step="0.01" min="0" max="{{ (amount | float) - (adjusted | float) }}" required oninput="updateAdjustmentMax()" />
+            </div>
+            <div class="form-group">
+              <label>Adjustment Type</label>
+              <select id="adjType">
+                <option value="">Select Adjustment Type</option>
+                <option value="Payroll Deduction">Payroll Deduction</option>
+                <option value="Manual Adjustment">Manual Adjustment</option>
+                <option value="Partial Payment">Partial Payment</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Reference</label>
+              <input type="text" id="adjReference" placeholder="e.g., July Payroll" />
+            </div>
+            <div class="form-group full">
+              <label>Remarks</label>
+              <textarea id="adjRemarks" placeholder="Add any notes..." style="min-height: 60px;"></textarea>
+            </div>
+          </div>
+          <div style="display: flex; gap: 10px; justify-content: flex-end;">
+            <button type="submit" class="btn btn-primary" id="submitBtn">
+              💾 <span id="submitBtnText">Save Adjustment</span>
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="clearAdjustmentForm()">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Adjustment History - Full Width -->
+  <div style="margin-top: 30px;">
+    <div class="info-card">
+      <h5 class="section-title">Adjustment History for This Advance</h5>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>SL</th>
+              <th style="min-width: 120px;">Date</th>
+              <th>Type</th>
+              <th>Reference</th>
+              <th>Amount</th>
+              <th>Remarks</th>
+              <th>Adjusted By</th>
+              <th style="width: 90px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="adjustmentHistoryBody">
+            {% if adjustments %}
+              {% for adj_id, adj_data in adjustments.items() %}
+              <tr>
+                <td>{{ loop.index }}</td>
+                <td style="white-space: nowrap;">
+                  {% set date_parts = adj_data.get('date', '').split('-') %}
+                  {% if date_parts|length == 3 %}
+                    {{ date_parts[1] }}-{{ date_parts[2] }}-{{ date_parts[0] }}
+                  {% else %}
+                    {{ adj_data.get('date', '—') }}
+                  {% endif %}
+                </td>
+                <td>{{ adj_data.get('type', '—') }}</td>
+                <td>{{ adj_data.get('reference', '—') }}</td>
+                <td>{{ currency_symbol }}{{ "{:,.2f}".format(adj_data.get('amount', 0) | float) }}</td>
+                <td>{{ adj_data.get('remarks', '—') }}</td>
+                <td>{{ adj_data.get('adjusted_by', 'System') }}</td>
+                <td style="text-align: center;">
+                  <div class="action-buttons" style="display: flex; gap: 6px; justify-content: center;">
+                    <button type="button" class="btn btn-sm" style="background:#3b82f6;color:white;border:none;padding:6px 8px;border-radius:4px;cursor:pointer;font-size:14px;min-width:32px;" title="Edit" onclick="editAdjustment('{{ adj_id }}', '{{ adj_data.get('date', '') }}', {{ adj_data.get('amount', 0) }}, '{{ adj_data.get('type', '') }}', '{{ adj_data.get('reference', '') }}', '{{ adj_data.get('remarks', '') }}')">✎</button>
+                    <button type="button" class="btn btn-sm" style="background:#ef4444;color:white;border:none;padding:6px 8px;border-radius:4px;cursor:pointer;font-size:14px;min-width:32px;" title="Delete" onclick="deleteAdjustment('{{ adj_id }}')">🗑</button>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+            <tr>
+              <td colspan="8" style="text-align: center; color: #94a3b8; padding: 40px;">
+                No adjustments yet. Add one using the form above.
+              </td>
+            </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top: 16px; font-size: 13px; color: #6b7280;">
+        Total Adjusted: <strong>{{ currency_symbol }}{{ "{:,.2f}".format(adjusted | float) }}</strong>
+      </div>
+      <div class="info-banner">
+        <div class="info-banner-icon">ℹ</div>
+        <div class="info-banner-text">
+          When balance becomes 0, the advance status will be automatically marked as Closed.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const advanceNo = '{{ advance_no }}';
+const currentCurrencySymbol = '{{ currency_symbol }}';
+let amount = {{ amount | float }};
+let adjusted = {{ adjusted | float }};
+let allAdvances = [];
+let allEmployees = [];
+let currentAdvanceId = '{{ advance_id }}';
+let currentAdvanceData = null;
+const storedEmployeeName = '{{ employee_name }}';
+
+document.getElementById('adjDate').valueAsDate = new Date();
+document.getElementById('adjAmount').max = (amount - adjusted).toFixed(2);
+
+// Load employees and update employee name if it changed
+function loadEmployeesForDetail() {
+  fetch('{{ url_for("get_employees") }}')
+    .then(r => r.json())
+    .then(data => {
+      allEmployees = data.employees || [];
+      updateEmployeeNameDisplay();
+    })
+    .catch(e => console.error('Error loading employees:', e));
+}
+
+function getUpdatedEmployeeName(storedName) {
+  // If exact match exists, use it
+  if (allEmployees.includes(storedName)) {
+    return storedName;
+  }
+  // Try to find by partial match (first part of the name)
+  const nameParts = storedName.split(' ');
+  const firstName = nameParts[0];
+  const matchedEmployee = allEmployees.find(emp =>
+    emp.toLowerCase().startsWith(firstName.toLowerCase())
+  );
+  return matchedEmployee || storedName;
+}
+
+function updateEmployeeNameDisplay() {
+  const updatedName = getUpdatedEmployeeName(storedEmployeeName);
+
+  // Update Details section
+  const employeeCell = document.querySelector('[data-employee-name]');
+  if (employeeCell) {
+    employeeCell.textContent = updatedName;
+  }
+
+  // Update dropdown at top
+  const dropdown = document.getElementById('advanceHeaderSelect');
+  if (dropdown && dropdown.options[0]) {
+    dropdown.options[0].textContent = `{{ advance_no }} - ${updatedName}`;
+  }
+}
+
+// Load employees on page load
+window.addEventListener('DOMContentLoaded', loadEmployeesForDetail);
+
+// Disable form if advance is fully paid/closed
+const balance = parseFloat(amount) - parseFloat(adjusted);
+if (balance <= 0) {
+  document.getElementById('adjAmount').disabled = true;
+  document.getElementById('adjAmount').value = '';
+  document.getElementById('adjAmount').placeholder = 'Advance is fully paid';
+}
+
+// Load all advances for dropdown
+function loadAllAdvances() {
+  fetch('{{ url_for("get_employee_advances") }}')
+    .then(r => r.json())
+    .then(data => {
+      allAdvances = data.advances || [];
+      populateAdvanceDropdown();
+    })
+    .catch(e => console.error('Error loading advances:', e));
+}
+
+function populateAdvanceDropdown() {
+  const dropdown = document.getElementById('advanceHeaderSelect');
+
+  // Clear existing options except the first one
+  while (dropdown.options.length > 1) {
+    dropdown.remove(1);
+  }
+
+  // Add all other advances to dropdown
+  allAdvances.forEach(adv => {
+    if (adv.advance_no !== '{{ advance_no }}') {
+      const option = document.createElement('option');
+      option.value = adv.id;  // Store the ID for navigation
+      option.textContent = `${adv.advance_no} - ${adv.employee_name}`;
+      dropdown.appendChild(option);
+    }
+  });
+}
+
+function navigateToAdvance(advanceId) {
+  if (advanceId === '{{ advance_id }}') {
+    // Already on this advance page
+    return;
+  }
+
+  // Navigate to the selected advance's detail page
+  window.location.href = `{{ url_for('advance_detail', advance_id='ADVANCE_ID') }}`.replace('ADVANCE_ID', advanceId);
+}
+
+
+// Load advances on page load
+window.addEventListener('DOMContentLoaded', function() {
+  loadAllAdvances();
+});
+
+function editAdjustment(adjId, adjDate, adjAmount, adjType, adjReference, adjRemarks) {
+  // Populate form with adjustment data
+  document.getElementById('editingAdjustmentId').value = adjId;
+  document.getElementById('adjDate').value = adjDate || '';
+  document.getElementById('adjAmount').value = parseFloat(adjAmount || 0);
+  document.getElementById('adjType').value = adjType || 'Payroll Deduction';
+  document.getElementById('adjReference').value = adjReference || '';
+  document.getElementById('adjRemarks').value = adjRemarks || '';
+
+  // For editing existing adjustments: max = advance_amount - (current_adjusted - old_adjustment_amount)
+  // This allows replacing the old adjustment with a new one without exceeding the total
+  const oldAmount = parseFloat(adjAmount || 0);
+  const currentAdjusted = parseFloat(adjusted);
+  const advanceAmount = parseFloat(amount);
+  const maxAllowed = advanceAmount - (currentAdjusted - oldAmount);
+  document.getElementById('adjAmount').max = maxAllowed.toFixed(2);
+  document.getElementById('adjAmount').disabled = false;
+
+  // Update button text
+  document.getElementById('submitBtnText').textContent = 'Update Adjustment';
+  document.getElementById('clearFormBtn').style.display = 'inline-block';
+
+  // Scroll smoothly to form with center alignment
+  const formElement = document.getElementById('adjustmentForm');
+  formElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  // Focus on adjustment date field
+  setTimeout(() => {
+    document.getElementById('adjDate').focus();
+  }, 500);
+}
+
+function updateAdjustmentMax() {
+  // This function can be used to validate the input in real-time if needed
+  // The HTML5 max attribute already prevents invalid input
+}
+
+function clearAdjustmentForm() {
+  document.getElementById('adjustmentFormElement').reset();
+  document.getElementById('editingAdjustmentId').value = '';
+  document.getElementById('adjDate').valueAsDate = new Date();
+  document.getElementById('adjType').value = '';
+
+  // For new adjustments, set max to current balance (only if balance > 0)
+  const balance = parseFloat(amount) - parseFloat(adjusted);
+  if (balance > 0) {
+    document.getElementById('adjAmount').max = balance.toFixed(2);
+    document.getElementById('adjAmount').disabled = false;
+    document.getElementById('adjAmount').placeholder = '';
+    document.getElementById('closedAdvanceMessage').style.display = 'none';
+  } else {
+    // If advance is closed/no balance, disable new adjustments
+    document.getElementById('adjAmount').disabled = true;
+    document.getElementById('adjAmount').placeholder = 'Advance is fully paid';
+    document.getElementById('adjAmount').value = '';
+    document.getElementById('closedAdvanceMessage').style.display = 'block';
+  }
+
+  document.getElementById('submitBtnText').textContent = 'Save Adjustment';
+  document.getElementById('clearFormBtn').style.display = 'none';
+}
+
+function saveAdjustment(event) {
+  event.preventDefault();
+
+  const editingId = document.getElementById('editingAdjustmentId').value;
+  const isUpdate = editingId !== '';
+  const selectedAdvanceNo = document.getElementById('advanceNoForAdjustment').value;
+
+  const adjustment = {
+    advance_no: selectedAdvanceNo || advanceNo,
+    date: document.getElementById('adjDate').value,
+    amount: parseFloat(document.getElementById('adjAmount').value),
+    type: document.getElementById('adjType').value,
+    reference: document.getElementById('adjReference').value,
+    remarks: document.getElementById('adjRemarks').value
+  };
+
+  if (!adjustment.date || !adjustment.amount) {
+    alert('Please fill in all required fields');
+    return;
+  }
+
+  // Validate that total adjusted doesn't exceed advance amount
+  if (!isUpdate) {
+    const totalAdjusted = parseFloat(adjusted) + adjustment.amount;
+    if (totalAdjusted > parseFloat(amount)) {
+      alert(`Cannot add adjustment. Total adjusted ($${totalAdjusted.toFixed(2)}) would exceed advance amount ($${parseFloat(amount).toFixed(2)}). Maximum adjustment: $${(parseFloat(amount) - parseFloat(adjusted)).toFixed(2)}`);
+      return;
+    }
+  }
+
+  const endpoint = isUpdate ? '{{ url_for("update_advance_adjustment") }}' : '{{ url_for("add_advance_adjustment") }}';
+
+  if (isUpdate) {
+    adjustment.adjustment_id = editingId;
+  }
+
+  fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(adjustment)
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      alert(isUpdate ? 'Adjustment updated successfully!' : 'Adjustment saved successfully!');
+      // Reload the page to refresh all data immediately
+      location.reload();
+    } else {
+      alert('Error: ' + (data.error || 'Unknown error'));
+    }
+  })
+  .catch(e => {
+    console.error('Error:', e);
+    alert('Error saving adjustment');
+  });
+}
+
+function deleteAdjustment(adjId) {
+  if (!confirm('Are you sure you want to delete this adjustment?')) return;
+
+  fetch('{{ url_for("delete_advance_adjustment") }}', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ advance_no: advanceNo, adjustment_id: adjId })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      alert('Adjustment deleted successfully!');
+      location.reload();
+    } else {
+      alert('Error: ' + (data.error || 'Unknown error'));
+    }
+  })
+  .catch(e => {
+    console.error('Error:', e);
+    alert('Error deleting adjustment');
+  });
+}
+
+function deleteAdvance(advNo) {
+  if (!confirm('Are you sure you want to delete this advance?')) return;
+
+  fetch('{{ url_for("delete_employee_advance") }}', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ advance_no: advNo })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      alert('Advance deleted successfully!');
+      window.location.href = '{{ url_for("payroll") }}#employee-advance';
+    } else {
+      alert('Error: ' + (data.error || 'Unknown error'));
+    }
+  })
+  .catch(e => {
+    console.error('Error:', e);
+    alert('Error deleting advance');
+  });
+}
+
+document.getElementById('downloadBtn').addEventListener('click', function() {
+  alert('PDF download feature coming soon!');
+});
+</script>
+{% endblock %}

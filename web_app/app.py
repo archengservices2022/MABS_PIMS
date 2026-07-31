@@ -541,21 +541,36 @@ def _sync_advance_to_finance(advance_id: str, advance_data: dict):
             _delete_advance_finance_entry(advance_id)
             return
 
+        # Get current user name from session for submitted_by_name
+        current_user_name = session.get("user_name", "") or advance_data.get("created_by", "")
+
+        # Build expense name and description with optional reason
+        employee_name = advance_data.get('employee_name', 'Unknown')
+        reason = advance_data.get('reason', '').strip()
+
+        expense_name = f"Advance for {employee_name}"
+        if reason:
+            description = f"Advance for {employee_name} - {reason}"
+        else:
+            description = f"Advance for {employee_name}"
+
         expense_data = {
             "expense_type": "Employee Advance",
-            "expense_name": f"Advance - {advance_data.get('employee_name', 'Unknown')}",
-            "description": f"Employee Advance #{advance_data.get('advance_no', '')} - {advance_data.get('reason', '')}",
+            "expense_name": expense_name,
+            "description": description,
             "amount": balance_due,
             "category": "Employee Advance",
             "date": advance_data.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
-            "vendor": advance_data.get("employee_name", ""),
+            "vendor": "Employee Advances",
             "notes": f"Original: ${float(advance_data.get('amount', 0)):.2f} | Adjusted: ${float(advance_data.get('adjusted', 0)):.2f}",
             "advance_id": advance_id,
             "advance_no": advance_data.get("advance_no", ""),
+            "employee_id": advance_data.get("employee_id", ""),
             "employee_name": advance_data.get("employee_name", ""),
             "status": "Approved",
             "created_by": advance_data.get("created_by", ""),
-            "submitted_by_name": advance_data.get("created_by", ""),
+            "submitted_by_name": current_user_name,
+            "created_at": advance_data.get("created_at", datetime.now(timezone.utc).isoformat()),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -590,6 +605,35 @@ def _delete_advance_finance_entry(advance_id: str):
                     break
     except Exception as e:
         log.error(f"Error deleting advance finance entry: {e}")
+
+def _sync_employee_name_in_advance_finances(employee_id: str, old_name: str, new_name: str):
+    """Sync employee name changes to all advance finance entries"""
+    try:
+        expenses = fb_get("/balance_sheet_expenses") or {}
+
+        if isinstance(expenses, dict):
+            now_iso = datetime.now(timezone.utc).isoformat()
+            for exp_id, exp_data in expenses.items():
+                if (isinstance(exp_data, dict) and
+                    exp_data.get("expense_type") == "Employee Advance" and
+                    exp_data.get("employee_id") == employee_id and
+                    exp_data.get("employee_name") == old_name):
+                    # Update employee name, expense_name, and description (with optional reason)
+                    reason = exp_data.get('reason', '').strip()
+                    new_expense_name = f"Advance for {new_name}"
+                    if reason:
+                        new_description = f"Advance for {new_name} - {reason}"
+                    else:
+                        new_description = f"Advance for {new_name}"
+                    fb_update(f"/balance_sheet_expenses/{exp_id}", {
+                        "employee_name": new_name,
+                        "expense_name": new_expense_name,
+                        "description": new_description,
+                        "updated_at": now_iso
+                    })
+        log.info(f"Synced employee name change for advance finance entries: {old_name} → {new_name}")
+    except Exception as e:
+        log.error(f"Error syncing employee name in advance finances: {e}")
 
 # ── In-memory TTL cache (avoids repeated Firebase reads on every page load) ───
 import time as _time
@@ -9107,6 +9151,12 @@ def api_employee_profiles_post():
 @login_required
 def api_employee_profiles_patch(profile_id):
     data = request.get_json() or {}
+
+    # Get old profile data to track name changes
+    old_profile = fb_get(f"/employee_profiles/{profile_id}") or {}
+    old_name = old_profile.get("name", "")
+    new_name = (data.get("name") or "").strip() if "name" in data else old_name
+
     updates = {}
     for field in ("name", "title", "region", "email"):
         if field in data:
@@ -9115,6 +9165,11 @@ def api_employee_profiles_patch(profile_id):
         updates["hourly_rate"] = float(data.get("hourly_rate") or 0)
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     fb_update(f"/employee_profiles/{profile_id}", updates)
+
+    # Sync employee name changes in advance finance entries
+    if old_name and new_name and old_name != new_name:
+        _sync_employee_name_in_advance_finances(profile_id, old_name, new_name)
+
     return jsonify({"success": True})
 
 @app.route("/api/employee-profiles/<profile_id>", methods=["DELETE"])
@@ -9770,6 +9825,9 @@ def financial():
                 edata["firebase_id"] = eid
                 # Ensure amount is always a float (some old entries might be strings)
                 edata["amount"] = _safe_float(edata.get("amount", 0))
+                # Ensure created_at exists for sorting (use fallback for old entries)
+                if not edata.get("created_at"):
+                    edata["created_at"] = edata.get("updated_at") or edata.get("date") or datetime.now(timezone.utc).isoformat()
                 # Mark receipt available for medical claim expenses even if written before has_receipt field existed
                 if not edata.get("has_receipt") and not edata.get("receipt_filename"):
                     if eid in _med_receipt_ids:
@@ -11309,6 +11367,22 @@ def expense_delete(exp_id):
             fb_update(f"/deleted_salaries/{salary_id}", archive_sal)
         fb_delete(f"/balance_sheet_salary/{salary_id}")
 
+    # If this expense is an advance, also delete the corresponding advance entry
+    if bs_data.get("expense_type") == "Employee Advance":
+        advance_id = bs_data.get("advance_id")
+        if advance_id:
+            # Archive the advance
+            advance_data = fb_get(f"/employee_advances/{advance_id}") or {}
+            if advance_data:
+                archive_adv = dict(advance_data)
+                archive_adv.update({
+                    "firebase_id": advance_id,
+                    "deleted_at": datetime.now(timezone.utc).isoformat(),
+                    "deleted_by": session.get("user_name") or session.get("user_email", ""),
+                })
+                fb_update(f"/deleted_advances/{advance_id}", archive_adv)
+            fb_delete(f"/employee_advances/{advance_id}")
+
     flash("Expense deleted and archived for recovery.", "success")
     return redirect(url_for("financial", tab="expenses"))
 
@@ -11348,6 +11422,19 @@ def expense_restore(exp_id):
             "created_at": archive.get("created_at", datetime.now(timezone.utc).isoformat()),
         }
         fb_update(f"/balance_sheet_salary/{salary_id}", salary_data)
+
+    # If this expense is an advance, restore the corresponding advance entry
+    if archive.get("expense_type") == "Employee Advance":
+        advance_id = archive.get("advance_id")
+        if advance_id:
+            # Check if there's a deleted advance to restore
+            deleted_advance = fb_get(f"/deleted_advances/{advance_id}") or {}
+            if deleted_advance:
+                # Restore advance (remove deleted metadata)
+                restored_advance = {k: v for k, v in deleted_advance.items()
+                                    if k not in ("deleted_at", "deleted_by", "firebase_id")}
+                fb_update(f"/employee_advances/{advance_id}", restored_advance)
+                fb_delete(f"/deleted_advances/{advance_id}")
 
     fb_delete(f"/deleted_expenses/{exp_id}")
     flash("Expense restored successfully.", "success")
@@ -11444,6 +11531,47 @@ def expense_edit(exp_id):
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             fb_update(f"/balance_sheet_salary/{salary_id}", salary_update)
+
+        # If this expense is an advance, sync date and amount changes back to advance entry
+        if existing.get("expense_type") == "Employee Advance":
+            advance_id = existing.get("advance_id")
+            if advance_id:
+                # Get advance data to check if adjustments have been added
+                advance_data = fb_get(f"/employee_advances/{advance_id}") or {}
+                adjustments = advance_data.get("adjustments", {})
+                has_adjustments = bool(adjustments and isinstance(adjustments, dict) and len(adjustments) > 0)
+
+                # Check if amount is being changed
+                old_amount = existing.get("amount", 0)
+                new_amount = _safe_float(data.get("amount", 0))
+                amount_changed = old_amount != new_amount
+
+                # If adjustments exist and amount is being changed, prevent the edit
+                if has_adjustments and amount_changed:
+                    return jsonify({
+                        "success": False,
+                        "error": "Cannot edit amount: Adjustments have been added to this advance. "
+                                "Please manage adjustments through the Employee Advance entry in Payroll. "
+                                "You can only edit the date.",
+                        "info": "To modify the advance amount, remove or edit the existing adjustments."
+                    }), 400
+
+                advance_update = {
+                    "date": data.get("date", ""),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+
+                # Only update amount if no adjustments exist
+                if not has_adjustments:
+                    advance_update["amount"] = new_amount
+                    # Check if balance is now 0 or less (closed)
+                    if new_amount <= 0:
+                        advance_update["status"] = "Closed"
+                    else:
+                        advance_update["status"] = "Open"
+
+                # Auto-sync to advance entry
+                fb_update(f"/employee_advances/{advance_id}", advance_update)
 
         return jsonify({"success": True, "expense_id": exp_id})
     except Exception as e:

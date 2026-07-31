@@ -37,6 +37,7 @@ from balance_sheet_tab import BalanceSheetTab, BalanceSheetFirebaseManager
 from job_form_tab import JobFormTab
 from expenses_tab import ExpensesTab
 from finance_overview_tab import FinanceOverviewTab
+from employee_advance_tab import EmployeeAdvanceTab
 from update_checker import UpdateChecker
 from update_indicator import UpdateIndicator
 from app_logger import setup_logging, get_logger
@@ -4601,6 +4602,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.history_tab          = InvoiceHistoryTab(self)
         self.finance_overview_tab = FinanceOverviewTab(self)
         self.expenses_tab         = ExpensesTab(self)
+        self.employee_advance_tab = EmployeeAdvanceTab(self)
         self.balance_sheet_tab    = BalanceSheetTab(self)
 
         # Projects & Invoice container (no lock overlay)
@@ -4682,6 +4684,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """)
         self.finance_inner_tabs.addTab(self.finance_overview_tab, "Overview")
         self.finance_inner_tabs.addTab(self.expenses_tab,     "Expenses")
+        self.finance_inner_tabs.addTab(self.employee_advance_tab, "Employee Advance")
         self.finance_inner_tabs.addTab(self.balance_sheet_tab,"Balance Sheet")
         fin_lay.addWidget(self.finance_inner_tabs)
 
@@ -4789,8 +4792,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_finance_tab_changed(self, index: int):
         """Refresh balance sheet data whenever the user switches to the Balance Sheet tab."""
-        if index == 2 and hasattr(self, "balance_sheet_tab"):
+        if index == 3 and hasattr(self, "balance_sheet_tab"):
             self.balance_sheet_tab.refresh_on_tab_show()
+        elif index == 2 and hasattr(self, "employee_advance_tab"):
+            self.employee_advance_tab.load_data()
 
     def _on_project_invoice_tab_changed(self, index: int):
         """Refresh client list whenever the user switches to the Invoice History tab."""
