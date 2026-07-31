@@ -1288,7 +1288,7 @@ function refreshAdvanceTable() {
   });
 
   const totalsRow = `
-    <tr style="background:#f0f9ff;border-top:2px solid #cbd5e1;font-weight:600;color:#1f2937;">
+    <tr class="totals-row" style="background:#f0f9ff;border-top:2px solid #cbd5e1;font-weight:600;color:#1f2937;">
       <td colspan="3" style="text-align:right;padding:12px 10px;">Totals (${sortedAdvances.length} advances)</td>
       <td style="padding:12px 10px;">{{ currency_symbol }}${parseFloat(totalAmount).toFixed(2)}</td>
       <td style="padding:12px 10px;">{{ currency_symbol }}${parseFloat(totalAdjusted).toFixed(2)}</td>
@@ -1350,7 +1350,7 @@ function filterAdvanceTable() {
       tbody.appendChild(noResultsRow);
     }
     // Remove totals row if no results
-    const totalsRow = tbody.querySelector('tr[style*="background:#f0f9ff"]');
+    const totalsRow = tbody.querySelector('tr.totals-row');
     if (totalsRow) totalsRow.remove();
   } else {
     const noResults = tbody.querySelector('.no-results');
@@ -1375,7 +1375,18 @@ function filterAdvanceTable() {
       });
 
       // Update or create totals row
-      let totalsRow = tbody.querySelector('tr[style*="background:#f0f9ff"]');
+      let totalsRow = tbody.querySelector('tr.totals-row');
+      if (!totalsRow && visibleCount > 0) {
+        // Create totals row if it doesn't exist
+        totalsRow = document.createElement('tr');
+        totalsRow.className = 'totals-row';
+        totalsRow.style.background = '#f0f9ff';
+        totalsRow.style.borderTop = '2px solid #cbd5e1';
+        totalsRow.style.fontWeight = '600';
+        totalsRow.style.color = '#1f2937';
+        tbody.appendChild(totalsRow);
+      }
+
       if (totalsRow) {
         totalsRow.innerHTML = `
           <td colspan="3" style="text-align:right;padding:12px 10px;font-weight:600;color:#1f2937;">Totals (${visibleCount} advances)</td>
