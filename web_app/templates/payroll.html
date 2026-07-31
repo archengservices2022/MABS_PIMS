@@ -1282,6 +1282,28 @@ function refreshAdvanceTable() {
     `;
   }).join('');
 
+  // Add totals row
+  let totalAmount = 0;
+  let totalAdjusted = 0;
+  let totalBalance = 0;
+
+  sortedAdvances.forEach(adv => {
+    totalAmount += parseFloat(adv.amount || 0);
+    totalAdjusted += parseFloat(adv.adjusted || 0);
+    totalBalance += (parseFloat(adv.amount || 0) - parseFloat(adv.adjusted || 0));
+  });
+
+  const totalsRow = `
+    <tr style="background:#f0f9ff;border-top:2px solid #cbd5e1;font-weight:600;color:#1f2937;">
+      <td colspan="3" style="text-align:right;padding:12px 10px;">Totals (${sortedAdvances.length} advances)</td>
+      <td style="padding:12px 10px;">{{ currency_symbol }}${parseFloat(totalAmount).toFixed(2)}</td>
+      <td style="padding:12px 10px;">{{ currency_symbol }}${parseFloat(totalAdjusted).toFixed(2)}</td>
+      <td style="padding:12px 10px;">{{ currency_symbol }}${parseFloat(totalBalance).toFixed(2)}</td>
+      <td colspan="2"></td>
+    </tr>
+  `;
+
+  tbody.innerHTML += totalsRow;
   document.getElementById('advanceTotal').textContent = `Total: ${allAdvances.length} Record(s)`;
 }
 
@@ -1345,9 +1367,43 @@ function filterAdvanceTable() {
       </td>`;
       tbody.appendChild(noResultsRow);
     }
+    // Remove totals row if no results
+    const totalsRow = tbody.querySelector('tr[style*="background:#f0f9ff"]');
+    if (totalsRow) totalsRow.remove();
   } else {
     const noResults = tbody.querySelector('.no-results');
     if (noResults) noResults.remove();
+
+    // Recalculate and update totals for visible rows
+    if (visibleCount > 0) {
+      let filteredTotal = 0;
+      let filteredAdjusted = 0;
+      let filteredBalance = 0;
+
+      rows.forEach(row => {
+        if (row.style.display !== 'none') {
+          const amount = parseFloat(row.cells[3]?.textContent.replace('$', '') || 0);
+          const adjusted = parseFloat(row.cells[4]?.textContent.replace('$', '') || 0);
+          const balance = parseFloat(row.cells[5]?.textContent.replace('$', '') || 0);
+
+          filteredTotal += amount;
+          filteredAdjusted += adjusted;
+          filteredBalance += balance;
+        }
+      });
+
+      // Update or create totals row
+      let totalsRow = tbody.querySelector('tr[style*="background:#f0f9ff"]');
+      if (totalsRow) {
+        totalsRow.innerHTML = `
+          <td colspan="3" style="text-align:right;padding:12px 10px;font-weight:600;color:#1f2937;">Totals (${visibleCount} advances)</td>
+          <td style="padding:12px 10px;font-weight:600;color:#1f2937;">{{ currency_symbol }}${parseFloat(filteredTotal).toFixed(2)}</td>
+          <td style="padding:12px 10px;font-weight:600;color:#1f2937;">{{ currency_symbol }}${parseFloat(filteredAdjusted).toFixed(2)}</td>
+          <td style="padding:12px 10px;font-weight:600;color:#1f2937;">{{ currency_symbol }}${parseFloat(filteredBalance).toFixed(2)}</td>
+          <td colspan="2"></td>
+        `;
+      }
+    }
   }
 }
 
