@@ -7247,6 +7247,7 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
                         exp_data["employee_name"] = new_name
                     if exp_data.get("created_by", "") == old_name:
                         exp_data["created_by"] = new_name
+                    # Update submitted_by_name with exact match only
                     if exp_data.get("submitted_by_name", "") == old_name:
                         exp_data["submitted_by_name"] = new_name
                     exp_data["updated_at"] = now_iso
@@ -7255,15 +7256,143 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
     # Update Finance Expenses (/balance_sheet_expenses)
     finance_expenses = fb_get("/balance_sheet_expenses") or {}
     if isinstance(finance_expenses, dict):
+        # Extract first name from old_name for partial matching (employee_name only)
+        old_first_name = old_name.split()[0] if old_name else ""
         for exp_id, exp_data in finance_expenses.items():
             if isinstance(exp_data, dict):
-                if exp_data.get("submitted_by_name", "") == old_name or exp_data.get("created_by", "") == old_name:
-                    if exp_data.get("submitted_by_name", "") == old_name:
-                        exp_data["submitted_by_name"] = new_name
+                exp_employee_name = exp_data.get("employee_name", "")
+                # Match exact name or partial (first name only) for employee_name
+                is_matching_employee = (exp_employee_name == old_name or
+                                       exp_employee_name == old_first_name or
+                                       (old_first_name and exp_employee_name.lower().startswith(old_first_name.lower())))
+
+                # Exact match only for submitted_by_name (user who created the entry)
+                submitted_by_name = exp_data.get("submitted_by_name", "")
+                is_matching_submitted_by = (submitted_by_name == old_name)
+
+                if (is_matching_submitted_by or
+                    exp_data.get("created_by", "") == old_name or
+                    is_matching_employee):
+                    update_data = {"updated_at": now_iso}
+
+                    # Update employee_name if it matches
+                    if is_matching_employee:
+                        stored_emp_name = exp_data.get("employee_name", "")
+                        update_data["employee_name"] = new_name
+
+                    # Update submitted_by_name if the user who created it changed their name (exact match)
+                    if is_matching_submitted_by:
+                        update_data["submitted_by_name"] = new_name
+
+                    # Update created_by if it matches
                     if exp_data.get("created_by", "") == old_name:
-                        exp_data["created_by"] = new_name
-                    exp_data["updated_at"] = now_iso
-                    fb_update(f"/balance_sheet_expenses/{exp_id}", exp_data)
+                        update_data["created_by"] = new_name
+
+                    # Always update expense_name to match new employee name
+                    if is_matching_employee:
+                        stored_emp_name = exp_data.get("employee_name", "")
+                        expense_name = exp_data.get("expense_name", "")
+                        if expense_name:
+                            # Replace any variation of the old name with new name
+                            new_expense_name = expense_name.replace(stored_emp_name, new_name)
+                            update_data["expense_name"] = new_expense_name
+
+                        # Always update description with new employee name
+                        description = exp_data.get("description", "")
+                        if description:
+                            new_description = description
+                            # Replace all variations
+                            new_description = new_description.replace(f"Employee Salary for {stored_emp_name}", f"Employee Salary for {new_name}")
+                            new_description = new_description.replace(f"Salary for {stored_emp_name}", f"Employee Salary for {new_name}")
+                            if old_name != stored_emp_name:
+                                new_description = new_description.replace(f"Employee Salary for {old_name}", f"Employee Salary for {new_name}")
+                                new_description = new_description.replace(f"Salary for {old_name}", f"Employee Salary for {new_name}")
+                            update_data["description"] = new_description
+
+                    if update_data.get("employee_name") or update_data.get("submitted_by_name"):
+                        fb_update(f"/balance_sheet_expenses/{exp_id}", update_data)
+
+    # Update Archived/Deleted Finance Expenses (/deleted_expenses)
+    deleted_expenses = fb_get("/deleted_expenses") or {}
+    if isinstance(deleted_expenses, dict):
+        for exp_id, exp_data in deleted_expenses.items():
+            if isinstance(exp_data, dict):
+                stored_emp_name = exp_data.get("employee_name", "")
+                # Match exact name or partial (first name only) for employee_name
+                is_matching_emp = (stored_emp_name == old_name or
+                                   stored_emp_name == old_first_name or
+                                   (old_first_name and stored_emp_name.lower().startswith(old_first_name.lower())))
+
+                # Exact match only for submitted_by_name
+                submitted_by_name = exp_data.get("submitted_by_name", "")
+                is_matching_submitted_by = (submitted_by_name == old_name)
+
+                if is_matching_emp or is_matching_submitted_by:
+                    update_data = {
+                        "updated_at": now_iso
+                    }
+
+                    if is_matching_emp:
+                        update_data["employee_name"] = new_name
+
+                    if is_matching_submitted_by:
+                        update_data["submitted_by_name"] = new_name
+
+                    # Always update expense_name and description if employee name changed
+                    if is_matching_emp:
+                        expense_name = exp_data.get("expense_name", "")
+                        if expense_name:
+                            # Replace any variation of the old name with new name
+                            new_expense_name = expense_name.replace(stored_emp_name, new_name)
+                            update_data["expense_name"] = new_expense_name
+
+                        # Always update description with new employee name
+                        description = exp_data.get("description", "")
+                        if description:
+                            new_description = description
+                            # Replace all variations
+                            new_description = new_description.replace(f"Employee Salary for {stored_emp_name}", f"Employee Salary for {new_name}")
+                            new_description = new_description.replace(f"Salary for {stored_emp_name}", f"Employee Salary for {new_name}")
+                            if old_name != stored_emp_name:
+                                new_description = new_description.replace(f"Employee Salary for {old_name}", f"Employee Salary for {new_name}")
+                                new_description = new_description.replace(f"Salary for {old_name}", f"Employee Salary for {new_name}")
+                            update_data["description"] = new_description
+
+                    fb_update(f"/deleted_expenses/{exp_id}", update_data)
+
+    # Update Archived/Deleted Salaries (/deleted_salaries)
+    deleted_salaries = fb_get("/deleted_salaries") or {}
+    if isinstance(deleted_salaries, dict):
+        for sal_id, sal_data in deleted_salaries.items():
+            if isinstance(sal_data, dict):
+                stored_emp_name = sal_data.get("employee_name", "")
+                # Match exact name or partial (first name only)
+                is_matching = (stored_emp_name == old_name or
+                              stored_emp_name == old_first_name or
+                              (old_first_name and stored_emp_name.lower().startswith(old_first_name.lower())))
+                if is_matching:
+                    sal_data["employee_name"] = new_name
+                    sal_data["updated_at"] = now_iso
+                    fb_update(f"/deleted_salaries/{sal_id}", sal_data)
+
+    # Also standardize all archived salary expenses to have correct description format
+    deleted_expenses = fb_get("/deleted_expenses") or {}
+    if isinstance(deleted_expenses, dict):
+        for exp_id, exp_data in deleted_expenses.items():
+            if isinstance(exp_data, dict) and (exp_data.get("category") == "Salary" or "Employee Compensation" in exp_data.get("expense_type", "")):
+                emp_name = exp_data.get("employee_name", "")
+                if emp_name:
+                    expected_desc = f"Employee Salary for {emp_name}"
+                    actual_desc = exp_data.get("description", "")
+                    if actual_desc != expected_desc:
+                        fb_update(f"/deleted_expenses/{exp_id}", {"description": expected_desc})
+
+    # Also ensure all salary expenses have submitted_by_name field
+    active_expenses = fb_get("/balance_sheet_expenses") or {}
+    if isinstance(active_expenses, dict):
+        for exp_id, exp_data in active_expenses.items():
+            if isinstance(exp_data, dict) and (exp_data.get("category") == "Salary" or "Employee Compensation" in exp_data.get("expense_type", "")) and not exp_data.get("submitted_by_name"):
+                fb_update(f"/balance_sheet_expenses/{exp_id}", {"submitted_by_name": "System"})
 
     # Update Pending Approvals
     approvals = fb_get("/pending_approvals") or {}
@@ -8988,7 +9117,37 @@ def create_salary():
         "salary_status": data.get("salary_status", "Paid"),
         "created_at":    datetime.now(timezone.utc).isoformat(),
     }
-    fb_push("/balance_sheet_salary", sal_data)
+
+    # Create salary record
+    salary_ref = fb_push("/balance_sheet_salary", sal_data)
+    sal_id = salary_ref if isinstance(salary_ref, str) else None
+
+    # Only sync to Finance expenses if status is "Paid"
+    salary_status = data.get("salary_status", "Paid")
+    if salary_status == "Paid":
+        employee_name = data.get("employee_name", "")
+        # Get current user's display name from database
+        user_uid = session.get("user_uid", "")
+        submitted_by_name = "System"
+        if user_uid:
+            user_data = fb_get(f"/users/{user_uid}") or {}
+            submitted_by_name = user_data.get("display_name", session.get("user_name", session.get("username", "System")))
+        expense_data = {
+            "employee_name": employee_name,
+            "date": date_str,
+            "amount": float(data.get("amount", 0)),
+            "expense_type": "Employee Compensation",
+            "expense_name": f"Employee Salary - {employee_name}",
+            "category": "Salary",
+            "vendor": "Employee Payroll",
+            "description": f"Employee Salary for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else ""),
+            "region": region,
+            "salary_id": sal_id,
+            "submitted_by_name": submitted_by_name,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        fb_push("/balance_sheet_expenses", expense_data)
+
     return jsonify({"success": True})
 
 @app.route("/api/payroll/salaries/<sal_id>", methods=["PUT"])
@@ -9016,13 +9175,480 @@ def update_salary(sal_id):
         "updated_at":    datetime.now(timezone.utc).isoformat(),
     }
     fb_update(f"/balance_sheet_salary/{sal_id}", sal_data)
+
+    # Handle Finance expenses based on salary status
+    salary_status = data.get("salary_status", "Paid")
+    employee_name = data.get("employee_name", "")
+    # Get current user's display name from database
+    user_uid = session.get("user_uid", "")
+    current_user = "System"
+    if user_uid:
+        user_data = fb_get(f"/users/{user_uid}") or {}
+        current_user = user_data.get("display_name", session.get("user_name", session.get("username", "System")))
+    expenses = fb_get("/balance_sheet_expenses") or {}
+    expense_exists = False
+
+    if isinstance(expenses, dict):
+        for exp_id, exp_data in expenses.items():
+            if isinstance(exp_data, dict) and exp_data.get("salary_id") == sal_id:
+                expense_exists = True
+                if salary_status == "Paid":
+                    # Update expense with professional fields, preserving original submitted_by_name
+                    expense_update = {
+                        "employee_name": employee_name,
+                        "date": date_str,
+                        "amount": float(data.get("amount", 0)),
+                        "expense_type": "Employee Compensation",
+                        "expense_name": f"Employee Salary - {employee_name}",
+                        "category": "Salary",
+                        "vendor": "Employee Payroll",
+                        "description": f"Employee Salary for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else ""),
+                        "region": region,
+                        "submitted_by_name": exp_data.get("submitted_by_name", current_user),
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                    fb_update(f"/balance_sheet_expenses/{exp_id}", expense_update)
+                else:
+                    # Delete expense if status is not "Paid"
+                    fb_delete(f"/balance_sheet_expenses/{exp_id}")
+                break
+
+    # If status is "Paid" but expense doesn't exist, create it
+    if salary_status == "Paid" and not expense_exists:
+        expense_data = {
+            "employee_name": employee_name,
+            "date": date_str,
+            "amount": float(data.get("amount", 0)),
+            "expense_type": "Employee Compensation",
+            "expense_name": f"Employee Salary - {employee_name}",
+            "category": "Salary",
+            "vendor": "Employee Payroll",
+            "description": f"Employee Salary for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else ""),
+            "region": region,
+            "salary_id": sal_id,
+            "submitted_by_name": current_user,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        fb_push("/balance_sheet_expenses", expense_data)
+
     return jsonify({"success": True})
 
 @app.route("/api/payroll/salaries/<sal_id>", methods=["DELETE"])
 @login_required
 def delete_salary(sal_id):
+    # Get salary data before deleting for archiving
+    salary_data = fb_get(f"/balance_sheet_salary/{sal_id}") or {}
+
+    # Archive the salary
+    archive_sal = dict(salary_data)
+    archive_sal.update({
+        "firebase_id": sal_id,
+        "deleted_at": datetime.now(timezone.utc).isoformat(),
+        "deleted_by": session.get("username", "Unknown")
+    })
+    fb_update(f"/deleted_salaries/{sal_id}", archive_sal)
+
+    # Delete the salary
     fb_delete(f"/balance_sheet_salary/{sal_id}")
+
+    # Also delete from Finance expenses and archive
+    expenses = fb_get("/balance_sheet_expenses") or {}
+    if isinstance(expenses, dict):
+        for exp_id, exp_data in expenses.items():
+            if isinstance(exp_data, dict) and exp_data.get("salary_id") == sal_id:
+                # Archive the expense
+                archive_exp = dict(exp_data)
+                archive_exp.update({
+                    "firebase_id": exp_id,
+                    "deleted_at": datetime.now(timezone.utc).isoformat(),
+                    "deleted_by": session.get("username", "Unknown")
+                })
+                fb_update(f"/deleted_expenses/{exp_id}", archive_exp)
+                # Delete the expense
+                fb_delete(f"/balance_sheet_expenses/{exp_id}")
+                break
+
     return jsonify({"success": True})
+
+# ── Employee Advance Routes ──────────────────────────────────────────────────────
+
+@app.route("/payroll/advance/<advance_id>")
+@login_required
+def advance_detail(advance_id):
+    """Display detailed view of an employee advance"""
+    try:
+        advances_raw = fb_get("/employee_advances") or {}
+        advance_data = None
+        advance_no = None
+
+        if isinstance(advances_raw, dict):
+            for aid, adata in advances_raw.items():
+                if aid == advance_id and isinstance(adata, dict):
+                    advance_data = adata
+                    advance_no = adata.get('advance_no', 'N/A')
+                    break
+
+        if not advance_data:
+            abort(404)
+
+        # Get currency symbol from settings or default
+        settings = fb_get("/settings") or {}
+        currency_symbol = settings.get('currency_symbol', '$')
+
+        return render_template('advance_detail.html',
+            advance_id=advance_id,
+            advance_no=advance_no,
+            employee_name=advance_data.get('employee_name', 'Unknown'),
+            date=advance_data.get('date', ''),
+            amount=advance_data.get('amount', 0),
+            adjusted=advance_data.get('adjusted', 0),
+            reason=advance_data.get('reason', '') or '—',
+            payment_method=advance_data.get('payment_method', 'N/A') or 'N/A',
+            status=advance_data.get('status', 'Open'),
+            adjustments=advance_data.get('adjustments', {}),
+            currency_symbol=currency_symbol
+        )
+    except Exception as e:
+        log.error(f"Error displaying advance detail: {e}")
+        abort(500)
+
+@app.route("/get_employees", methods=["GET"])
+@login_required
+def get_employees():
+    """Get list of active employees"""
+    try:
+        users = _load_all_users()
+        employees = [u.get("username", "") for u in users if u.get("active", True) and u.get("username")]
+        return jsonify({"employees": sorted(employees)})
+    except Exception as e:
+        log.error(f"Error getting employees: {e}")
+        return jsonify({"employees": [], "error": str(e)}), 500
+
+@app.route("/get_employee_advances", methods=["GET"])
+@login_required
+def get_employee_advances():
+    """Get all employee advances"""
+    try:
+        advances_raw = fb_get("/employee_advances") or {}
+        advances = []
+
+        if isinstance(advances_raw, dict):
+            for adv_id, adv_data in advances_raw.items():
+                if isinstance(adv_data, dict):
+                    # Make a copy to avoid modifying original data
+                    adv_copy = dict(adv_data)
+                    adv_copy['id'] = adv_id  # Add Firebase document ID
+                    advances.append(adv_copy)
+
+        # Sort by date descending
+        advances.sort(key=lambda x: x.get("date", ""), reverse=True)
+        return jsonify({"advances": advances})
+    except Exception as e:
+        log.error(f"Error getting advances: {e}")
+        return jsonify({"advances": [], "error": str(e)}), 500
+
+@app.route("/add_employee_advance", methods=["POST"])
+@login_required
+def add_employee_advance():
+    """Add a new employee advance"""
+    try:
+        data = request.get_json()
+
+        # Create advance record
+        advance_data = {
+            "advance_no": data.get("advance_no", ""),
+            "date": data.get("date", ""),
+            "employee_name": data.get("employee_name", ""),
+            "amount": float(data.get("amount", 0)),
+            "reason": data.get("reason", ""),
+            "payment_method": data.get("payment_method", "Cash"),
+            "status": "Open",
+            "adjusted": 0,
+            "adjustments": {},
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": session.get("username", "Unknown")
+        }
+
+        # Use fb_push to create new record with auto-generated ID
+        advance_id = fb_push("/employee_advances", advance_data)
+        log.info(f"Employee advance created: {advance_data['advance_no']}")
+
+        return jsonify({"success": True, "advance_id": advance_id})
+    except Exception as e:
+        log.error(f"Error adding advance: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/update_employee_advance", methods=["POST"])
+@login_required
+def update_employee_advance():
+    """Update an existing employee advance"""
+    try:
+        data = request.get_json()
+        advance_id = data.get("advance_id", "")
+
+        if not advance_id:
+            return jsonify({"success": False, "error": "Advance ID required"}), 400
+
+        # Get current advance data
+        advances_raw = fb_get("/employee_advances") or {}
+        advance_data = None
+
+        if isinstance(advances_raw, dict):
+            advance_data = advances_raw.get(advance_id, {})
+
+        if not advance_data:
+            return jsonify({"success": False, "error": "Advance not found"}), 404
+
+        # Calculate new balance
+        new_amount = float(data.get("amount", 0))
+        adjusted = float(advance_data.get("adjusted", 0))
+        new_balance = new_amount - adjusted
+
+        # Update fields
+        update_fields = {
+            "date": data.get("date", ""),
+            "employee_name": data.get("employee_name", ""),
+            "amount": new_amount,
+            "reason": data.get("reason", ""),
+            "payment_method": data.get("payment_method", "Cash"),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_by": session.get("username", "Unknown")
+        }
+
+        # If balance > 0, reopen the advance (only close when balance = 0)
+        if new_balance > 0:
+            update_fields["status"] = "Open"
+
+        fb_update(f"/employee_advances/{advance_id}", update_fields)
+        log.info(f"Employee advance updated: {data.get('advance_no', '')}")
+
+        return jsonify({"success": True})
+    except Exception as e:
+        log.error(f"Error updating advance: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/add_advance_adjustment", methods=["POST"])
+@login_required
+def add_advance_adjustment():
+    """Add an adjustment to an employee advance"""
+    try:
+        data = request.get_json()
+        advance_no = data.get("advance_no", "")
+
+        # Find the advance by advance_no
+        advances_raw = fb_get("/employee_advances") or {}
+        advance_id = None
+        advance_data = None
+
+        if isinstance(advances_raw, dict):
+            for aid, adata in advances_raw.items():
+                if isinstance(adata, dict) and adata.get("advance_no") == advance_no:
+                    advance_id = aid
+                    advance_data = adata
+                    break
+
+        if not advance_id:
+            return jsonify({"success": False, "error": "Advance not found"}), 404
+
+        # Create adjustment record
+        import uuid
+        adjustment_id = str(uuid.uuid4())
+        adjustment_amount = float(data.get("amount", 0))
+        adjustment = {
+            "date": data.get("date", ""),
+            "amount": adjustment_amount,
+            "type": data.get("type", ""),
+            "reference": data.get("reference", ""),
+            "remarks": data.get("remarks", ""),
+            "adjusted_by": session.get("username", "Admin"),
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        # Update advance: add adjustment and update adjusted amount
+        current_adjusted = float(advance_data.get("adjusted", 0))
+        advance_amount = float(advance_data.get("amount", 0))
+        new_adjusted = current_adjusted + adjustment_amount
+        new_balance = advance_amount - new_adjusted
+
+        # Validate that total adjusted doesn't exceed advance amount
+        if new_adjusted > advance_amount:
+            return jsonify({
+                "success": False,
+                "error": f"Cannot add adjustment. Total adjusted (${new_adjusted:.2f}) would exceed advance amount (${advance_amount:.2f}). Maximum adjustment: ${advance_amount - current_adjusted:.2f}"
+            }), 400
+
+        # Check if advance should be closed
+        new_status = "Closed" if new_balance <= 0 else advance_data.get("status", "Open")
+
+        # Update the advance record with new adjusted amount, status, and add adjustment
+        update_data = {
+            "adjusted": new_adjusted,
+            "status": new_status,
+            f"adjustments/{adjustment_id}": adjustment
+        }
+        fb_update(f"/employee_advances/{advance_id}", update_data)
+
+        log.info(f"Adjustment added to advance {advance_no}: {adjustment['amount']}")
+
+        return jsonify({"success": True})
+    except Exception as e:
+        log.error(f"Error adding adjustment: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/update_advance_adjustment", methods=["POST"])
+@login_required
+def update_advance_adjustment():
+    """Update an existing adjustment"""
+    try:
+        data = request.get_json()
+        advance_no = data.get("advance_no", "")
+        adjustment_id = data.get("adjustment_id", "")
+
+        # Find the advance by advance_no
+        advances_raw = fb_get("/employee_advances") or {}
+        advance_id = None
+        advance_data = None
+
+        if isinstance(advances_raw, dict):
+            for aid, adata in advances_raw.items():
+                if isinstance(adata, dict) and adata.get("advance_no") == advance_no:
+                    advance_id = aid
+                    advance_data = adata
+                    break
+
+        if not advance_id or not advance_data:
+            return jsonify({"success": False, "error": "Advance not found"}), 404
+
+        # Get the old adjustment to recalculate totals
+        adjustments = advance_data.get("adjustments", {})
+        old_adjustment = adjustments.get(adjustment_id, {})
+        old_amount = float(old_adjustment.get("amount", 0))
+
+        # Calculate new totals
+        new_amount = float(data.get("amount", 0))
+        current_adjusted = float(advance_data.get("adjusted", 0))
+        new_adjusted = current_adjusted - old_amount + new_amount
+        advance_amount = float(advance_data.get("amount", 0))
+        new_balance = advance_amount - new_adjusted
+
+        # Validate that total adjusted doesn't exceed advance amount
+        if new_adjusted > advance_amount:
+            return jsonify({
+                "success": False,
+                "error": f"Cannot update adjustment. Total adjusted (${new_adjusted:.2f}) would exceed advance amount (${advance_amount:.2f})"
+            }), 400
+
+        # Update the adjustment
+        updated_adjustment = {
+            "date": data.get("date", ""),
+            "amount": new_amount,
+            "type": data.get("type", ""),
+            "reference": data.get("reference", ""),
+            "remarks": data.get("remarks", ""),
+            "adjusted_by": session.get("username", "Admin"),
+            "created_at": old_adjustment.get("created_at", datetime.now(timezone.utc).isoformat()),
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        # Check if advance should be closed
+        new_status = "Closed" if new_balance <= 0 else advance_data.get("status", "Open")
+
+        # Update in Firebase
+        update_data = {
+            "adjusted": new_adjusted,
+            "status": new_status,
+            f"adjustments/{adjustment_id}": updated_adjustment
+        }
+        fb_update(f"/employee_advances/{advance_id}", update_data)
+
+        log.info(f"Adjustment updated for advance {advance_no}: {new_amount}")
+
+        return jsonify({"success": True})
+    except Exception as e:
+        log.error(f"Error updating adjustment: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/delete_advance_adjustment", methods=["POST"])
+@login_required
+def delete_advance_adjustment():
+    """Delete an adjustment from an advance"""
+    try:
+        data = request.get_json()
+        advance_no = data.get("advance_no", "")
+        adjustment_id = data.get("adjustment_id", "")
+
+        # Find the advance by advance_no
+        advances_raw = fb_get("/employee_advances") or {}
+        advance_id = None
+        advance_data = None
+
+        if isinstance(advances_raw, dict):
+            for aid, adata in advances_raw.items():
+                if isinstance(adata, dict) and adata.get("advance_no") == advance_no:
+                    advance_id = aid
+                    advance_data = adata
+                    break
+
+        if not advance_id or not advance_data:
+            return jsonify({"success": False, "error": "Advance not found"}), 404
+
+        # Get the adjustment being deleted
+        adjustments = advance_data.get("adjustments", {})
+        adjustment_to_delete = adjustments.get(adjustment_id, {})
+        deleted_amount = float(adjustment_to_delete.get("amount", 0))
+
+        # Recalculate adjusted amount
+        current_adjusted = float(advance_data.get("adjusted", 0))
+        new_adjusted = current_adjusted - deleted_amount
+        advance_amount = float(advance_data.get("amount", 0))
+        new_balance = advance_amount - new_adjusted
+
+        # Check if advance should be closed
+        new_status = "Closed" if new_balance <= 0 else "Open"
+
+        # Delete the adjustment and update totals
+        update_data = {
+            "adjusted": new_adjusted,
+            "status": new_status,
+            f"adjustments/{adjustment_id}": None  # Firebase treats None as delete
+        }
+        fb_update(f"/employee_advances/{advance_id}", update_data)
+
+        log.info(f"Adjustment deleted from advance {advance_no}: {deleted_amount}")
+
+        return jsonify({"success": True})
+    except Exception as e:
+        log.error(f"Error deleting adjustment: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/delete_employee_advance", methods=["POST"])
+@login_required
+def delete_employee_advance():
+    """Delete an employee advance"""
+    try:
+        data = request.get_json()
+        advance_no = data.get("advance_no", "")
+
+        # Find the advance by advance_no
+        advances_raw = fb_get("/employee_advances") or {}
+        advance_id = None
+
+        if isinstance(advances_raw, dict):
+            for aid, adata in advances_raw.items():
+                if isinstance(adata, dict) and adata.get("advance_no") == advance_no:
+                    advance_id = aid
+                    break
+
+        if not advance_id:
+            return jsonify({"success": False, "error": "Advance not found"}), 404
+
+        fb_delete(f"/employee_advances/{advance_id}")
+        log.info(f"Employee advance deleted: {advance_no}")
+
+        return jsonify({"success": True})
+    except Exception as e:
+        log.error(f"Error deleting advance: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 # ── Routes: Financial ─────────────────────────────────────────────────────────
 @app.route("/financial")
@@ -10558,6 +11184,13 @@ def expense_delete(exp_id):
     archive_exp = dict(bs_data)
     if is_emp_expense and isinstance(emp_data, dict):
         archive_exp.update({k: v for k, v in emp_data.items() if k not in archive_exp})
+
+    # Standardize description for salary expenses
+    if archive_exp.get("expense_type") == "Employee Compensation" or archive_exp.get("category") == "Salary":
+        emp_name = archive_exp.get("employee_name", "")
+        if emp_name:
+            archive_exp["description"] = f"Employee Salary for {emp_name}"
+
     archive_exp.update({
         "firebase_id": exp_id,
         "deleted_at": datetime.now(timezone.utc).isoformat(),
@@ -10573,6 +11206,21 @@ def expense_delete(exp_id):
     if is_emp_expense:
         fb_delete(f"/expenses/{exp_id}")
 
+    # If this expense is linked to a salary, also delete the salary
+    salary_id = bs_data.get("salary_id") or (emp_data.get("salary_id") if isinstance(emp_data, dict) else None)
+    if salary_id:
+        # Archive the salary as well
+        salary_data = fb_get(f"/balance_sheet_salary/{salary_id}") or {}
+        if salary_data:
+            archive_sal = dict(salary_data)
+            archive_sal.update({
+                "firebase_id": salary_id,
+                "deleted_at": datetime.now(timezone.utc).isoformat(),
+                "deleted_by": session.get("user_name") or session.get("user_email", ""),
+            })
+            fb_update(f"/deleted_salaries/{salary_id}", archive_sal)
+        fb_delete(f"/balance_sheet_salary/{salary_id}")
+
     flash("Expense deleted and archived for recovery.", "success")
     return redirect(url_for("financial", tab="expenses"))
 
@@ -10585,10 +11233,34 @@ def expense_restore(exp_id):
         return redirect(url_for("financial", tab="expenses"))
     restored = {k: v for k, v in archive.items()
                 if k not in ("deleted_at", "deleted_by", "deleted_by_uid", "firebase_id")}
+
+    # Standardize description for salary expenses
+    if restored.get("expense_type") == "Employee Compensation" or restored.get("category") == "Salary":
+        emp_name = restored.get("employee_name", "")
+        if emp_name:
+            restored["description"] = f"Employee Salary for {emp_name}"
+
     fb_update(f"/balance_sheet_expenses/{exp_id}", restored)
     # Restore to /expenses if it was an employee expense
     if archive.get("submitted_by") or archive.get("employee_name"):
         fb_update(f"/expenses/{exp_id}", restored)
+
+    # If this expense is linked to a salary, restore the salary as well
+    salary_id = archive.get("salary_id")
+    if salary_id:
+        # Prepare salary data from the archived expense data
+        salary_data = {
+            "employee_name": archive.get("employee_name", ""),
+            "date": archive.get("date", ""),
+            "amount": _safe_float(archive.get("amount", 0)),
+            "notes": archive.get("description", ""),
+            "region": archive.get("region", "Inside America"),
+            "year": int(archive.get("date", "")[:4]) if archive.get("date") else datetime.now(COMPANY_TZ).year,
+            "salary_status": "Paid",
+            "created_at": archive.get("created_at", datetime.now(timezone.utc).isoformat()),
+        }
+        fb_update(f"/balance_sheet_salary/{salary_id}", salary_data)
+
     fb_delete(f"/deleted_expenses/{exp_id}")
     flash("Expense restored successfully.", "success")
     return redirect(url_for("financial", tab="expenses"))
@@ -10674,6 +11346,16 @@ def expense_edit(exp_id):
                 "reviewed_at":     now_str,
                 "updated_at":      now_str,
             })
+
+        # If this expense is linked to a salary, sync back to payroll
+        salary_id = existing.get("salary_id")
+        if salary_id:
+            salary_update = {
+                "date": data.get("date", ""),
+                "amount": _safe_float(data.get("amount", 0)),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            fb_update(f"/balance_sheet_salary/{salary_id}", salary_update)
 
         return jsonify({"success": True, "expense_id": exp_id})
     except Exception as e:
@@ -12346,11 +13028,186 @@ def user_details_update(uid):
         user_email = user_data.get("email", "")
         _sync_user_display_name(old_display_name, new_display_name, user_email)
 
+        # Also sync submitted_by_name in all expenses if name changed
+        now_iso = datetime.now(timezone.utc).isoformat()
+        expenses = fb_get("/balance_sheet_expenses") or {}
+        if isinstance(expenses, dict):
+            for exp_id, exp_data in expenses.items():
+                if isinstance(exp_data, dict):
+                    submitted_by = exp_data.get("submitted_by_name", "")
+                    # Update if submitted_by matches old_display_name
+                    if submitted_by == old_display_name:
+                        fb_update(f"/balance_sheet_expenses/{exp_id}", {"submitted_by_name": new_display_name, "updated_at": now_iso})
+
+        # Also sync in archived expenses
+        deleted_expenses = fb_get("/deleted_expenses") or {}
+        if isinstance(deleted_expenses, dict):
+            for exp_id, exp_data in deleted_expenses.items():
+                if isinstance(exp_data, dict):
+                    submitted_by = exp_data.get("submitted_by_name", "")
+                    if submitted_by == old_display_name:
+                        fb_update(f"/deleted_expenses/{exp_id}", {"submitted_by_name": new_display_name, "updated_at": now_iso})
+
+    # ALWAYS sync all salary expenses with their linked salary records
+    # This ensures expense names match current salary employee names
+    now_iso = datetime.now(timezone.utc).isoformat()
+    expenses = fb_get("/balance_sheet_expenses") or {}
+    salaries = fb_get("/balance_sheet_salary") or {}
+
+    if isinstance(expenses, dict):
+        # Create employee name to salary mapping for lookup
+        emp_name_to_salary = {}
+        if isinstance(salaries, dict):
+            for sal_data in salaries.values():
+                if isinstance(sal_data, dict):
+                    emp_name = sal_data.get("employee_name", "")
+                    if emp_name and emp_name not in emp_name_to_salary:
+                        emp_name_to_salary[emp_name] = sal_data
+
+        for exp_id, exp_data in expenses.items():
+            if isinstance(exp_data, dict):
+                # Check if this is a salary expense
+                is_salary_expense = (
+                    exp_data.get("salary_id") or
+                    exp_data.get("category") == "Salary" or
+                    "Employee Compensation" in exp_data.get("expense_type", "")
+                )
+
+                if is_salary_expense:
+                    stored_emp_name = exp_data.get("employee_name", "")
+                    correct_emp_name = stored_emp_name
+
+                    # Try to find correct name from salary record
+                    if exp_data.get("salary_id"):
+                        salary = fb_get(f"/balance_sheet_salary/{exp_data.get('salary_id')}") or {}
+                        if salary and isinstance(salary, dict):
+                            correct_emp_name = salary.get("employee_name", "")
+                    elif stored_emp_name in emp_name_to_salary:
+                        correct_emp_name = emp_name_to_salary[stored_emp_name].get("employee_name", "")
+
+                    # If names don't match, update the expense
+                    if correct_emp_name and stored_emp_name != correct_emp_name:
+                        update_data = {
+                            "employee_name": correct_emp_name,
+                            "expense_name": f"Employee Salary - {correct_emp_name}",
+                            "updated_at": now_iso,
+                        }
+
+                        # Update description
+                        description = exp_data.get("description", "")
+                        if description:
+                            new_description = description
+                            new_description = new_description.replace(f"Employee Salary for {stored_emp_name}", f"Employee Salary for {correct_emp_name}")
+                            new_description = new_description.replace(f"Salary for {stored_emp_name}", f"Employee Salary for {correct_emp_name}")
+                            update_data["description"] = new_description
+
+                        fb_update(f"/balance_sheet_expenses/{exp_id}", update_data)
+
     # Update session if the logged-in user changed their own name
     if uid == session.get("user_uid") and new_display_name:
         session["user_name"] = new_display_name
 
     return jsonify({"ok": True})
+
+@app.route("/api/sync-submitted-by", methods=["POST"])
+@login_required
+def sync_submitted_by():
+    """Update all submitted_by_name to match current user display names from Settings"""
+    if normalize_role(session.get("user_role", "")) != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+
+    # Get ALL current users with their display names
+    all_users = fb_get("/users") or {}
+    user_display_map = {}
+    if isinstance(all_users, dict):
+        for user_data in all_users.values():
+            if isinstance(user_data, dict):
+                display_name = user_data.get("display_name", "")
+                if display_name:
+                    user_display_map[display_name] = display_name
+
+    updated_count = 0
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # Update all active salary expenses - sync submitted_by_name to current display names
+    expenses = fb_get("/balance_sheet_expenses") or {}
+    if isinstance(expenses, dict):
+        for exp_id, exp_data in expenses.items():
+            if isinstance(exp_data, dict) and (exp_data.get("category") == "Salary" or "Employee Compensation" in exp_data.get("expense_type", "")):
+                submitted_by = exp_data.get("submitted_by_name", "")
+                # Check if submitted_by exists in current users list, if not try to match variations
+                if submitted_by and submitted_by not in user_display_map:
+                    # Try to find matching user by checking if any current display name starts with old first name
+                    for current_display_name in user_display_map.keys():
+                        if submitted_by.lower().startswith(current_display_name.split()[0].lower()):
+                            # Update to current display name
+                            fb_update(f"/balance_sheet_expenses/{exp_id}", {"submitted_by_name": current_display_name, "updated_at": now_iso})
+                            updated_count += 1
+                            break
+
+    # Update all archived salary expenses
+    deleted_expenses = fb_get("/deleted_expenses") or {}
+    if isinstance(deleted_expenses, dict):
+        for exp_id, exp_data in deleted_expenses.items():
+            if isinstance(exp_data, dict) and (exp_data.get("category") == "Salary" or "Employee Compensation" in exp_data.get("expense_type", "")):
+                submitted_by = exp_data.get("submitted_by_name", "")
+                if submitted_by and submitted_by not in user_display_map:
+                    for current_display_name in user_display_map.keys():
+                        if submitted_by.lower().startswith(current_display_name.split()[0].lower()):
+                            fb_update(f"/deleted_expenses/{exp_id}", {"submitted_by_name": current_display_name, "updated_at": now_iso})
+                            updated_count += 1
+                            break
+
+    return jsonify({"ok": True, "updated": updated_count})
+
+@app.route("/api/sync-salary-expenses", methods=["POST"])
+@login_required
+def sync_salary_expenses():
+    """Force sync all salary expenses with current employee names from users table"""
+    if normalize_role(session.get("user_role", "")) != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+
+    # Get all users with their current display names
+    users = fb_get("/users") or {}
+    if not isinstance(users, dict):
+        return jsonify({"ok": True, "updated": 0})
+
+    # Update all salary expenses with correct employee names
+    now_iso = datetime.now(timezone.utc).isoformat()
+    expenses = fb_get("/balance_sheet_expenses") or {}
+    updated_count = 0
+
+    if isinstance(expenses, dict):
+        for exp_id, exp_data in expenses.items():
+            if isinstance(exp_data, dict) and exp_data.get("salary_id"):
+                # This is a salary expense, get the salary to find correct employee name
+                salary_id = exp_data.get("salary_id")
+                salary = fb_get(f"/balance_sheet_salary/{salary_id}") or {}
+
+                if salary and isinstance(salary, dict):
+                    correct_emp_name = salary.get("employee_name", "")
+                    stored_emp_name = exp_data.get("employee_name", "")
+
+                    # If names don't match, update the expense
+                    if correct_emp_name and stored_emp_name != correct_emp_name:
+                        update_data = {
+                            "employee_name": correct_emp_name,
+                            "expense_name": f"Employee Salary - {correct_emp_name}",
+                            "updated_at": now_iso,
+                        }
+
+                        # Update description
+                        description = exp_data.get("description", "")
+                        if description:
+                            new_description = description
+                            new_description = new_description.replace(f"Employee Salary for {stored_emp_name}", f"Employee Salary for {correct_emp_name}")
+                            new_description = new_description.replace(f"Salary for {stored_emp_name}", f"Employee Salary for {correct_emp_name}")
+                            update_data["description"] = new_description
+
+                        fb_update(f"/balance_sheet_expenses/{exp_id}", update_data)
+                        updated_count += 1
+
+    return jsonify({"ok": True, "updated": updated_count})
 
 @app.route("/api/commission/mark-paid", methods=["POST"])
 @role_required("quotes")
