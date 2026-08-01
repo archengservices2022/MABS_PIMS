@@ -13419,6 +13419,9 @@ def user_details_update(uid):
     fb_update(f"/users/{uid}", updates)
     cache_bust("all_users")
 
+    # Define now_iso for use in sync operations
+    now_iso = datetime.now(timezone.utc).isoformat()
+
     # Update session if the current user is updating their own details
     if session.get("user_id") == uid:
         log.info(f"Updating session for current user {uid}")
@@ -13497,8 +13500,6 @@ def user_details_update(uid):
                         log.info(f"  Updated deleted expense {exp_id}")
 
     # Sync name changes across timesheets, expenses, approvals, etc.
-    now_iso = datetime.now(timezone.utc).isoformat()
-
     if old_display_name and new_display_name:
         user_email = user_data.get("email", "")
         _sync_user_display_name(old_display_name, new_display_name, user_email)
