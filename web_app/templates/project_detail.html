@@ -2079,12 +2079,12 @@ function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl)
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      action: `Delete ${entityType}`,
+      action: `Delete change order`,
       entity_type: entityType,
       entity_id: entityId,
       entity_label: entityLabel,
       page_url: window.location.href,
-      notes: `Request to delete ${entityLabel}`
+      notes: `Delete ${entityLabel}`
     })
   })
   .then(r => r.json())
