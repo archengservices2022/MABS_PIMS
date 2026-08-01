@@ -1170,12 +1170,27 @@ function resolvePermRequest(reqId, action, pageUrl) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({action: action, notes: notes})
   })
-  .then(function(r) { return r.json(); })
+  .then(function(r) {
+    if (!r.ok) {
+      return r.json().then(function(d) {
+        throw new Error(d.error || 'HTTP ' + r.status);
+      });
+    }
+    return r.json();
+  })
   .then(function(d) {
-    if (!d.success) { alert('Error: ' + (d.error || 'Unknown')); return; }
+    if (!d.success) {
+      alert('Error: ' + (d.error || 'Unknown'));
+      console.error('Permission request failed:', d);
+      return;
+    }
+    alert('Request ' + action + 'ed successfully.');
     location.reload();
   })
-  .catch(function() { alert('Network error. Please try again.'); });
+  .catch(function(err) {
+    console.error('Error resolving permission request:', err);
+    alert('Error: ' + (err.message || 'Request failed. Please try again.'));
+  });
 }
 </script>
 {% endblock %}

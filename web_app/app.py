@@ -14304,12 +14304,17 @@ def api_permission_request():
 @app.route("/api/permission-requests/<req_id>/resolve", methods=["POST"])
 @role_required("settings")
 def api_permission_request_resolve(req_id):
-    if normalize_role(session.get("user_role", "")) != "admin":
+    user_role = normalize_role(session.get("user_role", ""))
+    if user_role != "admin":
+        log.warning(f"Permission request approval denied - user role '{user_role}' not admin (req_id={req_id})")
         return jsonify({"error": "Admin access required"}), 403
     data   = request.get_json(force=True) or {}
     status = "approved" if data.get("action") == "approve" else "denied"
     notes  = (data.get("notes") or "").strip()
     req    = fb_get(f"/permission_requests/{req_id}") or {}
+    if not req:
+        log.error(f"Permission request not found (req_id={req_id})")
+        return jsonify({"error": "Request not found"}), 404
 
     # Backfill entity_type/entity_id from page_url for old-style requests that lack them
     e_type = req.get("entity_type", "")
