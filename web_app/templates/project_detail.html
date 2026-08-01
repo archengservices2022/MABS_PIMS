@@ -888,8 +888,8 @@
                       </button>
                     </form>
                     {% elif user_role == 'administration' %}
-                    <button class="btn btn-xs btn-outline-danger"
-                            onclick="requestDeletePermission('change_order', '{{ project.firebase_id }}_{{ co_idx }}', 'Request admin approval to delete {{ co.get("co_number","CO") }} (Project: {{ project.get("project_number","") }})', '{{ url_for("project_detail", project_id=project.firebase_id) }}#tab-change-orders')"
+                    <button type="button" class="btn btn-xs btn-outline-danger"
+                            onclick="requestDeletePermission('change_order', '{{ project.firebase_id }}_{{ co_idx }}', 'Request admin approval to delete {{ co.get("co_number","CO") }} (Project: {{ project.get("project_number","") }})', '{{ url_for("project_detail", project_id=project.firebase_id) }}#tab-change-orders'); return false;"
                             title="Request admin approval to delete">
                       <i class="bi bi-trash"></i>
                     </button>
@@ -2073,23 +2073,6 @@ function toggleCoAddr(idx) {
 }
 
 function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl) {
-  // For change orders, try to delete directly if approved
-  if (entityType === 'change_order') {
-    // Extract project_id and co_idx from entityId (format: "project_id_co_idx")
-    const parts = entityId.split('_');
-    if (parts.length >= 2) {
-      const projectId = parts.slice(0, -1).join('_');
-      const coIdx = parts[parts.length - 1];
-      // Try to delete - if approved, it will work; if not, server will redirect with message
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = '/projects/' + projectId + '/change-orders/' + coIdx + '/delete';
-      document.body.appendChild(form);
-      form.submit();
-      return;
-    }
-  }
-
   const overlay = document.createElement('div');
   overlay.style.cssText = `
     position: fixed;
