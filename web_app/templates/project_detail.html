@@ -889,7 +889,7 @@
                     </form>
                     {% elif user_role == 'administration' %}
                     <button class="btn btn-xs btn-outline-danger"
-                            onclick="requestDeletePermission('change_order', '{{ project.firebase_id }}_{{ co_idx }}', '{{ co.get("co_number","CO") }} (Project: {{ project.get("project_number","") }})', '{{ url_for("project_detail", project_id=project.firebase_id) }}#tab-change-orders')"
+                            onclick="requestDeletePermission('change_order', '{{ project.firebase_id }}_{{ co_idx }}', 'Request admin approval to delete {{ co.get("co_number","CO") }} (Project: {{ project.get("project_number","") }})', '{{ url_for("project_detail", project_id=project.firebase_id) }}#tab-change-orders')"
                             title="Request admin approval to delete">
                       <i class="bi bi-trash"></i>
                     </button>
@@ -2073,18 +2073,18 @@ function toggleCoAddr(idx) {
 }
 
 function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl) {
-  if (!confirm(`Request admin approval to delete ${entityLabel}?`)) return;
+  if (!confirm(`${entityLabel}?`)) return;
 
   fetch('/api/permission-request', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      action: `Delete change order`,
+      action: entityLabel,
       entity_type: entityType,
       entity_id: entityId,
       entity_label: entityLabel,
       page_url: window.location.href,
-      notes: `Delete ${entityLabel}`
+      notes: entityLabel
     })
   })
   .then(r => r.json())
