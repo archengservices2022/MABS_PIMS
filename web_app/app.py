@@ -13364,6 +13364,48 @@ def user_pages_update(uid):
     })
     return jsonify({"ok": True, "custom_pages": pages})
 
+@app.route("/api/users/me/profile", methods=["PATCH"])
+@login_required
+def update_own_profile():
+    """Allow logged-in users to update their own profile (username/display name)."""
+    uid = session.get("user_uid", "")
+    if not uid:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    data = request.get_json() or {}
+    updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
+
+    # Load current user data for tracking name changes
+    user_data = fb_get(f"/users/{uid}") or {}
+    old_display_name = None
+    new_display_name = None
+
+    # Only allow updating username field
+    if "username" in data:
+        value = str(data["username"]).strip()
+        updates["username"] = value
+
+        # Track name change for syncing
+        old_val = user_data.get("username", "")
+        if old_val and old_val != value:
+            old_display_name = old_val
+            new_display_name = value
+
+    fb_update(f"/users/{uid}", updates)
+    cache_bust("all_users")
+
+    # Sync name changes across all records
+    if old_display_name and new_display_name:
+        user_email = user_data.get("email", "")
+        _sync_user_display_name(old_display_name, new_display_name, user_email)
+
+    # Update session with new name
+    if new_display_name:
+        session["user_name"] = new_display_name
+        session.modified = True
+
+    return jsonify({"ok": True})
+
 @app.route("/api/users/<uid>/details", methods=["PATCH"])
 @role_required("settings")
 def user_details_update(uid):
