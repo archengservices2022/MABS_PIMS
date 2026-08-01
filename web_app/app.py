@@ -7557,8 +7557,16 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
     if isinstance(payroll, dict):
         for pay_id, pay_data in payroll.items():
             if isinstance(pay_data, dict):
-                if pay_data.get("employee_name", "") == old_name:
+                # Match by exact name or email
+                employee_email = pay_data.get("employee_email", "")
+                email_match = user_email and employee_email == user_email
+                name_match = pay_data.get("employee_name", "") == old_name
+
+                if name_match or email_match:
                     pay_data["employee_name"] = new_name
+                    # Also update email field if it matches
+                    if email_match:
+                        pay_data["employee_email"] = user_email
                     pay_data["updated_at"] = now_iso
                     fb_update(f"/balance_sheet_salary/{pay_id}", pay_data)
 
