@@ -389,47 +389,7 @@ tbody tr:last-child td {
 .back-button:hover {
   color: #0a7860;
 }
-
-/* Flatpickr Calendar Styling */
-.flatpickr-calendar {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: white;
-  z-index: 9999;
-}
-
-.flatpickr-calendar.open {
-  display: block;
-}
-
-.flatpickr-months {
-  background: white;
-  border-radius: 8px 8px 0 0;
-}
-
-.flatpickr-day {
-  border-radius: 4px;
-}
-
-.flatpickr-day.selected {
-  background: #0d9488;
-  border-color: #0d9488;
-}
-
-.flatpickr-day.selected:hover {
-  background: #0a7860;
-  border-color: #0a7860;
-}
-
-.flatpickr-day.today {
-  border-color: #0d9488;
-}
 </style>
-
-<!-- Flatpickr Date Picker -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
 {% endblock %}
 
@@ -697,26 +657,12 @@ let currentAdvanceId = '{{ advance_id }}';
 let currentAdvanceData = null;
 const storedEmployeeName = '{{ employee_name }}';
 
-// Initialize adjustment date with MM-DD-YYYY format and Flatpickr calendar
+// Initialize adjustment date with MM-DD-YYYY format
 const today = new Date();
 const mm = String(today.getMonth() + 1).padStart(2, '0');
 const dd = String(today.getDate()).padStart(2, '0');
 const yyyy = today.getFullYear();
 document.getElementById('adjDate').value = `${mm}-${dd}-${yyyy}`;
-
-// Initialize Flatpickr date picker with popup overlay
-flatpickr('#adjDate', {
-  dateFormat: 'm-d-Y',
-  mode: 'single',
-  inline: false,
-  static: false,
-  altInput: false,
-  allowInput: true,
-  clickOpens: true,
-  appendTo: document.body,
-  zIndex: 9999,
-  position: 'auto'
-});
 
 document.getElementById('adjAmount').max = (amount - adjusted).toFixed(2);
 
