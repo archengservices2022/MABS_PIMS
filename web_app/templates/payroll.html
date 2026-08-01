@@ -1114,7 +1114,7 @@ function selectAdvanceEmployee(employee) {
   document.getElementById('adv_employee_dropdown').classList.remove('show');
 }
 
-function loadEmployees() {
+function loadEmployees(callback) {
   // Add cache-busting query parameter to ensure fresh data
   const timestamp = new Date().getTime();
   fetch(`{{ url_for("get_employees") }}?t=${timestamp}`)
@@ -1131,6 +1131,8 @@ function loadEmployees() {
         option.textContent = emp;
         select.appendChild(option);
       });
+      // Call callback if provided
+      if (callback) callback();
     })
     .catch(e => console.error('Error loading employees:', e));
 }
