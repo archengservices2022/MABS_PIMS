@@ -1251,11 +1251,20 @@ function refreshAdvanceTable() {
     return;
   }
 
-  // Sort by created_at timestamp descending (newest first) - includes date and time
+  // Sort by date descending (newest first) - with fallback to created_at for time precision
   const sortedAdvances = [...allAdvances].sort((a, b) => {
-    const timeA = new Date(a.created_at || '');
-    const timeB = new Date(b.created_at || '');
-    return timeB - timeA;
+    // First try to sort by created_at (includes time)
+    const createdA = a.created_at ? new Date(a.created_at) : null;
+    const createdB = b.created_at ? new Date(b.created_at) : null;
+
+    if (createdA && createdB) {
+      return createdB - createdA;
+    }
+
+    // Fallback to date field if created_at not available
+    const dateA = new Date(a.date || '');
+    const dateB = new Date(b.date || '');
+    return dateB - dateA;
   });
 
   // Clear search input and reset status filter when refreshing
