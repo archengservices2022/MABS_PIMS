@@ -2775,6 +2775,63 @@ function viewReceipt(expId) {
       </div>
     </div>
 
+    <!-- Advance Collected Revenue Section -->
+    <div class="mb-3" id="monthAdvanceAdjustmentSection" style="display:none;">
+      <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#7C3AED; padding:6px 0; border-bottom:2px solid #DDD6FE; margin-bottom:8px;">
+        <i class="bi bi-arrow-repeat me-1"></i>Advance Collected Revenue
+      </div>
+      <div class="table-responsive" style="width:100%;">
+        <table class="table table-hover mb-0" style="font-size:12px; width:100%; table-layout:fixed;">
+          <colgroup>
+            <col style="width:10%;">
+            <col style="width:12%;">
+            <col style="width:12%;">
+            <col style="width:18%;">
+            <col style="width:13%;">
+            <col style="width:13%;">
+            <col style="width:12%;">
+          </colgroup>
+          <thead style="background:#1e293b;">
+            <tr>
+              <th style="padding:8px 12px; color:#fff; font-weight:700;">Advance No</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700;">Date</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700;">Employee</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700;">Description</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Total</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700; text-align:right;">Adjusted Amount</th>
+              <th style="padding:8px 12px; color:#fff; font-weight:700;">Paid Date</th>
+            </tr>
+          </thead>
+          <tbody id="monthAdvanceAdjustmentTbody"></tbody>
+          <tfoot id="monthAdvanceAdjustmentTfoot" style="background:#F5F3FF; border-top:2px solid #DDD6FE;"></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- Total Monthly Revenue Breakdown -->
+    <div class="mb-3" id="monthTotalRevenueSection" style="display:none;">
+      <div style="background:#F0FDF4; border:2px solid #86EFAC; border-radius:8px; padding:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-weight:600; font-size:12px; color:#059669;">
+            <i class="bi bi-arrow-down-up me-1"></i>Revenue Collected
+          </span>
+          <span style="font-weight:700; font-size:13px; color:#059669;" id="monthCollectedRevenue">$0.00</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-weight:600; font-size:12px; color:#7C3AED;">
+            <i class="bi bi-arrow-repeat me-1"></i>Advance Collected
+          </span>
+          <span style="font-weight:700; font-size:13px; color:#7C3AED;" id="monthAdjustmentRevenue">$0.00</span>
+        </div>
+        <div style="border-top:2px solid #86EFAC; padding-top:8px; display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-weight:700; font-size:13px; color:#059669;">
+            <i class="bi bi-cash-stack me-2"></i>TOTAL MONTHLY REVENUE
+          </span>
+          <span style="font-weight:800; font-size:14px; color:#059669;" id="monthTotalRevenue">$0.00</span>
+        </div>
+      </div>
+    </div>
+
     <!-- Unpaid — Due This Month Section -->
     <div class="mb-3" id="monthDueSection" style="display:none;">
       <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#D97706; padding:6px 0; border-bottom:2px solid #FED7AA; margin-bottom:8px;">
@@ -2872,8 +2929,8 @@ function viewReceipt(expId) {
       </div>
 
       <!-- Grand Total Row -->
-      <div style="background:#F8FAFC; border:2px solid #E2E8F0; border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center; margin-top:16px;">
-        <span style="font-weight:700; font-size:13px; color:#1E293B;">
+      <div style="background:#FEF2F2; border:2px solid #FECACA; border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center; margin-top:16px;">
+        <span style="font-weight:700; font-size:13px; color:#991B1B;">
           <i class="bi bi-calculator me-2"></i>TOTAL EXPENSES (Salaries + Advances + Expenses)
         </span>
         <span style="font-weight:800; font-size:14px; color:#DC2626;" id="monthTotalExpenses">—</span>
@@ -2907,6 +2964,7 @@ function viewReceipt(expId) {
     var monthlyPaymentDetails    = {{ monthly_payment_details | safe }};
     var monthlyExpenseDetails    = {{ monthly_expense_details | safe }};
     var monthlySalaryDetails      = {{ monthly_salary_details | safe }};
+    var monthlyAdvanceAdjustmentDetails = {{ monthly_advance_adjustment_details | safe }};
     var monthlyCommissionDetails  = {{ monthly_commission_details | safe }};
     var monthlyOutstandingDetails = {{ monthly_outstanding_details | safe }};
     var monthlyDueDetails         = {{ monthly_due_details | safe }};
@@ -2944,6 +3002,7 @@ function viewReceipt(expId) {
 
       /* ?? 1. Revenue / Payments ?? */
       var payments = monthlyPaymentDetails[mkey] || [];
+      var totalPaid = 0;
       var empty = document.getElementById('monthPaymentsEmpty');
       var tableWrap = document.getElementById('monthPaymentsTableWrap');
       if (payments.length === 0) {
@@ -2973,10 +3032,50 @@ function viewReceipt(expId) {
         document.getElementById('monthPaymentsTbody').innerHTML = rows.join('');
         var totalStageAmount = payments.reduce(function(s,p){return s+parseFloat(p.stage_amount||0);},0);
         var totalInvoiced = payments.reduce(function(s,p){return s+parseFloat(p.total_amount||0);},0);
-        var totalPaid = payments.reduce(function(s,p){return s+parseFloat(p.paid_amount||0);},0);
+        totalPaid = payments.reduce(function(s,p){return s+parseFloat(p.paid_amount||0);},0);
         document.getElementById('monthPaymentsTfoot').innerHTML = '<tr><td colspan="5" style="padding:8px 12px;font-weight:700;">Total — '+payments.length+' payment(s)</td>'
           +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#16a34a;font-size:13px;">'+fmt(totalPaid)+'</td>'
           +'<td style="padding:8px 12px;"></td></tr>';
+      }
+
+      /* ?? 1.5. Advance Collected Revenue ?? */
+      var advAdjustments = monthlyAdvanceAdjustmentDetails[mkey] || [];
+      var advAdjSec = document.getElementById('monthAdvanceAdjustmentSection');
+      var totalAdvAdjRevenue = 0;
+      if (advAdjustments.length > 0) {
+        advAdjSec.style.display = '';
+        var advARows = advAdjustments.map(function(a, idx) {
+          var bg = idx%2===0?'#fff':'#f5f3ff';
+          var advanceLink = a.advance_id
+            ? '<a href="/payroll/advance/'+encodeURIComponent(a.advance_id)+'" style="color:#7C3AED;font-weight:700;text-decoration:none;">'+(a.advance_no||'—')+'</a>'
+            : (a.advance_no||'—');
+          return '<tr style="background:'+bg+';border-bottom:1px solid #ddd6fe;">'
+            +'<td style="padding:8px 12px;font-weight:500;">'+advanceLink+'</td>'
+            +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(a.date)+'</td>'
+            +'<td style="padding:8px 12px;color:#1e293b;font-weight:500;">'+(a.employee_name||'—')+'</td>'
+            +'<td style="padding:8px 12px;color:#6b7280;">Advance Adjustment</td>'
+            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#6b7280;">'+fmt(a.total_amount)+'</td>'
+            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#7C3AED;">'+fmt(a.adjusted_amount)+'</td>'
+            +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(a.adjusted_date)+'</td></tr>';
+        });
+        document.getElementById('monthAdvanceAdjustmentTbody').innerHTML = advARows.join('');
+        totalAdvAdjRevenue = advAdjustments.reduce(function(s,a){return s+parseFloat(a.adjusted_amount||0);},0);
+        document.getElementById('monthAdvanceAdjustmentTfoot').innerHTML = '<tr><td colspan="6" style="padding:8px 12px;font-weight:700;">Total Advance Collected</td>'
+          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#7C3AED;font-size:13px;">'+fmt(totalAdvAdjRevenue)+'</td></tr>';
+      } else {
+        advAdjSec.style.display = 'none';
+      }
+
+      // Calculate Total Monthly Revenue
+      var totalMonthlyRevenue = totalPaid + totalAdvAdjRevenue;
+      var totalRevSec = document.getElementById('monthTotalRevenueSection');
+      if (payments.length > 0 || advAdjustments.length > 0) {
+        totalRevSec.style.display = '';
+        document.getElementById('monthCollectedRevenue').textContent = fmt(totalPaid);
+        document.getElementById('monthAdjustmentRevenue').textContent = fmt(totalAdvAdjRevenue);
+        document.getElementById('monthTotalRevenue').textContent = fmt(totalMonthlyRevenue);
+      } else {
+        totalRevSec.style.display = 'none';
       }
 
       /* ?? 2. Unpaid — Due This Month ?? */
@@ -3077,17 +3176,35 @@ function viewReceipt(expId) {
           var aRows = advances.map(function(a, idx) {
             var bg = idx%2===0?'#fff':'#fffbeb';
             var advanceLink = a.advance_id
-              ? '<a href="/employee_advances/'+encodeURIComponent(a.advance_id)+'" style="color:#D97706;font-weight:700;text-decoration:none;">'+(a.advance_no||'—')+'</a>'
+              ? '<a href="/payroll/advance/'+encodeURIComponent(a.advance_id)+'" style="color:#D97706;font-weight:700;text-decoration:none;">'+(a.advance_no||'—')+'</a>'
               : (a.advance_no||'—');
+            // Extract original amount from reason field (format: "Original: $XXX.XX | Adjusted: $YYY.YY")
+            var originalAmount = a.amount;
+            if (a.reason && a.reason.includes('Original:')) {
+              var match = a.reason.match(/Original:\s*\$([0-9,]+\.?\d*)/);
+              if (match) {
+                originalAmount = parseFloat(match[1].replace(/,/g, ''));
+              }
+            }
             return '<tr style="background:'+bg+';border-bottom:1px solid #fed7aa;">'
               +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(a.date)+'</td>'
               +'<td style="padding:8px 12px;font-weight:500;">'+advanceLink+'</td>'
-              +'<td style="padding:8px 12px;color:#6b7280;">'+(a.employee_name||'—')+'</td>'
+              +'<td style="padding:8px 12px;color:#1e293b;font-weight:500;">'+(a.employee_name||'—')+'</td>'
               +'<td style="padding:8px 12px;color:#6b7280;">'+(a.reason||'—')+'</td>'
-              +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#D97706;">'+fmt(a.amount)+'</td></tr>';
+              +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#D97706;">'+fmt(originalAmount)+'</td></tr>';
           });
           document.getElementById('monthAdvancesTbody').innerHTML = aRows.join('');
-          totalAdv = advances.reduce(function(s,a){return s+parseFloat(a.amount||0);},0);
+          // Calculate total using original amounts from Balance Sheet perspective
+          totalAdv = advances.reduce(function(s,a){
+            var originalAmount = a.amount;
+            if (a.reason && a.reason.includes('Original:')) {
+              var match = a.reason.match(/Original:\s*\$([0-9,]+\.?\d*)/);
+              if (match) {
+                originalAmount = parseFloat(match[1].replace(/,/g, ''));
+              }
+            }
+            return s + parseFloat(originalAmount||0);
+          },0);
           document.getElementById('monthAdvancesTfoot').innerHTML = '<tr><td colspan="4" style="padding:8px 12px;font-weight:700;">Total Advances</td>'
             +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#D97706;font-size:13px;">'+fmt(totalAdv)+'</td></tr>';
         } else {

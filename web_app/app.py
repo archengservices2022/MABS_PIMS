@@ -536,11 +536,6 @@ def _sync_advance_to_finance(advance_id: str, advance_data: dict):
     try:
         balance_due = float(advance_data.get("amount", 0)) - float(advance_data.get("adjusted", 0))
 
-        # Don't create finance entry if balance due is 0
-        if balance_due <= 0:
-            _delete_advance_finance_entry(advance_id)
-            return
-
         # Get current user name from session for submitted_by_name
         current_user_name = session.get("user_name", "") or advance_data.get("created_by", "")
 
@@ -606,6 +601,17 @@ def _delete_advance_finance_entry(advance_id: str):
                     break
     except Exception as e:
         log.error(f"Error deleting advance finance entry: {e}")
+
+def _resync_all_advances():
+    """Re-sync all advances to update finance entries with correct amounts"""
+    try:
+        advances = fb_get("/employee_advances") or {}
+        if isinstance(advances, dict):
+            for adv_id, adv_data in advances.items():
+                if isinstance(adv_data, dict):
+                    _sync_advance_to_finance(adv_id, adv_data)
+    except Exception as e:
+        log.error(f"Error re-syncing advances: {e}")
 
 def _sync_employee_name_in_advance_finances(employee_id: str, old_name: str, new_name: str):
     """Sync employee name changes to all advance finance entries"""
@@ -9446,6 +9452,9 @@ def get_employees():
 def get_employee_advances():
     """Get all employee advances"""
     try:
+        # Re-sync all advances to ensure finance entries have correct amounts
+        _resync_all_advances()
+
         advances_raw = fb_get("/employee_advances") or {}
         advances = []
 
@@ -9793,6 +9802,9 @@ def delete_employee_advance():
 @app.route("/financial")
 @role_required("financial")
 def financial():
+    # Re-sync all advances to ensure expense entries have correct data
+    _resync_all_advances()
+
     # Sequential — Firebase Admin SDK shares one HTTP session; concurrent ThreadPoolExecutor calls return empty dicts
     invoices = fb_get("/invoices") or {}
     deleted_invoices = fb_get("/deleted_invoices") or {}
@@ -9818,12 +9830,6 @@ def financial():
     if isinstance(expenses, dict):
         for eid, edata in expenses.items():
             if isinstance(edata, dict):
-                # Skip advances with balance due = 0 (automatically closed)
-                if edata.get("expense_type") == "Employee Advance":
-                    advance_amount = _safe_float(edata.get("amount", 0))
-                    if advance_amount <= 0:
-                        continue
-
                 edata["firebase_id"] = eid
                 # Ensure amount is always a float (some old entries might be strings)
                 edata["amount"] = _safe_float(edata.get("amount", 0))
@@ -9842,7 +9848,15 @@ def financial():
         grouped = {}
         for item in items:
             exp_name = item.get("expense_name", "") or item.get("description", "—")
+            # For advances, use original amount from notes field; otherwise use amount field
             amount = _safe_float(item.get("amount", 0))
+            if item.get("expense_type") == "Employee Advance":
+                notes = item.get("notes", "")
+                if notes and "Original:" in notes:
+                    match = re.search(r'Original:\s*\$([0-9,]+\.?\d*)', notes)
+                    if match:
+                        amount = _safe_float(match.group(1).replace(",", ""))
+
             if exp_name not in grouped:
                 grouped[exp_name] = {
                     "expense_name": exp_name,
@@ -9862,6 +9876,17 @@ def financial():
 
     # Keep BOTH versions: raw for expense tab (all individual entries), grouped for balance sheet
     exp_list_all = sorted(exp_list_raw, key=lambda x: x.get("created_at", "") or x.get("date", ""), reverse=True)  # Sort by creation date (newest first)
+
+    # Create a filtered list for Expenses tab (exclude closed/fully-adjusted advances)
+    exp_list_for_tab = []
+    for e in exp_list_all:
+        if isinstance(e, dict):
+            if e.get("expense_type") == "Employee Advance":
+                advance_amount = _safe_float(e.get("amount", 0))
+                if advance_amount <= 0:
+                    continue
+            exp_list_for_tab.append(e)
+
     exp_list_grouped_all = group_expenses_by_name(exp_list_raw)  # Consolidated for reference
 
     # Filter expenses by selected year for balance sheet
@@ -10286,7 +10311,15 @@ def financial():
             exp_date = datetime.fromisoformat(ds[:10])
             if exp_date.year == current_year:
                 month = exp_date.month
-                annual_expenses[month] += _safe_float(exp.get("amount", 0))
+                # For advances, use original amount from notes; otherwise use amount field
+                amount = _safe_float(exp.get("amount", 0))
+                if exp.get("expense_type") == "Employee Advance":
+                    notes = exp.get("notes", "")
+                    if notes and "Original:" in notes:
+                        match = re.search(r'Original:\s*\$([0-9,]+\.?\d*)', notes)
+                        if match:
+                            amount = _safe_float(match.group(1).replace(",", ""))
+                annual_expenses[month] += amount
         except Exception:
             pass
 
@@ -10780,6 +10813,50 @@ def financial():
         except Exception:
             pass
 
+    # Monthly Advance Adjustment Details (for Balance Sheet) - grouped by individual adjustment date
+    monthly_advance_adjustment_details = {str(i): [] for i in range(1, 13)}
+    _all_advances = fb_get("/employee_advances") or {}
+    if isinstance(_all_advances, dict):
+        for _aid, _adata in _all_advances.items():
+            if not isinstance(_adata, dict):
+                continue
+            # Get individual adjustments for this advance
+            _adjustments = _adata.get("adjustments", {})
+            _orig_ds = (_adata.get("date") or "")[:10]
+            if isinstance(_adjustments, dict):
+                for _adj_id, _adj_data in _adjustments.items():
+                    if not isinstance(_adj_data, dict):
+                        continue
+                    _adj_amount = _safe_float(_adj_data.get("amount", 0))
+                    if _adj_amount <= 0:
+                        continue
+                    # Use individual adjustment date for grouping
+                    _adj_date_str = (_adj_data.get("date") or _orig_ds)[:10]
+                    try:
+                        _adj_d = datetime.fromisoformat(_adj_date_str)
+                        if _adj_d.year == current_year:
+                            monthly_advance_adjustment_details[str(_adj_d.month)].append({
+                                "advance_id": _aid,
+                                "advance_no": _adata.get("advance_no") or "",
+                                "employee_name": _adata.get("employee_name") or "—",
+                                "date": _orig_ds,
+                                "total_amount": _safe_float(_adata.get("amount", 0)),
+                                "adjusted_amount": _adj_amount,
+                                "adjusted_date": _adj_date_str,
+                            })
+                    except Exception:
+                        pass
+
+    # Add advance adjustment amounts to annual revenue (revenue from repayments)
+    for month_key, adjustments in monthly_advance_adjustment_details.items():
+        try:
+            month = int(month_key)
+            for adj in adjustments:
+                if isinstance(adj, dict):
+                    annual_revenue[month] += _safe_float(adj.get("adjusted_amount", 0))
+        except (ValueError, KeyError):
+            pass
+
     # Calculate totals for Balance Sheet (use selected year data, not stat_card_year)
     bs_total_revenue = sum(annual_revenue.values())
     bs_total_expenses = sum(annual_expenses.values())
@@ -11049,6 +11126,7 @@ def financial():
                 # Include advance-specific fields if this is an advance
                 if _exp.get("advance_id"):
                     _detail["advance_id"] = _exp.get("advance_id")
+                    _detail["advance_no"] = _exp.get("advance_no") or ""
                     _detail["employee_name"] = _exp.get("employee_name") or ""
                     _detail["reason"] = _exp.get("notes") or ""
                 monthly_expense_details[str(_d.month)].append(_detail)
@@ -11230,7 +11308,7 @@ def financial():
         annual_revenue=annual_revenue,
         annual_expenses=annual_expenses,
         annual_netpl=annual_netpl,
-        expenses=exp_list_all,
+        expenses=exp_list_for_tab,
         expenses_filtered=exp_list,
         filter_expense=filter_expense,
         selected_year=selected_year,
@@ -11264,6 +11342,7 @@ def financial():
         monthly_payment_details=json.dumps(monthly_payment_details),
         monthly_expense_details=json.dumps(monthly_expense_details),
         monthly_salary_details=json.dumps(monthly_salary_details),
+        monthly_advance_adjustment_details=json.dumps(monthly_advance_adjustment_details),
         monthly_outstanding_details=json.dumps(monthly_outstanding_details),
         monthly_due_details=json.dumps(monthly_due_details),
         aging_buckets=aging_buckets,
