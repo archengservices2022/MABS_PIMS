@@ -1213,10 +1213,6 @@ function getUpdatedEmployeeName(storedName) {
   return matchedEmployee || storedName;
 }
 
-// Pagination variables
-let currentAdvancePage = 1;
-const itemsPerPage = 15;
-
 function refreshAdvanceTable() {
   const tbody = document.getElementById('advanceTableBody');
 
@@ -1240,17 +1236,7 @@ function refreshAdvanceTable() {
   advanceStatusFilter = 'All';
   document.getElementById('advanceStatusDropdown').value = 'All';
 
-  // Reset pagination on refresh
-  currentAdvancePage = 1;
-
-  // Pagination: calculate start and end indexes
-  const totalPages = Math.ceil(sortedAdvances.length / itemsPerPage);
-  const startIndex = (currentAdvancePage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedAdvances = sortedAdvances.slice(startIndex, endIndex);
-
-  tbody.innerHTML = paginatedAdvances.map((adv, idx) => {
-    const actualIdx = startIndex + idx;
+  tbody.innerHTML = sortedAdvances.map((adv, idx) => {
     const balance = (adv.amount || 0) - (adv.adjusted || 0);
     const advanceId = adv.id || '';
     const detailUrl = `{{ url_for('advance_detail', advance_id='ADVANCE_ID') }}`.replace('ADVANCE_ID', advanceId);
@@ -1281,7 +1267,7 @@ function refreshAdvanceTable() {
         <td onclick="event.stopPropagation()" style="text-align:center;">
           <div class="action-buttons" style="display:flex;gap:6px;justify-content:center;">
             <button class="btn btn-sm" style="background:#3b82f6;color:white;border:none;padding:6px 8px;border-radius:4px;cursor:pointer;font-size:14px;min-width:32px;" title="Edit"
-              onclick="editAdvanceEntry(${actualIdx})">✎</button>
+              onclick="editAdvanceEntry(${idx})">✎</button>
             <button class="btn btn-sm" style="background:#ef4444;color:white;border:none;padding:6px 8px;border-radius:4px;cursor:pointer;font-size:14px;min-width:32px;" title="Delete"
               onclick="deleteAdvance('${adv.advance_no || ''}')">🗑</button>
           </div>
@@ -1290,12 +1276,12 @@ function refreshAdvanceTable() {
     `;
   }).join('');
 
-  // Add totals row (for current page)
+  // Add totals row
   let totalAmount = 0;
   let totalAdjusted = 0;
   let totalBalance = 0;
 
-  paginatedAdvances.forEach(adv => {
+  sortedAdvances.forEach(adv => {
     totalAmount += parseFloat(adv.amount || 0);
     totalAdjusted += parseFloat(adv.adjusted || 0);
     totalBalance += (parseFloat(adv.amount || 0) - parseFloat(adv.adjusted || 0));
@@ -1303,7 +1289,7 @@ function refreshAdvanceTable() {
 
   const totalsRow = `
     <tr class="totals-row" style="background:#f0f9ff;border-top:2px solid #cbd5e1;font-weight:600;">
-      <td colspan="3" style="text-align:right;padding:12px 10px;color:#1f2937;">Totals (${paginatedAdvances.length} on page)</td>
+      <td colspan="3" style="text-align:right;padding:12px 10px;color:#1f2937;">Totals (${sortedAdvances.length} advances)</td>
       <td style="padding:12px 10px;color:#1f2937;">{{ currency_symbol }}${parseFloat(totalAmount).toFixed(2)}</td>
       <td style="padding:12px 10px;color:#10b981;">{{ currency_symbol }}${parseFloat(totalAdjusted).toFixed(2)}</td>
       <td style="padding:12px 10px;color:#ef4444;">{{ currency_symbol }}${parseFloat(totalBalance).toFixed(2)}</td>
@@ -1312,81 +1298,7 @@ function refreshAdvanceTable() {
   `;
 
   tbody.innerHTML += totalsRow;
-  document.getElementById('advanceTotal').textContent = `Total: ${sortedAdvances.length} Record(s) - Page ${currentAdvancePage} of ${totalPages}`;
-
-  // Add pagination controls
-  addAdvancePaginationControls(totalPages);
-}
-
-function addAdvancePaginationControls(totalPages) {
-  let paginationContainer = document.getElementById('advancePaginationControls');
-  if (!paginationContainer) {
-    paginationContainer = document.createElement('div');
-    paginationContainer.id = 'advancePaginationControls';
-    const tableContainer = document.getElementById('advanceTableBody').parentElement.parentElement;
-    tableContainer.parentElement.appendChild(paginationContainer);
-  }
-
-  if (totalPages <= 1) {
-    paginationContainer.innerHTML = '';
-    return;
-  }
-
-  let paginationHTML = `<div style="display:flex;justify-content:center;gap:12px;margin-top:16px;align-items:center;">`;
-
-  // Previous button
-  const prevDisabled = currentAdvancePage === 1;
-  paginationHTML += `<button id="advPrevBtn" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;cursor:${prevDisabled ? 'not-allowed' : 'pointer'};font-weight:600;color:#374151;background:white;font-size:14px;opacity:${prevDisabled ? '0.4' : '1'};">‹</button>`;
-
-  // Page indicator - input field
-  paginationHTML += `<input type="number" id="advPageInput" value="${currentAdvancePage}" min="1" max="${totalPages}" style="width:40px;text-align:center;padding:6px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:14px;font-weight:500;" />`;
-
-  // Of text and total
-  paginationHTML += `<span style="color:#6b7280;font-size:14px;font-weight:500;">of ${totalPages}</span>`;
-
-  // Next button
-  const nextDisabled = currentAdvancePage === totalPages;
-  paginationHTML += `<button id="advNextBtn" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;cursor:${nextDisabled ? 'not-allowed' : 'pointer'};font-weight:600;color:#374151;background:white;font-size:14px;opacity:${nextDisabled ? '0.4' : '1'};">›</button>`;
-
-  paginationHTML += `</div>`;
-  paginationContainer.innerHTML = paginationHTML;
-
-  // Attach event listeners with error handling
-  setTimeout(() => {
-    const prevBtn = document.getElementById('advPrevBtn');
-    const nextBtn = document.getElementById('advNextBtn');
-    const pageInput = document.getElementById('advPageInput');
-
-    if (prevBtn) {
-      prevBtn.onclick = () => {
-        if (currentAdvancePage > 1) goToAdvancePage(currentAdvancePage - 1);
-      };
-    }
-
-    if (nextBtn) {
-      nextBtn.onclick = () => {
-        const totalAdvances = allAdvances.length;
-        const totalPgs = Math.ceil(totalAdvances / itemsPerPage);
-        if (currentAdvancePage < totalPgs) goToAdvancePage(currentAdvancePage + 1);
-      };
-    }
-
-    if (pageInput) {
-      pageInput.onchange = (e) => {
-        const page = parseInt(e.target.value);
-        if (page > 0) goToAdvancePage(page);
-      };
-    }
-  }, 0);
-}
-
-function goToAdvancePage(page) {
-  const totalAdvances = allAdvances.length;
-  const totalPages = Math.ceil(totalAdvances / itemsPerPage);
-  if (page >= 1 && page <= totalPages) {
-    currentAdvancePage = page;
-    refreshAdvanceTable();
-  }
+  document.getElementById('advanceTotal').textContent = `Total: ${allAdvances.length} Record(s)`;
 }
 
 // Global status filter variable
@@ -1487,13 +1399,6 @@ function filterAdvanceTable() {
 
       // Update bottom record count to show filtered count
       document.getElementById('advanceTotal').textContent = `Total: ${visibleCount} Record(s)`;
-
-      // Show/hide pagination based on whether filters are active
-      const paginationContainer = document.getElementById('advancePaginationControls');
-      const filtersActive = searchInput.length > 0 || advanceStatusFilter !== 'All';
-      if (paginationContainer) {
-        paginationContainer.style.display = filtersActive ? 'none' : 'block';
-      }
     }
   }
 }
