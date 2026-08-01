@@ -7623,6 +7623,16 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
                     for cp_id, _ in sorted_recs[1:]:
                         fb_delete(f"/commission_payments/{cp_id}")
 
+    # Update Employee Advances (employee_name field)
+    employee_advances = fb_get("/employee_advances") or {}
+    if isinstance(employee_advances, dict):
+        for adv_id, adv_data in employee_advances.items():
+            if isinstance(adv_data, dict):
+                if adv_data.get("employee_name", "") == old_name:
+                    adv_data["employee_name"] = new_name
+                    adv_data["updated_at"] = now_iso
+                    fb_update(f"/employee_advances/{adv_id}", adv_data)
+
     # Update Activity Sessions (employee_name field)
     activity_sessions = fb_get("/activity_sessions") or {}
     if isinstance(activity_sessions, dict):
