@@ -7388,9 +7388,11 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
                                        exp_employee_name == old_first_name or
                                        (old_first_name and exp_employee_name.lower().startswith(old_first_name.lower())))
 
-                # Exact match only for submitted_by_name (user who created the entry)
+                # Match submitted_by_name by exact name or email
                 submitted_by_name = exp_data.get("submitted_by_name", "")
-                is_matching_submitted_by = (submitted_by_name == old_name)
+                submitted_by_email = exp_data.get("submitted_by_email", "")
+                email_match = user_email and submitted_by_email == user_email
+                is_matching_submitted_by = (submitted_by_name == old_name or email_match)
 
                 if (is_matching_submitted_by or
                     exp_data.get("created_by", "") == old_name or
@@ -7402,9 +7404,12 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
                         stored_emp_name = exp_data.get("employee_name", "")
                         update_data["employee_name"] = new_name
 
-                    # Update submitted_by_name if the user who created it changed their name (exact match)
+                    # Update submitted_by_name if the user who created it changed their name (exact match or email match)
                     if is_matching_submitted_by:
                         update_data["submitted_by_name"] = new_name
+                        # Also update email field if it matches
+                        if email_match:
+                            update_data["submitted_by_email"] = user_email
 
                     # Update created_by if it matches
                     if exp_data.get("created_by", "") == old_name:
@@ -7444,9 +7449,11 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
                                    stored_emp_name == old_first_name or
                                    (old_first_name and stored_emp_name.lower().startswith(old_first_name.lower())))
 
-                # Exact match only for submitted_by_name
+                # Match submitted_by_name by exact name or email
                 submitted_by_name = exp_data.get("submitted_by_name", "")
-                is_matching_submitted_by = (submitted_by_name == old_name)
+                submitted_by_email = exp_data.get("submitted_by_email", "")
+                email_match = user_email and submitted_by_email == user_email
+                is_matching_submitted_by = (submitted_by_name == old_name or email_match)
 
                 if is_matching_emp or is_matching_submitted_by:
                     update_data = {
@@ -7458,6 +7465,9 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
 
                     if is_matching_submitted_by:
                         update_data["submitted_by_name"] = new_name
+                        # Also update email field if it matches
+                        if email_match:
+                            update_data["submitted_by_email"] = user_email
 
                     # Always update expense_name and description if employee name changed
                     if is_matching_emp:
