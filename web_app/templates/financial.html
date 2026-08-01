@@ -1322,30 +1322,27 @@ function getVisibleExpenseRows() {
     return matchSearch && matchType && matchVendor && matchFrom && matchTo;
   });
 
-  // Sort by date in descending order (newest to oldest) when filters are applied
-  const hasFilters = search || type || vendor || dateFrom || dateTo;
-  if (hasFilters) {
-    filteredRows.sort((a, b) => {
-      let dateA = (a.dataset.date || '').trim();
-      let dateB = (b.dataset.date || '').trim();
+  // Sort by date in descending order (newest to oldest)
+  filteredRows.sort((a, b) => {
+    let dateA = (a.dataset.date || '').trim();
+    let dateB = (b.dataset.date || '').trim();
 
-      // Convert DD-MM-YYYY to YYYY-MM-DD for proper chronological sorting
-      if (dateA && !dateA.match(/^\d{4}-\d{2}-\d{2}/)) {
-        const partsA = dateA.split('-');
-        if (partsA.length === 3) {
-          dateA = `${partsA[2]}-${partsA[0]}-${partsA[1]}`;
-        }
+    // Convert DD-MM-YYYY to YYYY-MM-DD for proper chronological sorting
+    if (dateA && !dateA.match(/^\d{4}-\d{2}-\d{2}/)) {
+      const partsA = dateA.split('-');
+      if (partsA.length === 3) {
+        dateA = `${partsA[2]}-${partsA[0]}-${partsA[1]}`;
       }
-      if (dateB && !dateB.match(/^\d{4}-\d{2}-\d{2}/)) {
-        const partsB = dateB.split('-');
-        if (partsB.length === 3) {
-          dateB = `${partsB[2]}-${partsB[0]}-${partsB[1]}`;
-        }
+    }
+    if (dateB && !dateB.match(/^\d{4}-\d{2}-\d{2}/)) {
+      const partsB = dateB.split('-');
+      if (partsB.length === 3) {
+        dateB = `${partsB[2]}-${partsB[0]}-${partsB[1]}`;
       }
+    }
 
-      return dateB.localeCompare(dateA);
-    });
-  }
+    return dateB.localeCompare(dateA);
+  });
 
   return filteredRows;
 }
@@ -2802,85 +2799,78 @@ function viewReceipt(expId) {
       </div>
     </div>
 
-    <!-- Combined Monthly Expenses Section - ONE TABLE -->
+    <!-- Combined Monthly Expenses Section (Salaries + Advances + Expenses) -->
     <div id="monthCombinedExpensesSection" style="display:none; margin-bottom:20px;">
       <!-- Main Header -->
       <div style="font-weight:700; font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:#1E293B; padding:8px 0; border-bottom:3px solid #E2E8F0; margin-bottom:16px;">
         <i class="bi bi-file-earmark-spreadsheet me-2"></i>Monthly Expenses Breakdown
       </div>
 
-      <!-- ONE UNIFIED TABLE -->
-      <div class="table-responsive">
-        <table class="table" style="font-size:12px; border-collapse:collapse;">
-          <!-- EXPENSES SECTION -->
-          <tbody>
-            <!-- Expenses Header Row -->
-            <tr style="background:#7F1D1D; color:#fff;">
-              <td colspan="5" style="padding:10px 12px; font-weight:700; text-align:left;">
-                <i class="bi bi-receipt me-1"></i>EXPENSES
-              </td>
-            </tr>
-            <!-- Expenses Column Headers -->
-            <tr style="background:#1e293b; color:#fff;">
-              <th style="padding:8px 12px; text-align:left; font-weight:700;">Date</th>
-              <th style="padding:8px 12px; text-align:left; font-weight:700;">Expense Item</th>
-              <th style="padding:8px 12px; text-align:left; font-weight:700;">Category</th>
-              <th style="padding:8px 12px; text-align:right; font-weight:700;">Amount</th>
-              <th style="padding:8px 12px; width:1%;"></th>
-            </tr>
-            <!-- Expenses Data Rows -->
+      <!-- Expenses Subsection -->
+      <div class="mb-4" id="monthExpensesSection">
+        <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#DC2626; padding:6px 0; border-bottom:2px solid #FECACA; margin-bottom:8px;">
+          <i class="bi bi-receipt me-1"></i>Expenses
+        </div>
+        <div class="table-responsive">
+          <table class="table mb-0" style="font-size:12px;">
+            <thead style="background:#7F1D1D; color:#fff;">
+              <tr>
+                <th style="padding:8px 12px; color:#fff;">Date</th>
+                <th style="padding:8px 12px; color:#fff;">Expense Item</th>
+                <th style="padding:8px 12px; color:#fff;">Category</th>
+                <th style="padding:8px 12px; color:#fff; text-align:right;">Amount</th>
+              </tr>
+            </thead>
             <tbody id="monthExpensesTbody"></tbody>
-            <!-- Expenses Total -->
-            <tr id="monthExpensesTfoot" style="background:#FEF2F2; border-top:2px solid #FECACA; border-bottom:2px solid #FECACA;"></tr>
-          </tbody>
-
-          <!-- SALARIES SECTION -->
-          <tbody>
-            <!-- Salaries Header Row -->
-            <tr style="background:#1E3A8A; color:#fff;">
-              <td colspan="5" style="padding:10px 12px; font-weight:700; text-align:left;">
-                <i class="bi bi-people me-1"></i>SALARIES
-              </td>
-            </tr>
-            <!-- Salaries Column Headers -->
-            <tr style="background:#1e293b; color:#fff;">
-              <th style="padding:8px 12px; text-align:left; font-weight:700;">Date</th>
-              <th style="padding:8px 12px; text-align:left; font-weight:700;">Employee</th>
-              <th style="padding:8px 12px; text-align:left; font-weight:700;">Role</th>
-              <th style="padding:8px 12px; text-align:left; font-weight:700;">Region</th>
-              <th style="padding:8px 12px; text-align:right; font-weight:700;">Amount</th>
-            </tr>
-            <!-- Salaries Data Rows -->
-            <tbody id="monthSalariesTbody"></tbody>
-            <!-- Salaries Total -->
-            <tr id="monthSalariesTfoot" style="background:#EFF6FF; border-top:2px solid #BFDBFE; border-bottom:2px solid #BFDBFE;"></tr>
-          </tbody>
-
-          <!-- ADVANCES SECTION -->
-          <tbody>
-            <!-- Advances Header Row -->
-            <tr style="background:#92400E; color:#fff;">
-              <td colspan="5" style="padding:10px 12px; font-weight:700; text-align:left;">
-                <i class="bi bi-arrow-right-circle me-1"></i>EMPLOYEE ADVANCES
-              </td>
-            </tr>
-            <!-- Advances Column Headers -->
-            <tr style="background:#1e293b; color:#fff;">
-              <th style="padding:8px 12px; text-align:left; font-weight:700;">Date</th>
-              <th style="padding:8px 12px; text-align:left; font-weight:700;">Employee</th>
-              <th style="padding:8px 12px; text-align:left; font-weight:700;">Reason</th>
-              <th style="padding:8px 12px; text-align:right; font-weight:700;">Amount</th>
-              <th style="padding:8px 12px; width:1%;"></th>
-            </tr>
-            <!-- Advances Data Rows -->
-            <tbody id="monthAdvancesTbody"></tbody>
-            <!-- Advances Total -->
-            <tr id="monthAdvancesTfoot" style="background:#FFFBEB; border-top:2px solid #FED7AA; border-bottom:2px solid #FED7AA;"></tr>
-          </tbody>
-        </table>
+            <tfoot id="monthExpensesTfoot" style="background:#FEF2F2; border-top:2px solid #FECACA;"></tfoot>
+          </table>
+        </div>
       </div>
 
-      <!-- Grand Total Row (Outside table) -->
+      <!-- Salaries Subsection -->
+      <div class="mb-4" id="monthSalariesSection">
+        <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#1D4ED8; padding:6px 0; border-bottom:2px solid #BFDBFE; margin-bottom:8px;">
+          <i class="bi bi-people me-1"></i>Salaries
+        </div>
+        <div class="table-responsive">
+          <table class="table mb-0" style="font-size:12px;">
+            <thead style="background:#1E3A8A; color:#fff;">
+              <tr>
+                <th style="padding:8px 12px; color:#fff;">Date</th>
+                <th style="padding:8px 12px; color:#fff;">Employee</th>
+                <th style="padding:8px 12px; color:#fff;">Role</th>
+                <th style="padding:8px 12px; color:#fff;">Region</th>
+                <th style="padding:8px 12px; color:#fff; text-align:right;">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="monthSalariesTbody"></tbody>
+            <tfoot id="monthSalariesTfoot" style="background:#EFF6FF; border-top:2px solid #BFDBFE;"></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- Advances Subsection -->
+      <div class="mb-4" id="monthAdvancesSection">
+        <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#D97706; padding:6px 0; border-bottom:2px solid #FED7AA; margin-bottom:8px;">
+          <i class="bi bi-arrow-right-circle me-1"></i>Employee Advances
+        </div>
+        <div class="table-responsive">
+          <table class="table mb-0" style="font-size:12px;">
+            <thead style="background:#92400E; color:#fff;">
+              <tr>
+                <th style="padding:8px 12px; color:#fff;">Date</th>
+                <th style="padding:8px 12px; color:#fff;">Employee</th>
+                <th style="padding:8px 12px; color:#fff;">Reason</th>
+                <th style="padding:8px 12px; color:#fff; text-align:right;">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="monthAdvancesTbody"></tbody>
+            <tfoot id="monthAdvancesTfoot" style="background:#FFFBEB; border-top:2px solid #FED7AA;"></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- Grand Total Row -->
       <div style="background:#F8FAFC; border:2px solid #E2E8F0; border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center; margin-top:16px;">
         <span style="font-weight:700; font-size:13px; color:#1E293B;">
           <i class="bi bi-calculator me-2"></i>TOTAL EXPENSES (Salaries + Advances + Expenses)
@@ -3072,8 +3062,8 @@ function viewReceipt(expId) {
           });
           document.getElementById('monthSalariesTbody').innerHTML = sRows.join('');
           totalSal = salaries.reduce(function(s,e){return s+parseFloat(e.amount||0);},0);
-          document.getElementById('monthSalariesTfoot').innerHTML = '<td colspan="4" style="padding:8px 12px;font-weight:700;">Total Salaries</td>'
-            +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#1D4ED8;font-size:13px;">'+fmt(totalSal)+'</td>';
+          document.getElementById('monthSalariesTfoot').innerHTML = '<tr><td colspan="4" style="padding:8px 12px;font-weight:700;">Total Salaries</td>'
+            +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#1D4ED8;font-size:13px;">'+fmt(totalSal)+'</td></tr>';
         } else {
           salSec.style.display = 'none';
         }
@@ -3093,9 +3083,8 @@ function viewReceipt(expId) {
           });
           document.getElementById('monthAdvancesTbody').innerHTML = aRows.join('');
           totalAdv = advances.reduce(function(s,a){return s+parseFloat(a.amount||0);},0);
-          document.getElementById('monthAdvancesTfoot').innerHTML = '<td colspan="3" style="padding:8px 12px;font-weight:700;">Total Advances</td>'
-            +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#D97706;font-size:13px;">'+fmt(totalAdv)+'</td>'
-            +'<td style="padding:8px 12px;"></td>';
+          document.getElementById('monthAdvancesTfoot').innerHTML = '<tr><td colspan="3" style="padding:8px 12px;font-weight:700;">Total Advances</td>'
+            +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#D97706;font-size:13px;">'+fmt(totalAdv)+'</td></tr>';
         } else {
           advSec.style.display = 'none';
         }
@@ -3115,9 +3104,8 @@ function viewReceipt(expId) {
           });
           document.getElementById('monthExpensesTbody').innerHTML = eRows.join('');
           totalExp = regularExpenses.reduce(function(s,e){return s+parseFloat(e.amount||0);},0);
-          document.getElementById('monthExpensesTfoot').innerHTML = '<td colspan="3" style="padding:8px 12px;font-weight:700;">Total Expenses</td>'
-            +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#DC2626;font-size:13px;">'+fmt(totalExp)+'</td>'
-            +'<td style="padding:8px 12px;"></td>';
+          document.getElementById('monthExpensesTfoot').innerHTML = '<tr><td colspan="3" style="padding:8px 12px;font-weight:700;">Total Expenses</td>'
+            +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#DC2626;font-size:13px;">'+fmt(totalExp)+'</td></tr>';
         } else {
           expSec.style.display = 'none';
         }
