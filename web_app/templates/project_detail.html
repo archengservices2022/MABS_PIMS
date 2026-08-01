@@ -2092,29 +2092,93 @@ function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl)
     background: white;
     border-radius: 12px;
     box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-    max-width: 450px;
+    max-width: 500px;
     width: 90%;
     overflow: hidden;
   `;
 
   const header = document.createElement('div');
   header.style.cssText = `
-    background: #7c3aed;
-    color: white;
-    padding: 18px 24px;
-    font-weight: 700;
+    background: white;
+    padding: 20px 24px;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
     font-size: 16px;
+    font-weight: 600;
+    color: #1e293b;
   `;
-  header.textContent = 'Request Admin Approval';
+  header.innerHTML = `<span style="font-size: 20px;">✈️</span> Request Delete Permission`;
+
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '✕';
+  closeBtn.style.cssText = `
+    margin-left: auto;
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #94a3b8;
+  `;
+  closeBtn.onclick = () => overlay.remove();
+  header.appendChild(closeBtn);
 
   const body = document.createElement('div');
   body.style.cssText = `
     padding: 24px;
-    color: #334155;
-    font-size: 14px;
-    line-height: 1.6;
+    color: #475569;
   `;
-  body.innerHTML = `<p>${entityLabel}?</p>`;
+
+  const description = document.createElement('p');
+  description.style.cssText = `
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    color: #64748b;
+  `;
+  description.textContent = 'An admin will review your request to delete:';
+
+  const entityName = document.createElement('div');
+  entityName.style.cssText = `
+    margin-bottom: 18px;
+    padding: 12px;
+    background: #f8fafc;
+    border-radius: 6px;
+    font-weight: 600;
+    color: #1e293b;
+    font-size: 14px;
+    border-left: 3px solid #f59e0b;
+  `;
+  entityName.textContent = entityLabel;
+
+  const reasonLabel = document.createElement('label');
+  reasonLabel.style.cssText = `
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    color: #1e293b;
+  `;
+  reasonLabel.textContent = 'Reason (optional)';
+
+  const reasonField = document.createElement('textarea');
+  reasonField.placeholder = 'Why do you need to delete this record?';
+  reasonField.style.cssText = `
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    resize: vertical;
+    min-height: 80px;
+    box-sizing: border-box;
+  `;
+
+  body.appendChild(description);
+  body.appendChild(entityName);
+  body.appendChild(reasonLabel);
+  body.appendChild(reasonField);
 
   const footer = document.createElement('div');
   footer.style.cssText = `
@@ -2123,6 +2187,7 @@ function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl)
     justify-content: flex-end;
     gap: 10px;
     border-top: 1px solid #e2e8f0;
+    background: #f8fafc;
   `;
 
   const cancelBtn = document.createElement('button');
@@ -2132,30 +2197,36 @@ function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl)
     border: 1px solid #cbd5e1;
     border-radius: 6px;
     background: white;
-    color: #334155;
+    color: #475569;
     font-weight: 600;
     cursor: pointer;
     font-size: 13px;
+    transition: all 0.15s;
   `;
+  cancelBtn.onmouseover = () => cancelBtn.style.background = '#f1f5f9';
+  cancelBtn.onmouseout = () => cancelBtn.style.background = 'white';
   cancelBtn.onclick = () => overlay.remove();
 
-  const confirmBtn = document.createElement('button');
-  confirmBtn.textContent = 'Request Approval';
-  confirmBtn.style.cssText = `
+  const sendBtn = document.createElement('button');
+  sendBtn.innerHTML = '✈️ Send Request';
+  sendBtn.style.cssText = `
     padding: 9px 18px;
     border: none;
     border-radius: 6px;
-    background: #7c3aed;
+    background: #f59e0b;
     color: white;
     font-weight: 600;
     cursor: pointer;
     font-size: 13px;
+    transition: all 0.15s;
   `;
-  confirmBtn.onclick = () => {
-    overlay.remove();
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Sending...';
+  sendBtn.onmouseover = () => sendBtn.style.background = '#d97706';
+  sendBtn.onmouseout = () => sendBtn.style.background = '#f59e0b';
+  sendBtn.onclick = () => {
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = '✈️ Sending...';
 
+    const reason = reasonField.value.trim();
     fetch('/api/permission-request', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2165,26 +2236,31 @@ function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl)
         entity_id: entityId,
         entity_label: entityLabel,
         page_url: window.location.href,
-        notes: entityLabel
+        notes: reason || entityLabel
       })
     })
     .then(r => r.json())
     .then(d => {
       if (d.success) {
+        overlay.remove();
         alert('Delete request sent to admin for approval.');
         window.location = redirectUrl;
       } else {
+        sendBtn.disabled = false;
+        sendBtn.innerHTML = '✈️ Send Request';
         alert('Error: ' + (d.error || 'Failed to send request'));
       }
     })
     .catch(err => {
       console.error('Request failed:', err);
+      sendBtn.disabled = false;
+      sendBtn.innerHTML = '✈️ Send Request';
       alert('Network error. Please try again.');
     });
   };
 
   footer.appendChild(cancelBtn);
-  footer.appendChild(confirmBtn);
+  footer.appendChild(sendBtn);
 
   modal.appendChild(header);
   modal.appendChild(body);
