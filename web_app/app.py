@@ -17259,12 +17259,19 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                             stage_data = payment_stages[int(payment_stage_index)]
                             if isinstance(stage_data, dict):
                                 payment_stage = stage_data.get("name", "")
-                                if payment_stage and "CO-" in payment_stage.upper():
-                                    co_num_match = payment_stage.split()[0] if " " in payment_stage else payment_stage
+                                # Look for CO in payment stage name (handle "CO-", "CO ", "CO1", etc.)
+                                if payment_stage and "CO" in payment_stage.upper():
+                                    # Extract CO number - handles "CO-1", "CO1", "CO 1", "CO-001", etc.
+                                    co_num_match = payment_stage.split()[0].replace("-", "") if " " in payment_stage else payment_stage.replace("-", "")
+                                    # Also try without removing hyphen
                                     for _co in _normalise_list(pdata.get("change_orders")):
-                                        if isinstance(_co, dict) and _co.get("co_number", "").upper() == co_num_match.upper():
-                                            co_po_wo_from_stage = _co.get("po_wo_number", "")
-                                            break
+                                        if isinstance(_co, dict):
+                                            co_db_num = _co.get("co_number", "").upper()
+                                            # Try with and without hyphen
+                                            if (co_db_num == co_num_match.upper() or
+                                                co_db_num == co_num_match.upper().replace("-", "")):
+                                                co_po_wo_from_stage = _co.get("po_wo_number", "")
+                                                break
                         break
             except Exception:
                 pass
@@ -17278,21 +17285,26 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         description = item.get("description", "")
 
         project_cell = Paragraph(project_number, center_style)
+        display_co_number = ""
         if description and "co-" in description.lower():
             # Extract just the CO number without description/title
             # Format: "co2 – TILT=E" → extract "co2"
-            co_number = ""
             if " – " in description:
-                # Split by " – " and take first part
-                co_number = description.split(" – ")[0].strip()
-            elif " – " in description:
-                co_number = description.split("–")[0].strip()
+                display_co_number = description.split(" – ")[0].strip()
+            elif "–" in description:
+                display_co_number = description.split("–")[0].strip()
             else:
-                co_number = description.strip()
+                display_co_number = description.strip()
 
-            if co_number.lower().startswith("co"):
-                project_number_display = f"{project_number}<br/><font size=8>{co_number}</font>"
+            if display_co_number.lower().startswith("co"):
+                project_number_display = f"{project_number}<br/><font size=8>{display_co_number}</font>"
                 project_cell = Paragraph(project_number_display, left_style)
+                # Try to get CO's PO/WO using extracted CO number
+                if not co_po_wo_from_stage:
+                    for _co in _normalise_list(pdata.get("change_orders")):
+                        if isinstance(_co, dict) and _co.get("co_number", "").upper() == display_co_number.upper():
+                            co_po_wo_from_stage = _co.get("po_wo_number", "")
+                            break
         elif payment_stage and "CO" in payment_stage.upper():
             # Extract just the CO number from payment stage
             co_stage = payment_stage.split(" – ")[0].strip() if " – " in payment_stage else payment_stage.split(" ")[0].strip()
