@@ -390,6 +390,11 @@ tbody tr:last-child td {
   color: #0a7860;
 }
 </style>
+
+<!-- Flatpickr Date Picker -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
 {% endblock %}
 
 {% block content %}
@@ -653,12 +658,23 @@ let currentAdvanceId = '{{ advance_id }}';
 let currentAdvanceData = null;
 const storedEmployeeName = '{{ employee_name }}';
 
-// Initialize adjustment date with YYYY-MM-DD format (for date input type)
+// Initialize adjustment date with MM-DD-YYYY format and Flatpickr calendar
 const today = new Date();
 const mm = String(today.getMonth() + 1).padStart(2, '0');
 const dd = String(today.getDate()).padStart(2, '0');
 const yyyy = today.getFullYear();
-document.getElementById('adjDate').value = `${yyyy}-${mm}-${dd}`;
+document.getElementById('adjDate').value = `${mm}-${dd}-${yyyy}`;
+
+// Initialize Flatpickr date picker with calendar at bottom
+flatpickr('#adjDate', {
+  dateFormat: 'm-d-Y',
+  mode: 'single',
+  position: 'below',
+  inline: false,
+  altInput: false,
+  allowInput: true
+});
+
 document.getElementById('adjAmount').max = (amount - adjusted).toFixed(2);
 
 // Load employees and update employee name if it changed
