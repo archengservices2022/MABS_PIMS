@@ -2072,7 +2072,36 @@ function toggleCoAddr(idx) {
   if (!edit.classList.contains('d-none')) edit.focus();
 }
 
-function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl) {
+async function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl) {
+  // For change orders, try to delete directly first (server will check approval)
+  if (entityType === 'change_order') {
+    const parts = entityId.split('_');
+    if (parts.length >= 2) {
+      const projectId = parts.slice(0, -1).join('_');
+      const coIdx = parts[parts.length - 1];
+
+      try {
+        const response = await fetch('/projects/' + projectId + '/change-orders/' + coIdx + '/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.ok) {
+          // Deletion succeeded
+          alert('Change order deleted successfully.');
+          location.reload();
+          return;
+        } else if (response.status === 302 || response.status === 303) {
+          // Server redirected - means not approved yet, show request modal
+          console.log('Not approved yet, showing request modal');
+        }
+      } catch (e) {
+        console.error('Delete check failed:', e);
+      }
+      // Fall through to show request modal
+    }
+  }
+
   const overlay = document.createElement('div');
   overlay.style.cssText = `
     position: fixed;
