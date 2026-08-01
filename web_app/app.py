@@ -19974,6 +19974,13 @@ def api_timesheets_send_back(sheet_id):
         return jsonify({"error": "Timesheet not found"}), 404
     if sheet.get("status") not in ("Submitted", "Approved", "Rejected"):
         return jsonify({"error": "Timesheet is already in draft state"}), 400
+
+    # Get employee details for email
+    emp_uid = sheet.get("employee_uid", "")
+    emp_data = fb_get(f"/users/{emp_uid}") or {}
+    emp_email = emp_data.get("email", "")
+    emp_name = emp_data.get("username", sheet.get("employee_name", "Employee"))
+
     fb_update(f"/timesheets/{sheet_id}", {
         "status":          "Draft",
         "sent_back_by":    session.get("user_name", ""),
@@ -19982,6 +19989,43 @@ def api_timesheets_send_back(sheet_id):
         "approved_at":     None,
         "rejection_notes": None,
     })
+
+    # Send notification email to employee
+    if emp_email:
+        try:
+            week_of = sheet.get("week_of", "")
+            company = fb_get("/company") or {}
+            em = company.get("email", {})
+
+            if em.get("enabled") and em.get("smtp_user"):
+                subject = f"Timesheet Sent Back for Review - Week of {week_of}"
+                body = f"""
+<p>Hi {emp_name},</p>
+
+<p>Your timesheet for the week of <strong>{week_of}</strong> has been sent back for review and correction.</p>
+
+<p>Please review the feedback and resubmit your timesheet as soon as possible.</p>
+
+<p>
+  <a href="{request.host_url.rstrip('/')}/timesheets/submit?week={week_of}" style="background-color: #0D9488; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; display: inline-block;">Edit Timesheet</a>
+</p>
+
+<p>Thank you,<br>{session.get("user_name", "Your Manager")}</p>
+                """
+
+                msg = MIMEMultipart('alternative')
+                msg['Subject'] = subject
+                msg['From'] = f"{company.get('name', 'PIMS')} <{em['smtp_user']}>"
+                msg['To'] = emp_email
+                msg.attach(MIMEText(body, 'html'))
+
+                with smtplib.SMTP(em.get("smtp_host", "smtp.gmail.com"), int(em.get("smtp_port", 587)), timeout=15) as srv:
+                    srv.starttls()
+                    srv.login(em["smtp_user"], em.get("smtp_password", ""))
+                    srv.sendmail(em["smtp_user"], [emp_email], msg.as_string())
+        except (smtplib.SMTPException, OSError) as e:
+            app.logger.warning(f"Failed to send timesheet send-back email to {emp_email}: {e!s}")
+
     return jsonify({"success": True})
 
 
