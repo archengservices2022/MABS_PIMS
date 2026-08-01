@@ -17230,9 +17230,23 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         project_name = ""
         plant = ""
         payment_stage = ""
-        if idx < len(linked_projects) and isinstance(linked_projects[idx], dict):
+
+        # Try to find matching project from linked_projects using project_number from item meta
+        item_project = item.get("project_number", "")
+        if item_project:
+            # Find matching project in linked_projects
+            for lp in linked_projects:
+                if isinstance(lp, dict) and lp.get("project_number") == item_project:
+                    project_number = lp.get("project_number", "")
+                    project_name = lp.get("project_name", "")
+                    break
+
+        # Fallback: try by index if project_number not found
+        if not project_number and idx < len(linked_projects) and isinstance(linked_projects[idx], dict):
             project_number = linked_projects[idx].get("project_number", "")
             project_name = linked_projects[idx].get("project_name", "")
+
+        # Final fallback to invoice meta
         if not project_number:
             project_number = meta.get("project_number", "")
 
@@ -17251,8 +17265,11 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                         site_address = pdata.get("site_address", "")
                         payment_stages = pdata.get("payment_stages", [])
                         payment_stage_index = None
-                        if idx < len(linked_projects) and isinstance(linked_projects[idx], dict):
-                            payment_stage_index = linked_projects[idx].get("payment_stage_index")
+                        # Find payment stage index from matching linked_project
+                        for lp in linked_projects:
+                            if isinstance(lp, dict) and lp.get("project_number") == project_number:
+                                payment_stage_index = lp.get("payment_stage_index")
+                                break
                         if payment_stage_index is None:
                             payment_stage_index = meta.get("payment_stage_index")
                         if payment_stage_index is not None and isinstance(payment_stages, list) and int(payment_stage_index) < len(payment_stages):
