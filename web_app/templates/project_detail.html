@@ -2219,12 +2219,12 @@ function showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl) 
   const header = document.createElement('div');
   header.style.cssText = `
     background: white;
-    padding: 20px 24px;
+    padding: 14px 16px;
     border-bottom: 1px solid #e2e8f0;
     display: flex;
     align-items: center;
     gap: 12px;
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 600;
     color: #1e293b;
   `;
@@ -2245,27 +2245,27 @@ function showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl) 
 
   const body = document.createElement('div');
   body.style.cssText = `
-    padding: 24px;
+    padding: 16px;
     color: #475569;
   `;
 
   const description = document.createElement('p');
   description.style.cssText = `
-    margin: 0 0 12px 0;
-    font-size: 14px;
+    margin: 0 0 8px 0;
+    font-size: 13px;
     color: #64748b;
   `;
   description.textContent = 'An admin will review your request to delete:';
 
   const entityName = document.createElement('div');
   entityName.style.cssText = `
-    margin-bottom: 18px;
-    padding: 12px;
+    margin-bottom: 12px;
+    padding: 8px;
     background: #f8fafc;
     border-radius: 6px;
     font-weight: 600;
     color: #1e293b;
-    font-size: 14px;
+    font-size: 13px;
     border-left: 3px solid #f59e0b;
   `;
   entityName.textContent = entityLabel;
@@ -2273,9 +2273,9 @@ function showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl) 
   const reasonLabel = document.createElement('label');
   reasonLabel.style.cssText = `
     display: block;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     font-weight: 600;
-    font-size: 13px;
+    font-size: 12px;
     color: #1e293b;
   `;
   reasonLabel.textContent = 'Reason (optional)';
@@ -2284,13 +2284,13 @@ function showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl) 
   reasonField.placeholder = 'Why do you need to delete this record?';
   reasonField.style.cssText = `
     width: 100%;
-    padding: 10px;
+    padding: 8px;
     border: 1px solid #cbd5e1;
     border-radius: 6px;
     font-family: inherit;
-    font-size: 13px;
+    font-size: 12px;
     resize: vertical;
-    min-height: 80px;
+    min-height: 50px;
     box-sizing: border-box;
   `;
 
@@ -2301,7 +2301,7 @@ function showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl) 
 
   const footer = document.createElement('div');
   footer.style.cssText = `
-    padding: 18px 24px;
+    padding: 12px 16px;
     display: flex;
     justify-content: flex-end;
     gap: 10px;
