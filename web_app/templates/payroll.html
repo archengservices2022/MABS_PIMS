@@ -1335,7 +1335,8 @@ function addAdvancePaginationControls(totalPages) {
   let paginationHTML = `<div style="display:flex;justify-content:center;gap:12px;margin-top:16px;align-items:center;">`;
 
   // Previous button
-  paginationHTML += `<button id="advPrevBtn" ${currentAdvancePage === 1 ? 'disabled' : ''} style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;font-weight:600;color:#374151;background:white;font-size:14px;${currentAdvancePage === 1 ? 'opacity:0.4;cursor:not-allowed;' : ''}">‹</button>`;
+  const prevDisabled = currentAdvancePage === 1;
+  paginationHTML += `<button id="advPrevBtn" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;cursor:${prevDisabled ? 'not-allowed' : 'pointer'};font-weight:600;color:#374151;background:white;font-size:14px;opacity:${prevDisabled ? '0.4' : '1'};">‹</button>`;
 
   // Page indicator - input field
   paginationHTML += `<input type="number" id="advPageInput" value="${currentAdvancePage}" min="1" max="${totalPages}" style="width:40px;text-align:center;padding:6px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:14px;font-weight:500;" />`;
@@ -1344,26 +1345,39 @@ function addAdvancePaginationControls(totalPages) {
   paginationHTML += `<span style="color:#6b7280;font-size:14px;font-weight:500;">of ${totalPages}</span>`;
 
   // Next button
-  paginationHTML += `<button id="advNextBtn" ${currentAdvancePage === totalPages ? 'disabled' : ''} style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;font-weight:600;color:#374151;background:white;font-size:14px;${currentAdvancePage === totalPages ? 'opacity:0.4;cursor:not-allowed;' : ''}">›</button>`;
+  const nextDisabled = currentAdvancePage === totalPages;
+  paginationHTML += `<button id="advNextBtn" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;cursor:${nextDisabled ? 'not-allowed' : 'pointer'};font-weight:600;color:#374151;background:white;font-size:14px;opacity:${nextDisabled ? '0.4' : '1'};">›</button>`;
 
   paginationHTML += `</div>`;
   paginationContainer.innerHTML = paginationHTML;
 
-  // Attach event listeners
-  document.getElementById('advPrevBtn').addEventListener('click', () => {
-    if (currentAdvancePage > 1) goToAdvancePage(currentAdvancePage - 1);
-  });
+  // Attach event listeners with error handling
+  setTimeout(() => {
+    const prevBtn = document.getElementById('advPrevBtn');
+    const nextBtn = document.getElementById('advNextBtn');
+    const pageInput = document.getElementById('advPageInput');
 
-  document.getElementById('advNextBtn').addEventListener('click', () => {
-    const totalAdvances = allAdvances.length;
-    const totalPgs = Math.ceil(totalAdvances / itemsPerPage);
-    if (currentAdvancePage < totalPgs) goToAdvancePage(currentAdvancePage + 1);
-  });
+    if (prevBtn) {
+      prevBtn.onclick = () => {
+        if (currentAdvancePage > 1) goToAdvancePage(currentAdvancePage - 1);
+      };
+    }
 
-  document.getElementById('advPageInput').addEventListener('change', (e) => {
-    const page = parseInt(e.target.value);
-    if (page > 0) goToAdvancePage(page);
-  });
+    if (nextBtn) {
+      nextBtn.onclick = () => {
+        const totalAdvances = allAdvances.length;
+        const totalPgs = Math.ceil(totalAdvances / itemsPerPage);
+        if (currentAdvancePage < totalPgs) goToAdvancePage(currentAdvancePage + 1);
+      };
+    }
+
+    if (pageInput) {
+      pageInput.onchange = (e) => {
+        const page = parseInt(e.target.value);
+        if (page > 0) goToAdvancePage(page);
+      };
+    }
+  }, 0);
 }
 
 function goToAdvancePage(page) {
