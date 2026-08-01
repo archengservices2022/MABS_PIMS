@@ -867,14 +867,21 @@
                       <button class="btn btn-xs btn-outline-warning" title="Submit to client">Submit</button>
                     </form>
                     {% elif co.get('status') == 'Submitted' %}
-                    <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}">
-                      <input type="hidden" name="status" value="Approved">
-                      <button class="btn btn-xs btn-success" title="Approve — adds to contract value">Approve</button>
-                    </form>
-                    <form method="POST" action="{{ url_for('co_status', project_id=project.firebase_id, co_idx=co_idx) }}">
-                      <input type="hidden" name="status" value="Rejected">
-                      <button class="btn btn-xs btn-outline-danger">Reject</button>
-                    </form>
+                    <button type="button" class="btn btn-xs btn-success approve-co-btn"
+                            data-project-id="{{ project.firebase_id }}"
+                            data-co-idx="{{ co_idx }}"
+                            data-co-number="{{ co.get('co_number','CO') }}"
+                            data-co-amount="{{ co.get('amount', 0) }}"
+                            title="Approve — adds to contract value">
+                      Approve
+                    </button>
+                    <button type="button" class="btn btn-xs btn-outline-danger reject-co-btn"
+                            data-project-id="{{ project.firebase_id }}"
+                            data-co-idx="{{ co_idx }}"
+                            data-co-number="{{ co.get('co_number','CO') }}"
+                            title="Reject this change order">
+                      Reject
+                    </button>
                     {% endif %}
                     <a href="{{ url_for('co_pdf', project_id=project.firebase_id, co_idx=co_idx) }}"
                        target="_blank" class="btn btn-xs btn-outline-secondary" title="Download CO PDF">
@@ -2392,5 +2399,118 @@ function showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl) 
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 }
+
+// Change Order Approval/Rejection Dialogs
+var currentCoData = null;
+
+function submitCoStatus(status) {
+  if (!currentCoData) return;
+
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = `/project/${currentCoData.projectId}/co/${currentCoData.coIdx}/status`;
+
+  var input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'status';
+  input.value = status;
+
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
+}
+
+function confirmApproveChangeOrder() {
+  if (!currentCoData) return;
+  bootstrap.Modal.getInstance(document.getElementById('approveCoModal')).hide();
+  submitCoStatus('Approved');
+}
+
+function confirmRejectChangeOrder() {
+  if (!currentCoData) return;
+  var reason = document.getElementById('rejectReason').value.trim();
+  bootstrap.Modal.getInstance(document.getElementById('rejectCoModal')).hide();
+  submitCoStatus('Rejected');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.approve-co-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      currentCoData = {
+        projectId: this.dataset.projectId,
+        coIdx: this.dataset.coIdx,
+        coNumber: this.dataset.coNumber,
+        coAmount: this.dataset.coAmount
+      };
+      document.getElementById('approveCoMessage').textContent =
+        'Approving ' + currentCoData.coNumber + ' (' + currentCoData.coAmount + ') will add it to the contract value and create a new payment stage.';
+      new bootstrap.Modal(document.getElementById('approveCoModal')).show();
+    });
+  });
+
+  document.querySelectorAll('.reject-co-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      currentCoData = {
+        projectId: this.dataset.projectId,
+        coIdx: this.dataset.coIdx,
+        coNumber: this.dataset.coNumber
+      };
+      document.getElementById('rejectReason').value = '';
+      new bootstrap.Modal(document.getElementById('rejectCoModal')).show();
+    });
+  });
+});
 </script>
+
+<!-- ?? Change Order - Approve Modal ???????????????????????????????????? -->
+<div class="modal fade" id="approveCoModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2 border-bottom-0">
+        <h6 class="modal-title"><i class="bi bi-check-circle text-success me-2"></i>Approve Change Order</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-3">
+        <div id="approveCoMessage" class="text-muted mb-3" style="font-size:13px;line-height:1.6;"></div>
+        <div class="alert alert-success py-2 px-3 mb-0" style="font-size:12px;">
+          <i class="bi bi-check2-circle me-2"></i><strong>Contract Updated:</strong> A new payment stage will be automatically added.
+        </div>
+      </div>
+      <div class="modal-footer py-2 border-top-0">
+        <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-success" onclick="confirmApproveChangeOrder()">
+          <i class="bi bi-check-circle me-1"></i>Approve CO
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ?? Change Order - Reject Modal ???????????????????????????????????? -->
+<div class="modal fade" id="rejectCoModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2 border-bottom-0">
+        <h6 class="modal-title"><i class="bi bi-x-circle text-danger me-2"></i>Reject Change Order</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-3">
+        <div class="mb-3">
+          <label class="form-label fw-semibold" style="font-size:13px;">Reason for Rejection <span class="text-muted fw-normal">(optional)</span></label>
+          <textarea id="rejectReason" class="form-control form-control-sm" placeholder="e.g., Not approved by client" rows="3" style="font-size:12px;"></textarea>
+        </div>
+        <div class="alert alert-warning py-2 px-3 mb-0" style="font-size:12px;">
+          <i class="bi bi-exclamation-triangle me-2"></i><strong>No contract impact:</strong> The change order will be marked as rejected and removed from totals.
+        </div>
+      </div>
+      <div class="modal-footer py-2 border-top-0">
+        <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-danger" onclick="confirmRejectChangeOrder()">
+          <i class="bi bi-x-circle me-1"></i>Reject CO
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
