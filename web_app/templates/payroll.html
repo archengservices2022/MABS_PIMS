@@ -1224,11 +1224,11 @@ function refreshAdvanceTable() {
     return;
   }
 
-  // Sort by date descending (newest first)
+  // Sort by created_at timestamp descending (newest first) - includes date and time
   const sortedAdvances = [...allAdvances].sort((a, b) => {
-    const dateA = new Date(a.date || '');
-    const dateB = new Date(b.date || '');
-    return dateB - dateA;
+    const timeA = new Date(a.created_at || '');
+    const timeB = new Date(b.created_at || '');
+    return timeB - timeA;
   });
 
   // Clear search input and reset status filter when refreshing
@@ -1254,7 +1254,7 @@ function refreshAdvanceTable() {
     const employeeName = getUpdatedEmployeeName(adv.employee_name);
 
     return `
-      <tr style="cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''" onclick="window.location='${detailUrl}'">
+      <tr style="cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''" onclick="window.location='${detailUrl}'" data-created-at="${adv.created_at || ''}">
         <td><a href="${detailUrl}" style="color:#0d9488;text-decoration:underline;font-weight:bold;">${adv.advance_no || 'N/A'}</a></td>
         <td style="white-space:nowrap;">${formattedDate}</td>
         <td>${employeeName}</td>
@@ -1342,16 +1342,12 @@ function filterAdvanceTable() {
     }
   });
 
-  // Sort visible rows by date ascending (oldest first)
+  // Sort visible rows by created_at timestamp ascending (oldest first) - includes date and time
   visibleRows.sort((a, b) => {
-    const dateA = (a.cells[1]?.textContent || '').trim();
-    const dateB = (b.cells[1]?.textContent || '').trim();
+    const timeA = a.dataset.createdAt ? new Date(a.dataset.createdAt) : new Date();
+    const timeB = b.dataset.createdAt ? new Date(b.dataset.createdAt) : new Date();
 
-    // Convert MM-DD-YYYY to comparable format
-    const dateAObj = new Date(dateA.split('-').reverse().join('-'));
-    const dateBObj = new Date(dateB.split('-').reverse().join('-'));
-
-    return dateAObj - dateBObj;
+    return timeA - timeB;
   });
 
   // Re-order rows in DOM based on sort
