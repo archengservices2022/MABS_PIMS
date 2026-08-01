@@ -790,7 +790,7 @@
               {% endif %}
             </td>
             <td class="text-muted">{{ req.get('notes','—') or '—' }}</td>
-            <td>{% if req.get('page_url') %}<button type="button" class="btn btn-xs btn-outline-secondary open-page-btn" data-url="{{ req.page_url | e }}" title="Open page"><i class="bi bi-box-arrow-up-right me-1"></i>Open Page</button>{% else %}—{% endif %}</td>
+            <td>—</td>
             <td class="text-muted text-nowrap">{{ (req.get('requested_at','')[:10] | format_date) if req.get('requested_at') else '—' }}</td>
             <td>
               {% if req.get('status') == 'pending' %}
@@ -1266,15 +1266,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
-  document.querySelectorAll('.open-page-btn').forEach(function(btn) {
-    btn.addEventListener('click', function(e) {
-      e.preventDefault();
-      var url = this.dataset.url;
-      if (url) {
-        window.open(url, '_blank');
-      }
-    });
-  });
 });
 </script>
 {% endblock %}
