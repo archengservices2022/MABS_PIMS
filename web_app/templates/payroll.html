@@ -1031,22 +1031,31 @@ function initializeAdvanceTab() {
 
     // Autofill the form with advance data
     document.getElementById('adv_no').value = editData.advance_no;
-    document.getElementById('adv_no').disabled = true; // Disable advance no for editing
     document.getElementById('adv_amount').value = editData.amount;
     document.getElementById('adv_date').value = editData.date;
-    document.getElementById('adv_employee').value = editData.employee_name;
+    document.getElementById('adv_reason').value = editData.reason || '';
 
-    // Set reason field
-    const reasonField = document.querySelector('[placeholder="Medical Emergency"], [id*="reason"], [id*="adv_reason"]');
-    if (reasonField) {
-      reasonField.value = editData.reason;
-    }
+    // Set employee dropdown - need to wait for employees to load
+    setTimeout(() => {
+      const employeeSelect = document.getElementById('adv_employee');
+      // Find option matching the employee name
+      const options = employeeSelect.querySelectorAll('option');
+      for (let opt of options) {
+        if (opt.value === editData.employee_name || opt.textContent === editData.employee_name) {
+          employeeSelect.value = opt.value;
+          break;
+        }
+      }
+    }, 500);
 
     // Change button text to indicate editing
-    const saveBtn = document.querySelector('button[onclick*="saveAdvance"]');
-    if (saveBtn) {
-      saveBtn.textContent = '💾 Update Advance';
-      saveBtn.style.background = '#10b981'; // Green for update
+    const btnText = document.getElementById('submitAdvanceBtnText');
+    if (btnText) {
+      btnText.textContent = 'Update Advance';
+    }
+    const submitBtn = document.getElementById('submitAdvanceBtn');
+    if (submitBtn) {
+      submitBtn.style.background = '#10b981'; // Green for update
     }
   } else {
     // Populate table immediately with embedded data
