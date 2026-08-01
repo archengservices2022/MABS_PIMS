@@ -13378,10 +13378,13 @@ def user_details_update(uid):
     old_display_name = None
     new_display_name = None
 
+    log.info(f"user_details_update for {uid}: received data={data}")
+
     for field in ("username", "title", "region", "employee_type", "display_name"):
         if field in data:
             value = str(data[field]).strip()
             updates[field] = value
+            log.info(f"  updating {field}={value}")
             # Track changes in display_name and username for syncing
             if field == "display_name":
                 # Prefer display_name if it exists in current data
@@ -13418,14 +13421,19 @@ def user_details_update(uid):
 
     # Update session if the current user is updating their own details
     if session.get("user_id") == uid:
+        log.info(f"Updating session for current user {uid}")
         if "username" in updates:
             session["username"] = updates["username"]
             session["user_name"] = updates["username"]
             session.modified = True
+            log.info(f"  Set session.user_name={session['user_name']}")
         if "display_name" in updates:
             session["display_name"] = updates["display_name"]
             session["user_name"] = updates["display_name"]  # Use display_name for user_name if set
             session.modified = True
+            log.info(f"  Set session.display_name={session['display_name']}, session.user_name={session['user_name']}")
+    else:
+        log.info(f"Not updating session: session.user_id={session.get('user_id')} != uid={uid}")
 
     # Sync name changes across timesheets, expenses, approvals, etc.
     now_iso = datetime.now(timezone.utc).isoformat()
