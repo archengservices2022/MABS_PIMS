@@ -1029,6 +1029,9 @@ function initializeAdvanceTab() {
     const editData = JSON.parse(editDataStr);
     sessionStorage.removeItem('editAdvanceData');
 
+    // Set advance_id to indicate editing mode
+    document.getElementById('advance_id').value = editData.advance_id;
+
     // Autofill the form with advance data
     document.getElementById('adv_no').value = editData.advance_no;
     document.getElementById('adv_amount').value = editData.amount;
