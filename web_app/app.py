@@ -545,21 +545,22 @@ def _sync_advance_to_finance(advance_id: str, advance_data: dict):
         current_user_name = session.get("user_name", "") or advance_data.get("created_by", "")
 
         # Build expense name and description with optional reason
+        advance_no = advance_data.get('advance_no', '')
         employee_name = advance_data.get('employee_name', 'Unknown')
         reason = advance_data.get('reason', '').strip()
 
-        expense_name = f"Advance for {employee_name}"
+        expense_name = f"{advance_no}_{employee_name}"
         if reason:
-            description = f"Advance for {employee_name} - {reason}"
+            description = f"Advance {advance_no} for {employee_name} - {reason}"
         else:
-            description = f"Advance for {employee_name}"
+            description = f"Advance {advance_no} for {employee_name}"
 
         expense_data = {
             "expense_type": "Employee Advance",
             "expense_name": expense_name,
             "description": description,
             "amount": balance_due,
-            "category": "Employee Advance",
+            "category": "Advance for employee",
             "date": advance_data.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
             "vendor": "Employee Advances",
             "notes": f"Original: ${float(advance_data.get('amount', 0)):.2f} | Adjusted: ${float(advance_data.get('adjusted', 0)):.2f}",
@@ -619,12 +620,13 @@ def _sync_employee_name_in_advance_finances(employee_id: str, old_name: str, new
                     exp_data.get("employee_id") == employee_id and
                     exp_data.get("employee_name") == old_name):
                     # Update employee name, expense_name, and description (with optional reason)
+                    advance_no = exp_data.get('advance_no', '')
                     reason = exp_data.get('reason', '').strip()
-                    new_expense_name = f"Advance for {new_name}"
+                    new_expense_name = f"{advance_no}_{new_name}"
                     if reason:
-                        new_description = f"Advance for {new_name} - {reason}"
+                        new_description = f"Advance {advance_no} for {new_name} - {reason}"
                     else:
-                        new_description = f"Advance for {new_name}"
+                        new_description = f"Advance {advance_no} for {new_name}"
                     fb_update(f"/balance_sheet_expenses/{exp_id}", {
                         "employee_name": new_name,
                         "expense_name": new_expense_name,
@@ -11032,12 +11034,24 @@ def financial():
         try:
             _d = datetime.fromisoformat(_ds)
             if _d.year == current_year:
-                monthly_expense_details[str(_d.month)].append({
+                # Skip salary entries (they're handled separately in monthly_salary_details)
+                _category = _exp.get("category") or _exp.get("expense_type") or ""
+                _expense_type = _exp.get("expense_type") or ""
+                if _category.lower() == "salary" or _expense_type.lower() == "salary":
+                    continue
+
+                _detail = {
                     "name":     _exp.get("expense_name") or _exp.get("description") or "",
-                    "category": _exp.get("category") or _exp.get("expense_type") or "",
+                    "category": _category,
                     "amount":   _safe_float(_exp.get("amount", 0)),
                     "date":     _ds,
-                })
+                }
+                # Include advance-specific fields if this is an advance
+                if _exp.get("advance_id"):
+                    _detail["advance_id"] = _exp.get("advance_id")
+                    _detail["employee_name"] = _exp.get("employee_name") or ""
+                    _detail["reason"] = _exp.get("notes") or ""
+                monthly_expense_details[str(_d.month)].append(_detail)
         except Exception:
             pass
 

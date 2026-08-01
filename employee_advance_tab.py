@@ -576,21 +576,22 @@ class EmployeeAdvanceTab(QtWidgets.QWidget):
             current_user_name = settings.get("user_name", "") or advance_data.get("created_by", "")
 
             # Build expense name and description with optional reason
+            advance_no = advance_data.get('advance_no', '')
             employee_name = advance_data.get('employee_name', 'Unknown')
             reason = advance_data.get('reason', '').strip()
 
-            expense_name = f"Advance for {employee_name}"
+            expense_name = f"{advance_no}_{employee_name}"
             if reason:
-                description = f"Advance for {employee_name} - {reason}"
+                description = f"Advance {advance_no} for {employee_name} - {reason}"
             else:
-                description = f"Advance for {employee_name}"
+                description = f"Advance {advance_no} for {employee_name}"
 
             expense_data = {
                 "expense_type": "Employee Advance",
                 "expense_name": expense_name,
                 "description": description,
                 "amount": balance_due,
-                "category": "Employee Advance",
+                "category": "Advance for employee",
                 "date": advance_data.get("date", datetime.now().strftime("%d-%b-%y")),
                 "vendor": "Employee Advances",
                 "notes": f"Original: ${float(advance_data.get('amount', 0)):.2f} | Adjusted: ${float(advance_data.get('adjusted', 0)):.2f}",
