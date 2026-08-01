@@ -414,7 +414,7 @@ tbody tr:last-child td {
       <button class="btn btn-secondary" onclick="window.print()" style="background: #e2e8f0; color: #0f172a;">
         🖨 Print
       </button>
-      <button class="btn btn-primary" onclick="openEditAdvanceDialogue()" style="background: #2563eb; color: white;">
+      <button class="btn btn-primary" onclick="editAdvance()" style="background: #2563eb; color: white;">
         ✎ Edit Advance
       </button>
       <button class="btn btn-danger" onclick="deleteAdvance('{{ advance_no }}')" style="background: #ef4444; color: white;">
@@ -916,71 +916,21 @@ function deleteAdjustment(adjId) {
   });
 }
 
-function openEditAdvanceDialogue() {
+function editAdvance() {
+  // Store advance data in sessionStorage to autofill the form
   const advanceData = {
     advance_no: '{{ advance_no }}',
     employee_name: '{{ employee_name }}',
-    amount: parseFloat('{{ amount }}' || 0),
-    date: '{{ date }}'.split('-').reverse().join('-'),
-    reason: '{{ reason }}'
+    amount: '{{ amount }}',
+    date: '{{ date }}',
+    reason: '{{ reason }}',
+    advance_id: '{{ advance_id }}'
   };
 
-  // Create edit form
-  const formHtml = `
-    <div style="display: flex; flex-direction: column; gap: 12px;">
-      <div>
-        <label style="font-weight: 600; margin-bottom: 4px; display: block;">Advance No</label>
-        <input type="text" id="editAdvNo" value="${advanceData.advance_no}" disabled style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px; background: #f8fafc;">
-      </div>
-      <div>
-        <label style="font-weight: 600; margin-bottom: 4px; display: block;">Employee</label>
-        <input type="text" id="editEmployee" value="${advanceData.employee_name}" disabled style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px; background: #f8fafc;">
-      </div>
-      <div>
-        <label style="font-weight: 600; margin-bottom: 4px; display: block;">Advance Amount</label>
-        <input type="number" id="editAmount" value="${advanceData.amount.toFixed(2)}" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
-      </div>
-      <div>
-        <label style="font-weight: 600; margin-bottom: 4px; display: block;">Advance Date</label>
-        <input type="date" id="editDate" value="${advanceData.date}" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
-      </div>
-      <div>
-        <label style="font-weight: 600; margin-bottom: 4px; display: block;">Reason</label>
-        <textarea id="editReason" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px; min-height: 60px;">${advanceData.reason}</textarea>
-      </div>
-    </div>
-  `;
+  sessionStorage.setItem('editAdvanceData', JSON.stringify(advanceData));
 
-  if (confirm('Edit Advance Details?\n\nClick OK to edit, Cancel to close')) {
-    const newAmount = prompt('Enter new Advance Amount:', advanceData.amount.toFixed(2));
-    if (newAmount && !isNaN(newAmount)) {
-      updateAdvanceDetails(advanceData.advance_no, parseFloat(newAmount));
-    }
-  }
-}
-
-function updateAdvanceDetails(advNo, newAmount) {
-  fetch('{{ url_for("update_employee_advance") }}', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      advance_no: advNo,
-      amount: newAmount
-    })
-  })
-  .then(r => r.json())
-  .then(data => {
-    if (data.success) {
-      alert('Advance updated successfully!');
-      location.reload();
-    } else {
-      alert('Error: ' + (data.error || 'Unknown error'));
-    }
-  })
-  .catch(e => {
-    console.error('Error:', e);
-    alert('Error updating advance');
-  });
+  // Redirect to payroll page with employee advance tab
+  window.location.href = '{{ url_for("payroll") }}#employee-advance';
 }
 
 function deleteAdvance(advNo) {

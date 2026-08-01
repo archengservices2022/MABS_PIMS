@@ -1023,14 +1023,41 @@ function initializeAdvanceTab() {
   const yyyy = today.getFullYear();
   document.getElementById('adv_date').value = `${yyyy}-${mm}-${dd}`;
 
-  // Populate table immediately with embedded data
-  if (allAdvances.length > 0) {
-    refreshAdvanceTable();
-    if (allAdvances.length > 0) {
-      document.getElementById('adv_no').value = generateAdvanceNo();
+  // Check if there's advance data to edit
+  const editDataStr = sessionStorage.getItem('editAdvanceData');
+  if (editDataStr) {
+    const editData = JSON.parse(editDataStr);
+    sessionStorage.removeItem('editAdvanceData');
+
+    // Autofill the form with advance data
+    document.getElementById('adv_no').value = editData.advance_no;
+    document.getElementById('adv_no').disabled = true; // Disable advance no for editing
+    document.getElementById('adv_amount').value = editData.amount;
+    document.getElementById('adv_date').value = editData.date;
+    document.getElementById('adv_employee').value = editData.employee_name;
+
+    // Set reason field
+    const reasonField = document.querySelector('[placeholder="Medical Emergency"], [id*="reason"], [id*="adv_reason"]');
+    if (reasonField) {
+      reasonField.value = editData.reason;
+    }
+
+    // Change button text to indicate editing
+    const saveBtn = document.querySelector('button[onclick*="saveAdvance"]');
+    if (saveBtn) {
+      saveBtn.textContent = '💾 Update Advance';
+      saveBtn.style.background = '#10b981'; // Green for update
     }
   } else {
-    document.getElementById('adv_no').value = 'ADV-00001';
+    // Populate table immediately with embedded data
+    if (allAdvances.length > 0) {
+      refreshAdvanceTable();
+      if (allAdvances.length > 0) {
+        document.getElementById('adv_no').value = generateAdvanceNo();
+      }
+    } else {
+      document.getElementById('adv_no').value = 'ADV-00001';
+    }
   }
 
   loadEmployees();
