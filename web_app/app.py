@@ -13496,6 +13496,18 @@ def user_details_update(uid):
 
                         fb_update(f"/balance_sheet_expenses/{exp_id}", update_data)
 
+    # Sync medical claims submitted_by_name when user name changes
+    if old_display_name and new_display_name:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        medical_claims = fb_get("/medical_claims") or {}
+        if isinstance(medical_claims, dict):
+            for claim_id, claim_data in medical_claims.items():
+                if isinstance(claim_data, dict):
+                    submitted_by = claim_data.get("submitted_by_name", "")
+                    # Update if submitted_by matches old_display_name
+                    if submitted_by == old_display_name:
+                        fb_update(f"/medical_claims/{claim_id}", {"submitted_by_name": new_display_name, "updated_at": now_iso})
+
     # Update session if the logged-in user changed their own name
     if uid == session.get("user_uid") and new_display_name:
         session["user_name"] = new_display_name
