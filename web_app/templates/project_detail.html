@@ -2073,35 +2073,6 @@ function toggleCoAddr(idx) {
 }
 
 function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl) {
-  // For change orders, check if already approved first
-  if (entityType === 'change_order') {
-    const parts = entityId.split('_');
-    if (parts.length >= 2) {
-      const projectId = parts.slice(0, -1).join('_');
-      const coIdx = parts[parts.length - 1];
-
-      // Quick check: try to delete, if it fails, show request modal
-      fetch('/projects/' + projectId + '/change-orders/' + coIdx + '/delete', {
-        method: 'POST',
-        redirect: 'manual'
-      })
-      .then(response => {
-        if (response.ok) {
-          // Already approved! Show confirm delete modal
-          showDeleteConfirmModal(projectId, coIdx, entityLabel);
-        } else {
-          // Not approved yet, show request modal
-          showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl);
-        }
-      })
-      .catch(() => {
-        // On error, show request modal
-        showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl);
-      });
-      return;
-    }
-  }
-
   showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl);
 }
 
