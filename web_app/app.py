@@ -3808,16 +3808,26 @@ def co_delete(project_id, co_idx):
     # Administration role needs admin approval to delete
     if _role == "administration":
         entity_id = f"{project_id}_{co_idx}"
-        log.info(f"Checking for approved delete: uid={_uid}, entity_type=change_order, entity_id={entity_id}")
         _perm = _has_approved_delete_request(_uid, "change_order", entity_id)
+
+        # If exact match not found, search for any approved delete request for this user+entity_type
         if not _perm:
-            log.warning(f"No approved delete request found for uid={_uid}, entity_id={entity_id}")
-            # List all permission requests for debugging
             all_reqs = fb_get("/permission_requests") or {}
-            log.debug(f"All permission requests: {list(all_reqs.keys())[:5]}")
+            if isinstance(all_reqs, dict):
+                for rid, r in all_reqs.items():
+                    if (isinstance(r, dict) and
+                            r.get("requested_by_uid") == _uid and
+                            r.get("entity_type") == "change_order" and
+                            r.get("status") == "approved" and
+                            entity_id in r.get("entity_id", "")):
+                        _perm = r
+                        _perm["firebase_id"] = rid
+                        log.info(f"Found partial match for entity_id in request {rid}")
+                        break
+
+        if not _perm:
             flash("You need admin approval to delete this change order. Use the 'Request Delete' button.", "danger")
             return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
-        log.info(f"Approved delete request found: {_perm.get('firebase_id', 'unknown')}")
 
     project = fb_get(f"/projects/{project_id}") or {}
     if not project:
