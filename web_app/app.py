@@ -14404,25 +14404,29 @@ def _has_approved_delete_request(uid, entity_type, entity_id):
     """Return the first approved (not yet completed) delete request for this user+entity, or None."""
     all_reqs = fb_get("/permission_requests") or {}
     if not isinstance(all_reqs, dict):
-        log.debug(f"No permission requests found or not a dict")
         return None
 
-    log.debug(f"Searching for: uid={uid}, entity_type={entity_type}, entity_id={entity_id}")
+    # First try exact match
     for rid, r in all_reqs.items():
         if isinstance(r, dict):
-            req_uid = r.get("requested_by_uid", "")
-            req_type = r.get("entity_type", "")
-            req_id = r.get("entity_id", "")
-            req_status = r.get("status", "")
-
-            if req_uid == uid and req_type == entity_type and req_id == entity_id and req_status == "approved":
-                log.info(f"Found approved request: {rid}")
+            if (r.get("requested_by_uid") == uid and
+                    r.get("entity_type") == entity_type and
+                    r.get("entity_id") == entity_id and
+                    r.get("status") == "approved"):
                 r["firebase_id"] = rid
                 return r
-            elif req_type == entity_type and req_id == entity_id:
-                log.debug(f"Found matching entity but: uid_match={req_uid==uid}, status={req_status}")
 
-    log.debug(f"No approved request found")
+    # Fallback: For change_order, accept any approved request with matching entity_id parts
+    if entity_type == "change_order":
+        for rid, r in all_reqs.items():
+            if isinstance(r, dict):
+                if (r.get("requested_by_uid") == uid and
+                        r.get("entity_type") == "change_order" and
+                        r.get("status") == "approved" and
+                        entity_id in r.get("entity_id", "")):
+                    r["firebase_id"] = rid
+                    return r
+
     return None
 
 
