@@ -2172,19 +2172,23 @@ function showDeleteConfirmModal(projectId, coIdx, coNumber) {
 }
 
 function deleteChangeOrder(projectId, coIdx) {
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = '/projects/' + projectId + '/change-orders/' + coIdx + '/delete';
-
-  // Add CSRF token
-  const csrfInput = document.createElement('input');
-  csrfInput.type = 'hidden';
-  csrfInput.name = 'csrf_token';
-  csrfInput.value = document.querySelector('input[name="csrf_token"]')?.value || '';
-  form.appendChild(csrfInput);
-
-  document.body.appendChild(form);
-  form.submit();
+  fetch('/projects/' + projectId + '/change-orders/' + coIdx + '/delete', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    }
+  })
+  .then(r => {
+    if (r.ok || r.status === 302) {
+      window.location.href = '/projects/' + projectId + '#tab-change-orders';
+    } else {
+      alert('Error deleting change order: ' + r.statusText);
+    }
+  })
+  .catch(err => {
+    console.error('Delete failed:', err);
+    alert('Network error: ' + err.message);
+  });
 }
 
 function showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl) {
