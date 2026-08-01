@@ -808,10 +808,10 @@
             </td>
             <td class="text-center text-nowrap">
               {% if req.get('status') == 'pending' %}
-              <button class="btn btn-xs btn-success me-1" onclick="resolvePermRequest('{{ req.firebase_id }}','approve','{{ req.get("page_url","") }}')" title="Approve — requester will be notified and can perform the delete">
+              <button class="btn btn-xs btn-success me-1 approve-perm-btn" data-req-id="{{ req.firebase_id }}" data-page-url="{{ req.get('page_url','') | e }}" title="Approve — requester will be notified and can perform the delete">
                 <i class="bi bi-check2"></i> Approve
               </button>
-              <button class="btn btn-xs btn-outline-danger" onclick="resolvePermRequest('{{ req.firebase_id }}','deny','')" title="Deny">
+              <button class="btn btn-xs btn-outline-danger deny-perm-btn" data-req-id="{{ req.firebase_id }}" title="Deny">
                 <i class="bi bi-x-lg"></i> Deny
               </button>
               {% else %}
@@ -832,6 +832,56 @@
     </div>
   </div>
   {% endif %}
+
+<!-- ?? Permission Request - Deny Modal ??????????????????????????????????????? -->
+<div class="modal fade" id="denyPermissionModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2 border-bottom-0">
+        <h6 class="modal-title"><i class="bi bi-x-circle text-danger me-2"></i>Deny Permission Request</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-3">
+        <div class="mb-3">
+          <label class="form-label fw-semibold" style="font-size:13px;">Reason for Denying <span class="text-muted fw-normal">(optional)</span></label>
+          <textarea id="denyReason" class="form-control form-control-sm" placeholder="e.g., Already approved by another admin" rows="3" style="font-size:12px;"></textarea>
+        </div>
+        <div class="alert alert-warning py-2 px-3 mb-0" style="font-size:12px;">
+          <i class="bi bi-exclamation-triangle me-2"></i><strong>Notifies requester:</strong> The user will be told their request was denied.
+        </div>
+      </div>
+      <div class="modal-footer py-2 border-top-0">
+        <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-danger" onclick="confirmDeny()">
+          <i class="bi bi-x-circle me-1"></i>Deny Request
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ?? Permission Request - Approve Modal ??????????????????????????????????? -->
+<div class="modal fade" id="approvePermissionModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2 border-bottom-0">
+        <h6 class="modal-title"><i class="bi bi-check-circle text-success me-2"></i>Approve Permission Request</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-3">
+        <div class="alert alert-success py-2 px-3 mb-0" style="font-size:12px;">
+          <i class="bi bi-check2-circle me-2"></i><strong>Notifies requester:</strong> The user will be approved and can proceed with the delete.
+        </div>
+      </div>
+      <div class="modal-footer py-2 border-top-0">
+        <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-success" onclick="confirmApprove()">
+          <i class="bi bi-check-circle me-1"></i>Approve Request
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ?? Customize User Pages Modal ???????????????????????????????????????????? -->
 <div class="modal fade" id="userPagesModal" tabindex="-1">
@@ -1159,13 +1209,13 @@ async function saveUserPages() {
   } catch(e) { msg.innerHTML = '<span class="text-danger">Request failed.</span>'; }
 }
 
-function resolvePermRequest(reqId, action, pageUrl) {
-  var notes = '';
-  if (action === 'deny') {
-    notes = prompt('Reason for denying (optional):') || '';
-    if (notes === null) return;
-  }
-  fetch('/api/permission-requests/' + reqId + '/resolve', {
+var currentPermReqId = null;
+var currentPageUrl = null;
+
+function submitPermissionRequest(action, notes) {
+  if (!currentPermReqId) return;
+
+  fetch('/api/permission-requests/' + currentPermReqId + '/resolve', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({action: action, notes: notes})
@@ -1178,7 +1228,47 @@ function resolvePermRequest(reqId, action, pageUrl) {
   .catch(function() { alert('Network error. Please try again.'); });
 }
 
+function confirmApprove() {
+  if (!currentPermReqId) return;
+  bootstrap.Modal.getInstance(document.getElementById('approvePermissionModal')).hide();
+  submitPermissionRequest('approve', '');
+}
+
+function confirmDeny() {
+  if (!currentPermReqId) return;
+  var reason = document.getElementById('denyReason').value.trim();
+  bootstrap.Modal.getInstance(document.getElementById('denyPermissionModal')).hide();
+  submitPermissionRequest('deny', reason);
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+  // Clear request ID when deny modal is dismissed (e.g., by Cancel button)
+  document.getElementById('denyPermissionModal').addEventListener('hidden.bs.modal', function() {
+    currentPermReqId = null;
+  });
+
+  // Clear request ID when approve modal is dismissed (e.g., by Cancel button)
+  document.getElementById('approvePermissionModal').addEventListener('hidden.bs.modal', function() {
+    currentPermReqId = null;
+  });
+
+  document.querySelectorAll('.approve-perm-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      currentPermReqId = this.dataset.reqId;
+      currentPageUrl = this.dataset.pageUrl;
+      document.getElementById('denyReason').value = '';
+      new bootstrap.Modal(document.getElementById('approvePermissionModal')).show();
+    });
+  });
+
+  document.querySelectorAll('.deny-perm-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      currentPermReqId = this.dataset.reqId;
+      document.getElementById('denyReason').value = '';
+      new bootstrap.Modal(document.getElementById('denyPermissionModal')).show();
+    });
+  });
+
   document.querySelectorAll('.open-page-btn').forEach(function(btn) {
     btn.addEventListener('click', function(e) {
       e.preventDefault();
