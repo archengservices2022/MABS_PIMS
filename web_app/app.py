@@ -17279,26 +17279,24 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
 
         project_cell = Paragraph(project_number, center_style)
         if description and "co-" in description.lower():
-            # Format: "Project Name — CO-002 – Title" or "CO-001 – Title"
-            if "—" in description:
-                # Split by em-dash first to get the CO part
-                parts = description.split("—")
-                co_section = parts[1].strip() if len(parts) > 1 else ""
-                # Now extract CO number and title from co_section
-                co_parts = co_section.split("–")
-                co_part = co_parts[0].strip()
-                title_part = co_parts[1].strip() if len(co_parts) > 1 else ""
+            # Extract just the CO number without description/title
+            # Format: "co2 – TILT=E" → extract "co2"
+            co_number = ""
+            if " – " in description:
+                # Split by " – " and take first part
+                co_number = description.split(" – ")[0].strip()
+            elif " – " in description:
+                co_number = description.split("–")[0].strip()
             else:
-                # Fallback: split by en-dash
-                co_parts = description.split("–")
-                co_part = co_parts[0].strip()
-                title_part = co_parts[1].strip() if len(co_parts) > 1 else ""
+                co_number = description.strip()
 
-            if co_part.upper().startswith("CO"):
-                project_number_display = f"{project_number}<br/><font size=8>{co_part}</font>"
+            if co_number.lower().startswith("co"):
+                project_number_display = f"{project_number}<br/><font size=8>{co_number}</font>"
                 project_cell = Paragraph(project_number_display, left_style)
         elif payment_stage and "CO" in payment_stage.upper():
-            project_number_display = f"{project_number}<br/><font size=8>{payment_stage}</font>"
+            # Extract just the CO number from payment stage
+            co_stage = payment_stage.split(" – ")[0].strip() if " – " in payment_stage else payment_stage.split(" ")[0].strip()
+            project_number_display = f"{project_number}<br/><font size=8>{co_stage}</font>"
             project_cell = Paragraph(project_number_display, left_style)
 
         is_co_stage = bool(
