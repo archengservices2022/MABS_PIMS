@@ -2175,6 +2175,14 @@ function deleteChangeOrder(projectId, coIdx) {
   const form = document.createElement('form');
   form.method = 'POST';
   form.action = '/projects/' + projectId + '/change-orders/' + coIdx + '/delete';
+
+  // Add CSRF token
+  const csrfInput = document.createElement('input');
+  csrfInput.type = 'hidden';
+  csrfInput.name = 'csrf_token';
+  csrfInput.value = document.querySelector('input[name="csrf_token"]')?.value || '';
+  form.appendChild(csrfInput);
+
   document.body.appendChild(form);
   form.submit();
 }
