@@ -1271,22 +1271,10 @@ document.addEventListener('DOMContentLoaded', function() {
       e.preventDefault();
       var url = this.dataset.url;
       if (url) {
-        try {
-          // Try to parse as absolute URL
-          if (url.startsWith('http://') || url.startsWith('https://')) {
-            var parsedUrl = new URL(url);
-            // If stored URL is a localhost/private IP, replace with current domain
-            if (parsedUrl.hostname.includes('localhost') || parsedUrl.hostname.includes('192.168') || parsedUrl.hostname.includes('127.0.0.1')) {
-              url = window.location.origin + parsedUrl.pathname + parsedUrl.search + parsedUrl.hash;
-            }
-          } else {
-            // Handle relative URLs
-            url = window.location.origin + url;
-          }
-        } catch(e) {
-          // Fallback: if URL parsing fails, try to extract path
-          url = window.location.origin + url;
-        }
+        // Replace localhost URLs with current domain
+        url = url.replace(/http:\/\/192\.168[^\/]*/, window.location.origin.replace(/^https?:/, 'https'));
+        url = url.replace(/http:\/\/localhost[^\/]*/, window.location.origin.replace(/^https?:/, 'https'));
+        url = url.replace(/http:\/\/127\.0\.0\.1[^\/]*/, window.location.origin.replace(/^https?:/, 'https'));
         window.open(url, '_blank');
       }
     });
