@@ -501,19 +501,19 @@ function weekToMonday(weekStr) {
   const week = parseInt(weekStr2);
 
   // ISO 8601: Jan 4 is always in week 1
-  // Calculate Monday of Week 1: Go back from Jan 4 to the Monday of that week
   const jan4 = new Date(year, 0, 4);
-  const jan4DayOfWeek = jan4.getDay();
+  const jan4_weekday = jan4.getDay();  // 0=Sun, 1=Mon, ..., 6=Sat
 
-  // Days to go back: Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6
-  const daysBack = jan4DayOfWeek === 0 ? 6 : jan4DayOfWeek - 1;
+  // Calculate days to go back to Monday of week containing Jan 4
+  const daysToMonday = jan4_weekday === 0 ? 6 : jan4_weekday - 1;
 
-  // Monday of Week 1
-  const week1Monday = new Date(year, 0, 4 - daysBack);
+  // Create Monday of Week 1 by going back from Jan 4
+  const week1Monday = new Date(year, 0, 4);
+  week1Monday.setDate(week1Monday.getDate() - daysToMonday);
 
-  // Get Monday of target week by adding (week-1) full weeks
+  // Add (week-1)*7 days to get target Monday
   const targetMonday = new Date(week1Monday);
-  targetMonday.setDate(week1Monday.getDate() + (week - 1) * 7);
+  targetMonday.setDate(targetMonday.getDate() + (week - 1) * 7);
 
   return targetMonday;
 }
