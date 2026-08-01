@@ -17305,7 +17305,8 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         )
         description_display = ""
         if is_co_stage:
-            description_display = co_po_wo_from_stage or po_wo or ""
+            # For CO stage, use the PO/WO from the CO itself, not the project
+            description_display = co_po_wo_from_stage or ""
         elif po_wo or site_address:
             if site_address:
                 import re
