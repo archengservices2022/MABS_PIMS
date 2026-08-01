@@ -3795,6 +3795,25 @@ def co_update_amount(project_id, co_idx):
     flash(f"{co.get('co_number', 'CO')} updated.", "success")
     return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
 
+@app.route("/api/change-orders/<project_id>/<int:co_idx>/check-delete-approval", methods=["GET"])
+@login_required
+def api_check_co_delete_approval(project_id, co_idx):
+    """Check if user has approval to delete this change order"""
+    _role = normalize_role(session.get("user_role", ""))
+    _uid = session.get("user_uid", "")
+
+    # Admin can delete directly
+    if _role == "admin":
+        return jsonify({"approved": True})
+
+    # Administration needs approval
+    if _role == "administration":
+        _perm = _has_approved_delete_request(_uid, "change_order", f"{project_id}_{co_idx}")
+        return jsonify({"approved": bool(_perm)})
+
+    return jsonify({"approved": False})
+
+
 @app.route("/projects/<project_id>/change-orders/<int:co_idx>/delete", methods=["POST"])
 @role_required("projects")
 def co_delete(project_id, co_idx):
