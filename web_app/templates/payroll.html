@@ -1331,24 +1331,16 @@ function addAdvancePaginationControls(totalPages) {
     return;
   }
 
-  let paginationHTML = `<div style="display:flex;justify-content:center;gap:8px;margin-top:16px;align-items:center;">`;
+  let paginationHTML = `<div style="display:flex;justify-content:center;gap:12px;margin-top:16px;align-items:center;">`;
 
   // Previous button
-  paginationHTML += `<button onclick="goToAdvancePage(${currentAdvancePage - 1})" ${currentAdvancePage === 1 ? 'disabled' : ''} style="padding:6px 12px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;font-weight:500;color:#374151;background:white;${currentAdvancePage === 1 ? 'opacity:0.5;cursor:not-allowed;' : ''}">← Previous</button>`;
+  paginationHTML += `<button onclick="goToAdvancePage(${currentAdvancePage - 1})" ${currentAdvancePage === 1 ? 'disabled' : ''} style="padding:8px 12px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;font-weight:600;color:#374151;background:white;font-size:16px;${currentAdvancePage === 1 ? 'opacity:0.4;cursor:not-allowed;' : 'hover:background:#f1f5f9;'}">‹</button>`;
 
-  // Page numbers
-  for (let i = 1; i <= totalPages; i++) {
-    if (i === currentAdvancePage) {
-      paginationHTML += `<button style="padding:6px 12px;border:1px solid #3b82f6;border-radius:6px;background:#3b82f6;color:white;font-weight:600;min-width:40px;">${i}</button>`;
-    } else if (i === 1 || i === totalPages || (i >= currentAdvancePage - 1 && i <= currentAdvancePage + 1)) {
-      paginationHTML += `<button onclick="goToAdvancePage(${i})" style="padding:6px 12px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;font-weight:500;color:#374151;background:white;min-width:40px;">${i}</button>`;
-    } else if (i === currentAdvancePage - 2 || i === currentAdvancePage + 2) {
-      paginationHTML += `<span style="padding:6px 12px;color:#94a3b8;">...</span>`;
-    }
-  }
+  // Page indicator
+  paginationHTML += `<span style="color:#6b7280;font-size:14px;font-weight:500;min-width:60px;text-align:center;">${currentAdvancePage} / ${totalPages}</span>`;
 
   // Next button
-  paginationHTML += `<button onclick="goToAdvancePage(${currentAdvancePage + 1})" ${currentAdvancePage === totalPages ? 'disabled' : ''} style="padding:6px 12px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;font-weight:500;color:#374151;background:white;${currentAdvancePage === totalPages ? 'opacity:0.5;cursor:not-allowed;' : ''}">Next →</button>`;
+  paginationHTML += `<button onclick="goToAdvancePage(${currentAdvancePage + 1})" ${currentAdvancePage === totalPages ? 'disabled' : ''} style="padding:8px 12px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;font-weight:600;color:#374151;background:white;font-size:16px;${currentAdvancePage === totalPages ? 'opacity:0.4;cursor:not-allowed;' : 'hover:background:#f1f5f9;'}">›</button>`;
 
   paginationHTML += `</div>`;
   paginationContainer.innerHTML = paginationHTML;
