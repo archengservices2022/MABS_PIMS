@@ -13423,7 +13423,7 @@ def user_details_update(uid):
     now_iso = datetime.now(timezone.utc).isoformat()
 
     # Update session if the current user is updating their own details
-    if session.get("user_id") == uid:
+    if session.get("user_uid") == uid:
         log.info(f"Updating session for current user {uid}")
         if "username" in updates:
             session["username"] = updates["username"]
@@ -13436,7 +13436,7 @@ def user_details_update(uid):
             session.modified = True
             log.info(f"  Set session.display_name={session['display_name']}, session.user_name={session['user_name']}")
     else:
-        log.info(f"Not updating session: session.user_id={session.get('user_id')} != uid={uid}")
+        log.info(f"Not updating session: session.user_uid={session.get('user_uid')} != uid={uid}")
 
     # SYNC submitted_by_name based on EMAIL and OLD NAME
     user_email = user_data.get("email", "").strip().lower()
