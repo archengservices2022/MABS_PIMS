@@ -561,25 +561,26 @@ function changeWeek(weekStr) {
 (function initWeekPicker() {
   const weekPicker = document.getElementById('weekPicker');
   const d = new Date(WEEK_OF);
-  const jan4 = new Date(d.getFullYear(), 0, 4);
-  const dayOfWeek = jan4.getDay() || 7;
-  const mondayOfWeek1 = new Date(jan4);
-  mondayOfWeek1.setDate(jan4.getDate() - (dayOfWeek - 1));
 
-  const weeksDiff = Math.round((d - mondayOfWeek1) / (7 * 86400000));
-  const weekNum = weeksDiff + 1;
+  // Use same logic as weekToMonday for consistent calculations
+  function dateToWeek(date) {
+    const year = date.getFullYear();
+    const jan4 = new Date(year, 0, 4);
+    const jan4DayOfWeek = jan4.getDay();
+    const daysToSubtract = jan4DayOfWeek === 0 ? 6 : jan4DayOfWeek - 1;
+    const week1Monday = new Date(jan4.getTime() - daysToSubtract * 24 * 60 * 60 * 1000);
 
+    // Use floor division to calculate week number
+    const weeksDiff = Math.floor((date.getTime() - week1Monday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+    return weeksDiff + 1;
+  }
+
+  const weekNum = dateToWeek(d);
   weekPicker.value = `${d.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
 
   // Set max week to current week
   const today = new Date();
-  const jan4Today = new Date(today.getFullYear(), 0, 4);
-  const dayOfWeekToday = jan4Today.getDay() || 7;
-  const mondayOfWeek1Today = new Date(jan4Today);
-  mondayOfWeek1Today.setDate(jan4Today.getDate() - (dayOfWeekToday - 1));
-
-  const weeksDiffToday = Math.round((today - mondayOfWeek1Today) / (7 * 86400000));
-  const currentWeekNum = weeksDiffToday + 1;
+  const currentWeekNum = dateToWeek(today);
   const maxWeek = `${today.getFullYear()}-W${String(currentWeekNum).padStart(2, '0')}`;
 
   weekPicker.max = maxWeek;
