@@ -7325,12 +7325,14 @@ def _sync_client_changes_by_name(old_company_name, new_company_name, new_client_
                     fb_update(f"/projects/{proj_id}", proj_data)
 
 def _backfill_salary_emails(old_name=None, new_name=None, user_email=None):
-    """Backfill employee_email for salary records, including partial name matches."""
+    """Backfill employee_email and employee_uid for salary records, including partial name matches."""
     salaries = fb_get("/balance_sheet_salary") or {}
     users = fb_get("/users") or {}
 
-    # Create name to email mapping from users table
+    # Create mappings from users table
     name_to_email = {}
+    name_to_uid = {}
+    email_to_uid = {}
     if isinstance(users, dict):
         for uid, user_data in users.items():
             if isinstance(user_data, dict):
@@ -7338,6 +7340,9 @@ def _backfill_salary_emails(old_name=None, new_name=None, user_email=None):
                 email = user_data.get("email", "")
                 if username and email:
                     name_to_email[username] = email
+                    name_to_uid[username] = uid
+                if email:
+                    email_to_uid[email] = uid
 
     updated_count = 0
     if isinstance(salaries, dict):
@@ -7348,13 +7353,15 @@ def _backfill_salary_emails(old_name=None, new_name=None, user_email=None):
             if isinstance(sal_data, dict):
                 employee_name = sal_data.get("employee_name", "")
                 current_email = sal_data.get("employee_email", "")
+                current_uid = sal_data.get("employee_uid", "")
 
-                # Skip if already has email
-                if current_email:
+                # Skip if already has both email and uid
+                if current_email and current_uid:
                     continue
 
                 should_update = False
                 email_to_use = ""
+                uid_to_use = ""
 
                 # Match strategies (in order of preference):
                 # 1. Exact name match with provided email
@@ -7363,17 +7370,23 @@ def _backfill_salary_emails(old_name=None, new_name=None, user_email=None):
                                    (old_first_name and employee_name.startswith(old_first_name + " "))):
                     should_update = True
                     email_to_use = user_email
+                    uid_to_use = email_to_uid.get(user_email, "")
                 # 3. Fallback: try to find email by employee_name in users table
                 elif employee_name in name_to_email:
                     should_update = True
                     email_to_use = name_to_email[employee_name]
+                    uid_to_use = name_to_uid.get(employee_name, "")
 
                 if should_update:
-                    fb_update(f"/balance_sheet_salary/{sal_id}", {
-                        "employee_email": email_to_use,
-                        "updated_at": datetime.now(timezone.utc).isoformat()
-                    })
-                    updated_count += 1
+                    update_data = {"updated_at": datetime.now(timezone.utc).isoformat()}
+                    if not current_email and email_to_use:
+                        update_data["employee_email"] = email_to_use
+                    if not current_uid and uid_to_use:
+                        update_data["employee_uid"] = uid_to_use
+
+                    if update_data and len(update_data) > 1:  # Only update if there's something to update besides updated_at
+                        fb_update(f"/balance_sheet_salary/{sal_id}", update_data)
+                        updated_count += 1
 
     return updated_count
 
@@ -7606,22 +7619,36 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
                     fb_update(f"/invoices/{inv_id}", inv_data)
 
     # Update Payroll records (balance_sheet_salary)
+    # First, get user_uid if we have user_email (for primary identifier matching)
+    user_uid = None
+    if user_email:
+        users = fb_get("/users") or {}
+        if isinstance(users, dict):
+            for uid, user_data in users.items():
+                if isinstance(user_data, dict) and user_data.get("email") == user_email:
+                    user_uid = uid
+                    break
+
     payroll = fb_get("/balance_sheet_salary") or {}
     if isinstance(payroll, dict):
         for pay_id, pay_data in payroll.items():
             if isinstance(pay_data, dict):
-                # Match by email (most reliable), or name as fallback
+                # Match by user_uid (primary), email, or name (fallback)
+                stored_uid = pay_data.get("employee_uid", "")
                 stored_email = pay_data.get("employee_email", "")
                 stored_name = pay_data.get("employee_name", "")
 
+                uid_match = user_uid and stored_uid == user_uid
                 email_match = user_email and stored_email == user_email
                 name_match = stored_name == old_name
 
-                if email_match or name_match:
+                if uid_match or email_match or name_match:
                     pay_data["employee_name"] = new_name
-                    # Always fill in email when updating (helps future syncs)
+                    # Always fill in email and uid when updating (helps future syncs)
                     if user_email:
                         pay_data["employee_email"] = user_email
+                    if user_uid:
+                        pay_data["employee_uid"] = user_uid
                     pay_data["updated_at"] = now_iso
                     fb_update(f"/balance_sheet_salary/{pay_id}", pay_data)
 
