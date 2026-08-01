@@ -7325,7 +7325,7 @@ def _sync_client_changes_by_name(old_company_name, new_company_name, new_client_
                     fb_update(f"/projects/{proj_id}", proj_data)
 
 def _backfill_salary_emails(old_name=None, new_name=None, user_email=None):
-    """Backfill employee_email for salary records. Can match by old/new names or all records."""
+    """Backfill employee_email for salary records, including partial name matches."""
     salaries = fb_get("/balance_sheet_salary") or {}
     users = fb_get("/users") or {}
 
@@ -7341,6 +7341,9 @@ def _backfill_salary_emails(old_name=None, new_name=None, user_email=None):
 
     updated_count = 0
     if isinstance(salaries, dict):
+        # Extract first name for matching variations
+        old_first_name = old_name.split()[0] if old_name else ""
+
         for sal_id, sal_data in salaries.items():
             if isinstance(sal_data, dict):
                 employee_name = sal_data.get("employee_name", "")
@@ -7353,11 +7356,14 @@ def _backfill_salary_emails(old_name=None, new_name=None, user_email=None):
                 should_update = False
                 email_to_use = ""
 
-                # If specific names provided, match by old name
-                if old_name and employee_name == old_name and user_email:
+                # Match strategies (in order of preference):
+                # 1. Exact name match with provided email
+                # 2. Partial match: if employee_name starts with same first name and we have user_email
+                if user_email and ((old_name and employee_name == old_name) or
+                                   (old_first_name and employee_name.startswith(old_first_name + " "))):
                     should_update = True
                     email_to_use = user_email
-                # Otherwise, try to find email by name in users table
+                # 3. Fallback: try to find email by employee_name in users table
                 elif employee_name in name_to_email:
                     should_update = True
                     email_to_use = name_to_email[employee_name]
@@ -7611,8 +7617,8 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
 
                 if name_match or email_match:
                     pay_data["employee_name"] = new_name
-                    # Also update email field if it matches
-                    if email_match:
+                    # Always fill in email when updating by name (helps future syncs)
+                    if user_email and (email_match or name_match):
                         pay_data["employee_email"] = user_email
                     pay_data["updated_at"] = now_iso
                     fb_update(f"/balance_sheet_salary/{pay_id}", pay_data)
