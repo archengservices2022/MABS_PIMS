@@ -1243,6 +1243,17 @@ input[type=number]::-webkit-inner-spin-button {
 input[type=number] {
   -moz-appearance: textfield;
 }
+
+@keyframes slideIn {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
 </style>
 <script>
 const projectId = '{{ project.firebase_id }}';
@@ -2345,9 +2356,18 @@ function showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl) 
             showDeleteConfirmModal(projectId, coIdx, entityLabel);
           }
         } else {
-          // Request sent for approval
-          alert('Delete request sent to admin for approval.');
-          window.location = redirectUrl;
+          // Request sent for approval - show success toast
+          const toast = document.createElement('div');
+          toast.className = 'alert alert-success';
+          toast.style.cssText = `
+            position: fixed; bottom: 20px; right: 20px; z-index: 9999;
+            padding: 12px 16px; border-radius: 4px; font-size: 14px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            min-width: 300px; animation: slideIn 0.3s ease-out;
+          `;
+          toast.innerHTML = '<i class="bi bi-check-circle" style="margin-right: 8px;"></i>Delete request sent to admin for approval.';
+          document.body.appendChild(toast);
+          setTimeout(() => toast.remove(), 4000);
         }
       } else {
         sendBtn.disabled = false;
