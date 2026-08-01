@@ -13417,12 +13417,13 @@ def user_details_update(uid):
     cache_bust("all_users")
 
     # Sync name changes across timesheets, expenses, approvals, etc.
+    now_iso = datetime.now(timezone.utc).isoformat()
+
     if old_display_name and new_display_name:
         user_email = user_data.get("email", "")
         _sync_user_display_name(old_display_name, new_display_name, user_email)
 
         # Also sync submitted_by_name in all expenses if name changed
-        now_iso = datetime.now(timezone.utc).isoformat()
         expenses = fb_get("/balance_sheet_expenses") or {}
         if isinstance(expenses, dict):
             for exp_id, exp_data in expenses.items():
@@ -13440,6 +13441,36 @@ def user_details_update(uid):
                     submitted_by = exp_data.get("submitted_by_name", "")
                     if submitted_by == old_display_name:
                         fb_update(f"/deleted_expenses/{exp_id}", {"submitted_by_name": new_display_name, "updated_at": now_iso})
+
+    # Also sync submitted_by_name when salary is linked to this user
+    # Check if this update changed the username and update related salary records
+    if "username" in updates:
+        old_username = user_data.get("username", "")
+        new_username = updates["username"]
+        if old_username and new_username and old_username != new_username:
+            # Update all salary records created by this user
+            salaries = fb_get("/balance_sheet_salary") or {}
+            if isinstance(salaries, dict):
+                for sal_id, sal_data in salaries.items():
+                    if isinstance(sal_data, dict):
+                        if sal_data.get("submitted_by_name", "") == old_username or sal_data.get("created_by", "") == old_username:
+                            fb_update(f"/balance_sheet_salary/{sal_id}", {"submitted_by_name": new_username, "updated_at": now_iso})
+
+            # Also update all expenses submitted by this user
+            expenses = fb_get("/balance_sheet_expenses") or {}
+            if isinstance(expenses, dict):
+                for exp_id, exp_data in expenses.items():
+                    if isinstance(exp_data, dict):
+                        if exp_data.get("submitted_by_name", "") == old_username or exp_data.get("created_by", "") == old_username:
+                            fb_update(f"/balance_sheet_expenses/{exp_id}", {"submitted_by_name": new_username, "updated_at": now_iso})
+
+            # Also update archived expenses
+            deleted_expenses = fb_get("/deleted_expenses") or {}
+            if isinstance(deleted_expenses, dict):
+                for exp_id, exp_data in deleted_expenses.items():
+                    if isinstance(exp_data, dict):
+                        if exp_data.get("submitted_by_name", "") == old_username or exp_data.get("created_by", "") == old_username:
+                            fb_update(f"/deleted_expenses/{exp_id}", {"submitted_by_name": new_username, "updated_at": now_iso})
 
     # ALWAYS sync all salary expenses with their linked salary records
     # This ensures expense names match current salary employee names
