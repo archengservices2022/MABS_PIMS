@@ -7623,6 +7623,18 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
                     session_data["employee_name"] = new_name
                     fb_update(f"/activity_sessions/{session_id}", session_data)
 
+    # Update Medical Claims (submitted_by_name field)
+    medical_claims = fb_get("/medical_claims") or {}
+    if isinstance(medical_claims, dict):
+        for claim_id, claim_data in medical_claims.items():
+            if isinstance(claim_data, dict):
+                submitted_by = claim_data.get("submitted_by_name", "")
+                # Exact match only for submitted_by_name (user who submitted the claim)
+                if submitted_by == old_name:
+                    claim_data["submitted_by_name"] = new_name
+                    claim_data["updated_at"] = now_iso
+                    fb_update(f"/medical_claims/{claim_id}", claim_data)
+
 
 @app.route("/clients/new", methods=["GET", "POST"])
 @role_required("clients")
@@ -13495,18 +13507,6 @@ def user_details_update(uid):
                             update_data["description"] = new_description
 
                         fb_update(f"/balance_sheet_expenses/{exp_id}", update_data)
-
-    # Sync medical claims submitted_by_name when user name changes
-    if old_display_name and new_display_name:
-        now_iso = datetime.now(timezone.utc).isoformat()
-        medical_claims = fb_get("/medical_claims") or {}
-        if isinstance(medical_claims, dict):
-            for claim_id, claim_data in medical_claims.items():
-                if isinstance(claim_data, dict):
-                    submitted_by = claim_data.get("submitted_by_name", "")
-                    # Update if submitted_by matches old_display_name
-                    if submitted_by == old_display_name:
-                        fb_update(f"/medical_claims/{claim_id}", {"submitted_by_name": new_display_name, "updated_at": now_iso})
 
     # Update session if the logged-in user changed their own name
     if uid == session.get("user_uid") and new_display_name:
