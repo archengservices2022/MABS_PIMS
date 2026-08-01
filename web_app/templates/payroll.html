@@ -527,7 +527,14 @@
   <div id="export" class="payroll-tab-content">
     <div class="card-panel mb-4">
       <h6 class="section-heading mb-3">Filter Export</h6>
-      <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
+      <div class="d-flex gap-2 flex-wrap align-items-center mb-3">
+        <select id="exportType" class="form-select form-select-sm" style="width:180px;" onchange="handleExportTypeChange()">
+          <option value="salary">Salary</option>
+          <option value="advance">Advance</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+      <div id="regionFilterContainer" class="d-flex gap-2 flex-wrap align-items-center mb-2">
         <select id="exportRegion" class="form-select form-select-sm" style="width:180px;" onchange="buildPayrollExportLinks()">
           <option value="">All Regions</option>
           <option value="Inside America">Inside America</option>
@@ -972,9 +979,11 @@ const CSV_PAYROLL   = "{{ url_for('payroll_export_csv') }}";
 
 function buildPayrollExportLinks() {
   const params = new URLSearchParams();
+  const type = document.getElementById('exportType').value;
   const r  = document.getElementById('exportRegion').value;
   const f  = document.getElementById('exportFrom').value;
   const t  = document.getElementById('exportTo').value;
+  if (type && type !== 'all') params.set('type', type);
   if (r) params.set('region', r);
   if (f) params.set('from', f);
   if (t) params.set('to', t);
@@ -984,11 +993,27 @@ function buildPayrollExportLinks() {
   document.getElementById('exportPayrollCsvLink').href   = CSV_PAYROLL   + q;
 }
 
+function handleExportTypeChange() {
+  const type = document.getElementById('exportType').value;
+  const regionContainer = document.getElementById('regionFilterContainer');
+
+  // Show region filter only for salary export, hide for advance export
+  if (type === 'advance') {
+    regionContainer.style.display = 'none';
+    document.getElementById('exportRegion').value = '';
+  } else {
+    regionContainer.style.display = 'flex';
+  }
+
+  buildPayrollExportLinks();
+}
+
 function clearPayrollExportFilters() {
+  document.getElementById('exportType').value   = 'salary';
   document.getElementById('exportRegion').value = '';
   document.getElementById('exportFrom').value   = '';
   document.getElementById('exportTo').value     = '';
-  buildPayrollExportLinks();
+  handleExportTypeChange();
 }
 
 function setPayrollExportRange(type) {

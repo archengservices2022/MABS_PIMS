@@ -8235,6 +8235,10 @@ def _build_commission_payroll_rows():
 def payroll_export_csv():
     import csv
     import io
+
+    # Get export type filter (salary, advance, or all)
+    export_type = request.args.get("type", "salary")
+
     raw_sal = fb_get("/balance_sheet_salary") or {}
     salaries = []
     for sid, sdata in (raw_sal.items() if isinstance(raw_sal, dict) else []):
@@ -8329,6 +8333,9 @@ def payroll_export_excel():
     from openpyxl.styles import Font, PatternFill, Alignment
     from openpyxl.utils import get_column_letter
     import io as _io
+
+    # Get export type filter (salary, advance, or all)
+    export_type = request.args.get("type", "salary")
 
     raw_sal = fb_get("/balance_sheet_salary") or {}
     salaries = []
@@ -8482,6 +8489,9 @@ def payroll_export_pdf():
         return redirect(url_for("payroll"))
     import io as _io
 
+    # Get export type filter (salary, advance, or all)
+    export_type = request.args.get("type", "salary")
+
     raw_sal = fb_get("/balance_sheet_salary") or {}
     salaries = []
     for sid, sdata in (raw_sal.items() if isinstance(raw_sal, dict) else []):
@@ -8526,115 +8536,178 @@ def payroll_export_pdf():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    hdrs = ["Employee", "Date", "Amount", "Region", "Notes", "Status"]
-    data = [hdrs]
-
     cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8, alignment=1, leading=10, wordWrap='CJK')
     group_style = ParagraphStyle("group", parent=styles["Normal"], fontSize=9, fontName="Helvetica-Bold", alignment=1, leading=10, textColor=colors.HexColor("#0F172A"))
 
     from collections import defaultdict
-    grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
-    for sal in salaries:
-        date_str = sal.get("date", "")
-        if date_str:
-            year = date_str[:4]
-            month = date_str[5:7]
-            day = date_str[8:10]
-            grouped[year][month][day].append(sal)
-
-    # Sort by created_at within each day (first created at top)
-    for year in grouped:
-        for month in grouped[year]:
-            for day in grouped[year][month]:
-                grouped[year][month][day].sort(key=lambda s: s.get("created_at", ""))
-
-    for year in sorted(grouped.keys()):
-        for month in sorted(grouped[year].keys()):
-            for day in sorted(grouped[year][month].keys()):
-                for sal in grouped[year][month][day]:
-                    data.append([
-                        Paragraph(sal.get("employee_name", "—"), cell_style),
-                        Paragraph(fmt_pdf_date(sal.get("date", "")), cell_style),
-                        Paragraph(f"${_safe_float(sal.get('amount', 0)):,.2f}", cell_style),
-                        Paragraph(sal.get("region", "—"), cell_style),
-                        Paragraph(sal.get("notes", "—"), cell_style),
-                        Paragraph(sal.get("salary_status", "—"), cell_style),
-                    ])
-
-    cw = [1.8*inch, 1.0*inch, 1.0*inch, 1.2*inch, 1.5*inch, 1.0*inch]
-    tbl = Table(data, colWidths=cw, repeatRows=1)
-    tbl.setStyle(TableStyle([
-        ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
-        ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
-        ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
-        ("FONTSIZE",      (0,0), (-1,0), 9),
-        ("ALIGN",         (0,0), (-1,0), "CENTER"),
-        ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
-        ("TOPPADDING",    (0,0), (-1,0), 8),
-        ("BOTTOMPADDING", (0,0), (-1,0), 8),
-        ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
-        ("FONTSIZE",      (0,1), (-1,-1), 8),
-        ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")]),
-        ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
-        ("TOPPADDING",    (0,1), (-1,-1), 5),
-        ("BOTTOMPADDING", (0,1), (-1,-1), 5),
-        ("ALIGN",         (0,1), (-1,-1), "CENTER"),
-        ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
-    ]))
-    elems.append(tbl)
-
-    # Commission Payroll section
     from reportlab.platypus import Spacer
-    elems.append(Spacer(1, 0.3*inch))
-    comm_title_s = ParagraphStyle("CT", parent=styles["Normal"], fontSize=12,
-                                   fontName="Helvetica-Bold",
-                                   textColor=colors.HexColor("#7C3AED"), spaceAfter=6)
-    elems.append(Paragraph("Commission Payroll", comm_title_s))
 
-    comm_rows, comm_total_rev, comm_total_earned = _build_commission_payroll_rows()
-    comm_hdrs = ["Period", "Salesperson", "Type", "Rate (%)", "Revenue", "Commission Due", "Status"]
-    comm_data = [comm_hdrs]
-    for r in comm_rows:
+    # Add Salary section if type is "salary" or "all"
+    if export_type in ["salary", "all"]:
+        hdrs = ["Employee", "Date", "Amount", "Region", "Notes", "Status"]
+        data = [hdrs]
+
+        grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+        for sal in salaries:
+            date_str = sal.get("date", "")
+            if date_str:
+                year = date_str[:4]
+                month = date_str[5:7]
+                day = date_str[8:10]
+                grouped[year][month][day].append(sal)
+
+        # Sort by created_at within each day (first created at top)
+        for year in grouped:
+            for month in grouped[year]:
+                for day in grouped[year][month]:
+                    grouped[year][month][day].sort(key=lambda s: s.get("created_at", ""))
+
+        for year in sorted(grouped.keys()):
+            for month in sorted(grouped[year].keys()):
+                for day in sorted(grouped[year][month].keys()):
+                    for sal in grouped[year][month][day]:
+                        data.append([
+                            Paragraph(sal.get("employee_name", "—"), cell_style),
+                            Paragraph(fmt_pdf_date(sal.get("date", "")), cell_style),
+                            Paragraph(f"${_safe_float(sal.get('amount', 0)):,.2f}", cell_style),
+                            Paragraph(sal.get("region", "—"), cell_style),
+                            Paragraph(sal.get("notes", "—"), cell_style),
+                            Paragraph(sal.get("salary_status", "—"), cell_style),
+                        ])
+
+        cw = [1.8*inch, 1.0*inch, 1.0*inch, 1.2*inch, 1.5*inch, 1.0*inch]
+        tbl = Table(data, colWidths=cw, repeatRows=1)
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
+            ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+            ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE",      (0,0), (-1,0), 9),
+            ("ALIGN",         (0,0), (-1,0), "CENTER"),
+            ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
+            ("TOPPADDING",    (0,0), (-1,0), 8),
+            ("BOTTOMPADDING", (0,0), (-1,0), 8),
+            ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
+            ("FONTSIZE",      (0,1), (-1,-1), 8),
+            ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")]),
+            ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
+            ("TOPPADDING",    (0,1), (-1,-1), 5),
+            ("BOTTOMPADDING", (0,1), (-1,-1), 5),
+            ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+            ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
+        ]))
+        elems.append(tbl)
+
+        # Commission Payroll section
+        elems.append(Spacer(1, 0.3*inch))
+        comm_title_s = ParagraphStyle("CT", parent=styles["Normal"], fontSize=12,
+                                       fontName="Helvetica-Bold",
+                                       textColor=colors.HexColor("#7C3AED"), spaceAfter=6)
+        elems.append(Paragraph("Commission Payroll", comm_title_s))
+
+        comm_rows, comm_total_rev, comm_total_earned = _build_commission_payroll_rows()
+        comm_hdrs = ["Period", "Salesperson", "Type", "Rate (%)", "Revenue", "Commission Due", "Status"]
+        comm_data = [comm_hdrs]
+        for r in comm_rows:
+            comm_data.append([
+                Paragraph(r["period"], cell_style),
+                Paragraph(r["salesperson"], cell_style),
+                Paragraph(r["emp_type"] or "—", cell_style),
+                Paragraph(f"{r['rate']:.1f}%", cell_style),
+                Paragraph(f"${r['revenue']:,.2f}", cell_style),
+                Paragraph(f"${r['earned']:,.2f}", cell_style),
+                Paragraph(r["status"], cell_style),
+            ])
+        # Totals row
+        bold_cell = ParagraphStyle("bold_cell", parent=styles["Normal"], fontSize=8, alignment=1, fontName="Helvetica-Bold")
         comm_data.append([
-            Paragraph(r["period"], cell_style),
-            Paragraph(r["salesperson"], cell_style),
-            Paragraph(r["emp_type"] or "—", cell_style),
-            Paragraph(f"{r['rate']:.1f}%", cell_style),
-            Paragraph(f"${r['revenue']:,.2f}", cell_style),
-            Paragraph(f"${r['earned']:,.2f}", cell_style),
-            Paragraph(r["status"], cell_style),
+            Paragraph("", bold_cell), Paragraph("", bold_cell), Paragraph("", bold_cell),
+            Paragraph("Totals", bold_cell),
+            Paragraph(f"${comm_total_rev:,.2f}", bold_cell),
+            Paragraph(f"${comm_total_earned:,.2f}", bold_cell),
+            Paragraph("", bold_cell),
         ])
-    # Totals row
-    bold_cell = ParagraphStyle("bold_cell", parent=styles["Normal"], fontSize=8, alignment=1, fontName="Helvetica-Bold")
-    comm_data.append([
-        Paragraph("", bold_cell), Paragraph("", bold_cell), Paragraph("", bold_cell),
-        Paragraph("Totals", bold_cell),
-        Paragraph(f"${comm_total_rev:,.2f}", bold_cell),
-        Paragraph(f"${comm_total_earned:,.2f}", bold_cell),
-        Paragraph("", bold_cell),
-    ])
-    comm_cw = [0.9*inch, 1.2*inch, 0.9*inch, 0.8*inch, 1.1*inch, 1.1*inch, 0.8*inch]
-    comm_tbl = Table(comm_data, colWidths=comm_cw, repeatRows=1)
-    comm_tbl.setStyle(TableStyle([
-        ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#7C3AED")),
-        ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
-        ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
-        ("FONTSIZE",      (0,0), (-1,0), 9),
-        ("ALIGN",         (0,0), (-1,0), "CENTER"),
-        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
-        ("TOPPADDING",    (0,0), (-1,0), 8),
-        ("BOTTOMPADDING", (0,0), (-1,0), 8),
-        ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
-        ("FONTSIZE",      (0,1), (-1,-1), 8),
-        ("ROWBACKGROUNDS",(0,1), (-1,-2), [colors.white, colors.HexColor("#F8FAFC")]),
-        ("BACKGROUND",    (0,-1), (-1,-1), colors.HexColor("#F3F0FF")),
-        ("FONTNAME",      (0,-1), (-1,-1), "Helvetica-Bold"),
-        ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
-        ("TOPPADDING",    (0,1), (-1,-1), 5),
-        ("BOTTOMPADDING", (0,1), (-1,-1), 5),
-        ("ALIGN",         (0,1), (-1,-1), "CENTER"),
-    ]))
-    elems.append(comm_tbl)
+        comm_cw = [0.9*inch, 1.2*inch, 0.9*inch, 0.8*inch, 1.1*inch, 1.1*inch, 0.8*inch]
+        comm_tbl = Table(comm_data, colWidths=comm_cw, repeatRows=1)
+        comm_tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#7C3AED")),
+            ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+            ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE",      (0,0), (-1,0), 9),
+            ("ALIGN",         (0,0), (-1,0), "CENTER"),
+            ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+            ("TOPPADDING",    (0,0), (-1,0), 8),
+            ("BOTTOMPADDING", (0,0), (-1,0), 8),
+            ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
+            ("FONTSIZE",      (0,1), (-1,-1), 8),
+            ("ROWBACKGROUNDS",(0,1), (-1,-2), [colors.white, colors.HexColor("#F8FAFC")]),
+            ("BACKGROUND",    (0,-1), (-1,-1), colors.HexColor("#F3F0FF")),
+            ("FONTNAME",      (0,-1), (-1,-1), "Helvetica-Bold"),
+            ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
+            ("TOPPADDING",    (0,1), (-1,-1), 5),
+            ("BOTTOMPADDING", (0,1), (-1,-1), 5),
+            ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+        ]))
+        elems.append(comm_tbl)
+
+    # Add Employee Advances section if type is "advance" or "all"
+    if export_type in ["advance", "all"]:
+        if export_type == "all":
+            elems.append(Spacer(1, 0.3*inch))
+        adv_title_s = ParagraphStyle("AT", parent=styles["Normal"], fontSize=12,
+                                      fontName="Helvetica-Bold",
+                                      textColor=colors.HexColor("#0891B2"), spaceAfter=6)
+        elems.append(Paragraph("Employee Advances", adv_title_s))
+
+        raw_adv = fb_get("/employee_advances") or {}
+        advances = []
+        for adv_id, adv_data in (raw_adv.items() if isinstance(raw_adv, dict) else []):
+            if isinstance(adv_data, dict):
+                adv_data["id"] = adv_id
+                advances.append(adv_data)
+
+        # Apply date filters to advances
+        if date_from:
+            advances = [a for a in advances if (a.get("date") or "") >= date_from]
+        if date_to:
+            advances = [a for a in advances if (a.get("date") or "") <= date_to]
+
+        advances.sort(key=lambda a: a.get("date", ""), reverse=False)
+
+        adv_hdrs = ["Advance No", "Employee", "Date", "Amount", "Adjusted", "Balance", "Status"]
+        adv_data = [adv_hdrs]
+        for adv in advances:
+            balance = _safe_float(adv.get("amount", 0)) - _safe_float(adv.get("adjusted", 0))
+            adv_data.append([
+                Paragraph(adv.get("advance_no", "—"), cell_style),
+                Paragraph(adv.get("employee_name", "—"), cell_style),
+                Paragraph(fmt_pdf_date(adv.get("date", "")), cell_style),
+                Paragraph(f"${_safe_float(adv.get('amount', 0)):,.2f}", cell_style),
+                Paragraph(f"${_safe_float(adv.get('adjusted', 0)):,.2f}", cell_style),
+                Paragraph(f"${balance:,.2f}", cell_style),
+                Paragraph(adv.get("status", "Open"), cell_style),
+            ])
+
+        adv_cw = [1.2*inch, 1.8*inch, 1.0*inch, 1.0*inch, 1.0*inch, 1.0*inch, 0.8*inch]
+        adv_tbl = Table(adv_data, colWidths=adv_cw, repeatRows=1)
+        adv_tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0891B2")),
+            ("TEXTCOLOR",     (0,0), (-1,0), colors.white),
+            ("FONTNAME",      (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE",      (0,0), (-1,0), 9),
+            ("ALIGN",         (0,0), (-1,0), "CENTER"),
+            ("VALIGN",        (0,0), (-1,0), "MIDDLE"),
+            ("TOPPADDING",    (0,0), (-1,0), 8),
+            ("BOTTOMPADDING", (0,0), (-1,0), 8),
+            ("FONTNAME",      (0,1), (-1,-1), "Helvetica"),
+            ("FONTSIZE",      (0,1), (-1,-1), 8),
+            ("ROWBACKGROUNDS",(0,1), (-1,-1), [colors.white, colors.HexColor("#F0F9FB")]),
+            ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#E2E8F0")),
+            ("TOPPADDING",    (0,1), (-1,-1), 5),
+            ("BOTTOMPADDING", (0,1), (-1,-1), 5),
+            ("ALIGN",         (0,1), (-1,-1), "CENTER"),
+            ("VALIGN",        (0,1), (-1,-1), "MIDDLE"),
+        ]))
+        elems.append(adv_tbl)
 
     doc.build(elems)
     buf.seek(0)
