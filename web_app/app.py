@@ -13416,6 +13416,14 @@ def user_details_update(uid):
     fb_update(f"/users/{uid}", updates)
     cache_bust("all_users")
 
+    # Update session if the current user is updating their own details
+    if session.get("user_id") == uid:
+        if "username" in updates:
+            session["username"] = updates["username"]
+            session["user_name"] = updates["username"]
+        if "display_name" in updates:
+            session["display_name"] = updates["display_name"]
+
     # Sync name changes across timesheets, expenses, approvals, etc.
     now_iso = datetime.now(timezone.utc).isoformat()
 
