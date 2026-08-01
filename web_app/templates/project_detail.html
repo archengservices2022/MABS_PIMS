@@ -880,13 +880,19 @@
                        target="_blank" class="btn btn-xs btn-outline-secondary" title="Download CO PDF">
                       <i class="bi bi-file-earmark-pdf"></i>
                     </a>
-                    {% if user_role in ('admin', 'administration') %}
+                    {% if user_role == 'admin' %}
                     <form method="POST" action="{{ url_for('co_delete', project_id=project.firebase_id, co_idx=co_idx) }}"
                           onsubmit="return confirm('Delete {{ co.get("co_number","CO") }} on project {{ project.get("project_number","") }}? This will update the contract value and financial totals.');">
                       <button class="btn btn-xs btn-outline-danger" title="Delete CO">
                         <i class="bi bi-trash"></i>
                       </button>
                     </form>
+                    {% elif user_role == 'administration' %}
+                    <button class="btn btn-xs btn-outline-warning"
+                            onclick="requestDeletePermission('change_order', '{{ project.firebase_id }}_{{ co_idx }}', '{{ co.get("co_number","CO") }}', '{{ url_for("project_detail", project_id=project.firebase_id) }}#tab-change-orders')"
+                            title="Request admin approval to delete">
+                      <i class="bi bi-exclamation-circle"></i>
+                    </button>
                     {% endif %}
                     </div>
                   </td>
@@ -2064,6 +2070,36 @@ function toggleCoAddr(idx) {
   display.classList.toggle('d-none');
   edit.classList.toggle('d-none');
   if (!edit.classList.contains('d-none')) edit.focus();
+}
+
+function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl) {
+  if (!confirm(`Request admin approval to delete ${entityLabel}?`)) return;
+
+  fetch('/api/permission-request', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: `Delete ${entityType}`,
+      entity_type: entityType,
+      entity_id: entityId,
+      entity_label: entityLabel,
+      page_url: window.location.href,
+      notes: `Request to delete ${entityLabel}`
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      alert('Delete request sent to admin for approval.');
+      window.location = redirectUrl;
+    } else {
+      alert('Error: ' + (d.error || 'Failed to send request'));
+    }
+  })
+  .catch(err => {
+    console.error('Request failed:', err);
+    alert('Network error. Please try again.');
+  });
 }
 </script>
 {% endblock %}

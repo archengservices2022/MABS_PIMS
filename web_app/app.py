@@ -3798,9 +3798,19 @@ def co_update_amount(project_id, co_idx):
 @app.route("/projects/<project_id>/change-orders/<int:co_idx>/delete", methods=["POST"])
 @role_required("projects")
 def co_delete(project_id, co_idx):
-    if normalize_role(session.get("user_role", "")) not in ("admin", "administration"):
+    _role = normalize_role(session.get("user_role", ""))
+    _uid  = session.get("user_uid", "")
+
+    if _role not in ("admin", "administration"):
         flash("You don't have permission to delete change orders.", "danger")
         return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+
+    # Administration role needs admin approval to delete
+    if _role == "administration":
+        _perm = _has_approved_delete_request(_uid, "change_order", f"{project_id}_{co_idx}")
+        if not _perm:
+            flash("You need admin approval to delete this change order. Use the 'Request Delete' button.", "danger")
+            return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
 
     project = fb_get(f"/projects/{project_id}") or {}
     if not project:
