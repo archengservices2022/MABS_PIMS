@@ -7324,12 +7324,12 @@ def _sync_client_changes_by_name(old_company_name, new_company_name, new_client_
                     proj_data["client_name"] = new_client_name
                     fb_update(f"/projects/{proj_id}", proj_data)
 
-def _backfill_salary_emails():
-    """Backfill employee_email for old salary records that don't have it."""
+def _backfill_salary_emails(old_name=None, new_name=None, user_email=None):
+    """Backfill employee_email for salary records. Can match by old/new names or all records."""
     salaries = fb_get("/balance_sheet_salary") or {}
     users = fb_get("/users") or {}
 
-    # Create name to email mapping
+    # Create name to email mapping from users table
     name_to_email = {}
     if isinstance(users, dict):
         for uid, user_data in users.items():
@@ -7339,20 +7339,35 @@ def _backfill_salary_emails():
                 if username and email:
                     name_to_email[username] = email
 
-    # Update salaries that are missing employee_email
     updated_count = 0
     if isinstance(salaries, dict):
         for sal_id, sal_data in salaries.items():
             if isinstance(sal_data, dict):
-                # Only update if email is missing
-                if not sal_data.get("employee_email"):
-                    employee_name = sal_data.get("employee_name", "")
-                    if employee_name and employee_name in name_to_email:
-                        fb_update(f"/balance_sheet_salary/{sal_id}", {
-                            "employee_email": name_to_email[employee_name],
-                            "updated_at": datetime.now(timezone.utc).isoformat()
-                        })
-                        updated_count += 1
+                employee_name = sal_data.get("employee_name", "")
+                current_email = sal_data.get("employee_email", "")
+
+                # Skip if already has email
+                if current_email:
+                    continue
+
+                should_update = False
+                email_to_use = ""
+
+                # If specific names provided, match by old name
+                if old_name and employee_name == old_name and user_email:
+                    should_update = True
+                    email_to_use = user_email
+                # Otherwise, try to find email by name in users table
+                elif employee_name in name_to_email:
+                    should_update = True
+                    email_to_use = name_to_email[employee_name]
+
+                if should_update:
+                    fb_update(f"/balance_sheet_salary/{sal_id}", {
+                        "employee_email": email_to_use,
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    })
+                    updated_count += 1
 
     return updated_count
 
@@ -13489,7 +13504,7 @@ def update_own_profile():
     if old_display_name and new_display_name:
         user_email = user_data.get("email", "")
         # First, backfill emails for old salary records that don't have them
-        _backfill_salary_emails()
+        _backfill_salary_emails(old_display_name, new_display_name, user_email)
         # Then run the sync with full email matching
         _sync_user_display_name(old_display_name, new_display_name, user_email)
 
@@ -13550,7 +13565,7 @@ def user_details_update(uid):
     if old_display_name and new_display_name:
         user_email = user_data.get("email", "")
         # First, backfill emails for old salary records that don't have them
-        _backfill_salary_emails()
+        _backfill_salary_emails(old_display_name, new_display_name, user_email)
         # Then run the sync with full email matching
         _sync_user_display_name(old_display_name, new_display_name, user_email)
 
