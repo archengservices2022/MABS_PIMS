@@ -889,7 +889,7 @@
                     </form>
                     {% elif user_role == 'administration' %}
                     <button class="btn btn-xs btn-outline-danger"
-                            onclick="requestDeletePermission('change_order', '{{ project.firebase_id }}_{{ co_idx }}', '{{ co.get("co_number","CO") }}', '{{ url_for("project_detail", project_id=project.firebase_id) }}#tab-change-orders')"
+                            onclick="requestDeletePermission('change_order', '{{ project.firebase_id }}_{{ co_idx }}', '{{ co.get("co_number","CO") }} (Project: {{ project.get("project_number","") }})', '{{ url_for("project_detail", project_id=project.firebase_id) }}#tab-change-orders')"
                             title="Request admin approval to delete">
                       <i class="bi bi-trash"></i>
                     </button>
