@@ -2073,33 +2073,124 @@ function toggleCoAddr(idx) {
 }
 
 function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl) {
-  if (!confirm(`${entityLabel}?`)) return;
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  `;
 
-  fetch('/api/permission-request', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      action: entityLabel,
-      entity_type: entityType,
-      entity_id: entityId,
-      entity_label: entityLabel,
-      page_url: window.location.href,
-      notes: entityLabel
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    max-width: 450px;
+    width: 90%;
+    overflow: hidden;
+  `;
+
+  const header = document.createElement('div');
+  header.style.cssText = `
+    background: #7c3aed;
+    color: white;
+    padding: 18px 24px;
+    font-weight: 700;
+    font-size: 16px;
+  `;
+  header.textContent = 'Request Admin Approval';
+
+  const body = document.createElement('div');
+  body.style.cssText = `
+    padding: 24px;
+    color: #334155;
+    font-size: 14px;
+    line-height: 1.6;
+  `;
+  body.innerHTML = `<p>${entityLabel}?</p>`;
+
+  const footer = document.createElement('div');
+  footer.style.cssText = `
+    padding: 18px 24px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    border-top: 1px solid #e2e8f0;
+  `;
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = `
+    padding: 9px 18px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: white;
+    color: #334155;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13px;
+  `;
+  cancelBtn.onclick = () => overlay.remove();
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.textContent = 'Request Approval';
+  confirmBtn.style.cssText = `
+    padding: 9px 18px;
+    border: none;
+    border-radius: 6px;
+    background: #7c3aed;
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13px;
+  `;
+  confirmBtn.onclick = () => {
+    overlay.remove();
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Sending...';
+
+    fetch('/api/permission-request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: entityLabel,
+        entity_type: entityType,
+        entity_id: entityId,
+        entity_label: entityLabel,
+        page_url: window.location.href,
+        notes: entityLabel
+      })
     })
-  })
-  .then(r => r.json())
-  .then(d => {
-    if (d.success) {
-      alert('Delete request sent to admin for approval.');
-      window.location = redirectUrl;
-    } else {
-      alert('Error: ' + (d.error || 'Failed to send request'));
-    }
-  })
-  .catch(err => {
-    console.error('Request failed:', err);
-    alert('Network error. Please try again.');
-  });
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        alert('Delete request sent to admin for approval.');
+        window.location = redirectUrl;
+      } else {
+        alert('Error: ' + (d.error || 'Failed to send request'));
+      }
+    })
+    .catch(err => {
+      console.error('Request failed:', err);
+      alert('Network error. Please try again.');
+    });
+  };
+
+  footer.appendChild(cancelBtn);
+  footer.appendChild(confirmBtn);
+
+  modal.appendChild(header);
+  modal.appendChild(body);
+  modal.appendChild(footer);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
 }
 </script>
 {% endblock %}
