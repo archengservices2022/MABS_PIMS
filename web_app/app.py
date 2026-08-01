@@ -13447,13 +13447,19 @@ def user_details_update(uid):
     if "username" in updates:
         old_username = user_data.get("username", "")
         new_username = updates["username"]
+        old_email = user_data.get("email", "")
         if old_username and new_username and old_username != new_username:
             # Update all salary records created by this user
             salaries = fb_get("/balance_sheet_salary") or {}
             if isinstance(salaries, dict):
                 for sal_id, sal_data in salaries.items():
                     if isinstance(sal_data, dict):
-                        if sal_data.get("submitted_by_name", "") == old_username or sal_data.get("created_by", "") == old_username:
+                        # Match by old username, email, or any variation
+                        submitted_by = sal_data.get("submitted_by_name", "")
+                        created_by = sal_data.get("created_by", "")
+                        submitted_email = sal_data.get("submitted_by_email", "")
+                        if (submitted_by == old_username or created_by == old_username or
+                            submitted_email == old_email or submitted_by.lower() == old_username.lower()):
                             fb_update(f"/balance_sheet_salary/{sal_id}", {"submitted_by_name": new_username, "updated_at": now_iso})
 
             # Also update all expenses submitted by this user
@@ -13461,7 +13467,11 @@ def user_details_update(uid):
             if isinstance(expenses, dict):
                 for exp_id, exp_data in expenses.items():
                     if isinstance(exp_data, dict):
-                        if exp_data.get("submitted_by_name", "") == old_username or exp_data.get("created_by", "") == old_username:
+                        submitted_by = exp_data.get("submitted_by_name", "")
+                        created_by = exp_data.get("created_by", "")
+                        submitted_email = exp_data.get("submitted_by_email", "")
+                        if (submitted_by == old_username or created_by == old_username or
+                            submitted_email == old_email or submitted_by.lower() == old_username.lower()):
                             fb_update(f"/balance_sheet_expenses/{exp_id}", {"submitted_by_name": new_username, "updated_at": now_iso})
 
             # Also update archived expenses
@@ -13469,7 +13479,11 @@ def user_details_update(uid):
             if isinstance(deleted_expenses, dict):
                 for exp_id, exp_data in deleted_expenses.items():
                     if isinstance(exp_data, dict):
-                        if exp_data.get("submitted_by_name", "") == old_username or exp_data.get("created_by", "") == old_username:
+                        submitted_by = exp_data.get("submitted_by_name", "")
+                        created_by = exp_data.get("created_by", "")
+                        submitted_email = exp_data.get("submitted_by_email", "")
+                        if (submitted_by == old_username or created_by == old_username or
+                            submitted_email == old_email or submitted_by.lower() == old_username.lower()):
                             fb_update(f"/deleted_expenses/{exp_id}", {"submitted_by_name": new_username, "updated_at": now_iso})
 
     # ALWAYS sync all salary expenses with their linked salary records
