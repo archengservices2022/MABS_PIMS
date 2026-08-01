@@ -17306,7 +17306,19 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         description_display = ""
         if is_co_stage:
             # For CO stage, use the PO/WO from the CO itself, not the project
+            # First try CO's PO/WO, then try payment stage's PO/WO
             description_display = co_po_wo_from_stage or ""
+            # If still empty, check if payment_stage_index has meta with PO/WO
+            if not description_display and payment_stage_index is not None:
+                try:
+                    stage_data = payment_stages[int(payment_stage_index)] if isinstance(payment_stages, list) and int(payment_stage_index) < len(payment_stages) else None
+                    if isinstance(stage_data, dict):
+                        # Try various field names for PO/WO in the payment stage
+                        description_display = (stage_data.get("po_wo_number") or
+                                              stage_data.get("po_wo") or
+                                              stage_data.get("po_number") or "")
+                except (ValueError, TypeError, IndexError):
+                    pass
         elif po_wo or site_address:
             if site_address:
                 import re
