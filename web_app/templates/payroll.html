@@ -1334,13 +1334,16 @@ function addAdvancePaginationControls(totalPages) {
   let paginationHTML = `<div style="display:flex;justify-content:center;gap:12px;margin-top:16px;align-items:center;">`;
 
   // Previous button
-  paginationHTML += `<button onclick="goToAdvancePage(${currentAdvancePage - 1})" ${currentAdvancePage === 1 ? 'disabled' : ''} style="padding:8px 12px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;font-weight:600;color:#374151;background:white;font-size:16px;${currentAdvancePage === 1 ? 'opacity:0.4;cursor:not-allowed;' : 'hover:background:#f1f5f9;'}">‹</button>`;
+  paginationHTML += `<button onclick="goToAdvancePage(${currentAdvancePage - 1})" ${currentAdvancePage === 1 ? 'disabled' : ''} style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;font-weight:600;color:#374151;background:white;font-size:14px;${currentAdvancePage === 1 ? 'opacity:0.4;cursor:not-allowed;' : ''}">‹</button>`;
 
-  // Page indicator
-  paginationHTML += `<span style="color:#6b7280;font-size:14px;font-weight:500;min-width:60px;text-align:center;">${currentAdvancePage} / ${totalPages}</span>`;
+  // Page indicator - input field
+  paginationHTML += `<input type="number" value="${currentAdvancePage}" onchange="goToAdvancePage(parseInt(this.value))" min="1" max="${totalPages}" style="width:40px;text-align:center;padding:6px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:14px;font-weight:500;" />`;
+
+  // Of text and total
+  paginationHTML += `<span style="color:#6b7280;font-size:14px;font-weight:500;">of ${totalPages}</span>`;
 
   // Next button
-  paginationHTML += `<button onclick="goToAdvancePage(${currentAdvancePage + 1})" ${currentAdvancePage === totalPages ? 'disabled' : ''} style="padding:8px 12px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;font-weight:600;color:#374151;background:white;font-size:16px;${currentAdvancePage === totalPages ? 'opacity:0.4;cursor:not-allowed;' : 'hover:background:#f1f5f9;'}">›</button>`;
+  paginationHTML += `<button onclick="goToAdvancePage(${currentAdvancePage + 1})" ${currentAdvancePage === totalPages ? 'disabled' : ''} style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;font-weight:600;color:#374151;background:white;font-size:14px;${currentAdvancePage === totalPages ? 'opacity:0.4;cursor:not-allowed;' : ''}">›</button>`;
 
   paginationHTML += `</div>`;
   paginationContainer.innerHTML = paginationHTML;
