@@ -217,7 +217,7 @@
             <tr style="border-bottom:1px solid #F1F5F9;">
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
                 {%- set desc = item.get('description','') -%}
-                {%- if 'CO' in desc and ' – ' in desc -%}
+                {%- if 'co' in desc.lower() and ' – ' in desc -%}
                   {%- set co_part = desc.split(' – ')[0].strip() -%}
                   {{ co_part }}
                 {%- else -%}
