@@ -13435,47 +13435,63 @@ def user_details_update(uid):
     else:
         log.info(f"Not updating session: session.user_id={session.get('user_id')} != uid={uid}")
 
-    # SYNC submitted_by_name based on EMAIL (most reliable identifier)
+    # SYNC submitted_by_name based on EMAIL and OLD NAME
     user_email = user_data.get("email", "").strip().lower()
-    if "display_name" in updates and user_email:
-        new_display_name = updates["display_name"]
-        log.info(f"Syncing submitted_by_name for email {user_email} → {new_display_name}")
+    old_display_name_for_sync = old_display_name  # From the display_name change tracking above
 
-        # Update all salary records by email
+    if "display_name" in updates:
+        new_display_name = updates["display_name"]
+
+        # Get old display name if not already set
+        if not old_display_name_for_sync:
+            old_display_name_for_sync = user_data.get("display_name", "")
+
+        log.info(f"Syncing submitted_by_name: email={user_email}, old_name={old_display_name_for_sync} → {new_display_name}")
+
+        # Update all salary records by email OR old name
         salaries = fb_get("/balance_sheet_salary") or {}
         if isinstance(salaries, dict):
             for sal_id, sal_data in salaries.items():
                 if isinstance(sal_data, dict):
                     submitted_email = sal_data.get("submitted_by_email", "").strip().lower()
-                    if submitted_email == user_email:
+                    submitted_name = sal_data.get("submitted_by_name", "").strip()
+                    # Match by email OR by old name
+                    if (user_email and submitted_email == user_email) or (old_display_name_for_sync and submitted_name == old_display_name_for_sync):
                         fb_update(f"/balance_sheet_salary/{sal_id}", {
                             "submitted_by_name": new_display_name,
+                            "submitted_by_email": user_email,
                             "updated_at": now_iso
                         })
                         log.info(f"  Updated salary {sal_id}")
 
-        # Update all expense records by email
+        # Update all expense records by email OR old name
         expenses = fb_get("/balance_sheet_expenses") or {}
         if isinstance(expenses, dict):
             for exp_id, exp_data in expenses.items():
                 if isinstance(exp_data, dict):
                     submitted_email = exp_data.get("submitted_by_email", "").strip().lower()
-                    if submitted_email == user_email:
+                    submitted_name = exp_data.get("submitted_by_name", "").strip()
+                    # Match by email OR by old name
+                    if (user_email and submitted_email == user_email) or (old_display_name_for_sync and submitted_name == old_display_name_for_sync):
                         fb_update(f"/balance_sheet_expenses/{exp_id}", {
                             "submitted_by_name": new_display_name,
+                            "submitted_by_email": user_email,
                             "updated_at": now_iso
                         })
                         log.info(f"  Updated expense {exp_id}")
 
-        # Update all deleted/archived expenses by email
+        # Update all deleted/archived expenses by email OR old name
         deleted_expenses = fb_get("/deleted_expenses") or {}
         if isinstance(deleted_expenses, dict):
             for exp_id, exp_data in deleted_expenses.items():
                 if isinstance(exp_data, dict):
                     submitted_email = exp_data.get("submitted_by_email", "").strip().lower()
-                    if submitted_email == user_email:
+                    submitted_name = exp_data.get("submitted_by_name", "").strip()
+                    # Match by email OR by old name
+                    if (user_email and submitted_email == user_email) or (old_display_name_for_sync and submitted_name == old_display_name_for_sync):
                         fb_update(f"/deleted_expenses/{exp_id}", {
                             "submitted_by_name": new_display_name,
+                            "submitted_by_email": user_email,
                             "updated_at": now_iso
                         })
                         log.info(f"  Updated deleted expense {exp_id}")
