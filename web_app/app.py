@@ -3890,6 +3890,11 @@ def co_delete(project_id, co_idx):
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     fb_update(f"/projects/{project_id}", update_data)
+
+    # Mark permission request as completed if it was approved by admin
+    if _role == "administration" and _perm:
+        fb_update(f"/permission_requests/{_perm['firebase_id']}", {"status": "completed"})
+
     cache_bust("projects_list")
     flash(f"{deleted_number} deleted and project financial totals updated.", "success")
     return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
