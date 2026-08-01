@@ -14310,6 +14310,14 @@ def api_permission_request():
         "reviewed_at":       None,
         "admin_notes":       None,
     }
+    # Check if already approved
+    _uid = session.get("user_uid", "")
+    _perm = _has_approved_delete_request(_uid, entity_type, entity_id)
+
+    if _perm:
+        # Already approved - user can delete now
+        return jsonify({"success": True, "approved": True})
+
     fb_push("/permission_requests", req)
     requester = session.get("user_name", "Someone")
     for u in _load_all_users():
@@ -14320,7 +14328,7 @@ def api_permission_request():
                     "Delete Permission Request",
                     f"{requester} requested to delete: {entity_label or action[:80]}",
                     link=url_for("settings") + "?tab=permissions")
-    return jsonify({"success": True})
+    return jsonify({"success": True, "approved": False})
 
 
 @app.route("/api/permission-requests/<req_id>/resolve", methods=["POST"])
