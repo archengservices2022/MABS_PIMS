@@ -8131,6 +8131,17 @@ def payroll():
                     comm_paid_set.add(_k)
                     comm_paid_amounts[_k] = _amt
 
+    # Load employee advances for immediate display
+    _all_advances = fb_get("/employee_advances") or {}
+    advances_list = []
+    if isinstance(_all_advances, dict):
+        for adv_id, adv_data in _all_advances.items():
+            if isinstance(adv_data, dict):
+                adv_copy = dict(adv_data)
+                adv_copy['id'] = adv_id
+                advances_list.append(adv_copy)
+    advances_list.sort(key=lambda x: x.get("date", ""), reverse=True)
+
     return render_template("payroll.html",
         employee_filter=employee_filter,
         year_filter=year_filter,
@@ -8139,7 +8150,8 @@ def payroll():
         salaries=salaries,
         commission_by_period=commission_by_period,
         comm_paid_set=list(comm_paid_set),
-        comm_paid_amounts=comm_paid_amounts)
+        comm_paid_amounts=comm_paid_amounts,
+        advances=json.dumps(advances_list))
 
 # ── Payroll Export Routes ─────────────────────────────────────────────────────
 def _build_commission_payroll_rows():
