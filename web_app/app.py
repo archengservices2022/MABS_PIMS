@@ -7610,15 +7610,17 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
     if isinstance(payroll, dict):
         for pay_id, pay_data in payroll.items():
             if isinstance(pay_data, dict):
-                # Match by exact name or email
-                employee_email = pay_data.get("employee_email", "")
-                email_match = user_email and employee_email == user_email
-                name_match = pay_data.get("employee_name", "") == old_name
+                # Match by email (most reliable), or name as fallback
+                stored_email = pay_data.get("employee_email", "")
+                stored_name = pay_data.get("employee_name", "")
 
-                if name_match or email_match:
+                email_match = user_email and stored_email == user_email
+                name_match = stored_name == old_name
+
+                if email_match or name_match:
                     pay_data["employee_name"] = new_name
-                    # Always fill in email when updating by name (helps future syncs)
-                    if user_email and (email_match or name_match):
+                    # Always fill in email when updating (helps future syncs)
+                    if user_email:
                         pay_data["employee_email"] = user_email
                     pay_data["updated_at"] = now_iso
                     fb_update(f"/balance_sheet_salary/{pay_id}", pay_data)
@@ -9404,19 +9406,22 @@ def create_salary():
     elif region == "International":
         region = "Outside America"
 
-    # Get employee email from users table for better sync matching
+    # Get employee email and user_id from users table for reliable sync matching
     employee_email = ""
+    employee_uid = ""
     employee_name = data.get("employee_name", "")
     if employee_name:
         users = fb_get("/users") or {}
         for uid, user_data in users.items():
             if isinstance(user_data, dict) and user_data.get("username") == employee_name:
                 employee_email = user_data.get("email", "")
+                employee_uid = uid
                 break
 
     sal_data = {
         "employee_name": employee_name,
         "employee_email": employee_email,
+        "employee_uid": employee_uid,
         "date":          date_str,
         "amount":        float(data.get("amount", 0)),
         "notes":         data.get("notes", ""),
@@ -9472,19 +9477,22 @@ def update_salary(sal_id):
         region = "Inside America"
     elif region == "International":
         region = "Outside America"
-    # Get employee email from users table for better sync matching
+    # Get employee email and user_id from users table for reliable sync matching
     employee_email = ""
+    employee_uid = ""
     employee_name = data.get("employee_name", "")
     if employee_name:
         users = fb_get("/users") or {}
         for uid, user_data in users.items():
             if isinstance(user_data, dict) and user_data.get("username") == employee_name:
                 employee_email = user_data.get("email", "")
+                employee_uid = uid
                 break
 
     sal_data = {
         "employee_name": employee_name,
         "employee_email": employee_email,
+        "employee_uid": employee_uid,
         "date":          date_str,
         "amount":        float(data.get("amount", 0)),
         "notes":         data.get("notes", ""),
