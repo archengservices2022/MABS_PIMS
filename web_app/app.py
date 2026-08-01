@@ -9351,8 +9351,19 @@ def create_salary():
     elif region == "International":
         region = "Outside America"
 
+    # Get employee email from users table for better sync matching
+    employee_email = ""
+    employee_name = data.get("employee_name", "")
+    if employee_name:
+        users = fb_get("/users") or {}
+        for uid, user_data in users.items():
+            if isinstance(user_data, dict) and user_data.get("username") == employee_name:
+                employee_email = user_data.get("email", "")
+                break
+
     sal_data = {
-        "employee_name": data.get("employee_name"),
+        "employee_name": employee_name,
+        "employee_email": employee_email,
         "date":          date_str,
         "amount":        float(data.get("amount", 0)),
         "notes":         data.get("notes", ""),
@@ -9408,8 +9419,19 @@ def update_salary(sal_id):
         region = "Inside America"
     elif region == "International":
         region = "Outside America"
+    # Get employee email from users table for better sync matching
+    employee_email = ""
+    employee_name = data.get("employee_name", "")
+    if employee_name:
+        users = fb_get("/users") or {}
+        for uid, user_data in users.items():
+            if isinstance(user_data, dict) and user_data.get("username") == employee_name:
+                employee_email = user_data.get("email", "")
+                break
+
     sal_data = {
-        "employee_name": data.get("employee_name"),
+        "employee_name": employee_name,
+        "employee_email": employee_email,
         "date":          date_str,
         "amount":        float(data.get("amount", 0)),
         "notes":         data.get("notes", ""),
