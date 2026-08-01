@@ -13424,6 +13424,7 @@ def user_details_update(uid):
             session.modified = True
         if "display_name" in updates:
             session["display_name"] = updates["display_name"]
+            session["user_name"] = updates["display_name"]  # Use display_name for user_name if set
             session.modified = True
 
     # Sync name changes across timesheets, expenses, approvals, etc.
