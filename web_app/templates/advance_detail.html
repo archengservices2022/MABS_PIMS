@@ -541,9 +541,9 @@ tbody tr:last-child td {
           <div class="form-grid">
             <div class="form-group">
               <label>Adjustment Date *</label>
-              <div style="position: relative; display: flex; align-items: center;">
-                <input type="text" id="adjDate" placeholder="MM-DD-YYYY" required style="padding-right: 36px;" />
-                <span style="position: absolute; right: 10px; cursor: pointer; font-size: 18px; color: #0d9488;" onclick="document.getElementById('adjDate').focus();">📅</span>
+              <div style="position: relative; display: flex; align-items: center; overflow: hidden;">
+                <input type="text" id="adjDate" placeholder="MM-DD-YYYY" required style="padding-right: 36px; flex: 1; width: 100%;" />
+                <span style="position: absolute; right: 10px; cursor: pointer; font-size: 18px; color: #0d9488; z-index: 1;" onclick="document.getElementById('adjDate').focus();">📅</span>
               </div>
             </div>
             <div class="form-group">
