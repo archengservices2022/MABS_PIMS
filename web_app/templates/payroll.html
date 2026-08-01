@@ -415,7 +415,7 @@
 
             <div class="form-group">
               <label for="adv_date" style="font-size:12px;margin-bottom:4px;">Date</label>
-              <input type="text" id="adv_date" placeholder="MM-DD-YYYY" required style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;" />
+              <input type="date" id="adv_date" required style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;" />
             </div>
 
             <div class="form-group">
@@ -1021,7 +1021,7 @@ function initializeAdvanceTab() {
   const mm = String(today.getMonth() + 1).padStart(2, '0');
   const dd = String(today.getDate()).padStart(2, '0');
   const yyyy = today.getFullYear();
-  document.getElementById('adv_date').value = `${mm}-${dd}-${yyyy}`;
+  document.getElementById('adv_date').value = `${yyyy}-${mm}-${dd}`;
   loadEmployees();
   loadAdvances();
 }
@@ -1097,7 +1097,7 @@ function clearAdvanceForm() {
   const mm = String(today.getMonth() + 1).padStart(2, '0');
   const dd = String(today.getDate()).padStart(2, '0');
   const yyyy = today.getFullYear();
-  document.getElementById('adv_date').value = `${mm}-${dd}-${yyyy}`;
+  document.getElementById('adv_date').value = `${yyyy}-${mm}-${dd}`;
   document.getElementById('adv_employee').value = '';
   document.getElementById('adv_status').value = 'Open';
   document.getElementById('submitAdvanceBtnText').textContent = 'Save Advance';
@@ -1116,15 +1116,8 @@ function editAdvanceEntry(idx) {
   // Populate form
   document.getElementById('adv_no').value = adv.advance_no || '';
 
-  // Format date as MM-DD-YYYY
-  let formattedDate = adv.date || '';
-  if (formattedDate && formattedDate.includes('-')) {
-    const dateParts = formattedDate.split('-');
-    if (dateParts.length === 3) {
-      formattedDate = `${dateParts[1]}-${dateParts[2]}-${dateParts[0]}`;
-    }
-  }
-  document.getElementById('adv_date').value = formattedDate;
+  // Set date directly (type=date expects YYYY-MM-DD format)
+  document.getElementById('adv_date').value = adv.date || '';
 
   document.getElementById('adv_employee').value = updatedEmployeeName || '';
   document.getElementById('adv_amount').value = adv.amount || '';
@@ -1150,14 +1143,8 @@ function addAdvance(event) {
 
   const isEditing = document.getElementById('advance_id').value !== '';
 
-  // Convert MM-DD-YYYY to YYYY-MM-DD for storage
-  let dateValue = document.getElementById('adv_date').value;
-  if (dateValue && dateValue.includes('-')) {
-    const dateParts = dateValue.split('-');
-    if (dateParts.length === 3) {
-      dateValue = `${dateParts[2]}-${dateParts[0]}-${dateParts[1]}`;
-    }
-  }
+  // Date is already in YYYY-MM-DD format from type=date input
+  const dateValue = document.getElementById('adv_date').value;
 
   const advance = {
     advance_no: document.getElementById('adv_no').value,
