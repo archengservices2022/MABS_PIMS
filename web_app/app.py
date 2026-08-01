@@ -17312,8 +17312,8 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
             project_cell = Paragraph(project_number_display, left_style)
 
         is_co_stage = bool(
-            (description and "co" in description.lower()) or
-            (payment_stage and "CO" in payment_stage.upper())
+            (description and "co-" in description.lower()) or
+            (payment_stage and "CO-" in payment_stage.upper())
         )
         description_display = ""
         if is_co_stage:
