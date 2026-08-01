@@ -1271,10 +1271,6 @@ document.addEventListener('DOMContentLoaded', function() {
       e.preventDefault();
       var url = this.dataset.url;
       if (url) {
-        // Replace localhost URLs with current domain
-        url = url.replace(/http:\/\/192\.168[^\/]*/, window.location.origin.replace(/^https?:/, 'https'));
-        url = url.replace(/http:\/\/localhost[^\/]*/, window.location.origin.replace(/^https?:/, 'https'));
-        url = url.replace(/http:\/\/127\.0\.0\.1[^\/]*/, window.location.origin.replace(/^https?:/, 'https'));
         window.open(url, '_blank');
       }
     });
