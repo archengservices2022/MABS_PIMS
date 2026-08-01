@@ -7324,6 +7324,38 @@ def _sync_client_changes_by_name(old_company_name, new_company_name, new_client_
                     proj_data["client_name"] = new_client_name
                     fb_update(f"/projects/{proj_id}", proj_data)
 
+def _backfill_salary_emails():
+    """Backfill employee_email for old salary records that don't have it."""
+    salaries = fb_get("/balance_sheet_salary") or {}
+    users = fb_get("/users") or {}
+
+    # Create name to email mapping
+    name_to_email = {}
+    if isinstance(users, dict):
+        for uid, user_data in users.items():
+            if isinstance(user_data, dict):
+                username = user_data.get("username", "")
+                email = user_data.get("email", "")
+                if username and email:
+                    name_to_email[username] = email
+
+    # Update salaries that are missing employee_email
+    updated_count = 0
+    if isinstance(salaries, dict):
+        for sal_id, sal_data in salaries.items():
+            if isinstance(sal_data, dict):
+                # Only update if email is missing
+                if not sal_data.get("employee_email"):
+                    employee_name = sal_data.get("employee_name", "")
+                    if employee_name and employee_name in name_to_email:
+                        fb_update(f"/balance_sheet_salary/{sal_id}", {
+                            "employee_email": name_to_email[employee_name],
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        })
+                        updated_count += 1
+
+    return updated_count
+
 def _sync_user_display_name(old_name, new_name, user_email=None):
     """Sync display name changes across all records: timesheets, expenses, approvals, invoices, etc.
     Uses both name and email for reliable matching."""
@@ -13456,6 +13488,9 @@ def update_own_profile():
     # Sync name changes across all records
     if old_display_name and new_display_name:
         user_email = user_data.get("email", "")
+        # First, backfill emails for old salary records that don't have them
+        _backfill_salary_emails()
+        # Then run the sync with full email matching
         _sync_user_display_name(old_display_name, new_display_name, user_email)
 
     # Update session with new name
@@ -13514,6 +13549,9 @@ def user_details_update(uid):
     # Sync name changes across all records (medical claims, expenses, advances, salaries, etc.)
     if old_display_name and new_display_name:
         user_email = user_data.get("email", "")
+        # First, backfill emails for old salary records that don't have them
+        _backfill_salary_emails()
+        # Then run the sync with full email matching
         _sync_user_display_name(old_display_name, new_display_name, user_email)
 
     # ALWAYS sync all salary expenses with their linked salary records
