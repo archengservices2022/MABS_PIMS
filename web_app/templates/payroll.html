@@ -1063,8 +1063,8 @@ function initializeAdvanceTab() {
       submitBtn.style.background = '#10b981'; // Green for update
     }
 
-    // Load advances to refresh table, but don't clear form
-    loadAdvances();
+    // Refresh table with embedded data (don't fetch to avoid overwriting with empty data)
+    refreshAdvanceTable();
   } else {
     // Populate table immediately with embedded data
     if (allAdvances.length > 0) {
