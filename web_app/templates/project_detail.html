@@ -2072,36 +2072,43 @@ function toggleCoAddr(idx) {
   if (!edit.classList.contains('d-none')) edit.focus();
 }
 
-async function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl) {
-  // For change orders, try to delete directly first (server will check approval)
+function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl) {
+  // For change orders: first try to delete (if approved, works; if not, shows modal)
   if (entityType === 'change_order') {
     const parts = entityId.split('_');
     if (parts.length >= 2) {
       const projectId = parts.slice(0, -1).join('_');
       const coIdx = parts[parts.length - 1];
 
-      try {
-        const response = await fetch('/projects/' + projectId + '/change-orders/' + coIdx + '/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        });
-
+      // Try delete via fetch to detect if approved or not
+      fetch('/projects/' + projectId + '/change-orders/' + coIdx + '/delete', {
+        method: 'POST',
+        redirect: 'manual'
+      })
+      .then(response => {
         if (response.ok) {
-          // Deletion succeeded
+          // Success - deleted
           alert('Change order deleted successfully.');
           location.reload();
-          return;
-        } else if (response.status === 302 || response.status === 303) {
-          // Server redirected - means not approved yet, show request modal
-          console.log('Not approved yet, showing request modal');
+        } else if (response.status === 303 || response.status === 302) {
+          // Not approved - show request modal instead
+          showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl);
         }
-      } catch (e) {
-        console.error('Delete check failed:', e);
-      }
-      // Fall through to show request modal
+      })
+      .catch(err => {
+        console.error('Delete error:', err);
+        // On error, show request modal
+        showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl);
+      });
+      return;
     }
   }
 
+  // For other entity types, always show request modal
+  showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl);
+}
+
+function showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl) {
   const overlay = document.createElement('div');
   overlay.style.cssText = `
     position: fixed;
