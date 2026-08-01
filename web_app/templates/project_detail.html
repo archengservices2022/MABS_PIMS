@@ -2073,38 +2073,7 @@ function toggleCoAddr(idx) {
 }
 
 function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl) {
-  // For change orders: first try to delete (if approved, works; if not, shows modal)
-  if (entityType === 'change_order') {
-    const parts = entityId.split('_');
-    if (parts.length >= 2) {
-      const projectId = parts.slice(0, -1).join('_');
-      const coIdx = parts[parts.length - 1];
-
-      // Try delete via fetch to detect if approved or not
-      fetch('/projects/' + projectId + '/change-orders/' + coIdx + '/delete', {
-        method: 'POST',
-        redirect: 'manual'
-      })
-      .then(response => {
-        if (response.ok) {
-          // Success - deleted
-          alert('Change order deleted successfully.');
-          location.reload();
-        } else if (response.status === 303 || response.status === 302) {
-          // Not approved - show request modal instead
-          showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl);
-        }
-      })
-      .catch(err => {
-        console.error('Delete error:', err);
-        // On error, show request modal
-        showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl);
-      });
-      return;
-    }
-  }
-
-  // For other entity types, always show request modal
+  // Always show the request modal - let the backend handle approval logic
   showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl);
 }
 
@@ -2266,34 +2235,69 @@ function showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl) 
     sendBtn.innerHTML = '<i class="bi bi-hourglass-split" style="margin-right: 6px;"></i>Sending...';
 
     const reason = reasonField.value.trim();
-    fetch('/api/permission-request', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: entityLabel,
-        entity_type: entityType,
-        entity_id: entityId,
-        entity_label: '',
-        page_url: window.location.href,
-        notes: reason
+
+    // For change orders, try to delete first (if approved, will succeed)
+    if (entityType === 'change_order') {
+      const parts = entityId.split('_');
+      if (parts.length >= 2) {
+        const projectId = parts.slice(0, -1).join('_');
+        const coIdx = parts[parts.length - 1];
+
+        fetch('/projects/' + projectId + '/change-orders/' + coIdx + '/delete', {
+          method: 'POST',
+          redirect: 'manual'
+        })
+        .then(response => {
+          if (response.ok) {
+            // Already approved, deletion succeeded
+            overlay.remove();
+            alert('Change order deleted successfully.');
+            location.reload();
+          } else {
+            // Not approved yet, send permission request
+            sendPermissionRequest();
+          }
+        })
+        .catch(() => {
+          // On error, try to send request
+          sendPermissionRequest();
+        });
+        return;
+      }
+    }
+
+    // For other entity types, just send request
+    sendPermissionRequest();
+
+    function sendPermissionRequest() {
+      fetch('/api/permission-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: entityLabel,
+          entity_type: entityType,
+          entity_id: entityId,
+          entity_label: '',
+          page_url: window.location.href,
+          notes: reason
+        })
       })
-    })
-    .then(r => r.json())
-    .then(d => {
-      if (d.success) {
-        overlay.remove();
-        alert('Delete request sent to admin for approval.');
-        window.location = redirectUrl;
-      } else {
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          overlay.remove();
+          alert('Delete request sent to admin for approval.');
+          window.location = redirectUrl;
+        } else {
+          sendBtn.disabled = false;
+          sendBtn.innerHTML = '<i class="bi bi-check-circle" style="margin-right: 6px;"></i>Send Request';
+          alert('Error: ' + (d.error || 'Failed to send request'));
+        }
+      })
+      .catch(err => {
+        console.error('Request failed:', err);
         sendBtn.disabled = false;
         sendBtn.innerHTML = '<i class="bi bi-check-circle" style="margin-right: 6px;"></i>Send Request';
-        alert('Error: ' + (d.error || 'Failed to send request'));
-      }
-    })
-    .catch(err => {
-      console.error('Request failed:', err);
-      sendBtn.disabled = false;
-      sendBtn.innerHTML = '<i class="bi bi-check-circle" style="margin-right: 6px;"></i>Send Request';
       alert('Network error. Please try again.');
     });
   };
