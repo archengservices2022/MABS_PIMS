@@ -531,7 +531,6 @@
         <select id="exportType" class="form-select form-select-sm" style="width:180px;" onchange="handleExportTypeChange()">
           <option value="salary">Salary</option>
           <option value="advance">Advance</option>
-          <option value="all">All</option>
         </select>
       </div>
       <div id="regionFilterContainer" class="d-flex gap-2 flex-wrap align-items-center mb-2">
@@ -983,7 +982,7 @@ function buildPayrollExportLinks() {
   const r  = document.getElementById('exportRegion').value;
   const f  = document.getElementById('exportFrom').value;
   const t  = document.getElementById('exportTo').value;
-  if (type && type !== 'all') params.set('type', type);
+  if (type && type !== 'salary') params.set('type', type);
   if (r) params.set('region', r);
   if (f) params.set('from', f);
   if (t) params.set('to', t);

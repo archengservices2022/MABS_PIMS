@@ -8542,8 +8542,8 @@ def payroll_export_pdf():
     from collections import defaultdict
     from reportlab.platypus import Spacer
 
-    # Add Salary section if type is "salary" or "all"
-    if export_type in ["salary", "all"]:
+    # Add Salary section if type is "salary"
+    if export_type == "salary":
         hdrs = ["Employee", "Date", "Amount", "Region", "Notes", "Status"]
         data = [hdrs]
 
@@ -8649,10 +8649,9 @@ def payroll_export_pdf():
         ]))
         elems.append(comm_tbl)
 
-    # Add Employee Advances section if type is "advance" or "all"
-    if export_type in ["advance", "all"]:
-        if export_type == "all":
-            elems.append(Spacer(1, 0.3*inch))
+    # Add Employee Advances section if type is "advance"
+    if export_type == "advance":
+        elems.append(Spacer(1, 0.3*inch))
         adv_title_s = ParagraphStyle("AT", parent=styles["Normal"], fontSize=12,
                                       fontName="Helvetica-Bold",
                                       textColor=colors.HexColor("#0891B2"), spaceAfter=6)
