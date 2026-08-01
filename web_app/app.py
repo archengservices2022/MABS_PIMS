@@ -13383,7 +13383,8 @@ def user_details_update(uid):
             value = str(data[field]).strip()
             updates[field] = value
             # Track changes in display_name and username for syncing
-            if field == "display_name":
+            # Treat username field updates as display_name changes for syncing purposes
+            if field in ("display_name", "username"):
                 # Prefer display_name if it exists in current data
                 old_val = user_data.get("display_name")
                 if not old_val:
@@ -13392,13 +13393,6 @@ def user_details_update(uid):
                 if old_val and old_val != value:
                     old_display_name = old_val
                     new_display_name = value
-            elif field == "username":
-                # If display_name wasn't in the update, check username
-                if "display_name" not in data and old_display_name is None:
-                    old_val = user_data.get("username", "")
-                    if old_val and old_val != value:
-                        old_display_name = old_val
-                        new_display_name = value
 
     for field in ("hourly_rate", "monthly_salary", "commission_rate"):
         if field in data:
