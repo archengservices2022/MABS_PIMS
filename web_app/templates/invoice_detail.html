@@ -206,7 +206,7 @@
         <table style="width:100%; border-collapse:collapse; margin:0;">
           <thead>
             <tr style="background:#0F172A;">
-              <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:left; font-weight:600;">DESCRIPTION</th>
+              <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:left; font-weight:600;">PROJECT &amp; CHANGE ORDER</th>
               <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:center; font-weight:600;">QTY</th>
               <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:right; font-weight:600;">UNIT PRICE</th>
               <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:right; font-weight:600;">AMOUNT</th>
@@ -216,10 +216,12 @@
             {% for item in invoice.get('line_items',[]) %}
             <tr style="border-bottom:1px solid #F1F5F9;">
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
+                {%- set meta = invoice.get('meta', {}) -%}
                 {%- set desc = item.get('description','') -%}
-                {%- if 'CO' in desc and ' – ' in desc -%}
-                  {%- set co_part = desc.split(' – ')[0].strip() -%}
-                  {{ co_part }}
+                {%- if 'CO' in desc -%}
+                  {%- set project_num = meta.get('project_number', '') -%}
+                  {%- set co_part = desc.split(' – ')[0].strip() if ' – ' in desc else desc.split('CO')[0].strip() + ' ' + 'CO' + desc.split('CO')[1].split()[0] -%}
+                  {{ project_num }} | {{ co_part }}
                 {%- else -%}
                   {{ desc }}
                 {%- endif -%}
