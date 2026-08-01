@@ -1029,7 +1029,7 @@ function initializeAdvanceTab() {
     const editData = JSON.parse(editDataStr);
     sessionStorage.removeItem('editAdvanceData');
 
-    // Set advance_id to indicate editing mode
+    // Set advance_id to indicate editing mode FIRST
     document.getElementById('advance_id').value = editData.advance_id;
 
     // Autofill the form with advance data
@@ -1039,17 +1039,19 @@ function initializeAdvanceTab() {
     document.getElementById('adv_reason').value = editData.reason || '';
 
     // Set employee dropdown - need to wait for employees to load
-    setTimeout(() => {
-      const employeeSelect = document.getElementById('adv_employee');
-      // Find option matching the employee name
-      const options = employeeSelect.querySelectorAll('option');
-      for (let opt of options) {
-        if (opt.value === editData.employee_name || opt.textContent === editData.employee_name) {
-          employeeSelect.value = opt.value;
-          break;
+    loadEmployees(() => {
+      setTimeout(() => {
+        const employeeSelect = document.getElementById('adv_employee');
+        // Find option matching the employee name
+        const options = employeeSelect.querySelectorAll('option');
+        for (let opt of options) {
+          if (opt.value === editData.employee_name || opt.textContent === editData.employee_name) {
+            employeeSelect.value = opt.value;
+            break;
+          }
         }
-      }
-    }, 500);
+      }, 100);
+    });
 
     // Change button text to indicate editing
     const btnText = document.getElementById('submitAdvanceBtnText');
@@ -1060,6 +1062,9 @@ function initializeAdvanceTab() {
     if (submitBtn) {
       submitBtn.style.background = '#10b981'; // Green for update
     }
+
+    // Load advances to refresh table, but don't clear form
+    loadAdvances();
   } else {
     // Populate table immediately with embedded data
     if (allAdvances.length > 0) {
@@ -1070,10 +1075,10 @@ function initializeAdvanceTab() {
     } else {
       document.getElementById('adv_no').value = 'ADV-00001';
     }
-  }
 
-  loadEmployees();
-  loadAdvances();
+    loadEmployees();
+    loadAdvances();
+  }
 }
 
 // Set up employee dropdown
