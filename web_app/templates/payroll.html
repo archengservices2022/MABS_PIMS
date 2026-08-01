@@ -1255,10 +1255,15 @@ function loadAdvances() {
     .then(data => {
       allAdvances = data.advances || [];
       refreshAdvanceTable();
-      if (allAdvances.length === 0) {
-        document.getElementById('adv_no').value = 'ADV-00001';
-      } else {
-        document.getElementById('adv_no').value = generateAdvanceNo();
+
+      // Only reset form fields if not in edit mode
+      const isEditingId = document.getElementById('advance_id').value;
+      if (!isEditingId) {
+        if (allAdvances.length === 0) {
+          document.getElementById('adv_no').value = 'ADV-00001';
+        } else {
+          document.getElementById('adv_no').value = generateAdvanceNo();
+        }
       }
     })
     .catch(e => console.error('Error loading advances:', e));
