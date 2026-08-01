@@ -3807,10 +3807,17 @@ def co_delete(project_id, co_idx):
 
     # Administration role needs admin approval to delete
     if _role == "administration":
-        _perm = _has_approved_delete_request(_uid, "change_order", f"{project_id}_{co_idx}")
+        entity_id = f"{project_id}_{co_idx}"
+        log.info(f"Checking for approved delete: uid={_uid}, entity_type=change_order, entity_id={entity_id}")
+        _perm = _has_approved_delete_request(_uid, "change_order", entity_id)
         if not _perm:
+            log.warning(f"No approved delete request found for uid={_uid}, entity_id={entity_id}")
+            # List all permission requests for debugging
+            all_reqs = fb_get("/permission_requests") or {}
+            log.debug(f"All permission requests: {list(all_reqs.keys())[:5]}")
             flash("You need admin approval to delete this change order. Use the 'Request Delete' button.", "danger")
             return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+        log.info(f"Approved delete request found: {_perm.get('firebase_id', 'unknown')}")
 
     project = fb_get(f"/projects/{project_id}") or {}
     if not project:
@@ -14379,15 +14386,25 @@ def _has_approved_delete_request(uid, entity_type, entity_id):
     """Return the first approved (not yet completed) delete request for this user+entity, or None."""
     all_reqs = fb_get("/permission_requests") or {}
     if not isinstance(all_reqs, dict):
+        log.debug(f"No permission requests found or not a dict")
         return None
+
+    log.debug(f"Searching for: uid={uid}, entity_type={entity_type}, entity_id={entity_id}")
     for rid, r in all_reqs.items():
-        if (isinstance(r, dict) and
-                r.get("requested_by_uid") == uid and
-                r.get("entity_type") == entity_type and
-                r.get("entity_id") == entity_id and
-                r.get("status") == "approved"):
-            r["firebase_id"] = rid
-            return r
+        if isinstance(r, dict):
+            req_uid = r.get("requested_by_uid", "")
+            req_type = r.get("entity_type", "")
+            req_id = r.get("entity_id", "")
+            req_status = r.get("status", "")
+
+            if req_uid == uid and req_type == entity_type and req_id == entity_id and req_status == "approved":
+                log.info(f"Found approved request: {rid}")
+                r["firebase_id"] = rid
+                return r
+            elif req_type == entity_type and req_id == entity_id:
+                log.debug(f"Found matching entity but: uid_match={req_uid==uid}, status={req_status}")
+
+    log.debug(f"No approved request found")
     return None
 
 
