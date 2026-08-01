@@ -999,10 +999,10 @@ function handleExportTypeChange() {
 
   // Show region filter only for salary export, hide for advance export
   if (type === 'advance') {
-    regionContainer.style.display = 'none';
+    regionContainer.style.cssText = 'display: none !important;';
     document.getElementById('exportRegion').value = '';
   } else {
-    regionContainer.style.display = 'flex';
+    regionContainer.style.cssText = 'display: flex !important; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.5rem;';
   }
 
   buildPayrollExportLinks();
