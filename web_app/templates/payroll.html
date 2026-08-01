@@ -1315,6 +1315,7 @@ function filterAdvanceTable() {
   const searchInput = document.getElementById('advanceSearchInput').value.toLowerCase();
   const tbody = document.getElementById('advanceTableBody');
   const rows = tbody.querySelectorAll('tr:not(.no-results):not(.totals-row)');
+  const visibleRows = [];
   let visibleCount = 0;
 
   rows.forEach(row => {
@@ -1335,7 +1336,27 @@ function filterAdvanceTable() {
 
     const shouldShow = searchMatches && statusMatches;
     row.style.display = shouldShow ? '' : 'none';
-    if (shouldShow) visibleCount++;
+    if (shouldShow) {
+      visibleCount++;
+      visibleRows.push(row);
+    }
+  });
+
+  // Sort visible rows by date descending (newest first)
+  visibleRows.sort((a, b) => {
+    const dateA = (a.cells[1]?.textContent || '').trim();
+    const dateB = (b.cells[1]?.textContent || '').trim();
+
+    // Convert MM-DD-YYYY to comparable format
+    const dateAObj = new Date(dateA.split('-').reverse().join('-'));
+    const dateBObj = new Date(dateB.split('-').reverse().join('-'));
+
+    return dateBObj - dateAObj;
+  });
+
+  // Re-order rows in DOM based on sort
+  visibleRows.forEach(row => {
+    row.parentNode.appendChild(row);
   });
 
   // Show or hide "no results" message
