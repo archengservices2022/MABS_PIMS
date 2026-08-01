@@ -888,7 +888,7 @@ a[href*="filter_expense"]:hover {
           </tr>
         </thead>
         <tbody id="expenseTableBody">
-          {% for exp in expenses|sort(attribute='created_at', reverse=False) %}
+          {% for exp in expenses|sort(attribute='created_at', reverse=True) %}
           <tr class="expense-row"
             data-search="{{ (exp.get('expense_name','') or exp.get('description',''))|lower }} {{ exp.get('vendor','')|lower }} {{ exp.get('category','')|lower }}"
             data-type="{{ exp.get('expense_type','') }}"

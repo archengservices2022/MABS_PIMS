@@ -1224,11 +1224,11 @@ function refreshAdvanceTable() {
     return;
   }
 
-  // Sort by date ascending (oldest first)
+  // Sort by date descending (newest first)
   const sortedAdvances = [...allAdvances].sort((a, b) => {
     const dateA = new Date(a.date || '');
     const dateB = new Date(b.date || '');
-    return dateA - dateB;
+    return dateB - dateA;
   });
 
   // Clear search input and reset status filter when refreshing
