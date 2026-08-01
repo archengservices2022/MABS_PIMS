@@ -500,26 +500,25 @@ function weekToMonday(weekStr) {
   const year = parseInt(yearStr);
   const week = parseInt(weekStr2);
 
-  // ISO 8601: Jan 4 is always in week 1
-  const jan4 = new Date(year, 0, 4);
-  const jan4Dow = jan4.getDay();
+  // ISO 8601: Jan 4 is always in week 1 - use UTC to avoid time zone issues
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Dow = jan4.getUTCDay();
 
   // Days to subtract to get Monday of Week 1
   const daysBack = jan4Dow === 0 ? 6 : jan4Dow - 1;
 
-  // Use getTime() arithmetic to avoid negative date issues
+  // Use UTC arithmetic to avoid time zone shifts
   const week1MondayMs = jan4.getTime() - daysBack * 24 * 60 * 60 * 1000;
-  const week1Monday = new Date(week1MondayMs);
 
-  // Add (week-1)*7 days using getTime() to get target Monday
-  const targetMondayMs = week1Monday.getTime() + (week - 1) * 7 * 24 * 60 * 60 * 1000;
+  // Add (week-1)*7 days to get target Monday
+  const targetMondayMs = week1MondayMs + (week - 1) * 7 * 24 * 60 * 60 * 1000;
 
   return new Date(targetMondayMs);
 }
 
-// Helper: Format date as YYYY-MM-DD
+// Helper: Format date as YYYY-MM-DD using UTC
 function dateToString(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
 // Handle week selection - navigate to the selected week
@@ -558,28 +557,31 @@ function changeWeek(weekStr) {
 // Initialize week picker
 (function initWeekPicker() {
   const weekPicker = document.getElementById('weekPicker');
-  const d = new Date(WEEK_OF);
+  // Parse WEEK_OF as UTC date
+  const dateStr = WEEK_OF;
+  const [y, m, day] = dateStr.split('-');
+  const d = new Date(Date.UTC(y, parseInt(m) - 1, day));
 
-  // Use same logic as weekToMonday for consistent calculations
+  // Use same logic as weekToMonday for consistent UTC calculations
   function dateToWeek(date) {
-    const year = date.getFullYear();
-    const jan4 = new Date(year, 0, 4);
-    const jan4DayOfWeek = jan4.getDay();
+    const year = date.getUTCFullYear();
+    const jan4 = new Date(Date.UTC(year, 0, 4));
+    const jan4DayOfWeek = jan4.getUTCDay();
     const daysToSubtract = jan4DayOfWeek === 0 ? 6 : jan4DayOfWeek - 1;
-    const week1Monday = new Date(jan4.getTime() - daysToSubtract * 24 * 60 * 60 * 1000);
+    const week1MondayMs = jan4.getTime() - daysToSubtract * 24 * 60 * 60 * 1000;
 
     // Use floor division to calculate week number
-    const weeksDiff = Math.floor((date.getTime() - week1Monday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+    const weeksDiff = Math.floor((date.getTime() - week1MondayMs) / (7 * 24 * 60 * 60 * 1000));
     return weeksDiff + 1;
   }
 
   const weekNum = dateToWeek(d);
-  weekPicker.value = `${d.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+  weekPicker.value = `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, '0')}`;
 
-  // Set max week to current week
+  // Set max week to current week (in UTC)
   const today = new Date();
   const currentWeekNum = dateToWeek(today);
-  const maxWeek = `${today.getFullYear()}-W${String(currentWeekNum).padStart(2, '0')}`;
+  const maxWeek = `${today.getUTCFullYear()}-W${String(currentWeekNum).padStart(2, '0')}`;
 
   weekPicker.max = maxWeek;
   console.log('Week picker initialized to:', weekPicker.value, 'Max:', maxWeek);
