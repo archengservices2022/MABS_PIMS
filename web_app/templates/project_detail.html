@@ -2109,7 +2109,7 @@ function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl)
     font-weight: 600;
     color: #1e293b;
   `;
-  header.innerHTML = `<span style="font-size: 20px;">✈️</span> Request Delete Permission`;
+  header.innerHTML = `<i class="bi bi-shield-check" style="font-size: 18px; color: #f59e0b;"></i> Request Delete Permission`;
 
   const closeBtn = document.createElement('button');
   closeBtn.innerHTML = '✕';
@@ -2208,7 +2208,7 @@ function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl)
   cancelBtn.onclick = () => overlay.remove();
 
   const sendBtn = document.createElement('button');
-  sendBtn.innerHTML = '✈️ Send Request';
+  sendBtn.innerHTML = '<i class="bi bi-check-circle" style="margin-right: 6px;"></i>Send Request';
   sendBtn.style.cssText = `
     padding: 9px 18px;
     border: none;
@@ -2219,12 +2219,15 @@ function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl)
     cursor: pointer;
     font-size: 13px;
     transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   `;
   sendBtn.onmouseover = () => sendBtn.style.background = '#d97706';
   sendBtn.onmouseout = () => sendBtn.style.background = '#f59e0b';
   sendBtn.onclick = () => {
     sendBtn.disabled = true;
-    sendBtn.innerHTML = '✈️ Sending...';
+    sendBtn.innerHTML = '<i class="bi bi-hourglass-split" style="margin-right: 6px;"></i>Sending...';
 
     const reason = reasonField.value.trim();
     fetch('/api/permission-request', {
@@ -2236,7 +2239,7 @@ function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl)
         entity_id: entityId,
         entity_label: entityLabel,
         page_url: window.location.href,
-        notes: reason || entityLabel
+        notes: reason
       })
     })
     .then(r => r.json())
@@ -2247,14 +2250,14 @@ function requestDeletePermission(entityType, entityId, entityLabel, redirectUrl)
         window.location = redirectUrl;
       } else {
         sendBtn.disabled = false;
-        sendBtn.innerHTML = '✈️ Send Request';
+        sendBtn.innerHTML = '<i class="bi bi-check-circle" style="margin-right: 6px;"></i>Send Request';
         alert('Error: ' + (d.error || 'Failed to send request'));
       }
     })
     .catch(err => {
       console.error('Request failed:', err);
       sendBtn.disabled = false;
-      sendBtn.innerHTML = '✈️ Send Request';
+      sendBtn.innerHTML = '<i class="bi bi-check-circle" style="margin-right: 6px;"></i>Send Request';
       alert('Network error. Please try again.');
     });
   };
