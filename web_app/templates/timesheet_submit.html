@@ -502,20 +502,19 @@ function weekToMonday(weekStr) {
 
   // ISO 8601: Jan 4 is always in week 1
   const jan4 = new Date(year, 0, 4);
-  const jan4_weekday = jan4.getDay();  // 0=Sun, 1=Mon, ..., 6=Sat
+  const jan4Dow = jan4.getDay();
 
-  // Calculate days to go back to Monday of week containing Jan 4
-  const daysToMonday = jan4_weekday === 0 ? 6 : jan4_weekday - 1;
+  // Days to subtract to get Monday of Week 1
+  const daysBack = jan4Dow === 0 ? 6 : jan4Dow - 1;
 
-  // Create Monday of Week 1 by going back from Jan 4
-  const week1Monday = new Date(year, 0, 4);
-  week1Monday.setDate(week1Monday.getDate() - daysToMonday);
+  // Use getTime() arithmetic to avoid negative date issues
+  const week1MondayMs = jan4.getTime() - daysBack * 24 * 60 * 60 * 1000;
+  const week1Monday = new Date(week1MondayMs);
 
-  // Add (week-1)*7 days to get target Monday
-  const targetMonday = new Date(week1Monday);
-  targetMonday.setDate(targetMonday.getDate() + (week - 1) * 7);
+  // Add (week-1)*7 days using getTime() to get target Monday
+  const targetMondayMs = week1Monday.getTime() + (week - 1) * 7 * 24 * 60 * 60 * 1000;
 
-  return targetMonday;
+  return new Date(targetMondayMs);
 }
 
 // Helper: Format date as YYYY-MM-DD
