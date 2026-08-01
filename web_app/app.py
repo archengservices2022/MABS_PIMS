@@ -7355,14 +7355,23 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
     if isinstance(expenses, dict):
         for exp_id, exp_data in expenses.items():
             if isinstance(exp_data, dict):
-                if exp_data.get("employee_name", "") == old_name or exp_data.get("created_by", "") == old_name or exp_data.get("submitted_by_name", "") == old_name:
+                # Match by exact name or by email if user_email is available
+                email_match = user_email and exp_data.get("submitted_by_email", "") == user_email
+                name_match = (exp_data.get("employee_name", "") == old_name or
+                             exp_data.get("created_by", "") == old_name or
+                             exp_data.get("submitted_by_name", "") == old_name)
+
+                if name_match or email_match:
                     if exp_data.get("employee_name", "") == old_name:
                         exp_data["employee_name"] = new_name
                     if exp_data.get("created_by", "") == old_name:
                         exp_data["created_by"] = new_name
-                    # Update submitted_by_name with exact match only
-                    if exp_data.get("submitted_by_name", "") == old_name:
+                    # Update submitted_by_name with exact match or email match
+                    if exp_data.get("submitted_by_name", "") == old_name or email_match:
                         exp_data["submitted_by_name"] = new_name
+                    # Also update email field if it exists
+                    if email_match:
+                        exp_data["submitted_by_email"] = user_email
                     exp_data["updated_at"] = now_iso
                     fb_update(f"/expenses/{exp_id}", exp_data)
 
