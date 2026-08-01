@@ -510,8 +510,8 @@ function weekToMonday(weekStr) {
   // If Jan 4 is Sunday (0), go back 6 days (to prev Monday)
   const daysToSubtract = jan4DayOfWeek === 0 ? 6 : jan4DayOfWeek - 1;
 
-  // Create date for Jan 4, then subtract days to get Monday of Week 1
-  const week1Monday = new Date(year, 0, 4 - daysToSubtract);
+  // Safely subtract days using milliseconds to avoid date normalization issues
+  const week1Monday = new Date(jan4.getTime() - daysToSubtract * 24 * 60 * 60 * 1000);
 
   // Now add (week-1)*7 days to get Monday of target week
   const resultDate = new Date(week1Monday.getTime() + (week - 1) * 7 * 24 * 60 * 60 * 1000);
