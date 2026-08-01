@@ -389,6 +389,42 @@ tbody tr:last-child td {
 .back-button:hover {
   color: #0a7860;
 }
+
+/* Flatpickr Calendar Styling */
+.flatpickr-calendar {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: white;
+  z-index: 9999;
+}
+
+.flatpickr-calendar.open {
+  display: block;
+}
+
+.flatpickr-months {
+  background: white;
+  border-radius: 8px 8px 0 0;
+}
+
+.flatpickr-day {
+  border-radius: 4px;
+}
+
+.flatpickr-day.selected {
+  background: #0d9488;
+  border-color: #0d9488;
+}
+
+.flatpickr-day.selected:hover {
+  background: #0a7860;
+  border-color: #0a7860;
+}
+
+.flatpickr-day.today {
+  border-color: #0d9488;
+}
 </style>
 
 <!-- Flatpickr Date Picker -->
@@ -676,7 +712,10 @@ flatpickr('#adjDate', {
   static: false,
   altInput: false,
   allowInput: true,
-  clickOpens: true
+  clickOpens: true,
+  appendTo: document.body,
+  zIndex: 9999,
+  position: 'auto'
 });
 
 document.getElementById('adjAmount').max = (amount - adjusted).toFixed(2);
