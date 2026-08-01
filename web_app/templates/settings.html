@@ -509,7 +509,7 @@
                     <div class="d-flex gap-1 justify-content-end">
                       <button class="btn btn-xs btn-outline-primary edit-user-btn"
                               data-uid="{{ u.firebase_uid }}"
-                              data-display-name="{{ u.get('display_name', u.get('username','')) | e }}"
+                              data-username="{{ u.get('username','') | e }}"
                               data-email="{{ u.get('email','') | e }}"
                               data-title="{{ u.get('title','') | e }}"
                               data-region="{{ u.get('region','') | e }}"
@@ -976,9 +976,8 @@ document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.edit-user-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var d = btn.dataset;
-      console.log('Opening edit modal for user:', d.uid, 'Display Name:', d.displayName);
       document.getElementById('editUid').value              = d.uid || '';
-      document.getElementById('editUsername').value         = d.displayName || '';
+      document.getElementById('editUsername').value         = d.username || '';
       document.getElementById('editEmail').value            = d.email || '';
       document.getElementById('editTitle').value            = d.title || '';
       document.getElementById('editRegion').value           = d.region || '';
@@ -1057,7 +1056,7 @@ async function saveUserDetails() {
   if (!saveBtn || saveBtn.disabled) return;
 
   var body   = {
-    display_name:    document.getElementById('editUsername').value.trim(),
+    username:        document.getElementById('editUsername').value.trim(),
     role:            role,
     title:           document.getElementById('editTitle').value.trim(),
     region:          document.getElementById('editRegion').value,
@@ -1076,7 +1075,6 @@ async function saveUserDetails() {
   }, 1500);
 
   try {
-    console.log('Saving user details for uid:', uid);
     var res = await fetch('/api/users/' + uid + '/details', {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
@@ -1084,45 +1082,34 @@ async function saveUserDetails() {
     });
 
     clearTimeout(timeoutId);
-    console.log('Response status:', res.status, 'ok:', res.ok);
 
     var data = {};
     try {
       data = await res.json();
-      console.log('Response data:', data);
     } catch(parseErr) {
       console.error('Response parse error:', parseErr);
-      msg.innerHTML = '<span class="text-danger">Failed to parse response</span>';
-      saveBtn.disabled = false;
-      return;
     }
 
     if (!res.ok) {
       var errMsg = data.error || data.message || 'Error: ' + res.status;
-      console.error('Request failed:', errMsg);
       msg.innerHTML = '<span class="text-danger">' + errMsg + '</span>';
       saveBtn.disabled = false;
       return;
     }
     if (data.error) {
-      console.error('API returned error:', data.error);
       msg.innerHTML = '<span class="text-danger">' + data.error + '</span>';
       saveBtn.disabled = false;
       return;
     }
 
-    console.log('Save successful, reloading page');
-    msg.innerHTML = '<span class="text-success">Saved! Reloading...</span>';
-    clearTimeout(timeoutId);
-    // Reload immediately on success
-    setTimeout(function(){ location.reload(); }, 300);
+    msg.innerHTML = '<span class="text-success">Saved!</span>';
+    setTimeout(function(){ location.reload(); }, 200);
   } catch(e) {
     clearTimeout(timeoutId);
     console.error('Save error:', e);
     msg.innerHTML = '<span class="text-danger">Request failed: ' + (e.message || 'Network error') + '</span>';
     saveBtn.disabled = false;
   }
-}
 }
 
 function buildPagesCheckboxes(role, selectedPages) {
@@ -1183,27 +1170,12 @@ function resolvePermRequest(reqId, action, pageUrl) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({action: action, notes: notes})
   })
-  .then(function(r) {
-    if (!r.ok) {
-      return r.json().then(function(d) {
-        throw new Error(d.error || 'HTTP ' + r.status);
-      });
-    }
-    return r.json();
-  })
+  .then(function(r) { return r.json(); })
   .then(function(d) {
-    if (!d.success) {
-      alert('Error: ' + (d.error || 'Unknown'));
-      console.error('Permission request failed:', d);
-      return;
-    }
-    alert('Request ' + action + 'ed successfully.');
+    if (!d.success) { alert('Error: ' + (d.error || 'Unknown')); return; }
     location.reload();
   })
-  .catch(function(err) {
-    console.error('Error resolving permission request:', err);
-    alert('Error: ' + (err.message || 'Request failed. Please try again.'));
-  });
+  .catch(function() { alert('Network error. Please try again.'); });
 }
 </script>
 {% endblock %}
