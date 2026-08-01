@@ -995,14 +995,32 @@ function sendBackSheet(sheetId, name) {
     font-size: 13px;
   `;
   confirmBtn.onclick = () => {
-    overlay.remove();
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Sending...';
+
     fetch(`/api/timesheets/${sheetId}/send-back`, {method: 'POST'})
-    .then(r => r.json())
-    .then(d => {
-      if (d.success) location.reload();
-      else alert('Error: ' + (d.error || 'Unknown'));
+    .then(r => {
+      console.log('Send back response status:', r.status);
+      return r.json();
     })
-    .catch(() => alert('Network error. Please try again.'));
+    .then(d => {
+      console.log('Send back response:', d);
+      if (d.success) {
+        overlay.remove();
+        location.reload();
+      }
+      else {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Send Back';
+        alert('Error: ' + (d.error || 'Unknown error occurred'));
+      }
+    })
+    .catch(err => {
+      console.error('Send back error:', err);
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Send Back';
+      alert('Network error. Please try again.');
+    });
   };
 
   footer.appendChild(cancelBtn);
