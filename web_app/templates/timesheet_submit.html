@@ -1588,24 +1588,6 @@ function saveSheet(action) {
   });
 }
 
-function changeWeek(val) {
-  if (!val) return;
-  const [yr, wk] = val.split('-W').map(Number);
-  const jan4 = new Date(yr, 0, 4);
-  const week1Mon = new Date(jan4);
-  week1Mon.setDate(jan4.getDate() - ((jan4.getDay()||7)-1));
-  const mon = new Date(week1Mon.getTime() + (wk-1)*7*86400000);
-  window.location = `/timesheets/submit?week=${mon.toISOString().slice(0,10)}`;
-}
-
-(function setWeekPicker() {
-  const d = new Date(WEEK_OF);
-  const jan4 = new Date(d.getFullYear(), 0, 4);
-  const startOfWeek1 = new Date(jan4.getTime() - ((jan4.getDay()||7)-1)*86400000);
-  const wkNum = Math.round((d-startOfWeek1)/(7*86400000))+1;
-  document.getElementById('weekPicker').value = `${d.getFullYear()}-W${String(wkNum).padStart(2,'0')}`;
-})();
-
 let _prevWeekEntries = [];
 function copyPrevWeek() {
   if (!_prevWeekEntries.length) return;
