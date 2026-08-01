@@ -7623,18 +7623,6 @@ def _sync_user_display_name(old_name, new_name, user_email=None):
                     session_data["employee_name"] = new_name
                     fb_update(f"/activity_sessions/{session_id}", session_data)
 
-    # Update Medical Claims (submitted_by_name field)
-    medical_claims = fb_get("/medical_claims") or {}
-    if isinstance(medical_claims, dict):
-        for claim_id, claim_data in medical_claims.items():
-            if isinstance(claim_data, dict):
-                submitted_by = claim_data.get("submitted_by_name", "")
-                # Exact match only for submitted_by_name (user who submitted the claim)
-                if submitted_by == old_name:
-                    claim_data["submitted_by_name"] = new_name
-                    claim_data["updated_at"] = now_iso
-                    fb_update(f"/medical_claims/{claim_id}", claim_data)
-
 
 @app.route("/clients/new", methods=["GET", "POST"])
 @role_required("clients")
