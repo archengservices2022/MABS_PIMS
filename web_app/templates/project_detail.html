@@ -2416,7 +2416,7 @@ function submitCoStatus(status) {
 
   var form = document.createElement('form');
   form.method = 'POST';
-  form.action = `/projects/${currentCoData.projectId}/co/${currentCoData.coIdx}/status`;
+  form.action = `/projects/${currentCoData.projectId}/change-orders/${currentCoData.coIdx}/status`;
 
   var input = document.createElement('input');
   input.type = 'hidden';
