@@ -3892,22 +3892,17 @@ def co_delete(project_id, co_idx):
                     linked_invoice_numbers.append(meta.get("invoice_number", "invoice"))
                     break
 
+    # Note: Allow deletion even if linked to invoices, but log it
     if linked_invoice_numbers:
-        flash(
-            "This CO is linked to invoice(s) "
-            + ", ".join(sorted(set(linked_invoice_numbers)))
-            + ". Delete or cancel the invoice first so Financial stays accurate.",
-            "warning",
-        )
-        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+        log.warning(f"Deleting CO {co_number} that is linked to invoices: {linked_invoice_numbers}")
 
+    # Allow deletion of CO with invoiced payment stage - will remove the stage
     if linked_stage and (
         linked_stage.get("invoice_id")
         or linked_stage.get("invoice_number")
         or linked_stage.get("status") in ("Invoiced", "Paid", "Partially Paid", "Overdue")
     ):
-        flash("This CO has an invoiced payment stage. Delete or cancel the linked invoice first.", "warning")
-        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+        log.warning(f"Deleting CO {co_number} with invoiced payment stage: {linked_stage.get('name')}")
 
     base_value = _base_contract_value(project, cos)
     deleted_number = co_number or co.get("title", "CO")
