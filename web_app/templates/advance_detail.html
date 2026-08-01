@@ -545,7 +545,10 @@ tbody tr:last-child td {
           <div class="form-grid">
             <div class="form-group">
               <label>Adjustment Date *</label>
-              <input type="text" id="adjDate" placeholder="MM-DD-YYYY" required />
+              <div style="position: relative; display: flex; align-items: center;">
+                <input type="text" id="adjDate" placeholder="MM-DD-YYYY" required style="padding-right: 36px;" />
+                <span style="position: absolute; right: 10px; cursor: pointer; font-size: 18px; color: #0d9488;" onclick="document.getElementById('adjDate').focus();">📅</span>
+              </div>
             </div>
             <div class="form-group">
               <label>Adjustment Amount *</label>
@@ -665,14 +668,15 @@ const dd = String(today.getDate()).padStart(2, '0');
 const yyyy = today.getFullYear();
 document.getElementById('adjDate').value = `${mm}-${dd}-${yyyy}`;
 
-// Initialize Flatpickr date picker with calendar at bottom
+// Initialize Flatpickr date picker with popup overlay
 flatpickr('#adjDate', {
   dateFormat: 'm-d-Y',
   mode: 'single',
-  position: 'below',
   inline: false,
+  static: false,
   altInput: false,
-  allowInput: true
+  allowInput: true,
+  clickOpens: true
 });
 
 document.getElementById('adjAmount').max = (amount - adjusted).toFixed(2);
