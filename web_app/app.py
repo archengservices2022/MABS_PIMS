@@ -13421,8 +13421,10 @@ def user_details_update(uid):
         if "username" in updates:
             session["username"] = updates["username"]
             session["user_name"] = updates["username"]
+            session.modified = True
         if "display_name" in updates:
             session["display_name"] = updates["display_name"]
+            session.modified = True
 
     # Sync name changes across timesheets, expenses, approvals, etc.
     now_iso = datetime.now(timezone.utc).isoformat()
