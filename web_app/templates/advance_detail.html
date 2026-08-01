@@ -540,7 +540,7 @@ tbody tr:last-child td {
           <div class="form-grid">
             <div class="form-group">
               <label>Adjustment Date *</label>
-              <input type="date" id="adjDate" required />
+              <input type="text" id="adjDate" placeholder="MM-DD-YYYY" required />
             </div>
             <div class="form-group">
               <label>Adjustment Amount *</label>
@@ -653,7 +653,12 @@ let currentAdvanceId = '{{ advance_id }}';
 let currentAdvanceData = null;
 const storedEmployeeName = '{{ employee_name }}';
 
-document.getElementById('adjDate').valueAsDate = new Date();
+// Initialize adjustment date with MM-DD-YYYY format
+const today = new Date();
+const mm = String(today.getMonth() + 1).padStart(2, '0');
+const dd = String(today.getDate()).padStart(2, '0');
+const yyyy = today.getFullYear();
+document.getElementById('adjDate').value = `${mm}-${dd}-${yyyy}`;
 document.getElementById('adjAmount').max = (amount - adjusted).toFixed(2);
 
 // Load employees and update employee name if it changed
@@ -757,7 +762,17 @@ window.addEventListener('DOMContentLoaded', function() {
 function editAdjustment(adjId, adjDate, adjAmount, adjType, adjReference, adjRemarks) {
   // Populate form with adjustment data
   document.getElementById('editingAdjustmentId').value = adjId;
-  document.getElementById('adjDate').value = adjDate || '';
+
+  // Format date as MM-DD-YYYY
+  let formattedDate = adjDate || '';
+  if (formattedDate && formattedDate.includes('-')) {
+    const dateParts = formattedDate.split('-');
+    if (dateParts.length === 3) {
+      formattedDate = `${dateParts[1]}-${dateParts[2]}-${dateParts[0]}`;
+    }
+  }
+  document.getElementById('adjDate').value = formattedDate;
+
   document.getElementById('adjAmount').value = parseFloat(adjAmount || 0);
   document.getElementById('adjType').value = adjType || 'Payroll Deduction';
   document.getElementById('adjReference').value = adjReference || '';
@@ -794,7 +809,14 @@ function updateAdjustmentMax() {
 function clearAdjustmentForm() {
   document.getElementById('adjustmentFormElement').reset();
   document.getElementById('editingAdjustmentId').value = '';
-  document.getElementById('adjDate').valueAsDate = new Date();
+
+  // Set date to today in MM-DD-YYYY format
+  const today = new Date();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const yyyy = today.getFullYear();
+  document.getElementById('adjDate').value = `${mm}-${dd}-${yyyy}`;
+
   document.getElementById('adjType').value = '';
 
   // For new adjustments, set max to current balance (only if balance > 0)
@@ -823,9 +845,18 @@ function saveAdjustment(event) {
   const isUpdate = editingId !== '';
   const selectedAdvanceNo = document.getElementById('advanceNoForAdjustment').value;
 
+  // Convert MM-DD-YYYY to YYYY-MM-DD for storage
+  let dateValue = document.getElementById('adjDate').value;
+  if (dateValue && dateValue.includes('-')) {
+    const dateParts = dateValue.split('-');
+    if (dateParts.length === 3) {
+      dateValue = `${dateParts[2]}-${dateParts[0]}-${dateParts[1]}`;
+    }
+  }
+
   const adjustment = {
     advance_no: selectedAdvanceNo || advanceNo,
-    date: document.getElementById('adjDate').value,
+    date: dateValue,
     amount: parseFloat(document.getElementById('adjAmount').value),
     type: document.getElementById('adjType').value,
     reference: document.getElementById('adjReference').value,
