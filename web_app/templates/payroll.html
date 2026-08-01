@@ -1224,11 +1224,11 @@ function refreshAdvanceTable() {
     return;
   }
 
-  // Sort by date descending (newest first)
+  // Sort by date ascending (oldest first)
   const sortedAdvances = [...allAdvances].sort((a, b) => {
     const dateA = new Date(a.date || '');
     const dateB = new Date(b.date || '');
-    return dateB - dateA;
+    return dateA - dateB;
   });
 
   // Clear search input and reset status filter when refreshing
@@ -1342,7 +1342,7 @@ function filterAdvanceTable() {
     }
   });
 
-  // Sort visible rows by date descending (newest first)
+  // Sort visible rows by date ascending (oldest first)
   visibleRows.sort((a, b) => {
     const dateA = (a.cells[1]?.textContent || '').trim();
     const dateB = (b.cells[1]?.textContent || '').trim();
@@ -1351,7 +1351,7 @@ function filterAdvanceTable() {
     const dateAObj = new Date(dateA.split('-').reverse().join('-'));
     const dateBObj = new Date(dateB.split('-').reverse().join('-'));
 
-    return dateBObj - dateAObj;
+    return dateAObj - dateBObj;
   });
 
   // Re-order rows in DOM based on sort

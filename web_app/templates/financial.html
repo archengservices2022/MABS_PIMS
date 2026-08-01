@@ -888,7 +888,7 @@ a[href*="filter_expense"]:hover {
           </tr>
         </thead>
         <tbody id="expenseTableBody">
-          {% for exp in expenses|sort(attribute='created_at', reverse=True) %}
+          {% for exp in expenses|sort(attribute='created_at', reverse=False) %}
           <tr class="expense-row"
             data-search="{{ (exp.get('expense_name','') or exp.get('description',''))|lower }} {{ exp.get('vendor','')|lower }} {{ exp.get('category','')|lower }}"
             data-type="{{ exp.get('expense_type','') }}"
@@ -1322,7 +1322,7 @@ function getVisibleExpenseRows() {
     return matchSearch && matchType && matchVendor && matchFrom && matchTo;
   });
 
-  // Sort by date in descending order (newest to oldest)
+  // Sort by date in ascending order (oldest to newest)
   filteredRows.sort((a, b) => {
     let dateA = (a.dataset.date || '').trim();
     let dateB = (b.dataset.date || '').trim();
@@ -1341,7 +1341,7 @@ function getVisibleExpenseRows() {
       }
     }
 
-    return dateB.localeCompare(dateA);
+    return dateA.localeCompare(dateB);
   });
 
   return filteredRows;
@@ -2859,8 +2859,9 @@ function viewReceipt(expId) {
             <thead style="background:#92400E; color:#fff;">
               <tr>
                 <th style="padding:8px 12px; color:#fff;">Date</th>
+                <th style="padding:8px 12px; color:#fff;">Advance No</th>
                 <th style="padding:8px 12px; color:#fff;">Employee</th>
-                <th style="padding:8px 12px; color:#fff;">Reason</th>
+                <th style="padding:8px 12px; color:#fff;">Description</th>
                 <th style="padding:8px 12px; color:#fff; text-align:right;">Amount</th>
               </tr>
             </thead>
@@ -3075,15 +3076,19 @@ function viewReceipt(expId) {
           advSec.style.display = '';
           var aRows = advances.map(function(a, idx) {
             var bg = idx%2===0?'#fff':'#fffbeb';
+            var advanceLink = a.advance_id
+              ? '<a href="/employee_advances/'+encodeURIComponent(a.advance_id)+'" style="color:#D97706;font-weight:700;text-decoration:none;">'+(a.advance_no||'—')+'</a>'
+              : (a.advance_no||'—');
             return '<tr style="background:'+bg+';border-bottom:1px solid #fed7aa;">'
               +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(a.date)+'</td>'
-              +'<td style="padding:8px 12px;font-weight:500;">'+(a.employee_name||'—')+'</td>'
+              +'<td style="padding:8px 12px;font-weight:500;">'+advanceLink+'</td>'
+              +'<td style="padding:8px 12px;color:#6b7280;">'+(a.employee_name||'—')+'</td>'
               +'<td style="padding:8px 12px;color:#6b7280;">'+(a.reason||'—')+'</td>'
               +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#D97706;">'+fmt(a.amount)+'</td></tr>';
           });
           document.getElementById('monthAdvancesTbody').innerHTML = aRows.join('');
           totalAdv = advances.reduce(function(s,a){return s+parseFloat(a.amount||0);},0);
-          document.getElementById('monthAdvancesTfoot').innerHTML = '<tr><td colspan="3" style="padding:8px 12px;font-weight:700;">Total Advances</td>'
+          document.getElementById('monthAdvancesTfoot').innerHTML = '<tr><td colspan="4" style="padding:8px 12px;font-weight:700;">Total Advances</td>'
             +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#D97706;font-size:13px;">'+fmt(totalAdv)+'</td></tr>';
         } else {
           advSec.style.display = 'none';
