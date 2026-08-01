@@ -14406,7 +14406,7 @@ def _has_approved_delete_request(uid, entity_type, entity_id):
     if not isinstance(all_reqs, dict):
         return None
 
-    # First try exact match
+    # Exact match only - strict checking
     for rid, r in all_reqs.items():
         if isinstance(r, dict):
             if (r.get("requested_by_uid") == uid and
@@ -14415,17 +14415,6 @@ def _has_approved_delete_request(uid, entity_type, entity_id):
                     r.get("status") == "approved"):
                 r["firebase_id"] = rid
                 return r
-
-    # Fallback: For change_order, accept any approved request with matching entity_id parts
-    if entity_type == "change_order":
-        for rid, r in all_reqs.items():
-            if isinstance(r, dict):
-                if (r.get("requested_by_uid") == uid and
-                        r.get("entity_type") == "change_order" and
-                        r.get("status") == "approved" and
-                        entity_id in r.get("entity_id", "")):
-                    r["firebase_id"] = rid
-                    return r
 
     return None
 
