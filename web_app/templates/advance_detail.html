@@ -541,7 +541,7 @@ tbody tr:last-child td {
           <div class="form-grid">
             <div class="form-group">
               <label>Adjustment Date *</label>
-              <input type="text" id="adjDate" placeholder="MM-DD-YYYY" required />
+              <input type="date" id="adjDate" required />
             </div>
             <div class="form-group">
               <label>Adjustment Amount *</label>
@@ -654,12 +654,12 @@ let currentAdvanceId = '{{ advance_id }}';
 let currentAdvanceData = null;
 const storedEmployeeName = '{{ employee_name }}';
 
-// Initialize adjustment date with MM-DD-YYYY format
+// Initialize adjustment date (type=date uses YYYY-MM-DD format)
 const today = new Date();
+const yyyy = today.getFullYear();
 const mm = String(today.getMonth() + 1).padStart(2, '0');
 const dd = String(today.getDate()).padStart(2, '0');
-const yyyy = today.getFullYear();
-document.getElementById('adjDate').value = `${mm}-${dd}-${yyyy}`;
+document.getElementById('adjDate').value = `${yyyy}-${mm}-${dd}`;
 
 document.getElementById('adjAmount').max = (amount - adjusted).toFixed(2);
 
@@ -765,15 +765,8 @@ function editAdjustment(adjId, adjDate, adjAmount, adjType, adjReference, adjRem
   // Populate form with adjustment data
   document.getElementById('editingAdjustmentId').value = adjId;
 
-  // Format date as MM-DD-YYYY
-  let formattedDate = adjDate || '';
-  if (formattedDate && formattedDate.includes('-')) {
-    const dateParts = formattedDate.split('-');
-    if (dateParts.length === 3) {
-      formattedDate = `${dateParts[1]}-${dateParts[2]}-${dateParts[0]}`;
-    }
-  }
-  document.getElementById('adjDate').value = formattedDate;
+  // Set date directly (type=date expects YYYY-MM-DD format)
+  document.getElementById('adjDate').value = adjDate || '';
 
   document.getElementById('adjAmount').value = parseFloat(adjAmount || 0);
   document.getElementById('adjType').value = adjType || 'Payroll Deduction';
