@@ -14406,7 +14406,7 @@ def _has_approved_delete_request(uid, entity_type, entity_id):
     if not isinstance(all_reqs, dict):
         return None
 
-    # Try exact match first
+    # Exact match only - must match uid, entity_type, entity_id, and status
     for rid, r in all_reqs.items():
         if isinstance(r, dict):
             if (r.get("requested_by_uid") == uid and
@@ -14415,28 +14415,6 @@ def _has_approved_delete_request(uid, entity_type, entity_id):
                     r.get("status") == "approved"):
                 r["firebase_id"] = rid
                 return r
-
-    # For change_order, try lenient matching - entity_id should end with _coIdx
-    # This handles cases where project_id format differs slightly
-    if entity_type == "change_order":
-        # Extract the co index from entity_id (last part after underscore)
-        parts = str(entity_id).split('_')
-        if len(parts) >= 2:
-            co_idx = parts[-1]  # Get last part (the co index)
-
-            for rid, r in all_reqs.items():
-                if isinstance(r, dict):
-                    req_entity_id = r.get("entity_id", "")
-                    req_parts = str(req_entity_id).split('_')
-
-                    # Match if same co_idx and approved
-                    if (r.get("requested_by_uid") == uid and
-                            r.get("entity_type") == "change_order" and
-                            r.get("status") == "approved" and
-                            len(req_parts) >= 2 and
-                            req_parts[-1] == co_idx):
-                        r["firebase_id"] = rid
-                        return r
 
     return None
 
