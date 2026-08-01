@@ -1213,6 +1213,10 @@ function getUpdatedEmployeeName(storedName) {
   return matchedEmployee || storedName;
 }
 
+// Pagination variables
+let currentAdvancePage = 1;
+const itemsPerPage = 15;
+
 function refreshAdvanceTable() {
   const tbody = document.getElementById('advanceTableBody');
 
@@ -1236,7 +1240,17 @@ function refreshAdvanceTable() {
   advanceStatusFilter = 'All';
   document.getElementById('advanceStatusDropdown').value = 'All';
 
-  tbody.innerHTML = sortedAdvances.map((adv, idx) => {
+  // Reset pagination on refresh
+  currentAdvancePage = 1;
+
+  // Pagination: calculate start and end indexes
+  const totalPages = Math.ceil(sortedAdvances.length / itemsPerPage);
+  const startIndex = (currentAdvancePage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedAdvances = sortedAdvances.slice(startIndex, endIndex);
+
+  tbody.innerHTML = paginatedAdvances.map((adv, idx) => {
+    const actualIdx = startIndex + idx;
     const balance = (adv.amount || 0) - (adv.adjusted || 0);
     const advanceId = adv.id || '';
     const detailUrl = `{{ url_for('advance_detail', advance_id='ADVANCE_ID') }}`.replace('ADVANCE_ID', advanceId);
@@ -1267,7 +1281,7 @@ function refreshAdvanceTable() {
         <td onclick="event.stopPropagation()" style="text-align:center;">
           <div class="action-buttons" style="display:flex;gap:6px;justify-content:center;">
             <button class="btn btn-sm" style="background:#3b82f6;color:white;border:none;padding:6px 8px;border-radius:4px;cursor:pointer;font-size:14px;min-width:32px;" title="Edit"
-              onclick="editAdvanceEntry(${idx})">✎</button>
+              onclick="editAdvanceEntry(${actualIdx})">✎</button>
             <button class="btn btn-sm" style="background:#ef4444;color:white;border:none;padding:6px 8px;border-radius:4px;cursor:pointer;font-size:14px;min-width:32px;" title="Delete"
               onclick="deleteAdvance('${adv.advance_no || ''}')">🗑</button>
           </div>
@@ -1276,12 +1290,12 @@ function refreshAdvanceTable() {
     `;
   }).join('');
 
-  // Add totals row
+  // Add totals row (for current page)
   let totalAmount = 0;
   let totalAdjusted = 0;
   let totalBalance = 0;
 
-  sortedAdvances.forEach(adv => {
+  paginatedAdvances.forEach(adv => {
     totalAmount += parseFloat(adv.amount || 0);
     totalAdjusted += parseFloat(adv.adjusted || 0);
     totalBalance += (parseFloat(adv.amount || 0) - parseFloat(adv.adjusted || 0));
@@ -1289,7 +1303,7 @@ function refreshAdvanceTable() {
 
   const totalsRow = `
     <tr class="totals-row" style="background:#f0f9ff;border-top:2px solid #cbd5e1;font-weight:600;">
-      <td colspan="3" style="text-align:right;padding:12px 10px;color:#1f2937;">Totals (${sortedAdvances.length} advances)</td>
+      <td colspan="3" style="text-align:right;padding:12px 10px;color:#1f2937;">Totals (${paginatedAdvances.length} on page)</td>
       <td style="padding:12px 10px;color:#1f2937;">{{ currency_symbol }}${parseFloat(totalAmount).toFixed(2)}</td>
       <td style="padding:12px 10px;color:#10b981;">{{ currency_symbol }}${parseFloat(totalAdjusted).toFixed(2)}</td>
       <td style="padding:12px 10px;color:#ef4444;">{{ currency_symbol }}${parseFloat(totalBalance).toFixed(2)}</td>
@@ -1298,7 +1312,55 @@ function refreshAdvanceTable() {
   `;
 
   tbody.innerHTML += totalsRow;
-  document.getElementById('advanceTotal').textContent = `Total: ${allAdvances.length} Record(s)`;
+  document.getElementById('advanceTotal').textContent = `Total: ${sortedAdvances.length} Record(s) - Page ${currentAdvancePage} of ${totalPages}`;
+
+  // Add pagination controls
+  addAdvancePaginationControls(totalPages);
+}
+
+function addAdvancePaginationControls(totalPages) {
+  let paginationContainer = document.getElementById('advancePaginationControls');
+  if (!paginationContainer) {
+    paginationContainer = document.createElement('div');
+    paginationContainer.id = 'advancePaginationControls';
+    document.getElementById('advanceTableBody').parentElement.parentElement.appendChild(paginationContainer);
+  }
+
+  if (totalPages <= 1) {
+    paginationContainer.innerHTML = '';
+    return;
+  }
+
+  let paginationHTML = `<div style="display:flex;justify-content:center;gap:8px;margin-top:16px;align-items:center;">`;
+
+  // Previous button
+  paginationHTML += `<button onclick="goToAdvancePage(${currentAdvancePage - 1})" ${currentAdvancePage === 1 ? 'disabled' : ''} style="padding:6px 12px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;font-weight:500;color:#374151;background:white;${currentAdvancePage === 1 ? 'opacity:0.5;cursor:not-allowed;' : ''}">← Previous</button>`;
+
+  // Page numbers
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === currentAdvancePage) {
+      paginationHTML += `<button style="padding:6px 12px;border:1px solid #3b82f6;border-radius:6px;background:#3b82f6;color:white;font-weight:600;min-width:40px;">${i}</button>`;
+    } else if (i === 1 || i === totalPages || (i >= currentAdvancePage - 1 && i <= currentAdvancePage + 1)) {
+      paginationHTML += `<button onclick="goToAdvancePage(${i})" style="padding:6px 12px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;font-weight:500;color:#374151;background:white;min-width:40px;">${i}</button>`;
+    } else if (i === currentAdvancePage - 2 || i === currentAdvancePage + 2) {
+      paginationHTML += `<span style="padding:6px 12px;color:#94a3b8;">...</span>`;
+    }
+  }
+
+  // Next button
+  paginationHTML += `<button onclick="goToAdvancePage(${currentAdvancePage + 1})" ${currentAdvancePage === totalPages ? 'disabled' : ''} style="padding:6px 12px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;font-weight:500;color:#374151;background:white;${currentAdvancePage === totalPages ? 'opacity:0.5;cursor:not-allowed;' : ''}">Next →</button>`;
+
+  paginationHTML += `</div>`;
+  paginationContainer.innerHTML = paginationHTML;
+}
+
+function goToAdvancePage(page) {
+  const totalAdvances = allAdvances.length;
+  const totalPages = Math.ceil(totalAdvances / itemsPerPage);
+  if (page >= 1 && page <= totalPages) {
+    currentAdvancePage = page;
+    refreshAdvanceTable();
+  }
 }
 
 // Global status filter variable
@@ -1399,6 +1461,13 @@ function filterAdvanceTable() {
 
       // Update bottom record count to show filtered count
       document.getElementById('advanceTotal').textContent = `Total: ${visibleCount} Record(s)`;
+
+      // Show/hide pagination based on whether filters are active
+      const paginationContainer = document.getElementById('advancePaginationControls');
+      const filtersActive = searchInput.length > 0 || advanceStatusFilter !== 'All';
+      if (paginationContainer) {
+        paginationContainer.style.display = filtersActive ? 'none' : 'block';
+      }
     }
   }
 }
