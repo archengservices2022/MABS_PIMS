@@ -1271,6 +1271,17 @@ document.addEventListener('DOMContentLoaded', function() {
       e.preventDefault();
       var url = this.dataset.url;
       if (url) {
+        // Handle relative URLs
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+          url = window.location.origin + url;
+        }
+        // If stored URL is a localhost/private IP, replace with current domain
+        else if (url.includes('localhost') || url.includes('192.168') || url.includes('127.0.0.1')) {
+          var pathMatch = url.match(/\/[^\/].*$/);
+          if (pathMatch) {
+            url = window.location.origin + pathMatch[0];
+          }
+        }
         window.open(url, '_blank');
       }
     });
