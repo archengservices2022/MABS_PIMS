@@ -17344,17 +17344,21 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         # For multi-project invoices, also check line item description for CO#
         # Description format could be "Testing2 — MABS-202608002_CO-1" or just "CO-1"
         if not invoice_co_num and description:
+            log.info(f"[PDF_CO_DEBUG_DESC] Checking description: {description}")
             # Try to extract CO# from description
             if " — " in description:
                 # Format: "project_name — CO_reference"
                 parts = description.split(" — ", 1)
                 if len(parts) > 1:
                     potential_co = parts[1].strip()
+                    log.info(f"[PDF_CO_DEBUG_DESC] Found potential_co: {potential_co}")
                     if potential_co and not potential_co.lower().startswith("stage") and not potential_co.lower().startswith("installment"):
                         invoice_co_num = potential_co
+                        log.info(f"[PDF_CO_DEBUG_DESC] Set invoice_co_num to: {invoice_co_num}")
             elif not description.lower().startswith("stage") and not description.lower().startswith("installment"):
                 # Description is the stage name itself
                 invoice_co_num = description.strip()
+                log.info(f"[PDF_CO_DEBUG_DESC] Set invoice_co_num from description: {invoice_co_num}")
         log.info(f"[PDF_CO_DEBUG] invoice_co_num from meta={invoice_co_num}")
         all_projects = None
         try:
