@@ -13,6 +13,10 @@
   #projFilterForm {
     margin-bottom: 15px;
   }
+  /* Disable pointer events on inactive tab panes */
+  .tab-pane:not(.show) {
+    pointer-events: none;
+  }
 </style>
 
 <!-- ?? Projects Overview ?????????????????????????????????????????????????????? -->
@@ -367,9 +371,9 @@
 
 
   <!-- ?? Tab: Archived Projects -->
-  <div class="tab-pane fade {{ 'show active' if active_tab in ('archived', 'archived-projects') else '' }}" id="tab-archived-projects">
-    <div class="card-panel">
-      <h6 class="section-heading mb-3"><i class="bi bi-archive me-2"></i>Archived Projects</h6>
+  <div class="tab-pane fade {{ 'show active' if active_tab in ('archived', 'archived-projects') else '' }}" id="tab-archived-projects" style="margin-top:-350px; padding-top:0; padding:0;">
+    <div class="card-panel" style="margin:0;">
+      <h6 class="section-heading mb-2" style="margin-top:0;"><i class="bi bi-archive me-2"></i>Archived Projects</h6>
       {% if deleted_projects %}
       <div class="table-responsive">
         <table class="table table-hover table-sm align-middle mb-0">
@@ -485,7 +489,7 @@ function setExportRange(type) {
   buildExportLinks();
 }
 
-// Hide table when export tab is active, show when all-projects tab is active
+// Hide table when export or archived tab is active, show when all-projects tab is active
 document.addEventListener('DOMContentLoaded', function() {
   const projectsTable = document.getElementById('projectsTable');
   const tableCardPanel = projectsTable ? projectsTable.closest('.card-panel') : null;
@@ -495,14 +499,22 @@ document.addEventListener('DOMContentLoaded', function() {
     return;
   }
 
-  // Hide table initially if export tab is active
+  // Hide table initially if export or archived tab is active
   const exportTab = document.getElementById('tab-export');
-  if (exportTab && exportTab.classList.contains('active')) {
+  const archivedTab = document.getElementById('tab-archived-projects');
+  if ((exportTab && exportTab.classList.contains('active')) || (archivedTab && archivedTab.classList.contains('active'))) {
     tableCardPanel.style.display = 'none';
   }
 
   // Handle tab switching - hide table when export tab is shown
   document.querySelectorAll('[href="#tab-export"]').forEach(link => {
+    link.addEventListener('shown.bs.tab', function() {
+      if (tableCardPanel) tableCardPanel.style.display = 'none';
+    });
+  });
+
+  // Handle tab switching - hide table when archived tab is shown
+  document.querySelectorAll('[href="#tab-archived-projects"]').forEach(link => {
     link.addEventListener('shown.bs.tab', function() {
       if (tableCardPanel) tableCardPanel.style.display = 'none';
     });
