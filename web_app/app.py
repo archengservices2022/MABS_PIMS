@@ -9867,11 +9867,14 @@ def salary_delete_perms():
             _all_reqs = fb_get("/permission_requests") or {}
             for req_id, req_data in (_all_reqs.items() if isinstance(_all_reqs, dict) else []):
                 if (isinstance(req_data, dict) and
+                    req_data.get("requested_by_uid") == _uid and
                     req_data.get("status") == "approved" and
                     req_data.get("entity_type") == "salary" and
                     "entity_id" in req_data):
                     perms.append(req_data.get("entity_id", ""))
+                    log.info(f"Found approved salary delete perm for {req_data.get('entity_id')}")
 
+        log.info(f"Salary delete perms for {_uid}: {perms}")
         return jsonify({"delete_perms": perms})
     except Exception as e:
         log.error(f"Error getting salary delete perms: {e}")
