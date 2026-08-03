@@ -17343,7 +17343,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                                     co_db_upper == invoice_upper or  # Case-insensitive exact
                                     co_db_normalized == invoice_normalized):  # Normalized (flexible separators)
                                     co_po_wo_from_stage = _co.get("po_wo_number", "")
-                                    display_co_number = co_db_num  # Use actual CO# from database
+                                    display_co_number = invoice_co_num  # Use what's in meta, not from database
                                     break
                         if display_co_number:
                             break
