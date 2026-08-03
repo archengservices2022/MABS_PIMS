@@ -1006,6 +1006,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load salary delete permissions immediately
   refreshSalaryDeletePerms();
+
+  // Refresh permissions when returning to page (admin approval detection)
+  window.addEventListener('focus', function() {
+    const salariesTab = document.querySelector('[href="#salaries"]');
+    if (salariesTab && salariesTab.classList.contains('active')) {
+      refreshSalaryDeletePerms();
+    }
+  });
 });
 
 // ?? Export Functions ??????????????????????????????????????
