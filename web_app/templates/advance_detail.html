@@ -613,9 +613,9 @@ tbody tr:last-child td {
                 <td>{{ adj_data.get('remarks', '—') }}</td>
                 <td>{{ adj_data.get('adjusted_by', 'System') }}</td>
                 <td style="text-align: center;">
-                  <div class="action-buttons">
-                    <button type="button" class="btn-sm" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;" title="Edit" onclick="editAdjustment('{{ adj_id }}', '{{ adj_data.get('date', '') }}', {{ adj_data.get('amount', 0) }}, '{{ adj_data.get('type', '') }}', '{{ adj_data.get('reference', '') }}', '{{ adj_data.get('remarks', '') }}')"><i class="bi bi-pencil"></i></button>
-                    <button type="button" class="btn-sm" style="background:#DC2626;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;" title="Delete" onclick="deleteAdjustment('{{ adj_id }}')"><i class="bi bi-trash"></i></button>
+                  <div class="action-buttons" style="display:flex;gap:6px;justify-content:center;">
+                    <button type="button" class="btn-sm" style="background:white;color:#6b7280;border:1.5px solid #d1d5db;padding:6px 9px;border-radius:5px;cursor:pointer;font-size:14px;display:inline-flex;align-items:center;justify-content:center;transition:all .2s;" title="Edit" onmouseover="this.style.borderColor='#9ca3af';this.style.color='#374151'" onmouseout="this.style.borderColor='#d1d5db';this.style.color='#6b7280'" onclick="editAdjustment('{{ adj_id }}', '{{ adj_data.get('date', '') }}', {{ adj_data.get('amount', 0) }}, '{{ adj_data.get('type', '') }}', '{{ adj_data.get('reference', '') }}', '{{ adj_data.get('remarks', '') }}')"><i class="bi bi-pencil"></i></button>
+                    <button type="button" class="btn-sm" style="background:white;color:#ef4444;border:1.5px solid #fecaca;padding:6px 9px;border-radius:5px;cursor:pointer;font-size:14px;display:inline-flex;align-items:center;justify-content:center;transition:all .2s;" title="Delete" onmouseover="this.style.borderColor='#dc2626';this.style.color='#991b1b'" onmouseout="this.style.borderColor='#fecaca';this.style.color='#ef4444'" onclick="deleteAdjustment('{{ adj_id }}')"><i class="bi bi-trash"></i></button>
                   </div>
                 </td>
               </tr>
