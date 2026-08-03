@@ -17349,38 +17349,54 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
 
         # If not found via meta, try extracting from description
         if not display_co_number and description:
-            # Extract the part after the project number (if format is "PROJECT - CO#" or "PROJECT - CO# DESCRIPTION")
+            # Description format could be "PROJECT - CO#" or "MABS-202604110 - CO-1"
+            # Try to extract CO reference, preferring full format matches
+            potential_co_refs = []
+
             if " - " in description:
                 parts = description.split(" - ", 1)
                 if len(parts) > 1:
-                    # Get everything after the first " - "
-                    after_dash = parts[1].strip()
-                    # Extract just the first word/token which should be the CO reference
+                    first_part = parts[0].strip()  # e.g., "MABS-202604110"
+                    after_dash = parts[1].strip()  # e.g., "CO-1 SHIP TO..."
                     co_ref_parts = after_dash.split()
-                    if co_ref_parts:
-                        potential_co_ref = co_ref_parts[0]
-                        # Search for this in all projects
-                        if all_projects:
-                            for pid, pdata_search in (all_projects.items() if isinstance(all_projects, dict) else []):
-                                if isinstance(pdata_search, dict):
-                                    for _co in _normalise_list(pdata_search.get("change_orders")):
-                                        if isinstance(_co, dict):
-                                            co_db_num = _co.get("co_number", "").strip()
-                                            # Try multiple matching strategies - handle any format
-                                            co_db_upper = co_db_num.upper()
-                                            potential_upper = potential_co_ref.upper()
-                                            # Normalize all separators (-, _, space)
-                                            co_db_norm = co_db_upper.replace("-", "").replace("_", "").replace(" ", "")
-                                            potential_norm = potential_upper.replace("-", "").replace("_", "").replace(" ", "")
 
-                                            if (co_db_num == potential_co_ref or  # Exact match
-                                                co_db_upper == potential_upper or  # Case-insensitive
-                                                co_db_norm == potential_norm):  # Normalized
-                                                co_po_wo_from_stage = _co.get("po_wo_number", "")
-                                                display_co_number = co_db_num
-                                                break
-                                    if display_co_number:
+                    if co_ref_parts:
+                        short_ref = co_ref_parts[0]  # e.g., "CO-1"
+                        # Try full format first (PROJECT_CO# or PROJECT-CO#)
+                        full_ref_with_underscore = f"{first_part}_{short_ref}"
+                        full_ref_with_hyphen = f"{first_part}-{short_ref}"
+
+                        # Add candidates in order of preference
+                        potential_co_refs.append(full_ref_with_underscore)  # MABS-202604110_CO-1
+                        potential_co_refs.append(full_ref_with_hyphen)       # MABS-202604110-CO-1
+                        potential_co_refs.append(short_ref)                   # CO-1 (fallback)
+
+            # Search for CO with any of the potential references
+            if potential_co_refs and all_projects:
+                # Try each potential CO reference in order of preference
+                for potential_co_ref in potential_co_refs:
+                    if display_co_number:
+                        break
+                    for pid, pdata_search in (all_projects.items() if isinstance(all_projects, dict) else []):
+                        if isinstance(pdata_search, dict):
+                            for _co in _normalise_list(pdata_search.get("change_orders")):
+                                if isinstance(_co, dict):
+                                    co_db_num = _co.get("co_number", "").strip()
+                                    # Try multiple matching strategies - handle any format
+                                    co_db_upper = co_db_num.upper()
+                                    potential_upper = potential_co_ref.upper()
+                                    # Normalize all separators (-, _, space)
+                                    co_db_norm = co_db_upper.replace("-", "").replace("_", "").replace(" ", "")
+                                    potential_norm = potential_upper.replace("-", "").replace("_", "").replace(" ", "")
+
+                                    if (co_db_num == potential_co_ref or  # Exact match
+                                        co_db_upper == potential_upper or  # Case-insensitive
+                                        co_db_norm == potential_norm):  # Normalized
+                                        co_po_wo_from_stage = _co.get("po_wo_number", "")
+                                        display_co_number = co_db_num
                                         break
+                            if display_co_number:
+                                break
 
         # Display CO number below project number if found
         if display_co_number:
