@@ -746,7 +746,9 @@ function switchTab(tabName, event) {
 function renderSalaryDeleteButtons() {
   document.querySelectorAll('[id^="salary-action-"]').forEach(el => {
     const salaryId = el.id.replace('salary-action-', '');
-    if (salaryDeletePerms.has(salaryId)) {
+    const hasPermission = salaryDeletePerms.has(salaryId);
+    console.log(`Rendering button for ${salaryId}: hasPermission=${hasPermission}, perms=${Array.from(salaryDeletePerms)}`);
+    if (hasPermission) {
       el.innerHTML = `<button type="button" class="btn btn-xs btn-outline-danger" title="Delete" onclick="deleteSalary('${salaryId}')"><i class="bi bi-trash"></i></button>`;
     } else {
       el.innerHTML = `<button type="button" class="btn btn-xs btn-outline-warning" title="Request Delete" onclick="openDeleteRequestModal('salary','${salaryId}','Salary Entry')"><i class="bi bi-send"></i></button>`;
@@ -784,6 +786,9 @@ function applySalaryFilters() {
       if (reg === 'Outside America') intlTotal += amt;
     }
   });
+
+  // Re-render salary delete buttons after filtering
+  renderSalaryDeleteButtons();
 
   // Update month headers
   document.querySelectorAll('#salaryTableBody tr[data-period-header]').forEach(hdr => {
@@ -1083,6 +1088,7 @@ async function refreshSalaryDeletePerms() {
     const response = await fetch('{{ url_for("salary_delete_perms") }}');
     const data = await response.json();
     salaryDeletePerms = new Set(data.delete_perms || []);
+    console.log('Loaded salary delete perms:', Array.from(salaryDeletePerms));
     renderSalaryDeleteButtons();
   } catch (e) {
     console.error('Error refreshing salary perms:', e);
