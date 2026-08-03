@@ -1375,11 +1375,11 @@ function refreshAdvanceTable() {
           ${adv.status === 'Closed' ? 'background:#dcfce7;color:#15803d;' : 'background:#dbeafe;color:#1d4ed8;'}">
           ${adv.status || 'Open'}</span></td>
         <td onclick="event.stopPropagation()" style="text-align:center;">
-          <div class="action-buttons" style="display:flex;gap:6px;justify-content:center;align-items:center;">
-            <button class="btn-sm" style="background:#3b82f6;color:white;border:none;padding:6px 8px;border-radius:4px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;transition:all .2s;" title="Edit" onmouseover="this.style.background='#1e40af'" onmouseout="this.style.background='#3b82f6'"
-              onclick="editAdvanceEntry(${idx})"><i class="bi bi-pencil" style="font-size:14px;"></i></button>
-            <button class="btn-sm" style="background:#ef4444;color:white;border:none;padding:6px 8px;border-radius:4px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;transition:all .2s;" title="Delete" onmouseover="this.style.background='#dc2626'" onmouseout="this.style.background='#ef4444'"
-              onclick="deleteAdvance('${adv.advance_no || ''}')"><i class="bi bi-trash" style="font-size:14px;"></i></button>
+          <div class="action-buttons">
+            <button class="btn-sm" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;" title="Edit"
+              onclick="editAdvanceEntry(${idx})"><i class="bi bi-pencil"></i></button>
+            <button class="btn-sm" style="background:#DC2626;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;" title="Delete"
+              onclick="deleteAdvance('${adv.advance_no || ''}')"><i class="bi bi-trash"></i></button>
           </div>
         </td>
       </tr>

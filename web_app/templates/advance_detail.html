@@ -414,11 +414,11 @@ tbody tr:last-child td {
       <button class="btn btn-secondary" onclick="window.print()" style="background: #e2e8f0; color: #0f172a;">
         🖨 Print
       </button>
-      <button class="btn btn-sm" style="background:#3b82f6;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 16px;transition:all .2s;" title="Edit" onmouseover="this.style.background='#1e40af'" onmouseout="this.style.background='#3b82f6'" onclick="editAdvance()">
-        <i class="bi bi-pencil" style="font-size:14px;"></i> Edit Advance
+      <button class="btn btn-sm" style="background:#0D9488;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;" title="Edit" onclick="editAdvance()">
+        <i class="bi bi-pencil"></i> Edit Advance
       </button>
-      <button class="btn btn-sm" style="background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 16px;transition:all .2s;" title="Delete" onmouseover="this.style.background='#dc2626'" onmouseout="this.style.background='#ef4444'" onclick="deleteAdvance('{{ advance_no }}')">
-        <i class="bi bi-trash" style="font-size:14px;"></i> Delete
+      <button class="btn btn-sm" style="background:#DC2626;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;" title="Delete" onclick="deleteAdvance('{{ advance_no }}')">
+        <i class="bi bi-trash"></i> Delete
       </button>
     </div>
   </div>
@@ -613,9 +613,9 @@ tbody tr:last-child td {
                 <td>{{ adj_data.get('remarks', '—') }}</td>
                 <td>{{ adj_data.get('adjusted_by', 'System') }}</td>
                 <td style="text-align: center;">
-                  <div class="action-buttons" style="display:flex;gap:6px;justify-content:center;align-items:center;">
-                    <button type="button" class="btn-sm" style="background:#3b82f6;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;transition:all .2s;" title="Edit" onmouseover="this.style.background='#1e40af'" onmouseout="this.style.background='#3b82f6'" onclick="editAdjustment('{{ adj_id }}', '{{ adj_data.get('date', '') }}', {{ adj_data.get('amount', 0) }}, '{{ adj_data.get('type', '') }}', '{{ adj_data.get('reference', '') }}', '{{ adj_data.get('remarks', '') }}')"><i class="bi bi-pencil" style="font-size:14px;"></i></button>
-                    <button type="button" class="btn-sm" style="background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;transition:all .2s;" title="Delete" onmouseover="this.style.background='#dc2626'" onmouseout="this.style.background='#ef4444'" onclick="deleteAdjustment('{{ adj_id }}')"><i class="bi bi-trash" style="font-size:14px;"></i></button>
+                  <div class="action-buttons">
+                    <button type="button" class="btn-sm" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;" title="Edit" onclick="editAdjustment('{{ adj_id }}', '{{ adj_data.get('date', '') }}', {{ adj_data.get('amount', 0) }}, '{{ adj_data.get('type', '') }}', '{{ adj_data.get('reference', '') }}', '{{ adj_data.get('remarks', '') }}')"><i class="bi bi-pencil"></i></button>
+                    <button type="button" class="btn-sm" style="background:#DC2626;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;" title="Delete" onclick="deleteAdjustment('{{ adj_id }}')"><i class="bi bi-trash"></i></button>
                   </div>
                 </td>
               </tr>
