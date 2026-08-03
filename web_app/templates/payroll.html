@@ -743,16 +743,19 @@ function switchTab(tabName, event) {
   event.target.closest('.payroll-tab-button').classList.add('active');
 }
 
+function handleSalaryDelete(salaryId) {
+  if (salaryDeletePerms.has(salaryId)) {
+    deleteSalary(salaryId);
+  } else {
+    openDeleteRequestModal('salary', salaryId, 'Salary Entry');
+  }
+}
+
 function renderSalaryDeleteButtons() {
   document.querySelectorAll('[id^="salary-action-"]').forEach(el => {
     const salaryId = el.id.replace('salary-action-', '');
-    const hasPermission = salaryDeletePerms.has(salaryId);
-    console.log(`Rendering button for ${salaryId}: hasPermission=${hasPermission}, perms=${Array.from(salaryDeletePerms)}`);
-    if (hasPermission) {
-      el.innerHTML = `<button type="button" class="btn btn-xs btn-outline-danger" title="Delete" onclick="deleteSalary('${salaryId}')"><i class="bi bi-trash"></i></button>`;
-    } else {
-      el.innerHTML = `<button type="button" class="btn btn-xs btn-outline-warning" title="Request Delete" onclick="openDeleteRequestModal('salary','${salaryId}','Salary Entry')"><i class="bi bi-send"></i></button>`;
-    }
+    // Always render the same button - it checks permissions at click time
+    el.innerHTML = `<button type="button" class="btn btn-xs btn-outline-danger" title="Delete" onclick="handleSalaryDelete('${salaryId}')"><i class="bi bi-trash"></i></button>`;
   });
 }
 
