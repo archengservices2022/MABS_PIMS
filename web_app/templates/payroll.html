@@ -963,7 +963,11 @@ function addSalary(e) {
 }
 
 function deleteSalary(id) {
+  id = (id || '').trim();
+  console.log(`deleteSalary called with id="${id}", perms=${Array.from(salaryDeletePerms)}`);
+
   if (!salaryDeletePerms.has(id)) {
+    console.error(`Permission check failed: "${id}" not in permissions`);
     alert('You do not have permission to delete this salary. Please request approval first.');
     return;
   }
