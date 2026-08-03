@@ -8356,7 +8356,8 @@ def payroll():
         comm_paid_set=list(comm_paid_set),
         comm_paid_amounts=comm_paid_amounts,
         advances=json.dumps(advances_list),
-        advance_delete_perms=_advance_del_perms)
+        advance_delete_perms=_advance_del_perms,
+        salary_delete_perms=[])
 
 # ── Payroll Export Routes ─────────────────────────────────────────────────────
 def _build_commission_payroll_rows():
@@ -9708,6 +9709,20 @@ def delete_salary(sal_id):
                 fb_delete(f"/balance_sheet_expenses/{exp_id}")
                 break
 
+    # Mark permission request as completed
+    _uid = session.get("user_uid", "")
+    _all_reqs = fb_get("/permission_requests") or {}
+    if isinstance(_all_reqs, dict):
+        for req_id, req_data in _all_reqs.items():
+            if (isinstance(req_data, dict) and
+                req_data.get("requested_by_uid") == _uid and
+                req_data.get("entity_type") == "salary" and
+                req_data.get("entity_id") == sal_id and
+                req_data.get("status") == "approved"):
+                fb_update(f"/permission_requests/{req_id}", {"status": "completed"})
+                log.info(f"Marked permission request {req_id} as completed")
+                break
+
     return jsonify({"success": True})
 
 # ── Employee Advance Routes ──────────────────────────────────────────────────────
@@ -9824,6 +9839,42 @@ def advance_delete_perms():
         return jsonify({"delete_perms": perms})
     except Exception as e:
         log.error(f"Error getting delete perms: {e}")
+        return jsonify({"delete_perms": [], "error": str(e)}), 500
+
+@app.route("/api/salary-delete-perms", methods=["GET"])
+@login_required
+def salary_delete_perms():
+    """Get list of salary records user can delete"""
+    try:
+        _uid  = session.get("user_uid", "")
+        _role = normalize_role(session.get("user_role", ""))
+
+        _all_salaries = fb_get("/balance_sheet_salary") or {}
+        salaries_list = []
+        if isinstance(_all_salaries, dict):
+            for sal_id, sal_data in _all_salaries.items():
+                if isinstance(sal_data, dict):
+                    sal_copy = dict(sal_data)
+                    sal_copy['id'] = sal_id
+                    salaries_list.append(sal_copy)
+
+        # Admin/Accountant can delete all
+        perms = []
+        if _role in ("admin", "accountant"):
+            perms = [s.get("id","") for s in salaries_list]
+        else:
+            # Check for approved delete requests for this user
+            _all_reqs = fb_get("/permission_requests") or {}
+            for req_id, req_data in (_all_reqs.items() if isinstance(_all_reqs, dict) else []):
+                if (isinstance(req_data, dict) and
+                    req_data.get("status") == "approved" and
+                    req_data.get("entity_type") == "salary" and
+                    "entity_id" in req_data):
+                    perms.append(req_data.get("entity_id", ""))
+
+        return jsonify({"delete_perms": perms})
+    except Exception as e:
+        log.error(f"Error getting salary delete perms: {e}")
         return jsonify({"delete_perms": [], "error": str(e)}), 500
 
 @app.route("/add_employee_advance", methods=["POST"])

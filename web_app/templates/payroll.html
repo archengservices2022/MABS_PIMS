@@ -306,13 +306,9 @@
                 <td><span class="region-badge {{ 'region-usa' if sal.region == 'Inside America' else 'region-intl' }}">{{ sal.region or '—' }}</span></td>
                 <td>{{ sal.notes or '—' }}</td>
                 <td>
-                  <div class="action-buttons">
-                    <button onclick="editSalary('{{ sal.firebase_id }}','{{ sal_emp | replace("'","&#39;") }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace("'","&#39;") }}','{{ sal.get('salary_status','Pending') }}')" class="btn-sm" title="Edit" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
-                      <i class="bi bi-pencil"></i>
-                    </button>
-                    <button onclick="deleteSalary('{{ sal.firebase_id }}')" class="btn-sm" title="Delete" style="background:#DC2626;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
-                      <i class="bi bi-trash"></i>
-                    </button>
+                  <div class="d-flex gap-1" style="justify-content:center;">
+                    <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit" onclick="editSalary('{{ sal.firebase_id }}','{{ sal_emp | replace("'","&#39;") }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace("'","&#39;") }}','{{ sal.get('salary_status','Pending') }}')"><i class="bi bi-pencil"></i></button>
+                    <span id="salary-action-{{ sal.firebase_id }}"></span>
                   </div>
                 </td>
               </tr>
@@ -747,6 +743,17 @@ function switchTab(tabName, event) {
   event.target.closest('.payroll-tab-button').classList.add('active');
 }
 
+function renderSalaryDeleteButtons() {
+  document.querySelectorAll('[id^="salary-action-"]').forEach(el => {
+    const salaryId = el.id.replace('salary-action-', '');
+    if (salaryDeletePerms.has(salaryId)) {
+      el.innerHTML = `<button type="button" class="btn btn-xs btn-outline-danger" title="Delete" onclick="deleteSalary('${salaryId}')"><i class="bi bi-trash"></i></button>`;
+    } else {
+      el.innerHTML = `<button type="button" class="btn btn-xs btn-outline-warning" title="Request Delete" onclick="openDeleteRequestModal('salary','${salaryId}','Salary Entry')"><i class="bi bi-send"></i></button>`;
+    }
+  });
+}
+
 function applySalaryFilters() {
   const search   = document.getElementById('searchEmployee').value.toLowerCase();
   const region   = document.getElementById('filterRegion').value;
@@ -777,6 +784,9 @@ function applySalaryFilters() {
       if (reg === 'Outside America') intlTotal += amt;
     }
   });
+
+  // Render salary delete buttons with correct permissions
+  renderSalaryDeleteButtons();
 
   // Update month headers
   document.querySelectorAll('#salaryTableBody tr[data-period-header]').forEach(hdr => {
@@ -951,13 +961,27 @@ function addSalary(e) {
 }
 
 function deleteSalary(id) {
-  if (!confirm('Delete this salary entry?\n\nThis action requires admin approval and cannot be undone.')) return;
+  if (!salaryDeletePerms.has(id)) {
+    alert('You do not have permission to delete this salary. Please request approval first.');
+    return;
+  }
+  if (!confirm('Delete this salary entry?\n\nThis action cannot be undone.')) return;
   const confirm2 = prompt('Type DELETE to confirm removal:');
   if (confirm2 !== 'DELETE') { alert('Deletion cancelled.'); return; }
   fetch(`/api/payroll/salaries/${id}`, {method: 'DELETE'})
     .then(r => r.json())
-    .then(res => { if (res.success) location.reload(); })
-    .catch(() => location.reload());
+    .then(res => {
+      if (res.success) {
+        alert('Salary deleted successfully!');
+        refreshSalaryDeletePerms();
+      } else {
+        alert('Error: ' + (res.error || 'Unknown error'));
+      }
+    })
+    .catch(e => {
+      console.error('Error:', e);
+      alert('Error deleting salary');
+    });
 }
 
 // Real-time filter listeners
@@ -970,6 +994,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('dateTo').addEventListener('change', applySalaryFilters);
   buildPayrollExportLinks();
   handleExportTypeChange();
+
+  // Load salary delete permissions immediately
+  refreshSalaryDeletePerms();
 });
 
 // ?? Export Functions ??????????????????????????????????????
@@ -1040,6 +1067,7 @@ function localDate(d) {
 let allEmployees = [];
 let allAdvances = {{ advances|safe }};
 let advanceDeletePerms = new Set({{ advance_delete_perms|tojson|safe }});
+let salaryDeletePerms = new Set({{ salary_delete_perms|tojson|safe }});
 
 // Refresh delete permissions from server
 async function refreshAdvanceDeletePerms() {
@@ -1050,6 +1078,17 @@ async function refreshAdvanceDeletePerms() {
     refreshAdvanceTable();
   } catch (e) {
     console.error('Error refreshing perms:', e);
+  }
+}
+
+async function refreshSalaryDeletePerms() {
+  try {
+    const response = await fetch('{{ url_for("salary_delete_perms") }}');
+    const data = await response.json();
+    salaryDeletePerms = new Set(data.delete_perms || []);
+    applySalaryFilters();
+  } catch (e) {
+    console.error('Error refreshing salary perms:', e);
   }
 }
 
