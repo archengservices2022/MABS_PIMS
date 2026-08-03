@@ -306,12 +306,12 @@
                 <td><span class="region-badge {{ 'region-usa' if sal.region == 'Inside America' else 'region-intl' }}">{{ sal.region or '—' }}</span></td>
                 <td>{{ sal.notes or '—' }}</td>
                 <td>
-                  <div class="action-buttons">
-                    <button onclick="editSalary('{{ sal.firebase_id }}','{{ sal_emp | replace("'","&#39;") }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace("'","&#39;") }}','{{ sal.get('salary_status','Pending') }}')" class="btn-sm" title="Edit" style="background:#0D9488;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
-                      <i class="bi bi-pencil"></i>
+                  <div class="action-buttons" style="display:flex;gap:6px;justify-content:center;align-items:center;">
+                    <button onclick="editSalary('{{ sal.firebase_id }}','{{ sal_emp | replace("'","&#39;") }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace("'","&#39;") }}','{{ sal.get('salary_status','Pending') }}')" class="btn-sm" title="Edit" style="background:#3b82f6;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;transition:all .2s;" onmouseover="this.style.background='#1e40af'" onmouseout="this.style.background='#3b82f6'">
+                      <i class="bi bi-pencil" style="font-size:14px;"></i>
                     </button>
-                    <button onclick="deleteSalary('{{ sal.firebase_id }}')" class="btn-sm" title="Delete" style="background:#DC2626;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">
-                      <i class="bi bi-trash"></i>
+                    <button onclick="deleteSalary('{{ sal.firebase_id }}')" class="btn-sm" title="Delete" style="background:#ef4444;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;transition:all .2s;" onmouseover="this.style.background='#dc2626'" onmouseout="this.style.background='#ef4444'">
+                      <i class="bi bi-trash" style="font-size:14px;"></i>
                     </button>
                   </div>
                 </td>
