@@ -17331,13 +17331,16 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                         for _co in _normalise_list(pdata_search.get("change_orders")):
                             if isinstance(_co, dict):
                                 co_db_num = _co.get("co_number", "").strip()
-                                # Exact match (case-insensitive), with flexible hyphen handling
-                                co_db_normalized = co_db_num.upper().replace("-", "").replace(" ", "")
-                                invoice_normalized = invoice_co_num.upper().replace("-", "").replace(" ", "")
+                                # Multiple matching strategies for CO number
+                                co_db_upper = co_db_num.upper()
+                                invoice_upper = invoice_co_num.upper()
+                                # Normalize: remove hyphens, underscores, spaces for comparison
+                                co_db_normalized = co_db_upper.replace("-", "").replace("_", "").replace(" ", "")
+                                invoice_normalized = invoice_upper.replace("-", "").replace("_", "").replace(" ", "")
 
-                                if (co_db_num == invoice_co_num or  # Exact match with case
-                                    co_db_num.upper() == invoice_co_num.upper() or  # Case-insensitive exact
-                                    co_db_normalized == invoice_normalized):  # Normalized (no hyphens/spaces)
+                                if (co_db_num == invoice_co_num or  # Exact match (case-sensitive)
+                                    co_db_upper == invoice_upper or  # Case-insensitive exact
+                                    co_db_normalized == invoice_normalized):  # Normalized (flexible separators)
                                     co_po_wo_from_stage = _co.get("po_wo_number", "")
                                     display_co_number = co_db_num  # Use actual CO# from database
                                     break
@@ -17363,10 +17366,16 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                                     for _co in _normalise_list(pdata_search.get("change_orders")):
                                         if isinstance(_co, dict):
                                             co_db_num = _co.get("co_number", "").strip()
-                                            # Try multiple matching strategies
-                                            if (co_db_num.upper() == potential_co_ref.upper() or
-                                                co_db_num.upper().replace("-", "") == potential_co_ref.upper().replace("-", "") or
-                                                co_db_num.upper() == potential_co_ref.upper().replace("-", "")):
+                                            # Try multiple matching strategies - handle any format
+                                            co_db_upper = co_db_num.upper()
+                                            potential_upper = potential_co_ref.upper()
+                                            # Normalize all separators (-, _, space)
+                                            co_db_norm = co_db_upper.replace("-", "").replace("_", "").replace(" ", "")
+                                            potential_norm = potential_upper.replace("-", "").replace("_", "").replace(" ", "")
+
+                                            if (co_db_num == potential_co_ref or  # Exact match
+                                                co_db_upper == potential_upper or  # Case-insensitive
+                                                co_db_norm == potential_norm):  # Normalized
                                                 co_po_wo_from_stage = _co.get("po_wo_number", "")
                                                 display_co_number = co_db_num
                                                 break
