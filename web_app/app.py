@@ -19726,9 +19726,25 @@ def quick_invoice_stage(project_id, stage_idx):
             "line_items": line_items,
         }
 
-        # Extract CO number from stage if present
-        if "co_number" in stage:
-            invoice_data["meta"]["co_number"] = stage.get("co_number", "").strip()
+        # Extract CO number: find matching change order by stage name
+        co_number_to_save = ""
+        change_orders = project.get("change_orders", [])
+        if isinstance(change_orders, dict):
+            change_orders = list(change_orders.values())
+
+        # Try to find CO that matches this stage name
+        for co in change_orders:
+            if isinstance(co, dict):
+                co_name = co.get("name", "").strip()
+                co_num = co.get("co_number", "").strip()
+                # Match by name or co_number
+                if (stage_name == co_name or stage_name == co_num or
+                    stage_name.lower() == co_name.lower() or stage_name.lower() == co_num.lower()):
+                    co_number_to_save = co_num
+                    break
+
+        if co_number_to_save:
+            invoice_data["meta"]["co_number"] = co_number_to_save
 
         # Create invoice
         invoice_id = fb_push("/invoices", invoice_data)
