@@ -17339,16 +17339,43 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
             project_number_display = f"{project_number}<br/><font size=8>{co_stage}</font>"
             project_cell = Paragraph(project_number_display, left_style)
 
+        # Improved CO detection: check for "co" followed by number (co1, co2, CO-1, CO-2, etc.)
+        import re
+        co_pattern = re.compile(r'\bco\d+\b', re.IGNORECASE)
         is_co_stage = bool(
-            (description and "co-" in description.lower()) or
-            (payment_stage and "CO-" in payment_stage.upper())
+            (description and co_pattern.search(description)) or
+            (payment_stage and co_pattern.search(payment_stage)) or
+            (meta.get("co_number", "").strip())
         )
         description_display = ""
         if is_co_stage:
-            # For CO stage, use the PO/WO from the CO itself, not the project
-            # First try CO's PO/WO, then try payment stage's PO/WO
+            # For CO stage, use the PO/WO from the CO itself, NEVER the project's PO
+            # First try CO's PO/WO from stage lookup or meta lookup
             description_display = co_po_wo_from_stage or ""
-            # If still empty, check if payment_stage_index has meta with PO/WO
+
+            # If still empty, try to find CO from description or payment_stage
+            if not description_display:
+                co_match = co_pattern.search(description) if description else None
+                if not co_match:
+                    co_match = co_pattern.search(payment_stage) if payment_stage else None
+
+                if co_match:
+                    matched_co_num = co_match.group(0).upper()
+                    for _co in _normalise_list(pdata.get("change_orders")) if pdata else []:
+                        if isinstance(_co, dict) and _co.get("co_number", "").upper() == matched_co_num:
+                            description_display = _co.get("po_wo_number", "")
+                            break
+
+            # If still empty, try from invoice meta co_number
+            if not description_display:
+                invoice_co_num = meta.get("co_number", "").strip()
+                if invoice_co_num:
+                    for _co in _normalise_list(pdata.get("change_orders")) if pdata else []:
+                        if isinstance(_co, dict) and _co.get("co_number", "").upper() == invoice_co_num.upper():
+                            description_display = _co.get("po_wo_number", "")
+                            break
+
+            # If still empty, check payment_stage_index has meta with PO/WO
             if not description_display and payment_stage_index is not None:
                 try:
                     stage_data = payment_stages[int(payment_stage_index)] if isinstance(payment_stages, list) and int(payment_stage_index) < len(payment_stages) else None
