@@ -19726,6 +19726,10 @@ def quick_invoice_stage(project_id, stage_idx):
             "line_items": line_items,
         }
 
+        # Extract CO number from stage if present
+        if "co_number" in stage:
+            invoice_data["meta"]["co_number"] = stage.get("co_number", "").strip()
+
         # Create invoice
         invoice_id = fb_push("/invoices", invoice_data)
         invoice_number = invoice_data["meta"].get("invoice_number", "")
