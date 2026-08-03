@@ -19726,30 +19726,10 @@ def quick_invoice_stage(project_id, stage_idx):
             "line_items": line_items,
         }
 
-        # Extract CO number: find matching change order by stage name
-        co_number_to_save = ""
-        change_orders = project.get("change_orders", [])
-        if isinstance(change_orders, dict):
-            change_orders = list(change_orders.values())
-
-        log.info(f"[CO_MATCH] stage_name={stage_name}, total_cos={len(change_orders)}")
-
-        # Try to find CO that matches this stage name
-        for co in change_orders:
-            if isinstance(co, dict):
-                co_name = co.get("name", "").strip()
-                co_num = co.get("co_number", "").strip()
-                log.info(f"[CO_MATCH] Checking CO: name={co_name}, co_number={co_num}")
-                # Match by name or co_number
-                if (stage_name == co_name or stage_name == co_num or
-                    stage_name.lower() == co_name.lower() or stage_name.lower() == co_num.lower()):
-                    co_number_to_save = co_num
-                    log.info(f"[CO_MATCH] MATCHED! Setting co_number_to_save={co_number_to_save}")
-                    break
-
-        if co_number_to_save:
-            invoice_data["meta"]["co_number"] = co_number_to_save
-            log.info(f"[CO_MATCH] Saved to meta: co_number={co_number_to_save}")
+        # Extract CO# from stage name - use exactly what's given
+        # If stage name looks like a CO (not "Stage X" or "Installment X"), use it as CO#
+        if stage_name and not stage_name.lower().startswith("stage") and not stage_name.lower().startswith("installment"):
+            invoice_data["meta"]["co_number"] = stage_name.strip()
 
         # Create invoice
         invoice_id = fb_push("/invoices", invoice_data)
