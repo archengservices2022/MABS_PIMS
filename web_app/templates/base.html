@@ -65,6 +65,8 @@
       .notif-msg { color: #94a3b8; }
       .notif-btn { color: #94a3b8; }
       .notif-btn:hover { color: #e2e8f0; }
+      .notif-mark-all { color: #94a3b8; }
+      .notif-mark-all:hover { color: #e2e8f0; }
     }
   </style>
   {% block head %}{% endblock %}
@@ -230,7 +232,7 @@
         <div class="notif-dropdown d-none" id="notifDropdown">
           <div class="notif-header">
             <span>Notifications</span>
-            <button class="notif-mark-all" onclick="markAllRead()">Mark all read</button>
+            <button class="notif-mark-all" onclick="markAllRead(event)">Mark all read</button>
           </div>
           <div id="notifList"><div class="notif-empty"><i class="bi bi-bell-slash" style="font-size:22px;opacity:.4;display:block;margin-bottom:6px;"></i>Loading…</div></div>
         </div>
@@ -507,16 +509,26 @@ document.querySelectorAll('.alert-toast').forEach(function(el) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: id })
-    });
+    }).then(function () { fetchNotifications(true); });
     if (link) window.location = link;
   };
 
-  window.markAllRead = function () {
+  window.markAllRead = function (e) {
+    var list = document.getElementById('notifList');
+    if (list) {
+      var items = list.querySelectorAll('.notif-item');
+      items.forEach(function(item) { item.classList.remove('unread'); });
+    }
+    var badge = document.getElementById('notifBadge');
+    if (badge) badge.classList.add('d-none');
+
     fetch('/api/notifications/mark-read', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: null })
-    }).then(function () { fetchNotifications(true); });
+    }).catch(function (err) {
+      console.error('Mark all read failed:', err);
+    });
   };
 
   // Close dropdown when clicking outside
