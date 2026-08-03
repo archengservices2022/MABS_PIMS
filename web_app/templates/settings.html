@@ -1269,9 +1269,22 @@ document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.open-page-btn').forEach(function(btn) {
     btn.addEventListener('click', function(e) {
       e.preventDefault();
-      var url = this.dataset.url;
-      if (url) {
-        window.open(url, '_blank');
+      var storedUrl = this.dataset.url;
+      if (storedUrl) {
+        try {
+          // Extract path and hash from stored URL
+          var urlObj = new URL(storedUrl);
+          var pathWithHash = urlObj.pathname + urlObj.hash;
+
+          // Apply to current domain
+          var currentOrigin = window.location.origin;
+          var finalUrl = currentOrigin + pathWithHash;
+
+          window.open(finalUrl, '_blank');
+        } catch (e) {
+          // Fallback to stored URL if parsing fails
+          window.open(storedUrl, '_blank');
+        }
       }
     });
   });
