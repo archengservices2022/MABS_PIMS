@@ -17352,13 +17352,16 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                 if len(parts) > 1:
                     potential_co = parts[1].strip()
                     log.info(f"[PDF_CO_DEBUG_DESC] Found potential_co: {potential_co}")
-                    if potential_co and not potential_co.lower().startswith("stage") and not potential_co.lower().startswith("installment"):
+                    # Only treat as CO# if it contains "CO" or looks like a CO reference, and NOT a common stage name
+                    if (potential_co and ("co" in potential_co.lower() or "-" in potential_co or "_" in potential_co) and
+                        not any(x in potential_co.lower() for x in ["payment", "installment", "stage"])):
                         invoice_co_num = potential_co
                         log.info(f"[PDF_CO_DEBUG_DESC] Set invoice_co_num to: {invoice_co_num}")
-            elif not description.lower().startswith("stage") and not description.lower().startswith("installment"):
-                # Description is the stage name itself
-                invoice_co_num = description.strip()
-                log.info(f"[PDF_CO_DEBUG_DESC] Set invoice_co_num from description: {invoice_co_num}")
+            elif description and "co" in description.lower():
+                # Description might be just a CO# like "CO-1"
+                if not any(x in description.lower() for x in ["payment", "installment", "stage"]):
+                    invoice_co_num = description.strip()
+                    log.info(f"[PDF_CO_DEBUG_DESC] Set invoice_co_num from description: {invoice_co_num}")
         log.info(f"[PDF_CO_DEBUG] invoice_co_num from meta={invoice_co_num}")
         all_projects = None
         try:
