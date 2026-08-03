@@ -17348,13 +17348,16 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
             (meta.get("co_number", "").strip())
         )
         description_display = ""
+        # Determine which PO to use
+        po_to_use = ""
+
         if is_co_stage:
             # For CO stage, use the PO/WO from the CO itself, NEVER the project's PO
             # First try CO's PO/WO from stage lookup or meta lookup
-            description_display = co_po_wo_from_stage or ""
+            po_to_use = co_po_wo_from_stage or ""
 
             # If still empty, try to find CO from description or payment_stage
-            if not description_display:
+            if not po_to_use:
                 co_match = co_pattern.search(description) if description else None
                 if not co_match:
                     co_match = co_pattern.search(payment_stage) if payment_stage else None
@@ -17363,90 +17366,94 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                     matched_co_num = co_match.group(0).upper()
                     for _co in _normalise_list(pdata.get("change_orders")) if pdata else []:
                         if isinstance(_co, dict) and _co.get("co_number", "").upper() == matched_co_num:
-                            description_display = _co.get("po_wo_number", "")
+                            po_to_use = _co.get("po_wo_number", "")
                             break
 
             # If still empty, try from invoice meta co_number
-            if not description_display:
+            if not po_to_use:
                 invoice_co_num = meta.get("co_number", "").strip()
                 if invoice_co_num:
                     for _co in _normalise_list(pdata.get("change_orders")) if pdata else []:
                         if isinstance(_co, dict) and _co.get("co_number", "").upper() == invoice_co_num.upper():
-                            description_display = _co.get("po_wo_number", "")
+                            po_to_use = _co.get("po_wo_number", "")
                             break
 
             # If still empty, check payment_stage_index has meta with PO/WO
-            if not description_display and payment_stage_index is not None:
+            if not po_to_use and payment_stage_index is not None:
                 try:
                     stage_data = payment_stages[int(payment_stage_index)] if isinstance(payment_stages, list) and int(payment_stage_index) < len(payment_stages) else None
                     if isinstance(stage_data, dict):
                         # Try various field names for PO/WO in the payment stage
-                        description_display = (stage_data.get("po_wo_number") or
-                                              stage_data.get("po_wo") or
-                                              stage_data.get("po_number") or "")
+                        po_to_use = (stage_data.get("po_wo_number") or
+                                     stage_data.get("po_wo") or
+                                     stage_data.get("po_number") or "")
                 except (ValueError, TypeError, IndexError):
                     pass
-        elif po_wo or site_address:
-            if site_address:
-                import re
-                us_states_abbr = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"]
+        else:
+            # For non-CO stage, use project's PO
+            po_to_use = po_wo or ""
 
-                state_idx = -1
-                closest_state_idx = float('inf')
-                site_upper = site_address.upper()
+        # Process site address for all line items (both CO and non-CO)
+        processed_site_address = site_address
+        if processed_site_address:
+            import re
+            us_states_abbr = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"]
 
-                for state in us_states_abbr:
-                    idx = site_upper.find(f" {state} ")
+            state_idx = -1
+            closest_state_idx = float('inf')
+            site_upper = processed_site_address.upper()
+
+            for state in us_states_abbr:
+                idx = site_upper.find(f" {state} ")
+                if idx != -1:
+                    next_char_idx = idx + len(state) + 2
+                    if next_char_idx < len(site_upper):
+                        next_char = site_upper[next_char_idx]
+                        if next_char.isdigit() and idx < closest_state_idx:
+                            state_idx = idx
+                            closest_state_idx = idx
+
+                if state_idx == -1:
+                    idx = site_upper.find(f" {state}")
                     if idx != -1:
-                        next_char_idx = idx + len(state) + 2
+                        next_char_idx = idx + len(state) + 1
                         if next_char_idx < len(site_upper):
                             next_char = site_upper[next_char_idx]
                             if next_char.isdigit() and idx < closest_state_idx:
                                 state_idx = idx
                                 closest_state_idx = idx
 
-                    if state_idx == -1:
-                        idx = site_upper.find(f" {state}")
-                        if idx != -1:
-                            next_char_idx = idx + len(state) + 1
-                            if next_char_idx < len(site_upper):
-                                next_char = site_upper[next_char_idx]
-                                if next_char.isdigit() and idx < closest_state_idx:
-                                    state_idx = idx
-                                    closest_state_idx = idx
+            if state_idx != -1:
+                processed_site_address = processed_site_address[:state_idx].strip()
+                if processed_site_address.endswith(" -"):
+                    processed_site_address = processed_site_address[:-2].strip()
+                if processed_site_address.endswith("–"):
+                    processed_site_address = processed_site_address[:-1].strip()
+            elif plant and plant.strip():
+                plant_upper = plant.strip().upper()
+                site_upper = processed_site_address.upper()
+                plant_idx = site_upper.find(f" {plant_upper} ")
+                if plant_idx == -1:
+                    plant_idx = site_upper.find(f" {plant_upper}")
+                if plant_idx == -1:
+                    plant_idx = site_upper.find(plant_upper)
 
-                if state_idx != -1:
-                    site_address = site_address[:state_idx].strip()
-                    if site_address.endswith(" -"):
-                        site_address = site_address[:-2].strip()
-                    if site_address.endswith("–"):
-                        site_address = site_address[:-1].strip()
-                elif plant and plant.strip():
-                    plant_upper = plant.strip().upper()
-                    site_upper = site_address.upper()
-                    plant_idx = site_upper.find(f" {plant_upper} ")
-                    if plant_idx == -1:
-                        plant_idx = site_upper.find(f" {plant_upper}")
-                    if plant_idx == -1:
-                        plant_idx = site_upper.find(plant_upper)
+                if plant_idx != -1:
+                    processed_site_address = processed_site_address[:plant_idx].strip()
+                    if processed_site_address.endswith(" -"):
+                        processed_site_address = processed_site_address[:-2].strip()
+                    if processed_site_address.endswith("–"):
+                        processed_site_address = processed_site_address[:-1].strip()
 
-                    if plant_idx != -1:
-                        site_address = site_address[:plant_idx].strip()
-                        if site_address.endswith(" -"):
-                            site_address = site_address[:-2].strip()
-                        if site_address.endswith("–"):
-                            site_address = site_address[:-1].strip()
+            processed_site_address = processed_site_address.rstrip(",").strip()
 
-                site_address = site_address.rstrip(",").strip()
-
-                if po_wo and site_address:
-                    description_display = f"{po_wo} - {site_address}"
-                elif site_address:
-                    description_display = site_address
-                else:
-                    description_display = po_wo
-            else:
-                description_display = po_wo
+        # Build final description display with PO and site address
+        if po_to_use and processed_site_address:
+            description_display = f"{po_to_use} - {processed_site_address}"
+        elif po_to_use:
+            description_display = po_to_use
+        elif processed_site_address:
+            description_display = processed_site_address
 
         total_due_val = qty_val * unit_price_val
         total_due = f"${total_due_val:,.2f}"
