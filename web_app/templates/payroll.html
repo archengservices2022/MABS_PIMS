@@ -1104,14 +1104,16 @@ function initializeAdvanceTab() {
     // Refresh table with embedded data (don't fetch to avoid overwriting with empty data)
     refreshAdvanceTable();
   } else {
-    // Set initial advance number
+    // Display initial server-side data immediately
     if (allAdvances.length > 0) {
+      refreshAdvanceTable();
       document.getElementById('adv_no').value = generateAdvanceNo();
     } else {
       document.getElementById('adv_no').value = 'ADV-00001';
     }
 
     loadEmployees();
+    // Load fresh data and permissions from server
     loadAdvances();
   }
 }
