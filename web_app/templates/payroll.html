@@ -1613,8 +1613,8 @@ window.addEventListener('hashchange', handleHashNavigation);
         <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body pb-2">
-        <p style="color: #475569; margin-bottom: 16px;">Type <strong style="color: #dc2626;">delete</strong> to confirm deletion of this advance:</p>
-        <input type="text" id="payrollAdvanceDeleteText" placeholder="Type 'delete'" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; box-sizing: border-box; margin-bottom: 16px;">
+        <p style="color: #475569; margin-bottom: 16px;">Type <strong style="color: #dc2626;">DELETE</strong> to confirm deletion of this advance:</p>
+        <input type="text" id="payrollAdvanceDeleteText" placeholder="Type 'DELETE'" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; box-sizing: border-box; margin-bottom: 16px;">
       </div>
       <div class="modal-footer py-2">
         <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -1632,7 +1632,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const deleteBtn = document.getElementById('payrollAdvanceDeleteBtn');
 
   const updateDeleteButtonState = () => {
-    const isValid = deleteInput.value === 'delete';
+    const isValid = deleteInput.value === 'DELETE';
     deleteBtn.style.opacity = isValid ? '1' : '0.5';
     deleteBtn.disabled = !isValid;
   };
