@@ -1104,16 +1104,22 @@ function initializeAdvanceTab() {
     // Refresh table with embedded data (don't fetch to avoid overwriting with empty data)
     refreshAdvanceTable();
   } else {
-    // Display initial server-side data immediately
+    // Set initial advance number
     if (allAdvances.length > 0) {
-      refreshAdvanceTable();
       document.getElementById('adv_no').value = generateAdvanceNo();
     } else {
       document.getElementById('adv_no').value = 'ADV-00001';
     }
 
     loadEmployees();
-    // Load fresh data and permissions from server
+
+    // Fetch permissions first, then display table immediately
+    (async () => {
+      await refreshAdvanceDeletePerms();
+      // Now table will render with correct permissions
+    })();
+
+    // Load fresh data from server
     loadAdvances();
   }
 }
