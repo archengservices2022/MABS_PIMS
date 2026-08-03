@@ -4427,6 +4427,12 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
 
     amt_paid = str(total_amount) if mark_paid else "0"
 
+    # Extract CO# from stage name if it looks like a CO
+    stage_name = stage.get("name", "")
+    co_number_to_save = ""
+    if stage_name and not stage_name.lower().startswith("stage") and not stage_name.lower().startswith("installment"):
+        co_number_to_save = stage_name.strip()
+
     invoice_data = {
         "meta": {
             "invoice_number":      inv_num,
@@ -4454,6 +4460,10 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
         },
         "line_items": line_items,
     }
+
+    # Add CO# to meta if found
+    if co_number_to_save:
+        invoice_data["meta"]["co_number"] = co_number_to_save
     iid = fb_push("/invoices", invoice_data)
     stage_status = "Paid" if mark_paid else "Invoiced"
     _mark_project_stage(proj_num, stage_idx, stage_status, invoice_id=iid, amount=amount)
