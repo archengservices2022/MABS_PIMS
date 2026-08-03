@@ -9790,6 +9790,34 @@ def get_employee_advances():
         log.error(f"Error getting advances: {e}")
         return jsonify({"advances": [], "error": str(e)}), 500
 
+@app.route("/api/advance-delete-perms", methods=["GET"])
+@login_required
+def advance_delete_perms():
+    """Get list of advance numbers user can delete"""
+    try:
+        _uid  = session.get("user_uid", "")
+        _role = normalize_role(session.get("user_role", ""))
+
+        _all_advances = fb_get("/employee_advances") or {}
+        advances_list = []
+        if isinstance(_all_advances, dict):
+            for adv_id, adv_data in _all_advances.items():
+                if isinstance(adv_data, dict):
+                    adv_copy = dict(adv_data)
+                    adv_copy['id'] = adv_id
+                    advances_list.append(adv_copy)
+
+        # Admin/Accountant can delete all
+        if _role in ("admin", "accountant"):
+            perms = [a.get("advance_no","") for a in advances_list]
+        else:
+            perms = []
+
+        return jsonify({"delete_perms": perms})
+    except Exception as e:
+        log.error(f"Error getting delete perms: {e}")
+        return jsonify({"delete_perms": [], "error": str(e)}), 500
+
 @app.route("/add_employee_advance", methods=["POST"])
 @login_required
 def add_employee_advance():

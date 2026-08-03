@@ -1041,6 +1041,18 @@ let allEmployees = [];
 let allAdvances = {{ advances|safe }};
 let advanceDeletePerms = new Set({{ advance_delete_perms|tojson|safe }});
 
+// Refresh delete permissions from server
+async function refreshAdvanceDeletePerms() {
+  try {
+    const response = await fetch('{{ url_for("advance_delete_perms") }}');
+    const data = await response.json();
+    advanceDeletePerms = new Set(data.delete_perms || []);
+    refreshAdvanceTable();
+  } catch (e) {
+    console.error('Error refreshing perms:', e);
+  }
+}
+
 // Initialize advance tab
 function initializeAdvanceTab() {
   const today = new Date();
@@ -1605,6 +1617,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Listen for hash changes (browser back/forward)
 window.addEventListener('hashchange', handleHashNavigation);
+
+// Refresh advance delete permissions when page regains focus
+window.addEventListener('focus', function() {
+  if (document.getElementById('employee-advance').classList.contains('active')) {
+    refreshAdvanceDeletePerms();
+  }
+});
 </script>
 
 <!-- ?? Delete Advance Modal ????????????????????????????????????????????????????????? -->
