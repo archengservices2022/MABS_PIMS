@@ -4430,7 +4430,8 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
     # Extract CO# from stage name if it looks like a CO
     stage_name = stage.get("name", "")
     co_number_to_save = ""
-    if stage_name and not stage_name.lower().startswith("stage") and not stage_name.lower().startswith("installment"):
+    if (stage_name and ("co" in stage_name.lower() or "-" in stage_name or "_" in stage_name) and
+        not any(x in stage_name.lower() for x in ["payment", "installment", "stage"])):
         co_number_to_save = stage_name.strip()
 
     invoice_data = {
@@ -5503,10 +5504,13 @@ def invoice_new():
         if not co_number:
             # Check URL parameter first (from project details page)
             stage_name_param = request.args.get("stage_name", "").strip()
-            if stage_name_param and not stage_name_param.lower().startswith("stage") and not stage_name_param.lower().startswith("installment"):
+            # Only treat as CO# if it contains "CO" or has hyphens/underscores, AND doesn't contain payment keywords
+            if (stage_name_param and ("co" in stage_name_param.lower() or "-" in stage_name_param or "_" in stage_name_param) and
+                not any(x in stage_name_param.lower() for x in ["payment", "installment", "stage"])):
                 co_number = stage_name_param
             # Fallback to form stage_name
-            elif stage_name and not stage_name.lower().startswith("stage") and not stage_name.lower().startswith("installment"):
+            elif (stage_name and ("co" in stage_name.lower() or "-" in stage_name or "_" in stage_name) and
+                  not any(x in stage_name.lower() for x in ["payment", "installment", "stage"])):
                 co_number = stage_name
 
             if co_number:
@@ -19795,7 +19799,8 @@ def quick_invoice_stage(project_id, stage_idx):
 
         # Extract CO# from stage name - use exactly what's given
         # If stage name looks like a CO (not "Stage X" or "Installment X"), use it as CO#
-        if stage_name and not stage_name.lower().startswith("stage") and not stage_name.lower().startswith("installment"):
+        if (stage_name and ("co" in stage_name.lower() or "-" in stage_name or "_" in stage_name) and
+            not any(x in stage_name.lower() for x in ["payment", "installment", "stage"])):
             invoice_data["meta"]["co_number"] = stage_name.strip()
 
         # Create invoice
