@@ -10146,6 +10146,20 @@ def delete_employee_advance():
         fb_delete(f"/employee_advances/{advance_id}")
         log.info(f"Employee advance deleted: {advance_no}")
 
+        # Mark permission request as completed
+        _uid = session.get("user_uid", "")
+        _all_reqs = fb_get("/permission_requests") or {}
+        if isinstance(_all_reqs, dict):
+            for req_id, req_data in _all_reqs.items():
+                if (isinstance(req_data, dict) and
+                    req_data.get("requested_by_uid") == _uid and
+                    req_data.get("entity_type") == "advance" and
+                    req_data.get("entity_id") == advance_no and
+                    req_data.get("status") == "approved"):
+                    fb_update(f"/permission_requests/{req_id}", {"status": "completed"})
+                    log.info(f"Marked permission request {req_id} as completed")
+                    break
+
         return jsonify({"success": True})
     except Exception as e:
         log.error(f"Error deleting advance: {e}")
