@@ -1104,12 +1104,9 @@ function initializeAdvanceTab() {
     // Refresh table with embedded data (don't fetch to avoid overwriting with empty data)
     refreshAdvanceTable();
   } else {
-    // Populate table immediately with embedded data
+    // Set initial advance number
     if (allAdvances.length > 0) {
-      refreshAdvanceTable();
-      if (allAdvances.length > 0) {
-        document.getElementById('adv_no').value = generateAdvanceNo();
-      }
+      document.getElementById('adv_no').value = generateAdvanceNo();
     } else {
       document.getElementById('adv_no').value = 'ADV-00001';
     }
