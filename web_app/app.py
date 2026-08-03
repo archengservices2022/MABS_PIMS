@@ -17324,16 +17324,20 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
             pass
 
         if invoice_co_num:
-            # Search all projects for this CO number (with flexible matching)
+            # Search all projects for this EXACT CO number
             if all_projects:
                 for pid, pdata_search in (all_projects.items() if isinstance(all_projects, dict) else []):
                     if isinstance(pdata_search, dict):
                         for _co in _normalise_list(pdata_search.get("change_orders")):
                             if isinstance(_co, dict):
                                 co_db_num = _co.get("co_number", "").strip()
-                                # Try exact match first, then normalized match (remove hyphens)
-                                if (co_db_num.upper() == invoice_co_num.upper() or
-                                    co_db_num.upper().replace("-", "") == invoice_co_num.upper().replace("-", "")):
+                                # Exact match (case-insensitive), with flexible hyphen handling
+                                co_db_normalized = co_db_num.upper().replace("-", "").replace(" ", "")
+                                invoice_normalized = invoice_co_num.upper().replace("-", "").replace(" ", "")
+
+                                if (co_db_num == invoice_co_num or  # Exact match with case
+                                    co_db_num.upper() == invoice_co_num.upper() or  # Case-insensitive exact
+                                    co_db_normalized == invoice_normalized):  # Normalized (no hyphens/spaces)
                                     co_po_wo_from_stage = _co.get("po_wo_number", "")
                                     display_co_number = co_db_num  # Use actual CO# from database
                                     break
