@@ -17317,46 +17317,57 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
 
         # First, check if invoice has a CO number in meta - this is the authoritative CO reference
         invoice_co_num = meta.get("co_number", "").strip()
+        all_projects = None
+        try:
+            all_projects = fb_get("/projects") or {}
+        except Exception:
+            pass
+
         if invoice_co_num:
-            # Search all projects for this CO number
-            try:
-                all_projects = fb_get("/projects") or {}
+            # Search all projects for this CO number (with flexible matching)
+            if all_projects:
                 for pid, pdata_search in (all_projects.items() if isinstance(all_projects, dict) else []):
                     if isinstance(pdata_search, dict):
                         for _co in _normalise_list(pdata_search.get("change_orders")):
-                            if isinstance(_co, dict) and _co.get("co_number", "").upper() == invoice_co_num.upper():
-                                co_po_wo_from_stage = _co.get("po_wo_number", "")
-                                display_co_number = _co.get("co_number", "")  # Use actual CO# from database
-                                break
+                            if isinstance(_co, dict):
+                                co_db_num = _co.get("co_number", "").strip()
+                                # Try exact match first, then normalized match (remove hyphens)
+                                if (co_db_num.upper() == invoice_co_num.upper() or
+                                    co_db_num.upper().replace("-", "") == invoice_co_num.upper().replace("-", "")):
+                                    co_po_wo_from_stage = _co.get("po_wo_number", "")
+                                    display_co_number = co_db_num  # Use actual CO# from database
+                                    break
                         if display_co_number:
                             break
-            except Exception:
-                pass
 
-        # If not found via meta, try extracting from description or payment stage
-        if not display_co_number:
-            # Try to extract any reference from description (could be "CO-1", "TILT=E", etc.)
-            # Look for anything that looks like it could reference a CO
-            if description:
-                # Extract the part after the project number (if format is "PROJECT - IDENTIFIER")
-                if " - " in description:
-                    potential_co_ref = description.split(" - ", 1)[1].split(" ")[0].strip()
-                    if potential_co_ref:
+        # If not found via meta, try extracting from description
+        if not display_co_number and description:
+            # Extract the part after the project number (if format is "PROJECT - CO#" or "PROJECT - CO# DESCRIPTION")
+            if " - " in description:
+                parts = description.split(" - ", 1)
+                if len(parts) > 1:
+                    # Get everything after the first " - "
+                    after_dash = parts[1].strip()
+                    # Extract just the first word/token which should be the CO reference
+                    co_ref_parts = after_dash.split()
+                    if co_ref_parts:
+                        potential_co_ref = co_ref_parts[0]
                         # Search for this in all projects
-                        try:
-                            all_projects = fb_get("/projects") or {}
+                        if all_projects:
                             for pid, pdata_search in (all_projects.items() if isinstance(all_projects, dict) else []):
                                 if isinstance(pdata_search, dict):
                                     for _co in _normalise_list(pdata_search.get("change_orders")):
                                         if isinstance(_co, dict):
-                                            if _co.get("co_number", "").upper() == potential_co_ref.upper():
+                                            co_db_num = _co.get("co_number", "").strip()
+                                            # Try multiple matching strategies
+                                            if (co_db_num.upper() == potential_co_ref.upper() or
+                                                co_db_num.upper().replace("-", "") == potential_co_ref.upper().replace("-", "") or
+                                                co_db_num.upper() == potential_co_ref.upper().replace("-", "")):
                                                 co_po_wo_from_stage = _co.get("po_wo_number", "")
-                                                display_co_number = _co.get("co_number", "")
+                                                display_co_number = co_db_num
                                                 break
                                     if display_co_number:
                                         break
-                        except Exception:
-                            pass
 
         # Display CO number below project number if found
         if display_co_number:
