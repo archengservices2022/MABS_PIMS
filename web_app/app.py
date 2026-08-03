@@ -17289,6 +17289,17 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                                                 co_db_num == co_num_match.upper().replace("-", "")):
                                                 co_po_wo_from_stage = _co.get("po_wo_number", "")
                                                 break
+
+                        # If invoice has a CO number in meta, use that to find the CO's PO
+                        invoice_co_number = meta.get("co_number", "")
+                        if invoice_co_number and not co_po_wo_from_stage:
+                            for _co in _normalise_list(pdata.get("change_orders")):
+                                if isinstance(_co, dict):
+                                    co_db_num = _co.get("co_number", "").upper()
+                                    if co_db_num == invoice_co_number.upper():
+                                        co_po_wo_from_stage = _co.get("po_wo_number", "")
+                                        break
+
                         break
             except Exception:
                 pass
