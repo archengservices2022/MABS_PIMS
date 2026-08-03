@@ -17313,26 +17313,26 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         description = item.get("description", "")
 
         project_cell = Paragraph(project_number, center_style)
-        display_co_number = ""
 
-        # Improved CO detection: check for "co" followed by number (co1, co2, CO-1, CO-2, etc.)
+        # Improved CO detection: check for "co" followed by optional hyphen and number (co1, co2, CO-1, CO-2, etc.)
         import re
-        co_pattern = re.compile(r'\bco\d+\b', re.IGNORECASE)
+        co_pattern = re.compile(r'\bco[-]?\d+\b', re.IGNORECASE)
 
         # Extract CO number from description if present
         if description:
             co_match = co_pattern.search(description)
             if co_match:
-                display_co_number = co_match.group(0).upper()
-                project_number_display = f"{project_number}<br/><font size=8>{display_co_number}</font>"
-                project_cell = Paragraph(project_number_display, left_style)
+                # Normalize CO number for comparison (remove hyphens)
+                normalized_co_number = co_match.group(0).upper().replace("-", "")
 
                 # Try to find the CO in current project first
                 if not co_po_wo_from_stage and pdata:
                     for _co in _normalise_list(pdata.get("change_orders")):
-                        if isinstance(_co, dict) and _co.get("co_number", "").upper() == display_co_number:
-                            co_po_wo_from_stage = _co.get("po_wo_number", "")
-                            break
+                        if isinstance(_co, dict):
+                            co_db_number = _co.get("co_number", "").upper().replace("-", "")
+                            if co_db_number == normalized_co_number:
+                                co_po_wo_from_stage = _co.get("po_wo_number", "")
+                                break
 
                 # If not found in current project, search all projects for this CO
                 if not co_po_wo_from_stage:
@@ -17341,22 +17341,45 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                         for pid, pdata_search in (all_projects.items() if isinstance(all_projects, dict) else []):
                             if isinstance(pdata_search, dict):
                                 for _co in _normalise_list(pdata_search.get("change_orders")):
-                                    if isinstance(_co, dict) and _co.get("co_number", "").upper() == display_co_number:
-                                        co_po_wo_from_stage = _co.get("po_wo_number", "")
-                                        break
+                                    if isinstance(_co, dict):
+                                        co_db_number = _co.get("co_number", "").upper().replace("-", "")
+                                        if co_db_number == normalized_co_number:
+                                            co_po_wo_from_stage = _co.get("po_wo_number", "")
+                                            break
                                 if co_po_wo_from_stage:
                                     break
                     except Exception:
                         pass
 
         # Also check payment stage for CO number
-        if not display_co_number and payment_stage:
+        if not co_po_wo_from_stage and payment_stage:
             co_match = co_pattern.search(payment_stage)
             if co_match:
-                display_co_number = co_match.group(0).upper()
-                co_stage = display_co_number
-                project_number_display = f"{project_number}<br/><font size=8>{co_stage}</font>"
-                project_cell = Paragraph(project_number_display, left_style)
+                normalized_co_number = co_match.group(0).upper().replace("-", "")
+                # Similar search logic for payment stage CO
+                if pdata:
+                    for _co in _normalise_list(pdata.get("change_orders")):
+                        if isinstance(_co, dict):
+                            co_db_number = _co.get("co_number", "").upper().replace("-", "")
+                            if co_db_number == normalized_co_number:
+                                co_po_wo_from_stage = _co.get("po_wo_number", "")
+                                break
+
+                if not co_po_wo_from_stage:
+                    try:
+                        all_projects = fb_get("/projects") or {}
+                        for pid, pdata_search in (all_projects.items() if isinstance(all_projects, dict) else []):
+                            if isinstance(pdata_search, dict):
+                                for _co in _normalise_list(pdata_search.get("change_orders")):
+                                    if isinstance(_co, dict):
+                                        co_db_number = _co.get("co_number", "").upper().replace("-", "")
+                                        if co_db_number == normalized_co_number:
+                                            co_po_wo_from_stage = _co.get("po_wo_number", "")
+                                            break
+                                if co_po_wo_from_stage:
+                                    break
+                    except Exception:
+                        pass
 
         # Use same CO pattern for consistency
         is_co_stage = bool(
