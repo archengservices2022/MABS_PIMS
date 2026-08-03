@@ -743,7 +743,17 @@ function switchTab(tabName, event) {
   event.target.closest('.payroll-tab-button').classList.add('active');
 }
 
-function handleSalaryDelete(salaryId) {
+async function handleSalaryDelete(salaryId) {
+  // Fetch fresh permissions before checking (to catch admin approvals)
+  try {
+    const response = await fetch('{{ url_for("salary_delete_perms") }}');
+    const data = await response.json();
+    salaryDeletePerms = new Set(data.delete_perms || []);
+    console.log(`Fresh perms loaded: ${Array.from(salaryDeletePerms)}`);
+  } catch (e) {
+    console.error('Error fetching perms:', e);
+  }
+
   if (salaryDeletePerms.has(salaryId)) {
     deleteSalary(salaryId);
   } else {
@@ -1009,10 +1019,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Refresh permissions when returning to page (admin approval detection)
   window.addEventListener('focus', function() {
-    const salariesTab = document.querySelector('[href="#salaries"]');
-    if (salariesTab && salariesTab.classList.contains('active')) {
-      refreshSalaryDeletePerms();
-    }
+    console.log('Window focus - refreshing salary permissions');
+    refreshSalaryDeletePerms();
   });
 });
 
