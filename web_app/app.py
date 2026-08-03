@@ -9816,7 +9816,7 @@ def advance_delete_perms():
             _all_reqs = fb_get("/permission_requests") or {}
             for req_id, req_data in (_all_reqs.items() if isinstance(_all_reqs, dict) else []):
                 if (isinstance(req_data, dict) and
-                    req_data.get("status") == "Approved" and
+                    req_data.get("status") == "approved" and
                     req_data.get("entity_type") == "advance" and
                     "entity_id" in req_data):
                     perms.append(req_data.get("entity_id", ""))
@@ -14396,13 +14396,24 @@ def api_permission_request():
         "reviewed_at":       None,
         "admin_notes":       None,
     }
-    # Check if already approved
+    # Check if already approved or has pending request
     _uid = session.get("user_uid", "")
     _perm = _has_approved_delete_request(_uid, entity_type, entity_id)
 
     if _perm:
         # Already approved - user can delete now
         return jsonify({"success": True, "approved": True})
+
+    # Check for existing pending request for this entity
+    _all_reqs = fb_get("/permission_requests") or {}
+    for req_id, req_data in (_all_reqs.items() if isinstance(_all_reqs, dict) else []):
+        if (isinstance(req_data, dict) and
+            req_data.get("requested_by_uid") == _uid and
+            req_data.get("entity_type") == entity_type and
+            req_data.get("entity_id") == entity_id and
+            req_data.get("status") == "pending"):
+            # Pending request already exists for this entity
+            return jsonify({"success": False, "error": "A delete request for this item is already pending admin review", "pending": True})
 
     fb_push("/permission_requests", req)
     requester = session.get("user_name", "Someone")
