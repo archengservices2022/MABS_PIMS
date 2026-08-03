@@ -9808,10 +9808,18 @@ def advance_delete_perms():
                     advances_list.append(adv_copy)
 
         # Admin/Accountant can delete all
+        perms = []
         if _role in ("admin", "accountant"):
             perms = [a.get("advance_no","") for a in advances_list]
         else:
-            perms = []
+            # Check for approved delete requests for this user
+            _all_reqs = fb_get("/permission_requests") or {}
+            for req_id, req_data in (_all_reqs.items() if isinstance(_all_reqs, dict) else []):
+                if (isinstance(req_data, dict) and
+                    req_data.get("status") == "Approved" and
+                    req_data.get("entity_type") == "advance" and
+                    "entity_id" in req_data):
+                    perms.append(req_data.get("entity_id", ""))
 
         return jsonify({"delete_perms": perms})
     except Exception as e:
