@@ -8342,9 +8342,9 @@ def payroll():
     _uid  = session.get("user_uid", "")
     _role = normalize_role(session.get("user_role", ""))
     if _role in ("admin", "accountant"):
-        _advance_del_perms = {a.get("advance_no","") for a in advances_list}
+        _advance_del_perms = [a.get("advance_no","") for a in advances_list]
     else:
-        _advance_del_perms = set()
+        _advance_del_perms = []
 
     return render_template("payroll.html",
         employee_filter=employee_filter,
