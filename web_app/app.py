@@ -17317,6 +17317,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
 
         # First, check if invoice has a CO number in meta - this is the authoritative CO reference
         invoice_co_num = meta.get("co_number", "").strip()
+        log.info(f"[PDF_CO_DEBUG] invoice_co_num from meta={invoice_co_num}")
         all_projects = None
         try:
             all_projects = fb_get("/projects") or {}
@@ -17403,9 +17404,11 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                                 break
 
         # Display CO number below project number if found
+        log.info(f"[PDF_CO_DEBUG] display_co_number={display_co_number}, invoice_co_num={invoice_co_num}")
         if display_co_number:
             project_number_display = f"{project_number}<br/><font size=8>{display_co_number}</font>"
             project_cell = Paragraph(project_number_display, left_style)
+            log.info(f"[PDF_CO_DEBUG] Setting project_cell with CO#: {display_co_number}")
 
         # Determine if this is a CO stage
         is_co_stage = bool(display_co_number or meta.get("co_number", "").strip())
