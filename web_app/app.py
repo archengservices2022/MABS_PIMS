@@ -17325,8 +17325,27 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
             pass
 
         if invoice_co_num:
-            # Search all projects for this EXACT CO number
-            if all_projects:
+            # Search CURRENT project first for this CO number
+            if pdata:
+                for _co in _normalise_list(pdata.get("change_orders")):
+                    if isinstance(_co, dict):
+                        co_db_num = _co.get("co_number", "").strip()
+                        # Multiple matching strategies for CO number
+                        co_db_upper = co_db_num.upper()
+                        invoice_upper = invoice_co_num.upper()
+                        # Normalize: remove hyphens, underscores, spaces for comparison
+                        co_db_normalized = co_db_upper.replace("-", "").replace("_", "").replace(" ", "")
+                        invoice_normalized = invoice_upper.replace("-", "").replace("_", "").replace(" ", "")
+
+                        if (co_db_num == invoice_co_num or  # Exact match (case-sensitive)
+                            co_db_upper == invoice_upper or  # Case-insensitive exact
+                            co_db_normalized == invoice_normalized):  # Normalized (flexible separators)
+                            co_po_wo_from_stage = _co.get("po_wo_number", "")
+                            display_co_number = invoice_co_num  # Use what's in meta, not from database
+                            break
+
+            # If not found in current project, search all projects
+            if not display_co_number and all_projects:
                 for pid, pdata_search in (all_projects.items() if isinstance(all_projects, dict) else []):
                     if isinstance(pdata_search, dict):
                         for _co in _normalise_list(pdata_search.get("change_orders")):
@@ -17348,9 +17367,9 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                         if display_co_number:
                             break
 
-                # If CO not found in database but meta has CO number, still display it
-                if not display_co_number and invoice_co_num:
-                    display_co_number = invoice_co_num
+            # If CO not found in database but meta has CO number, still display it
+            if not display_co_number and invoice_co_num:
+                display_co_number = invoice_co_num
 
         # If not found via meta, try extracting from description
         if not display_co_number and description:
