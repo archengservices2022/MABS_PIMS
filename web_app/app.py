@@ -5499,6 +5499,19 @@ def invoice_new():
         stage_idx_raw = request.form.get("payment_stage_index", "")
         stage_name    = request.form.get("payment_stage", "")
 
+        # If no co_number from form, try to get from stage_name or URL parameter
+        if not co_number:
+            # Check URL parameter first (from project details page)
+            stage_name_param = request.args.get("stage_name", "").strip()
+            if stage_name_param and not stage_name_param.lower().startswith("stage") and not stage_name_param.lower().startswith("installment"):
+                co_number = stage_name_param
+            # Fallback to form stage_name
+            elif stage_name and not stage_name.lower().startswith("stage") and not stage_name.lower().startswith("installment"):
+                co_number = stage_name
+
+            if co_number:
+                data["meta"]["co_number"] = co_number
+
         # If no stage was explicitly selected, auto-detect the first pending stage
         if stage_idx_raw == "":
             proj_num = data["meta"].get("project_number", "")
