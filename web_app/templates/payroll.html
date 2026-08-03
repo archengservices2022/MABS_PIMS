@@ -1294,7 +1294,6 @@ function loadAdvances() {
     .then(r => r.json())
     .then(data => {
       allAdvances = data.advances || [];
-      refreshAdvanceTable();
       refreshAdvanceDeletePerms();
 
       // Only reset form fields if not in edit mode
