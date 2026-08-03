@@ -8338,6 +8338,14 @@ def payroll():
                 advances_list.append(adv_copy)
     advances_list.sort(key=lambda x: x.get("date", ""), reverse=True)
 
+    # Check delete permissions for advances
+    _uid  = session.get("user_uid", "")
+    _role = normalize_role(session.get("user_role", ""))
+    if _role in ("admin", "accountant"):
+        _advance_del_perms = {a.get("advance_no","") for a in advances_list}
+    else:
+        _advance_del_perms = set()
+
     return render_template("payroll.html",
         employee_filter=employee_filter,
         year_filter=year_filter,
@@ -8347,7 +8355,8 @@ def payroll():
         commission_by_period=commission_by_period,
         comm_paid_set=list(comm_paid_set),
         comm_paid_amounts=comm_paid_amounts,
-        advances=json.dumps(advances_list))
+        advances=json.dumps(advances_list),
+        advance_delete_perms=_advance_del_perms)
 
 # ── Payroll Export Routes ─────────────────────────────────────────────────────
 def _build_commission_payroll_rows():

@@ -1039,6 +1039,7 @@ function localDate(d) {
 // ?? Employee Advance Functions ????????????????????????????????????
 let allEmployees = [];
 let allAdvances = {{ advances|safe }};
+let advanceDeletePerms = new Set({{ advance_delete_perms|tojson|safe }});
 
 // Initialize advance tab
 function initializeAdvanceTab() {
@@ -1378,8 +1379,10 @@ function refreshAdvanceTable() {
           <div class="d-flex gap-1" style="justify-content:center;">
             <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit"
               onclick="editAdvanceEntry(${idx})"><i class="bi bi-pencil"></i></button>
-            <button type="button" class="btn btn-xs btn-outline-danger" title="Delete"
-              onclick="deleteAdvance('${adv.advance_no || ''}')"><i class="bi bi-trash"></i></button>
+            ${advanceDeletePerms.has(adv.advance_no) ?
+              `<button type="button" class="btn btn-xs btn-outline-danger" title="Delete" onclick="deleteAdvance('${adv.advance_no || ''}')"><i class="bi bi-trash"></i></button>` :
+              `<button type="button" class="btn btn-xs btn-outline-warning" title="Request Delete" onclick="openDeleteRequestModal('advance','${adv.advance_no || ''}','Advance: ${adv.advance_no || ''}')"><i class="bi bi-send"></i></button>`
+            }
           </div>
         </td>
       </tr>
