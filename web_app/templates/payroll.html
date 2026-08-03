@@ -1295,6 +1295,7 @@ function loadAdvances() {
     .then(data => {
       allAdvances = data.advances || [];
       refreshAdvanceTable();
+      refreshAdvanceDeletePerms();
 
       // Only reset form fields if not in edit mode
       const isEditingId = document.getElementById('advance_id').value;
@@ -1567,6 +1568,7 @@ function confirmPayrollDeleteAdvance() {
     if (data.success) {
       alert('Advance deleted successfully!');
       loadAdvances();
+      refreshAdvanceDeletePerms();
     } else {
       alert('Error: ' + (data.error || 'Unknown error'));
     }
