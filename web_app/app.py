@@ -17347,6 +17347,10 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                         if display_co_number:
                             break
 
+                # If CO not found in database but meta has CO number, still display it
+                if not display_co_number and invoice_co_num:
+                    display_co_number = invoice_co_num
+
         # If not found via meta, try extracting from description
         if not display_co_number and description:
             # Description format could be "PROJECT - CO#" or "MABS-202604110 - CO-1"
