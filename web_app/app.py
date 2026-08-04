@@ -4494,6 +4494,8 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
         # Get plant
         plant = _project_plant_display(project)
 
+        log.info(f"[ENRICH_LINE] stage_name={stage_name}, co_firebase_id={co_firebase_id}, powo={powo_number}, site_addr={site_address}")
+
         return {
             "description": stage_name,
             "quantity":    "1",
