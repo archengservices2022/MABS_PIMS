@@ -5992,36 +5992,47 @@ def invoice_detail(invoice_id):
     # Refresh project payment stage amounts to ensure they're always current
     _update_project_stage_payment_status(invoice_id)
 
-    # Enrich line items with POWO if not already present (handles old invoices)
+    # Enrich line items with stage_name and POWO if not already present (handles old invoices)
     line_items = data.get("line_items", []) or []
     if isinstance(line_items, list) and raw_proj:
         for item in line_items:
             if isinstance(item, dict):
-                # If POWO not set, try to extract from change order
-                if not item.get("powo_number"):
+                proj_num = item.get("project_number", "") or proj_num
+
+                # If stage_name not set, try to extract from description (for old invoices)
+                if not item.get("stage_name"):
+                    desc = item.get("description", "").strip()
+                    # Common stage names to check
+                    common_stages = ["Full Payment", "Down Payment", "Deposit", "Retainage", "Final Payment", "Mobilization"]
+                    for stage in common_stages:
+                        if desc == stage or desc.startswith(stage):
+                            item["stage_name"] = desc
+                            break
+
+                # If POWO not set, try to extract from project
+                if not item.get("powo_number") and proj_num:
                     co_num = item.get("co_number", "")
-                    proj_num = item.get("project_number", "") or proj_num
-                    if co_num and proj_num:
-                        # Find project and get POWO from CO
-                        for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
-                            if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
+                    # Find project and get POWO
+                    for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
+                        if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
+                            # Get POWO from project first
+                            powo = pdata.get("po_wo_number", "").strip()
+                            if not powo and co_num:
+                                # Then try from CO
                                 cos = pdata.get("change_orders") or []
                                 if isinstance(cos, dict):
                                     cos = list(cos.values())
-                                # Get POWO from project first, then from CO
-                                powo = pdata.get("po_wo_number", "").strip()
-                                if not powo:
-                                    for co in (cos if isinstance(cos, list) else []):
-                                        if isinstance(co, dict):
-                                            if (co.get("co_number") == co_num or
-                                                co_num in co.get("name", "") or
-                                                co.get("name", "").startswith(co_num)):
-                                                powo = co.get("po_wo_number", "").strip()
-                                                if powo:
-                                                    break
-                                if powo:
-                                    item["powo_number"] = powo
-                                break
+                                for co in (cos if isinstance(cos, list) else []):
+                                    if isinstance(co, dict):
+                                        if (co.get("co_number") == co_num or
+                                            co_num in co.get("name", "") or
+                                            co.get("name", "").startswith(co_num)):
+                                            powo = co.get("po_wo_number", "").strip()
+                                            if powo:
+                                                break
+                            if powo:
+                                item["powo_number"] = powo
+                            break
 
     # Source quote — via the linked project's source_quote field
     source_quote = None
