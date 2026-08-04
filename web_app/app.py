@@ -3641,7 +3641,7 @@ def co_new(project_id):
         fb_update(f"/projects/{project_id}", {"base_contract_value": project.get("contract_value", 0)})
     fb_update(f"/projects/{project_id}", {"change_orders": cos})
     flash(f"Change Order {co_num} created.", "success")
-    return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+    return _redirect_project_detail(project_id, "#tab-change-orders")
 
 @app.route("/projects/<project_id>/change-orders/<int:co_idx>/status", methods=["POST"])
 @role_required("projects")
@@ -3694,7 +3694,7 @@ def co_status(project_id, co_idx):
         return _redirect_project_detail(project_id, "#tab-change-orders")
     fb_update(f"/projects/{project_id}", {"change_orders": cos})
     flash(f"{cos[co_idx]['co_number']} status updated to {new_status}.", "success")
-    return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+    return _redirect_project_detail(project_id, "#tab-change-orders")
 
 @app.route("/projects/<project_id>/change-orders/<int:co_idx>/amount", methods=["POST"])
 @role_required("projects")
@@ -3790,7 +3790,7 @@ def co_update_amount(project_id, co_idx):
     fb_update(f"/projects/{project_id}", update_data)
     cache_bust("projects_list")
     flash(f"{co.get('co_number', 'CO')} updated.", "success")
-    return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+    return _redirect_project_detail(project_id, "#tab-change-orders")
 
 @app.route("/api/change-orders/<project_id>/<int:co_idx>/check-delete-approval", methods=["GET"])
 @login_required
@@ -3925,7 +3925,7 @@ def co_delete(project_id, co_idx):
 
     cache_bust("projects_list")
     flash(f"{deleted_number} deleted and project financial totals updated.", "success")
-    return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+    return _redirect_project_detail(project_id, "#tab-change-orders")
 
 @app.route("/projects/<project_id>/change-orders/<int:co_idx>/pdf")
 @login_required
