@@ -9865,14 +9865,22 @@ def salary_delete_perms():
         else:
             # Check for approved delete requests for this user
             _all_reqs = fb_get("/permission_requests") or {}
+            log.info(f"Checking salary delete requests for user {_uid}")
             for req_id, req_data in (_all_reqs.items() if isinstance(_all_reqs, dict) else []):
-                if (isinstance(req_data, dict) and
-                    req_data.get("requested_by_uid") == _uid and
-                    req_data.get("status") == "approved" and
-                    req_data.get("entity_type") == "salary" and
-                    "entity_id" in req_data):
-                    perms.append(req_data.get("entity_id", ""))
-                    log.info(f"Found approved salary delete perm for {req_data.get('entity_id')}")
+                if isinstance(req_data, dict):
+                    req_uid = req_data.get("requested_by_uid", "")
+                    req_status = req_data.get("status", "")
+                    req_type = req_data.get("entity_type", "")
+                    req_id_val = req_data.get("entity_id", "")
+
+                    if (req_uid == _uid and
+                        req_status == "approved" and
+                        req_type == "salary" and
+                        req_id_val):
+                        perms.append(req_id_val)
+                        log.info(f"Found approved salary delete perm: req_uid={req_uid}, status={req_status}, type={req_type}, entity_id={req_id_val}")
+                    elif req_uid == _uid and req_status == "approved" and req_type == "salary":
+                        log.warning(f"Salary request missing entity_id: {req_data}")
 
         log.info(f"Salary delete perms for {_uid}: {perms}")
         return jsonify({"delete_perms": perms})
@@ -14562,6 +14570,13 @@ def _extract_entity_from_url(url):
     m = _re.search(r'/clients/([^/?#]+)', url)
     if m:
         return "client", m.group(1)
+    # For salaries and advances, extract entity_id from the request details
+    # The entity_id should already be in the permission_requests document
+    # This is a fallback for older requests that might not have entity_type/entity_id set
+    if '/payroll' in url or 'salary' in url.lower():
+        return "salary", ""
+    if '/advance' in url.lower():
+        return "advance", ""
     return "", ""
 
 
