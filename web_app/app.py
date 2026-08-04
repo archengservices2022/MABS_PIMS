@@ -2647,6 +2647,15 @@ def project_to_quote(project_id):
                            next_num=_next_quote_number(),
                            from_project=project)
 
+# Helper to preserve pagination when redirecting to project detail
+def _redirect_project_detail(project_id, anchor=""):
+    """Redirect to project detail while preserving the current page number."""
+    page = request.args.get('page', '1')
+    url = url_for('project_detail', project_id=project_id) + f"?page={page}"
+    if anchor:
+        url += anchor
+    return redirect(url)
+
 # ── Routes: Projects ──────────────────────────────────────────────────────────
 @app.route("/projects")
 @role_required("projects")
@@ -3591,12 +3600,12 @@ def co_new(project_id):
     # Validate CO Number is required
     if not co_num:
         flash("CO Number is required.", "danger")
-        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+        return _redirect_project_detail(project_id, "#tab-change-orders")
 
     # Validate PO/WO required and unique across all projects and their COs
     if not co_po_wo:
         flash("PO/WO number is required for Change Orders.", "danger")
-        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+        return _redirect_project_detail(project_id, "#tab-change-orders")
     all_projects = fb_get("/projects") or {}
     if isinstance(all_projects, dict):
         for pid, pdata in all_projects.items():
@@ -3604,11 +3613,11 @@ def co_new(project_id):
                 continue
             if pdata.get("po_wo_number", "").strip() == co_po_wo:
                 flash(f"PO/WO number '{co_po_wo}' is already used by project {pdata.get('project_number','?')}.", "danger")
-                return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+                return _redirect_project_detail(project_id, "#tab-change-orders")
             for xco in _normalise_list(pdata.get("change_orders")):
                 if isinstance(xco, dict) and xco.get("po_wo_number", "").strip() == co_po_wo:
                     flash(f"PO/WO number '{co_po_wo}' is already used by {xco.get('co_number','a CO')} on project {pdata.get('project_number','?')}.", "danger")
-                    return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+                    return _redirect_project_detail(project_id, "#tab-change-orders")
 
     now_str = datetime.now(timezone.utc).isoformat()
     new_co = {
@@ -3681,7 +3690,7 @@ def co_status(project_id, co_idx):
             update_data["updated_at"] = now_str
         fb_update(f"/projects/{project_id}", update_data)
         flash(f"{cos[co_idx]['co_number']} approved — contract updated to ${new_value:,.0f} and new payment stage added.", "success")
-        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+        return _redirect_project_detail(project_id, "#tab-change-orders")
     fb_update(f"/projects/{project_id}", {"change_orders": cos})
     flash(f"{cos[co_idx]['co_number']} status updated to {new_status}.", "success")
     return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
@@ -3699,7 +3708,7 @@ def co_update_amount(project_id, co_idx):
     new_amount = _safe_float(request.form.get("amount", 0))
     if new_amount < 0:
         flash("CO amount cannot be negative.", "danger")
-        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+        return _redirect_project_detail(project_id, "#tab-change-orders")
 
     # Validate PO/WO uniqueness (skip if unchanged)
     new_po_wo = request.form.get("po_wo_number", "").strip()
@@ -3711,13 +3720,13 @@ def co_update_amount(project_id, co_idx):
                     continue
                 if pdata.get("po_wo_number", "").strip() == new_po_wo:
                     flash(f"PO/WO number '{new_po_wo}' is already used by project {pdata.get('project_number','?')}.", "danger")
-                    return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+                    return _redirect_project_detail(project_id, "#tab-change-orders")
                 for xidx, xco in enumerate(_normalise_list(pdata.get("change_orders"))):
                     if isinstance(xco, dict) and xco.get("po_wo_number", "").strip() == new_po_wo:
                         if pid == project_id and xidx == co_idx:
                             continue  # same CO, skip
                         flash(f"PO/WO number '{new_po_wo}' is already used by {xco.get('co_number','a CO')} on project {pdata.get('project_number','?')}.", "danger")
-                        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+                        return _redirect_project_detail(project_id, "#tab-change-orders")
 
     base_value = _base_contract_value(project, cos)
     co = cos[co_idx]
@@ -3743,7 +3752,7 @@ def co_update_amount(project_id, co_idx):
     if new_co_num_req and new_co_num_req != old_co_num:
         if any(c.get("co_number") == new_co_num_req for i, c in enumerate(cos) if i != co_idx):
             flash(f"CO number '{new_co_num_req}' is already in use on this project.", "danger")
-            return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+            return _redirect_project_detail(project_id, "#tab-change-orders")
         co["co_number"] = new_co_num_req
     else:
         new_co_num_req = None  # no rename
@@ -3809,7 +3818,7 @@ def co_delete(project_id, co_idx):
 
     if _role not in ("admin", "administration"):
         flash("You don't have permission to delete change orders.", "danger")
-        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+        return _redirect_project_detail(project_id, "#tab-change-orders")
 
     # Administration role needs admin approval to delete
     if _role == "administration":
@@ -3833,7 +3842,7 @@ def co_delete(project_id, co_idx):
 
         if not _perm:
             flash("You need admin approval to delete this change order. Use the 'Request Delete' button.", "danger")
-            return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+            return _redirect_project_detail(project_id, "#tab-change-orders")
 
     project = fb_get(f"/projects/{project_id}") or {}
     if not project:
@@ -3928,7 +3937,7 @@ def co_pdf(project_id, co_idx):
         from reportlab.lib.units import mm, inch
     except ImportError:
         flash("reportlab not installed.", "danger")
-        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+        return _redirect_project_detail(project_id, "#tab-change-orders")
 
     import io as _io
     from pathlib import Path
@@ -4321,7 +4330,7 @@ def project_edit(project_id):
 
         cache_bust("projects_list")
         flash("Project updated successfully.", "success")
-        return redirect(url_for("project_detail", project_id=project_id))
+        return _redirect_project_detail(project_id)
     sales_people = [p.get("name","") for p in _load_sales_people() if p.get("name","")]
     return render_template("project_form.html", project=data, clients=clients,
                            sales_people=sales_people, prefill_quote="", is_new=False)
@@ -4473,7 +4482,7 @@ def project_stage_create_invoice(project_id, stage_idx):
     iid, err = _create_stage_invoice(project_id, stage_idx, mark_paid=False)
     if err:
         flash(err, "warning")
-        return redirect(url_for("project_detail", project_id=project_id))
+        return _redirect_project_detail(project_id)
     flash("Invoice created.", "success")
     return redirect(url_for("invoice_detail", invoice_id=iid))
 
@@ -4484,7 +4493,7 @@ def project_stage_mark_paid(project_id, stage_idx):
     iid, err = _create_stage_invoice(project_id, stage_idx, mark_paid=True)
     if err:
         flash(err, "warning")
-        return redirect(url_for("project_detail", project_id=project_id))
+        return _redirect_project_detail(project_id)
     flash("Stage marked as paid and invoice created.", "success")
     return redirect(url_for("project_detail", project_id=project_id))
 
@@ -4497,15 +4506,15 @@ def project_stage_set_amount(project_id, stage_idx):
     stages = data.get("payment_stages") or []
     if not (0 <= stage_idx < len(stages)) or not isinstance(stages[stage_idx], dict):
         flash("Stage not found.", "danger")
-        return redirect(url_for("project_detail", project_id=project_id))
+        return _redirect_project_detail(project_id)
     if stages[stage_idx].get("status") != "Pending":
         flash("Cannot edit amount on an already-invoiced stage.", "warning")
-        return redirect(url_for("project_detail", project_id=project_id))
+        return _redirect_project_detail(project_id)
     try:
         new_amount = round(float(str(request.form.get("amount", "0")).replace(",", "")), 2)
     except (ValueError, TypeError):
         flash("Invalid amount.", "danger")
-        return redirect(url_for("project_detail", project_id=project_id))
+        return _redirect_project_detail(project_id)
     stages[stage_idx]["amount"] = new_amount
 
     # Auto-balance: spread remaining balance equally across other pending BASE stages.
@@ -4559,7 +4568,7 @@ def project_delete(project_id):
         _perm = _has_approved_delete_request(_uid, "project", project_id)
         if not _perm:
             flash("You need admin approval to delete this project. Use the 'Request Delete' button.", "danger")
-            return redirect(url_for("project_detail", project_id=project_id))
+            return _redirect_project_detail(project_id)
     project = fb_get(f"/projects/{project_id}") or {}
     if not project:
         flash("Project not found.", "warning")
@@ -4568,7 +4577,7 @@ def project_delete(project_id):
     confirmed = request.form.get("confirm_project_number", "").strip()
     if confirmed != expected:
         flash("Project number confirmation did not match. Project was not deleted.", "danger")
-        return redirect(url_for("project_detail", project_id=project_id))
+        return _redirect_project_detail(project_id)
 
     source_quote_id = project.get("source_quote_id")
     deleted_at = datetime.now(timezone.utc).isoformat()
@@ -5352,7 +5361,7 @@ def co_create_invoice(project_id, co_idx):
     # Only allow invoice creation from approved COs
     if change_order.get("status") != "Approved":
         flash("Can only create invoice from approved change orders.", "warning")
-        return redirect(url_for("project_detail", project_id=project_id) + "#tab-change-orders")
+        return _redirect_project_detail(project_id, "#tab-change-orders")
 
     # Redirect to invoice creation form with CO data pre-filled
     # The invoice_new route will handle rendering the form with these parameters
@@ -17137,7 +17146,7 @@ def project_pdf(project_id):
         from reportlab.lib.units import inch
     except ImportError:
         flash("reportlab not installed.", "danger")
-        return redirect(url_for("project_detail", project_id=project_id))
+        return _redirect_project_detail(project_id)
 
     import io as _io
     project = fb_get(f"/projects/{project_id}")
