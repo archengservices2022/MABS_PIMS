@@ -16988,6 +16988,19 @@ def _parse_invoice_form(form) -> dict:
         # Not a CO, return full description as address
         return "", desc
 
+    # Helper to get change order POWO number
+    def _get_co_powo(project_data, co_number):
+        """Get POWO (po_wo_number) from change order by CO number."""
+        if not project_data or not co_number:
+            return ""
+        change_orders = project_data.get("change_orders") or {}
+        if isinstance(change_orders, dict):
+            for co_data in change_orders.values():
+                if isinstance(co_data, dict):
+                    if co_data.get("co_number", "") == co_number or co_data.get("name", "").startswith(co_number):
+                        return co_data.get("po_wo_number", "")
+        return ""
+
     for i, (desc, qty, price) in enumerate(zip(descriptions, quantities, unit_prices)):
         if desc.strip():
             item_proj = (item_projects[i].strip() if i < len(item_projects) else "")
@@ -16999,6 +17012,9 @@ def _parse_invoice_form(form) -> dict:
 
             # Extract CO number and address from description
             co_number, desc_address = _extract_co_and_address(desc)
+
+            # Get POWO number from change order if this is a CO
+            powo_number = _get_co_powo(project_data, co_number) if co_number else ""
 
             # Use extracted address if description had format "CO — address", otherwise use project site_address
             if desc_address:
@@ -17017,6 +17033,7 @@ def _parse_invoice_form(form) -> dict:
                 "project_number": item_proj,
                 "plant":          plant,
                 "co_number":      co_number,
+                "powo_number":    powo_number,
                 "site_address":   display_address,
             })
 

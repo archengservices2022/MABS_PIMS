@@ -219,6 +219,7 @@
             <tr style="border-bottom:1px solid #F1F5F9;">
               {%- set proj = item.get('project_number','') -%}
               {%- set co = item.get('co_number','') -%}
+              {%- set powo = item.get('powo_number','') -%}
               {%- set addr = item.get('site_address','') -%}
               {%- set desc = item.get('description','') -%}
               {%- if not co and desc and ('CO' in desc.upper() or '-CO' in desc.upper()) -%}
@@ -235,7 +236,13 @@
                 {%- endif -%}
               </td>
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
-                {%- if co -%}
+                {%- if powo -%}
+                  {%- if addr -%}
+                    {{ powo }}<br><small style="color:#64748B;">{{ addr }}</small>
+                  {%- else -%}
+                    {{ powo }}
+                  {%- endif -%}
+                {%- elif co -%}
                   {%- if addr -%}
                     {{ co }}<br><small style="color:#64748B;">{{ addr }}</small>
                   {%- else -%}
