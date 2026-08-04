@@ -20290,6 +20290,22 @@ def quick_invoice_stage(project_id, stage_idx):
         powo_number = ""
         site_address = project.get("site_address", "") or project.get("project_site_address", "")
 
+        # Truncate address to remove state/zip/phone (keep only street and city)
+        if site_address:
+            import re
+            # Remove phone numbers (e.g., "T: (801) 205-9365")
+            site_address = re.sub(r'\s+T:\s+\([^)]+\)[^\s]*', '', site_address)
+            site_address = re.sub(r'\s+Phone:\s+\([^)]+\)[^\s]*', '', site_address)
+
+            # Split by comma and remove state/zip part
+            addr_parts = site_address.split(",")
+            if len(addr_parts) > 1:
+                last_part = addr_parts[-1].strip()
+                # State codes are typically 2 chars, or have zip pattern
+                if len(last_part) <= 15 or any(c.isdigit() for c in last_part):
+                    # Remove last part (likely state/zip)
+                    site_address = ", ".join(addr_parts[:-1]).strip()
+
         # Get POWO from CO if available
         if co_firebase_id:
             cos = project.get("change_orders") or []
