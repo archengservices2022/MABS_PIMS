@@ -217,14 +217,21 @@
           <tbody>
             {% for item in invoice.get('line_items',[]) %}
             <tr style="border-bottom:1px solid #F1F5F9;">
-              <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">{{ item.get('project_number','') }}</td>
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
-                {%- set desc = item.get('description','') -%}
-                {%- if 'co' in desc.lower() and ' – ' in desc -%}
-                  {%- set co_part = desc.split(' – ')[0].strip() -%}
-                  {{ co_part }}
+                {{ item.get('project_number','') }}
+                {%- if item.get('co_number') %}<br><small style="color:#64748B;">{{ item.get('co_number') }}</small>{% endif -%}
+              </td>
+              <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
+                {%- if item.get('co_number') -%}
+                  {{ item.get('co_number') }}<br><small style="color:#64748B;">{{ item.get('site_address','') }}</small>
                 {%- else -%}
-                  {{ desc }}
+                  {%- set desc = item.get('description','') -%}
+                  {%- if 'co' in desc.lower() and ' – ' in desc -%}
+                    {%- set co_part = desc.split(' – ')[0].strip() -%}
+                    {{ co_part }}
+                  {%- else -%}
+                    {{ desc }}
+                  {%- endif -%}
                 {%- endif -%}
               </td>
               <td style="padding:14px 16px; color:#64748B; text-align:center;">{{ item.get('plant','') }}</td>

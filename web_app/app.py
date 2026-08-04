@@ -16965,6 +16965,18 @@ def _parse_invoice_form(form) -> dict:
                 return pdata
         return {}
 
+    # Extract CO number from description if present
+    def _extract_co_number(desc):
+        """Extract change order number from description (e.g., 'MABS-123-CO-1' from 'MABS-123-CO-1 — Address')."""
+        if not desc:
+            return ""
+        parts = desc.split(" – ")
+        co_part = parts[0].strip() if parts else desc.strip()
+        # Check if it looks like a CO number
+        if "CO" in co_part.upper() or "-CO" in co_part.upper():
+            return co_part
+        return ""
+
     for i, (desc, qty, price) in enumerate(zip(descriptions, quantities, unit_prices)):
         if desc.strip():
             item_proj = (item_projects[i].strip() if i < len(item_projects) else "")
@@ -16972,6 +16984,8 @@ def _parse_invoice_form(form) -> dict:
             proj_number = item_proj or main_project
             project_data = _get_project_by_number(proj_number)
             plant = _project_plant_display(project_data) if project_data else ""
+            site_address = project_data.get("site_address", "") or project_data.get("project_site_address", "") if project_data else ""
+            co_number = _extract_co_number(desc)
 
             line_items.append({
                 "description":    desc,
@@ -16983,6 +16997,8 @@ def _parse_invoice_form(form) -> dict:
                 # the one selected above, so one invoice can span multiple projects.
                 "project_number": item_proj,
                 "plant":          plant,
+                "co_number":      co_number,
+                "site_address":   site_address,
             })
 
     # Every distinct project referenced anywhere on this invoice (main selection +
