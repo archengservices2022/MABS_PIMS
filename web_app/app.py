@@ -6015,6 +6015,12 @@ def invoice_detail(invoice_id):
                         if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
                             site_addr = pdata.get("site_address", "") or pdata.get("project_site_address", "")
                             if site_addr:
+                                # Remove state and zip from address (keep only street and city)
+                                # Format: "Street, City, State Zip" -> "Street, City"
+                                parts = site_addr.split(",")
+                                if len(parts) > 2:
+                                    # Has state/zip, take only street and city
+                                    site_addr = ", ".join(parts[:-1]).strip()
                                 item["site_address"] = site_addr
                             break
 
@@ -17107,6 +17113,13 @@ def _parse_invoice_form(form) -> dict:
                 display_address = desc_address
             else:
                 display_address = site_address
+
+            # Truncate address to remove state/zip (keep only street and city)
+            # Format: "Street, City, State Zip" -> "Street, City"
+            if display_address:
+                addr_parts = display_address.split(",")
+                if len(addr_parts) > 2:
+                    display_address = ", ".join(addr_parts[:-1]).strip()
 
             line_items.append({
                 "description":    desc,
