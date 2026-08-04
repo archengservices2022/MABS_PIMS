@@ -770,7 +770,19 @@ function renderSalaryDeleteButtons() {
   document.querySelectorAll('[id^="salary-action-"]').forEach(el => {
     const salaryId = el.id.replace('salary-action-', '');
     // Always render the same button - it checks permissions at click time
-    el.innerHTML = `<button type="button" class="btn btn-xs btn-outline-danger" title="Delete" onclick="handleSalaryDelete('${salaryId}')"><i class="bi bi-trash"></i></button>`;
+    el.innerHTML = `<button type="button" class="btn btn-xs btn-outline-danger" title="Delete" data-salary-id="${salaryId}"><i class="bi bi-trash"></i></button>`;
+
+    // Attach click handler via event listener (more reliable than inline onclick)
+    const btn = el.querySelector('button');
+    if (btn) {
+      btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const id = this.getAttribute('data-salary-id');
+        console.log(`Button clicked for salary: ${id}`);
+        handleSalaryDelete(id);
+      });
+    }
   });
 }
 
