@@ -6015,12 +6015,19 @@ def invoice_detail(invoice_id):
                         if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
                             site_addr = pdata.get("site_address", "") or pdata.get("project_site_address", "")
                             if site_addr:
-                                # Remove state and zip from address (keep only street and city)
-                                # Format: "Street, City, State Zip" -> "Street, City"
+                                # Remove phone and state/zip from address (keep contact name, street and city)
+                                import re
+                                # Remove phone numbers
+                                site_addr = re.sub(r'\s+T:\s+\([^)]+\)[^\s]*', '', site_addr)
+                                site_addr = re.sub(r'\s+Phone:\s+\([^)]+\)[^\s]*', '', site_addr)
+
+                                # Remove state/zip part
                                 parts = site_addr.split(",")
-                                if len(parts) > 2:
-                                    # Has state/zip, take only street and city
-                                    site_addr = ", ".join(parts[:-1]).strip()
+                                if len(parts) > 1:
+                                    last_part = parts[-1].strip()
+                                    # State codes are 2+ chars with digits, or zip pattern
+                                    if len(last_part) <= 15 or any(c.isdigit() for c in last_part):
+                                        site_addr = ", ".join(parts[:-1]).strip()
                                 item["site_address"] = site_addr
                             break
 
@@ -17114,12 +17121,23 @@ def _parse_invoice_form(form) -> dict:
             else:
                 display_address = site_address
 
-            # Truncate address to remove state/zip (keep only street and city)
-            # Format: "Street, City, State Zip" -> "Street, City"
+            # Truncate address to remove state/zip/phone (keep contact name, street and city)
+            # Remove anything after state abbreviation or phone number
             if display_address:
+                # Remove phone numbers (e.g., "T: (801) 205-9365")
+                import re
+                display_address = re.sub(r'\s+T:\s+\([^)]+\)[^\s]*', '', display_address)
+                display_address = re.sub(r'\s+Phone:\s+\([^)]+\)[^\s]*', '', display_address)
+
+                # Split by comma and remove state/zip part
                 addr_parts = display_address.split(",")
-                if len(addr_parts) > 2:
-                    display_address = ", ".join(addr_parts[:-1]).strip()
+                if len(addr_parts) > 1:
+                    # Check if last part looks like state/zip
+                    last_part = addr_parts[-1].strip()
+                    # State codes are typically 2 chars, or have zip pattern
+                    if len(last_part) <= 15 or any(c.isdigit() for c in last_part):
+                        # Remove last part (likely state/zip)
+                        display_address = ", ".join(addr_parts[:-1]).strip()
 
             line_items.append({
                 "description":    desc,
