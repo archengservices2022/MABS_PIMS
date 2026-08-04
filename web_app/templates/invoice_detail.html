@@ -220,16 +220,20 @@
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
                 {%- set proj = item.get('project_number','') -%}
                 {%- set co = item.get('co_number','') -%}
-                {%- if proj %}{{ proj }}{% endif -%}
-                {%- if co %}<br><small style="color:#64748B;">{{ co }}</small>{% endif -%}
+                {%- if proj -%}
+                  {{ proj }}
+                  {%- if co %}<br>{{ proj }}_{{ co }}<br><small style="color:#64748B;">{{ co }}</small>{% endif -%}
+                {%- endif -%}
               </td>
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
                 {%- set co = item.get('co_number','') -%}
                 {%- set addr = item.get('site_address','') -%}
-                {%- if co and addr -%}
-                  {{ co }}<br><small style="color:#64748B;">{{ addr }}</small>
-                {%- elif co -%}
-                  {{ co }}
+                {%- if co -%}
+                  {%- if addr -%}
+                    {{ co }} - {{ addr }}
+                  {%- else -%}
+                    {{ co }}
+                  {%- endif -%}
                 {%- else -%}
                   {%- set desc = item.get('description','') -%}
                   {%- if 'co' in desc.lower() and ' – ' in desc -%}
