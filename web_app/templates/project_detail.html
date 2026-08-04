@@ -2517,7 +2517,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Preserve pagination state - add page parameter to all forms
   const urlParams = new URLSearchParams(window.location.search);
-  const pageNum = urlParams.get('page');
+  let pageNum = urlParams.get('page');
+
+  // If page in URL, store it in sessionStorage
+  if (pageNum) {
+    sessionStorage.setItem('project_page', pageNum);
+  } else {
+    // Try to restore from sessionStorage if not in URL
+    pageNum = sessionStorage.getItem('project_page');
+  }
+
   if (pageNum) {
     // Populate existing form-page-input fields
     document.querySelectorAll('.form-page-input').forEach(function(input) {

@@ -794,9 +794,18 @@ document.addEventListener('DOMContentLoaded', function() {
     new TablePager('projectsPager', '#projectsTableBody', 'tr.project-row', 15);
     _PAGERS['projectsPager'].refresh();
 
-    // Restore page from URL parameter if present
+    // Restore page from URL parameter or sessionStorage
     const urlParams = new URLSearchParams(window.location.search);
-    const pageNum = urlParams.get('page');
+    let pageNum = urlParams.get('page');
+
+    // If page in URL, store it in sessionStorage
+    if (pageNum) {
+      sessionStorage.setItem('projects_page', pageNum);
+    } else {
+      // Try to restore from sessionStorage if not in URL
+      pageNum = sessionStorage.getItem('projects_page');
+    }
+
     if (pageNum && !isNaN(pageNum)) {
       const pager = _PAGERS['projectsPager'];
       const pageInt = parseInt(pageNum);

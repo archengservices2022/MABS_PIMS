@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="d-flex align-items-center mb-3">
-  <a href="{{ url_for('project_detail', project_id=project.firebase_id) if not is_new else url_for('projects') }}" class="btn btn-sm btn-outline-secondary me-2">
+  <a href="{{ url_for('project_detail', project_id=project.firebase_id) if not is_new else url_for('projects') }}{% if not is_new and request.args.get('page') %}?page={{ request.args.get('page') }}{% endif %}" class="btn btn-sm btn-outline-secondary me-2">
     <i class="bi bi-arrow-left"></i>
   </a>
   <h5 class="mb-0">{{ 'Create New Project' if is_new else 'Edit Project' }}</h5>
@@ -1267,11 +1267,20 @@ document.addEventListener('DOMContentLoaded', function () {
     lookupQuote(qInput.value);
   }
 
-  // Preserve pagination when editing - capture page from URL query string
+  // Preserve pagination when editing - capture page from URL query string or sessionStorage
   const urlParams = new URLSearchParams(window.location.search);
-  const pageNum = urlParams.get('page');
+  let pageNum = urlParams.get('page');
+
+  // If page in URL, use it and store it
   if (pageNum) {
     document.getElementById('pageInput').value = pageNum;
+    sessionStorage.setItem('project_page', pageNum);
+  } else {
+    // Try to restore from sessionStorage if not in URL
+    const storedPage = sessionStorage.getItem('project_page');
+    if (storedPage) {
+      document.getElementById('pageInput').value = storedPage;
+    }
   }
 });
 
