@@ -20284,13 +20284,36 @@ def quick_invoice_stage(project_id, stage_idx):
         stage_name = stage.get("name", f"Stage {stage_idx + 1}")
         stage_amount = _safe_float(stage.get("amount", 0))
 
-        # Build line items for only this specific stage
+        # Build enriched line items for this stage
+        co_number = stage.get("co_number", "")
+        co_firebase_id = stage.get("co_firebase_id", "")
+        powo_number = ""
+        site_address = project.get("site_address", "") or project.get("project_site_address", "")
+
+        # Get POWO from CO if available
+        if co_firebase_id:
+            cos = project.get("change_orders") or []
+            if isinstance(cos, dict):
+                cos = list(cos.values())
+            for co in (cos if isinstance(cos, list) else []):
+                if isinstance(co, dict) and co.get("firebase_id") == co_firebase_id:
+                    powo_number = co.get("po_wo_number", "").strip()
+                    break
+
+        log.info(f"[QUICK_INVOICE] stage_idx={stage_idx}, stage_name={stage_name}, co_id={co_firebase_id}, powo={powo_number}")
+
         line_items = [{
             "description": stage_name,
             "project_number": proj_num,
             "quantity": "1",
             "unit_price": str(stage_amount),
             "amount": str(stage_amount),
+            "stage_name": stage_name,
+            "co_number": co_number,
+            "co_firebase_id": co_firebase_id,
+            "powo_number": powo_number,
+            "site_address": site_address,
+            "plant": _project_plant_display(project) if project else "",
         }]
         linked_projects = [{"project_number": proj_num, "payment_stage_index": stage_idx}]
         total_amount = stage_amount
