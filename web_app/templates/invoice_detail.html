@@ -219,10 +219,14 @@
             <tr style="border-bottom:1px solid #F1F5F9;">
               {%- set proj = item.get('project_number','') -%}
               {%- set co = item.get('co_number','') -%}
+              {%- set addr = item.get('site_address','') -%}
               {%- set desc = item.get('description','') -%}
               {%- if not co and desc and ('CO' in desc.upper() or '-CO' in desc.upper()) -%}
                 {%- set desc_parts = desc.split(' – ') -%}
                 {%- set co = desc_parts[0].strip() if desc_parts else '' -%}
+                {%- if not addr and desc_parts|length > 1 -%}
+                  {%- set addr = (' – '.join(desc_parts[1:])).strip() -%}
+                {%- endif -%}
               {%- endif -%}
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
                 {%- if proj -%}
@@ -231,7 +235,6 @@
                 {%- endif -%}
               </td>
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
-                {%- set addr = item.get('site_address','') -%}
                 {%- if co -%}
                   {%- if addr -%}
                     {{ co }} - {{ addr }}
