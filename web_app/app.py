@@ -6009,6 +6009,15 @@ def invoice_detail(invoice_id):
                             item["stage_name"] = desc
                             break
 
+                # If site_address not set, try to extract from project (for old invoices)
+                if not item.get("site_address") and proj_num:
+                    for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
+                        if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
+                            site_addr = pdata.get("site_address", "") or pdata.get("project_site_address", "")
+                            if site_addr:
+                                item["site_address"] = site_addr
+                            break
+
                 # If POWO not set, try to extract from project
                 if not item.get("powo_number") and proj_num:
                     co_num = item.get("co_number", "")
