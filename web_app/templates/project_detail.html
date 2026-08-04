@@ -2489,6 +2489,20 @@ function confirmRejectChangeOrder() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+  // Store and restore page number in session storage
+  const urlParams = new URLSearchParams(window.location.search);
+  const currentPage = urlParams.get('page');
+  if (currentPage) {
+    sessionStorage.setItem('project_detail_page', currentPage);
+  } else {
+    const storedPage = sessionStorage.getItem('project_detail_page');
+    if (storedPage && !window.location.href.includes('?page=')) {
+      // If no page in URL but we have a stored page, add it
+      const newUrl = window.location.href + (window.location.href.includes('?') ? '&' : '?') + 'page=' + storedPage;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }
+
   document.querySelectorAll('.approve-co-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       currentCoData = {
