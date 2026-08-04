@@ -6132,8 +6132,8 @@ def invoice_detail(invoice_id):
                     if not item.get("stage_name") and co_num:
                         item["stage_name"] = co_num
 
-                # If site_address not set, try to extract from project (for old invoices)
-                if not item.get("site_address") and proj_num:
+                # Always fetch site_address fresh from project (auto-updates when project address changes)
+                if proj_num:
                     for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
                         if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
                             site_addr = pdata.get("site_address", "") or pdata.get("project_site_address", "")
