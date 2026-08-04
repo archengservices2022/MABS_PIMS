@@ -1705,6 +1705,14 @@ def quotes():
         if fdata and isinstance(fdata, dict):
             fdata["firebase_id"] = fid
             fdata.setdefault("status", "Not Started")
+            # Auto-sync: quote with a linked project should be Converted
+            if (fdata.get("linked_project_id")
+                    and fdata["status"] not in {"Converted", "Rejected", "Cancelled", "Invoiced"}):
+                fb_update(f"/job_forms/{fid}", {
+                    "status":     "Converted",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                })
+                fdata["status"] = "Converted"
             # Auto-expire quotes past valid_until date
             valid_until = fdata.get("valid_until", "")
             if (valid_until and valid_until < today_str
