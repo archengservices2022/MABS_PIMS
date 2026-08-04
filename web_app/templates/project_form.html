@@ -15,6 +15,7 @@
       onsubmit="return validateProjectForm(event)">
   <input type="hidden" name="source_quote_id" value="{{ prefill_quote_id|default('') }}">
   <input type="hidden" name="page" id="pageInput" value="1">
+  <input type="hidden" name="tab" id="tabInput" value="overview">
   <div class="row g-3">
     <div class="col-lg-8">
       <div class="card-panel mb-3">
@@ -1267,11 +1268,15 @@ document.addEventListener('DOMContentLoaded', function () {
     lookupQuote(qInput.value);
   }
 
-  // Preserve pagination when editing - capture page from URL query string
+  // Preserve pagination and tab when editing - capture from URL query string
   const urlParams = new URLSearchParams(window.location.search);
   const pageNum = urlParams.get('page');
   if (pageNum) {
     document.getElementById('pageInput').value = pageNum;
+  }
+  const tabName = urlParams.get('tab');
+  if (tabName) {
+    document.getElementById('tabInput').value = tabName;
   }
 });
 
