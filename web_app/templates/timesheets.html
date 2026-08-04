@@ -916,17 +916,7 @@ function approveSheet(sheetId, action) {
 }
 
 function sendBackSheet(sheetId, name) {
-  var msg = 'You are about to send this timesheet back for correction. This action cannot be undone.';
-  showConfirmDialog('Send Back to Employee', msg, 'Send Back', '#7c3aed', function() {
-    fetch('/api/timesheets/' + sheetId + '/send-back', {method: 'POST'}).then(function(r) {
-      return r.json();
-    }).then(function(d) {
-      if (d.success) location.reload();
-      else alert('Error: ' + (d.error || 'Unknown error'));
-    }).catch(function(e) {
-      alert('Network error. Please try again.');
-    });
-  }, false);
+  alert('Send back clicked for: ' + sheetId);
 }
 
 function deleteSheet(sheetId) {
