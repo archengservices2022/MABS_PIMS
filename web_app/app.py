@@ -17256,6 +17256,7 @@ def _parse_invoice_form(form, co_number="") -> dict:
                             stage_name = stage.get("name", "")
                 except (ValueError, IndexError):
                     pass
+            log.info(f"[PARSE_INV] Line {i}: stage_idx_str={stage_idx_str}, project_data exists={bool(project_data)}, stage_name={stage_name}")
 
             # Use extracted address if description had format "CO — address", otherwise use project site_address
             if desc_address:
