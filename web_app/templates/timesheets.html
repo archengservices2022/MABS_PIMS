@@ -916,20 +916,16 @@ function approveSheet(sheetId, action) {
 }
 
 function sendBackSheet(sheetId, name) {
-  const title = 'Send Back to Employee';
-  const empName = name || 'this employee';
-  const message = 'You are about to send <strong>' + empName + '</strong> timesheet back for correction. This action cannot be undone.';
-
-  showConfirmDialog(title, message, 'Send Back', '#7c3aed', function() {
-    fetch('/api/timesheets/' + sheetId + '/send-back', {method: 'POST'})
-      .then(r => r.json())
-      .then(d => {
-        if (d.success) location.reload();
-        else alert('Error: ' + (d.error || 'Unknown error occurred'));
-      })
-      .catch(err => {
-        alert('Network error. Please try again.');
-      });
+  var msg = 'You are about to send this timesheet back for correction. This action cannot be undone.';
+  showConfirmDialog('Send Back to Employee', msg, 'Send Back', '#7c3aed', function() {
+    fetch('/api/timesheets/' + sheetId + '/send-back', {method: 'POST'}).then(function(r) {
+      return r.json();
+    }).then(function(d) {
+      if (d.success) location.reload();
+      else alert('Error: ' + (d.error || 'Unknown error'));
+    }).catch(function(e) {
+      alert('Network error. Please try again.');
+    });
   }, false);
 }
 
