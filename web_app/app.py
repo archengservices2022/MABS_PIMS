@@ -4437,6 +4437,7 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
     Returns (invoice_id, error_message). If mark_paid=True, also marks it Paid
     and syncs the project payment totals.
     """
+    log.info(f"[_CREATE_STAGE_INVOICE] START - project_id={project_id}, stage_idx={stage_idx}")
     project = fb_get(f"/projects/{project_id}") or {}
     stages  = project.get("payment_stages") or []
     if not (0 <= stage_idx < len(stages)) or not isinstance(stages[stage_idx], dict):
