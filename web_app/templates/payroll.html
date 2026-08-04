@@ -744,19 +744,24 @@ function switchTab(tabName, event) {
 }
 
 async function handleSalaryDelete(salaryId) {
+  console.log(`handleSalaryDelete called with: "${salaryId}"`);
+
   // Fetch fresh permissions before checking (to catch admin approvals)
   try {
     const response = await fetch('{{ url_for("salary_delete_perms") }}');
     const data = await response.json();
     salaryDeletePerms = new Set(data.delete_perms || []);
-    console.log(`Fresh perms loaded: ${Array.from(salaryDeletePerms)}`);
+    console.log(`Fresh perms loaded: ${JSON.stringify(Array.from(salaryDeletePerms))}`);
+    console.log(`Checking if "${salaryId}" is in perms: ${salaryDeletePerms.has(salaryId)}`);
   } catch (e) {
     console.error('Error fetching perms:', e);
   }
 
   if (salaryDeletePerms.has(salaryId)) {
+    console.log(`Permission granted - showing delete dialog`);
     deleteSalary(salaryId);
   } else {
+    console.log(`No permission - showing request modal`);
     openDeleteRequestModal('salary', salaryId, 'Salary Entry');
   }
 }
