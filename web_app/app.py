@@ -2650,7 +2650,8 @@ def project_to_quote(project_id):
 # Helper to preserve pagination when redirecting to project detail
 def _redirect_project_detail(project_id, anchor=""):
     """Redirect to project detail while preserving the current page number."""
-    page = request.args.get('page', '1')
+    # Check both request.args (URL query string) and request.form (POST data)
+    page = request.args.get('page') or request.form.get('page', '1')
     url = url_for('project_detail', project_id=project_id) + f"?page={page}"
     if anchor:
         url += anchor

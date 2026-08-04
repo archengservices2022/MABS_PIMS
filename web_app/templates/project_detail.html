@@ -1027,6 +1027,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST" action="{{ url_for('co_new', project_id=project.firebase_id) }}">
+        <input type="hidden" name="page" class="form-page-input" value="1">
         <div class="modal-body">
           <div class="row g-3 mb-3">
             <div class="col-md-7">
@@ -2489,6 +2490,26 @@ document.addEventListener('DOMContentLoaded', function() {
       new bootstrap.Modal(document.getElementById('rejectCoModal')).show();
     });
   });
+
+  // Preserve pagination state - add page parameter to all forms
+  const urlParams = new URLSearchParams(window.location.search);
+  const pageNum = urlParams.get('page');
+  if (pageNum) {
+    // Populate existing form-page-input fields
+    document.querySelectorAll('.form-page-input').forEach(function(input) {
+      input.value = pageNum;
+    });
+    // Add hidden page input to all forms that don't have one
+    document.querySelectorAll('form').forEach(function(form) {
+      if (!form.querySelector('input[name="page"]')) {
+        const pageInput = document.createElement('input');
+        pageInput.type = 'hidden';
+        pageInput.name = 'page';
+        pageInput.value = pageNum;
+        form.appendChild(pageInput);
+      }
+    });
+  }
 });
 </script>
 
