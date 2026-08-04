@@ -217,16 +217,20 @@
           <tbody>
             {% for item in invoice.get('line_items',[]) %}
             <tr style="border-bottom:1px solid #F1F5F9;">
+              {%- set proj = item.get('project_number','') -%}
+              {%- set co = item.get('co_number','') -%}
+              {%- set desc = item.get('description','') -%}
+              {%- if not co and desc and ('CO' in desc.upper() or '-CO' in desc.upper()) -%}
+                {%- set desc_parts = desc.split(' – ') -%}
+                {%- set co = desc_parts[0].strip() if desc_parts else '' -%}
+              {%- endif -%}
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
-                {%- set proj = item.get('project_number','') -%}
-                {%- set co = item.get('co_number','') -%}
                 {%- if proj -%}
                   {{ proj }}
                   {%- if co %}<br>{{ proj }}_{{ co }}<br><small style="color:#64748B;">{{ co }}</small>{% endif -%}
                 {%- endif -%}
               </td>
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
-                {%- set co = item.get('co_number','') -%}
                 {%- set addr = item.get('site_address','') -%}
                 {%- if co -%}
                   {%- if addr -%}
@@ -235,7 +239,6 @@
                     {{ co }}
                   {%- endif -%}
                 {%- else -%}
-                  {%- set desc = item.get('description','') -%}
                   {%- if 'co' in desc.lower() and ' – ' in desc -%}
                     {%- set co_part = desc.split(' – ')[0].strip() -%}
                     {{ co_part }}
