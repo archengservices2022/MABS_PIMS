@@ -530,7 +530,7 @@
                   <button class="act-btn reject" onclick="approveSheet('{{ row.sheet.firebase_id }}','reject')" title="Reject">
                     <i class="bi bi-x-lg"></i>
                   </button>
-                  <button class="act-btn sendback" onclick="sendBackSheet('{{ row.sheet.firebase_id }}', {{ row.name|tojson }})" title="Send Back to Employee">
+                  <button class="act-btn sendback" onclick='sendBackSheet("{{ row.sheet.firebase_id }}", {{ row.name|tojson }})' title="Send Back to Employee">
                     <i class="bi bi-arrow-counterclockwise"></i>
                   </button>
                 {% endif %}
@@ -916,7 +916,17 @@ function approveSheet(sheetId, action) {
 }
 
 function sendBackSheet(sheetId, name) {
-  alert('Send back clicked for: ' + sheetId);
+  var msg = 'You are about to send this timesheet back for correction. This action cannot be undone.';
+  showConfirmDialog('Send Back to Employee', msg, 'Send Back', '#7c3aed', function() {
+    fetch('/api/timesheets/' + sheetId + '/send-back', {method: 'POST'}).then(function(r) {
+      return r.json();
+    }).then(function(d) {
+      if (d.success) location.reload();
+      else alert('Error: ' + (d.error || 'Unknown error'));
+    }).catch(function(e) {
+      alert('Network error. Please try again.');
+    });
+  }, false);
 }
 
 function deleteSheet(sheetId) {
