@@ -218,12 +218,18 @@
             {% for item in invoice.get('line_items',[]) %}
             <tr style="border-bottom:1px solid #F1F5F9;">
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
-                {{ item.get('project_number','') }}
-                {%- if item.get('co_number') %}<br><small style="color:#64748B;">{{ item.get('co_number') }}</small>{% endif -%}
+                {%- set proj = item.get('project_number','') -%}
+                {%- set co = item.get('co_number','') -%}
+                {%- if proj %}{{ proj }}{% endif -%}
+                {%- if co %}<br><small style="color:#64748B;">{{ co }}</small>{% endif -%}
               </td>
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
-                {%- if item.get('co_number') -%}
-                  {{ item.get('co_number') }}<br><small style="color:#64748B;">{{ item.get('site_address','') }}</small>
+                {%- set co = item.get('co_number','') -%}
+                {%- set addr = item.get('site_address','') -%}
+                {%- if co and addr -%}
+                  {{ co }}<br><small style="color:#64748B;">{{ addr }}</small>
+                {%- elif co -%}
+                  {{ co }}
                 {%- else -%}
                   {%- set desc = item.get('description','') -%}
                   {%- if 'co' in desc.lower() and ' – ' in desc -%}
