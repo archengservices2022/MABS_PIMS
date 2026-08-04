@@ -1705,22 +1705,9 @@ def quotes():
         if fdata and isinstance(fdata, dict):
             fdata["firebase_id"] = fid
             fdata.setdefault("status", "Not Started")
-            # Auto-sync: non-standard statuses → standard equivalents
-            if fdata["status"] in {"Draft", "In Review", "On Hold", "Completed"}:
-                fb_update(f"/job_forms/{fid}", {
-                    "status":     "In Progress",
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                })
-                fdata["status"] = "In Progress"
-            if fdata["status"] == "Invoiced":
-                fb_update(f"/job_forms/{fid}", {
-                    "status":     "Converted",
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                })
-                fdata["status"] = "Converted"
             # Auto-sync: quote with a linked project should be Converted
             if (fdata.get("linked_project_id")
-                    and fdata["status"] not in {"Converted", "Rejected", "Cancelled"}):
+                    and fdata["status"] not in {"Converted", "Rejected", "Cancelled", "Invoiced"}):
                 fb_update(f"/job_forms/{fid}", {
                     "status":     "Converted",
                     "updated_at": datetime.now(timezone.utc).isoformat(),
