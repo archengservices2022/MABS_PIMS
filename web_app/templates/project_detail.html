@@ -2489,11 +2489,23 @@ function confirmRejectChangeOrder() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-  // Reset to Overview tab on page load - always start with default tab
-  const overviewTab = document.querySelector('[href="#tab-overview"]');
-  if (overviewTab) {
-    const tab = new bootstrap.Tab(overviewTab);
-    tab.show();
+  // Store active tab when it changes
+  const tabButtons = document.querySelectorAll('[data-bs-toggle="tab"]');
+  tabButtons.forEach(tab => {
+    tab.addEventListener('shown.bs.tab', function() {
+      const tabName = this.getAttribute('href').replace('#tab-', '');
+      sessionStorage.setItem('project_active_tab', tabName);
+    });
+  });
+
+  // Restore previously active tab
+  const activeTab = sessionStorage.getItem('project_active_tab');
+  if (activeTab) {
+    const tabLink = document.querySelector(`[href="#tab-${activeTab}"]`);
+    if (tabLink) {
+      const tab = new bootstrap.Tab(tabLink);
+      tab.show();
+    }
   }
 
   document.querySelectorAll('.approve-co-btn').forEach(function(btn) {
