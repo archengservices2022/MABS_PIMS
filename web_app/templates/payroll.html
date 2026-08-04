@@ -1022,7 +1022,7 @@ function confirmPayrollDeleteSalary() {
       if (res.success) {
         const modal = bootstrap.Modal.getInstance(document.getElementById('deleteRequestModal'));
         if (modal) modal.hide();
-        alert('Salary deleted successfully!');
+        sessionStorage.setItem('salaryDeleteSuccess', 'true');
         location.reload();
       } else {
         alert('Error: ' + (res.error || 'Unknown error'));
@@ -1053,6 +1053,17 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('Window focus - refreshing salary permissions');
     refreshSalaryDeletePerms();
   });
+
+  // Display salary delete success message if available
+  if (sessionStorage.getItem('salaryDeleteSuccess')) {
+    sessionStorage.removeItem('salaryDeleteSuccess');
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-success alert-dismissible position-fixed shadow';
+    alert.style.cssText = 'top:72px;right:20px;z-index:9999;min-width:280px;font-size:13px;';
+    alert.innerHTML = '<i class="bi bi-check2-circle me-2"></i>Salary entry deleted successfully! <button type="button" class="btn-close btn-sm" data-bs-dismiss="alert"></button>';
+    document.body.appendChild(alert);
+    setTimeout(() => alert.remove(), 5000);
+  }
 });
 
 // ?? Export Functions ??????????????????????????????????????
