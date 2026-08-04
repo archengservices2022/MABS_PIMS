@@ -16983,6 +16983,7 @@ def _parse_invoice_form(form) -> dict:
     quantities      = form.getlist("item_quantity[]")
     unit_prices     = form.getlist("item_unit_price[]")
     item_projects   = form.getlist("item_project[]")  # Form field name is "item_project[]" not "item_project_number[]"
+    item_stages     = form.getlist("item_stage_index[]")  # Payment stage index for each line item
     main_project    = form.get("project_number", "").strip()
 
     # Load all projects to enrich line items
@@ -17067,6 +17068,20 @@ def _parse_invoice_form(form) -> dict:
             # Get POWO number (from project or change order)
             powo_number = _get_powo(project_data, co_number)
 
+            # Get payment stage name if stage index is provided
+            stage_name = ""
+            stage_idx_str = item_stages[i].strip() if i < len(item_stages) else ""
+            if stage_idx_str and project_data:
+                try:
+                    stage_idx = int(stage_idx_str)
+                    stages = project_data.get("payment_stages", [])
+                    if isinstance(stages, list) and 0 <= stage_idx < len(stages):
+                        stage = stages[stage_idx]
+                        if isinstance(stage, dict):
+                            stage_name = stage.get("name", "")
+                except (ValueError, IndexError):
+                    pass
+
             # Use extracted address if description had format "CO — address", otherwise use project site_address
             if desc_address:
                 display_address = desc_address
@@ -17086,6 +17101,7 @@ def _parse_invoice_form(form) -> dict:
                 "co_number":      co_number,
                 "powo_number":    powo_number,
                 "site_address":   display_address,
+                "stage_name":     stage_name,
             })
 
     # Every distinct project referenced anywhere on this invoice (main selection +
