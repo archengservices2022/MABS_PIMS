@@ -16993,12 +16993,20 @@ def _parse_invoice_form(form) -> dict:
         """Get POWO (po_wo_number) from change order by CO number."""
         if not project_data or not co_number:
             return ""
-        change_orders = project_data.get("change_orders") or {}
+        change_orders = project_data.get("change_orders") or []
+        # Handle both list and dict formats
         if isinstance(change_orders, dict):
-            for co_data in change_orders.values():
+            change_orders = list(change_orders.values())
+        if isinstance(change_orders, list):
+            for co_data in change_orders:
                 if isinstance(co_data, dict):
-                    if co_data.get("co_number", "") == co_number or co_data.get("name", "").startswith(co_number):
-                        return co_data.get("po_wo_number", "")
+                    co_num = co_data.get("co_number", "").strip()
+                    co_name = co_data.get("name", "").strip()
+                    # Match either co_number field or if name contains CO number
+                    if co_num == co_number or co_name == co_number or (co_number in co_name):
+                        powo = co_data.get("po_wo_number", "").strip()
+                        if powo:
+                            return powo
         return ""
 
     for i, (desc, qty, price) in enumerate(zip(descriptions, quantities, unit_prices)):

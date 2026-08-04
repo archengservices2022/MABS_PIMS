@@ -238,13 +238,13 @@
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
                 {%- if powo -%}
                   {%- if addr -%}
-                    {{ powo }}<br><small style="color:#64748B;">{{ addr }}</small>
+                    {{ powo }} - {{ addr }}
                   {%- else -%}
                     {{ powo }}
                   {%- endif -%}
                 {%- elif co -%}
                   {%- if addr -%}
-                    {{ co }}<br><small style="color:#64748B;">{{ addr }}</small>
+                    {{ co }} - {{ addr }}
                   {%- else -%}
                     {{ co }}
                   {%- endif -%}
@@ -252,7 +252,7 @@
                   {%- if 'co' in desc.lower() and ' – ' in desc -%}
                     {%- set co_part = desc.split(' – ')[0].strip() -%}
                     {%- set addr_part = desc.split(' – ', 1)[1].strip() -%}
-                    {{ co_part }}<br><small style="color:#64748B;">{{ addr_part }}</small>
+                    {{ co_part }} - {{ addr_part }}
                   {%- else -%}
                     {{ desc }}
                   {%- endif -%}
