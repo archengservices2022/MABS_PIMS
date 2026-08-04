@@ -354,6 +354,7 @@
         <div class="card-panel mb-3">
           <h6 class="section-heading">Update Status</h6>
           <form id="statusForm" method="POST" action="{{ url_for('project_status', project_id=project.firebase_id) }}">
+            <input type="hidden" name="page" id="statusPageInput" value="1">
             <select id="statusSelect" name="status" class="form-select form-select-sm mb-2">
               {% for s in ['Not Started','In Progress','Sent out_Not Invoiced','Sent out_Invoiced','invoiced_Not paid yet','invoiced_Partially paid','invoiced_Fully paid'] %}
               <option value="{{ s }}" {{ 'selected' if project.get('status') == s }}>{{ s }}</option>
@@ -2059,16 +2060,20 @@ function saveAmountChangeWithPermission(idx, contractValue, originalAmount, edit
 }
 
 function handleStatusUpdate() {
+  const pageParam = new URLSearchParams(window.location.search).get('page') || '1';
+  document.getElementById('statusPageInput').value = pageParam;
+
   const status = document.getElementById('statusSelect').value;
   if (status === 'Sent out_Not Invoiced') {
     {% if has_pending_stage %}
-    const invoiceUrl = '{{ url_for("invoice_new") }}?project={{ project.get("project_number","") }}&client={{ (project.get("company_name") or project.get("client_name",""))|urlencode }}&stage_idx={{ next_stage_idx }}&stage_name={{ next_stage_name|urlencode }}&stage_amount={{ next_stage_amount }}';
+    let invoiceUrl = '{{ url_for("invoice_new") }}?project={{ project.get("project_number","") }}&client={{ (project.get("company_name") or project.get("client_name",""))|urlencode }}&stage_idx={{ next_stage_idx }}&stage_name={{ next_stage_name|urlencode }}&stage_amount={{ next_stage_amount }}';
     {% elif not project.get('payment_stages') %}
-    const invoiceUrl = '{{ url_for("invoice_new") }}?project={{ project.get("project_number","") }}&client={{ (project.get("company_name") or project.get("client_name",""))|urlencode }}';
+    let invoiceUrl = '{{ url_for("invoice_new") }}?project={{ project.get("project_number","") }}&client={{ (project.get("company_name") or project.get("client_name",""))|urlencode }}';
     {% else %}
-    const invoiceUrl = null;
+    let invoiceUrl = null;
     {% endif %}
     if (invoiceUrl) {
+      invoiceUrl += '&page=' + pageParam + '&project_id={{ project.firebase_id }}';
       document.getElementById('invoicePromptLink').href = invoiceUrl;
       new bootstrap.Modal(document.getElementById('invoicePromptModal')).show();
       return;
