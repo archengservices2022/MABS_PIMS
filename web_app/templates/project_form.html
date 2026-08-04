@@ -1274,10 +1274,10 @@ document.addEventListener('DOMContentLoaded', function () {
   // If page in URL, use it and store it
   if (pageNum) {
     document.getElementById('pageInput').value = pageNum;
-    sessionStorage.setItem('project_page', pageNum);
+    sessionStorage.setItem('projects_page', pageNum);
   } else {
     // Try to restore from sessionStorage if not in URL
-    const storedPage = sessionStorage.getItem('project_page');
+    const storedPage = sessionStorage.getItem('projects_page');
     if (storedPage) {
       document.getElementById('pageInput').value = storedPage;
       pageNum = storedPage;

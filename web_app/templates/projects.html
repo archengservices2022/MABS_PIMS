@@ -803,7 +803,10 @@ document.addEventListener('DOMContentLoaded', function() {
       sessionStorage.setItem('projects_page', pageNum);
     } else {
       // Try to restore from sessionStorage if not in URL
-      pageNum = sessionStorage.getItem('projects_page');
+      const storedPage = sessionStorage.getItem('projects_page');
+      if (storedPage && !isNaN(storedPage)) {
+        pageNum = storedPage;
+      }
     }
 
     if (pageNum && !isNaN(pageNum)) {
@@ -813,6 +816,16 @@ document.addEventListener('DOMContentLoaded', function() {
         pager.page = pageInt;
         pager._paginate();
       }
+    }
+
+    // Keep updating sessionStorage whenever pagination changes
+    const pager = _PAGERS['projectsPager'];
+    if (pager) {
+      const originalPaginate = pager._paginate;
+      pager._paginate = function() {
+        originalPaginate.call(this);
+        sessionStorage.setItem('projects_page', this.page.toString());
+      };
     }
   }
 

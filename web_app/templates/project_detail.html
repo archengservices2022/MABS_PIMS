@@ -2521,10 +2521,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // If page in URL, store it in sessionStorage
   if (pageNum) {
-    sessionStorage.setItem('project_page', pageNum);
+    sessionStorage.setItem('projects_page', pageNum);
   } else {
     // Try to restore from sessionStorage if not in URL
-    pageNum = sessionStorage.getItem('project_page');
+    pageNum = sessionStorage.getItem('projects_page');
   }
 
   if (pageNum) {
