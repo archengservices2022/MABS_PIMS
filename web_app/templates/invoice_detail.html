@@ -237,14 +237,15 @@
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
                 {%- if co -%}
                   {%- if addr -%}
-                    {{ co }} - {{ addr }}
+                    {{ co }}<br><small style="color:#64748B;">{{ addr }}</small>
                   {%- else -%}
                     {{ co }}
                   {%- endif -%}
                 {%- else -%}
                   {%- if 'co' in desc.lower() and ' – ' in desc -%}
                     {%- set co_part = desc.split(' – ')[0].strip() -%}
-                    {{ co_part }}
+                    {%- set addr_part = desc.split(' – ', 1)[1].strip() if ' – ' in desc else '' -%}
+                    {{ co_part }}<br><small style="color:#64748B;">{{ addr_part }}</small>
                   {%- else -%}
                     {{ desc }}
                   {%- endif -%}
