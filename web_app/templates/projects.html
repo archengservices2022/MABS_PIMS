@@ -794,18 +794,9 @@ document.addEventListener('DOMContentLoaded', function() {
     new TablePager('projectsPager', '#projectsTableBody', 'tr.project-row', 15);
     _PAGERS['projectsPager'].refresh();
 
-    // Restore page from URL parameter or sessionStorage
+    // Restore page from URL parameter if present
     const urlParams = new URLSearchParams(window.location.search);
-    let pageNum = urlParams.get('page');
-
-    // If no page in URL, try to restore from sessionStorage
-    if (!pageNum) {
-      pageNum = sessionStorage.getItem('projects_list_page');
-    } else {
-      // Store current page in sessionStorage for when user returns
-      sessionStorage.setItem('projects_list_page', pageNum);
-    }
-
+    const pageNum = urlParams.get('page');
     if (pageNum && !isNaN(pageNum)) {
       const pager = _PAGERS['projectsPager'];
       const pageInt = parseInt(pageNum);
@@ -813,18 +804,6 @@ document.addEventListener('DOMContentLoaded', function() {
         pager.page = pageInt;
         pager._paginate();
       }
-    }
-
-    // Monitor pagination changes and update sessionStorage
-    const pager = _PAGERS['projectsPager'];
-    if (pager) {
-      // Store original _paginate method
-      const originalPaginate = pager._paginate;
-      // Override _paginate to update sessionStorage
-      pager._paginate = function() {
-        originalPaginate.call(this);
-        sessionStorage.setItem('projects_list_page', this.page.toString());
-      };
     }
   }
 

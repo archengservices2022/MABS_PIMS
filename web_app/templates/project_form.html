@@ -15,7 +15,6 @@
       onsubmit="return validateProjectForm(event)">
   <input type="hidden" name="source_quote_id" value="{{ prefill_quote_id|default('') }}">
   <input type="hidden" name="page" id="pageInput" value="1">
-  <input type="hidden" name="tab" id="tabInput" value="overview">
   <div class="row g-3">
     <div class="col-lg-8">
       <div class="card-panel mb-3">
@@ -375,7 +374,7 @@
           <i class="bi bi-check-lg me-1"></i>
           {{ 'Create Project' if is_new else 'Save Changes' }}
         </button>
-        <a href="{{ url_for('project_detail', project_id=project.firebase_id) if not is_new else url_for('projects') }}{% if not is_new and request.args.get('page') %}?page={{ request.args.get('page') }}{% if request.args.get('tab') %}&tab={{ request.args.get('tab') }}{% endif %}{% elif not is_new and request.args.get('tab') %}?tab={{ request.args.get('tab') }}{% endif %}" class="btn btn-outline-secondary">Cancel</a>
+        <a href="{{ url_for('project_detail', project_id=project.firebase_id) if not is_new else url_for('projects') }}" class="btn btn-outline-secondary">Cancel</a>
       </div>
     </div>
   </div>
@@ -1268,15 +1267,11 @@ document.addEventListener('DOMContentLoaded', function () {
     lookupQuote(qInput.value);
   }
 
-  // Preserve pagination and tab when editing - capture from URL query string
+  // Preserve pagination when editing - capture page from URL query string
   const urlParams = new URLSearchParams(window.location.search);
   const pageNum = urlParams.get('page');
   if (pageNum) {
     document.getElementById('pageInput').value = pageNum;
-  }
-  const tabName = urlParams.get('tab');
-  if (tabName) {
-    document.getElementById('tabInput').value = tabName;
   }
 });
 

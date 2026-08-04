@@ -42,7 +42,7 @@
     </span>
     {% endif %}
     {% endif %}
-    <a href="{{ url_for('project_edit', project_id=project.firebase_id) }}{% if request.args.get('page') %}?page={{ request.args.get('page') }}{% endif %}{% if request.args.get('tab') %}&tab={{ request.args.get('tab') }}{% endif %}" class="btn btn-sm btn-outline-primary" onclick="preserveTab(event)">
+    <a href="{{ url_for('project_edit', project_id=project.firebase_id) }}{% if request.args.get('page') %}?page={{ request.args.get('page') }}{% endif %}" class="btn btn-sm btn-outline-primary">
       <i class="bi bi-pencil me-1"></i>Edit
     </a>
     {% if user_has_delete_perm %}
@@ -2489,20 +2489,6 @@ function confirmRejectChangeOrder() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-  // Store and restore page number in session storage
-  const urlParams = new URLSearchParams(window.location.search);
-  const currentPage = urlParams.get('page');
-  if (currentPage) {
-    sessionStorage.setItem('project_detail_page', currentPage);
-  } else {
-    const storedPage = sessionStorage.getItem('project_detail_page');
-    if (storedPage && !window.location.href.includes('?page=')) {
-      // If no page in URL but we have a stored page, add it
-      const newUrl = window.location.href + (window.location.href.includes('?') ? '&' : '?') + 'page=' + storedPage;
-      window.history.replaceState({}, '', newUrl);
-    }
-  }
-
   document.querySelectorAll('.approve-co-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       currentCoData = {
@@ -2547,18 +2533,6 @@ document.addEventListener('DOMContentLoaded', function() {
         form.appendChild(pageInput);
       }
     });
-  }
-
-  // Preserve active tab when editing
-  const activeTab = document.querySelector('.nav-link.active');
-  if (activeTab) {
-    const tabName = activeTab.getAttribute('href')?.replace('#tab-', '') || 'overview';
-    const editLink = document.querySelector('a[href*="/edit"]');
-    if (editLink) {
-      const href = editLink.getAttribute('href');
-      const separator = href.includes('?') ? '&' : '?';
-      editLink.setAttribute('href', href + separator + 'tab=' + tabName);
-    }
   }
 });
 </script>

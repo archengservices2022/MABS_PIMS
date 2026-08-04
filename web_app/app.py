@@ -4331,10 +4331,9 @@ def project_edit(project_id):
 
         cache_bust("projects_list")
         flash("Project updated successfully.", "success")
-        # Preserve pagination and tab state from form submission
+        # Preserve pagination state from form submission
         page = request.form.get('page', request.args.get('page', '1'))
-        tab = request.form.get('tab', request.args.get('tab', 'overview'))
-        url = url_for('project_detail', project_id=project_id) + f"?page={page}#{tab if tab.startswith('#') else 'tab-' + tab}"
+        url = url_for('project_detail', project_id=project_id) + f"?page={page}"
         return redirect(url)
     sales_people = [p.get("name","") for p in _load_sales_people() if p.get("name","")]
     return render_template("project_form.html", project=data, clients=clients,
@@ -4349,7 +4348,7 @@ def project_status(project_id):
         "updated_at": datetime.now(timezone.utc).isoformat()
     })
     flash(f"Status updated to {new_status}.", "success")
-    return _redirect_project_detail(project_id)
+    return redirect(url_for("project_detail", project_id=project_id))
 
 @app.route("/projects/<project_id>/stage/<int:stage_idx>/invoice", methods=["GET"])
 @role_required("projects")
