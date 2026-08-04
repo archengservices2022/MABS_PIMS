@@ -16965,17 +16965,28 @@ def _parse_invoice_form(form) -> dict:
                 return pdata
         return {}
 
-    # Extract CO number from description if present
-    def _extract_co_number(desc):
-        """Extract change order number from description (e.g., 'MABS-123-CO-1' from 'MABS-123-CO-1 — Address')."""
+    # Extract CO number and address from description if present
+    def _extract_co_and_address(desc):
+        """Extract CO number and address from description.
+
+        Examples:
+        - 'MABS-123-CO-1 — 3511 W Piera Cir' -> ('MABS-123-CO-1', '3511 W Piera Cir')
+        - 'MABS-123-CO-1' -> ('MABS-123-CO-1', '')
+        - 'Regular description' -> ('', 'Regular description')
+        """
         if not desc:
-            return ""
+            return "", ""
+
         parts = desc.split(" – ")
-        co_part = parts[0].strip() if parts else desc.strip()
-        # Check if it looks like a CO number
-        if "CO" in co_part.upper() or "-CO" in co_part.upper():
-            return co_part
-        return ""
+        first_part = parts[0].strip() if parts else ""
+        remaining = (" – ".join(parts[1:])).strip() if len(parts) > 1 else ""
+
+        # Check if first part looks like a CO number
+        if "CO" in first_part.upper() or "-CO" in first_part.upper():
+            return first_part, remaining
+
+        # Not a CO, return full description as address
+        return "", desc
 
     for i, (desc, qty, price) in enumerate(zip(descriptions, quantities, unit_prices)):
         if desc.strip():
@@ -16985,7 +16996,15 @@ def _parse_invoice_form(form) -> dict:
             project_data = _get_project_by_number(proj_number)
             plant = _project_plant_display(project_data) if project_data else ""
             site_address = project_data.get("site_address", "") or project_data.get("project_site_address", "") if project_data else ""
-            co_number = _extract_co_number(desc)
+
+            # Extract CO number and address from description
+            co_number, desc_address = _extract_co_and_address(desc)
+
+            # Use extracted address if description had format "CO — address", otherwise use project site_address
+            if desc_address:
+                display_address = desc_address
+            else:
+                display_address = site_address
 
             line_items.append({
                 "description":    desc,
@@ -16998,7 +17017,7 @@ def _parse_invoice_form(form) -> dict:
                 "project_number": item_proj,
                 "plant":          plant,
                 "co_number":      co_number,
-                "site_address":   site_address,
+                "site_address":   display_address,
             })
 
     # Every distinct project referenced anywhere on this invoice (main selection +
