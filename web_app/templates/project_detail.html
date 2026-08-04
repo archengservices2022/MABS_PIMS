@@ -2489,6 +2489,13 @@ function confirmRejectChangeOrder() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+  // Reset to Overview tab on page load - always start with default tab
+  const overviewTab = document.querySelector('[href="#tab-overview"]');
+  if (overviewTab) {
+    const tab = new bootstrap.Tab(overviewTab);
+    tab.show();
+  }
+
   document.querySelectorAll('.approve-co-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       currentCoData = {
@@ -2521,10 +2528,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // If page in URL, store it in sessionStorage
   if (pageNum) {
-    localStorage.setItem('projects_page', pageNum);
+    // Store in form for submission
   } else {
-    // Try to restore from localStorage if not in URL
-    pageNum = localStorage.getItem('projects_page');
+    // Page not in URL - use URL parameter only
+    pageNum = urlParams.get('page');
   }
 
   if (pageNum) {

@@ -791,20 +791,9 @@ document.addEventListener('DOMContentLoaded', function () {
 // ?? Projects table pager ??????????????????????????????????????????????????????
 document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('projectsTableBody')) {
-    // Get page from URL or localStorage BEFORE initializing pager
+    // Get page from URL only - don't persist across section navigation
     const urlParams = new URLSearchParams(window.location.search);
     let pageNum = urlParams.get('page');
-
-    // If page in URL, store it in localStorage
-    if (pageNum) {
-      localStorage.setItem('projects_page', pageNum);
-    } else {
-      // Try to restore from localStorage if not in URL
-      const storedPage = localStorage.getItem('projects_page');
-      if (storedPage && !isNaN(storedPage)) {
-        pageNum = storedPage;
-      }
-    }
 
     new TablePager('projectsPager', '#projectsTableBody', 'tr.project-row', 15);
     _PAGERS['projectsPager'].refresh();
@@ -816,24 +805,9 @@ document.addEventListener('DOMContentLoaded', function() {
       if (pageInt >= 1) {
         pager.page = pageInt;
         pager._paginate();
-
-        // Update URL to include page parameter if it wasn't there
-        if (!urlParams.get('page')) {
-          const newUrl = window.location.pathname + '?page=' + pageNum;
-          window.history.replaceState({}, '', newUrl);
-        }
       }
     }
 
-    // Keep updating localStorage whenever pagination changes
-    const pager = _PAGERS['projectsPager'];
-    if (pager) {
-      const originalPaginate = pager._paginate;
-      pager._paginate = function() {
-        originalPaginate.call(this);
-        localStorage.setItem('projects_page', this.page.toString());
-      };
-    }
   }
 
   // Close select dropdowns when clicking outside filter form
