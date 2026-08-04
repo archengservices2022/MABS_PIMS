@@ -5476,7 +5476,14 @@ def invoice_new():
         stage_idx_raw = request.form.get("payment_stage_index", "")
         is_single_project = stage_idx_raw != ""
 
-        data = _parse_invoice_form(request.form)
+        # Extract CO number early so it can be used in line item creation
+        co_number = request.form.get("co_number", "").strip()
+        if not co_number:
+            stage_name_form = request.form.get("payment_stage", "").strip()
+            if stage_name_form and ("co" in stage_name_form.lower() or "-" in stage_name_form or "_" in stage_name_form):
+                co_number = stage_name_form
+
+        data = _parse_invoice_form(request.form, co_number=co_number)
         project_number = data["meta"].get("project_number", "")
 
         # Get all projects and invoices for validation
@@ -17122,7 +17129,7 @@ def _parse_project_form(form) -> dict:
         "actual_labor_cost":    _safe_float(form.get("actual_labor_cost", 0)),
     }
 
-def _parse_invoice_form(form) -> dict:
+def _parse_invoice_form(form, co_number="") -> dict:
     line_items = []
     descriptions    = form.getlist("item_description[]")
     quantities      = form.getlist("item_quantity[]")
@@ -17228,12 +17235,13 @@ def _parse_invoice_form(form) -> dict:
             plant = _project_plant_display(project_data) if project_data else ""
             site_address = project_data.get("site_address", "") or project_data.get("project_site_address", "") if project_data else ""
 
-            # Extract CO number and address from description
-            co_number, desc_address = _extract_co_and_address(desc)
+            # Extract CO number and address from description (or use passed co_number)
+            extracted_co, desc_address = _extract_co_and_address(desc)
+            item_co_number = extracted_co or co_number  # Use passed CO number if not in description
 
             # Get POWO number and CO firebase_id (from project or change order)
-            powo_number = _get_powo(project_data, co_number)
-            co_firebase_id = _get_co_firebase_id(project_data, co_number) if co_number else ""
+            powo_number = _get_powo(project_data, item_co_number)
+            co_firebase_id = _get_co_firebase_id(project_data, item_co_number) if item_co_number else ""
 
             # Get payment stage name if stage index is provided
             stage_name = ""
@@ -17283,7 +17291,7 @@ def _parse_invoice_form(form) -> dict:
                 # the one selected above, so one invoice can span multiple projects.
                 "project_number": item_proj,
                 "plant":          plant,
-                "co_number":      co_number,
+                "co_number":      item_co_number,
                 "co_firebase_id": co_firebase_id,
                 "powo_number":    powo_number,
                 "site_address":   display_address,
