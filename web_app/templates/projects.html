@@ -791,16 +791,16 @@ document.addEventListener('DOMContentLoaded', function () {
 // ?? Projects table pager ??????????????????????????????????????????????????????
 document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('projectsTableBody')) {
-    // Get page from URL or sessionStorage BEFORE initializing pager
+    // Get page from URL or localStorage BEFORE initializing pager
     const urlParams = new URLSearchParams(window.location.search);
     let pageNum = urlParams.get('page');
 
-    // If page in URL, store it in sessionStorage
+    // If page in URL, store it in localStorage
     if (pageNum) {
-      sessionStorage.setItem('projects_page', pageNum);
+      localStorage.setItem('projects_page', pageNum);
     } else {
-      // Try to restore from sessionStorage if not in URL
-      const storedPage = sessionStorage.getItem('projects_page');
+      // Try to restore from localStorage if not in URL
+      const storedPage = localStorage.getItem('projects_page');
       if (storedPage && !isNaN(storedPage)) {
         pageNum = storedPage;
       }
@@ -816,16 +816,22 @@ document.addEventListener('DOMContentLoaded', function() {
       if (pageInt >= 1) {
         pager.page = pageInt;
         pager._paginate();
+
+        // Update URL to include page parameter if it wasn't there
+        if (!urlParams.get('page')) {
+          const newUrl = window.location.pathname + '?page=' + pageNum;
+          window.history.replaceState({}, '', newUrl);
+        }
       }
     }
 
-    // Keep updating sessionStorage whenever pagination changes
+    // Keep updating localStorage whenever pagination changes
     const pager = _PAGERS['projectsPager'];
     if (pager) {
       const originalPaginate = pager._paginate;
       pager._paginate = function() {
         originalPaginate.call(this);
-        sessionStorage.setItem('projects_page', this.page.toString());
+        localStorage.setItem('projects_page', this.page.toString());
       };
     }
   }
