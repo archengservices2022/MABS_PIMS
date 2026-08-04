@@ -201,6 +201,9 @@
 </div>
 
 <script>
+// Clear localStorage on logout/login page - ensures page 1 on next session
+localStorage.removeItem('projects_page');
+
 function togglePw() {
   var f = document.getElementById('pwField');
   var icon = document.getElementById('eyeIcon');
