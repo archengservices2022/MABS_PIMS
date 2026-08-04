@@ -769,19 +769,30 @@ async function handleSalaryDelete(salaryId) {
 function renderSalaryDeleteButtons() {
   document.querySelectorAll('[id^="salary-action-"]').forEach(el => {
     const salaryId = el.id.replace('salary-action-', '');
-    // Always render the same button - it checks permissions at click time
-    el.innerHTML = `<button type="button" class="btn btn-xs btn-outline-danger" title="Delete" data-salary-id="${salaryId}"><i class="bi bi-trash"></i></button>`;
+    const hasPermission = salaryDeletePerms.has(salaryId);
 
-    // Attach click handler via event listener (more reliable than inline onclick)
-    const btn = el.querySelector('button');
-    if (btn) {
-      btn.addEventListener('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        const id = this.getAttribute('data-salary-id');
-        console.log(`Button clicked for salary: ${id}`);
-        handleSalaryDelete(id);
-      });
+    if (hasPermission) {
+      el.innerHTML = `<button type="button" class="btn btn-xs btn-outline-danger" title="Delete" data-salary-id="${salaryId}"><i class="bi bi-trash"></i></button>`;
+      const btn = el.querySelector('button');
+      if (btn) {
+        btn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const id = this.getAttribute('data-salary-id');
+          handleSalaryDelete(id);
+        });
+      }
+    } else {
+      el.innerHTML = `<button type="button" class="btn btn-xs btn-outline-warning" title="Request Delete" data-salary-id="${salaryId}"><i class="bi bi-send"></i></button>`;
+      const btn = el.querySelector('button');
+      if (btn) {
+        btn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const id = this.getAttribute('data-salary-id');
+          openDeleteRequestModal('salary', id, 'Salary Entry');
+        });
+      }
     }
   });
 }
@@ -992,24 +1003,27 @@ function addSalary(e) {
   });
 }
 
-function deleteSalary(id) {
-  id = (id || '').trim();
-  console.log(`deleteSalary called with id="${id}", perms=${Array.from(salaryDeletePerms)}`);
+var currentSalaryDeleteId = null;
 
-  if (!salaryDeletePerms.has(id)) {
-    console.error(`Permission check failed: "${id}" not in permissions`);
-    alert('You do not have permission to delete this salary. Please request approval first.');
-    return;
-  }
-  if (!confirm('Delete this salary entry?\n\nThis action cannot be undone.')) return;
-  const confirm2 = prompt('Type DELETE to confirm removal:');
-  if (confirm2 !== 'DELETE') { alert('Deletion cancelled.'); return; }
-  fetch(`/api/payroll/salaries/${id}`, {method: 'DELETE'})
+function deleteSalary(id) {
+  currentSalaryDeleteId = (id || '').trim();
+  console.log(`deleteSalary called with id="${currentSalaryDeleteId}", perms=${Array.from(salaryDeletePerms)}`);
+  document.getElementById('payrollSalaryDeleteText').value = '';
+  new bootstrap.Modal(document.getElementById('payrollDeleteSalaryModal')).show();
+}
+
+function confirmPayrollDeleteSalary() {
+  if (!currentSalaryDeleteId) return;
+  bootstrap.Modal.getInstance(document.getElementById('payrollDeleteSalaryModal')).hide();
+
+  fetch(`/api/payroll/salaries/${currentSalaryDeleteId}`, {method: 'DELETE'})
     .then(r => r.json())
     .then(res => {
       if (res.success) {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('deleteRequestModal'));
+        if (modal) modal.hide();
         alert('Salary deleted successfully!');
-        refreshSalaryDeletePerms();
+        location.reload();
       } else {
         alert('Error: ' + (res.error || 'Unknown error'));
       }
@@ -1748,7 +1762,41 @@ document.addEventListener('DOMContentLoaded', function() {
   };
 
   deleteInput.addEventListener('input', updateDeleteButtonState);
+
+  // Salary delete modal validation
+  const salaryDeleteInput = document.getElementById('payrollSalaryDeleteText');
+  const salaryDeleteBtn = document.getElementById('payrollSalaryDeleteBtn');
+  if (salaryDeleteInput && salaryDeleteBtn) {
+    const updateSalaryDeleteButtonState = () => {
+      const isValid = salaryDeleteInput.value === 'DELETE';
+      salaryDeleteBtn.style.opacity = isValid ? '1' : '0.5';
+      salaryDeleteBtn.disabled = !isValid;
+    };
+    salaryDeleteInput.addEventListener('input', updateSalaryDeleteButtonState);
+  }
 });
 </script>
+
+<!-- ?? Delete Salary Modal ????????????????????????????????????????????????????????? -->
+<div class="modal fade" id="payrollDeleteSalaryModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">Confirm Delete Salary</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pb-2">
+        <p style="color: #475569; margin-bottom: 16px;">Type <strong style="color: #dc2626;">DELETE</strong> to confirm deletion of this salary entry:</p>
+        <input type="text" id="payrollSalaryDeleteText" placeholder="Type 'DELETE'" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; box-sizing: border-box; margin-bottom: 16px;">
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button id="payrollSalaryDeleteBtn" class="btn btn-sm btn-danger" onclick="confirmPayrollDeleteSalary()" style="opacity: 0.5;" disabled>
+          <i class="bi bi-trash me-1"></i>Delete Salary
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 {% endblock %}
