@@ -4511,13 +4511,33 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
         }
 
     # Build line items: base stage first, then CO stages
-    line_items = [_enrich_stage_line_item(stage, stage_idx, proj_num)]
+    try:
+        line_items = [_enrich_stage_line_item(stage, stage_idx, proj_num)]
+    except Exception as e:
+        log.error(f"[ENRICH_ERROR] Failed to enrich stage line item: {e}", exc_info=True)
+        line_items = [{
+            "description": stage.get("name", f"Payment Stage {stage_idx + 1}"),
+            "quantity":    "1",
+            "unit_price":  str(amount),
+            "amount":      str(amount),
+            "project_number": proj_num,
+        }]
     linked_projects = [{"project_number": proj_num, "payment_stage_index": stage_idx}]
     total_amount = amount
 
     for co_idx, co_stage in co_pending:
         co_amt  = _safe_float(co_stage.get("amount", 0))
-        line_items.append(_enrich_stage_line_item(co_stage, co_idx, proj_num))
+        try:
+            line_items.append(_enrich_stage_line_item(co_stage, co_idx, proj_num))
+        except Exception as e:
+            log.error(f"[ENRICH_ERROR] Failed to enrich CO line item: {e}", exc_info=True)
+            line_items.append({
+                "description": co_stage.get("name", f"CO Stage {co_idx + 1}"),
+                "quantity":    "1",
+                "unit_price":  str(co_amt),
+                "amount":      str(co_amt),
+                "project_number": proj_num,
+            })
         linked_projects.append({"project_number": proj_num, "payment_stage_index": co_idx})
         total_amount += co_amt
 
