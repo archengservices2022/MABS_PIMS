@@ -7,6 +7,7 @@ import tempfile
 import logging
 import secrets
 import hashlib
+import uuid
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -252,6 +253,10 @@ def _base_contract_value(project: dict, change_orders=None) -> float:
     return _safe_float(project.get("contract_value", 0)) - _approved_co_total(
         project.get("change_orders") if change_orders is None else change_orders
     )
+
+def _generate_co_firebase_id() -> str:
+    """Generate unique Firebase ID for change order."""
+    return f"co_{uuid.uuid4().hex[:20]}"
 
 def _sync_contract_value_from_cos(project_id: str, project: dict, change_orders=None) -> bool:
     cos = project.get("change_orders") if change_orders is None else change_orders
@@ -529,6 +534,63 @@ def fb_delete(path: str) -> bool:
         return False
     ref.delete()
     return True
+
+# ── Migration: Add Firebase IDs to Existing Change Orders ──────────────────────
+def _migrate_add_co_firebase_ids():
+    """One-time migration: add firebase_id to existing COs and stages without them."""
+    if not FIREBASE_AVAILABLE:
+        log.warning("Firebase not available - skipping CO firebase_id migration")
+        return
+
+    try:
+        all_projects = fb_get("/projects") or {}
+        if not isinstance(all_projects, dict):
+            return
+
+        migration_count = 0
+
+        for project_id, project in all_projects.items():
+            if not isinstance(project, dict):
+                continue
+
+            modified = False
+
+            # Migrate COs
+            cos = project.get("change_orders") or []
+            if isinstance(cos, list):
+                for co in cos:
+                    if isinstance(co, dict) and not co.get("firebase_id"):
+                        co["firebase_id"] = _generate_co_firebase_id()
+                        modified = True
+                        migration_count += 1
+
+            # Migrate Stages
+            stages = project.get("payment_stages") or []
+            if isinstance(stages, list):
+                for stage in stages:
+                    if isinstance(stage, dict) and not stage.get("co_firebase_id"):
+                        # Try to find corresponding CO and get its firebase_id
+                        co_idx = stage.get("co_index")
+                        if co_idx is not None and isinstance(co_idx, int) and co_idx < len(cos):
+                            if isinstance(cos[co_idx], dict):
+                                stage["co_firebase_id"] = cos[co_idx].get("firebase_id")
+                                modified = True
+
+            # Save if modified
+            if modified:
+                fb_update(f"/projects/{project_id}", {
+                    "change_orders": cos,
+                    "payment_stages": stages,
+                    "migrated_at": datetime.now(timezone.utc).isoformat()
+                })
+
+        if migration_count > 0:
+            log.info(f"✓ Migration complete: Added firebase_id to {migration_count} change orders")
+        else:
+            log.info("✓ Migration: All COs already have firebase_id")
+
+    except Exception as e:
+        log.error(f"✗ Error during CO firebase_id migration: {e}")
 
 # ── Employee Advance Finance Sync Helpers ────────────────────────────────────
 def _sync_advance_to_finance(advance_id: str, advance_data: dict):
@@ -3622,6 +3684,7 @@ def co_new(project_id):
 
     now_str = datetime.now(timezone.utc).isoformat()
     new_co = {
+        "firebase_id":      _generate_co_firebase_id(),
         "co_number":        co_num,
         "title":            request.form.get("title", "").strip(),
         "description":      request.form.get("description", "").strip(),
@@ -3679,6 +3742,7 @@ def co_status(project_id, co_idx):
             "status": "Pending Invoice",
             "co_number": cos[co_idx]['co_number'],  # Link back to change order
             "co_index": co_idx,  # Store CO index for reference
+            "co_firebase_id": cos[co_idx].get("firebase_id"),  # Link to CO firebase ID
         })
         update_data = {
             "change_orders":  cos,
@@ -6030,6 +6094,26 @@ def invoice_detail(invoice_id):
                                         site_addr = ", ".join(parts[:-1]).strip()
                                 item["site_address"] = site_addr
                             break
+
+                # If CO firebase_id exists, fetch latest POWO from that CO
+                if item.get("co_firebase_id"):
+                    co_firebase_id = item.get("co_firebase_id")
+                    # Try to fetch CO document directly using firebase_id
+                    try:
+                        # Search through all projects' change_orders for this firebase_id
+                        for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
+                            if isinstance(pdata, dict):
+                                cos = pdata.get("change_orders") or []
+                                if isinstance(cos, dict):
+                                    cos = list(cos.values())
+                                for co in (cos if isinstance(cos, list) else []):
+                                    if isinstance(co, dict) and co.get("firebase_id") == co_firebase_id:
+                                        powo = co.get("po_wo_number", "").strip()
+                                        if powo:
+                                            item["powo_number"] = powo
+                                        break
+                    except Exception:
+                        pass
 
                 # If POWO not set, try to extract from project
                 if not item.get("powo_number") and proj_num:
@@ -17086,6 +17170,27 @@ def _parse_invoice_form(form) -> dict:
                                 return powo
         return ""
 
+    # Helper to find CO firebase_id by CO number
+    def _get_co_firebase_id(project_data, co_number=""):
+        """Get CO firebase_id from change order by CO number."""
+        if not project_data or not co_number:
+            return ""
+
+        change_orders = project_data.get("change_orders") or []
+        if isinstance(change_orders, dict):
+            change_orders = list(change_orders.values())
+        if isinstance(change_orders, list):
+            for co_data in change_orders:
+                if isinstance(co_data, dict):
+                    co_num = co_data.get("co_number", "").strip()
+                    co_name = co_data.get("name", "").strip()
+                    if (co_num == co_number or
+                        co_name == co_number or
+                        co_number in co_name or
+                        co_name.startswith(co_number)):
+                        return co_data.get("firebase_id", "")
+        return ""
+
     for i, (desc, qty, price) in enumerate(zip(descriptions, quantities, unit_prices)):
         if desc.strip():
             item_proj = (item_projects[i].strip() if i < len(item_projects) else "")
@@ -17098,8 +17203,9 @@ def _parse_invoice_form(form) -> dict:
             # Extract CO number and address from description
             co_number, desc_address = _extract_co_and_address(desc)
 
-            # Get POWO number (from project or change order)
+            # Get POWO number and CO firebase_id (from project or change order)
             powo_number = _get_powo(project_data, co_number)
+            co_firebase_id = _get_co_firebase_id(project_data, co_number) if co_number else ""
 
             # Get payment stage name if stage index is provided
             stage_name = ""
@@ -17150,6 +17256,7 @@ def _parse_invoice_form(form) -> dict:
                 "project_number": item_proj,
                 "plant":          plant,
                 "co_number":      co_number,
+                "co_firebase_id": co_firebase_id,
                 "powo_number":    powo_number,
                 "site_address":   display_address,
                 "stage_name":     stage_name,
@@ -20867,6 +20974,9 @@ def api_timesheets_export():
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    # Run CO firebase_id migration on startup
+    _migrate_add_co_firebase_ids()
+
     app.run(
         debug=os.environ.get("FLASK_DEBUG", "0") == "1",
         host=os.environ.get("FLASK_HOST", "0.0.0.0"),
