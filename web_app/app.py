@@ -4642,7 +4642,7 @@ def project_note_add(project_id):
     text = request.form.get("note_text", "").strip()
     if not text:
         flash("Note cannot be empty.", "warning")
-        return redirect(url_for("project_detail", project_id=project_id) + "#tab-notes")
+        return _redirect_project_detail(project_id, "#tab-notes")
     project = fb_get(f"/projects/{project_id}") or {}
     log = project.get("activity_log") or []
     if not isinstance(log, list):
@@ -4656,7 +4656,7 @@ def project_note_add(project_id):
         "activity_log": log,
         "updated_at":   datetime.now(timezone.utc).isoformat(),
     })
-    return redirect(url_for("project_detail", project_id=project_id) + "#tab-notes")
+    return _redirect_project_detail(project_id, "#tab-notes")
 
 @app.route("/projects/<project_id>/notes/<int:idx>/delete", methods=["POST"])
 @role_required("projects")
@@ -4669,7 +4669,7 @@ def project_note_delete(project_id, idx):
             "activity_log": log,
             "updated_at":   datetime.now(timezone.utc).isoformat(),
         })
-    return redirect(url_for("project_detail", project_id=project_id) + "#tab-notes")
+    return _redirect_project_detail(project_id, "#tab-notes")
 
 # ── Routes: Projects Export ───────────────────────────────────────────────────
 def _filter_projects_export(items):
