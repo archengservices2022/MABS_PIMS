@@ -4343,12 +4343,14 @@ def project_edit(project_id):
 @role_required("projects")
 def project_status(project_id):
     new_status = request.form.get("status", "In Progress")
+    page = request.form.get('page', request.args.get('page', '1'))
     fb_update(f"/projects/{project_id}", {
         "status": new_status,
         "updated_at": datetime.now(timezone.utc).isoformat()
     })
     flash(f"Status updated to {new_status}.", "success")
-    return redirect(url_for("project_detail", project_id=project_id))
+    url = url_for("project_detail", project_id=project_id) + f"?page={page}"
+    return redirect(url)
 
 @app.route("/projects/<project_id>/stage/<int:stage_idx>/invoice", methods=["GET"])
 @role_required("projects")
