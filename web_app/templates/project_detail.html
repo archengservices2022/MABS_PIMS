@@ -21,14 +21,14 @@
   <div class="d-flex gap-2 flex-wrap">
     {% if 'invoicing' in allowed_pages %}
     {% if has_pending_stage %}
-    <a href="{{ url_for('invoice_new') }}?project={{ project.get('project_number','') }}&client={{ (project.get('company_name') or project.get('client_name','')) }}&stage_idx={{ next_stage_idx }}&stage_name={{ next_stage_name|urlencode }}&stage_amount={{ next_stage_amount }}"
+    <a href="{{ url_for('invoice_new') }}?project={{ project.get('project_number','') }}&client={{ (project.get('company_name') or project.get('client_name','')) }}&stage_idx={{ next_stage_idx }}&stage_name={{ next_stage_name|urlencode }}&stage_amount={{ next_stage_amount }}{% if request.args.get('page') %}&page={{ request.args.get('page') }}{% endif %}"
        class="btn btn-sm btn-teal"
        data-bs-toggle="tooltip" data-bs-placement="bottom"
        title="Create invoice for next payment stage">
       <i class="bi bi-receipt me-1"></i>Create Invoice
     </a>
     {% elif not project.get('payment_stages') %}
-    <a href="{{ url_for('invoice_new') }}?project={{ project.get('project_number','') }}&client={{ (project.get('company_name') or project.get('client_name','')) }}"
+    <a href="{{ url_for('invoice_new') }}?project={{ project.get('project_number','') }}&client={{ (project.get('company_name') or project.get('client_name','')) }}{% if request.args.get('page') %}&page={{ request.args.get('page') }}{% endif %}"
        class="btn btn-sm btn-teal"
        data-bs-toggle="tooltip" data-bs-placement="bottom"
        title="Create a manual invoice for this project">
