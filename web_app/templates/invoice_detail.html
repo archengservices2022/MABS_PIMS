@@ -206,15 +206,18 @@
         <table style="width:100%; border-collapse:collapse; margin:0;">
           <thead>
             <tr style="background:#0F172A;">
-              <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:left; font-weight:600;">DESCRIPTION</th>
+              <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:left; font-weight:600;">PROJECT NUMBER</th>
+              <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:left; font-weight:600;">DESCRIPTION (PO & ROAD NAME)</th>
+              <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:center; font-weight:600;">PLANT</th>
               <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:center; font-weight:600;">QTY</th>
               <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:right; font-weight:600;">UNIT PRICE</th>
-              <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:right; font-weight:600;">AMOUNT</th>
+              <th style="padding:12px 16px; color:#fff; font-size:0.75rem; letter-spacing:.06em; text-align:right; font-weight:600;">TOTAL DUE</th>
             </tr>
           </thead>
           <tbody>
             {% for item in invoice.get('line_items',[]) %}
             <tr style="border-bottom:1px solid #F1F5F9;">
+              <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">{{ item.get('project_number','') }}</td>
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
                 {%- set desc = item.get('description','') -%}
                 {%- if 'co' in desc.lower() and ' – ' in desc -%}
@@ -224,12 +227,13 @@
                   {{ desc }}
                 {%- endif -%}
               </td>
+              <td style="padding:14px 16px; color:#64748B; text-align:center;">{{ item.get('plant','') }}</td>
               <td style="padding:14px 16px; color:#64748B; text-align:center;">{{ item.get('quantity','1') }}</td>
               <td style="padding:14px 16px; color:#64748B; text-align:right;">{{ currency_symbol }}{{ "{:,.2f}".format(item.get('unit_price',0)|float) }}</td>
               <td style="padding:14px 16px; color:#1E293B; font-weight:600; text-align:right;">{{ currency_symbol }}{{ "{:,.2f}".format(item.get('amount',0)|float) }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="4" style="padding:24px; text-align:center; color:#94A3B8;">No line items.</td></tr>
+            <tr><td colspan="6" style="padding:24px; text-align:center; color:#94A3B8;">No line items.</td></tr>
             {% endfor %}
           </tbody>
         </table>

@@ -16953,9 +16953,26 @@ def _parse_invoice_form(form) -> dict:
     unit_prices     = form.getlist("item_unit_price[]")
     item_projects   = form.getlist("item_project[]")  # Form field name is "item_project[]" not "item_project_number[]"
     main_project    = form.get("project_number", "").strip()
+
+    # Load all projects to enrich line items
+    all_projects = fb_get("/projects") or {}
+    def _get_project_by_number(proj_num):
+        """Find project data by project_number."""
+        if not proj_num:
+            return {}
+        for pid, pdata in (all_projects.items() if isinstance(all_projects, dict) else []):
+            if isinstance(pdata, dict) and pdata.get("project_number", "").strip() == proj_num.strip():
+                return pdata
+        return {}
+
     for i, (desc, qty, price) in enumerate(zip(descriptions, quantities, unit_prices)):
         if desc.strip():
             item_proj = (item_projects[i].strip() if i < len(item_projects) else "")
+            # Use main project if item project is empty
+            proj_number = item_proj or main_project
+            project_data = _get_project_by_number(proj_number)
+            plant = _project_plant_display(project_data) if project_data else ""
+
             line_items.append({
                 "description":    desc,
                 "quantity":       qty,
@@ -16965,6 +16982,7 @@ def _parse_invoice_form(form) -> dict:
                 # Set explicitly when an item belongs to a *different* project than
                 # the one selected above, so one invoice can span multiple projects.
                 "project_number": item_proj,
+                "plant":          plant,
             })
 
     # Every distinct project referenced anywhere on this invoice (main selection +
