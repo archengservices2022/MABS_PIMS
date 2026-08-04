@@ -4467,27 +4467,55 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
                 _is_co_stage(s)):
             co_pending.append((ci, s))
 
+    # Helper to enrich line item with CO data
+    def _enrich_stage_line_item(stage_data, stage_index, proj_num):
+        """Enrich a line item from a payment stage with CO data."""
+        stage_name = stage_data.get("name", f"Payment Stage {stage_index + 1}")
+
+        # Get CO-related fields from stage if available
+        co_number = stage_data.get("co_number", "")
+        co_firebase_id = stage_data.get("co_firebase_id", "")
+
+        # Get POWO from project or CO
+        powo_number = ""
+        if co_firebase_id:
+            # Try to find CO in project's change_orders and get POWO
+            cos = project.get("change_orders") or []
+            if isinstance(cos, dict):
+                cos = list(cos.values())
+            for co in (cos if isinstance(cos, list) else []):
+                if isinstance(co, dict) and co.get("firebase_id") == co_firebase_id:
+                    powo_number = co.get("po_wo_number", "").strip()
+                    break
+
+        # Get site address from project
+        site_address = project.get("site_address", "") or project.get("project_site_address", "")
+
+        # Get plant
+        plant = _project_plant_display(project)
+
+        return {
+            "description": stage_name,
+            "quantity":    "1",
+            "unit_price":  str(_safe_float(stage_data.get("amount", 0))),
+            "amount":      str(_safe_float(stage_data.get("amount", 0))),
+            "project_number": proj_num,
+            "stage_name": stage_name,
+            "co_number": co_number,
+            "co_firebase_id": co_firebase_id,
+            "powo_number": powo_number,
+            "site_address": site_address,
+            "plant": plant,
+        }
+
     # Build line items: base stage first, then CO stages
-    line_items = [{
-        "description": stage.get("name", f"Payment Stage {stage_idx + 1}"),
-        "quantity":    "1",
-        "unit_price":  str(amount),
-        "amount":      str(amount),
-        "project_number": proj_num,
-    }]
+    line_items = [_enrich_stage_line_item(stage, stage_idx, proj_num)]
     linked_projects = [{"project_number": proj_num, "payment_stage_index": stage_idx}]
     total_amount = amount
 
     for co_idx, co_stage in co_pending:
-        co_name = co_stage.get("name", f"CO Stage {co_idx + 1}")
         co_amt  = _safe_float(co_stage.get("amount", 0))
-        line_items.append({
-            "description":    co_name,
-            "quantity":       "1",
-            "unit_price":     str(co_amt),
-            "amount":         str(co_amt),
-            "project_number": proj_num,
-        })
+        line_items.append(_enrich_stage_line_item(co_stage, co_idx, proj_num))
         linked_projects.append({"project_number": proj_num, "payment_stage_index": co_idx})
         total_amount += co_amt
 
