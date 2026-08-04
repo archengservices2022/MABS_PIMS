@@ -2206,6 +2206,18 @@ function deleteChangeOrder(projectId, coIdx) {
   form.method = 'POST';
   form.action = '/projects/' + projectId + '/change-orders/' + coIdx + '/delete';
   form.style.display = 'none';
+
+  // Add page parameter to preserve pagination
+  const urlParams = new URLSearchParams(window.location.search);
+  const pageNum = urlParams.get('page');
+  if (pageNum) {
+    const pageInput = document.createElement('input');
+    pageInput.type = 'hidden';
+    pageInput.name = 'page';
+    pageInput.value = pageNum;
+    form.appendChild(pageInput);
+  }
+
   document.body.appendChild(form);
   form.submit();
 }
@@ -2447,6 +2459,18 @@ function submitCoStatus(status) {
   input.value = status;
 
   form.appendChild(input);
+
+  // Add page parameter to preserve pagination
+  const urlParams = new URLSearchParams(window.location.search);
+  const pageNum = urlParams.get('page');
+  if (pageNum) {
+    const pageInput = document.createElement('input');
+    pageInput.type = 'hidden';
+    pageInput.name = 'page';
+    pageInput.value = pageNum;
+    form.appendChild(pageInput);
+  }
+
   document.body.appendChild(form);
   form.submit();
 }
