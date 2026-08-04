@@ -6063,15 +6063,21 @@ def invoice_detail(invoice_id):
             if isinstance(item, dict):
                 proj_num = item.get("project_number", "") or proj_num
 
-                # If stage_name not set, try to extract from description (for old invoices)
+                # If stage_name not set, try to extract from description or CO (for old invoices)
                 if not item.get("stage_name"):
+                    co_num = item.get("co_number", "")
                     desc = item.get("description", "").strip()
-                    # Common stage names to check
+
+                    # First try common payment stage names
                     common_stages = ["Full Payment", "Down Payment", "Deposit", "Retainage", "Final Payment", "Mobilization"]
                     for stage in common_stages:
                         if desc == stage or desc.startswith(stage):
                             item["stage_name"] = desc
                             break
+
+                    # If CO number exists and no stage_name found, use CO number as stage name
+                    if not item.get("stage_name") and co_num:
+                        item["stage_name"] = co_num
 
                 # If site_address not set, try to extract from project (for old invoices)
                 if not item.get("site_address") and proj_num:
@@ -6095,6 +6101,24 @@ def invoice_detail(invoice_id):
                                 item["site_address"] = site_addr
                             break
 
+                # If CO number but no firebase_id, try to find it (for old invoices)
+                if not item.get("co_firebase_id") and proj_num:
+                    co_num = item.get("co_number", "")
+                    if co_num:
+                        for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
+                            if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
+                                cos = pdata.get("change_orders") or []
+                                if isinstance(cos, dict):
+                                    cos = list(cos.values())
+                                for co in (cos if isinstance(cos, list) else []):
+                                    if isinstance(co, dict):
+                                        if (co.get("co_number") == co_num or
+                                            co_num in co.get("name", "") or
+                                            co.get("name", "").startswith(co_num)):
+                                            item["co_firebase_id"] = co.get("firebase_id", "")
+                                            break
+                                break
+
                 # If CO firebase_id exists, fetch latest POWO from that CO
                 if item.get("co_firebase_id"):
                     co_firebase_id = item.get("co_firebase_id")
@@ -6111,6 +6135,10 @@ def invoice_detail(invoice_id):
                                         powo = co.get("po_wo_number", "").strip()
                                         if powo:
                                             item["powo_number"] = powo
+                                        # Also update stage_name if it's a CO
+                                        if not item.get("stage_name") or item.get("stage_name") == co_num:
+                                            co_name = co.get("name", "").strip()
+                                            item["stage_name"] = co_name if co_name else co_num
                                         break
                     except Exception:
                         pass
