@@ -16998,12 +16998,20 @@ def _parse_invoice_form(form) -> dict:
         if isinstance(change_orders, dict):
             change_orders = list(change_orders.values())
         if isinstance(change_orders, list):
+            co_number_lower = co_number.lower().strip()
             for co_data in change_orders:
                 if isinstance(co_data, dict):
                     co_num = co_data.get("co_number", "").strip()
                     co_name = co_data.get("name", "").strip()
-                    # Match either co_number field or if name contains CO number
-                    if co_num == co_number or co_name == co_number or (co_number in co_name):
+                    # Try multiple matching strategies:
+                    # 1. Exact match on co_number
+                    # 2. Exact match on name
+                    # 3. co_number appears anywhere in name
+                    # 4. Last part of CO number (e.g., "CO-1" from "MABS-20260610-CO-1")
+                    if (co_num == co_number or
+                        co_name == co_number or
+                        co_number in co_name or
+                        co_name.startswith(co_number)):
                         powo = co_data.get("po_wo_number", "").strip()
                         if powo:
                             return powo
