@@ -6008,15 +6008,19 @@ def invoice_detail(invoice_id):
                                 cos = pdata.get("change_orders") or []
                                 if isinstance(cos, dict):
                                     cos = list(cos.values())
-                                for co in (cos if isinstance(cos, list) else []):
-                                    if isinstance(co, dict):
-                                        if (co.get("co_number") == co_num or
-                                            co_num in co.get("name", "") or
-                                            co.get("name", "").startswith(co_num)):
-                                            powo = co.get("po_wo_number", "").strip()
-                                            if powo:
-                                                item["powo_number"] = powo
-                                            break
+                                # Get POWO from project first, then from CO
+                                powo = pdata.get("po_wo_number", "").strip()
+                                if not powo:
+                                    for co in (cos if isinstance(cos, list) else []):
+                                        if isinstance(co, dict):
+                                            if (co.get("co_number") == co_num or
+                                                co_num in co.get("name", "") or
+                                                co.get("name", "").startswith(co_num)):
+                                                powo = co.get("po_wo_number", "").strip()
+                                                if powo:
+                                                    break
+                                if powo:
+                                    item["powo_number"] = powo
                                 break
 
     # Source quote — via the linked project's source_quote field
@@ -17016,33 +17020,36 @@ def _parse_invoice_form(form) -> dict:
         # Not a CO, return full description as address
         return "", desc
 
-    # Helper to get change order POWO number
-    def _get_co_powo(project_data, co_number):
-        """Get POWO (po_wo_number) from change order by CO number."""
-        if not project_data or not co_number:
+    # Helper to get POWO number (from change order or project)
+    def _get_powo(project_data, co_number=""):
+        """Get POWO (po_wo_number) from change order or project."""
+        if not project_data:
             return ""
-        change_orders = project_data.get("change_orders") or []
-        # Handle both list and dict formats
-        if isinstance(change_orders, dict):
-            change_orders = list(change_orders.values())
-        if isinstance(change_orders, list):
-            co_number_lower = co_number.lower().strip()
-            for co_data in change_orders:
-                if isinstance(co_data, dict):
-                    co_num = co_data.get("co_number", "").strip()
-                    co_name = co_data.get("name", "").strip()
-                    # Try multiple matching strategies:
-                    # 1. Exact match on co_number
-                    # 2. Exact match on name
-                    # 3. co_number appears anywhere in name
-                    # 4. Last part of CO number (e.g., "CO-1" from "MABS-20260610-CO-1")
-                    if (co_num == co_number or
-                        co_name == co_number or
-                        co_number in co_name or
-                        co_name.startswith(co_number)):
-                        powo = co_data.get("po_wo_number", "").strip()
-                        if powo:
-                            return powo
+
+        # First try project-level po_wo_number
+        project_powo = project_data.get("po_wo_number", "").strip()
+        if project_powo:
+            return project_powo
+
+        # If CO number provided, try to find it in change orders
+        if co_number:
+            change_orders = project_data.get("change_orders") or []
+            # Handle both list and dict formats
+            if isinstance(change_orders, dict):
+                change_orders = list(change_orders.values())
+            if isinstance(change_orders, list):
+                for co_data in change_orders:
+                    if isinstance(co_data, dict):
+                        co_num = co_data.get("co_number", "").strip()
+                        co_name = co_data.get("name", "").strip()
+                        # Try multiple matching strategies
+                        if (co_num == co_number or
+                            co_name == co_number or
+                            co_number in co_name or
+                            co_name.startswith(co_number)):
+                            powo = co_data.get("po_wo_number", "").strip()
+                            if powo:
+                                return powo
         return ""
 
     for i, (desc, qty, price) in enumerate(zip(descriptions, quantities, unit_prices)):
@@ -17057,8 +17064,8 @@ def _parse_invoice_form(form) -> dict:
             # Extract CO number and address from description
             co_number, desc_address = _extract_co_and_address(desc)
 
-            # Get POWO number from change order if this is a CO
-            powo_number = _get_co_powo(project_data, co_number) if co_number else ""
+            # Get POWO number (from project or change order)
+            powo_number = _get_powo(project_data, co_number)
 
             # Use extracted address if description had format "CO — address", otherwise use project site_address
             if desc_address:
