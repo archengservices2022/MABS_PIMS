@@ -916,13 +916,17 @@ function approveSheet(sheetId, action) {
 }
 
 function sendBackSheet(sheetId, name) {
+  console.log('sendBackSheet called with:', sheetId, name);
   const title = 'Send Back to Employee';
   const message = `You are about to send <strong>${name || "this employee"}'s</strong> timesheet back for correction. This action cannot be undone.`;
 
+  console.log('Calling showConfirmDialog');
   showConfirmDialog(title, message, 'Send Back', '#7c3aed', () => {
+    console.log('Confirmed - sending timesheet back');
     fetch(`/api/timesheets/${sheetId}/send-back`, {method: 'POST'})
       .then(r => r.json())
       .then(d => {
+        console.log('Send back response:', d);
         if (d.success) location.reload();
         else alert('Error: ' + (d.error || 'Unknown error occurred'));
       })
