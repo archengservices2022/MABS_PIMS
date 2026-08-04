@@ -4467,77 +4467,53 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
                 _is_co_stage(s)):
             co_pending.append((ci, s))
 
-    # Helper to enrich line item with CO data
-    def _enrich_stage_line_item(stage_data, stage_index, proj_num):
-        """Enrich a line item from a payment stage with CO data."""
+    # Build enriched line items
+    def build_enriched_item(stage_data, stage_index, proj_num_arg):
+        """Build enriched line item from stage data."""
         stage_name = stage_data.get("name", f"Payment Stage {stage_index + 1}")
-
-        # Get CO-related fields from stage if available
         co_number = stage_data.get("co_number", "")
         co_firebase_id = stage_data.get("co_firebase_id", "")
-
-        # Get POWO from project or CO
         powo_number = ""
-        if co_firebase_id:
-            # Try to find CO in project's change_orders and get POWO
-            cos = project.get("change_orders") or []
-            if isinstance(cos, dict):
-                cos = list(cos.values())
-            for co in (cos if isinstance(cos, list) else []):
-                if isinstance(co, dict) and co.get("firebase_id") == co_firebase_id:
-                    powo_number = co.get("po_wo_number", "").strip()
-                    break
+        site_address = ""
 
-        # Get site address from project
-        site_address = project.get("site_address", "") or project.get("project_site_address", "")
+        # Try to get POWO if CO exists
+        try:
+            if co_firebase_id:
+                cos = project.get("change_orders") or []
+                if isinstance(cos, dict):
+                    cos = list(cos.values())
+                for co in (cos if isinstance(cos, list) else []):
+                    if isinstance(co, dict) and co.get("firebase_id") == co_firebase_id:
+                        powo_number = co.get("po_wo_number", "").strip()
+                        break
+            site_address = project.get("site_address", "") or project.get("project_site_address", "")
+        except Exception as e:
+            log.warning(f"[BUILD_ITEM_WARN] Error getting CO/address: {e}")
 
-        # Get plant
-        plant = _project_plant_display(project)
-
-        log.info(f"[ENRICH_LINE] stage_name={stage_name}, co_firebase_id={co_firebase_id}, powo={powo_number}, site_addr={site_address}")
+        log.info(f"[BUILD_ITEM] stage={stage_name}, co_id={co_firebase_id}, powo={powo_number}")
 
         return {
             "description": stage_name,
             "quantity":    "1",
             "unit_price":  str(_safe_float(stage_data.get("amount", 0))),
             "amount":      str(_safe_float(stage_data.get("amount", 0))),
-            "project_number": proj_num,
+            "project_number": proj_num_arg,
             "stage_name": stage_name,
             "co_number": co_number,
             "co_firebase_id": co_firebase_id,
             "powo_number": powo_number,
             "site_address": site_address,
-            "plant": plant,
+            "plant": _project_plant_display(project) if project else "",
         }
 
     # Build line items: base stage first, then CO stages
-    try:
-        line_items = [_enrich_stage_line_item(stage, stage_idx, proj_num)]
-    except Exception as e:
-        log.error(f"[ENRICH_ERROR] Failed to enrich stage line item: {e}", exc_info=True)
-        line_items = [{
-            "description": stage.get("name", f"Payment Stage {stage_idx + 1}"),
-            "quantity":    "1",
-            "unit_price":  str(amount),
-            "amount":      str(amount),
-            "project_number": proj_num,
-        }]
+    line_items = [build_enriched_item(stage, stage_idx, proj_num)]
     linked_projects = [{"project_number": proj_num, "payment_stage_index": stage_idx}]
     total_amount = amount
 
     for co_idx, co_stage in co_pending:
         co_amt  = _safe_float(co_stage.get("amount", 0))
-        try:
-            line_items.append(_enrich_stage_line_item(co_stage, co_idx, proj_num))
-        except Exception as e:
-            log.error(f"[ENRICH_ERROR] Failed to enrich CO line item: {e}", exc_info=True)
-            line_items.append({
-                "description": co_stage.get("name", f"CO Stage {co_idx + 1}"),
-                "quantity":    "1",
-                "unit_price":  str(co_amt),
-                "amount":      str(co_amt),
-                "project_number": proj_num,
-            })
+        line_items.append(build_enriched_item(co_stage, co_idx, proj_num))
         linked_projects.append({"project_number": proj_num, "payment_stage_index": co_idx})
         total_amount += co_amt
 
