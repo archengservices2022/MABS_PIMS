@@ -235,15 +235,17 @@
                 {%- endif -%}
               </td>
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
-                {%- if addr -%}
-                  {{ addr }}
-                {%- elif co and ' – ' in desc -%}
-                  {%- set addr_part = desc.split(' – ', 1)[1].strip() if ' – ' in desc else '' -%}
-                  {{ addr_part }}
+                {%- if co -%}
+                  {%- if addr -%}
+                    {{ co }}<br><small style="color:#64748B;">{{ addr }}</small>
+                  {%- else -%}
+                    {{ co }}
+                  {%- endif -%}
                 {%- else -%}
                   {%- if 'co' in desc.lower() and ' – ' in desc -%}
+                    {%- set co_part = desc.split(' – ')[0].strip() -%}
                     {%- set addr_part = desc.split(' – ', 1)[1].strip() -%}
-                    {{ addr_part }}
+                    {{ co_part }}<br><small style="color:#64748B;">{{ addr_part }}</small>
                   {%- else -%}
                     {{ desc }}
                   {%- endif -%}
