@@ -204,7 +204,7 @@
 // Clear storage on logout/login page - ensures clean state on next session
 localStorage.removeItem('projects_page');
 localStorage.removeItem('project_tab');
-sessionStorage.removeItem('project_active_tab');
+sessionStorage.clear();
 
 function togglePw() {
   var f = document.getElementById('pwField');

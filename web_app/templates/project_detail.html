@@ -2494,17 +2494,20 @@ function confirmRejectChangeOrder() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+  const projectId = '{{ project.firebase_id }}';
+  const tabStorageKey = 'project_active_tab_' + projectId;
+
   // Store active tab when it changes
   const tabButtons = document.querySelectorAll('[data-bs-toggle="tab"]');
   tabButtons.forEach(tab => {
     tab.addEventListener('shown.bs.tab', function() {
       const tabName = this.getAttribute('href').replace('#tab-', '');
-      sessionStorage.setItem('project_active_tab', tabName);
+      sessionStorage.setItem(tabStorageKey, tabName);
     });
   });
 
-  // Restore previously active tab
-  const activeTab = sessionStorage.getItem('project_active_tab');
+  // Restore previously active tab for this project only
+  const activeTab = sessionStorage.getItem(tabStorageKey);
   if (activeTab) {
     const tabLink = document.querySelector(`[href="#tab-${activeTab}"]`);
     if (tabLink) {
