@@ -4330,7 +4330,10 @@ def project_edit(project_id):
 
         cache_bust("projects_list")
         flash("Project updated successfully.", "success")
-        return _redirect_project_detail(project_id)
+        # Preserve pagination state from form submission
+        page = request.form.get('page', request.args.get('page', '1'))
+        url = url_for('project_detail', project_id=project_id) + f"?page={page}"
+        return redirect(url)
     sales_people = [p.get("name","") for p in _load_sales_people() if p.get("name","")]
     return render_template("project_form.html", project=data, clients=clients,
                            sales_people=sales_people, prefill_quote="", is_new=False)

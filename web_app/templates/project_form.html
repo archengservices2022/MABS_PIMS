@@ -14,6 +14,7 @@
       action="{{ url_for('project_edit', project_id=project.firebase_id) if not is_new else url_for('project_new') }}"
       onsubmit="return validateProjectForm(event)">
   <input type="hidden" name="source_quote_id" value="{{ prefill_quote_id|default('') }}">
+  <input type="hidden" name="page" id="pageInput" value="1">
   <div class="row g-3">
     <div class="col-lg-8">
       <div class="card-panel mb-3">
@@ -1264,6 +1265,13 @@ document.addEventListener('DOMContentLoaded', function () {
   const prefill = "{{ prefill_quote }}";
   if (prefill && qInput.value) {
     lookupQuote(qInput.value);
+  }
+
+  // Preserve pagination when editing - capture page from URL query string
+  const urlParams = new URLSearchParams(window.location.search);
+  const pageNum = urlParams.get('page');
+  if (pageNum) {
+    document.getElementById('pageInput').value = pageNum;
   }
 });
 
