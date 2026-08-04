@@ -791,10 +791,7 @@ document.addEventListener('DOMContentLoaded', function () {
 // ?? Projects table pager ??????????????????????????????????????????????????????
 document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('projectsTableBody')) {
-    new TablePager('projectsPager', '#projectsTableBody', 'tr.project-row', 15);
-    _PAGERS['projectsPager'].refresh();
-
-    // Restore page from URL parameter or sessionStorage
+    // Get page from URL or sessionStorage BEFORE initializing pager
     const urlParams = new URLSearchParams(window.location.search);
     let pageNum = urlParams.get('page');
 
@@ -809,6 +806,10 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }
 
+    new TablePager('projectsPager', '#projectsTableBody', 'tr.project-row', 15);
+    _PAGERS['projectsPager'].refresh();
+
+    // Apply page number after pager is initialized
     if (pageNum && !isNaN(pageNum)) {
       const pager = _PAGERS['projectsPager'];
       const pageInt = parseInt(pageNum);
