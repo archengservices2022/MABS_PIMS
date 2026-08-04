@@ -236,14 +236,19 @@
                 {%- endif -%}
               </td>
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
+                {%- set contact = item.get('contact_name','') -%}
                 {%- if powo -%}
-                  {%- if addr -%}
+                  {%- if contact and addr -%}
+                    {{ powo }} - {{ contact }} {{ addr }}
+                  {%- elif addr -%}
                     {{ powo }} - {{ addr }}
                   {%- else -%}
                     {{ powo }}
                   {%- endif -%}
                 {%- elif co -%}
-                  {%- if addr -%}
+                  {%- if contact and addr -%}
+                    {{ co }} - {{ contact }} {{ addr }}
+                  {%- elif addr -%}
                     {{ co }} - {{ addr }}
                   {%- else -%}
                     {{ co }}
@@ -252,7 +257,11 @@
                   {%- if 'co' in desc.lower() and ' – ' in desc -%}
                     {%- set co_part = desc.split(' – ')[0].strip() -%}
                     {%- set addr_part = desc.split(' – ', 1)[1].strip() -%}
-                    {{ co_part }} - {{ addr_part }}
+                    {%- if contact -%}
+                      {{ co_part }} - {{ contact }} {{ addr_part }}
+                    {%- else -%}
+                      {{ co_part }} - {{ addr_part }}
+                    {%- endif -%}
                   {%- else -%}
                     {{ desc }}
                   {%- endif -%}

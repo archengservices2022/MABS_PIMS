@@ -5992,8 +5992,9 @@ def invoice_detail(invoice_id):
     # Refresh project payment stage amounts to ensure they're always current
     _update_project_stage_payment_status(invoice_id)
 
-    # Enrich line items with POWO if not already present (handles old invoices)
+    # Enrich line items with POWO and contact name if not already present (handles old invoices)
     line_items = data.get("line_items", []) or []
+    contact_name = data.get("meta", {}).get("contact_person", "") or data.get("meta", {}).get("bill_to_contact", "")
     if isinstance(line_items, list) and raw_proj:
         for item in line_items:
             if isinstance(item, dict):
@@ -6018,6 +6019,9 @@ def invoice_detail(invoice_id):
                                                 item["powo_number"] = powo
                                             break
                                 break
+                # Store contact name for template use
+                if contact_name and not item.get("contact_name"):
+                    item["contact_name"] = contact_name
 
     # Source quote — via the linked project's source_quote field
     source_quote = None
@@ -16983,6 +16987,8 @@ def _parse_invoice_form(form) -> dict:
 
     # Load all projects to enrich line items
     all_projects = fb_get("/projects") or {}
+    contact_person = form.get("contact_person", "").strip()
+
     def _get_project_by_number(proj_num):
         """Find project data by project_number."""
         if not proj_num:
@@ -17078,6 +17084,7 @@ def _parse_invoice_form(form) -> dict:
                 "co_number":      co_number,
                 "powo_number":    powo_number,
                 "site_address":   display_address,
+                "contact_name":   contact_person,
             })
 
     # Every distinct project referenced anywhere on this invoice (main selection +
