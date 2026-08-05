@@ -232,7 +232,12 @@
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
                 {%- set stage = item.get('stage_name','') -%}
                 {%- if proj -%}
-                  {{ proj }}
+                  {%- if ' – ' in proj -%}
+                    {%- set proj_clean = proj.split(' – ')[0].strip() -%}
+                    {{ proj_clean }}
+                  {%- else -%}
+                    {{ proj }}
+                  {%- endif -%}
                   {%- if stage %}<br><small style="color:#64748B;">{{ stage }}</small>{% endif -%}
                 {%- endif -%}
               </td>
