@@ -176,7 +176,7 @@
           <tbody id="invoiceTableBody">
             {% for inv in invoices %}
             {% set meta = inv.get('meta', {}) %}
-            <tr class="inv-row" onclick="location.href='{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}'"
+            <tr class="inv-row" onclick="location.href=getInvoiceDetailUrl('{{ inv.firebase_id }}');"
                 style="cursor:pointer;">
               <td style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
                 <span class="fw-bold text-teal" style="text-decoration:none;white-space:nowrap;">{{ meta.get('invoice_number','—') }}</span>
@@ -214,7 +214,7 @@
                   <i class="bi bi-check-circle"></i>
                 </button>
                 {% endif %}
-                <a href="{{ url_for('invoice_detail', invoice_id=inv.firebase_id) }}"
+                <a href="javascript:location.href=getInvoiceDetailUrl('{{ inv.firebase_id }}');"
                    class="btn btn-xs btn-outline-secondary">
                   <i class="bi bi-eye"></i>
                 </a>
@@ -394,6 +394,16 @@
 <script>
 const TODAY_ISO = {{ now.strftime('%Y-%m-%d') | tojson }}; // company-timezone "today", not the browser's local/UTC date
 
+// ?? Pagination state helpers ?????????????????????????????????????????????????
+function getCurrentPage() {
+  return _PAGERS['invoicePager'] ? _PAGERS['invoicePager'].page : 1;
+}
+
+function getInvoiceDetailUrl(invoiceId) {
+  const page = getCurrentPage();
+  return `{{ url_for('invoice_detail', invoice_id='') }}${invoiceId}?page=${page}`;
+}
+
 // ?? Quick Pay ????????????????????????????????????????????????????????????????
 async function quickPay(invoiceId, total, amountPaid, btn) {
   const fmt = v => CURRENCY_SYMBOL + parseFloat(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -417,12 +427,6 @@ async function quickPay(invoiceId, total, amountPaid, btn) {
   const resp = await fetch(`/invoicing/${invoiceId}/payment/sequential`, {method:'POST', body:form});
 
   if (resp.ok) {
-    try {
-      const currentPage = _PAGERS['invoicePager'] && _PAGERS['invoicePager'].page ? _PAGERS['invoicePager'].page : 1;
-      localStorage.setItem('invoicePageToRestore', currentPage.toString());
-    } catch (e) {
-      console.log('Could not save page:', e);
-    }
     location.reload();
   } else {
     btn.disabled = false;
@@ -451,7 +455,6 @@ function setInvRange(type) {
     fromEl.value = localDate(f);
     toEl.value   = localDate(now);
   }
-  localStorage.removeItem('invoicePageToRestore');
   form.submit();
 }
 
@@ -507,7 +510,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
   document.querySelectorAll('[data-bs-toggle="tab"]').forEach(function(link) {
     link.addEventListener('shown.bs.tab', function(e) {
-      localStorage.removeItem('invoicePageToRestore');
       const id = e.target.getAttribute('href').replace('#tab-', '');
       const url = new URL(window.location);
       url.searchParams.set('tab', id);
@@ -520,34 +522,21 @@ document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('invoiceTableBody')) {
     new TablePager('invoicePager', '#invoiceTableBody', 'tr.inv-row', 15);
 
-    // Restore page after a short delay to ensure all rows are rendered
-    setTimeout(function() {
-      try {
-        const savedPage = localStorage.getItem('invoicePageToRestore');
-        if (savedPage) {
-          const pageNum = parseInt(savedPage, 10);
-          if (pageNum > 0 && _PAGERS['invoicePager']) {
-            const totalPages = Math.max(1, Math.ceil((_PAGERS['invoicePager']._vis || []).length / _PAGERS['invoicePager'].pageSize));
-            if (pageNum <= totalPages) {
-              _PAGERS['invoicePager'].page = pageNum;
-            }
-          }
-          localStorage.removeItem('invoicePageToRestore');
-        }
-      } catch (e) {
-        console.log('Could not restore page:', e);
+    // Restore page from URL parameter (same as projects tab)
+    const urlParams = new URLSearchParams(window.location.search);
+    const savedPage = urlParams.get('page');
+    if (savedPage) {
+      const pageNum = parseInt(savedPage, 10);
+      if (pageNum > 0) {
+        _PAGERS['invoicePager'].page = pageNum;
       }
+      // Clean URL by removing page parameter
+      const cleanUrl = new URL(window.location);
+      cleanUrl.searchParams.delete('page');
+      window.history.replaceState({}, '', cleanUrl);
+    }
 
-      _PAGERS['invoicePager'].refresh();
-    }, 100);
-  }
-
-  // Clear saved page when filter form is submitted (filter changes should reset to page 1)
-  const filterForm = document.getElementById('invFilterForm');
-  if (filterForm) {
-    filterForm.addEventListener('submit', function() {
-      localStorage.removeItem('invoicePageToRestore');
-    });
+    _PAGERS['invoicePager'].refresh();
   }
 });
 </script>
