@@ -175,13 +175,13 @@
             <!-- Multi-project invoice -->
             {% for proj in linked_projects %}
             <div style="font-size:0.8rem; color:#64748B; margin-top:4px;">
-              Project: {{ proj.get('project_number','') }}{% if proj.get('project_name') %} — {{ proj.get('project_name','') }}{% endif %}
+              Project: <a href="{{ url_for('project_detail', project_id=proj.get('firebase_id','')) }}" style="color:#0D9488; text-decoration:none; font-weight:500; cursor:pointer;">{{ proj.get('project_number','') }}</a>{% if proj.get('project_name') %} — {{ proj.get('project_name','') }}{% endif %}
             </div>
             {% endfor %}
           {% elif meta.get('project_number') %}
             <!-- Single project invoice -->
             <div style="font-size:0.8rem; color:#64748B; margin-top:4px;">
-              Project: {{ meta.get('project_number') }}{% if linked_project and linked_project.get('project_name') %} — {{ linked_project.get('project_name','') }}{% endif %}
+              Project: <a href="{{ url_for('project_detail', project_id=linked_project.get('firebase_id','')) }}" style="color:#0D9488; text-decoration:none; font-weight:500; cursor:pointer;">{{ meta.get('project_number') }}</a>{% if linked_project and linked_project.get('project_name') %} — {{ linked_project.get('project_name','') }}{% endif %}
             </div>
           {% endif %}
           {% if meta.get('payment_stage') %}
