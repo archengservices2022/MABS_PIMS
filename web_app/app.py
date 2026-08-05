@@ -6135,11 +6135,31 @@ def invoice_detail(invoice_id):
                         if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
                             site_addr = pdata.get("site_address", "") or pdata.get("project_site_address", "")
                             if site_addr:
-                                # Remove state/zip/phone from address (keep contact name, street and city)
+                                # Truncate address using same logic as PDF - look for state code + zip
                                 import re
-                                # Remove everything from state code to end (state, zip, phone, etc)
-                                # Pattern: optional comma + whitespace + 2-letter state code + space + everything to end
-                                site_addr = re.sub(r',?\s*[A-Z]{2}\s+.*$', '', site_addr).strip()
+                                us_states = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"]
+                                state_idx = -1
+                                site_upper = site_addr.upper()
+                                for state in us_states:
+                                    # Look for state followed by space and digit
+                                    idx = site_upper.find(f" {state} ")
+                                    if idx != -1:
+                                        next_char_idx = idx + len(state) + 2
+                                        if next_char_idx < len(site_upper) and site_upper[next_char_idx].isdigit():
+                                            state_idx = idx
+                                            break
+                                    # Also try state at end with space before
+                                    if state_idx == -1:
+                                        idx = site_upper.find(f" {state}")
+                                        if idx != -1:
+                                            next_char_idx = idx + len(state) + 1
+                                            if next_char_idx < len(site_upper) and site_upper[next_char_idx].isdigit():
+                                                state_idx = idx
+                                                break
+
+                                if state_idx != -1:
+                                    site_addr = site_addr[:state_idx].strip().rstrip(",").strip()
+
                                 item["site_address"] = site_addr
                             break
 
