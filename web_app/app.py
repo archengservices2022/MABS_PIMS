@@ -6143,8 +6143,8 @@ def invoice_detail(invoice_id):
                                 # Truncate address - remove state code and everything after
                                 import re
                                 us_states = "AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY"
-                                # Find state code preceded by space
-                                pattern = rf'\s+({us_states})(?:\s|,|$)'
+                                # Find state code preceded by space/comma, followed by comma/space/digit/end (not a letter)
+                                pattern = rf'[\s,]+({us_states})(?=[\s,\d]|$)'
                                 match = re.search(pattern, site_addr, re.IGNORECASE)
                                 if match:
                                     site_addr = site_addr[:match.start()].strip().rstrip(",").strip()
@@ -18144,8 +18144,8 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         if processed_site_address:
             import re
             us_states = "AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY"
-            # Find state code preceded by space
-            pattern = rf'\s+({us_states})(?:\s|,|$)'
+            # Find state code preceded by space/comma, followed by comma/space/digit/end (not a letter)
+            pattern = rf'[\s,]+({us_states})(?=[\s,\d]|$)'
             match = re.search(pattern, processed_site_address, re.IGNORECASE)
             if match:
                 processed_site_address = processed_site_address[:match.start()].strip().rstrip(",").strip()
