@@ -268,8 +268,8 @@
                   {# For legacy stages, extract CO number (before the dash) #}
                   {% set co_part = stage_name.split(' – ')[0].strip() %}
                   {% set display_stage_name = co_part %}
-                {% elif 'Down Payment' in stage_name %}
-                  {# For down payment stages, display with percentage #}
+                {% elif loop.index0 == 0 %}
+                  {# First stage is always down payment, display with percentage #}
                   {% set contract_val = project.get('contract_value',0)|float %}
                   {% set stage_amount = s.get('amount',0)|float %}
                   {% if contract_val > 0 and stage_amount > 0 %}
@@ -278,8 +278,11 @@
                   {% else %}
                     {% set display_stage_name = stage_name %}
                   {% endif %}
+                {% elif loop.index0 == stages|length - 1 and stages|length > 2 %}
+                  {# Last stage (if there are multiple installments) is Final Payment #}
+                  {% set display_stage_name = 'Final Payment' %}
                 {% else %}
-                  {# For installment stages, display as Installment 1, Installment 2, etc. #}
+                  {# For other installment stages, display as Installment 1, Installment 2, etc. #}
                   {% set installment_num = loop.index0 %}
                   {% set display_stage_name = 'Installment ' + installment_num|string %}
                 {% endif %}
