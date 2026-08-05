@@ -6156,25 +6156,45 @@ def invoice_detail(invoice_id):
                 if not item.get("stage_name"):
                     co_num = item.get("co_number", "")
                     desc = item.get("description", "").strip()
+                    common_stages = ["Full Payment", "Down Payment", "Deposit", "Retainage", "Final Payment", "Mobilization"]
 
-                    # First try extracting from description format "Project Name — Stage Name"
-                    if " — " in desc:
+                    # Try different description formats to extract stage name
+                    extracted_stage = None
+
+                    # Format 1: "Project Name — Stage Name" (em-dash)
+                    if " — " in desc and not extracted_stage:
                         parts = desc.split(" — ")
                         if len(parts) >= 2:
-                            extracted_stage = parts[-1].strip()  # Get the last part after "—"
-                            common_stages = ["Full Payment", "Down Payment", "Deposit", "Retainage", "Final Payment", "Mobilization"]
-                            if extracted_stage in common_stages or any(extracted_stage.startswith(s) for s in common_stages):
-                                item["stage_name"] = extracted_stage
+                            candidate = parts[-1].strip()
+                            if candidate in common_stages or any(candidate.startswith(s) for s in common_stages):
+                                extracted_stage = candidate
 
-                    # Fallback to common payment stage names if not found in description
-                    if not item.get("stage_name"):
-                        common_stages = ["Full Payment", "Down Payment", "Deposit", "Retainage", "Final Payment", "Mobilization"]
+                    # Format 2: "Project Name - Stage Name" (hyphen)
+                    if " - " in desc and not extracted_stage:
+                        parts = desc.split(" - ")
+                        if len(parts) >= 2:
+                            candidate = parts[-1].strip()
+                            if candidate in common_stages or any(candidate.startswith(s) for s in common_stages):
+                                extracted_stage = candidate
+
+                    # Format 3: Exact match with common stage names
+                    if not extracted_stage:
                         for stage in common_stages:
                             if desc == stage or desc.startswith(stage):
-                                item["stage_name"] = stage
+                                extracted_stage = stage
                                 break
 
-                    # If CO number exists and no stage_name found, use CO number as stage name
+                    # Format 4: Stage name might be at the beginning
+                    if not extracted_stage:
+                        for stage in common_stages:
+                            if stage in desc:
+                                extracted_stage = stage
+                                break
+
+                    if extracted_stage:
+                        item["stage_name"] = extracted_stage
+
+                    # If CO number exists and no stage_name found, use CO number as stage name (CO stages only)
                     if not item.get("stage_name") and co_num:
                         item["stage_name"] = co_num
 
