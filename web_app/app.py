@@ -6235,16 +6235,9 @@ def invoice_detail(invoice_id):
                                         powo = co.get("po_wo_number", "").strip()
                                         if powo:
                                             item["powo_number"] = powo
-                                        # Also update stage_name if it's a CO
-                                        if not item.get("stage_name") or item.get("stage_name") == co_num:
-                                            co_name = co.get("name", "").strip()
-                                            item["stage_name"] = co_name if co_name else co_num
                                         break
                     except Exception:
                         pass
-
-                # DEBUG: Log the stage_name for this line item
-                log.info(f"[INVOICE_DETAIL] proj={proj_num}, co_num={co_num}, co_firebase_id={item.get('co_firebase_id','')}, stored_stage_name={item.get('stage_name','')}")
 
                 # Always fetch fresh POWO from project for non-CO stages (auto-updates when project POWO changes)
                 if proj_num:
