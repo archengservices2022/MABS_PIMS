@@ -7104,7 +7104,8 @@ def invoice_delete(invoice_id):
     if _perm:
         fb_update(f"/permission_requests/{_perm['firebase_id']}", {"status": "completed"})
     flash("Invoice deleted successfully", "success")
-    return redirect(url_for("invoicing"))
+    page = request.form.get('page', '1')
+    return redirect(url_for("invoicing", page=page))
 
 @app.route("/invoicing/<invoice_id>/restore", methods=["POST"])
 @role_required("invoicing")
