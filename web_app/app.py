@@ -6142,27 +6142,12 @@ def invoice_detail(invoice_id):
                             if site_addr:
                                 # Truncate address - remove state code and everything after
                                 import re
-                                us_states = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"]
-                                state_idx = -1
-                                site_upper = site_addr.upper()
-                                for state in us_states:
-                                    # Look for space + state code + comma or space
-                                    idx = site_upper.find(f" {state},")
-                                    if idx != -1:
-                                        state_idx = idx
-                                        break
-                                    # Also try state with space after it (no comma)
-                                    idx = site_upper.find(f" {state} ")
-                                    if idx != -1:
-                                        state_idx = idx
-                                        break
-                                    # Try state at end with space before
-                                    idx = site_upper.find(f" {state}")
-                                    if idx != -1 and state_idx == -1:
-                                        state_idx = idx
-
-                                if state_idx != -1:
-                                    site_addr = site_addr[:state_idx].strip().rstrip(",").strip()
+                                us_states = "AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY"
+                                # Find state code preceded by space
+                                pattern = rf'\s+({us_states})(?:\s|,|$)'
+                                match = re.search(pattern, site_addr, re.IGNORECASE)
+                                if match:
+                                    site_addr = site_addr[:match.start()].strip()
 
                                 item["site_address"] = site_addr
                             break
