@@ -18,6 +18,7 @@
   {% endif %}
 
 <form method="POST">
+  <input type="hidden" name="page" value="{{ request.args.get('page') }}">
   <div class="row g-3">
     <!-- Left column -->
     <div class="col-lg-8">

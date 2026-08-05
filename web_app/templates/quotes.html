@@ -185,7 +185,7 @@
                 data-status="{{ q.get('status','Not Started') }}"
                 data-total="{{ q.get('total',0)|float }}"
                 data-search="{{ q.get('client_name','')|lower }} {{ q.get('job_number','')|lower }} {{ q.get('project_name','')|lower }}"
-                onclick="location.href='{{ url_for('quote_detail', quote_id=q.firebase_id) }}'"
+                onclick="location.href=getQuoteDetailUrl('{{ q.firebase_id }}')"
                 style="cursor:pointer;">
               <td><span class="fw-bold text-teal">{{ q.get('job_number','—') }}</span></td>
               <td>{{ q.get('company_name') or q.get('client_name','—') }}</td>
@@ -686,7 +686,7 @@
             {% for q in follow_ups %}
             <tr>
               <td>
-                <a href="{{ url_for('quote_detail', quote_id=q.firebase_id) }}"
+                <a href="javascript:location.href=getQuoteDetailUrl('{{ q.firebase_id }}');"
                    class="fw-bold text-teal text-decoration-none">
                   {{ q.get('job_number','—') }}
                 </a>
@@ -743,7 +743,7 @@
                     </button>
                   </form>
                   <!-- Open -->
-                  <a href="{{ url_for('quote_detail', quote_id=q.firebase_id) }}"
+                  <a href="javascript:location.href=getQuoteDetailUrl('{{ q.firebase_id }}');"
                      class="btn btn-xs btn-outline-primary" title="Open quote">
                     <i class="bi bi-arrow-right"></i>
                   </a>
@@ -796,7 +796,7 @@
             {% set days_ahead = q.get('_fu_days_ahead', 0) %}
             <tr>
               <td>
-                <a href="{{ url_for('quote_detail', quote_id=q.firebase_id) }}"
+                <a href="javascript:location.href=getQuoteDetailUrl('{{ q.firebase_id }}');"
                    class="fw-bold text-teal text-decoration-none">
                   {{ q.get('job_number','—') }}
                 </a>
@@ -992,6 +992,16 @@
 
 {% block scripts %}
 <script>
+// ?? Pagination state helpers ?????????????????????????????????????????????????
+function getCurrentQuotePage() {
+  return _PAGERS['quotesPager'] ? _PAGERS['quotesPager'].page : 1;
+}
+
+function getQuoteDetailUrl(quoteId) {
+  const page = getCurrentQuotePage();
+  return `{{ url_for('quote_detail', quote_id='') }}${quoteId}?page=${page}`;
+}
+
 // ?? Activate correct tab from ?tab= URL param ?????????????????????????????????
 (function() {
   const map = { all:'#tab-all', new:'#tab-new', salespeople:'#tab-salespeople', followups:'#tab-followups', export:'#tab-export', archived:'#tab-archived-quotes', 'archived-quotes':'#tab-archived-quotes' };

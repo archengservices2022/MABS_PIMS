@@ -6,7 +6,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div class="d-flex align-items-center gap-2">
-    <a href="{{ url_for('invoicing') }}" class="btn btn-sm btn-outline-secondary">
+    <a href="{{ url_for('invoicing') }}{% if request.args.get('page') %}?page={{ request.args.get('page') }}{% endif %}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-arrow-left"></i>
     </a>
     <h5 class="mb-0">{{ meta.get('invoice_number','Invoice') }}</h5>
@@ -30,6 +30,7 @@
     </a>
     <form method="POST" action="{{ url_for('invoice_send', invoice_id=invoice.firebase_id) }}"
           onsubmit="return confirm('{{ 'Send receipt to' if meta.get('status') == 'Paid' else 'Send invoice to' }} {{ meta.get('company_name') or meta.get('client_name','client') }}?');">
+      <input type="hidden" name="page" id="sendPageInput" value="1">
       {% if meta.get('status') == 'Paid' %}
       <button type="submit" class="btn btn-sm btn-outline-success">
         <i class="bi bi-envelope-check me-1"></i>Send Receipt
@@ -376,6 +377,7 @@
           <div class="mb-0"><label class="form-label form-label-sm" style="color:#374151; font-weight:500;">Reference #</label><input type="text" name="reference" class="form-control form-control-sm" placeholder="Check #, Wire ref, etc."></div>
         </div>
 
+        <input type="hidden" name="page" id="statusPageInput" value="1">
         <button type="button" class="btn btn-sm btn-teal w-100 mt-2" onclick="handleStatusUpdate()">Update</button>
       </form>
     </div>
@@ -567,7 +569,8 @@
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
           <i class="bi bi-x-lg me-1"></i>Cancel — Keep Invoice
         </button>
-        <form method="POST" action="{{ url_for('invoice_delete', invoice_id=invoice.firebase_id) }}">
+        <form method="POST" action="{{ url_for('invoice_delete', invoice_id=invoice.firebase_id) }}" id="deleteForm">
+          <input type="hidden" name="page" id="deletePageInput" value="1">
           <button type="submit" id="deleteConfirmBtn" class="btn btn-danger" disabled>
             <i class="bi bi-trash me-1"></i>Yes, Delete Permanently
           </button>
@@ -1086,6 +1089,27 @@ function copyReminder() {
   const body = document.getElementById('reminderBody').value;
   navigator.clipboard.writeText('Subject: ' + subj + '\n\n' + body);
 }
+
+// Preserve page number when deleting, updating status, or sending invoice
+document.addEventListener('DOMContentLoaded', function() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const page = urlParams.get('page') || '1';
+
+  const deletePageInput = document.getElementById('deletePageInput');
+  if (deletePageInput) {
+    deletePageInput.value = page;
+  }
+
+  const statusPageInput = document.getElementById('statusPageInput');
+  if (statusPageInput) {
+    statusPageInput.value = page;
+  }
+
+  const sendPageInput = document.getElementById('sendPageInput');
+  if (sendPageInput) {
+    sendPageInput.value = page;
+  }
+});
 
 // Direct Send Reminder button
 const sendReminderBtn = document.getElementById('sendReminderBtn');
