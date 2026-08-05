@@ -5947,6 +5947,8 @@ def invoice_new():
             stage_indices = [int(idx.strip()) if idx.strip().isdigit() else None
                            for idx in item_stage_index_param.split(",")]
 
+        log.info(f"[INVOICE_NEW] Multiple projects: {project_ids}, stage_indices param: '{item_stage_index_param}', parsed: {stage_indices}")
+
         all_projects_data = fb_get("/projects") or {}
         raw_invoices = fb_get("/invoices") or {}
 
@@ -5975,12 +5977,14 @@ def invoice_new():
                         else:
                             next_stage_name = ""
                         stage_amount = stages[next_stage_idx].get("amount", 0) if isinstance(stages[next_stage_idx], dict) else 0
+                        log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): using stage_idx={next_stage_idx}, stage_name='{next_stage_name}'")
                     else:
                         # Auto-detect next payment stage for this project
                         detection = _get_next_payment_stage(proj_data, raw_invoices)
                         next_stage_idx = detection.get("stage_idx")
                         next_stage_name = detection.get("stage_name")
                         stage_amount = detection.get("amount", 0)
+                        log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): auto-detected stage_idx={next_stage_idx}, stage_name='{next_stage_name}'")
 
                     # Use stage amount if available, otherwise use outstanding balance
                     if stage_amount > 0 and next_stage_idx is not None:
