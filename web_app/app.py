@@ -17825,7 +17825,12 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
     elif not isinstance(linked_projects, list):
         linked_projects = []
 
-    for idx, item in enumerate(invoice.get("line_items", [])):
+    # Sort line items by project number in ascending order
+    line_items_to_display = invoice.get("line_items", [])
+    if isinstance(line_items_to_display, list):
+        line_items_to_display = sorted(line_items_to_display, key=lambda x: x.get("project_number", ""))
+
+    for idx, item in enumerate(line_items_to_display):
         qty_val = _safe_float(item.get("quantity", 1))
         qty = str(int(qty_val)) if qty_val == int(qty_val) else str(qty_val)
         unit_price_val = _safe_float(item.get('unit_price', 0))
