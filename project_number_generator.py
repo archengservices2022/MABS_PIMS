@@ -11754,7 +11754,7 @@ class ProjectDialog(QtWidgets.QDialog):
         try:
             parent = self.parent()
             if not hasattr(parent, 'generated_projects') or not parent.generated_projects:
-                return 1
+                return 101
             
             max_sequence = 0
             import re
