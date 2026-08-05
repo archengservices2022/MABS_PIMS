@@ -265,23 +265,15 @@
                   {%- else -%}
                     {{ powo }}
                   {%- endif -%}
-                {%- elif co -%}
-                  {%- if addr -%}
-                    {{ co }} - {{ addr }}
-                  {%- else -%}
-                    {{ co }}
-                  {%- endif -%}
+                {%- elif addr -%}
+                  {%- set addr_clean = addr.split(' – ')[0].strip() if ' – ' in addr else addr -%}
+                  {{ addr_clean }}
+                {%- elif 'co' in desc.lower() and ' – ' in desc -%}
+                  {%- set co_part = desc.split(' – ')[0].strip() -%}
+                  {%- set addr_part = desc.split(' – ', 1)[1].strip() -%}
+                  {{ co_part }} - {{ addr_part }}
                 {%- else -%}
-                  {%- if 'co' in desc.lower() and ' – ' in desc -%}
-                    {%- set co_part = desc.split(' – ')[0].strip() -%}
-                    {%- set addr_part = desc.split(' – ', 1)[1].strip() -%}
-                    {{ co_part }} - {{ addr_part }}
-                  {%- elif addr -%}
-                    {%- set addr_clean = addr.split(' – ')[0].strip() if ' – ' in addr else addr -%}
-                    {{ addr_clean }}
-                  {%- else -%}
-                    {{ desc }}
-                  {%- endif -%}
+                  {{ desc }}
                 {%- endif -%}
               </td>
               <td style="padding:14px 16px; color:#64748B; text-align:center;">{{ item.get('plant','') }}</td>
