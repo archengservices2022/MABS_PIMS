@@ -5916,6 +5916,7 @@ def invoice_new():
     stage_name   = request.args.get("stage_name", "")
     stage_amount = request.args.get("stage_amount", "")
     multiple_projects = request.args.get("projects", "")  # Comma-separated firebase IDs
+    item_stage_index_param = request.args.get("item_stage_index", "")  # Comma-separated stage indices from modal
 
 
     prefill_name   = ""
@@ -5940,6 +5941,12 @@ def invoice_new():
     # Handle multiple projects from modal (one line item per project, matching desktop software)
     if multiple_projects:
         project_ids = [pid.strip() for pid in multiple_projects.split(",") if pid.strip()]
+        # Parse stage indices from query parameter (comma-separated)
+        stage_indices = []
+        if item_stage_index_param:
+            stage_indices = [int(idx.strip()) if idx.strip().isdigit() else None
+                           for idx in item_stage_index_param.split(",")]
+
         all_projects_data = fb_get("/projects") or {}
         raw_invoices = fb_get("/invoices") or {}
 
@@ -5951,18 +5958,29 @@ def invoice_new():
                 # Auto-fill client from first project's company_name
                 prefill_client = single_proj_data.get("company_name") or single_proj_data.get("client_name", "")
 
-        for proj_id in project_ids:
+        for i, proj_id in enumerate(project_ids):
             if proj_id in all_projects_data:
                 proj_data = all_projects_data[proj_id]
                 if isinstance(proj_data, dict):
                     proj_num = proj_data.get("project_number", "")
                     proj_name = proj_data.get("project_name", "")
 
-                    # Detect next payment stage for this project
-                    detection = _get_next_payment_stage(proj_data, raw_invoices)
-                    next_stage_idx = detection.get("stage_idx")
-                    next_stage_name = detection.get("stage_name")
-                    stage_amount = detection.get("amount", 0)
+                    # Use provided stage index if available, otherwise auto-detect
+                    if i < len(stage_indices) and stage_indices[i] is not None:
+                        next_stage_idx = stage_indices[i]
+                        # Get stage name from project's payment_stages using the provided index
+                        stages = proj_data.get("payment_stages", [])
+                        if isinstance(stages, list) and 0 <= next_stage_idx < len(stages):
+                            next_stage_name = stages[next_stage_idx].get("name", "") if isinstance(stages[next_stage_idx], dict) else ""
+                        else:
+                            next_stage_name = ""
+                        stage_amount = stages[next_stage_idx].get("amount", 0) if isinstance(stages[next_stage_idx], dict) else 0
+                    else:
+                        # Auto-detect next payment stage for this project
+                        detection = _get_next_payment_stage(proj_data, raw_invoices)
+                        next_stage_idx = detection.get("stage_idx")
+                        next_stage_name = detection.get("stage_name")
+                        stage_amount = detection.get("amount", 0)
 
                     # Use stage amount if available, otherwise use outstanding balance
                     if stage_amount > 0 and next_stage_idx is not None:
