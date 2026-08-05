@@ -220,7 +220,17 @@
         {% set stages = project.get('payment_stages') or [] %}
         {% if stages %}
         {% set ns = namespace(first_pending=none) %}
+        {# Count down payment and installment stages #}
+        {% set down_payment_count = 0 %}
+        {% set installment_count = 0 %}
         {% for s in stages %}
+          {% if s.get('co_number') or ('CO' in s.get('name','') and ' – ' in s.get('name','')) %}
+            {# Skip CO stages #}
+          {% elif 'Down Payment' in s.get('name','') %}
+            {% set down_payment_count = down_payment_count + 1 %}
+          {% else %}
+            {% set installment_count = installment_count + 1 %}
+          {% endif %}
           {% if ns.first_pending is none and s.get('status') == 'Pending Invoice' %}
             {% set ns.first_pending = loop.index0 %}
           {% endif %}
@@ -278,19 +288,30 @@
                   {% else %}
                     {% set display_stage_name = stage_name %}
                   {% endif %}
-                {% elif loop.index0 == stages|length - 1 %}
-                  {# Last stage is Final Payment #}
-                  {% set display_stage_name = 'Final Payment' %}
                 {% else %}
-                  {# For other installment stages, display as Installment 1, Installment 2, etc. #}
-                  {# Count how many non-down-payment, non-CO stages come before this one #}
-                  {% set installment_num = 1 %}
+                  {# Installment stages #}
+                  {% set current_installment_num = 0 %}
                   {% for prev_stage in stages[:loop.index0] %}
-                    {% if 'Down Payment' not in prev_stage.get('name','') and not prev_stage.get('co_number') %}
-                      {% set installment_num = installment_num + 1 %}
+                    {% if 'Down Payment' not in prev_stage.get('name','') and not prev_stage.get('co_number') and not ('CO' in prev_stage.get('name','') and ' – ' in prev_stage.get('name','')) %}
+                      {% set current_installment_num = current_installment_num + 1 %}
                     {% endif %}
                   {% endfor %}
-                  {% set display_stage_name = 'Installment ' + installment_num|string %}
+                  {% set current_installment_num = current_installment_num + 1 %}
+
+                  {# Determine display format based on total installments #}
+                  {% if installment_count == 1 and down_payment_count > 0 %}
+                    {# Single installment with down payment = Final Payment #}
+                    {% set display_stage_name = 'Final Payment' %}
+                  {% elif installment_count == 1 %}
+                    {# Single installment without down payment = Final Payment #}
+                    {% set display_stage_name = 'Final Payment' %}
+                  {% elif down_payment_count > 0 %}
+                    {# Multiple installments with down payment = "Installment X of Y" #}
+                    {% set display_stage_name = 'Installment ' + current_installment_num|string + ' of ' + installment_count|string %}
+                  {% else %}
+                    {# Multiple installments without down payment = "Installment X of Y" #}
+                    {% set display_stage_name = 'Installment ' + current_installment_num|string + ' of ' + installment_count|string %}
+                  {% endif %}
                 {% endif %}
                 <tr>
                   <td>{{ display_stage_name }}</td>
