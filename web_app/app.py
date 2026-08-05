@@ -18959,7 +18959,8 @@ def invoice_send(invoice_id):
     except Exception as exc:
         log.error("invoice_send error for %s: %s", invoice_id, exc)
         flash(f"Failed to send: {exc}", "danger")
-    return redirect(url_for("invoice_detail", invoice_id=invoice_id))
+    page = request.form.get('page', '1')
+    return redirect(url_for("invoice_detail", invoice_id=invoice_id, page=page))
 
 @app.route("/quotes/<quote_id>/send", methods=["POST"])
 @role_required("quotes")
