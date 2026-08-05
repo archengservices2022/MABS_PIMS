@@ -244,9 +244,9 @@
                   {%- endif -%}
                   {%- set proj_firebase_id = proj_firebase_map.get(proj_clean, '') -%}
                   {%- if proj_firebase_id -%}
-                    <a href="/projects/{{ proj_firebase_id }}" style="color:#15803D; text-decoration:none; cursor:pointer; font-weight:700;">{{ proj_clean }}</a>
+                    <a href="/projects/{{ proj_firebase_id }}" style="color:#0F766E; text-decoration:none; cursor:pointer; font-weight:700;">{{ proj_clean }}</a>
                   {%- else -%}
-                    <span style="color:#15803D; font-weight:700;">{{ proj_clean }}</span>
+                    <span style="color:#0F766E; font-weight:700;">{{ proj_clean }}</span>
                   {%- endif -%}
                   {%- set display_stage = item.get('display_stage_name', '') -%}
                   {%- if display_stage -%}
