@@ -20287,26 +20287,9 @@ def quick_invoice_stage(project_id, stage_idx):
         # Build enriched line items for this stage
         co_number = stage.get("co_number", "")
         co_firebase_id = stage.get("co_firebase_id", "")
+
+        # Get POWO: try CO first, then project level (same logic as invoice_new)
         powo_number = ""
-        site_address = project.get("site_address", "") or project.get("project_site_address", "")
-
-        # Truncate address to remove state/zip/phone (keep only street and city)
-        if site_address:
-            import re
-            # Remove phone numbers (e.g., "T: (801) 205-9365")
-            site_address = re.sub(r'\s+T:\s+\([^)]+\)[^\s]*', '', site_address)
-            site_address = re.sub(r'\s+Phone:\s+\([^)]+\)[^\s]*', '', site_address)
-
-            # Split by comma and remove state/zip part
-            addr_parts = site_address.split(",")
-            if len(addr_parts) > 1:
-                last_part = addr_parts[-1].strip()
-                # State codes are typically 2 chars, or have zip pattern
-                if len(last_part) <= 15 or any(c.isdigit() for c in last_part):
-                    # Remove last part (likely state/zip)
-                    site_address = ", ".join(addr_parts[:-1]).strip()
-
-        # Get POWO from CO if available
         if co_firebase_id:
             cos = project.get("change_orders") or []
             if isinstance(cos, dict):
@@ -20314,7 +20297,14 @@ def quick_invoice_stage(project_id, stage_idx):
             for co in (cos if isinstance(cos, list) else []):
                 if isinstance(co, dict) and co.get("firebase_id") == co_firebase_id:
                     powo_number = co.get("po_wo_number", "").strip()
-                    break
+                    if powo_number:
+                        break
+
+        # Fallback to project-level POWO if CO doesn't have one
+        if not powo_number:
+            powo_number = project.get("po_wo_number", "").strip()
+
+        log.info(f"[QUICK_INVOICE] stage_idx=???, stage_name={stage_name}, co_id={co_firebase_id}, powo={powo_number}")
 
         log.info(f"[QUICK_INVOICE] stage_idx={stage_idx}, stage_name={stage_name}, co_id={co_firebase_id}, powo={powo_number}")
 
