@@ -268,18 +268,16 @@
                   {# For legacy stages, extract CO number (before the dash) #}
                   {% set co_part = stage_name.split(' – ')[0].strip() %}
                   {% set display_stage_name = co_part %}
-                {% elif loop.index0 == 0 and 'Down Payment' in stage_name %}
-                  {# Auto-calculate correct percentage for first stage #}
+                {% else %}
+                  {# For non-CO stages, display stage name with percentage #}
                   {% set contract_val = project.get('contract_value',0)|float %}
                   {% set stage_amount = s.get('amount',0)|float %}
-                  {% if contract_val > 0 %}
-                    {% set correct_pct = ((stage_amount / contract_val) * 100)|round|int %}
-                    {% set display_stage_name = 'Down Payment (' + correct_pct|string + '%)' %}
+                  {% if contract_val > 0 and stage_amount > 0 %}
+                    {% set pct = ((stage_amount / contract_val) * 100)|round|int %}
+                    {% set display_stage_name = stage_name + ' (' + pct|string + '%)' %}
                   {% else %}
                     {% set display_stage_name = stage_name %}
                   {% endif %}
-                {% else %}
-                  {% set display_stage_name = stage_name %}
                 {% endif %}
                 <tr>
                   <td>{{ display_stage_name }}</td>
