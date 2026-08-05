@@ -258,26 +258,31 @@
                 {%- endif -%}
               </td>
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
-                {%- if powo -%}
-                  {%- if addr -%}
-                    {{ powo }} - {{ addr }}
+                <div>
+                  {%- if powo -%}
+                    {%- if addr -%}
+                      {{ powo }} - {{ addr }}
+                    {%- else -%}
+                      {{ powo }}
+                    {%- endif -%}
+                  {%- elif co -%}
+                    {%- if addr -%}
+                      {{ co }} - {{ addr }}
+                    {%- else -%}
+                      {{ co }}
+                    {%- endif -%}
                   {%- else -%}
-                    {{ powo }}
+                    {%- if 'co' in desc.lower() and ' – ' in desc -%}
+                      {%- set co_part = desc.split(' – ')[0].strip() -%}
+                      {%- set addr_part = desc.split(' – ', 1)[1].strip() -%}
+                      {{ co_part }} - {{ addr_part }}
+                    {%- else -%}
+                      {{ desc }}
+                    {%- endif -%}
                   {%- endif -%}
-                {%- elif co -%}
-                  {%- if addr -%}
-                    {{ co }} - {{ addr }}
-                  {%- else -%}
-                    {{ co }}
-                  {%- endif -%}
-                {%- else -%}
-                  {%- if 'co' in desc.lower() and ' – ' in desc -%}
-                    {%- set co_part = desc.split(' – ')[0].strip() -%}
-                    {%- set addr_part = desc.split(' – ', 1)[1].strip() -%}
-                    {{ co_part }} - {{ addr_part }}
-                  {%- else -%}
-                    {{ desc }}
-                  {%- endif -%}
+                </div>
+                {%- if stage and stage != item.get('co_number','') -%}
+                <div style="color:#64748B; font-size:0.85rem; margin-top:2px;">{{ stage.split(' – ')[0].strip() if ' – ' in stage else stage }}</div>
                 {%- endif -%}
               </td>
               <td style="padding:14px 16px; color:#64748B; text-align:center;">{{ item.get('plant','') }}</td>
