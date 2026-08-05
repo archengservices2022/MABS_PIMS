@@ -5342,9 +5342,11 @@ def api_get_projects(project_ids):
                     if detection.get("stage_name"):
                         proj["next_stage"] = detection.get("stage_name")
                         proj["next_stage_amount"] = detection.get("amount", 0)
+                        proj["next_stage_index"] = detection.get("stage_idx", "")
                     else:
                         proj["next_stage"] = "Fully Invoiced"
                         proj["next_stage_amount"] = 0
+                        proj["next_stage_index"] = ""
                     proj["stage_blocked"] = detection.get("blocked", False)
                     proj["stage_reason"] = detection.get("reason", "")
                 except Exception as e:
@@ -5453,14 +5455,17 @@ def create_bulk_invoices():
 
         if created_invoice_ids:
             flash(f"Created {len(created_invoice_ids)} invoice(s) successfully.", "success")
-            return jsonify({"success": True, "invoice_ids": created_invoice_ids})
+            # Redirect to the first created invoice
+            return redirect(url_for("invoice_detail", invoice_id=created_invoice_ids[0]))
         else:
-            return jsonify({"success": False, "error": "No invoices created. All selected projects may be fully invoiced."}), 400
+            flash("No invoices created. All selected projects may be fully invoiced.", "warning")
+            return redirect(url_for("invoicing"))
 
     except Exception as e:
         import traceback
         log.error("Bulk invoice creation error: %s", traceback.format_exc())
-        return jsonify({"success": False, "error": str(e)}), 500
+        flash(f"Error creating invoices: {str(e)}", "danger")
+        return redirect(url_for("invoicing"))
 
 @app.route("/projects/<project_id>/change-orders/<int:co_idx>/invoice", methods=["GET"])
 @role_required("invoicing")
@@ -6135,19 +6140,15 @@ def invoice_detail(invoice_id):
                         if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
                             site_addr = pdata.get("site_address", "") or pdata.get("project_site_address", "")
                             if site_addr:
-                                # Remove phone and state/zip from address (keep contact name, street and city)
+                                # Truncate address - remove state code and everything after
                                 import re
-                                # Remove phone numbers
-                                site_addr = re.sub(r'\s+T:\s+\([^)]+\)[^\s]*', '', site_addr)
-                                site_addr = re.sub(r'\s+Phone:\s+\([^)]+\)[^\s]*', '', site_addr)
+                                us_states = "AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY"
+                                # Find state code followed by comma+space+digit (like ", IL 6") or space+digit (like " IL 6") or end
+                                pattern = rf'\s+({us_states})(?:,\s*\d|\s+\d|$)'
+                                match = re.search(pattern, site_addr, re.IGNORECASE)
+                                if match:
+                                    site_addr = site_addr[:match.start()].strip().rstrip(",").strip()
 
-                                # Remove state/zip part
-                                parts = site_addr.split(",")
-                                if len(parts) > 1:
-                                    last_part = parts[-1].strip()
-                                    # State codes are 2+ chars with digits, or zip pattern
-                                    if len(last_part) <= 15 or any(c.isdigit() for c in last_part):
-                                        site_addr = ", ".join(parts[:-1]).strip()
                                 item["site_address"] = site_addr
                             break
 
@@ -6193,30 +6194,38 @@ def invoice_detail(invoice_id):
                     except Exception:
                         pass
 
-                # If POWO not set, try to extract from project
-                if not item.get("powo_number") and proj_num:
+                # Always fetch fresh POWO from project for non-CO stages (auto-updates when project POWO changes)
+                if proj_num:
                     co_num = item.get("co_number", "")
-                    # Find project and get POWO
-                    for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
-                        if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
-                            # Get POWO from project first
-                            powo = pdata.get("po_wo_number", "").strip()
-                            if not powo and co_num:
-                                # Then try from CO
-                                cos = pdata.get("change_orders") or []
-                                if isinstance(cos, dict):
-                                    cos = list(cos.values())
-                                for co in (cos if isinstance(cos, list) else []):
-                                    if isinstance(co, dict):
-                                        if (co.get("co_number") == co_num or
-                                            co_num in co.get("name", "") or
-                                            co.get("name", "").startswith(co_num)):
-                                            powo = co.get("po_wo_number", "").strip()
-                                            if powo:
+                    is_co_stage = bool(co_num or item.get("co_firebase_id"))
+
+                    # For non-CO stages, always get fresh POWO from project
+                    if not is_co_stage:
+                        for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
+                            if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
+                                powo = pdata.get("po_wo_number", "").strip()
+                                if powo:
+                                    item["powo_number"] = powo
+                                break
+                    else:
+                        # For CO stages, only set if not already fetched from CO
+                        if not item.get("powo_number"):
+                            for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
+                                if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
+                                    # Try from CO first
+                                    cos = pdata.get("change_orders") or []
+                                    if isinstance(cos, dict):
+                                        cos = list(cos.values())
+                                    for co in (cos if isinstance(cos, list) else []):
+                                        if isinstance(co, dict):
+                                            if (co.get("co_number") == co_num or
+                                                co_num in co.get("name", "") or
+                                                co.get("name", "").startswith(co_num)):
+                                                powo = co.get("po_wo_number", "").strip()
+                                                if powo:
+                                                    item["powo_number"] = powo
                                                 break
-                            if powo:
-                                item["powo_number"] = powo
-                            break
+                                    break
 
                 # Fetch plant fresh from project (always update, don't store snapshot)
                 if proj_num:
@@ -6225,6 +6234,35 @@ def invoice_detail(invoice_id):
                             plant = pdata.get("plant", "").strip()
                             if plant:
                                 item["plant"] = plant
+
+                            # For non-CO stages, fetch real stage name with percentage from project
+                            co_num = item.get("co_number", "")
+                            is_co_stage = bool(co_num or item.get("co_firebase_id"))
+                            if not is_co_stage:
+                                # Try to get payment_stage_index from linked_projects or item
+                                payment_stage_index = None
+                                for lp in linked_projects:
+                                    if isinstance(lp, dict) and lp.get("project_number") == proj_num:
+                                        payment_stage_index = lp.get("payment_stage_index")
+                                        break
+                                if payment_stage_index is None:
+                                    payment_stage_index = item.get("payment_stage_index")
+                                if payment_stage_index is None:
+                                    payment_stage_index = data.get("meta", {}).get("payment_stage_index")
+
+                                # Fetch real stage name and percentage
+                                if payment_stage_index is not None:
+                                    payment_stages = pdata.get("payment_stages", [])
+                                    if isinstance(payment_stages, list) and int(payment_stage_index) < len(payment_stages):
+                                        stage_data = payment_stages[int(payment_stage_index)]
+                                        if isinstance(stage_data, dict):
+                                            stage_name = stage_data.get("name", "")
+                                            stage_percentage = stage_data.get("percentage", "")
+                                            if stage_name:
+                                                if stage_percentage:
+                                                    item["display_stage_name"] = f"{stage_name} {stage_percentage}%"
+                                                else:
+                                                    item["display_stage_name"] = stage_name
                             break
 
     # Source quote — via the linked project's source_quote field
@@ -6235,6 +6273,11 @@ def invoice_detail(invoice_id):
             source_quote = fb_get(f"/job_forms/{sq_id}") or None
             if source_quote:
                 source_quote["firebase_id"] = sq_id
+
+    # Sort line items by project number in ascending order
+    line_items = data.get("line_items", [])
+    if isinstance(line_items, list):
+        data["line_items"] = sorted(line_items, key=lambda x: x.get("project_number", ""))
 
     _uid  = session.get("user_uid", "")
     _role = normalize_role(session.get("user_role", ""))
@@ -17811,7 +17854,12 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
     elif not isinstance(linked_projects, list):
         linked_projects = []
 
-    for idx, item in enumerate(invoice.get("line_items", [])):
+    # Sort line items by project number in ascending order
+    line_items_to_display = invoice.get("line_items", [])
+    if isinstance(line_items_to_display, list):
+        line_items_to_display = sorted(line_items_to_display, key=lambda x: x.get("project_number", ""))
+
+    for idx, item in enumerate(line_items_to_display):
         qty_val = _safe_float(item.get("quantity", 1))
         qty = str(int(qty_val)) if qty_val == int(qty_val) else str(qty_val)
         unit_price_val = _safe_float(item.get('unit_price', 0))
@@ -18051,9 +18099,28 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         po_to_use = ""
 
         if is_co_stage:
-            # For CO stage, use the PO/WO from the CO itself, NEVER the project's PO
-            # First try CO's PO/WO from stage lookup or meta lookup
-            po_to_use = co_po_wo_from_stage or ""
+            # For CO stage, always fetch latest PO/WO from the CO itself, NEVER use stored value
+            po_to_use = ""
+
+            # Try to fetch fresh CO data using co_firebase_id if available
+            co_firebase_id = item.get("co_firebase_id", "").strip()
+            if co_firebase_id:
+                try:
+                    all_projects = fb_get("/projects") or {}
+                    for pid, pdata_search in (all_projects.items() if isinstance(all_projects, dict) else []):
+                        if isinstance(pdata_search, dict):
+                            for _co in _normalise_list(pdata_search.get("change_orders")):
+                                if isinstance(_co, dict) and _co.get("firebase_id") == co_firebase_id:
+                                    po_to_use = _co.get("po_wo_number", "").strip()
+                                    break
+                            if po_to_use:
+                                break
+                except Exception:
+                    pass
+
+            # If still empty, try CO's PO/WO from stage lookup or meta lookup
+            if not po_to_use:
+                po_to_use = co_po_wo_from_stage or ""
 
             # If still empty, try from invoice meta co_number in all projects
             if not po_to_use:
@@ -18085,46 +18152,34 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                 except (ValueError, TypeError, IndexError):
                     pass
         else:
-            # For non-CO stage, use project's PO
-            po_to_use = po_wo or ""
+            # For non-CO stage, always fetch fresh project's PO/WO
+            po_to_use = ""
+            if project_number:
+                try:
+                    all_projects = fb_get("/projects") or {}
+                    for pid, pdata_search in (all_projects.items() if isinstance(all_projects, dict) else []):
+                        if isinstance(pdata_search, dict) and pdata_search.get("project_number") == project_number:
+                            po_to_use = pdata_search.get("po_wo_number", "").strip()
+                            break
+                except Exception:
+                    pass
+
+            # Fallback to the initially fetched value if not found
+            if not po_to_use:
+                po_to_use = po_wo or ""
 
         # Process site address for all line items (both CO and non-CO)
         processed_site_address = site_address
         if processed_site_address:
             import re
-            us_states_abbr = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"]
-
-            state_idx = -1
-            closest_state_idx = float('inf')
-            site_upper = processed_site_address.upper()
-
-            for state in us_states_abbr:
-                idx = site_upper.find(f" {state} ")
-                if idx != -1:
-                    next_char_idx = idx + len(state) + 2
-                    if next_char_idx < len(site_upper):
-                        next_char = site_upper[next_char_idx]
-                        if next_char.isdigit() and idx < closest_state_idx:
-                            state_idx = idx
-                            closest_state_idx = idx
-
-                if state_idx == -1:
-                    idx = site_upper.find(f" {state}")
-                    if idx != -1:
-                        next_char_idx = idx + len(state) + 1
-                        if next_char_idx < len(site_upper):
-                            next_char = site_upper[next_char_idx]
-                            if next_char.isdigit() and idx < closest_state_idx:
-                                state_idx = idx
-                                closest_state_idx = idx
-
-            if state_idx != -1:
-                processed_site_address = processed_site_address[:state_idx].strip()
-                if processed_site_address.endswith(" -"):
-                    processed_site_address = processed_site_address[:-2].strip()
-                if processed_site_address.endswith("–"):
-                    processed_site_address = processed_site_address[:-1].strip()
+            us_states = "AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY"
+            # Find state code followed by comma+space+digit (like ", IL 6") or space+digit (like " IL 6") or end
+            pattern = rf'\s+({us_states})(?:,\s*\d|\s+\d|$)'
+            match = re.search(pattern, processed_site_address, re.IGNORECASE)
+            if match:
+                processed_site_address = processed_site_address[:match.start()].strip().rstrip(",").strip()
             elif plant and plant.strip():
+                # Fallback: try to truncate at plant name if no state found
                 plant_upper = plant.strip().upper()
                 site_upper = processed_site_address.upper()
                 plant_idx = site_upper.find(f" {plant_upper} ")
@@ -18134,13 +18189,9 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                     plant_idx = site_upper.find(plant_upper)
 
                 if plant_idx != -1:
-                    processed_site_address = processed_site_address[:plant_idx].strip()
-                    if processed_site_address.endswith(" -"):
-                        processed_site_address = processed_site_address[:-2].strip()
-                    if processed_site_address.endswith("–"):
-                        processed_site_address = processed_site_address[:-1].strip()
-
-            processed_site_address = processed_site_address.rstrip(",").strip()
+                    processed_site_address = processed_site_address[:plant_idx].strip().rstrip(",").strip()
+            else:
+                processed_site_address = processed_site_address.rstrip(",").strip()
 
         # Build final description display with PO and site address
         if po_to_use and processed_site_address:

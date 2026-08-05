@@ -219,8 +219,16 @@
 
         {% set stages = project.get('payment_stages') or [] %}
         {% if stages %}
-        {% set ns = namespace(first_pending=none) %}
+        {% set ns = namespace(first_pending=none, down_payment_count=0, installment_count=0) %}
+        {# Count down payment and installment stages #}
         {% for s in stages %}
+          {% if s.get('co_number') or ('CO' in s.get('name','') and ' – ' in s.get('name','')) %}
+            {# Skip CO stages #}
+          {% elif 'Down Payment' in s.get('name','') %}
+            {% set ns.down_payment_count = ns.down_payment_count + 1 %}
+          {% else %}
+            {% set ns.installment_count = ns.installment_count + 1 %}
+          {% endif %}
           {% if ns.first_pending is none and s.get('status') == 'Pending Invoice' %}
             {% set ns.first_pending = loop.index0 %}
           {% endif %}
@@ -268,18 +276,40 @@
                   {# For legacy stages, extract CO number (before the dash) #}
                   {% set co_part = stage_name.split(' – ')[0].strip() %}
                   {% set display_stage_name = co_part %}
-                {% elif loop.index0 == 0 and 'Down Payment' in stage_name %}
-                  {# Auto-calculate correct percentage for first stage #}
+                {% elif 'Down Payment' in stage_name %}
+                  {# Down payment stage - display with percentage #}
                   {% set contract_val = project.get('contract_value',0)|float %}
                   {% set stage_amount = s.get('amount',0)|float %}
-                  {% if contract_val > 0 %}
-                    {% set correct_pct = ((stage_amount / contract_val) * 100)|round|int %}
-                    {% set display_stage_name = 'Down Payment (' + correct_pct|string + '%)' %}
+                  {% if contract_val > 0 and stage_amount > 0 %}
+                    {% set pct = ((stage_amount / contract_val) * 100)|round|int %}
+                    {% set display_stage_name = 'Down Payment (' + pct|string + '%)' %}
                   {% else %}
                     {% set display_stage_name = stage_name %}
                   {% endif %}
                 {% else %}
-                  {% set display_stage_name = stage_name %}
+                  {# Installment stages #}
+                  {% set current_installment_num = 0 %}
+                  {% for prev_stage in stages[:loop.index0] %}
+                    {% if 'Down Payment' not in prev_stage.get('name','') and not prev_stage.get('co_number') and not ('CO' in prev_stage.get('name','') and ' – ' in prev_stage.get('name','')) %}
+                      {% set current_installment_num = current_installment_num + 1 %}
+                    {% endif %}
+                  {% endfor %}
+                  {% set current_installment_num = current_installment_num + 1 %}
+
+                  {# Determine display format based on total installments #}
+                  {% if ns.installment_count == 1 and ns.down_payment_count > 0 %}
+                    {# Single installment with down payment = Final Payment #}
+                    {% set display_stage_name = 'Final Payment' %}
+                  {% elif ns.installment_count == 1 %}
+                    {# Single installment without down payment = Final Payment #}
+                    {% set display_stage_name = 'Final Payment' %}
+                  {% elif ns.down_payment_count > 0 %}
+                    {# Multiple installments with down payment = "Installment X of Y" #}
+                    {% set display_stage_name = 'Installment ' + current_installment_num|string + ' of ' + ns.installment_count|string %}
+                  {% else %}
+                    {# Multiple installments without down payment = "Installment X of Y" #}
+                    {% set display_stage_name = 'Installment ' + current_installment_num|string + ' of ' + ns.installment_count|string %}
+                  {% endif %}
                 {% endif %}
                 <tr>
                   <td>{{ display_stage_name }}</td>

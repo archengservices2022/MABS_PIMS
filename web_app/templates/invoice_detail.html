@@ -153,7 +153,7 @@
               {{ company.name }}
             </div>
             <div style="color:rgba(255,255,255,.75); font-size:0.8rem; margin-top:4px; line-height:1.6; white-space:pre-line;">{{ company.address }}</div>
-            <div style="color:rgba(255,255,255,.75); font-size:0.8rem;">{{ company.phone }} &nbsp;?&nbsp; {{ company.email }}</div>
+            <div style="color:rgba(255,255,255,.75); font-size:0.8rem;">{{ company.phone }} • {{ company.email }}</div>
           </div>
           <div class="text-end">
             <div style="font-size:2rem; font-weight:900; color:#fff; letter-spacing:.08em;">INVOICE</div>
@@ -171,22 +171,20 @@
         <div>
           <div style="font-size:0.65rem; font-weight:700; color:#94A3B8; letter-spacing:.1em; margin-bottom:4px;">BILL TO</div>
           <div style="font-weight:700; font-size:1rem; color:#0F172A;">{{ meta.get('company_name') or meta.get('client_name','—') }}</div>
-          {% if meta.get('project_number') %}
-          <div style="font-size:0.8rem; color:#64748B;">Project: {{ meta.get('project_number') }}
-            {% if linked_project %} — {{ linked_project.get('project_name','') }}{% endif %}
-          </div>
-          {% endif %}
-          {% if meta.get('payment_stage') %}
-          <div style="font-size:0.78rem; color:#0D9488; margin-top:2px;">
-            <i class="bi bi-layers me-1"></i>
-            {%- set stage = meta.get('payment_stage','') -%}
-            {%- if 'CO' in stage and ' – ' in stage -%}
-              {%- set co_part = stage.split(' – ')[0].strip() -%}
-              {{ co_part }}
-            {%- else -%}
-              {{ stage }}
-            {%- endif -%}
-          </div>
+          {% if linked_projects and linked_projects|length > 1 %}
+            <!-- Multi-project invoice -->
+            <div style="font-size:0.8rem; color:#64748B; margin-top:4px;">
+              <strong>Multiple Projects</strong> ({{ linked_projects|length }} projects)
+            </div>
+          {% elif meta.get('project_number') %}
+            <!-- Single project invoice -->
+            <div style="font-size:0.8rem; color:#64748B; margin-top:4px;">
+              {% if linked_project %}
+              Project: <a href="{{ url_for('project_detail', project_id=linked_project.get('firebase_id','')) }}" style="color:#0D9488; text-decoration:none; font-weight:500; cursor:pointer;">{{ meta.get('project_number') }}</a>{% if linked_project.get('project_name') %} — {{ linked_project.get('project_name','') }}{% endif %}
+              {% else %}
+              Project: {{ meta.get('project_number') }}
+              {% endif %}
+            </div>
           {% endif %}
         </div>
         <div class="text-end">
@@ -204,6 +202,12 @@
 
       <!-- Line items -->
       <div style="padding:0 32px; position:relative; z-index:1;">
+        {%- set proj_firebase_map = {} -%}
+        {%- for lp in linked_projects -%}
+          {%- if lp.get('firebase_id') and lp.get('project_number') -%}
+            {%- set _ = proj_firebase_map.update({lp.get('project_number'): lp.get('firebase_id')}) -%}
+          {%- endif -%}
+        {%- endfor -%}
         <table style="width:100%; border-collapse:collapse; margin:0;">
           <thead>
             <tr style="background:#0F172A;">
@@ -235,11 +239,19 @@
                 {%- if proj -%}
                   {%- if ' – ' in proj -%}
                     {%- set proj_clean = proj.split(' – ')[0].strip() -%}
-                    {{ proj_clean }}
                   {%- else -%}
-                    {{ proj }}
+                    {%- set proj_clean = proj -%}
                   {%- endif -%}
-                  {%- if stage -%}
+                  {%- set proj_firebase_id = proj_firebase_map.get(proj_clean, '') -%}
+                  {%- if proj_firebase_id -%}
+                    <a href="/projects/{{ proj_firebase_id }}" style="color:#0F766E; text-decoration:none; cursor:pointer; font-weight:700;">{{ proj_clean }}</a>
+                  {%- else -%}
+                    <span style="color:#0F766E; font-weight:700;">{{ proj_clean }}</span>
+                  {%- endif -%}
+                  {%- set display_stage = item.get('display_stage_name', '') -%}
+                  {%- if display_stage -%}
+                    <div style="color:#64748B; white-space:nowrap;">{{ display_stage }}</div>
+                  {%- elif stage -%}
                     {%- set stage_clean = stage.split(' – ')[0].strip() if ' – ' in stage else stage -%}
                     <div style="color:#64748B; white-space:nowrap;">{{ stage_clean }}</div>
                   {%- endif -%}
@@ -248,25 +260,13 @@
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
                 {%- if powo -%}
                   {%- if addr -%}
-                    {%- set clean_addr = addr.split(' T: ')[0].strip() if ' T: ' in addr else addr -%}
-                    {%- set clean_addr = clean_addr.split(' Phone: ')[0].strip() if ' Phone: ' in clean_addr else clean_addr -%}
-                    {%- set addr_parts = clean_addr.split(',') -%}
-                    {%- if addr_parts|length > 1 -%}
-                      {%- set clean_addr = ', '.join(addr_parts[:-1]).strip() -%}
-                    {%- endif -%}
-                    {{ powo }} - {{ clean_addr }}
+                    {{ powo }} - {{ addr }}
                   {%- else -%}
                     {{ powo }}
                   {%- endif -%}
                 {%- elif co -%}
                   {%- if addr -%}
-                    {%- set clean_addr = addr.split(' T: ')[0].strip() if ' T: ' in addr else addr -%}
-                    {%- set clean_addr = clean_addr.split(' Phone: ')[0].strip() if ' Phone: ' in clean_addr else clean_addr -%}
-                    {%- set addr_parts = clean_addr.split(',') -%}
-                    {%- if addr_parts|length > 1 -%}
-                      {%- set clean_addr = ', '.join(addr_parts[:-1]).strip() -%}
-                    {%- endif -%}
-                    {{ co }} - {{ clean_addr }}
+                    {{ co }} - {{ addr }}
                   {%- else -%}
                     {{ co }}
                   {%- endif -%}
@@ -274,13 +274,10 @@
                   {%- if 'co' in desc.lower() and ' – ' in desc -%}
                     {%- set co_part = desc.split(' – ')[0].strip() -%}
                     {%- set addr_part = desc.split(' – ', 1)[1].strip() -%}
-                    {%- set clean_addr = addr_part.split(' T: ')[0].strip() if ' T: ' in addr_part else addr_part -%}
-                    {%- set clean_addr = clean_addr.split(' Phone: ')[0].strip() if ' Phone: ' in clean_addr else clean_addr -%}
-                    {%- set addr_parts = clean_addr.split(',') -%}
-                    {%- if addr_parts|length > 1 -%}
-                      {%- set clean_addr = ', '.join(addr_parts[:-1]).strip() -%}
-                    {%- endif -%}
-                    {{ co_part }} - {{ clean_addr }}
+                    {{ co_part }} - {{ addr_part }}
+                  {%- elif addr -%}
+                    {%- set addr_clean = addr.split(' – ')[0].strip() if ' – ' in addr else addr -%}
+                    {{ addr_clean }}
                   {%- else -%}
                     {{ desc }}
                   {%- endif -%}
