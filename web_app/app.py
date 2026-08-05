@@ -18018,9 +18018,11 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         # Display CO number below project number if found
         log.info(f"[PDF_CO_DEBUG] display_co_number={display_co_number}, invoice_co_num={invoice_co_num}")
         if display_co_number:
-            project_number_display = f"{project_number}<br/><font size=8>{display_co_number}</font>"
+            # Clean CO number - remove address part if present (e.g., "MABS-202606103-CO-1 – 3511 W Piera Cir" -> "MABS-202606103-CO-1")
+            co_clean = display_co_number.split(' – ')[0].strip() if ' – ' in display_co_number else display_co_number
+            project_number_display = f"{project_number}<br/><font size=8>{co_clean}</font>"
             project_cell = Paragraph(project_number_display, left_style)
-            log.info(f"[PDF_CO_DEBUG] Setting project_cell with CO#: {display_co_number}")
+            log.info(f"[PDF_CO_DEBUG] Setting project_cell with CO#: {co_clean}")
 
         # Determine if this is a CO stage
         is_co_stage = bool(display_co_number or meta.get("co_number", "").strip())
