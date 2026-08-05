@@ -3,32 +3,28 @@
 {% block page_title %}Approvals{% endblock %}
 
 {% block content %}
-<div style="max-width:1400px;margin:0 auto;">
 
-  <!-- Tabs Navigation -->
-  <div class="card-panel mb-4">
-    <ul class="nav nav-tabs" role="tablist" style="border-bottom:1px solid #e5e7eb;">
-      <li class="nav-item" role="presentation">
-        <button class="nav-link active fw-semibold" id="tab-delete-btn" data-bs-toggle="tab" data-bs-target="#tab-delete" type="button" role="tab" aria-controls="tab-delete" aria-selected="true">
-          <i class="bi bi-trash me-2" style="color:#ef4444;"></i>Delete Requests
-          {% if permission_requests %}<span class="badge bg-danger ms-2">{{ permission_requests|length }}</span>{% endif %}
-        </button>
-      </li>
-      <li class="nav-item" role="presentation">
-        <button class="nav-link fw-semibold" id="tab-employee-btn" data-bs-toggle="tab" data-bs-target="#tab-employee" type="button" role="tab" aria-controls="tab-employee" aria-selected="false">
-          <i class="bi bi-people-fill me-2" style="color:#3b82f6;"></i>Employee
-          {% set emp_count = (pending_medical|length if pending_medical else 0) + (pending_time_off|length if pending_time_off else 0) + (pending_expenses|length if pending_expenses else 0) + (pending_timesheets|length if pending_timesheets else 0) %}
-          {% if emp_count > 0 %}<span class="badge bg-danger ms-2">{{ emp_count }}</span>{% endif %}
-        </button>
-      </li>
-    </ul>
-  </div>
+<!-- Tabs Navigation -->
+<ul class="nav nav-tabs mb-4" id="approvalsTab">
+  <li class="nav-item">
+    <a class="nav-link active" data-bs-toggle="tab" href="#tab-delete">
+      <i class="bi bi-trash me-1"></i>Delete Requests
+      {% if permission_requests %}<span class="badge bg-danger ms-1">{{ permission_requests|length }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-employee">
+      <i class="bi bi-people-fill me-1"></i>Employee
+      {% set emp_count = (pending_medical|length if pending_medical else 0) + (pending_time_off|length if pending_time_off else 0) + (pending_expenses|length if pending_expenses else 0) + (pending_timesheets|length if pending_timesheets else 0) %}
+      {% if emp_count > 0 %}<span class="badge bg-danger ms-1">{{ emp_count }}</span>{% endif %}
+    </a>
+  </li>
+</ul>
 
-  <!-- Tab Content -->
-  <div class="tab-content">
+<div class="tab-content" id="approvalsTabContent">
 
     <!-- DELETE REQUESTS TAB -->
-    <div class="tab-pane fade show active" id="tab-delete" role="tabpanel" aria-labelledby="tab-delete-btn">
+    <div class="tab-pane fade show active" id="tab-delete">
       {% if permission_requests %}
       <div class="card-panel">
         <h6 class="section-heading mb-3"><i class="bi bi-trash me-1" style="color:#ef4444;"></i>Delete Requests</h6>
@@ -77,7 +73,7 @@
     </div>
 
     <!-- EMPLOYEE TAB (All in one table) -->
-    <div class="tab-pane fade" id="tab-employee" role="tabpanel" aria-labelledby="tab-employee-btn">
+    <div class="tab-pane fade" id="tab-employee">
       {% if (pending_medical and pending_medical|length > 0) or (pending_time_off and pending_time_off|length > 0) or (pending_expenses and pending_expenses|length > 0) or (pending_timesheets and pending_timesheets|length > 0) %}
       <div class="card-panel">
         <h6 class="section-heading mb-3"><i class="bi bi-people-fill me-1" style="color:#3b82f6;"></i>Employee Approvals</h6>
@@ -203,9 +199,6 @@
       </div>
       {% endif %}
     </div>
-
-  </div>
-
 </div>
 
 <!-- Modals -->
