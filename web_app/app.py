@@ -5968,6 +5968,14 @@ def invoice_new():
                     proj_num = proj_data.get("project_number", "")
                     proj_name = proj_data.get("project_name", "")
                     stages = proj_data.get("payment_stages", [])
+                    num_stages = len(stages) if isinstance(stages, list) else 0
+
+                    # Log all available stages for this project
+                    stages_info = []
+                    for s_idx, s in enumerate(stages if isinstance(stages, list) else []):
+                        if isinstance(s, dict):
+                            stages_info.append(f"[{s_idx}]={s.get('name', '')}")
+                    log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): available stages: {', '.join(stages_info) if stages_info else 'none'}")
 
                     # Use provided stage index if available, otherwise auto-detect
                     if i < len(stage_indices) and stage_indices[i] is not None:
@@ -5979,14 +5987,14 @@ def invoice_new():
                         else:
                             next_stage_name = ""
                             stage_amount = 0
-                        log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): using provided stage_idx={next_stage_idx}, num_stages={len(stages) if isinstance(stages, list) else 0}, stage_name='{next_stage_name}'")
+                        log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): USING PROVIDED stage_idx={next_stage_idx}/{num_stages}, stage_name='{next_stage_name}'")
                     else:
                         # Auto-detect next payment stage for this project
                         detection = _get_next_payment_stage(proj_data, raw_invoices)
                         next_stage_idx = detection.get("stage_idx")
                         next_stage_name = detection.get("stage_name")
                         stage_amount = detection.get("amount", 0)
-                        log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): auto-detected (no provided idx), stage_idx={next_stage_idx}, stage_name='{next_stage_name}'")
+                        log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): AUTO-DETECTED stage_idx={next_stage_idx}/{num_stages}, stage_name='{next_stage_name}'")
 
                     # Use stage amount if available, otherwise use outstanding balance
                     if stage_amount > 0 and next_stage_idx is not None:
