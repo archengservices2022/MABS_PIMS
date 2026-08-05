@@ -6223,24 +6223,6 @@ def invoice_detail(invoice_id):
                                 item["plant"] = plant
                             break
 
-                # Fetch CO number fresh from CO using firebase_id (always update)
-                if item.get("co_firebase_id"):
-                    co_firebase_id = item.get("co_firebase_id")
-                    try:
-                        for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
-                            if isinstance(pdata, dict):
-                                cos = pdata.get("change_orders") or []
-                                if isinstance(cos, dict):
-                                    cos = list(cos.values())
-                                for co in (cos if isinstance(cos, list) else []):
-                                    if isinstance(co, dict) and co.get("firebase_id") == co_firebase_id:
-                                        co_num = co.get("co_number", "").strip()
-                                        if co_num:
-                                            item["co_number"] = co_num
-                                        break
-                    except (KeyError, ValueError, TypeError):
-                        pass
-
     # Source quote — via the linked project's source_quote field
     source_quote = None
     if linked_project:
