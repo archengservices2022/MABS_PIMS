@@ -5,7 +5,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div class="d-flex align-items-center gap-2">
-    <a href="{{ url_for('quotes') }}" class="btn btn-sm btn-outline-secondary">
+    <a href="{{ url_for('quotes') }}{% if request.args.get('page') %}?page={{ request.args.get('page') }}{% endif %}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-arrow-left"></i>
     </a>
     <h5 class="mb-0">{{ quote.get('job_number', 'Quote') }}</h5>
@@ -42,6 +42,7 @@
     <!-- Duplicate -->
     <form method="POST" action="{{ url_for('quote_duplicate', quote_id=quote.firebase_id) }}"
           onsubmit="return confirm('Duplicate this quote?\n\nA copy will be created as a new draft with the next quote number.');">
+      <input type="hidden" name="page" class="quotePageInput" value="1">
       <button type="submit" class="btn btn-sm btn-outline-secondary">
         <i class="bi bi-copy me-1"></i>Duplicate
       </button>
@@ -50,6 +51,7 @@
     <!-- Draft Email - Professional Email with PDF -->
     <form method="POST" action="{{ url_for('quote_send', quote_id=quote.firebase_id) }}"
           onsubmit="return confirm('Send this quote to {{ quote.get('company_name') or quote.get('client_name','client') }}?');">
+      <input type="hidden" name="page" class="quotePageInput" value="1">
       <button type="submit" class="btn btn-sm btn-outline-teal">
         <i class="bi bi-envelope me-1"></i>Draft Email
       </button>
@@ -278,6 +280,7 @@
     <div class="card-panel mb-3">
       <h6 class="section-heading">Update Status</h6>
       <form method="POST" action="{{ url_for('quote_status', quote_id=quote.firebase_id) }}">
+        <input type="hidden" name="page" class="quotePageInput" value="1">
         <select name="status" class="form-select form-select-sm mb-2">
           {% for s in ['Not Started','Draft','Sent','In Review','Approved','On Hold','In Progress','Completed','Converted','Invoiced','Rejected','Expired','Cancelled'] %}
           <option value="{{ s }}" {{ 'selected' if quote.get('status') == s }}>{{ s }}</option>
@@ -383,6 +386,7 @@
           <i class="bi bi-x-lg me-1"></i>Cancel — Keep Quote
         </button>
         <form method="POST" action="{{ url_for('quote_delete', quote_id=quote.firebase_id) }}">
+          <input type="hidden" name="page" class="quotePageInput" value="1">
           <button type="submit" id="deleteConfirmBtn" class="btn btn-danger" disabled>
             <i class="bi bi-trash me-1"></i>Yes, Delete Permanently
           </button>
@@ -396,6 +400,16 @@
 {% block scripts %}
 <script>
 window._userCanDelete = {{ 'true' if user_has_delete_perm else 'false' }};
+
+// ?? Preserve page number across actions ??????????????????????????????????????
+document.addEventListener('DOMContentLoaded', function() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const page = urlParams.get('page') || '1';
+  document.querySelectorAll('.quotePageInput').forEach(input => {
+    input.value = page;
+  });
+});
+
 // ?? Delete modal ?????????????????????????????????????????????????????????????
 function openDeleteModal() {
   document.getElementById('deleteConfirmInput').value = '';

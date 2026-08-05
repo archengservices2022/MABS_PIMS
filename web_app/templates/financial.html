@@ -917,6 +917,7 @@ a[href*="filter_expense"]:hover {
                 {% if user_role == 'admin' %}
                 <form method="POST" action="{{ url_for('expense_delete', exp_id=exp.firebase_id) }}"
                       onsubmit="return confirm('Delete this expense?');" style="display:inline;">
+                  <input type="hidden" name="page" class="expensePageInput" value="1">
                   <button type="submit" class="btn btn-xs btn-outline-danger" title="Delete (Admin only)">
                     <i class="bi bi-trash"></i>
                   </button>
@@ -1285,7 +1286,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ?? Expense table client-side filters ????????????????????????????????????????
 // ?? Expense table pagination and filters ?????????????????????????????????????
-let expenseCurrentPage = 1;
+let expenseCurrentPage = parseInt('{{ expense_page or 1 }}') || 1;
 let expensePerPage = 15;
 let expenseFilteredRows = [];
 
@@ -1863,6 +1864,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <script>
 let receiptFile = null;
+
+function getCurrentExpensePage() {
+  return expenseCurrentPage || 1;
+}
 
 function openAddExpenseModal() {
   window.editingExpenseId = null;
@@ -4312,6 +4317,12 @@ document.addEventListener('DOMContentLoaded', function() {
     new TablePager('incomePager', '#incomeTableBody', 'tr.inc-row', 15);
     _PAGERS['incomePager'].refresh();
   }
+
+  // Populate expense page inputs with current page
+  const page = getCurrentExpensePage();
+  document.querySelectorAll('.expensePageInput').forEach(input => {
+    input.value = page;
+  });
 });
 
 // By Project pagination is handled inline in the tab-by-project section

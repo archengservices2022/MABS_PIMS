@@ -2602,7 +2602,8 @@ def quote_edit(quote_id):
         updated["updated_at"] = datetime.now(timezone.utc).isoformat()
         fb_update(f"/job_forms/{quote_id}", updated)
         flash("Quote updated.", "success")
-        return redirect(url_for("quote_detail", quote_id=quote_id))
+        page = request.form.get('page', '1')
+        return redirect(url_for("quote_detail", quote_id=quote_id, page=page))
     return render_template("quote_form.html", quote=data, clients=clients,
                            sales_people=sales_ppl, is_new=False)
 
@@ -2616,7 +2617,8 @@ def quote_delete(quote_id):
         _perm = _has_approved_delete_request(_uid, "quote", quote_id)
         if not _perm:
             flash("You need admin approval to delete this quote. Use the 'Request Delete' button.", "danger")
-            return redirect(url_for("quote_detail", quote_id=quote_id))
+            page = request.form.get('page', '1')
+            return redirect(url_for("quote_detail", quote_id=quote_id, page=page))
 
     quote_data = fb_get(f"/job_forms/{quote_id}") or {}
 
@@ -2644,7 +2646,8 @@ def quote_delete(quote_id):
     if _perm:
         fb_update(f"/permission_requests/{_perm['firebase_id']}", {"status": "completed"})
     flash("Quote deleted and archived for recovery.", "success")
-    return redirect(url_for("quotes"))
+    page = request.form.get('page', '1')
+    return redirect(url_for("quotes", page=page))
 
 @app.route("/quotes/<quote_id>/restore", methods=["POST"])
 @role_required("quotes")
@@ -2678,7 +2681,8 @@ def quote_status(quote_id):
         "updated_at": datetime.now(timezone.utc).isoformat()
     })
     flash(f"Status updated to {new_status}.", "success")
-    return redirect(url_for("quotes"))
+    page = request.form.get('page', '1')
+    return redirect(url_for("quote_detail", quote_id=quote_id, page=page))
 
 @app.route("/projects/<project_id>/quote", methods=["GET", "POST"])
 @role_required("quotes")
@@ -6475,7 +6479,8 @@ def invoice_edit(invoice_id):
                                 pass
 
         flash("Invoice updated successfully.", "success")
-        return redirect(url_for("invoice_detail", invoice_id=invoice_id))
+        page = request.form.get('page', '1')
+        return redirect(url_for("invoice_detail", invoice_id=invoice_id, page=page))
 
     # GET request - load invoice data for editing
     meta = invoice_data.get("meta", {})
@@ -11830,6 +11835,7 @@ def financial():
 
     today_date = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     active_tab = request.args.get("tab", "overview")
+    expense_page = request.args.get("page", "1")
     _valid_fin_tabs = {'overview', 'income', 'expenses', 'by-project', 'balance-sheet', 'aging', 'commission'}
     if active_tab not in _valid_fin_tabs:
         active_tab = 'overview'
@@ -12006,6 +12012,7 @@ def financial():
         all_vendors=all_vendors,
         today_date=today_date,
         active_tab=active_tab,
+        expense_page=expense_page,
         inv_status_labels=json.dumps(list(inv_status_counts.keys())),
         inv_status_data=json.dumps(list(inv_status_counts.values())),
         exp_cat_labels=json.dumps(list(exp_cats.keys())),
@@ -12149,7 +12156,8 @@ def expense_delete(exp_id):
             fb_delete(f"/employee_advances/{advance_id}")
 
     flash("Expense deleted and archived for recovery.", "success")
-    return redirect(url_for("financial", tab="expenses"))
+    page = request.form.get('page', '1')
+    return redirect(url_for("financial", tab="expenses", page=page))
 
 @app.route("/financial/expense/<exp_id>/restore", methods=["POST"])
 @role_required("financial")
@@ -18967,7 +18975,8 @@ def invoice_send(invoice_id):
 def quote_send(quote_id):
     ok, msg = _send_quote_email(quote_id)
     flash(msg, "success" if ok else "danger")
-    return redirect(url_for("quote_detail", quote_id=quote_id))
+    page = request.form.get('page', '1')
+    return redirect(url_for("quote_detail", quote_id=quote_id, page=page))
 
 @app.route("/invoicing/<invoice_id>/payment/add", methods=["POST"])
 @role_required("invoicing")
