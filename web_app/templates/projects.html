@@ -768,10 +768,10 @@ function loadToInvoice() {
   // Get firebase IDs from the projects
   const projectIds = readyProjects.map(p => p.firebase_id).join(',');
 
-  // Use the existing create_bulk_invoices endpoint
+  // Use the new create_multiproject_invoice endpoint to create a SINGLE invoice
   const form = document.createElement('form');
   form.method = 'POST';
-  form.action = `{{ url_for('create_bulk_invoices') }}`;
+  form.action = `{{ url_for('create_multiproject_invoice') }}`;
 
   const input = document.createElement('input');
   input.type = 'hidden';
