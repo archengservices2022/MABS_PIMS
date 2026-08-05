@@ -225,9 +225,9 @@
           {% if s.get('co_number') or ('CO' in s.get('name','') and ' – ' in s.get('name','')) %}
             {# Skip CO stages #}
           {% elif 'Down Payment' in s.get('name','') %}
-            {% set _ = ns.update(down_payment_count=ns.down_payment_count + 1) %}
+            {% set ns.down_payment_count = ns.down_payment_count + 1 %}
           {% else %}
-            {% set _ = ns.update(installment_count=ns.installment_count + 1) %}
+            {% set ns.installment_count = ns.installment_count + 1 %}
           {% endif %}
           {% if ns.first_pending is none and s.get('status') == 'Pending Invoice' %}
             {% set ns.first_pending = loop.index0 %}
