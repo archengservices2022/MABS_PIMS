@@ -417,8 +417,12 @@ async function quickPay(invoiceId, total, amountPaid, btn) {
   const resp = await fetch(`/invoicing/${invoiceId}/payment/sequential`, {method:'POST', body:form});
 
   if (resp.ok) {
-    const currentPage = _PAGERS['invoicePager']?.page || 1;
-    sessionStorage.setItem('invoicePage', currentPage);
+    try {
+      const currentPage = _PAGERS['invoicePager'] && _PAGERS['invoicePager'].page ? _PAGERS['invoicePager'].page : 1;
+      localStorage.setItem('invoicePageToRestore', currentPage.toString());
+    } catch (e) {
+      console.log('Could not save page:', e);
+    }
     location.reload();
   } else {
     btn.disabled = false;
@@ -447,7 +451,7 @@ function setInvRange(type) {
     fromEl.value = localDate(f);
     toEl.value   = localDate(now);
   }
-  sessionStorage.removeItem('invoicePage');
+  localStorage.removeItem('invoicePageToRestore');
   form.submit();
 }
 
@@ -503,7 +507,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   document.querySelectorAll('[data-bs-toggle="tab"]').forEach(function(link) {
     link.addEventListener('shown.bs.tab', function(e) {
-      sessionStorage.removeItem('invoicePage');
+      localStorage.removeItem('invoicePageToRestore');
       const id = e.target.getAttribute('href').replace('#tab-', '');
       const url = new URL(window.location);
       url.searchParams.set('tab', id);
@@ -515,20 +519,34 @@ document.addEventListener('DOMContentLoaded', function () {
 document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('invoiceTableBody')) {
     new TablePager('invoicePager', '#invoiceTableBody', 'tr.inv-row', 15);
-    const savedPage = sessionStorage.getItem('invoicePage');
-    if (savedPage) {
-      const pageNum = parseInt(savedPage, 10);
-      _PAGERS['invoicePager'].page = pageNum;
-      sessionStorage.removeItem('invoicePage');
-    }
-    _PAGERS['invoicePager'].refresh();
+
+    // Restore page after a short delay to ensure all rows are rendered
+    setTimeout(function() {
+      try {
+        const savedPage = localStorage.getItem('invoicePageToRestore');
+        if (savedPage) {
+          const pageNum = parseInt(savedPage, 10);
+          if (pageNum > 0 && _PAGERS['invoicePager']) {
+            const totalPages = Math.max(1, Math.ceil((_PAGERS['invoicePager']._vis || []).length / _PAGERS['invoicePager'].pageSize));
+            if (pageNum <= totalPages) {
+              _PAGERS['invoicePager'].page = pageNum;
+            }
+          }
+          localStorage.removeItem('invoicePageToRestore');
+        }
+      } catch (e) {
+        console.log('Could not restore page:', e);
+      }
+
+      _PAGERS['invoicePager'].refresh();
+    }, 100);
   }
 
   // Clear saved page when filter form is submitted (filter changes should reset to page 1)
   const filterForm = document.getElementById('invFilterForm');
   if (filterForm) {
     filterForm.addEventListener('submit', function() {
-      sessionStorage.removeItem('invoicePage');
+      localStorage.removeItem('invoicePageToRestore');
     });
   }
 });
