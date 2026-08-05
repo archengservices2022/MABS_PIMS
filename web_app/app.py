@@ -6011,6 +6011,7 @@ def invoice_new():
                         if next_stage_name:
                             description = f"{proj_name} — {next_stage_name}"
 
+                        log.info(f"[PREFILL] proj={proj_num}, stage_idx={next_stage_idx}, stage_name='{next_stage_name}', description='{description}'")
                         prefill_items.append({
                             "description": description,
                             "project": proj_num,
