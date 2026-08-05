@@ -11787,8 +11787,8 @@ class ProjectDialog(QtWidgets.QDialog):
                         continue
                     max_sequence = max(max_sequence, sequence)
                     break
-            
-            return max_sequence + 1
+
+            return max_sequence + 101 if max_sequence == 0 else max_sequence + 1
             
         except Exception as e:
             _log.warning("Error getting next sequence: %s", e)
