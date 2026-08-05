@@ -250,7 +250,8 @@
                   {%- endif -%}
                   {%- set display_stage = item.get('display_stage_name', '') -%}
                   {%- if display_stage -%}
-                    <div style="color:#64748B; white-space:nowrap;">{{ display_stage }}</div>
+                    {%- set display_stage_clean = display_stage.split(' – ')[0].strip() if ' – ' in display_stage else display_stage -%}
+                    <div style="color:#64748B; white-space:nowrap;">{{ display_stage_clean }}</div>
                   {%- elif stage -%}
                     {%- set stage_clean = stage.split(' – ')[0].strip() if ' – ' in stage else stage -%}
                     <div style="color:#64748B; white-space:nowrap;">{{ stage_clean }}</div>
