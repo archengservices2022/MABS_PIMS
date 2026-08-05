@@ -6137,17 +6137,14 @@ def invoice_detail(invoice_id):
                             if site_addr:
                                 # Remove phone and state/zip from address (keep contact name, street and city)
                                 import re
-                                # Remove phone numbers
+                                # Remove phone numbers (T: or T( formats)
                                 site_addr = re.sub(r'\s+T:\s+\([^)]+\)[^\s]*', '', site_addr)
+                                site_addr = re.sub(r'\s+T\s+\(\d+\)[^\s]*', '', site_addr)
                                 site_addr = re.sub(r'\s+Phone:\s+\([^)]+\)[^\s]*', '', site_addr)
 
-                                # Remove state/zip part
-                                parts = site_addr.split(",")
-                                if len(parts) > 1:
-                                    last_part = parts[-1].strip()
-                                    # State codes are 2+ chars with digits, or zip pattern
-                                    if len(last_part) <= 15 or any(c.isdigit() for c in last_part):
-                                        site_addr = ", ".join(parts[:-1]).strip()
+                                # Remove state/zip part (handle both comma-separated and space-separated)
+                                # Pattern: optional comma, then 2-letter state code, then 5+ digit zip
+                                site_addr = re.sub(r',?\s+[A-Z]{2}\s+\d{5}(-\d{4})?$', '', site_addr).strip()
                                 item["site_address"] = site_addr
                             break
 
