@@ -5455,14 +5455,17 @@ def create_bulk_invoices():
 
         if created_invoice_ids:
             flash(f"Created {len(created_invoice_ids)} invoice(s) successfully.", "success")
-            return jsonify({"success": True, "invoice_ids": created_invoice_ids})
+            # Redirect to the first created invoice
+            return redirect(url_for("invoice_detail", invoice_id=created_invoice_ids[0]))
         else:
-            return jsonify({"success": False, "error": "No invoices created. All selected projects may be fully invoiced."}), 400
+            flash("No invoices created. All selected projects may be fully invoiced.", "warning")
+            return redirect(url_for("invoicing"))
 
     except Exception as e:
         import traceback
         log.error("Bulk invoice creation error: %s", traceback.format_exc())
-        return jsonify({"success": False, "error": str(e)}), 500
+        flash(f"Error creating invoices: {str(e)}", "danger")
+        return redirect(url_for("invoicing"))
 
 @app.route("/projects/<project_id>/change-orders/<int:co_idx>/invoice", methods=["GET"])
 @role_required("invoicing")

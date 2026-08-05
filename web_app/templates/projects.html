@@ -765,120 +765,20 @@ function loadToInvoice() {
     return;
   }
 
-  // Create a hidden form to POST the multi-project invoice data
+  // Get firebase IDs from the projects
+  const projectIds = readyProjects.map(p => p.firebase_id).join(',');
+
+  // Use the existing create_bulk_invoices endpoint
   const form = document.createElement('form');
   form.method = 'POST';
-  form.action = `{{ url_for('invoice_new') }}`;
+  form.action = `{{ url_for('create_bulk_invoices') }}`;
 
-  // Add invoice metadata (use first project's info for client)
-  const firstProject = readyProjects[0];
-  const invoiceDate = new Date().toISOString().split('T')[0];
-  const dueDate = new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0];
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'project_ids';
+  input.value = projectIds;
+  form.appendChild(input);
 
-  // Add client name (company_name from first project)
-  const clientInput = document.createElement('input');
-  clientInput.type = 'hidden';
-  clientInput.name = 'client_name';
-  clientInput.value = firstProject.company_name || firstProject.client_name || '';
-  form.appendChild(clientInput);
-
-  // Add invoice number (auto-generated)
-  const invNumInput = document.createElement('input');
-  invNumInput.type = 'hidden';
-  invNumInput.name = 'invoice_number';
-  invNumInput.value = `{{ _next_invoice_number() if _next_invoice_number }}`;
-  form.appendChild(invNumInput);
-
-  // Add invoice date
-  const invDateInput = document.createElement('input');
-  invDateInput.type = 'hidden';
-  invDateInput.name = 'invoice_date';
-  invDateInput.value = invoiceDate;
-  form.appendChild(invDateInput);
-
-  // Add due date
-  const dueDateInput = document.createElement('input');
-  dueDateInput.type = 'hidden';
-  dueDateInput.name = 'due_date';
-  dueDateInput.value = dueDate;
-  form.appendChild(dueDateInput);
-
-  // Add status (Draft)
-  const statusInput = document.createElement('input');
-  statusInput.type = 'hidden';
-  statusInput.name = 'status';
-  statusInput.value = 'Draft';
-  form.appendChild(statusInput);
-
-  // Add line items for each project with their stage index and description
-  let totalAmount = 0;
-  readyProjects.forEach((project, index) => {
-    // Add description (project name + stage name)
-    const descInput = document.createElement('input');
-    descInput.type = 'hidden';
-    descInput.name = 'item_description[]';
-    descInput.value = `${project.project_name} — ${project.next_stage}`;
-    form.appendChild(descInput);
-
-    // Add quantity (always 1)
-    const qtyInput = document.createElement('input');
-    qtyInput.type = 'hidden';
-    qtyInput.name = 'item_quantity[]';
-    qtyInput.value = '1';
-    form.appendChild(qtyInput);
-
-    // Add unit price (the stage amount)
-    const stageAmount = parseFloat(project.next_stage_amount || '0');
-    const priceInput = document.createElement('input');
-    priceInput.type = 'hidden';
-    priceInput.name = 'item_unit_price[]';
-    priceInput.value = stageAmount.toFixed(2);
-    form.appendChild(priceInput);
-
-    totalAmount += stageAmount;
-
-    // Add project number
-    const projInput = document.createElement('input');
-    projInput.type = 'hidden';
-    projInput.name = 'item_project[]';
-    projInput.value = project.project_number;
-    form.appendChild(projInput);
-
-    // Add stage index for this project
-    const stageInput = document.createElement('input');
-    stageInput.type = 'hidden';
-    stageInput.name = 'item_stage_index[]';
-    stageInput.value = project.next_stage_index || '';
-    form.appendChild(stageInput);
-  });
-
-  // Add subtotal and total
-  const subtotalInput = document.createElement('input');
-  subtotalInput.type = 'hidden';
-  subtotalInput.name = 'subtotal';
-  subtotalInput.value = totalAmount.toFixed(2);
-  form.appendChild(subtotalInput);
-
-  const totalInput = document.createElement('input');
-  totalInput.type = 'hidden';
-  totalInput.name = 'total';
-  totalInput.value = totalAmount.toFixed(2);
-  form.appendChild(totalInput);
-
-  // Add tax fields
-  const taxRateInput = document.createElement('input');
-  taxRateInput.type = 'hidden';
-  taxRateInput.name = 'tax_rate';
-  taxRateInput.value = '0';
-  form.appendChild(taxRateInput);
-
-  const taxAmountInput = document.createElement('input');
-  taxAmountInput.type = 'hidden';
-  taxAmountInput.name = 'tax_amount';
-  taxAmountInput.value = '0';
-  form.appendChild(taxAmountInput);
-
-  // Submit the form
   document.body.appendChild(form);
   form.submit();
 }
