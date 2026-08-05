@@ -230,8 +230,8 @@
             {% endfor %}
           </tbody>
           <tfoot>
-            {% set total_all = invoices|map(attribute='meta')|map(attribute='total')|map('float')|sum %}
-            {% set paid_all = invoices|map(attribute='meta')|map(attribute='amount_paid')|map('float')|sum %}
+            {% set total_all = invoices|map(attribute='meta')|map(attribute='total', default='0')|map('float')|sum %}
+            {% set paid_all = invoices|map(attribute='meta')|map(attribute='amount_paid', default='0')|map('float')|sum %}
             {% set ns = namespace(tax_paid_all=0) %}
             {% for inv in invoices %}
               {% set ns.tax_paid_all = ns.tax_paid_all + (inv.get('tax_payments', [])|map(attribute='amount')|map('float')|sum) %}
