@@ -6213,11 +6213,10 @@ def invoice_detail(invoice_id):
 
                 # Always fetch fresh POWO from project for non-CO stages (auto-updates when project POWO changes)
                 if proj_num:
-                    co_num = item.get("co_number", "")
-                    is_co_stage = bool(co_num or item.get("co_firebase_id"))
+                    co_firebase_id = item.get("co_firebase_id", "")
 
                     # For non-CO stages, always get fresh POWO from project
-                    if not is_co_stage:
+                    if not co_firebase_id:
                         for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
                             if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
                                 powo = pdata.get("po_wo_number", "").strip()
@@ -6225,33 +6224,19 @@ def invoice_detail(invoice_id):
                                     item["powo_number"] = powo
                                 break
                     else:
-                        # For CO stages, always fetch fresh POWO from CO (even if previously set)
-                        powo_found = False
+                        # For CO stages, ONLY fetch fresh POWO from CO (don't fall back to project)
                         for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
                             if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
-                                # Try from CO first
                                 cos = pdata.get("change_orders") or []
                                 if isinstance(cos, dict):
                                     cos = list(cos.values())
                                 for co in (cos if isinstance(cos, list) else []):
-                                    if isinstance(co, dict):
-                                        if (co.get("co_number") == co_num or
-                                            co_num in co.get("name", "") or
-                                            co.get("name", "").startswith(co_num)):
-                                            powo = co.get("po_wo_number", "").strip()
-                                            if powo:
-                                                item["powo_number"] = powo
-                                                powo_found = True
-                                            break
+                                    if isinstance(co, dict) and co.get("firebase_id") == co_firebase_id:
+                                        powo = co.get("po_wo_number", "").strip()
+                                        if powo:
+                                            item["powo_number"] = powo
+                                        break
                                 break
-                        # Only fall back to project POWO if CO doesn't have one
-                        if not powo_found:
-                            for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
-                                if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
-                                    powo = pdata.get("po_wo_number", "").strip()
-                                    if powo:
-                                        item["powo_number"] = powo
-                                    break
 
                 # Fetch plant fresh from project (always update, don't store snapshot)
                 if proj_num:
