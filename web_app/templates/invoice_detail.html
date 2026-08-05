@@ -175,13 +175,13 @@
             <!-- Multi-project invoice -->
             {% for proj in linked_projects %}
             <div style="font-size:0.8rem; color:#64748B; margin-top:4px;">
-              Project: {{ proj.get('project_number','') }}{% if proj.get('project_name') %} — {{ proj.get('project_name','') }}{% endif %}
+              Project: {{ proj.get('project_number','') }}{% if proj.get('description') %} — {{ proj.get('description','') }}{% elif proj.get('company_name') %} — {{ proj.get('company_name','') }}{% elif proj.get('client_name') %} — {{ proj.get('client_name','') }}{% endif %}
             </div>
             {% endfor %}
           {% elif meta.get('project_number') %}
             <!-- Single project invoice -->
             <div style="font-size:0.8rem; color:#64748B; margin-top:4px;">
-              Project: {{ meta.get('project_number') }}{% if linked_project %} — {{ linked_project.get('project_name','') }}{% endif %}
+              Project: {{ meta.get('project_number') }}{% if linked_project %}{% if linked_project.get('description') %} — {{ linked_project.get('description','') }}{% elif linked_project.get('company_name') %} — {{ linked_project.get('company_name','') }}{% elif linked_project.get('client_name') %} — {{ linked_project.get('client_name','') }}{% endif %}{% endif %}
             </div>
           {% endif %}
           {% if meta.get('payment_stage') %}
