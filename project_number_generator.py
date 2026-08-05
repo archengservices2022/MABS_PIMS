@@ -11754,7 +11754,7 @@ class ProjectDialog(QtWidgets.QDialog):
         try:
             parent = self.parent()
             if not hasattr(parent, 'generated_projects') or not parent.generated_projects:
-                return 1
+                return 101
             
             max_sequence = 0
             import re
@@ -11787,8 +11787,8 @@ class ProjectDialog(QtWidgets.QDialog):
                         continue
                     max_sequence = max(max_sequence, sequence)
                     break
-            
-            return max_sequence + 1
+
+            return max_sequence + 101 if max_sequence == 0 else max_sequence + 1
             
         except Exception as e:
             _log.warning("Error getting next sequence: %s", e)
