@@ -230,7 +230,7 @@
                   {%- set addr = (' – '.join(desc_parts[1:])).strip() -%}
                 {%- endif -%}
               {%- endif -%}
-              <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
+              <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem; white-space:nowrap;">
                 {%- set stage = item.get('stage_name','') -%}
                 {%- if proj -%}
                   {%- if ' – ' in proj -%}
@@ -241,7 +241,7 @@
                   {%- endif -%}
                   {%- if stage -%}
                     {%- set stage_clean = stage.split(' – ')[0].strip() if ' – ' in stage else stage -%}
-                    <div style="color:#64748B;">{{ stage_clean }}</div>
+                    <div style="color:#64748B; white-space:nowrap;">{{ stage_clean }}</div>
                   {%- endif -%}
                 {%- endif -%}
               </td>
