@@ -6147,7 +6147,7 @@ def invoice_detail(invoice_id):
                                 pattern = rf'\s+({us_states})(?:\s|,|$)'
                                 match = re.search(pattern, site_addr, re.IGNORECASE)
                                 if match:
-                                    site_addr = site_addr[:match.start()].strip()
+                                    site_addr = site_addr[:match.start()].strip().rstrip(",").strip()
 
                                 item["site_address"] = site_addr
                             break
@@ -18133,39 +18133,14 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         processed_site_address = site_address
         if processed_site_address:
             import re
-            us_states_abbr = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"]
-
-            state_idx = -1
-            closest_state_idx = float('inf')
-            site_upper = processed_site_address.upper()
-
-            for state in us_states_abbr:
-                idx = site_upper.find(f" {state} ")
-                if idx != -1:
-                    next_char_idx = idx + len(state) + 2
-                    if next_char_idx < len(site_upper):
-                        next_char = site_upper[next_char_idx]
-                        if next_char.isdigit() and idx < closest_state_idx:
-                            state_idx = idx
-                            closest_state_idx = idx
-
-                if state_idx == -1:
-                    idx = site_upper.find(f" {state}")
-                    if idx != -1:
-                        next_char_idx = idx + len(state) + 1
-                        if next_char_idx < len(site_upper):
-                            next_char = site_upper[next_char_idx]
-                            if next_char.isdigit() and idx < closest_state_idx:
-                                state_idx = idx
-                                closest_state_idx = idx
-
-            if state_idx != -1:
-                processed_site_address = processed_site_address[:state_idx].strip()
-                if processed_site_address.endswith(" -"):
-                    processed_site_address = processed_site_address[:-2].strip()
-                if processed_site_address.endswith("–"):
-                    processed_site_address = processed_site_address[:-1].strip()
+            us_states = "AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY"
+            # Find state code preceded by space
+            pattern = rf'\s+({us_states})(?:\s|,|$)'
+            match = re.search(pattern, processed_site_address, re.IGNORECASE)
+            if match:
+                processed_site_address = processed_site_address[:match.start()].strip().rstrip(",").strip()
             elif plant and plant.strip():
+                # Fallback: try to truncate at plant name if no state found
                 plant_upper = plant.strip().upper()
                 site_upper = processed_site_address.upper()
                 plant_idx = site_upper.find(f" {plant_upper} ")
@@ -18175,13 +18150,9 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                     plant_idx = site_upper.find(plant_upper)
 
                 if plant_idx != -1:
-                    processed_site_address = processed_site_address[:plant_idx].strip()
-                    if processed_site_address.endswith(" -"):
-                        processed_site_address = processed_site_address[:-2].strip()
-                    if processed_site_address.endswith("–"):
-                        processed_site_address = processed_site_address[:-1].strip()
-
-            processed_site_address = processed_site_address.rstrip(",").strip()
+                    processed_site_address = processed_site_address[:plant_idx].strip().rstrip(",").strip()
+            else:
+                processed_site_address = processed_site_address.rstrip(",").strip()
 
         # Build final description display with PO and site address
         if po_to_use and processed_site_address:
