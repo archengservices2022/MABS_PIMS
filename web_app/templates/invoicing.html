@@ -417,6 +417,8 @@ async function quickPay(invoiceId, total, amountPaid, btn) {
   const resp = await fetch(`/invoicing/${invoiceId}/payment/sequential`, {method:'POST', body:form});
 
   if (resp.ok) {
+    const currentPage = _PAGERS['invoicePager']?.page || 1;
+    sessionStorage.setItem('invoicePage', currentPage);
     location.reload();
   } else {
     btn.disabled = false;
@@ -445,6 +447,7 @@ function setInvRange(type) {
     fromEl.value = localDate(f);
     toEl.value   = localDate(now);
   }
+  sessionStorage.removeItem('invoicePage');
   form.submit();
 }
 
@@ -500,6 +503,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   document.querySelectorAll('[data-bs-toggle="tab"]').forEach(function(link) {
     link.addEventListener('shown.bs.tab', function(e) {
+      sessionStorage.removeItem('invoicePage');
       const id = e.target.getAttribute('href').replace('#tab-', '');
       const url = new URL(window.location);
       url.searchParams.set('tab', id);
@@ -511,7 +515,21 @@ document.addEventListener('DOMContentLoaded', function () {
 document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('invoiceTableBody')) {
     new TablePager('invoicePager', '#invoiceTableBody', 'tr.inv-row', 15);
+    const savedPage = sessionStorage.getItem('invoicePage');
+    if (savedPage) {
+      const pageNum = parseInt(savedPage, 10);
+      _PAGERS['invoicePager'].page = pageNum;
+      sessionStorage.removeItem('invoicePage');
+    }
     _PAGERS['invoicePager'].refresh();
+  }
+
+  // Clear saved page when filter form is submitted (filter changes should reset to page 1)
+  const filterForm = document.getElementById('invFilterForm');
+  if (filterForm) {
+    filterForm.addEventListener('submit', function() {
+      sessionStorage.removeItem('invoicePage');
+    });
   }
 });
 </script>
