@@ -4671,7 +4671,15 @@ class InvoiceHistoryViewWidget(QtWidgets.QWidget):
         except Exception as e:
             _log.warning("Error loading invoices from Firebase: %s", e)
             QtWidgets.QMessageBox.warning(self, "Load Error", f"Error loading invoices from Firebase: {str(e)}")
-    
+
+    def refresh_invoices_preserve_pagination(self):
+        """Reload invoices from Firebase while preserving the current page number.
+        Used after actions like adding/editing payments, sending emails, downloading PDFs."""
+        saved_page = self._ih_page
+        self.load_all_invoices()
+        self._ih_page = saved_page
+        self._ih_render_page()
+
     def clear_quick_filter_highlighting(self):
         default_style = """
             QPushButton {
@@ -4901,10 +4909,11 @@ class InvoiceHistoryViewWidget(QtWidgets.QWidget):
         except Exception as e:
             _log.warning("Error applying all time filter: %s", e)
         
-    def display_invoices(self, invoices: List):
-        """Store the invoice list and render page 1."""
+    def display_invoices(self, invoices: List, preserve_page: bool = False):
+        """Store the invoice list and render page 1 (or preserve current page if preserve_page=True)."""
         self._ih_all_displayed = list(invoices) if invoices else []
-        self._ih_page = 1
+        if not preserve_page:
+            self._ih_page = 1
         self._ih_render_page()
 
     def _ih_render_page(self):
@@ -8212,11 +8221,7 @@ class InvoiceHistoryTab(QtWidgets.QWidget):
         if isinstance(current_widget, ClientListWidget):
             current_widget.load_clients()
         elif self.current_client and isinstance(current_widget, InvoiceHistoryViewWidget):
-            search_text = current_widget.date_range_widget.search_bar.text() if hasattr(current_widget, "date_range_widget") else ""
-            self.show_invoice_history(self.current_client)
-            refreshed_widget = self.stacked_widget.currentWidget()
-            if search_text and isinstance(refreshed_widget, InvoiceHistoryViewWidget):
-                refreshed_widget.date_range_widget.search_bar.setText(search_text)
+            current_widget.refresh_invoices_preserve_pagination()
 
 
 class InvoiceHistoryTab(QtWidgets.QWidget):
@@ -8367,8 +8372,4 @@ class InvoiceHistoryTab(QtWidgets.QWidget):
         if isinstance(current_widget, ClientListWidget):
             current_widget.load_clients()
         elif self.current_client and isinstance(current_widget, InvoiceHistoryViewWidget):
-            search_text = current_widget.date_range_widget.search_bar.text() if hasattr(current_widget, "date_range_widget") else ""
-            self.show_invoice_history(self.current_client)
-            refreshed_widget = self.stacked_widget.currentWidget()
-            if search_text and isinstance(refreshed_widget, InvoiceHistoryViewWidget):
-                refreshed_widget.date_range_widget.search_bar.setText(search_text)
+            current_widget.refresh_invoices_preserve_pagination()
