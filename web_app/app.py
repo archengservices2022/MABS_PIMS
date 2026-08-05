@@ -6223,34 +6223,22 @@ def invoice_detail(invoice_id):
                                 item["plant"] = plant
                             break
 
-                # Fetch CO number fresh from CO using firebase_id or co_index (always update)
+                # Fetch CO number fresh from CO using firebase_id (always update)
                 if item.get("co_firebase_id"):
                     co_firebase_id = item.get("co_firebase_id")
-                    co_index = item.get("co_index")
                     try:
                         for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
-                            if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
+                            if isinstance(pdata, dict):
                                 cos = pdata.get("change_orders") or []
                                 if isinstance(cos, dict):
                                     cos = list(cos.values())
-
-                                # Try direct index lookup first (faster for projects with many COs)
-                                if co_index is not None and isinstance(cos, list) and 0 <= co_index < len(cos):
-                                    co = cos[co_index]
-                                    if isinstance(co, dict) and co.get("firebase_id") == co_firebase_id:
-                                        co_num = co.get("co_number", "").strip()
-                                        if co_num:
-                                            item["co_number"] = co_num
-                                        break
-
-                                # Fallback: loop through all COs if index doesn't match
                                 for co in (cos if isinstance(cos, list) else []):
                                     if isinstance(co, dict) and co.get("firebase_id") == co_firebase_id:
                                         co_num = co.get("co_number", "").strip()
                                         if co_num:
                                             item["co_number"] = co_num
                                         break
-                    except (KeyError, ValueError, TypeError, IndexError):
+                    except (KeyError, ValueError, TypeError):
                         pass
 
     # Source quote — via the linked project's source_quote field
