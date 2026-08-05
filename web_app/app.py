@@ -5947,10 +5947,11 @@ def invoice_new():
             stage_indices = [int(idx.strip()) if idx.strip().isdigit() else None
                            for idx in item_stage_index_param.split(",")]
 
-        log.info(f"[INVOICE_NEW] Multiple projects: {project_ids}, stage_indices param: '{item_stage_index_param}', parsed: {stage_indices}")
-
         all_projects_data = fb_get("/projects") or {}
         raw_invoices = fb_get("/invoices") or {}
+
+        proj_nums = [all_projects_data.get(pid, {}).get("project_number", "?") for pid in project_ids]
+        log.info(f"[INVOICE_NEW] Multiple projects: IDs={project_ids}, nums={proj_nums}, stage_indices param: '{item_stage_index_param}', parsed: {stage_indices}")
 
         # Auto-populate Project Number and Client from first project
         if len(project_ids) >= 1 and project_ids[0] in all_projects_data:
@@ -5966,25 +5967,26 @@ def invoice_new():
                 if isinstance(proj_data, dict):
                     proj_num = proj_data.get("project_number", "")
                     proj_name = proj_data.get("project_name", "")
+                    stages = proj_data.get("payment_stages", [])
 
                     # Use provided stage index if available, otherwise auto-detect
                     if i < len(stage_indices) and stage_indices[i] is not None:
                         next_stage_idx = stage_indices[i]
                         # Get stage name from project's payment_stages using the provided index
-                        stages = proj_data.get("payment_stages", [])
                         if isinstance(stages, list) and 0 <= next_stage_idx < len(stages):
                             next_stage_name = stages[next_stage_idx].get("name", "") if isinstance(stages[next_stage_idx], dict) else ""
+                            stage_amount = stages[next_stage_idx].get("amount", 0) if isinstance(stages[next_stage_idx], dict) else 0
                         else:
                             next_stage_name = ""
-                        stage_amount = stages[next_stage_idx].get("amount", 0) if isinstance(stages[next_stage_idx], dict) else 0
-                        log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): using stage_idx={next_stage_idx}, stage_name='{next_stage_name}'")
+                            stage_amount = 0
+                        log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): using provided stage_idx={next_stage_idx}, num_stages={len(stages) if isinstance(stages, list) else 0}, stage_name='{next_stage_name}'")
                     else:
                         # Auto-detect next payment stage for this project
                         detection = _get_next_payment_stage(proj_data, raw_invoices)
                         next_stage_idx = detection.get("stage_idx")
                         next_stage_name = detection.get("stage_name")
                         stage_amount = detection.get("amount", 0)
-                        log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): auto-detected stage_idx={next_stage_idx}, stage_name='{next_stage_name}'")
+                        log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): auto-detected (no provided idx), stage_idx={next_stage_idx}, stage_name='{next_stage_name}'")
 
                     # Use stage amount if available, otherwise use outstanding balance
                     if stage_amount > 0 and next_stage_idx is not None:
