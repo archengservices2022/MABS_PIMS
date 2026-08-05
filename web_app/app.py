@@ -17959,6 +17959,20 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                         plant = pdata.get("plant", "")
                         po_wo = pdata.get("po_wo_number", "")
                         site_address = pdata.get("site_address", "")
+
+                        # Fetch fresh PO/WO from CO using line item's co_firebase_id
+                        co_firebase_id = item.get("co_firebase_id", "")
+                        if co_firebase_id:
+                            cos = pdata.get("change_orders") or []
+                            if isinstance(cos, dict):
+                                cos = list(cos.values())
+                            for co in (cos if isinstance(cos, list) else []):
+                                if isinstance(co, dict) and co.get("firebase_id") == co_firebase_id:
+                                    co_fresh_powo = co.get("po_wo_number", "").strip()
+                                    if co_fresh_powo:
+                                        co_po_wo_from_stage = co_fresh_powo
+                                    break
+
                         payment_stages = pdata.get("payment_stages", [])
                         payment_stage_index = None
                         # Find payment stage index from matching linked_project
