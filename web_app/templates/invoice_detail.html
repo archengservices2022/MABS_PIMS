@@ -248,7 +248,10 @@
                   {%- else -%}
                     <span style="color:#15803D; font-weight:700;">{{ proj_clean }}</span>
                   {%- endif -%}
-                  {%- if stage -%}
+                  {%- set display_stage = item.get('display_stage_name', '') -%}
+                  {%- if display_stage -%}
+                    <div style="color:#64748B; white-space:nowrap;">{{ display_stage }}</div>
+                  {%- elif stage -%}
                     {%- set stage_clean = stage.split(' – ')[0].strip() if ' – ' in stage else stage -%}
                     <div style="color:#64748B; white-space:nowrap;">{{ stage_clean }}</div>
                   {%- endif -%}

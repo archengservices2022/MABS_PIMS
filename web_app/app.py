@@ -6234,6 +6234,35 @@ def invoice_detail(invoice_id):
                             plant = pdata.get("plant", "").strip()
                             if plant:
                                 item["plant"] = plant
+
+                            # For non-CO stages, fetch real stage name with percentage from project
+                            co_num = item.get("co_number", "")
+                            is_co_stage = bool(co_num or item.get("co_firebase_id"))
+                            if not is_co_stage:
+                                # Try to get payment_stage_index from linked_projects or item
+                                payment_stage_index = None
+                                for lp in linked_projects:
+                                    if isinstance(lp, dict) and lp.get("project_number") == proj_num:
+                                        payment_stage_index = lp.get("payment_stage_index")
+                                        break
+                                if payment_stage_index is None:
+                                    payment_stage_index = item.get("payment_stage_index")
+                                if payment_stage_index is None:
+                                    payment_stage_index = data.get("meta", {}).get("payment_stage_index")
+
+                                # Fetch real stage name and percentage
+                                if payment_stage_index is not None:
+                                    payment_stages = pdata.get("payment_stages", [])
+                                    if isinstance(payment_stages, list) and int(payment_stage_index) < len(payment_stages):
+                                        stage_data = payment_stages[int(payment_stage_index)]
+                                        if isinstance(stage_data, dict):
+                                            stage_name = stage_data.get("name", "")
+                                            stage_percentage = stage_data.get("percentage", "")
+                                            if stage_name:
+                                                if stage_percentage:
+                                                    item["display_stage_name"] = f"{stage_name} {stage_percentage}%"
+                                                else:
+                                                    item["display_stage_name"] = stage_name
                             break
 
     # Source quote — via the linked project's source_quote field
