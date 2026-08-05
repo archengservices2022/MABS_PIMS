@@ -6,7 +6,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div class="d-flex align-items-center gap-2">
-    <a href="{{ url_for('invoicing') }}" class="btn btn-sm btn-outline-secondary">
+    <a href="{{ url_for('invoicing') }}{% if request.args.get('page') %}?page={{ request.args.get('page') }}{% endif %}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-arrow-left"></i>
     </a>
     <h5 class="mb-0">{{ meta.get('invoice_number','Invoice') }}</h5>
