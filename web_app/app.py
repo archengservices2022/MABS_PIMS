@@ -5897,15 +5897,8 @@ def invoice_new():
             _upsert_revenue_entry(inv_id, fresh_meta)
 
         flash("Invoice created successfully.", "success")
-        # If invoice was created from a project detail page, redirect back to that project with page preserved
-        page = request.form.get('page', '')
-        project_number = data["meta"].get("project_number", "")
-        if page and project_number:
-            all_projects = fb_get("/projects") or {}
-            for pid, pdata in (all_projects.items() if isinstance(all_projects, dict) else []):
-                if isinstance(pdata, dict) and pdata.get("project_number", "") == project_number:
-                    return redirect(url_for("project_detail", project_id=pid) + f"?page={page}#tab-change-orders")
-        return redirect(url_for("invoicing", tab="all-invoices"))
+        # Always redirect to the newly created invoice detail page
+        return redirect(url_for("invoice_detail", invoice_id=inv_id))
     next_num     = _next_invoice_number()
     prefill_proj = request.args.get("project", "")
     prefill_client = request.args.get("client", "")
