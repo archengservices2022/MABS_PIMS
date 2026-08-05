@@ -238,7 +238,10 @@
                   {%- else -%}
                     {{ proj }}
                   {%- endif -%}
-                  {%- if stage %}<br><small style="color:#64748B;">{{ stage }}</small>{% endif -%}
+                  {%- if stage -%}
+                    {%- set stage_clean = stage.split(' – ')[0].strip() if ' – ' in stage else stage -%}
+                    <br><small style="color:#64748B;">{{ stage_clean }}</small>
+                  {%- endif -%}
                 {%- endif -%}
               </td>
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
