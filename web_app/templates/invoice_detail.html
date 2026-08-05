@@ -241,7 +241,7 @@
                   {%- endif -%}
                   {%- if stage -%}
                     {%- set stage_clean = stage.split(' – ')[0].strip() if ' – ' in stage else stage -%}
-                    <br><small style="color:#64748B;">{{ stage_clean }}</small>
+                    <span style="color:#64748B;"> - {{ stage_clean }}</span>
                   {%- endif -%}
                 {%- endif -%}
               </td>
