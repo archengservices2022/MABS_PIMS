@@ -261,6 +261,9 @@
                     {%- set co_part = desc.split(' – ')[0].strip() -%}
                     {%- set addr_part = desc.split(' – ', 1)[1].strip() -%}
                     {{ co_part }} - {{ addr_part }}
+                  {%- elif addr -%}
+                    {%- set addr_clean = addr.split(' – ')[0].strip() if ' – ' in addr else addr -%}
+                    {{ addr_clean }}
                   {%- else -%}
                     {{ desc }}
                   {%- endif -%}
