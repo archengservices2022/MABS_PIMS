@@ -18064,8 +18064,12 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
 
         if is_co_stage:
             # For CO stage, use the PO/WO from the CO itself, NEVER the project's PO
-            # First try CO's PO/WO from stage lookup or meta lookup
-            po_to_use = co_po_wo_from_stage or ""
+            # First try PO/WO from line item (already enriched)
+            po_to_use = item.get("powo_number", "").strip() or ""
+
+            # If still empty, try CO's PO/WO from stage lookup or meta lookup
+            if not po_to_use:
+                po_to_use = co_po_wo_from_stage or ""
 
             # If still empty, try from invoice meta co_number in all projects
             if not po_to_use:
