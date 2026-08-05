@@ -765,8 +765,15 @@ function loadToInvoice() {
     return;
   }
 
-  const projectIds = readyProjects.map(p => p.firebase_id).join(',');
-  window.location.href = `{{ url_for('invoice_new') }}?projects=${projectIds}`;
+  // Build query parameters with project IDs and their corresponding stage indices
+  const params = new URLSearchParams();
+  const projectIds = readyProjects.map(p => p.firebase_id);
+  const stageIndices = readyProjects.map(p => p.next_stage_index !== undefined ? p.next_stage_index : '');
+
+  params.append('projects', projectIds.join(','));
+  params.append('item_stage_index', stageIndices.join(','));
+
+  window.location.href = `{{ url_for('invoice_new') }}?${params.toString()}`;
 }
 
 // Activate tab from URL param or server active_tab
