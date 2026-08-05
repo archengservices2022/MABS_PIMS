@@ -1852,7 +1852,9 @@ function quickInvoiceStage(idx, stageName, amount, projectId) {
   .then(r => r.json())
   .then(data => {
     if (data.success) {
-      // Redirect to invoice detail page
+      // Clear page parameter to prevent redirect back to project list, then go to invoice detail
+      sessionStorage.removeItem('projects_page');
+      console.log('[quickInvoiceStage] Invoice created:', data.invoice_id, 'Redirecting to invoice detail...');
       window.location.href = `/invoicing/${data.invoice_id}`;
     } else {
       alert('? Error: ' + (data.error || 'Could not create invoice'));
