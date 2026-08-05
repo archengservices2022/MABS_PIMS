@@ -765,8 +765,31 @@ function loadToInvoice() {
     return;
   }
 
-  const projectIds = readyProjects.map(p => p.firebase_id).join(',');
-  window.location.href = `{{ url_for('invoice_new') }}?projects=${projectIds}`;
+  // Create a hidden form to POST the multi-project invoice data
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = `{{ url_for('invoice_new') }}`;
+
+  // Add line items for each project with their stage index
+  readyProjects.forEach((project, index) => {
+    // Add project number
+    const projInput = document.createElement('input');
+    projInput.type = 'hidden';
+    projInput.name = 'item_project[]';
+    projInput.value = project.project_number;
+    form.appendChild(projInput);
+
+    // Add stage index for this project
+    const stageInput = document.createElement('input');
+    stageInput.type = 'hidden';
+    stageInput.name = 'item_stage_index[]';
+    stageInput.value = project.next_stage_index || '';
+    form.appendChild(stageInput);
+  });
+
+  // Submit the form
+  document.body.appendChild(form);
+  form.submit();
 }
 
 // Activate tab from URL param or server active_tab

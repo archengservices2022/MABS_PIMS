@@ -5342,9 +5342,11 @@ def api_get_projects(project_ids):
                     if detection.get("stage_name"):
                         proj["next_stage"] = detection.get("stage_name")
                         proj["next_stage_amount"] = detection.get("amount", 0)
+                        proj["next_stage_index"] = detection.get("stage_idx", "")
                     else:
                         proj["next_stage"] = "Fully Invoiced"
                         proj["next_stage_amount"] = 0
+                        proj["next_stage_index"] = ""
                     proj["stage_blocked"] = detection.get("blocked", False)
                     proj["stage_reason"] = detection.get("reason", "")
                 except Exception as e:
