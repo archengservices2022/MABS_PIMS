@@ -124,17 +124,17 @@ except Exception as exc:
 
 # ── Role helpers ──────────────────────────────────────────────────────────────
 ROLE_PAGES = {
-    "admin":          ["dashboard", "quotes", "projects", "invoicing", "clients", "payroll", "financial", "settings", "employees", "sales_dashboard", "timesheets", "reviews"],
+    "admin":          ["dashboard", "quotes", "projects", "invoicing", "clients", "payroll", "financial", "settings", "employees", "sales_dashboard", "timesheets", "reviews", "approvals"],
     "sales":          ["sales_dashboard", "quotes", "clients", "employees", "timesheets"],
     "projects":       ["projects", "invoicing", "clients", "employees", "timesheets"],
     "finance":        ["financial", "payroll", "employees", "timesheets"],
     "engineer":       ["employees", "timesheets"],
     "administration": ["dashboard", "projects", "invoicing", "clients", "employees", "timesheets"],
-    "accountant":     ["dashboard", "employees", "projects", "invoicing", "financial", "payroll", "timesheets"],
+    "accountant":     ["dashboard", "employees", "projects", "invoicing", "financial", "payroll", "timesheets", "approvals"],
 }
 
 ALL_PAGES = ["dashboard", "sales_dashboard", "quotes", "projects", "invoicing", "clients", "payroll",
-             "financial", "settings", "employees", "timesheets", "reviews"]
+             "financial", "settings", "employees", "timesheets", "reviews", "approvals"]
 
 PAGE_LABELS = {
     "dashboard":      "Dashboard",
@@ -149,6 +149,7 @@ PAGE_LABELS = {
     "sales_dashboard":"Sales Dashboard",
     "timesheets":     "Timesheets",
     "reviews":        "Performance Reviews",
+    "approvals":      "Approvals",
 }
 
 US_STATE_ABBRS = {
@@ -14996,6 +14997,101 @@ def settings():
                            permission_requests=_perm_reqs,
                            now=datetime.now(COMPANY_TZ))
 
+# ── Routes: Approvals (Admin + Accountant) ───────────────────────────────────
+@app.route("/approvals")
+@role_required("approvals")
+def approvals():
+    _role = normalize_role(session.get("user_role", ""))
+    if _role not in ("admin", "accountant"):
+        flash("You don't have permission to access this page.", "danger")
+        return redirect(url_for("dashboard"))
+
+    # Pending delete/permission requests
+    _perm_reqs = []
+    _raw_reqs = fb_get("/permission_requests") or {}
+    if isinstance(_raw_reqs, dict):
+        for _rid, _rd in _raw_reqs.items():
+            if _rd and isinstance(_rd, dict) and _rd.get("status") == "pending":
+                _rd["firebase_id"] = _rid
+                _perm_reqs.append(_rd)
+    _perm_reqs.sort(key=lambda x: x.get("requested_at", ""), reverse=True)
+
+    # Pending expense claims
+    pending_expenses = []
+    _raw_exp = fb_get("/expenses") or {}
+    if isinstance(_raw_exp, dict):
+        for eid, edata in _raw_exp.items():
+            if isinstance(edata, dict) and edata.get("status") == "Pending":
+                edata["firebase_id"] = eid
+                pending_expenses.append(edata)
+    pending_expenses.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+
+    # Pending medical claims
+    pending_medical = []
+    _raw_med = fb_get("/medical_claims") or {}
+    if isinstance(_raw_med, dict):
+        for cid, cdata in _raw_med.items():
+            if isinstance(cdata, dict) and cdata.get("status") == "Pending":
+                cdata["firebase_id"] = cid
+                pending_medical.append(cdata)
+    pending_medical.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+
+    # Pending time off
+    all_time_off = _load_time_off_requests()
+    pending_time_off = [r for r in all_time_off if r.get("status") == "Pending"]
+    pending_time_off.sort(key=lambda r: r.get("requested_at", ""), reverse=True)
+
+    # Pending timesheets
+    all_sheets = _load_timesheets()
+    pending_timesheets = [s for s in all_sheets if s.get("status") == "Submitted"]
+    pending_timesheets.sort(key=lambda s: s.get("submitted_at", ""), reverse=True)
+
+    return render_template("approvals.html",
+                           permission_requests=_perm_reqs,
+                           pending_expenses=pending_expenses,
+                           pending_medical=pending_medical,
+                           pending_time_off=pending_time_off,
+                           pending_timesheets=pending_timesheets,
+                           currency_symbol=CURRENCY_SYMBOL,
+                           now=datetime.now(COMPANY_TZ))
+
+@app.route("/api/approvals/count")
+@role_required("approvals")
+def api_approvals_count():
+    _role = normalize_role(session.get("user_role", ""))
+    if _role not in ("admin", "accountant"):
+        return jsonify({"count": 0})
+
+    count = 0
+
+    # Pending permission requests
+    _raw_reqs = fb_get("/permission_requests") or {}
+    if isinstance(_raw_reqs, dict):
+        count += sum(1 for r in _raw_reqs.values()
+                     if isinstance(r, dict) and r.get("status") == "pending")
+
+    # Pending expenses
+    _raw_exp = fb_get("/expenses") or {}
+    if isinstance(_raw_exp, dict):
+        count += sum(1 for e in _raw_exp.values()
+                     if isinstance(e, dict) and e.get("status") == "Pending")
+
+    # Pending medical claims
+    _raw_med = fb_get("/medical_claims") or {}
+    if isinstance(_raw_med, dict):
+        count += sum(1 for c in _raw_med.values()
+                     if isinstance(c, dict) and c.get("status") == "Pending")
+
+    # Pending time off
+    all_time_off = _load_time_off_requests()
+    count += sum(1 for r in all_time_off if r.get("status") == "Pending")
+
+    # Pending timesheets
+    all_sheets = _load_timesheets()
+    count += sum(1 for s in all_sheets if s.get("status") == "Submitted")
+
+    return jsonify({"count": count})
+
 @app.route("/settings/company", methods=["POST"])
 @role_required("settings")
 def settings_company():
@@ -18006,7 +18102,6 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                                     if co_fresh_powo:
                                         co_po_wo_from_stage = co_fresh_powo
                                     break
-
                         payment_stages = pdata.get("payment_stages", [])
                         payment_stage_index = None
                         # Find payment stage index from matching linked_project
