@@ -6208,23 +6208,32 @@ def invoice_detail(invoice_id):
                                     item["powo_number"] = powo
                                 break
                     else:
-                        # For CO stages, only set if not already fetched from CO
-                        if not item.get("powo_number"):
+                        # For CO stages, always fetch fresh POWO from CO (even if previously set)
+                        powo_found = False
+                        for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
+                            if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
+                                # Try from CO first
+                                cos = pdata.get("change_orders") or []
+                                if isinstance(cos, dict):
+                                    cos = list(cos.values())
+                                for co in (cos if isinstance(cos, list) else []):
+                                    if isinstance(co, dict):
+                                        if (co.get("co_number") == co_num or
+                                            co_num in co.get("name", "") or
+                                            co.get("name", "").startswith(co_num)):
+                                            powo = co.get("po_wo_number", "").strip()
+                                            if powo:
+                                                item["powo_number"] = powo
+                                                powo_found = True
+                                            break
+                                break
+                        # Only fall back to project POWO if CO doesn't have one
+                        if not powo_found:
                             for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
                                 if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
-                                    # Try from CO first
-                                    cos = pdata.get("change_orders") or []
-                                    if isinstance(cos, dict):
-                                        cos = list(cos.values())
-                                    for co in (cos if isinstance(cos, list) else []):
-                                        if isinstance(co, dict):
-                                            if (co.get("co_number") == co_num or
-                                                co_num in co.get("name", "") or
-                                                co.get("name", "").startswith(co_num)):
-                                                powo = co.get("po_wo_number", "").strip()
-                                                if powo:
-                                                    item["powo_number"] = powo
-                                                break
+                                    powo = pdata.get("po_wo_number", "").strip()
+                                    if powo:
+                                        item["powo_number"] = powo
                                     break
 
                 # Fetch plant fresh from project (always update, don't store snapshot)
