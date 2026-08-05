@@ -3176,6 +3176,7 @@ def projects_import_excel():
             skipped += 1
             continue
         co_entry = {
+            "firebase_id":  _generate_co_firebase_id(),
             "co_number":    co_num,
             "title":        d["site_address"] or co_num,
             "description":  d["notes"],
@@ -6161,13 +6162,29 @@ def invoice_detail(invoice_id):
                                 cos = pdata.get("change_orders") or []
                                 if isinstance(cos, dict):
                                     cos = list(cos.values())
+                                # Try multiple matching strategies
                                 for co in (cos if isinstance(cos, list) else []):
                                     if isinstance(co, dict):
-                                        if (co.get("co_number") == co_num or
-                                            co_num in co.get("name", "") or
-                                            co.get("name", "").startswith(co_num)):
+                                        co_db_num = co.get("co_number", "").strip().upper()
+                                        co_input = co_num.strip().upper()
+                                        # Extract just the CO part if full reference given (e.g., "MABS-202606103-CO-1" -> "CO-1")
+                                        if "-CO" in co_input and "-CO" in co_db_num:
+                                            co_input_short = co_input.split("-CO", 1)[1]
+                                            co_db_short = co_db_num.split("-CO", 1)[1]
+                                            if co_input_short == co_db_short:
+                                                item["co_firebase_id"] = co.get("firebase_id", "")
+                                                break
+                                        # Try exact match
+                                        elif co_db_num == co_input:
                                             item["co_firebase_id"] = co.get("firebase_id", "")
                                             break
+                                        # Try by name
+                                        elif (co_input in co.get("name", "").upper() or
+                                              co.get("name", "").upper().startswith(co_input)):
+                                            item["co_firebase_id"] = co.get("firebase_id", "")
+                                            break
+                                if item.get("co_firebase_id"):
+                                    break
                                 break
 
                 # If CO firebase_id exists, fetch latest POWO from that CO
