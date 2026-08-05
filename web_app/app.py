@@ -6135,16 +6135,11 @@ def invoice_detail(invoice_id):
                         if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
                             site_addr = pdata.get("site_address", "") or pdata.get("project_site_address", "")
                             if site_addr:
-                                # Remove phone and state/zip from address (keep contact name, street and city)
+                                # Remove state/zip/phone from address (keep contact name, street and city)
                                 import re
-                                # Remove phone numbers (T: or T( formats)
-                                site_addr = re.sub(r'\s+T:\s+\([^)]+\)[^\s]*', '', site_addr)
-                                site_addr = re.sub(r'\s+T\s+\(\d+\)[^\s]*', '', site_addr)
-                                site_addr = re.sub(r'\s+Phone:\s+\([^)]+\)[^\s]*', '', site_addr)
-
-                                # Remove state/zip part (handle both comma-separated and space-separated)
-                                # Pattern: optional comma, then 2-letter state code, then 5+ digit zip
-                                site_addr = re.sub(r',?\s+[A-Z]{2}\s+\d{5}(-\d{4})?$', '', site_addr).strip()
+                                # Remove everything from state code to end (state, zip, phone, etc)
+                                # Pattern: space + 2-letter state code + space + everything to end
+                                site_addr = re.sub(r'\s+[A-Z]{2}\s+.*$', '', site_addr).strip()
                                 item["site_address"] = site_addr
                             break
 
