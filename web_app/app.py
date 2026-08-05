@@ -6655,7 +6655,8 @@ def invoice_status(invoice_id):
         _upsert_revenue_entry(invoice_id, m)
 
     flash(f"Invoice updated to {new_status}. Project & balance sheet synced.", "success")
-    return redirect(url_for("invoice_detail", invoice_id=invoice_id))
+    page = request.form.get('page', '1')
+    return redirect(url_for("invoice_detail", invoice_id=invoice_id, page=page))
 
 @app.route("/api/invoices/<invoice_id>", methods=["GET"])
 @role_required("invoicing")
