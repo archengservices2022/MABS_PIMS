@@ -18124,8 +18124,21 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                 except (ValueError, TypeError, IndexError):
                     pass
         else:
-            # For non-CO stage, use project's PO
-            po_to_use = po_wo or ""
+            # For non-CO stage, always fetch fresh project's PO/WO
+            po_to_use = ""
+            if project_number:
+                try:
+                    all_projects = fb_get("/projects") or {}
+                    for pid, pdata_search in (all_projects.items() if isinstance(all_projects, dict) else []):
+                        if isinstance(pdata_search, dict) and pdata_search.get("project_number") == project_number:
+                            po_to_use = pdata_search.get("po_wo_number", "").strip()
+                            break
+                except Exception:
+                    pass
+
+            # Fallback to the initially fetched value if not found
+            if not po_to_use:
+                po_to_use = po_wo or ""
 
         # Process site address for all line items (both CO and non-CO)
         processed_site_address = site_address
