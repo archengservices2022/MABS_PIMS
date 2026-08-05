@@ -248,7 +248,8 @@
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
                 {%- if powo -%}
                   {%- if addr -%}
-                    {%- set clean_addr = addr.split(' T: ')[0].strip() if ' T: ' in addr else addr -%}
+                    {%- set clean_addr = addr.split(' T (')[0].strip() if ' T (' in addr else addr -%}
+                    {%- set clean_addr = clean_addr.split(' T: ')[0].strip() if ' T: ' in clean_addr else clean_addr -%}
                     {%- set clean_addr = clean_addr.split(' Phone: ')[0].strip() if ' Phone: ' in clean_addr else clean_addr -%}
                     {%- set addr_parts = clean_addr.split(',') -%}
                     {%- if addr_parts|length > 1 -%}
@@ -260,7 +261,8 @@
                   {%- endif -%}
                 {%- elif co -%}
                   {%- if addr -%}
-                    {%- set clean_addr = addr.split(' T: ')[0].strip() if ' T: ' in addr else addr -%}
+                    {%- set clean_addr = addr.split(' T (')[0].strip() if ' T (' in addr else addr -%}
+                    {%- set clean_addr = clean_addr.split(' T: ')[0].strip() if ' T: ' in clean_addr else clean_addr -%}
                     {%- set clean_addr = clean_addr.split(' Phone: ')[0].strip() if ' Phone: ' in clean_addr else clean_addr -%}
                     {%- set addr_parts = clean_addr.split(',') -%}
                     {%- if addr_parts|length > 1 -%}
@@ -274,7 +276,8 @@
                   {%- if 'co' in desc.lower() and ' – ' in desc -%}
                     {%- set co_part = desc.split(' – ')[0].strip() -%}
                     {%- set addr_part = desc.split(' – ', 1)[1].strip() -%}
-                    {%- set clean_addr = addr_part.split(' T: ')[0].strip() if ' T: ' in addr_part else addr_part -%}
+                    {%- set clean_addr = addr_part.split(' T (')[0].strip() if ' T (' in addr_part else addr_part -%}
+                    {%- set clean_addr = clean_addr.split(' T: ')[0].strip() if ' T: ' in clean_addr else clean_addr -%}
                     {%- set clean_addr = clean_addr.split(' Phone: ')[0].strip() if ' Phone: ' in clean_addr else clean_addr -%}
                     {%- set addr_parts = clean_addr.split(',') -%}
                     {%- if addr_parts|length > 1 -%}
