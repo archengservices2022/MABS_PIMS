@@ -15669,6 +15669,23 @@ def _get_next_payment_stage(project: dict, all_invoices: dict = None) -> dict:
     for idx, stage in enumerate(payment_stages):
         if isinstance(stage, dict) and idx not in invoiced_stages:
             stage_name = stage.get("name", f"Stage {idx + 1}")
+
+            # For CO stages, fetch PO/WO from the CO object
+            co_num = stage.get("co_number", "")
+            powo = ""
+            if co_num:
+                # Find the CO and get its PO/WO number
+                change_orders = project.get("change_orders", [])
+                if isinstance(change_orders, list):
+                    for co in change_orders:
+                        if isinstance(co, dict) and co.get("co_number") == co_num:
+                            powo = co.get("po_wo_number", "").strip()
+                            break
+
+            # Include PO/WO number if available
+            if powo:
+                stage_name = f"{stage_name} ({powo})"
+
             amount = _safe_float(stage.get("amount", 0))
             blocked = False
             reason = "Ready to invoice"
