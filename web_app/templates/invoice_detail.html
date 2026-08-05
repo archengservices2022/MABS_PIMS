@@ -202,6 +202,12 @@
 
       <!-- Line items -->
       <div style="padding:0 32px; position:relative; z-index:1;">
+        {%- set proj_firebase_map = {} -%}
+        {%- for lp in linked_projects -%}
+          {%- if lp.get('firebase_id') and lp.get('project_number') -%}
+            {%- set _ = proj_firebase_map.update({lp.get('project_number'): lp.get('firebase_id')}) -%}
+          {%- endif -%}
+        {%- endfor -%}
         <table style="width:100%; border-collapse:collapse; margin:0;">
           <thead>
             <tr style="background:#0F172A;">
@@ -233,9 +239,14 @@
                 {%- if proj -%}
                   {%- if ' – ' in proj -%}
                     {%- set proj_clean = proj.split(' – ')[0].strip() -%}
-                    {{ proj_clean }}
                   {%- else -%}
-                    {{ proj }}
+                    {%- set proj_clean = proj -%}
+                  {%- endif -%}
+                  {%- set proj_firebase_id = proj_firebase_map.get(proj_clean, '') -%}
+                  {%- if proj_firebase_id -%}
+                    <a href="/projects/{{ proj_firebase_id }}" style="color:#0369A1; text-decoration:none; cursor:pointer;">{{ proj_clean }}</a>
+                  {%- else -%}
+                    {{ proj_clean }}
                   {%- endif -%}
                   {%- if stage -%}
                     {%- set stage_clean = stage.split(' – ')[0].strip() if ' – ' in stage else stage -%}
