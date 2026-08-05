@@ -6245,10 +6245,10 @@ def invoice_detail(invoice_id):
             if source_quote:
                 source_quote["firebase_id"] = sq_id
 
-    # Sort line items by amount in descending order (highest revenue first)
+    # Sort line items by project number in ascending order
     line_items = data.get("line_items", [])
     if isinstance(line_items, list):
-        data["line_items"] = sorted(line_items, key=lambda x: _safe_float(x.get("amount", 0)), reverse=True)
+        data["line_items"] = sorted(line_items, key=lambda x: x.get("project_number", ""))
 
     _uid  = session.get("user_uid", "")
     _role = normalize_role(session.get("user_role", ""))
