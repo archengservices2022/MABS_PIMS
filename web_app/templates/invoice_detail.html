@@ -30,6 +30,7 @@
     </a>
     <form method="POST" action="{{ url_for('invoice_send', invoice_id=invoice.firebase_id) }}"
           onsubmit="return confirm('{{ 'Send receipt to' if meta.get('status') == 'Paid' else 'Send invoice to' }} {{ meta.get('company_name') or meta.get('client_name','client') }}?');">
+      <input type="hidden" name="page" id="sendPageInput" value="1">
       {% if meta.get('status') == 'Paid' %}
       <button type="submit" class="btn btn-sm btn-outline-success">
         <i class="bi bi-envelope-check me-1"></i>Send Receipt
@@ -1086,7 +1087,7 @@ function copyReminder() {
   navigator.clipboard.writeText('Subject: ' + subj + '\n\n' + body);
 }
 
-// Preserve page number when deleting or updating status on invoice
+// Preserve page number when deleting, updating status, or sending invoice
 document.addEventListener('DOMContentLoaded', function() {
   const urlParams = new URLSearchParams(window.location.search);
   const page = urlParams.get('page') || '1';
@@ -1099,6 +1100,11 @@ document.addEventListener('DOMContentLoaded', function() {
   const statusPageInput = document.getElementById('statusPageInput');
   if (statusPageInput) {
     statusPageInput.value = page;
+  }
+
+  const sendPageInput = document.getElementById('sendPageInput');
+  if (sendPageInput) {
+    sendPageInput.value = page;
   }
 });
 
