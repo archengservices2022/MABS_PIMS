@@ -6158,12 +6158,22 @@ def invoice_detail(invoice_id):
                     co_num = item.get("co_number", "")
                     desc = item.get("description", "").strip()
 
-                    # First try common payment stage names
-                    common_stages = ["Full Payment", "Down Payment", "Deposit", "Retainage", "Final Payment", "Mobilization"]
-                    for stage in common_stages:
-                        if desc == stage or desc.startswith(stage):
-                            item["stage_name"] = desc
-                            break
+                    # First try extracting from description format "Project Name — Stage Name"
+                    if " — " in desc:
+                        parts = desc.split(" — ")
+                        if len(parts) >= 2:
+                            extracted_stage = parts[-1].strip()  # Get the last part after "—"
+                            common_stages = ["Full Payment", "Down Payment", "Deposit", "Retainage", "Final Payment", "Mobilization"]
+                            if extracted_stage in common_stages or any(extracted_stage.startswith(s) for s in common_stages):
+                                item["stage_name"] = extracted_stage
+
+                    # Fallback to common payment stage names if not found in description
+                    if not item.get("stage_name"):
+                        common_stages = ["Full Payment", "Down Payment", "Deposit", "Retainage", "Final Payment", "Mobilization"]
+                        for stage in common_stages:
+                            if desc == stage or desc.startswith(stage):
+                                item["stage_name"] = stage
+                                break
 
                     # If CO number exists and no stage_name found, use CO number as stage name
                     if not item.get("stage_name") and co_num:
