@@ -17835,6 +17835,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         po_wo = ""
         site_address = ""
         co_po_wo_from_stage = ""
+        payment_stage_index = None
         if project_number:
             try:
                 raw_proj = fb_get("/projects") or {}
