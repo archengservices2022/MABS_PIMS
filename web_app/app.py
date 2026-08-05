@@ -6138,8 +6138,8 @@ def invoice_detail(invoice_id):
                                 # Remove state/zip/phone from address (keep contact name, street and city)
                                 import re
                                 # Remove everything from state code to end (state, zip, phone, etc)
-                                # Pattern: space + 2-letter state code + space + everything to end
-                                site_addr = re.sub(r'\s+[A-Z]{2}\s+.*$', '', site_addr).strip()
+                                # Pattern: optional comma + whitespace + 2-letter state code + space + everything to end
+                                site_addr = re.sub(r',?\s*[A-Z]{2}\s+.*$', '', site_addr).strip()
                                 item["site_address"] = site_addr
                             break
 
