@@ -182,6 +182,16 @@
       <span class="nav-label">Reviews</span>
     </a>
     {% endif %}
+
+    {% if 'approvals' in allowed_pages %}
+    <a href="{{ url_for('approvals') }}"
+       class="nav-item accent-teal {% if request.endpoint == 'approvals' %}active{% endif %}"
+       id="approvalsNavItem">
+      <span class="nav-icon"><i class="bi bi-check2-square-fill"></i></span>
+      <span class="nav-label">Approvals</span>
+      <span class="badge bg-danger" id="approvalsCountBadge" style="font-size:9px;margin-left:6px;display:none;"></span>
+    </a>
+    {% endif %}
   </nav>
 
   <div class="sb-spacer"></div>
@@ -544,6 +554,26 @@ document.querySelectorAll('.alert-toast').forEach(function(el) {
   // Initial badge load + poll every 60s
   fetchNotifications(false);
   setInterval(function () { fetchNotifications(false); }, 60000);
+})();
+
+// ── Approvals Badge ───────────────────────────────────────────────────────────
+(function () {
+  function updateApprovalsBadge() {
+    var badge = document.getElementById('approvalsCountBadge');
+    if (!badge) return;
+    fetch('/api/approvals/count').then(function (r) { return r.json(); }).then(function (data) {
+      if (data.count > 0) {
+        badge.textContent = data.count > 99 ? '99+' : data.count;
+        badge.style.display = '';
+      } else {
+        badge.style.display = 'none';
+      }
+    }).catch(function () {});
+  }
+  if (document.getElementById('approvalsNavItem')) {
+    updateApprovalsBadge();
+    setInterval(updateApprovalsBadge, 60000);
+  }
 })();
 
 // Global copy-to-clipboard helper
