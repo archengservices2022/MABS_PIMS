@@ -6205,30 +6205,38 @@ def invoice_detail(invoice_id):
                     except Exception:
                         pass
 
-                # If POWO not set, try to extract from project
-                if not item.get("powo_number") and proj_num:
+                # Always fetch fresh POWO from project for non-CO stages (auto-updates when project POWO changes)
+                if proj_num:
                     co_num = item.get("co_number", "")
-                    # Find project and get POWO
-                    for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
-                        if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
-                            # Get POWO from project first
-                            powo = pdata.get("po_wo_number", "").strip()
-                            if not powo and co_num:
-                                # Then try from CO
-                                cos = pdata.get("change_orders") or []
-                                if isinstance(cos, dict):
-                                    cos = list(cos.values())
-                                for co in (cos if isinstance(cos, list) else []):
-                                    if isinstance(co, dict):
-                                        if (co.get("co_number") == co_num or
-                                            co_num in co.get("name", "") or
-                                            co.get("name", "").startswith(co_num)):
-                                            powo = co.get("po_wo_number", "").strip()
-                                            if powo:
+                    is_co_stage = bool(co_num or item.get("co_firebase_id"))
+
+                    # For non-CO stages, always get fresh POWO from project
+                    if not is_co_stage:
+                        for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
+                            if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
+                                powo = pdata.get("po_wo_number", "").strip()
+                                if powo:
+                                    item["powo_number"] = powo
+                                break
+                    else:
+                        # For CO stages, only set if not already fetched from CO
+                        if not item.get("powo_number"):
+                            for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
+                                if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
+                                    # Try from CO first
+                                    cos = pdata.get("change_orders") or []
+                                    if isinstance(cos, dict):
+                                        cos = list(cos.values())
+                                    for co in (cos if isinstance(cos, list) else []):
+                                        if isinstance(co, dict):
+                                            if (co.get("co_number") == co_num or
+                                                co_num in co.get("name", "") or
+                                                co.get("name", "").startswith(co_num)):
+                                                powo = co.get("po_wo_number", "").strip()
+                                                if powo:
+                                                    item["powo_number"] = powo
                                                 break
-                            if powo:
-                                item["powo_number"] = powo
-                            break
+                                    break
 
                 # Fetch plant fresh from project (always update, don't store snapshot)
                 if proj_num:
