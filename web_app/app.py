@@ -17219,9 +17219,24 @@ def _parse_invoice_form(form, co_number="") -> dict:
         # Not a CO, return full description as address
         return "", desc
 
+    # Helper to get POWO from CO by firebase_id (for CO stages only, no fallback)
+    def _get_co_powo_by_id(project_data, co_firebase_id=""):
+        """Get POWO from a specific CO by firebase_id. For CO stages only."""
+        if not project_data or not co_firebase_id:
+            return ""
+
+        change_orders = project_data.get("change_orders") or []
+        if isinstance(change_orders, dict):
+            change_orders = list(change_orders.values())
+        if isinstance(change_orders, list):
+            for co_data in change_orders:
+                if isinstance(co_data, dict) and co_data.get("firebase_id") == co_firebase_id:
+                    return co_data.get("po_wo_number", "").strip()
+        return ""
+
     # Helper to get POWO number (from change order or project)
     def _get_powo(project_data, co_number=""):
-        """Get POWO (po_wo_number) from change order or project."""
+        """Get POWO (po_wo_number) from change order or project. For regular payment stages."""
         if not project_data:
             return ""
 
@@ -17285,13 +17300,11 @@ def _parse_invoice_form(form, co_number="") -> dict:
             extracted_co, desc_address = _extract_co_and_address(desc)
             item_co_number = extracted_co or co_number  # Use passed CO number if not in description
 
-            # Get POWO number and CO firebase_id (from project or change order)
-            powo_number = _get_powo(project_data, item_co_number)
-            co_firebase_id = _get_co_firebase_id(project_data, item_co_number) if item_co_number else ""
-
-            # Get payment stage name if stage index is provided
+            # Get payment stage name and CO firebase_id if stage index is provided
             stage_name = ""
             stage_idx_str = item_stages[i].strip() if i < len(item_stages) else ""
+            co_firebase_id_from_stage = ""
+
             if stage_idx_str and project_data:
                 try:
                     stage_idx = int(stage_idx_str)
@@ -17300,8 +17313,19 @@ def _parse_invoice_form(form, co_number="") -> dict:
                         stage = stages[stage_idx]
                         if isinstance(stage, dict):
                             stage_name = stage.get("name", "")
+                            co_firebase_id_from_stage = stage.get("co_firebase_id", "")
                 except (ValueError, IndexError):
                     pass
+
+            # Get POWO number and CO firebase_id
+            # If this is a CO stage (has co_firebase_id from stage), use CO POWO only
+            if co_firebase_id_from_stage:
+                powo_number = _get_co_powo_by_id(project_data, co_firebase_id_from_stage)
+                co_firebase_id = co_firebase_id_from_stage
+            else:
+                # Regular payment stage - use project POWO
+                powo_number = _get_powo(project_data, item_co_number)
+                co_firebase_id = _get_co_firebase_id(project_data, item_co_number) if item_co_number else ""
             log.info(f"[PARSE_INV] Line {i}: stage_idx_str={stage_idx_str}, project_data exists={bool(project_data)}, stage_name={stage_name}")
 
             # Use extracted address if description had format "CO — address", otherwise use project site_address
@@ -20287,27 +20311,11 @@ def quick_invoice_stage(project_id, stage_idx):
         # Build enriched line items for this stage
         co_number = stage.get("co_number", "")
         co_firebase_id = stage.get("co_firebase_id", "")
+
+        # Get POWO: For CO stages, ONLY use CO POWO (don't fall back to project)
         powo_number = ""
-        site_address = project.get("site_address", "") or project.get("project_site_address", "")
-
-        # Truncate address to remove state/zip/phone (keep only street and city)
-        if site_address:
-            import re
-            # Remove phone numbers (e.g., "T: (801) 205-9365")
-            site_address = re.sub(r'\s+T:\s+\([^)]+\)[^\s]*', '', site_address)
-            site_address = re.sub(r'\s+Phone:\s+\([^)]+\)[^\s]*', '', site_address)
-
-            # Split by comma and remove state/zip part
-            addr_parts = site_address.split(",")
-            if len(addr_parts) > 1:
-                last_part = addr_parts[-1].strip()
-                # State codes are typically 2 chars, or have zip pattern
-                if len(last_part) <= 15 or any(c.isdigit() for c in last_part):
-                    # Remove last part (likely state/zip)
-                    site_address = ", ".join(addr_parts[:-1]).strip()
-
-        # Get POWO from CO if available
         if co_firebase_id:
+            # This is a CO stage - get POWO from CO only
             cos = project.get("change_orders") or []
             if isinstance(cos, dict):
                 cos = list(cos.values())
@@ -20315,6 +20323,9 @@ def quick_invoice_stage(project_id, stage_idx):
                 if isinstance(co, dict) and co.get("firebase_id") == co_firebase_id:
                     powo_number = co.get("po_wo_number", "").strip()
                     break
+        else:
+            # Regular payment stage - use project POWO
+            powo_number = project.get("po_wo_number", "").strip()
 
         log.info(f"[QUICK_INVOICE] stage_idx={stage_idx}, stage_name={stage_name}, co_id={co_firebase_id}, powo={powo_number}")
 
