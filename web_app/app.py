@@ -6243,6 +6243,9 @@ def invoice_detail(invoice_id):
                     except Exception:
                         pass
 
+                # DEBUG: Log the stage_name for this line item
+                log.info(f"[INVOICE_DETAIL] proj={proj_num}, co_num={co_num}, co_firebase_id={item.get('co_firebase_id','')}, stored_stage_name={item.get('stage_name','')}")
+
                 # Always fetch fresh POWO from project for non-CO stages (auto-updates when project POWO changes)
                 if proj_num:
                     co_firebase_id = item.get("co_firebase_id", "")
