@@ -18063,9 +18063,24 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         po_to_use = ""
 
         if is_co_stage:
-            # For CO stage, use the PO/WO from the CO itself, NEVER the project's PO
-            # First try PO/WO from line item (already enriched)
-            po_to_use = item.get("powo_number", "").strip() or ""
+            # For CO stage, always fetch latest PO/WO from the CO itself, NEVER use stored value
+            po_to_use = ""
+
+            # Try to fetch fresh CO data using co_firebase_id if available
+            co_firebase_id = item.get("co_firebase_id", "").strip()
+            if co_firebase_id:
+                try:
+                    all_projects = fb_get("/projects") or {}
+                    for pid, pdata_search in (all_projects.items() if isinstance(all_projects, dict) else []):
+                        if isinstance(pdata_search, dict):
+                            for _co in _normalise_list(pdata_search.get("change_orders")):
+                                if isinstance(_co, dict) and _co.get("firebase_id") == co_firebase_id:
+                                    po_to_use = _co.get("po_wo_number", "").strip()
+                                    break
+                            if po_to_use:
+                                break
+                except Exception:
+                    pass
 
             # If still empty, try CO's PO/WO from stage lookup or meta lookup
             if not po_to_use:
