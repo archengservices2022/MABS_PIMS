@@ -765,22 +765,9 @@ function loadToInvoice() {
     return;
   }
 
-  // Get firebase IDs from the projects
+  // Get firebase IDs and redirect to invoice_new form with projects parameter
   const projectIds = readyProjects.map(p => p.firebase_id).join(',');
-
-  // Use the new create_multiproject_invoice endpoint to create a SINGLE invoice
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = `{{ url_for('create_multiproject_invoice') }}`;
-
-  const input = document.createElement('input');
-  input.type = 'hidden';
-  input.name = 'project_ids';
-  input.value = projectIds;
-  form.appendChild(input);
-
-  document.body.appendChild(form);
-  form.submit();
+  window.location.href = `{{ url_for('invoice_new') }}?projects=${encodeURIComponent(projectIds)}`;
 }
 
 // Activate tab from URL param or server active_tab
