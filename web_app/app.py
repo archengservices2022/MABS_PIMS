@@ -6251,10 +6251,10 @@ def invoice_detail(invoice_id):
                                     break
                                 break
 
-                # If CO firebase_id exists, fetch latest POWO from that CO
+                # If CO firebase_id exists, ALWAYS fetch fresh/latest POWO from that CO
+                # This ensures the description shows the current PO/WO even if it was updated after invoice creation
                 if item.get("co_firebase_id"):
                     co_firebase_id = item.get("co_firebase_id")
-                    # Try to fetch CO document directly using firebase_id
                     try:
                         # Search through all projects' change_orders for this firebase_id
                         for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
@@ -6267,9 +6267,10 @@ def invoice_detail(invoice_id):
                                         powo = co.get("po_wo_number", "").strip()
                                         if powo:
                                             item["powo_number"] = powo
+                                            log.info(f"[INVOICE_DETAIL] CO firebase_id={co_firebase_id}: fetched fresh powo='{powo}'")
                                         break
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.error(f"[INVOICE_DETAIL] Error fetching fresh PO/WO for CO {co_firebase_id}: {e}")
 
                 # Always fetch fresh POWO from project for non-CO stages (auto-updates when project POWO changes)
                 if proj_num:
@@ -18312,11 +18313,12 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                             for _co in _normalise_list(pdata_search.get("change_orders")):
                                 if isinstance(_co, dict) and _co.get("firebase_id") == co_firebase_id:
                                     po_to_use = _co.get("po_wo_number", "").strip()
+                                    log.info(f"[PDF_POWO] CO firebase_id={co_firebase_id}: fetched fresh powo='{po_to_use}'")
                                     break
                             if po_to_use:
                                 break
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.error(f"[PDF_POWO] Error fetching fresh PO/WO for CO {co_firebase_id}: {e}")
 
             # If still empty, try CO's PO/WO from stage lookup or meta lookup
             if not po_to_use:
