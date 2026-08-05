@@ -17075,7 +17075,7 @@ def _next_project_number() -> str:
                         nums.append(int(m.group(1)))
                     except ValueError:
                         pass
-    next_n = (max(nums) + 1) if nums else 1
+    next_n = 101 if (not nums or max(nums) < 100) else (max(nums) + 1)
     return f"{base}{next_n:03d}"
 
 def _parse_service_types(form) -> list:
