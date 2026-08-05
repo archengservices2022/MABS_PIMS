@@ -4498,7 +4498,7 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
         "co_number": co_number,
         "co_firebase_id": co_firebase_id,
         "powo_number": powo_number,
-        "site_address": site_address,
+        # Don't store site_address — always fetch fresh from project on view
         "plant": _project_plant_display(project) if project else "",
     })
 
@@ -4531,7 +4531,7 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
             "co_number": co_stage_co_number,
             "co_firebase_id": co_stage_co_firebase_id,
             "powo_number": co_stage_powo,
-            "site_address": site_address,
+            # Don't store site_address — always fetch fresh from project on view
             "plant": _project_plant_display(project) if project else "",
         })
         linked_projects.append({"project_number": proj_num, "payment_stage_index": co_idx})
@@ -20328,7 +20328,7 @@ def quick_invoice_stage(project_id, stage_idx):
             "co_number": co_number,
             "co_firebase_id": co_firebase_id,
             "powo_number": powo_number,
-            "site_address": site_address,
+            # Don't store site_address — always fetch fresh from project on view
             "plant": _project_plant_display(project) if project else "",
         }]
         linked_projects = [{"project_number": proj_num, "payment_stage_index": stage_idx}]
