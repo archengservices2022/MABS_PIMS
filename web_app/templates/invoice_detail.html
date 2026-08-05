@@ -246,15 +246,34 @@
                 {%- endif -%}
               </td>
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
+                {%- macro clean_address(address) -%}
+                  {%- if address -%}
+                    {%- set result = address -%}
+                    {%- if ' T: ' in result -%}
+                      {%- set result = result.split(' T: ')[0].strip() -%}
+                    {%- endif -%}
+                    {%- if ' Phone: ' in result -%}
+                      {%- set result = result.split(' Phone: ')[0].strip() -%}
+                    {%- endif -%}
+                    {%- set parts = result.split(',') -%}
+                    {%- if parts|length > 1 -%}
+                      {%- set last_part = parts[-1].strip() -%}
+                      {%- if (last_part|length <= 15 and last_part != parts[-1].strip()) or (' ' in last_part and last_part[0].isupper() and last_part|length <= 5) -%}
+                        {%- set result = ', '.join(parts[:-1]).strip() -%}
+                      {%- endif -%}
+                    {%- endif -%}
+                    {{ result }}
+                  {%- endif -%}
+                {%- endmacro -%}
                 {%- if powo -%}
                   {%- if addr -%}
-                    {{ powo }} - {{ addr }}
+                    {{ powo }} - {{ clean_address(addr) }}
                   {%- else -%}
                     {{ powo }}
                   {%- endif -%}
                 {%- elif co -%}
                   {%- if addr -%}
-                    {{ co }} - {{ addr }}
+                    {{ co }} - {{ clean_address(addr) }}
                   {%- else -%}
                     {{ co }}
                   {%- endif -%}
@@ -262,7 +281,7 @@
                   {%- if 'co' in desc.lower() and ' – ' in desc -%}
                     {%- set co_part = desc.split(' – ')[0].strip() -%}
                     {%- set addr_part = desc.split(' – ', 1)[1].strip() -%}
-                    {{ co_part }} - {{ addr_part }}
+                    {{ co_part }} - {{ clean_address(addr_part) }}
                   {%- else -%}
                     {{ desc }}
                   {%- endif -%}
