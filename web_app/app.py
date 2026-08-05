@@ -17417,6 +17417,8 @@ def _parse_invoice_form(form, co_number="") -> dict:
             stage_idx_str = item_stages[i].strip() if i < len(item_stages) else ""
             co_firebase_id_from_stage = ""
 
+            log.info(f"[PARSE_INV_MULTI] Line {i}: proj={proj_number}, stage_idx_str='{stage_idx_str}', has_project_data={bool(project_data)}")
+
             if stage_idx_str and project_data:
                 try:
                     stage_idx = int(stage_idx_str)
@@ -17463,6 +17465,8 @@ def _parse_invoice_form(form, co_number="") -> dict:
                     if len(last_part) <= 15 or any(c.isdigit() for c in last_part):
                         # Remove last part (likely state/zip)
                         display_address = ", ".join(addr_parts[:-1]).strip()
+
+            log.info(f"[PARSE_INV_STORED] Line {i}: proj={proj_number}, stage_name='{stage_name}', co_number={item_co_number}")
 
             line_items.append({
                 "description":    desc,
