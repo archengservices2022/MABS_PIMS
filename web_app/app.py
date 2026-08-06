@@ -15009,13 +15009,17 @@ def approvals():
 
     # All delete/permission requests (pending + completed/approved/denied)
     _perm_reqs = []
+    _perm_reqs_pending = []
     _raw_reqs = fb_get("/permission_requests") or {}
     if isinstance(_raw_reqs, dict):
         for _rid, _rd in _raw_reqs.items():
             if _rd and isinstance(_rd, dict):
                 _rd["firebase_id"] = _rid
                 _perm_reqs.append(_rd)
+                if _rd.get("status") == "pending":
+                    _perm_reqs_pending.append(_rd)
     _perm_reqs.sort(key=lambda x: x.get("requested_at", ""), reverse=True)
+    _perm_reqs_pending.sort(key=lambda x: x.get("requested_at", ""), reverse=True)
 
     # Pending expense claims
     pending_expenses = []
@@ -15049,6 +15053,7 @@ def approvals():
 
     return render_template("approvals.html",
                            permission_requests=_perm_reqs,
+                           pending_permission_requests=_perm_reqs_pending,
                            pending_expenses=pending_expenses,
                            pending_medical=pending_medical,
                            pending_time_off=pending_time_off,
