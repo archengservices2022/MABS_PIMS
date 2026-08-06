@@ -118,7 +118,19 @@
               {% for item in all_employee_items %}
               <tr>
                 <td class="fw-semibold">{{ item.employee }}</td>
-                <td><span class="badge" style="background:#3b82f6;color:white;">{{ item.type }}</span></td>
+                <td>
+                  {% if item.type == 'Medical' %}
+                    <span class="badge" style="background:#8b5cf6;color:white;">{{ item.type }}</span>
+                  {% elif item.type == 'Expense' %}
+                    <span class="badge" style="background:#f97316;color:white;">{{ item.type }}</span>
+                  {% elif item.type == 'Time Off' %}
+                    <span class="badge" style="background:#10b981;color:white;">{{ item.type }}</span>
+                  {% elif item.type == 'Timesheet' %}
+                    <span class="badge" style="background:#0891b2;color:white;">{{ item.type }}</span>
+                  {% else %}
+                    <span class="badge" style="background:#6b7280;color:white;">{{ item.type }}</span>
+                  {% endif %}
+                </td>
                 <td class="text-muted text-nowrap">
                   {% if item.cat == 'timeoff' %}
                     {{ item.date | format_date }} to {{ item.date_end | format_date }}
