@@ -15168,6 +15168,7 @@ def approvals():
             'reviewed_by': reviewed_by,
             'sent_back': sheet.get('status') == 'Draft' and sheet.get('sent_back_by'),
             'notes': sheet.get('submitted_at', '—')[:10] if sheet.get('submitted_at') else '—',
+            'week_of': sheet.get('week_of', ''),
             'days_pending': days_pending,
             'cat': 'timesheet'
         })
