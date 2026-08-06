@@ -15093,14 +15093,23 @@ def approvals():
             'cat': 'expense'
         })
     for req in pending_time_off:
+        # Calculate hours for time off
+        r_hours = req.get('total_hours')
+        if r_hours is None:
+            if req.get('type') == 'Half Day':
+                r_hours = 4
+            elif req.get('type') == 'Unpaid':
+                r_hours = None
+            else:
+                r_hours = (req.get('working_days', 0) or 1) * 8
         all_employee_items.append({
             'type': 'Time Off',
             'employee': req.get('employee_name', '—'),
             'date': req.get('start_date', ''),
             'date_end': req.get('end_date', ''),
             'sort_key': req.get('requested_at', ''),
-            'amount': '—',
-            'currency': '',
+            'amount': r_hours if r_hours is not None else '—',
+            'currency': 'h',
             'status': req.get('status', 'Pending'),
             'reviewed_by': req.get('reviewed_by', '—'),
             'notes': req.get('reason', '—'),
