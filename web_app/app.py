@@ -15160,7 +15160,7 @@ def approvals():
             'amount': sheet.get('total_hours', 0),
             'currency': 'h',
             'status': sheet.get('status', 'Submitted'),
-            'reviewed_by': sheet.get('reviewed_by', '—'),
+            'reviewed_by': sheet.get('approved_by', '—'),
             'notes': sheet.get('submitted_at', '—')[:10] if sheet.get('submitted_at') else '—',
             'days_pending': days_pending,
             'cat': 'timesheet'
