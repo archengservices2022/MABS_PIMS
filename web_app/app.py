@@ -15210,7 +15210,8 @@ def approvals():
 
     # Get exchange rate from settings
     _settings = load_settings()
-    bdt_exchange_rate = _safe_float(_settings.get("bdt_exchange_rate", 110)) or 110
+    _company_settings = _settings.get("company", {})
+    bdt_exchange_rate = _safe_float(_company_settings.get("bdt_exchange_rate", 110)) or 110
 
     return render_template("approvals.html",
                            permission_requests=_perm_reqs,
