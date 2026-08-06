@@ -164,7 +164,7 @@
                       <i class="bi bi-box-arrow-up-right me-1"></i>Open
                     </a>
                   {% elif item.cat == 'timesheet' %}
-                    <a href="{{ url_for('timesheets') }}" class="btn btn-xs btn-outline-secondary" title="Open Timesheets">
+                    <a href="{{ url_for('timesheets', week=item.week_of) }}" class="btn btn-xs btn-outline-secondary" title="Open Timesheets">
                       <i class="bi bi-box-arrow-up-right me-1"></i>Open
                     </a>
                   {% else %}
