@@ -490,6 +490,9 @@ def role_required(page_key):
             role         = session.get("user_role", "")
             custom_pages = session.get("custom_pages") or None
             if not can_access(role, page_key, custom_pages):
+                # For API endpoints, return JSON error; for pages, redirect
+                if request.path.startswith("/api/"):
+                    return jsonify({"error": "Access denied"}), 403
                 flash("You don't have permission to access this page.", "danger")
                 return redirect(url_for(first_page(role, custom_pages)))
             return f(*args, **kwargs)
