@@ -924,6 +924,14 @@ def login():
                         _clear_login_attempts(ip)
                         role         = normalize_role(profile.get("role", "sales"))
                         custom_pages = profile.get("custom_pages") or None
+
+                        # Auto-migrate: add new role pages to existing custom_pages
+                        if custom_pages and isinstance(custom_pages, list):
+                            role_defaults = ROLE_PAGES.get(role, [])
+                            for page in role_defaults:
+                                if page not in custom_pages:
+                                    custom_pages.append(page)
+
                         session.permanent        = True
                         session["user_email"]    = email
                         session["user_uid"]      = uid
