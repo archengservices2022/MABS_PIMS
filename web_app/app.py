@@ -928,9 +928,15 @@ def login():
                         # Auto-migrate: add new role pages to existing custom_pages
                         if custom_pages and isinstance(custom_pages, list):
                             role_defaults = ROLE_PAGES.get(role, [])
+                            needs_update = False
                             for page in role_defaults:
                                 if page not in custom_pages:
                                     custom_pages.append(page)
+                                    needs_update = True
+                            # Save migrated pages back to Firebase
+                            if needs_update:
+                                fb_update(f"/users/{uid}", {"custom_pages": custom_pages})
+                                log.info(f"Auto-migrated pages for {email}: added missing pages to custom_pages")
 
                         session.permanent        = True
                         session["user_email"]    = email
