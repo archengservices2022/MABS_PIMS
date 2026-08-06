@@ -124,13 +124,13 @@ except Exception as exc:
 
 # ── Role helpers ──────────────────────────────────────────────────────────────
 ROLE_PAGES = {
-    "admin":          ["dashboard", "quotes", "projects", "invoicing", "clients", "payroll", "financial", "settings", "employees", "sales_dashboard", "timesheets", "reviews", "approvals"],
+    "admin":          ["dashboard", "quotes", "projects", "invoicing", "clients", "payroll", "financial", "settings", "employees", "sales_dashboard", "timesheets", "reviews"],
     "sales":          ["sales_dashboard", "quotes", "clients", "employees", "timesheets"],
     "projects":       ["projects", "invoicing", "clients", "employees", "timesheets"],
     "finance":        ["financial", "payroll", "employees", "timesheets"],
     "engineer":       ["employees", "timesheets"],
     "administration": ["dashboard", "projects", "invoicing", "clients", "employees", "timesheets"],
-    "accountant":     ["dashboard", "employees", "projects", "invoicing", "financial", "payroll", "timesheets", "approvals"],
+    "accountant":     ["dashboard", "employees", "projects", "invoicing", "financial", "payroll", "timesheets"],
 }
 
 ALL_PAGES = ["dashboard", "sales_dashboard", "quotes", "projects", "invoicing", "clients", "payroll",
