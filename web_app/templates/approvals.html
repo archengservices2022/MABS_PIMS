@@ -122,7 +122,10 @@
                 <td class="fw-semibold">{{ claim.get('employee_name', '—') }}</td>
                 <td><span class="badge" style="background:#6366f1;color:white;">Medical</span></td>
                 <td class="text-muted text-nowrap">{{ claim.get('claim_date','—') | format_date }}</td>
-                <td class="fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(claim.get('amount_claimed',0)|float) }}</td>
+                <td class="fw-semibold">
+                  {% set curr = claim.get('amount_currency', 'BDT') %}
+                  {% if curr == 'BDT' %}৳{% elif curr == 'USD' %}${% else %}{{ curr }}{% endif %}{{ "{:,.2f}".format(claim.get('amount_claimed',0)|float) }}
+                </td>
                 <td><span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span></td>
                 <td class="text-muted small">{{ claim.get('description','—') }}</td>
                 <td class="text-center text-nowrap">
