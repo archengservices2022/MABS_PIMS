@@ -3146,10 +3146,10 @@ document.querySelectorAll('.approve-timeoff-btn').forEach(function(btn) {
   btn.addEventListener('click', function() {
     var requestId = this.dataset.requestId;
     if (!requestId) return;
-    fetch('/employees/time-off/' + requestId + '/action', {
+    fetch('/employees/time-off/' + requestId + '/approve', {
       method: 'POST',
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: 'action=approve'
+      body: ''
     })
     .then(function(r) { return r.json(); })
     .then(function(d) {
@@ -3170,10 +3170,10 @@ document.querySelectorAll('.reject-timeoff-btn').forEach(function(btn) {
     if (!requestId) return;
     var reason = prompt('Reason for rejecting (optional):');
     if (reason === null) return; // User cancelled
-    fetch('/employees/time-off/' + requestId + '/action', {
+    fetch('/employees/time-off/' + requestId + '/reject', {
       method: 'POST',
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: 'action=reject&notes=' + encodeURIComponent(reason || '')
+      body: 'notes=' + encodeURIComponent(reason || '')
     })
     .then(function(r) { return r.json(); })
     .then(function(d) {
