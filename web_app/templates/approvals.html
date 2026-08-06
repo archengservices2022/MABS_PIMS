@@ -155,8 +155,10 @@
                       {% if item.amount is number %}{{ "{:.1f}".format(item.amount|float) }}h{% else %}{{ item.amount }}h{% endif %}
                     {% elif item.currency == 'BDT' %}
                       ৳{{ "{:,.2f}".format(item.amount|float) }}
+                    {% elif item.currency == 'USD' %}
+                      ${{ "{:,.2f}".format(item.amount|float) }} ≈ ৳{{ "{:,.2f}".format((item.amount|float) * bdt_exchange_rate) }}
                     {% else %}
-                      ${{ "{:,.2f}".format(item.amount|float) }}
+                      ${{ "{:,.2f}".format(item.amount|float) }} ≈ ৳{{ "{:,.2f}".format((item.amount|float) * bdt_exchange_rate) }}
                     {% endif %}
                   {% else %}
                     —

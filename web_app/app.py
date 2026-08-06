@@ -15208,11 +15208,16 @@ def approvals():
         })
     all_employee_items.sort(key=lambda x: x.get('sort_key', ''), reverse=True)
 
+    # Get exchange rate from settings
+    _settings = load_settings()
+    bdt_exchange_rate = _safe_float(_settings.get("bdt_exchange_rate", 110)) or 110
+
     return render_template("approvals.html",
                            permission_requests=_perm_reqs,
                            pending_permission_requests=_perm_reqs_pending,
                            all_employee_items=all_employee_items,
                            currency_symbol=CURRENCY_SYMBOL,
+                           bdt_exchange_rate=bdt_exchange_rate,
                            now=datetime.now(COMPANY_TZ))
 
 @app.route("/api/approvals/count")
