@@ -1039,11 +1039,15 @@ document.addEventListener('DOMContentLoaded', function() {
       var role = (d.role || '').toLowerCase();
       document.getElementById('editEmployeeType').value     = d.employeeType || '';
       document.getElementById('editCommissionRate').value   = parseFloat(d.commissionRate) > 0 ? parseFloat(d.commissionRate) : '';
-      document.getElementById('editUserMsg').innerHTML      = '';
+      var msgEl = document.getElementById('editUserMsg');
+      if (msgEl) msgEl.innerHTML = '';
       var isSalesOrAdmin = role === 'sales' || role === 'admin';
-      document.getElementById('editCommissionSection').style.display = isSalesOrAdmin ? '' : 'none';
-      document.getElementById('editEmployeeTypeField').style.display = role === 'sales' ? '' : 'none';
-      new bootstrap.Modal(document.getElementById('editUserModal')).show();
+      var commEl = document.getElementById('editCommissionSection');
+      if (commEl) commEl.style.display = isSalesOrAdmin ? '' : 'none';
+      var typeEl = document.getElementById('editEmployeeTypeField');
+      if (typeEl) typeEl.style.display = role === 'sales' ? '' : 'none';
+      var editModal = document.getElementById('editUserModal');
+      if (editModal) new bootstrap.Modal(editModal).show();
     });
   });
 
@@ -1079,13 +1083,17 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('pagesUid').value       = uid;
       document.getElementById('pagesRole').value      = role;
       document.getElementById('pagesUserName').textContent = name;
-      document.getElementById('pagesMsg').innerHTML   = '';
+      var msgEl = document.getElementById('pagesMsg');
+      if (msgEl) msgEl.innerHTML = '';
       var badge = document.getElementById('pagesRoleBadge');
-      badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
-      badge.style.background = {admin:'#dc2626',finance:'#0D9488',projects:'#7C3AED',engineer:'#0369a1',sales:'#d97706',administration:'#92400E',accountant:'#3730A3'}[role] || '#6b7280';
-      badge.style.color = '#fff';
+      if (badge) {
+        badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+        badge.style.background = {admin:'#dc2626',finance:'#0D9488',projects:'#7C3AED',engineer:'#0369a1',sales:'#d97706',administration:'#92400E',accountant:'#3730A3'}[role] || '#6b7280';
+        badge.style.color = '#fff';
+      }
       buildPagesCheckboxes(role, saved);
-      new bootstrap.Modal(document.getElementById('userPagesModal')).show();
+      var pagesModal = document.getElementById('userPagesModal');
+      if (pagesModal) new bootstrap.Modal(pagesModal).show();
     });
   });
 });
