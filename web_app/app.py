@@ -14841,6 +14841,14 @@ def api_permission_request():
     action       = (data.get("action") or "Delete action").strip()[:200]
     notes        = (data.get("notes") or "").strip()[:500]
     page_url     = (data.get("page_url") or "").strip()[:500]
+    # Strip domain from URL to keep only path and query (for cross-domain compatibility)
+    if page_url and "://" in page_url:
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(page_url)
+            page_url = parsed.path + ("?" + parsed.query if parsed.query else "") + ("#" + parsed.fragment if parsed.fragment else "")
+        except ValueError:
+            pass  # If URL parsing fails, keep original page_url
     entity_type  = (data.get("entity_type") or "").strip()[:50]
     entity_id    = (data.get("entity_id") or "").strip()[:200]
     entity_label = (data.get("entity_label") or "").strip()[:200]
