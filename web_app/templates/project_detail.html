@@ -3,7 +3,7 @@
 {% block page_title %}Project Detail{% endblock %}
 
 {% block content %}
-{% set can_manage_projects = user_role in ('admin', 'projects', 'administration') %}
+{% set can_manage_projects = user_role in ('admin', 'projects', 'administration', 'accountant') %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div class="d-flex align-items-center gap-2">
     <a href="{{ url_for('projects') }}{% if request.args.get('page') %}?page={{ request.args.get('page') }}{% endif %}" class="btn btn-sm btn-outline-secondary">
@@ -918,7 +918,7 @@
                        target="_blank" class="btn btn-xs btn-outline-secondary" title="Download CO PDF">
                       <i class="bi bi-file-earmark-pdf"></i>
                     </a>
-                    {% if user_role == 'admin' %}
+                    {% if user_role in ('admin', 'accountant') %}
                     <form method="POST" action="{{ url_for('co_delete', project_id=project.firebase_id, co_idx=co_idx) }}"
                           onsubmit="return confirm('Delete {{ co.get("co_number","CO") }} on project {{ project.get("project_number","") }}? This will update the contract value and financial totals.');">
                       <button class="btn btn-xs btn-outline-danger" title="Delete CO">
