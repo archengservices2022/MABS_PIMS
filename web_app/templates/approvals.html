@@ -59,10 +59,11 @@
                     <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
                   {% elif req.get('status') == 'approved' %}
                     <span class="badge bg-success">Approved</span>
+                    <div class="text-muted" style="font-size:11px;">by {{ req.get('reviewed_by','—') }}</div>
                     {% if req.get('admin_notes') %}<div class="text-muted" style="font-size:11px;">{{ req.admin_notes }}</div>{% endif %}
                   {% elif req.get('status') == 'completed' %}
                     <span class="badge bg-secondary">Completed</span>
-                    <div class="text-muted" style="font-size:11px;">Deleted by {{ req.get('requested_by_name','—') }}</div>
+                    <div class="text-muted" style="font-size:11px;">Deleted by {{ req.get('reviewed_by','—') }}</div>
                   {% else %}
                     <span class="badge bg-danger">Denied</span>
                     {% if req.get('admin_notes') %}<div class="text-muted" style="font-size:11px;">{{ req.admin_notes }}</div>{% endif %}
