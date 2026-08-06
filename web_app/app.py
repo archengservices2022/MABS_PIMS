@@ -15109,7 +15109,7 @@ def approvals():
             'employee': claim.get('employee_name', '—'),
             'date': claim.get('claim_date', ''),
             'submitted_at': claim.get('submitted_at', ''),
-            'sort_key': claim.get('claim_date', ''),
+            'sort_key': claim.get('submitted_at', ''),
             'amount': claim.get('amount_claimed', 0),
             'currency': claim.get('amount_currency', 'BDT'),
             'status': claim.get('status', 'Pending'),
