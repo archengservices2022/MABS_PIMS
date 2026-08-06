@@ -1026,74 +1026,107 @@ const ROLE_DEFAULTS = {{ role_pages | tojson }};
 document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.edit-user-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      var d = btn.dataset;
-      document.getElementById('editUid').value              = d.uid || '';
-      document.getElementById('editUsername').value         = d.username || '';
-      document.getElementById('editEmail').value            = d.email || '';
-      document.getElementById('editTitle').value            = d.title || '';
-      document.getElementById('editRegion').value           = d.region || '';
-      document.getElementById('editHourlyRate').value       = parseFloat(d.rate) > 0 ? parseFloat(d.rate) : '';
-      document.getElementById('editMonthlySalary').value    = parseFloat(d.salary) > 0 ? parseFloat(d.salary) : '';
-      document.getElementById('editRole').value             = (d.role || 'sales').toLowerCase();
-      document.getElementById('editStatus').value           = d.active || 'true';
-      var role = (d.role || '').toLowerCase();
-      document.getElementById('editEmployeeType').value     = d.employeeType || '';
-      document.getElementById('editCommissionRate').value   = parseFloat(d.commissionRate) > 0 ? parseFloat(d.commissionRate) : '';
-      var msgEl = document.getElementById('editUserMsg');
-      if (msgEl) msgEl.innerHTML = '';
-      var isSalesOrAdmin = role === 'sales' || role === 'admin';
-      var commEl = document.getElementById('editCommissionSection');
-      if (commEl) commEl.style.display = isSalesOrAdmin ? '' : 'none';
-      var typeEl = document.getElementById('editEmployeeTypeField');
-      if (typeEl) typeEl.style.display = role === 'sales' ? '' : 'none';
-      var editModal = document.getElementById('editUserModal');
-      if (editModal) new bootstrap.Modal(editModal).show();
+      try {
+        var d = btn.dataset;
+        var uid = document.getElementById('editUid');
+        var username = document.getElementById('editUsername');
+        var email = document.getElementById('editEmail');
+        var title = document.getElementById('editTitle');
+        var region = document.getElementById('editRegion');
+        var hourlyRate = document.getElementById('editHourlyRate');
+        var monthlySalary = document.getElementById('editMonthlySalary');
+        var roleEl = document.getElementById('editRole');
+        var status = document.getElementById('editStatus');
+        var employeeType = document.getElementById('editEmployeeType');
+        var commissionRate = document.getElementById('editCommissionRate');
+
+        if (uid) uid.value = d.uid || '';
+        if (username) username.value = d.username || '';
+        if (email) email.value = d.email || '';
+        if (title) title.value = d.title || '';
+        if (region) region.value = d.region || '';
+        if (hourlyRate) hourlyRate.value = parseFloat(d.rate) > 0 ? parseFloat(d.rate) : '';
+        if (monthlySalary) monthlySalary.value = parseFloat(d.salary) > 0 ? parseFloat(d.salary) : '';
+        if (roleEl) roleEl.value = (d.role || 'sales').toLowerCase();
+        if (status) status.value = d.active || 'true';
+        var role = (d.role || '').toLowerCase();
+        if (employeeType) employeeType.value = d.employeeType || '';
+        if (commissionRate) commissionRate.value = parseFloat(d.commissionRate) > 0 ? parseFloat(d.commissionRate) : '';
+
+        var msgEl = document.getElementById('editUserMsg');
+        if (msgEl) msgEl.innerHTML = '';
+        var isSalesOrAdmin = role === 'sales' || role === 'admin';
+        var commEl = document.getElementById('editCommissionSection');
+        if (commEl) commEl.style.display = isSalesOrAdmin ? '' : 'none';
+        var typeEl = document.getElementById('editEmployeeTypeField');
+        if (typeEl) typeEl.style.display = role === 'sales' ? '' : 'none';
+        var editModal = document.getElementById('editUserModal');
+        if (editModal) new bootstrap.Modal(editModal).show();
+      } catch(e) {
+        console.error('Error in edit user button:', e);
+      }
     });
   });
 
   document.querySelectorAll('.send-reset-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      var email = btn.dataset.email;
-      var name  = btn.dataset.name;
-      if (!confirm('Send password reset email to ' + name + ' (' + email + ')?')) return;
-      btn.disabled = true;
-      fetch('/api/admin/send-reset-email', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({email: email})
-      }).then(r => r.json()).then(data => {
+      try {
+        var email = btn.dataset.email;
+        var name  = btn.dataset.name;
+        if (!confirm('Send password reset email to ' + name + ' (' + email + ')?')) return;
+        btn.disabled = true;
+        fetch('/api/admin/send-reset-email', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({email: email})
+        }).then(r => r.json()).then(data => {
+          btn.disabled = false;
+          if (data.success) {
+            alert('Reset email sent to ' + email);
+          } else {
+            alert('Error: ' + data.error);
+          }
+        }).catch(err => {
+          btn.disabled = false;
+          console.error('Reset email error:', err);
+          alert('Network error. Please try again.');
+        });
+      } catch(e) {
         btn.disabled = false;
-        if (data.success) {
-          alert('Reset email sent to ' + email);
-        } else {
-          alert('Error: ' + data.error);
-        }
-      }).catch(() => { btn.disabled = false; alert('Network error. Please try again.'); });
+        console.error('Error in send reset button:', e);
+      }
     });
   });
 
   document.querySelectorAll('.pages-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      var uid   = btn.dataset.uid;
-      var name  = btn.dataset.name;
-      var role  = btn.dataset.role;
-      var saved;
-      var _cp = btn.dataset.custompages || '';
-      saved = _cp ? _cp.split(',') : [];
-      document.getElementById('pagesUid').value       = uid;
-      document.getElementById('pagesRole').value      = role;
-      document.getElementById('pagesUserName').textContent = name;
-      var msgEl = document.getElementById('pagesMsg');
-      if (msgEl) msgEl.innerHTML = '';
-      var badge = document.getElementById('pagesRoleBadge');
-      if (badge) {
-        badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
-        badge.style.background = {admin:'#dc2626',finance:'#0D9488',projects:'#7C3AED',engineer:'#0369a1',sales:'#d97706',administration:'#92400E',accountant:'#3730A3'}[role] || '#6b7280';
-        badge.style.color = '#fff';
+      try {
+        var uid   = btn.dataset.uid;
+        var name  = btn.dataset.name;
+        var role  = btn.dataset.role;
+        var saved;
+        var _cp = btn.dataset.custompages || '';
+        saved = _cp ? _cp.split(',') : [];
+        var pagesUidEl = document.getElementById('pagesUid');
+        if (pagesUidEl) pagesUidEl.value = uid;
+        var pagesRoleEl = document.getElementById('pagesRole');
+        if (pagesRoleEl) pagesRoleEl.value = role;
+        var pagesNameEl = document.getElementById('pagesUserName');
+        if (pagesNameEl) pagesNameEl.textContent = name;
+        var msgEl = document.getElementById('pagesMsg');
+        if (msgEl) msgEl.innerHTML = '';
+        var badge = document.getElementById('pagesRoleBadge');
+        if (badge) {
+          badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+          badge.style.background = {admin:'#dc2626',finance:'#0D9488',projects:'#7C3AED',engineer:'#0369a1',sales:'#d97706',administration:'#92400E',accountant:'#3730A3'}[role] || '#6b7280';
+          badge.style.color = '#fff';
+        }
+        buildPagesCheckboxes(role, saved);
+        var pagesModal = document.getElementById('userPagesModal');
+        if (pagesModal) new bootstrap.Modal(pagesModal).show();
+      } catch(e) {
+        console.error('Error in pages button:', e);
       }
-      buildPagesCheckboxes(role, saved);
-      var pagesModal = document.getElementById('userPagesModal');
-      if (pagesModal) new bootstrap.Modal(pagesModal).show();
     });
   });
 });
