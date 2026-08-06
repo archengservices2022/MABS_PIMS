@@ -1012,9 +1012,13 @@
 const ALL_PAGES   = {{ all_pages | tojson }};
 
 function toggleCreateCommission() {
-  var role = document.getElementById('createUserRole').value;
-  document.getElementById('createCommissionSection').style.display = (role === 'sales' || role === 'admin') ? '' : 'none';
-  document.getElementById('createEmployeeTypeField').style.display = role === 'sales' ? '' : 'none';
+  var roleEl = document.getElementById('createUserRole');
+  if (!roleEl) return;
+  var role = roleEl.value;
+  var commEl = document.getElementById('createCommissionSection');
+  if (commEl) commEl.style.display = (role === 'sales' || role === 'admin') ? '' : 'none';
+  var typeEl = document.getElementById('createEmployeeTypeField');
+  if (typeEl) typeEl.style.display = role === 'sales' ? '' : 'none';
 }
 const PAGE_LABELS = {{ page_labels | tojson }};
 const ROLE_DEFAULTS = {{ role_pages | tojson }};
@@ -1087,10 +1091,14 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function onEditRoleChange() {
-  var role = document.getElementById('editRole').value;
+  var roleEl = document.getElementById('editRole');
+  if (!roleEl) return;
+  var role = roleEl.value;
   var isSalesOrAdmin = role === 'sales' || role === 'admin';
-  document.getElementById('editCommissionSection').style.display = isSalesOrAdmin ? '' : 'none';
-  document.getElementById('editEmployeeTypeField').style.display = role === 'sales' ? '' : 'none';
+  var commEl = document.getElementById('editCommissionSection');
+  if (commEl) commEl.style.display = isSalesOrAdmin ? '' : 'none';
+  var typeEl = document.getElementById('editEmployeeTypeField');
+  if (typeEl) typeEl.style.display = role === 'sales' ? '' : 'none';
 }
 
 async function saveUserDetails() {
