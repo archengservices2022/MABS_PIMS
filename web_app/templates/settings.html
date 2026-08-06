@@ -1260,18 +1260,30 @@ var currentPageUrl = null;
 
 function submitPermissionRequest(action, notes) {
   if (!currentPermReqId) return;
-
-  fetch('/api/permission-requests/' + currentPermReqId + '/resolve', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({action: action, notes: notes})
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(d) {
-    if (!d.success) { alert('Error: ' + (d.error || 'Unknown')); return; }
-    location.reload();
-  })
-  .catch(function() { alert('Network error. Please try again.'); });
+  try {
+    fetch('/api/permission-requests/' + currentPermReqId + '/resolve', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action: action, notes: notes})
+    })
+    .then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(data => {
+      if (!data.success) {
+        alert('Error: ' + (data.error || 'Unknown'));
+        return;
+      }
+      location.reload();
+    })
+    .catch(err => {
+      console.error('Permission request error:', err);
+      alert('Error: ' + (err.message || 'Request failed'));
+    });
+  } catch(e) {
+    console.error('Submit permission error:', e);
+  }
 }
 
 function confirmApprove() {
