@@ -3141,26 +3141,16 @@ window.openMedAmtEdit = function(claimId, empName, amtClaimed, amtApproved) {
   new bootstrap.Modal(document.getElementById('medAmtEditModal')).show();
 };
 
-// Time off approval handlers
+// Time off approval handlers - submit form directly
 document.querySelectorAll('.approve-timeoff-btn').forEach(function(btn) {
   btn.addEventListener('click', function() {
     var requestId = this.dataset.requestId;
     if (!requestId) return;
-    fetch('/employees/time-off/' + requestId + '/approve', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: ''
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      if (d.success) {
-        alert('Time off approved!');
-        location.reload();
-      } else {
-        alert('Error: ' + (d.error || 'Unknown error'));
-      }
-    })
-    .catch(function(err) { alert('Error: ' + err.message); });
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/employees/time-off/' + requestId + '/approve';
+    document.body.appendChild(form);
+    form.submit();
   });
 });
 
@@ -3168,23 +3158,11 @@ document.querySelectorAll('.reject-timeoff-btn').forEach(function(btn) {
   btn.addEventListener('click', function() {
     var requestId = this.dataset.requestId;
     if (!requestId) return;
-    var reason = prompt('Reason for rejecting (optional):');
-    if (reason === null) return; // User cancelled
-    fetch('/employees/time-off/' + requestId + '/reject', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: 'notes=' + encodeURIComponent(reason || '')
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      if (d.success) {
-        alert('Time off rejected!');
-        location.reload();
-      } else {
-        alert('Error: ' + (d.error || 'Unknown error'));
-      }
-    })
-    .catch(function(err) { alert('Error: ' + err.message); });
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/employees/time-off/' + requestId + '/reject';
+    document.body.appendChild(form);
+    form.submit();
   });
 });
 </script>
