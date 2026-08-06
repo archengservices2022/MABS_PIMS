@@ -15048,7 +15048,19 @@ def approvals():
 
     # Pending timesheets
     all_sheets = _load_timesheets()
-    pending_timesheets = [s for s in all_sheets if s.get("status") == "Submitted"]
+    pending_timesheets = []
+    for s in all_sheets:
+        if s.get("status") == "Submitted":
+            # Add week label for display
+            try:
+                week_of = s.get("week_of", "")
+                if week_of:
+                    ws = datetime.strptime(week_of, "%Y-%m-%d").date()
+                    we = ws + timedelta(days=6)
+                    s["week_label"] = f"{ws.strftime('%b %d')} — {we.strftime('%b %d, %Y')}"
+            except:
+                s["week_label"] = week_of or "—"
+            pending_timesheets.append(s)
     pending_timesheets.sort(key=lambda s: s.get("submitted_at", ""), reverse=True)
 
     return render_template("approvals.html",

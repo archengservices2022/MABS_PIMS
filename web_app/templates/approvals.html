@@ -121,8 +121,8 @@
               <tr id="med-{{ claim.firebase_id }}">
                 <td class="fw-semibold">{{ claim.get('employee_name', '—') }}</td>
                 <td><span class="badge" style="background:#6366f1;color:white;">Medical</span></td>
-                <td class="text-muted text-nowrap">{{ claim.get('date_incurred','—') | format_date }}</td>
-                <td class="fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(claim.get('amount',0)|float) }}</td>
+                <td class="text-muted text-nowrap">{{ claim.get('claim_date','—') | format_date }}</td>
+                <td class="fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(claim.get('amount_claimed',0)|float) }}</td>
                 <td><span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span></td>
                 <td class="text-muted small">{{ claim.get('description','—') }}</td>
                 <td class="text-center text-nowrap">
@@ -172,7 +172,7 @@
               <tr id="ts-{{ sheet.firebase_id }}">
                 <td class="fw-semibold">{{ sheet.get('employee_name', '—') }}</td>
                 <td><span class="badge" style="background:#0d9488;color:white;">Timesheet</span></td>
-                <td class="text-muted text-nowrap">Week {{ sheet.get('week_start','—') | format_date }} to {{ sheet.get('week_end','—') | format_date }}</td>
+                <td class="text-muted text-nowrap">Week of {{ sheet.get('week_label','—') }}</td>
                 <td class="fw-semibold">{{ "{:.1f}".format(sheet.get('total_hours',0)|float) }}h</td>
                 <td><span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span></td>
                 <td class="text-muted small">Submitted {{ sheet.get('submitted_at','—')[:10] | format_date if sheet.get('submitted_at') else '—' }}</td>
