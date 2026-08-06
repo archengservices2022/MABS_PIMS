@@ -15007,12 +15007,12 @@ def approvals():
         flash("You don't have permission to access this page.", "danger")
         return redirect(url_for("dashboard"))
 
-    # Pending delete/permission requests
+    # All delete/permission requests (pending + completed/approved/denied)
     _perm_reqs = []
     _raw_reqs = fb_get("/permission_requests") or {}
     if isinstance(_raw_reqs, dict):
         for _rid, _rd in _raw_reqs.items():
-            if _rd and isinstance(_rd, dict) and _rd.get("status") == "pending":
+            if _rd and isinstance(_rd, dict):
                 _rd["firebase_id"] = _rid
                 _perm_reqs.append(_rd)
     _perm_reqs.sort(key=lambda x: x.get("requested_at", ""), reverse=True)

@@ -27,15 +27,17 @@
     <div class="tab-pane fade show active" id="tab-delete">
       {% if permission_requests %}
       <div class="card-panel">
-        <h6 class="section-heading mb-3"><i class="bi bi-trash me-1" style="color:#ef4444;"></i>Delete Requests</h6>
+        <h6 class="section-heading mb-3"><i class="bi bi-shield-lock me-1" style="color:#0D9488;"></i>Permission Requests</h6>
         <div class="table-responsive">
           <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
             <thead class="table-light">
               <tr>
                 <th>Requested By</th>
-                <th>Item To Delete</th>
-                <th>Date</th>
+                <th>Action Requested</th>
                 <th>Notes</th>
+                <th>Page</th>
+                <th>Date</th>
+                <th>Status</th>
                 <th class="text-center">Actions</th>
               </tr>
             </thead>
@@ -49,15 +51,37 @@
                   <div class="text-muted" style="font-size:11px;">{{ req.entity_label }}</div>
                   {% endif %}
                 </td>
-                <td class="text-muted text-nowrap">{{ (req.get('requested_at','')[:10] | format_date) if req.get('requested_at') else '—' }}</td>
                 <td class="text-muted">{{ req.get('notes','—') or '—' }}</td>
+                <td>{% if req.get('page_url') %}<button type="button" class="btn btn-xs btn-outline-secondary open-page-btn" data-url="{{ req.page_url | e }}" title="Open page"><i class="bi bi-box-arrow-up-right me-1"></i>Open Page</button>{% else %}—{% endif %}</td>
+                <td class="text-muted text-nowrap">{{ (req.get('requested_at','')[:10] | format_date) if req.get('requested_at') else '—' }}</td>
+                <td>
+                  {% if req.get('status') == 'pending' %}
+                    <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
+                  {% elif req.get('status') == 'approved' %}
+                    <span class="badge bg-success">Approved</span>
+                    {% if req.get('admin_notes') %}<div class="text-muted" style="font-size:11px;">{{ req.admin_notes }}</div>{% endif %}
+                  {% elif req.get('status') == 'completed' %}
+                    <span class="badge bg-secondary">Completed</span>
+                    <div class="text-muted" style="font-size:11px;">Deleted by {{ req.get('requested_by_name','—') }}</div>
+                  {% else %}
+                    <span class="badge bg-danger">Denied</span>
+                    {% if req.get('admin_notes') %}<div class="text-muted" style="font-size:11px;">{{ req.admin_notes }}</div>{% endif %}
+                  {% endif %}
+                </td>
                 <td class="text-center text-nowrap">
-                  <button class="btn btn-xs btn-success me-1 approve-perm-btn" data-req-id="{{ req.firebase_id }}" title="Approve">
+                  {% if req.get('status') == 'pending' %}
+                  <button class="btn btn-xs btn-success me-1 approve-perm-btn" data-req-id="{{ req.firebase_id }}" data-page-url="{{ req.get('page_url','') | e }}" title="Approve — requester will be notified and can perform the delete">
                     <i class="bi bi-check2"></i> Approve
                   </button>
                   <button class="btn btn-xs btn-outline-danger deny-perm-btn" data-req-id="{{ req.firebase_id }}" title="Deny">
                     <i class="bi bi-x-lg"></i> Deny
                   </button>
+                  {% else %}
+                  <span class="text-muted small">
+                    {% if req.get('status') == 'completed' %}Completed{% else %}Resolved{% endif %}
+                    by {{ req.get('reviewed_by','—') }}
+                  </span>
+                  {% endif %}
                 </td>
               </tr>
               {% endfor %}
@@ -67,7 +91,7 @@
       </div>
       {% else %}
       <div class="card-panel">
-        <div class="text-muted text-center py-5"><i class="bi bi-trash" style="font-size:48px;display:block;margin-bottom:12px;opacity:.3;"></i>No delete requests pending.</div>
+        <div class="text-muted text-center py-4"><i class="bi bi-shield-check" style="font-size:32px;display:block;margin-bottom:8px;opacity:.4;"></i>No permission requests yet.</div>
       </div>
       {% endif %}
     </div>
