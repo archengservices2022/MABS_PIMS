@@ -96,136 +96,87 @@
       {% endif %}
     </div>
 
-    <!-- EMPLOYEE TAB (Essential information only with status and open page) -->
+    <!-- EMPLOYEE TAB (Like Delete Requests - unified list by date) -->
     <div class="tab-pane fade" id="tab-employee">
-      {% if (pending_medical and pending_medical|length > 0) or (pending_time_off and pending_time_off|length > 0) or (pending_expenses and pending_expenses|length > 0) or (pending_timesheets and pending_timesheets|length > 0) %}
+      {% set all_items = [] %}
+      {% for claim in pending_medical or [] %}
+        {% do all_items.append({'type': 'Medical', 'employee': claim.get('employee_name', '—'), 'date': claim.get('claim_date', ''), 'sort_key': claim.get('claim_date', ''), 'amount': claim.get('amount_claimed', 0), 'currency': claim.get('amount_currency', 'BDT'), 'status': claim.get('status', 'Pending'), 'reviewed_by': claim.get('reviewed_by', '—'), 'notes': claim.get('description', '—'), 'id': claim.get('firebase_id', ''), 'cat': 'medical'}) %}
+      {% endfor %}
+      {% for exp in pending_expenses or [] %}
+        {% do all_items.append({'type': 'Expense', 'employee': exp.get('employee_name', '—'), 'date': exp.get('date', ''), 'sort_key': exp.get('created_at', exp.get('date', '')), 'amount': exp.get('amount', 0), 'currency': 'BDT', 'status': exp.get('status', 'Pending'), 'reviewed_by': exp.get('reviewed_by', '—'), 'notes': exp.get('description', '—') or exp.get('expense_name', '—'), 'id': exp.get('firebase_id', ''), 'cat': 'expense'}) %}
+      {% endfor %}
+      {% for req in pending_time_off or [] %}
+        {% do all_items.append({'type': 'Time Off', 'employee': req.get('employee_name', '—'), 'date': req.get('start_date', ''), 'date_end': req.get('end_date', ''), 'sort_key': req.get('requested_at', ''), 'amount': '—', 'currency': '', 'status': req.get('status', 'Pending'), 'reviewed_by': req.get('reviewed_by', '—'), 'notes': req.get('reason', '—'), 'id': req.get('firebase_id', ''), 'cat': 'timeoff'}) %}
+      {% endfor %}
+      {% for sheet in pending_timesheets or [] %}
+        {% do all_items.append({'type': 'Timesheet', 'employee': sheet.get('employee_name', '—'), 'date': sheet.get('week_label', '—'), 'sort_key': sheet.get('submitted_at', ''), 'amount': sheet.get('total_hours', 0), 'currency': 'h', 'status': sheet.get('status', 'Submitted'), 'reviewed_by': sheet.get('reviewed_by', '—'), 'notes': sheet.get('submitted_at', '—')[:10] if sheet.get('submitted_at') else '—', 'id': sheet.get('firebase_id', ''), 'cat': 'timesheet'}) %}
+      {% endfor %}
+
+      {% if all_items|length > 0 %}
       <div class="card-panel">
         <h6 class="section-heading mb-3"><i class="bi bi-people-fill me-1" style="color:#3b82f6;"></i>Employee Approvals</h6>
         <div class="table-responsive">
           <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
             <thead class="table-light">
               <tr>
-                <th>Employee</th>
+                <th>Requested By</th>
                 <th>Type</th>
-                <th>Date/Period</th>
-                <th>Amount/Hours</th>
+                <th>Date</th>
+                <th>Amount</th>
                 <th>Status</th>
                 <th>Notes</th>
-                <th class="text-center">Actions</th>
+                <th>Page</th>
               </tr>
             </thead>
             <tbody>
-
-              <!-- Medical Claims -->
-              {% for claim in pending_medical or [] %}
-              <tr id="med-{{ claim.firebase_id }}">
-                <td class="fw-semibold">{{ claim.get('employee_name', '—') }}</td>
-                <td><span class="badge" style="background:#6366f1;color:white;">Medical</span></td>
-                <td class="text-muted text-nowrap">{{ claim.get('claim_date','—') | format_date }}</td>
-                <td class="fw-semibold">
-                  {% set curr = claim.get('amount_currency', 'BDT') %}
-                  {% if curr == 'BDT' %}৳{% elif curr == 'USD' %}${% else %}{{ curr }}{% endif %}{{ "{:,.2f}".format(claim.get('amount_claimed',0)|float) }}
-                </td>
-                <td>
-                  {% if claim.get('status') == 'Pending' %}
-                    <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
-                  {% elif claim.get('status') == 'Approved' %}
-                    <span class="badge bg-success">Approved</span><br><span class="text-muted small">by {{ claim.get('reviewed_by','—') }}</span>
+              {% for item in all_items | sort(attribute='sort_key', reverse=True) %}
+              <tr>
+                <td class="fw-semibold">{{ item.employee }}</td>
+                <td><span class="badge" style="background:#3b82f6;color:white;">{{ item.type }}</span></td>
+                <td class="text-muted text-nowrap">
+                  {% if item.cat == 'timeoff' %}
+                    {{ item.date | format_date }} to {{ item.date_end | format_date }}
                   {% else %}
-                    <span class="badge bg-danger">Denied</span><br><span class="text-muted small">by {{ claim.get('reviewed_by','—') }}</span>
+                    {{ item.date | format_date }}
                   {% endif %}
                 </td>
-                <td class="text-muted small">{{ claim.get('description','—') }}</td>
-                <td class="text-center text-nowrap">
-                  <a href="{{ url_for('employees') }}" class="btn btn-xs btn-outline-secondary" title="Open Medical Claims">
-                    <i class="bi bi-box-arrow-up-right me-1"></i>Open Page
+                <td>
+                  {% if item.amount != '—' %}
+                    {% if item.currency == 'h' %}
+                      {{ "{:.1f}".format(item.amount|float) }}h
+                    {% elif item.currency == 'BDT' %}
+                      ৳{{ "{:,.2f}".format(item.amount|float) }}
+                    {% else %}
+                      ${{ "{:,.2f}".format(item.amount|float) }}
+                    {% endif %}
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+                <td>
+                  {% if item.status == 'Pending' or item.status == 'Submitted' %}
+                    <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
+                  {% elif item.status == 'Approved' %}
+                    <span class="badge bg-success">Approved</span><br><span class="text-muted small">by {{ item.reviewed_by }}</span>
+                  {% else %}
+                    <span class="badge bg-danger">Denied</span><br><span class="text-muted small">by {{ item.reviewed_by }}</span>
+                  {% endif %}
+                </td>
+                <td class="text-muted small">{{ item.notes }}</td>
+                <td>
+                  <a href="{{ url_for('employees') }}" class="btn btn-xs btn-outline-secondary" title="Open Page">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>Open
                   </a>
                 </td>
               </tr>
               {% endfor %}
-
-              <!-- Time Off Requests -->
-              {% for req in pending_time_off or [] %}
-              <tr id="timeoff-{{ req.firebase_id }}">
-                <td class="fw-semibold">{{ req.get('employee_name', '—') }}</td>
-                <td><span class="badge" style="background:#f59e0b;color:white;">{{ req.get('type','—') }}</span></td>
-                <td class="text-muted text-nowrap">{{ req.get('start_date','—') | format_date }} to {{ req.get('end_date','—') | format_date }}</td>
-                <td>—</td>
-                <td>
-                  {% if req.get('status') == 'Pending' %}
-                    <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
-                  {% elif req.get('status') == 'Approved' %}
-                    <span class="badge bg-success">Approved</span><br><span class="text-muted small">by {{ req.get('reviewed_by','—') }}</span>
-                  {% else %}
-                    <span class="badge bg-danger">Denied</span><br><span class="text-muted small">by {{ req.get('reviewed_by','—') }}</span>
-                  {% endif %}
-                </td>
-                <td class="text-muted small">{{ req.get('reason','—') or '—' }}</td>
-                <td class="text-center text-nowrap">
-                  <a href="{{ url_for('employees') }}" class="btn btn-xs btn-outline-secondary" title="Open Time Off">
-                    <i class="bi bi-box-arrow-up-right me-1"></i>Open Page
-                  </a>
-                </td>
-              </tr>
-              {% endfor %}
-
-              <!-- Expenses -->
-              {% for exp in pending_expenses or [] %}
-              <tr id="exp-{{ exp.firebase_id }}">
-                <td class="fw-semibold">{{ exp.get('employee_name', '—') }}</td>
-                <td><span class="badge" style="background:#f97316;color:white;">Expense</span></td>
-                <td class="text-muted text-nowrap">{{ exp.get('date','—') | format_date }}</td>
-                <td class="fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(exp.get('amount',0)|float) }}</td>
-                <td>
-                  {% if exp.get('status') == 'Pending' %}
-                    <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
-                  {% elif exp.get('status') == 'Approved' %}
-                    <span class="badge bg-success">Approved</span><br><span class="text-muted small">by {{ exp.get('reviewed_by','—') }}</span>
-                  {% else %}
-                    <span class="badge bg-danger">Denied</span><br><span class="text-muted small">by {{ exp.get('reviewed_by','—') }}</span>
-                  {% endif %}
-                </td>
-                <td class="text-muted small">{{ exp.get('description','—') or exp.get('expense_name','—') }}</td>
-                <td class="text-center text-nowrap">
-                  <a href="{{ url_for('employees') }}" class="btn btn-xs btn-outline-secondary" title="Open Expenses">
-                    <i class="bi bi-box-arrow-up-right me-1"></i>Open Page
-                  </a>
-                </td>
-              </tr>
-              {% endfor %}
-
-              <!-- Timesheets -->
-              {% for sheet in pending_timesheets or [] %}
-              <tr id="ts-{{ sheet.firebase_id }}">
-                <td class="fw-semibold">{{ sheet.get('employee_name', '—') }}</td>
-                <td><span class="badge" style="background:#0d9488;color:white;">Timesheet</span></td>
-                <td class="text-muted text-nowrap">Week of {{ sheet.get('week_label','—') }}</td>
-                <td class="fw-semibold">{{ "{:.1f}".format(sheet.get('total_hours',0)|float) }}h</td>
-                <td>
-                  {% if sheet.get('status') == 'Submitted' %}
-                    <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
-                  {% elif sheet.get('status') == 'Approved' %}
-                    <span class="badge bg-success">Approved</span><br><span class="text-muted small">by {{ sheet.get('reviewed_by','—') }}</span>
-                  {% else %}
-                    <span class="badge bg-danger">Denied</span><br><span class="text-muted small">by {{ sheet.get('reviewed_by','—') }}</span>
-                  {% endif %}
-                </td>
-                <td class="text-muted small">Submitted {{ sheet.get('submitted_at','—')[:10] | format_date if sheet.get('submitted_at') else '—' }}</td>
-                <td class="text-center text-nowrap">
-                  <a href="{{ url_for('timesheets') }}" class="btn btn-xs btn-outline-secondary" title="Open Timesheets">
-                    <i class="bi bi-box-arrow-up-right me-1"></i>Open Page
-                  </a>
-                </td>
-              </tr>
-              {% endfor %}
-
             </tbody>
           </table>
         </div>
       </div>
       {% else %}
       <div class="card-panel">
-        <div class="text-muted text-center py-4"><i class="bi bi-people-fill" style="font-size:32px;display:block;margin-bottom:8px;opacity:.4;"></i>No pending employee approvals.</div>
+        <div class="text-muted text-center py-4"><i class="bi bi-people-fill" style="font-size:32px;display:block;margin-bottom:8px;opacity:.4;"></i>No employee approvals.</div>
       </div>
       {% endif %}
     </div>
