@@ -1639,9 +1639,11 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           <i class="bi bi-plus-circle me-1" style="color:#0D9488;"></i>Submit Expense
         </h6>
         <form method="post" action="{{ url_for('employee_expense_submit') }}"
-              enctype="multipart/form-data" id="empExpenseForm">
+              enctype="multipart/form-data" id="empExpenseForm" onsubmit="empPrepareSubmit(event)">
           <!-- Hidden field to track expense being edited -->
           <input type="hidden" id="empEditingExpenseId" name="editing_expense_id" value="">
+          <!-- Hidden field to store original Taka amount -->
+          <input type="hidden" id="empAmountTakaHidden" name="amount_taka_original" value="">
 
           <div class="row g-2 mb-2">
             <div class="col-6">
@@ -1654,21 +1656,15 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                 {% endfor %}
               </select>
             </div>
-            <div class="col-6">
-              <label class="form-label small fw-semibold">Amount ($) <span class="text-danger">*</span></label>
-              <input type="number" name="amount" class="form-control form-control-sm"
-                     step="0.01" min="0.01" placeholder="0.00" required>
+            <div class="col-6" id="empCatSelectWrap">
+              <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
+              <select name="category" id="empExpCategory" class="form-select form-select-sm" required
+                      onchange="empUpdateNames(this.value,'empExpName')">
+                <option value="">— Select type first —</option>
+              </select>
             </div>
           </div>
 
-          <!-- Category: dropdown for O&M / Capital, free text for Other -->
-          <div class="mb-2" id="empCatSelectWrap">
-            <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
-            <select name="category" id="empExpCategory" class="form-select form-select-sm" required
-                    onchange="empUpdateNames(this.value,'empExpName')">
-              <option value="">— Select type first —</option>
-            </select>
-          </div>
           <div class="mb-2" id="empCatTextWrap" style="display:none;">
             <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
             <input type="text" name="category" id="empExpCategoryText" class="form-control form-control-sm" required
@@ -1686,6 +1682,16 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <label class="form-label small fw-semibold">Expense Name <span class="text-danger">*</span></label>
             <input type="text" name="expense_name" id="empExpNameText" class="form-control form-control-sm" required
                    placeholder="Describe the expense...">
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Amount (৳ BDT) <span class="text-danger">*</span></label>
+            <input type="number" name="amount_taka" id="empAmountTaka" class="form-control form-control-sm"
+                   step="1" min="1" placeholder="0" required oninput="empConvertAmountToUsd()">
+            <div class="mt-1" style="font-size:12px;color:#64748b;">
+              ≈ <span style="font-weight:700;color:#0D9488;" id="empUsdConversion">$0.00</span> USD (at ৳<span id="empExchangeRateDisplay">{{ bdt_exchange_rate or 110 }}</span> per $1)
+            </div>
+            <input type="hidden" name="amount" id="empAmountUsd">
           </div>
 
           <div class="row g-2 mb-2">
@@ -1771,7 +1777,10 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                 <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','—') }}</div>
                 <div class="text-muted" style="font-size:11px;">{{ e.get('expense_type','') }}</div>
               </td>
-              <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</td>
+              <td class="text-end">
+                <div class="fw-semibold" style="font-size:14px;">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</div>
+                <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * (bdt_exchange_rate or 110)) }}</div>
+              </td>
               <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
               <td>
                 {% set st = e.get('status','Pending') %}
@@ -1890,7 +1899,10 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             {% endif %}
           </td>
           <td class="text-muted small">{{ e.get('vendor','—') }}</td>
-          <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</td>
+          <td class="text-end">
+            <div class="fw-semibold" style="font-size:14px;color:#10b981;">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</div>
+            <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * (bdt_exchange_rate or 110)) }}</div>
+          </td>
           <td class="text-center">
             {% if e.get('receipt_filename') or e.get('has_receipt') %}
             <button class="btn btn-xs btn-outline-primary"
@@ -1940,6 +1952,95 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
     </div>
     {% endif %}
   </div>
+
+  <!-- Admin Only: All Submissions -->
+  {% if user_role == 'admin' %}
+  <div class="card-panel mt-4">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <h6 class="panel-title mb-0">
+        <i class="bi bi-receipt-cutoff me-1" style="color:#0D9488;"></i>All Expense Submissions
+      </h6>
+    </div>
+    {% if all_expenses %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead style="background:#f8fafc;">
+          <tr>
+            <th>Employee</th><th style="min-width:100px;">Date</th><th>Name</th>
+            <th class="text-end">Amount</th>
+            <th>Project</th><th>Status</th><th class="text-center">Receipt</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for e in all_expenses %}
+        <tr>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <span class="emp-avatar" style="width:28px;height:28px;font-size:11px;">{{ (e.submitted_by_name or 'U')[0]|upper }}</span>
+              <div class="fw-500 small">{{ e.submitted_by_name or '—' }}</div>
+            </div>
+          </td>
+          <td class="text-muted small">{{ e.get('date','—') | format_date }}</td>
+          <td>
+            <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','—') }}</div>
+            <div class="text-muted" style="font-size:11px;">
+              <span class="badge bg-light text-secondary" style="font-size:10px;">{{ e.get('expense_type','') }}</span>
+            </div>
+          </td>
+          <td class="text-end">
+            <div class="fw-semibold" style="font-size:14px;color:#0D9488;">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</div>
+            <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * (bdt_exchange_rate or 110)) }}</div>
+          </td>
+          <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
+          <td>
+            {% set st = e.get('status','Pending') %}
+            {% set reviewed_by = e.get('reviewed_by', '') %}
+            {% set reviewed_at = e.get('reviewed_at', '') %}
+            {% if st == 'Approved' %}
+              <span class="badge bg-success">Approved</span>
+              {% if reviewed_by %}
+              <div class="text-muted small" style="font-size:11px;margin-top:4px;">by <strong>{{ reviewed_by }}</strong></div>
+              {% if reviewed_at %}
+              <div class="text-muted small" style="font-size:10px;">{{ reviewed_at[:10] | format_date }}</div>
+              {% endif %}
+              {% endif %}
+            {% elif st == 'Rejected' %}
+              <span class="badge bg-danger">Rejected</span>
+              {% if reviewed_by %}
+              <div class="text-muted small" style="font-size:11px;margin-top:4px;">by <strong>{{ reviewed_by }}</strong></div>
+              {% if reviewed_at %}
+              <div class="text-muted small" style="font-size:10px;">{{ reviewed_at[:10] | format_date }}</div>
+              {% endif %}
+              {% endif %}
+            {% else %}
+              <span class="badge bg-warning text-dark">Pending</span>
+              <div class="text-muted small" style="font-size:11px;margin-top:4px;">Awaiting review</div>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            {% if e.get('receipt_filename') or e.get('has_receipt') %}
+            <button class="btn btn-xs btn-outline-primary"
+                    onclick="viewEmpReceipt('{{ e.firebase_id }}')"
+                    title="View receipt">
+              <i class="bi bi-paperclip"></i>
+            </button>
+            {% else %}
+            <span class="text-muted small">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-4">
+      <i class="bi bi-receipt" style="font-size:2rem;opacity:.3;display:block;margin-bottom:8px;"></i>
+      <div class="small">No expense submissions found.</div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
   {% endif %}
 
 </div><!-- /tab-emp-expenses -->
@@ -2731,11 +2832,15 @@ window.openEmpExpenseEdit = function(exp) {
   }, 100);
 
   // Fill basic fields first (use form-specific selectors to avoid matching modal fields)
-  form.querySelector('input[name="amount"]').value = exp.amount || '';
+  var amountUsd = exp.amount || 0;
+  var exchangeRate = {{ bdt_exchange_rate or 110 }};
+  var amountTaka = Math.round(amountUsd * exchangeRate);
+  form.querySelector('input[name="amount_taka"]').value = amountTaka || '';
   form.querySelector('input[name="date"]').value = exp.date || '';
   form.querySelector('input[name="vendor"]').value = exp.vendor || '';
   form.querySelector('select[name="project_number"]').value = exp.project_number || '';
   form.querySelector('textarea[name="notes"]').value = exp.notes || '';
+  empConvertAmountToUsd();
 
   // Handle type and category/name
   var typeEl = document.getElementById('empExpType');
@@ -2817,6 +2922,30 @@ window.openEmpExpenseEdit = function(exp) {
   }
 };
 
+window.empConvertAmountToUsd = function() {
+  const exchangeRate = {{ bdt_exchange_rate or 110 }};
+  const takaInput = document.getElementById('empAmountTaka');
+  const usdHidden = document.getElementById('empAmountUsd');
+  const usdDisplay = document.getElementById('empUsdConversion');
+
+  if (!takaInput || !usdHidden || !usdDisplay) return;
+
+  const taka = parseFloat(takaInput.value) || 0;
+  const usd = taka / exchangeRate;
+
+  usdHidden.value = usd.toFixed(2);
+  usdDisplay.textContent = '$' + usd.toFixed(2);
+};
+
+window.empPrepareSubmit = function(event) {
+  const takaInput = document.getElementById('empAmountTaka');
+  const takaHidden = document.getElementById('empAmountTakaHidden');
+
+  if (takaInput && takaHidden) {
+    takaHidden.value = takaInput.value;
+  }
+};
+
 window.empCancelEdit = function() {
   // Reset form
   document.getElementById('empExpenseForm').reset();
@@ -2837,6 +2966,9 @@ window.empCancelEdit = function() {
   document.getElementById('empExpName').disabled = false;
   document.getElementById('empExpCategoryText').disabled = true;
   document.getElementById('empExpNameText').disabled = true;
+
+  // Reset amount conversion
+  empConvertAmountToUsd();
 };
 
 window.reviewExpenseEdit = function(expId, action) {

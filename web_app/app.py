@@ -13317,6 +13317,8 @@ def employees():
     if is_admin:
         # Admins see all pending expenses for approval
         context["pending_expenses"] = [e for e in all_emp_expenses if e.get("status") == "Pending"]
+        # Admins see all submissions (approved, rejected, and pending)
+        context["all_expenses"] = all_emp_expenses
     else:
         context["pending_expenses"] = []
 
@@ -13588,6 +13590,7 @@ def employee_expense_submit():
         "expense_name":      request.form.get("expense_name", ""),
         "description":       request.form.get("expense_name", ""),
         "amount":            _safe_float(request.form.get("amount", 0)),
+        "amount_taka_original": _safe_float(request.form.get("amount_taka_original", 0)),
         "category":          request.form.get("category", ""),
         "date":              request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
         "vendor":            request.form.get("vendor", "").strip(),
