@@ -14891,8 +14891,12 @@ def api_permission_request():
 
 
 @app.route("/api/permission-requests/<req_id>/resolve", methods=["POST"])
-@role_required("approvals")
 def api_permission_request_resolve(req_id):
+    # Allow access from either "settings" or "approvals" pages
+    allowed_pages = session.get("custom_pages") or ROLE_PAGES.get(normalize_role(session.get("user_role", "")), [])
+    if "settings" not in allowed_pages and "approvals" not in allowed_pages:
+        return jsonify({"error": "Access denied"}), 403
+
     user_role = normalize_role(session.get("user_role", ""))
     if user_role not in ("admin", "accountant"):
         log.warning(f"Permission request approval denied - user role '{user_role}' not admin/accountant (req_id={req_id})")
