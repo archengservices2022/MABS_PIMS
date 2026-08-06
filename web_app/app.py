@@ -14871,12 +14871,12 @@ def api_permission_request():
 
 
 @app.route("/api/permission-requests/<req_id>/resolve", methods=["POST"])
-@role_required("settings")
+@role_required("approvals")
 def api_permission_request_resolve(req_id):
     user_role = normalize_role(session.get("user_role", ""))
-    if user_role != "admin":
-        log.warning(f"Permission request approval denied - user role '{user_role}' not admin (req_id={req_id})")
-        return jsonify({"error": "Admin access required"}), 403
+    if user_role not in ("admin", "accountant"):
+        log.warning(f"Permission request approval denied - user role '{user_role}' not admin/accountant (req_id={req_id})")
+        return jsonify({"error": "Admin/Accountant access required"}), 403
     data   = request.get_json(force=True) or {}
     status = "approved" if data.get("action") == "approve" else "denied"
     notes  = (data.get("notes") or "").strip()
