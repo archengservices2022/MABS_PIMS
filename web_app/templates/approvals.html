@@ -162,6 +162,9 @@
                 <td>
                   {% if item.status == 'Pending' or item.status == 'Submitted' %}
                     <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
+                    {% if item.days_pending > 0 %}
+                      <div class="text-muted small" style="margin-top:4px;">{{ item.days_pending }} day{{ 's' if item.days_pending != 1 else '' }} pending</div>
+                    {% endif %}
                   {% elif item.status == 'Approved' %}
                     <span class="badge bg-success">Approved</span><br><span class="text-muted small">by {{ item.reviewed_by }}</span>
                   {% else %}
