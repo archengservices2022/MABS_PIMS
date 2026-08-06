@@ -1156,8 +1156,8 @@ function confirmExpenseReview(expId, action, empName) {
   const headerBg = isApprove ? '#10b981' : '#ef4444';
   const title = isApprove ? 'Approve Expense' : 'Reject Expense';
   const message = isApprove
-    ? `You are about to <strong>approve</strong> <strong>${empName}</strong>'s expense. This action cannot be undone.`
-    : `You are about to <strong>reject</strong> <strong>${empName}</strong>'s expense. This action cannot be undone.`;
+    ? `You are about to <strong>Approve</strong> <strong>${empName}</strong>'s expense. This action cannot be undone.`
+    : `You are about to <strong>Reject</strong> <strong>${empName}</strong>'s expense. This action cannot be undone.`;
 
   showConfirmationModal(title, message, isApprove ? 'Approve' : 'Reject', headerBg, () => {
     const form = document.createElement('form');
@@ -3165,8 +3165,8 @@ function confirmTimeOffReview(requestId, action, empName) {
   const headerBg = isApprove ? '#10b981' : '#ef4444';
   const title = isApprove ? 'Approve Time Off' : 'Reject Time Off';
   const message = isApprove
-    ? `You are about to <strong>approve</strong> <strong>${empName}</strong>'s time off request. This action cannot be undone.`
-    : `You are about to <strong>reject</strong> <strong>${empName}</strong>'s time off request. This action cannot be undone.`;
+    ? `You are about to <strong>Approve</strong> <strong>${empName}</strong>'s time off request. This action cannot be undone.`
+    : `You are about to <strong>Reject</strong> <strong>${empName}</strong>'s time off request. This action cannot be undone.`;
 
   showConfirmationModal(title, message, isApprove ? 'Approve' : 'Reject', headerBg, () => {
     const form = document.createElement('form');
