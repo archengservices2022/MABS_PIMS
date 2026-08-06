@@ -108,6 +108,7 @@
                 <th>Requested By</th>
                 <th>Type</th>
                 <th>Date</th>
+                <th>Submitted Date</th>
                 <th>Amount</th>
                 <th>Notes</th>
                 <th>Page</th>
@@ -138,6 +139,13 @@
                     {{ item.date }}
                   {% else %}
                     {{ item.date | format_date }}
+                  {% endif %}
+                </td>
+                <td class="text-muted text-nowrap">
+                  {% if item.submitted_at %}
+                    {{ item.submitted_at | format_date }}
+                  {% else %}
+                    —
                   {% endif %}
                 </td>
                 <td>
