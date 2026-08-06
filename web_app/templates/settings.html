@@ -1227,27 +1227,39 @@ function submitPermissionRequest(action, notes) {
 
 function confirmApprove() {
   if (!currentPermReqId) return;
-  bootstrap.Modal.getInstance(document.getElementById('approvePermissionModal')).hide();
+  var modal = document.getElementById('approvePermissionModal');
+  if (modal) {
+    bootstrap.Modal.getInstance(modal).hide();
+  }
   submitPermissionRequest('approve', '');
 }
 
 function confirmDeny() {
   if (!currentPermReqId) return;
   var reason = document.getElementById('denyReason').value.trim();
-  bootstrap.Modal.getInstance(document.getElementById('denyPermissionModal')).hide();
+  var modal = document.getElementById('denyPermissionModal');
+  if (modal) {
+    bootstrap.Modal.getInstance(modal).hide();
+  }
   submitPermissionRequest('deny', reason);
 }
 
 document.addEventListener('DOMContentLoaded', function() {
   // Clear request ID when deny modal is dismissed (e.g., by Cancel button)
-  document.getElementById('denyPermissionModal').addEventListener('hidden.bs.modal', function() {
-    currentPermReqId = null;
-  });
+  var denyModal = document.getElementById('denyPermissionModal');
+  if (denyModal) {
+    denyModal.addEventListener('hidden.bs.modal', function() {
+      currentPermReqId = null;
+    });
+  }
 
   // Clear request ID when approve modal is dismissed (e.g., by Cancel button)
-  document.getElementById('approvePermissionModal').addEventListener('hidden.bs.modal', function() {
-    currentPermReqId = null;
-  });
+  var approveModal = document.getElementById('approvePermissionModal');
+  if (approveModal) {
+    approveModal.addEventListener('hidden.bs.modal', function() {
+      currentPermReqId = null;
+    });
+  }
 
   document.querySelectorAll('.approve-perm-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
