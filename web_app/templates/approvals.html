@@ -96,49 +96,45 @@
       {% endif %}
     </div>
 
-    <!-- EMPLOYEE TAB (All in one unified table with all details) -->
+    <!-- EMPLOYEE TAB (Essential information only with status and open page) -->
     <div class="tab-pane fade" id="tab-employee">
       {% if (pending_medical and pending_medical|length > 0) or (pending_time_off and pending_time_off|length > 0) or (pending_expenses and pending_expenses|length > 0) or (pending_timesheets and pending_timesheets|length > 0) %}
       <div class="card-panel">
         <h6 class="section-heading mb-3"><i class="bi bi-people-fill me-1" style="color:#3b82f6;"></i>Employee Approvals</h6>
         <div class="table-responsive">
-          <table class="table table-sm table-hover align-middle mb-0" style="font-size:12px;">
+          <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
             <thead class="table-light">
               <tr>
                 <th>Employee</th>
                 <th>Type</th>
                 <th>Date/Period</th>
-                <th>Description/Name</th>
                 <th>Amount/Hours</th>
-                <th>Category/Project</th>
-                <th>Receipt</th>
-                <th>Claimed</th>
-                <th>Approved</th>
-                <th>Reason/Notes</th>
-                <th class="text-center" style="min-width:100px;">Actions</th>
+                <th>Approved Amount</th>
+                <th>Status</th>
+                <th>Page</th>
+                <th>Notes</th>
+                <th class="text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
 
               <!-- Medical Claims -->
               {% for claim in pending_medical or [] %}
-              <tr id="med-{{ claim.firebase_id }}" class="align-middle">
+              <tr id="med-{{ claim.firebase_id }}">
                 <td class="fw-semibold">{{ claim.get('employee_name', '—') }}</td>
                 <td><span class="badge" style="background:#6366f1;color:white;">Medical</span></td>
-                <td class="text-muted text-nowrap" style="font-size:11px;">{{ claim.get('date_incurred','—') | format_date }}</td>
-                <td class="text-muted" style="font-size:11px;">{{ claim.get('description','—') }}</td>
-                <td>—</td>
-                <td>—</td>
-                <td>—</td>
-                <td class="fw-semibold" style="font-size:11px;">{{ currency_symbol }}{{ "{:,.2f}".format(claim.get('amount',0)|float) }}</td>
-                <td class="fw-semibold" style="font-size:11px;">
+                <td class="text-muted text-nowrap">{{ claim.get('date_incurred','—') | format_date }}</td>
+                <td class="fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(claim.get('amount',0)|float) }}</td>
+                <td class="fw-semibold">
                   {% if claim.get('approved_amount') %}
                     {{ currency_symbol }}{{ "{:,.2f}".format(claim.get('approved_amount',0)|float) }}
                   {% else %}
                     <span class="text-muted">—</span>
                   {% endif %}
                 </td>
+                <td><span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span></td>
                 <td>—</td>
+                <td class="text-muted small">{{ claim.get('description','—') }}</td>
                 <td class="text-center text-nowrap">
                   <button class="btn btn-xs btn-success me-1" data-bs-toggle="modal" data-bs-target="#medApproveModal" data-claim-id="{{ claim.firebase_id }}" onclick="setMedicalClaimId(this.dataset.claimId)" title="Approve">
                     <i class="bi bi-check2"></i>
@@ -155,17 +151,15 @@
 
               <!-- Time Off Requests -->
               {% for req in pending_time_off or [] %}
-              <tr id="timeoff-{{ req.firebase_id }}" class="align-middle">
+              <tr id="timeoff-{{ req.firebase_id }}">
                 <td class="fw-semibold">{{ req.get('employee_name', '—') }}</td>
                 <td><span class="badge" style="background:#f59e0b;color:white;">{{ req.get('type','—') }}</span></td>
-                <td class="text-muted text-nowrap" style="font-size:11px;">{{ req.get('start_date','—') | format_date }} to {{ req.get('end_date','—') | format_date }}</td>
+                <td class="text-muted text-nowrap">{{ req.get('start_date','—') | format_date }} to {{ req.get('end_date','—') | format_date }}</td>
                 <td>—</td>
                 <td>—</td>
+                <td><span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span></td>
                 <td>—</td>
-                <td>—</td>
-                <td>—</td>
-                <td>—</td>
-                <td class="text-muted small" style="font-size:11px;">{{ req.get('reason','—') or '—' }}</td>
+                <td class="text-muted small">{{ req.get('reason','—') or '—' }}</td>
                 <td class="text-center text-nowrap">
                   <form method="POST" action="{{ url_for('employee_time_off_action', request_id=req.firebase_id, action='approve') }}" class="d-inline">
                     <button type="submit" class="btn btn-xs btn-success me-1" title="Approve">
@@ -183,25 +177,15 @@
 
               <!-- Expenses -->
               {% for exp in pending_expenses or [] %}
-              <tr id="exp-{{ exp.firebase_id }}" class="align-middle">
+              <tr id="exp-{{ exp.firebase_id }}">
                 <td class="fw-semibold">{{ exp.get('employee_name', '—') }}</td>
                 <td><span class="badge" style="background:#f97316;color:white;">Expense</span></td>
-                <td class="text-muted text-nowrap" style="font-size:11px;">{{ exp.get('date','—') | format_date }}</td>
-                <td class="text-muted" style="font-size:11px;">{{ exp.get('description','—') or exp.get('expense_name','—') }}</td>
-                <td class="fw-semibold" style="font-size:11px;">{{ currency_symbol }}{{ "{:,.2f}".format(exp.get('amount',0)|float) }}</td>
-                <td class="text-muted" style="font-size:11px;">{{ exp.get('category','—') }}<br>{{ exp.get('project','—') or '—' }}</td>
-                <td class="text-center">
-                  {% if exp.get('receipt_url') %}
-                  <a href="{{ exp.receipt_url }}" target="_blank" class="btn btn-xs btn-outline-secondary" title="View Receipt">
-                    <i class="bi bi-file-pdf"></i>
-                  </a>
-                  {% else %}
-                  <span class="text-muted">—</span>
-                  {% endif %}
-                </td>
-                <td class="fw-semibold" style="font-size:11px;">{{ currency_symbol }}{{ "{:,.2f}".format(exp.get('amount',0)|float) }}</td>
+                <td class="text-muted text-nowrap">{{ exp.get('date','—') | format_date }}</td>
+                <td class="fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(exp.get('amount',0)|float) }}</td>
                 <td>—</td>
+                <td><span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span></td>
                 <td>—</td>
+                <td class="text-muted small">{{ exp.get('description','—') or exp.get('expense_name','—') }}</td>
                 <td class="text-center text-nowrap">
                   <form method="POST" action="{{ url_for('employee_expense_review', exp_id=exp.firebase_id) }}" class="d-inline">
                     <input type="hidden" name="action" value="approve">
@@ -218,17 +202,15 @@
 
               <!-- Timesheets -->
               {% for sheet in pending_timesheets or [] %}
-              <tr id="ts-{{ sheet.firebase_id }}" class="align-middle">
+              <tr id="ts-{{ sheet.firebase_id }}">
                 <td class="fw-semibold">{{ sheet.get('employee_name', '—') }}</td>
                 <td><span class="badge" style="background:#0d9488;color:white;">Timesheet</span></td>
-                <td class="text-muted text-nowrap" style="font-size:11px;">{{ sheet.get('week_start','—') | format_date }} to {{ sheet.get('week_end','—') | format_date }}</td>
+                <td class="text-muted text-nowrap">{{ sheet.get('week_start','—') | format_date }} to {{ sheet.get('week_end','—') | format_date }}</td>
+                <td class="fw-semibold">{{ "{:.1f}".format(sheet.get('total_hours',0)|float) }}h</td>
                 <td>—</td>
-                <td class="fw-semibold" style="font-size:11px;">{{ "{:.1f}".format(sheet.get('total_hours',0)|float) }}h</td>
+                <td><span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span></td>
                 <td>—</td>
-                <td>—</td>
-                <td>—</td>
-                <td>—</td>
-                <td class="text-muted small" style="font-size:11px;">Submitted {{ sheet.get('submitted_at','—')[:10] | format_date if sheet.get('submitted_at') else '—' }}</td>
+                <td class="text-muted small">Submitted {{ sheet.get('submitted_at','—')[:10] | format_date if sheet.get('submitted_at') else '—' }}</td>
                 <td class="text-center text-nowrap">
                   <button class="btn btn-xs btn-success me-1 timesheet-approve-btn" data-sheet-id="{{ sheet.firebase_id }}" title="Approve">
                     <i class="bi bi-check2"></i>
@@ -246,7 +228,7 @@
       </div>
       {% else %}
       <div class="card-panel">
-        <div class="text-muted text-center py-5"><i class="bi bi-people-fill" style="font-size:48px;display:block;margin-bottom:12px;opacity:.3;"></i>No pending employee approvals.</div>
+        <div class="text-muted text-center py-4"><i class="bi bi-people-fill" style="font-size:32px;display:block;margin-bottom:8px;opacity:.4;"></i>No pending employee approvals.</div>
       </div>
       {% endif %}
     </div>
