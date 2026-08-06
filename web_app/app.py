@@ -14898,10 +14898,6 @@ def api_permission_request_resolve(req_id):
     if "settings" not in allowed_pages and "approvals" not in allowed_pages:
         return jsonify({"error": "Access denied"}), 403
 
-    user_role = normalize_role(session.get("user_role", ""))
-    if user_role not in ("admin", "accountant"):
-        log.warning(f"Permission request approval denied - user role '{user_role}' not admin/accountant (req_id={req_id})")
-        return jsonify({"error": "Admin/Accountant access required"}), 403
     data   = request.get_json(force=True) or {}
     status = "approved" if data.get("action") == "approve" else "denied"
     notes  = (data.get("notes") or "").strip()
