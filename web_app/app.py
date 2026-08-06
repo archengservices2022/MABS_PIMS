@@ -14018,7 +14018,7 @@ def employee_time_off_new():
 @app.route("/employees/time-off/<request_id>/<action>", methods=["POST"])
 @role_required("employees")
 def employee_time_off_action(request_id, action):
-    if normalize_role(session.get("user_role", "")) != "admin":
+    if normalize_role(session.get("user_role", "")) not in ("admin", "accountant"):
         flash("You don't have permission to do that.", "danger")
         return redirect(url_for("employees"))
 
