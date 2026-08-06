@@ -166,11 +166,9 @@
                       <div class="text-muted small" style="margin-top:4px;">{{ item.days_pending }} day{{ 's' if item.days_pending != 1 else '' }} pending</div>
                     {% endif %}
                   {% elif item.status == 'Approved' %}
-                    <span class="badge bg-success">Approved</span>
-                    {% if item.reviewed_by and item.reviewed_by != '—' %}<br><span class="text-muted small">by {{ item.reviewed_by }}</span>{% endif %}
+                    <span class="badge bg-success">Approved</span><br><span class="text-muted small">by {{ item.reviewed_by }}</span>
                   {% else %}
-                    <span class="badge bg-danger">Denied</span>
-                    {% if item.reviewed_by and item.reviewed_by != '—' %}<br><span class="text-muted small">by {{ item.reviewed_by }}</span>{% endif %}
+                    <span class="badge bg-danger">Denied</span><br><span class="text-muted small">by {{ item.reviewed_by }}</span>
                   {% endif %}
                 </td>
               </tr>

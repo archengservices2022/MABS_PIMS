@@ -21199,9 +21199,10 @@ def api_timesheets_approve(sheet_id):
     action = data.get("action", "approve")
     notes  = (data.get("notes") or "").strip()
     status = "Approved" if action == "approve" else "Rejected"
+    reviewer_name = session.get("user_name") or session.get("username") or session.get("user_email", "")
     fb_update(f"/timesheets/{sheet_id}", {
         "status":          status,
-        "approved_by":     session.get("user_name", ""),
+        "approved_by":     reviewer_name,
         "approved_at":     datetime.now(timezone.utc).isoformat(),
         "rejection_notes": notes,
     })
