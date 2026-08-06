@@ -15028,9 +15028,6 @@ def settings():
 @role_required("approvals")
 def approvals():
     _role = normalize_role(session.get("user_role", ""))
-    if _role not in ("admin", "accountant"):
-        flash("You don't have permission to access this page.", "danger")
-        return redirect(url_for("dashboard"))
 
     # All delete/permission requests (pending + completed/approved/denied)
     _perm_reqs = []
