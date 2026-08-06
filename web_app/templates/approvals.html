@@ -100,7 +100,10 @@
     <div class="tab-pane fade" id="tab-employee">
       {% if all_employee_items|length > 0 %}
       <div class="card-panel">
-        <h6 class="section-heading mb-3"><i class="bi bi-people-fill me-1" style="color:#3b82f6;"></i>Employee Approvals</h6>
+        {% set pending_count = all_employee_items | selectattr('status', 'in', ['Pending', 'Submitted']) | list | length %}
+        <h6 class="section-heading mb-3"><i class="bi bi-people-fill me-1" style="color:#3b82f6;"></i>Employee Approvals
+          {% if pending_count > 0 %}<span class="badge bg-danger ms-2">{{ pending_count }}</span>{% endif %}
+        </h6>
         <div class="table-responsive">
           <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
             <thead class="table-light">
