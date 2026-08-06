@@ -154,9 +154,11 @@
                     {% if item.currency == 'h' %}
                       {% if item.amount is number %}{{ "{:.1f}".format(item.amount|float) }}h{% else %}{{ item.amount }}h{% endif %}
                     {% elif item.cat == 'medical' %}
-                      ৳{{ "{:,.2f}".format(item.amount|float) }}
+                      <div>${{ "{:.2f}".format((item.amount|float) / bdt_exchange_rate) }}</div>
+                      <div class="text-muted" style="font-size:11px;">৳{{ "{:,.2f}".format(item.amount|float) }}</div>
                     {% else %}
-                      ৳{{ "{:,.2f}".format((item.amount|float) * bdt_exchange_rate) }}
+                      <div>${{ "{:.2f}".format(item.amount|float) }}</div>
+                      <div class="text-muted" style="font-size:11px;">৳{{ "{:,.2f}".format((item.amount|float) * bdt_exchange_rate) }}</div>
                     {% endif %}
                   {% else %}
                     —
