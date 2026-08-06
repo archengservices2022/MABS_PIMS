@@ -209,7 +209,30 @@
     </div>
 </div>
 
-<!-- Modal for Delete Requests only -->
+<!-- Approve Modal -->
+<div class="modal fade" id="approvePermissionModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">Approve Delete Request</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pb-2">
+        <p class="text-muted mb-0" style="font-size:12px;">
+          Approving this request will notify the requester and allow them to proceed with the delete action.
+        </p>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-success" onclick="confirmApprove()">
+          <i class="bi bi-check-circle me-1"></i>Approve
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Deny Modal -->
 <div class="modal fade" id="denyPermissionModal" tabindex="-1">
   <div class="modal-dialog modal-sm">
     <div class="modal-content">
@@ -219,8 +242,8 @@
       </div>
       <div class="modal-body pb-2">
         <div class="mb-3">
-          <label class="form-label fw-semibold" style="font-size:12px;">Reason (optional)</label>
-          <textarea id="denyReason" class="form-control form-control-sm" rows="2" style="font-size:12px;"></textarea>
+          <label class="form-label fw-semibold" style="font-size:12px;">Reason for Denying <span class="text-muted fw-normal">(optional)</span></label>
+          <textarea id="denyReason" class="form-control form-control-sm" placeholder="e.g., Already approved by another admin" rows="2" style="font-size:12px;"></textarea>
         </div>
       </div>
       <div class="modal-footer py-2">
@@ -266,7 +289,7 @@ document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.approve-perm-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       currentPermReqId = this.dataset.reqId;
-      submitPermissionRequest('approve', '');
+      new bootstrap.Modal(document.getElementById('approvePermissionModal')).show();
     });
   });
 
@@ -276,6 +299,10 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('denyReason').value = '';
       new bootstrap.Modal(document.getElementById('denyPermissionModal')).show();
     });
+  });
+
+  document.getElementById('approvePermissionModal').addEventListener('hidden.bs.modal', function() {
+    currentPermReqId = null;
   });
 
   document.getElementById('denyPermissionModal').addEventListener('hidden.bs.modal', function() {
@@ -302,6 +329,12 @@ function submitPermissionRequest(action, notes) {
     location.reload();
   })
   .catch(err => { alert('Error: ' + err.message); });
+}
+
+function confirmApprove() {
+  if (!currentPermReqId) return;
+  bootstrap.Modal.getInstance(document.getElementById('approvePermissionModal')).hide();
+  submitPermissionRequest('approve', '');
 }
 
 function confirmDeny() {
