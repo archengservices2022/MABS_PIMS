@@ -324,6 +324,14 @@ function setMedicalClaimId(id) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.open-page-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      var url = this.getAttribute('data-url');
+      if (url) window.open(url, '_blank');
+    });
+  });
+
   document.querySelectorAll('.approve-perm-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       currentPermReqId = this.dataset.reqId;
@@ -371,7 +379,10 @@ function submitPermissionRequest(action, notes) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({action: action, notes: notes})
   })
-  .then(r => r.json())
+  .then(r => {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  })
   .then(data => {
     if (!data.success) {
       alert('Error: ' + (data.error || 'Unknown'));
@@ -379,7 +390,7 @@ function submitPermissionRequest(action, notes) {
     }
     location.reload();
   })
-  .catch(() => { alert('Network error. Please try again.'); });
+  .catch(err => { alert('Error: ' + err.message); });
 }
 
 function confirmDeny() {
@@ -395,7 +406,10 @@ function approveTimesheet(sheetId) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({action: 'approve', notes: ''})
   })
-  .then(r => r.json())
+  .then(r => {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  })
   .then(data => {
     if (data.error) {
       alert('Error: ' + data.error);
@@ -403,7 +417,7 @@ function approveTimesheet(sheetId) {
     }
     location.reload();
   })
-  .catch(() => { alert('Network error. Please try again.'); });
+  .catch(err => { alert('Error: ' + err.message); });
 }
 
 function rejectTimesheet(sheetId) {
@@ -414,7 +428,10 @@ function rejectTimesheet(sheetId) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({action: 'reject', notes: notes})
   })
-  .then(r => r.json())
+  .then(r => {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  })
   .then(data => {
     if (data.error) {
       alert('Error: ' + data.error);
@@ -422,7 +439,7 @@ function rejectTimesheet(sheetId) {
     }
     location.reload();
   })
-  .catch(() => { alert('Network error. Please try again.'); });
+  .catch(err => { alert('Error: ' + err.message); });
 }
 </script>
 {% endblock %}
