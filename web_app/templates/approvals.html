@@ -232,6 +232,21 @@
 var currentPermReqId = null;
 
 document.addEventListener('DOMContentLoaded', function() {
+  // Tab persistence
+  const savedTab = localStorage.getItem('approvalsActiveTab');
+  if (savedTab) {
+    const tabLink = document.querySelector(`[href="${savedTab}"]`);
+    if (tabLink) {
+      new bootstrap.Tab(tabLink).show();
+    }
+  }
+
+  document.querySelectorAll('#approvalsTab .nav-link').forEach(function(link) {
+    link.addEventListener('shown.bs.tab', function(e) {
+      localStorage.setItem('approvalsActiveTab', this.getAttribute('href'));
+    });
+  });
+
   document.querySelectorAll('.open-page-btn').forEach(function(btn) {
     btn.addEventListener('click', function(e) {
       e.preventDefault();
