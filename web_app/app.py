@@ -14018,7 +14018,7 @@ def employee_time_off_new():
 @app.route("/employees/time-off/<request_id>/<action>", methods=["POST"])
 @role_required("employees")
 def employee_time_off_action(request_id, action):
-    if normalize_role(session.get("user_role", "")) not in ("admin", "accountant"):
+    if normalize_role(session.get("user_role", "")) != "admin":
         flash("You don't have permission to do that.", "danger")
         return redirect(url_for("employees"))
 
@@ -15111,38 +15111,40 @@ def approvals():
             'days_pending': days_pending,
             'cat': 'expense'
         })
-    for req in pending_time_off:
-        # Calculate hours for time off
-        r_hours = req.get('total_hours')
-        if r_hours is None:
-            if req.get('type') == 'Half Day':
-                r_hours = 4
-            elif req.get('type') == 'Unpaid':
-                r_hours = None
-            else:
-                r_hours = (req.get('working_days', 0) or 1) * 8
-        requested_at = req.get('requested_at', '')
-        days_pending = 0
-        if requested_at and req.get('status') == 'Pending':
-            try:
-                requested_dt = datetime.fromisoformat(requested_at.replace('Z', '+00:00'))
-                days_pending = (now - requested_dt).days
-            except:
-                days_pending = 0
-        all_employee_items.append({
-            'type': 'Time Off',
-            'employee': req.get('employee_name', '—'),
-            'date': req.get('start_date', ''),
-            'date_end': req.get('end_date', ''),
-            'sort_key': req.get('requested_at', ''),
-            'amount': r_hours if r_hours is not None else '—',
-            'currency': 'h',
-            'status': req.get('status', 'Pending'),
-            'reviewed_by': req.get('reviewed_by', '—'),
-            'notes': req.get('reason', '—'),
-            'days_pending': days_pending,
-            'cat': 'timeoff'
-        })
+    # Only show time off to admins (not accountants)
+    if _role == "admin":
+        for req in pending_time_off:
+            # Calculate hours for time off
+            r_hours = req.get('total_hours')
+            if r_hours is None:
+                if req.get('type') == 'Half Day':
+                    r_hours = 4
+                elif req.get('type') == 'Unpaid':
+                    r_hours = None
+                else:
+                    r_hours = (req.get('working_days', 0) or 1) * 8
+            requested_at = req.get('requested_at', '')
+            days_pending = 0
+            if requested_at and req.get('status') == 'Pending':
+                try:
+                    requested_dt = datetime.fromisoformat(requested_at.replace('Z', '+00:00'))
+                    days_pending = (now - requested_dt).days
+                except:
+                    days_pending = 0
+            all_employee_items.append({
+                'type': 'Time Off',
+                'employee': req.get('employee_name', '—'),
+                'date': req.get('start_date', ''),
+                'date_end': req.get('end_date', ''),
+                'sort_key': req.get('requested_at', ''),
+                'amount': r_hours if r_hours is not None else '—',
+                'currency': 'h',
+                'status': req.get('status', 'Pending'),
+                'reviewed_by': req.get('reviewed_by', '—'),
+                'notes': req.get('reason', '—'),
+                'days_pending': days_pending,
+                'cat': 'timeoff'
+            })
     for sheet in pending_timesheets:
         submitted_at = sheet.get('submitted_at', '')
         days_pending = 0
