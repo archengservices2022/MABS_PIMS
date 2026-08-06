@@ -1179,19 +1179,23 @@ async function saveUserDetails() {
 
     clearTimeout(timeoutId);
 
+    if (!res.ok) {
+      console.error('Response not ok:', res.status);
+      msg.innerHTML = '<span class="text-danger">Error: ' + res.status + ' ' + res.statusText + '</span>';
+      saveBtn.disabled = false;
+      return;
+    }
+
     var data = {};
     try {
       data = await res.json();
     } catch(parseErr) {
       console.error('Response parse error:', parseErr);
-    }
-
-    if (!res.ok) {
-      var errMsg = data.error || data.message || 'Error: ' + res.status;
-      msg.innerHTML = '<span class="text-danger">' + errMsg + '</span>';
+      msg.innerHTML = '<span class="text-danger">Invalid response from server</span>';
       saveBtn.disabled = false;
       return;
     }
+
     if (data.error) {
       msg.innerHTML = '<span class="text-danger">' + data.error + '</span>';
       saveBtn.disabled = false;
@@ -1203,7 +1207,7 @@ async function saveUserDetails() {
   } catch(e) {
     clearTimeout(timeoutId);
     console.error('Save error:', e);
-    msg.innerHTML = '<span class="text-danger">Request failed: ' + (e.message || 'Network error') + '</span>';
+    msg.innerHTML = '<span class="text-danger">Request failed: ' + (e.message || 'Unknown error') + '</span>';
     saveBtn.disabled = false;
   }
 }
@@ -1241,18 +1245,40 @@ async function saveUserPages() {
   var defaults = ROLE_DEFAULTS[role] || [];
   var isDefault = defaults.length === pages.length && defaults.every(function(p){ return pages.indexOf(p) !== -1; });
   var payload = isDefault ? [] : pages;
-  msg.innerHTML = '<span class="text-muted">Saving?</span>';
+  msg.innerHTML = '<span class="text-muted">Saving...</span>';
   try {
     var res  = await fetch('/api/users/' + uid + '/pages', {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({custom_pages: payload})
     });
-    var data = await res.json();
-    if (!res.ok || data.error) { msg.innerHTML = '<span class="text-danger">' + (data.error || 'Error') + '</span>'; return; }
+
+    if (!res.ok) {
+      console.error('Response not ok:', res.status);
+      msg.innerHTML = '<span class="text-danger">Error: ' + res.status + '</span>';
+      return;
+    }
+
+    var data = {};
+    try {
+      data = await res.json();
+    } catch(parseErr) {
+      console.error('Response parse error:', parseErr);
+      msg.innerHTML = '<span class="text-danger">Invalid response from server</span>';
+      return;
+    }
+
+    if (data.error) {
+      msg.innerHTML = '<span class="text-danger">' + data.error + '</span>';
+      return;
+    }
+
     msg.innerHTML = '<span class="text-success">Saved!</span>';
     setTimeout(function(){ location.reload(); }, 600);
-  } catch(e) { msg.innerHTML = '<span class="text-danger">Request failed.</span>'; }
+  } catch(e) {
+    console.error('Save pages error:', e);
+    msg.innerHTML = '<span class="text-danger">Request failed: ' + (e.message || 'Unknown error') + '</span>';
+  }
 }
 
 var currentPermReqId = null;
