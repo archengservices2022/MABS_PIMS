@@ -15078,7 +15078,7 @@ def approvals():
             'type': 'Medical',
             'employee': claim.get('employee_name', '—'),
             'date': claim.get('claim_date', ''),
-            'submitted_at': claim.get('created_at', ''),
+            'submitted_at': claim.get('submitted_at', ''),
             'sort_key': claim.get('claim_date', ''),
             'amount': claim.get('amount_claimed', 0),
             'currency': claim.get('amount_currency', 'BDT'),
@@ -17689,14 +17689,20 @@ def _parse_invoice_form(form, co_number="") -> dict:
 
             # Get POWO number and CO firebase_id
             # If this is a CO stage (has co_firebase_id from stage), use CO POWO only
+            final_co_number = ""
+            final_co_firebase_id = ""
             if co_firebase_id_from_stage:
                 powo_number = _get_co_powo_by_id(project_data, co_firebase_id_from_stage)
-                co_firebase_id = co_firebase_id_from_stage
+                final_co_firebase_id = co_firebase_id_from_stage
+                final_co_number = item_co_number  # For CO stages, keep the CO number
             else:
-                # Regular payment stage - use project POWO
+                # Regular payment stage - use project POWO but DON'T set co_number/co_firebase_id
+                # This prevents regular stages from being treated as CO stages when displaying
                 powo_number = _get_powo(project_data, item_co_number)
-                co_firebase_id = _get_co_firebase_id(project_data, item_co_number) if item_co_number else ""
-            log.info(f"[PARSE_INV] Line {i}: stage_idx_str={stage_idx_str}, project_data exists={bool(project_data)}, stage_name={stage_name}")
+                # Don't set co_firebase_id for non-CO stages - this is the key fix
+                final_co_firebase_id = ""
+                final_co_number = ""
+            log.info(f"[PARSE_INV] Line {i}: stage_idx_str={stage_idx_str}, project_data exists={bool(project_data)}, stage_name={stage_name}, is_co_stage={bool(co_firebase_id_from_stage)}")
 
             # Use extracted address if description had format "CO — address", otherwise use project site_address
             if desc_address:
@@ -17722,7 +17728,7 @@ def _parse_invoice_form(form, co_number="") -> dict:
                         # Remove last part (likely state/zip)
                         display_address = ", ".join(addr_parts[:-1]).strip()
 
-            log.info(f"[PARSE_INV_STORED] Line {i}: proj={proj_number}, stage_name='{stage_name}', co_number={item_co_number}")
+            log.info(f"[PARSE_INV_STORED] Line {i}: proj={proj_number}, stage_name='{stage_name}', co_number={final_co_number}, is_co={bool(final_co_firebase_id)}")
 
             line_items.append({
                 "description":    desc,
@@ -17734,11 +17740,12 @@ def _parse_invoice_form(form, co_number="") -> dict:
                 # the one selected above, so one invoice can span multiple projects.
                 "project_number": item_proj,
                 "plant":          plant,
-                "co_number":      item_co_number,
-                "co_firebase_id": co_firebase_id,
+                "co_number":      final_co_number,
+                "co_firebase_id": final_co_firebase_id,
                 "powo_number":    powo_number,
                 "site_address":   display_address,
                 "stage_name":     stage_name,
+                "payment_stage_index": int(stage_idx_str) if stage_idx_str else None,
             })
 
     # Every distinct project referenced anywhere on this invoice (main selection +
