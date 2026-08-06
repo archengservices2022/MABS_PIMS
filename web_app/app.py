@@ -14093,6 +14093,7 @@ def user_pages_update(uid):
     # Update session immediately if user is updating their own pages
     if uid == session.get("user_uid"):
         session["custom_pages"] = pages if pages else None
+        session.modified = True
     return jsonify({"ok": True, "custom_pages": pages})
 
 @app.route("/api/users/me/profile", methods=["PATCH"])
