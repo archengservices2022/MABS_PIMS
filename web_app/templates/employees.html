@@ -3141,29 +3141,40 @@ window.openMedAmtEdit = function(claimId, empName, amtClaimed, amtApproved) {
   new bootstrap.Modal(document.getElementById('medAmtEditModal')).show();
 };
 
-// Time off approval handlers - submit form directly
+// Time off approval handlers - show confirmation dialog
 document.querySelectorAll('.approve-timeoff-btn').forEach(function(btn) {
   btn.addEventListener('click', function() {
     var requestId = this.dataset.requestId;
+    var empName = this.closest('tr').querySelector('.fw-500')?.textContent || 'Employee';
     if (!requestId) return;
-    var form = document.createElement('form');
-    form.method = 'POST';
-    form.action = '/employees/time-off/' + requestId + '/approve';
-    document.body.appendChild(form);
-    form.submit();
+    confirmTimeOffReview(requestId, 'approve', empName);
   });
 });
 
 document.querySelectorAll('.reject-timeoff-btn').forEach(function(btn) {
   btn.addEventListener('click', function() {
     var requestId = this.dataset.requestId;
+    var empName = this.closest('tr').querySelector('.fw-500')?.textContent || 'Employee';
     if (!requestId) return;
-    var form = document.createElement('form');
+    confirmTimeOffReview(requestId, 'reject', empName);
+  });
+});
+
+function confirmTimeOffReview(requestId, action, empName) {
+  const isApprove = action === 'approve';
+  const headerBg = isApprove ? '#10b981' : '#ef4444';
+  const title = isApprove ? 'Approve Time Off' : 'Reject Time Off';
+  const message = isApprove
+    ? `You are about to <strong>approve</strong> <strong>${empName}</strong>'s time off request. This action cannot be undone.`
+    : `You are about to <strong>reject</strong> <strong>${empName}</strong>'s time off request. This action cannot be undone.`;
+
+  showConfirmationModal(title, message, isApprove ? 'Approve' : 'Reject', headerBg, () => {
+    const form = document.createElement('form');
     form.method = 'POST';
-    form.action = '/employees/time-off/' + requestId + '/reject';
+    form.action = `/employees/time-off/${requestId}/${action}`;
     document.body.appendChild(form);
     form.submit();
   });
-});
+}
 </script>
 {% endblock %}
