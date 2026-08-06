@@ -15154,6 +15154,9 @@ def approvals():
                 days_pending = (now - submitted_dt).days
             except:
                 days_pending = 0
+        # Use sent_back_by if status is Draft, otherwise use approved_by
+        reviewed_by = sheet.get('sent_back_by') if sheet.get('status') == 'Draft' else sheet.get('approved_by', '—')
+        reviewed_by = reviewed_by or '—'
         all_employee_items.append({
             'type': 'Timesheet',
             'employee': sheet.get('employee_name', '—'),
@@ -15162,7 +15165,8 @@ def approvals():
             'amount': sheet.get('total_hours', 0),
             'currency': 'h',
             'status': sheet.get('status', 'Submitted'),
-            'reviewed_by': sheet.get('approved_by', '—'),
+            'reviewed_by': reviewed_by,
+            'sent_back': sheet.get('status') == 'Draft' and sheet.get('sent_back_by'),
             'notes': sheet.get('submitted_at', '—')[:10] if sheet.get('submitted_at') else '—',
             'days_pending': days_pending,
             'cat': 'timesheet'
@@ -21235,9 +21239,10 @@ def api_timesheets_send_back(sheet_id):
     emp_email = emp_data.get("email", "")
     emp_name = emp_data.get("username", sheet.get("employee_name", "Employee"))
 
+    reviewer_name = session.get("user_name") or session.get("username") or session.get("user_email", "")
     fb_update(f"/timesheets/{sheet_id}", {
         "status":          "Draft",
-        "sent_back_by":    session.get("user_name", ""),
+        "sent_back_by":    reviewer_name,
         "sent_back_at":    datetime.now(timezone.utc).isoformat(),
         "approved_by":     None,
         "approved_at":     None,
