@@ -126,7 +126,15 @@
                   {% set curr = claim.get('amount_currency', 'BDT') %}
                   {% if curr == 'BDT' %}৳{% elif curr == 'USD' %}${% else %}{{ curr }}{% endif %}{{ "{:,.2f}".format(claim.get('amount_claimed',0)|float) }}
                 </td>
-                <td><span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span></td>
+                <td>
+                  {% if claim.get('status') == 'Pending' %}
+                    <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
+                  {% elif claim.get('status') == 'Approved' %}
+                    <span class="badge bg-success">Approved</span><br><span class="text-muted small">by {{ claim.get('reviewed_by','—') }}</span>
+                  {% else %}
+                    <span class="badge bg-danger">Denied</span><br><span class="text-muted small">by {{ claim.get('reviewed_by','—') }}</span>
+                  {% endif %}
+                </td>
                 <td class="text-muted small">{{ claim.get('description','—') }}</td>
                 <td class="text-center text-nowrap">
                   <a href="{{ url_for('employees') }}" class="btn btn-xs btn-outline-secondary" title="Open Medical Claims">
@@ -143,7 +151,15 @@
                 <td><span class="badge" style="background:#f59e0b;color:white;">{{ req.get('type','—') }}</span></td>
                 <td class="text-muted text-nowrap">{{ req.get('start_date','—') | format_date }} to {{ req.get('end_date','—') | format_date }}</td>
                 <td>—</td>
-                <td><span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span></td>
+                <td>
+                  {% if req.get('status') == 'Pending' %}
+                    <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
+                  {% elif req.get('status') == 'Approved' %}
+                    <span class="badge bg-success">Approved</span><br><span class="text-muted small">by {{ req.get('reviewed_by','—') }}</span>
+                  {% else %}
+                    <span class="badge bg-danger">Denied</span><br><span class="text-muted small">by {{ req.get('reviewed_by','—') }}</span>
+                  {% endif %}
+                </td>
                 <td class="text-muted small">{{ req.get('reason','—') or '—' }}</td>
                 <td class="text-center text-nowrap">
                   <a href="{{ url_for('employees') }}" class="btn btn-xs btn-outline-secondary" title="Open Time Off">
@@ -160,7 +176,15 @@
                 <td><span class="badge" style="background:#f97316;color:white;">Expense</span></td>
                 <td class="text-muted text-nowrap">{{ exp.get('date','—') | format_date }}</td>
                 <td class="fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(exp.get('amount',0)|float) }}</td>
-                <td><span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span></td>
+                <td>
+                  {% if exp.get('status') == 'Pending' %}
+                    <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
+                  {% elif exp.get('status') == 'Approved' %}
+                    <span class="badge bg-success">Approved</span><br><span class="text-muted small">by {{ exp.get('reviewed_by','—') }}</span>
+                  {% else %}
+                    <span class="badge bg-danger">Denied</span><br><span class="text-muted small">by {{ exp.get('reviewed_by','—') }}</span>
+                  {% endif %}
+                </td>
                 <td class="text-muted small">{{ exp.get('description','—') or exp.get('expense_name','—') }}</td>
                 <td class="text-center text-nowrap">
                   <a href="{{ url_for('employees') }}" class="btn btn-xs btn-outline-secondary" title="Open Expenses">
@@ -177,7 +201,15 @@
                 <td><span class="badge" style="background:#0d9488;color:white;">Timesheet</span></td>
                 <td class="text-muted text-nowrap">Week of {{ sheet.get('week_label','—') }}</td>
                 <td class="fw-semibold">{{ "{:.1f}".format(sheet.get('total_hours',0)|float) }}h</td>
-                <td><span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span></td>
+                <td>
+                  {% if sheet.get('status') == 'Submitted' %}
+                    <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
+                  {% elif sheet.get('status') == 'Approved' %}
+                    <span class="badge bg-success">Approved</span><br><span class="text-muted small">by {{ sheet.get('reviewed_by','—') }}</span>
+                  {% else %}
+                    <span class="badge bg-danger">Denied</span><br><span class="text-muted small">by {{ sheet.get('reviewed_by','—') }}</span>
+                  {% endif %}
+                </td>
                 <td class="text-muted small">Submitted {{ sheet.get('submitted_at','—')[:10] | format_date if sheet.get('submitted_at') else '—' }}</td>
                 <td class="text-center text-nowrap">
                   <a href="{{ url_for('timesheets') }}" class="btn btn-xs btn-outline-secondary" title="Open Timesheets">

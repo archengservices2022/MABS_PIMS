@@ -15021,46 +15021,45 @@ def approvals():
     _perm_reqs.sort(key=lambda x: x.get("requested_at", ""), reverse=True)
     _perm_reqs_pending.sort(key=lambda x: x.get("requested_at", ""), reverse=True)
 
-    # Pending expense claims
+    # All expense claims (pending + approved + rejected) - show history with status and reviewer
     pending_expenses = []
     _raw_exp = fb_get("/expenses") or {}
     if isinstance(_raw_exp, dict):
         for eid, edata in _raw_exp.items():
-            if isinstance(edata, dict) and edata.get("status") == "Pending":
+            if isinstance(edata, dict):
                 edata["firebase_id"] = eid
                 pending_expenses.append(edata)
     pending_expenses.sort(key=lambda x: x.get("created_at", ""), reverse=True)
 
-    # Pending medical claims
+    # All medical claims (pending + approved + rejected) - show history with status and reviewer
     pending_medical = []
     _raw_med = fb_get("/medical_claims") or {}
     if isinstance(_raw_med, dict):
         for cid, cdata in _raw_med.items():
-            if isinstance(cdata, dict) and cdata.get("status") == "Pending":
+            if isinstance(cdata, dict):
                 cdata["firebase_id"] = cid
                 pending_medical.append(cdata)
     pending_medical.sort(key=lambda x: x.get("created_at", ""), reverse=True)
 
-    # Pending time off
+    # All time off (pending + approved + rejected) - show history with status and reviewer
     all_time_off = _load_time_off_requests()
-    pending_time_off = [r for r in all_time_off if r.get("status") == "Pending"]
+    pending_time_off = all_time_off
     pending_time_off.sort(key=lambda r: r.get("requested_at", ""), reverse=True)
 
-    # Pending timesheets
+    # All timesheets (submitted + approved + rejected) - show history with status and reviewer
     all_sheets = _load_timesheets()
     pending_timesheets = []
     for s in all_sheets:
-        if s.get("status") == "Submitted":
-            # Add week label for display
-            try:
-                week_of = s.get("week_of", "")
-                if week_of:
-                    ws = datetime.strptime(week_of, "%Y-%m-%d").date()
-                    we = ws + timedelta(days=6)
-                    s["week_label"] = f"{ws.strftime('%b %d')} — {we.strftime('%b %d, %Y')}"
-            except:
-                s["week_label"] = week_of or "—"
-            pending_timesheets.append(s)
+        # Add week label for display
+        try:
+            week_of = s.get("week_of", "")
+            if week_of:
+                ws = datetime.strptime(week_of, "%Y-%m-%d").date()
+                we = ws + timedelta(days=6)
+                s["week_label"] = f"{ws.strftime('%b %d')} — {we.strftime('%b %d, %Y')}"
+        except:
+            s["week_label"] = week_of or "—"
+        pending_timesheets.append(s)
     pending_timesheets.sort(key=lambda s: s.get("submitted_at", ""), reverse=True)
 
     return render_template("approvals.html",
