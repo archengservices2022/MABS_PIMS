@@ -15,8 +15,8 @@
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-employee">
       <i class="bi bi-people-fill me-1"></i>Employee
-      {% set emp_count = (pending_medical|length if pending_medical else 0) + (pending_time_off|length if pending_time_off else 0) + (pending_expenses|length if pending_expenses else 0) + (pending_timesheets|length if pending_timesheets else 0) %}
-      {% if emp_count > 0 %}<span class="badge bg-danger ms-1">{{ emp_count }}</span>{% endif %}
+      {% set pending_emp_count = all_employee_items | selectattr('status', 'in', ['Pending', 'Submitted']) | list | length %}
+      {% if pending_emp_count > 0 %}<span class="badge bg-danger ms-1">{{ pending_emp_count }}</span>{% endif %}
     </a>
   </li>
 </ul>
