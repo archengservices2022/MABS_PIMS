@@ -14925,18 +14925,20 @@ def api_permission_request_resolve(req_id):
 
     requester_uid = req.get("requested_by_uid", "")
     reviewer_name = session.get("user_name", "Admin")
+    reviewer_role = normalize_role(session.get("user_role", "")).title()
+    reviewer_display = f"{reviewer_name} ({reviewer_role})"
     entity_label  = req.get("entity_label", "") or req.get("action", "")
     page_url      = req.get("page_url", "")
     if requester_uid:
         if status == "approved":
             _push_notification(requester_uid, "permission_response",
                 "Delete Request Approved",
-                f"{reviewer_name} approved your request to delete: {entity_label[:80]}. You can now go to the page and delete it.",
+                f"{reviewer_display} approved your request to delete: {entity_label[:80]}. You can now go to the page and delete it.",
                 link=page_url or "")
         else:
             _push_notification(requester_uid, "permission_response",
                 "Delete Request Denied",
-                f"{reviewer_name} denied your request to delete: {entity_label[:80]}" + (f" — {notes}" if notes else ""),
+                f"{reviewer_display} denied your request to delete: {entity_label[:80]}" + (f" — {notes}" if notes else ""),
                 link=page_url or "")
     return jsonify({"success": True, "status": status})
 
