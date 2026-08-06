@@ -122,6 +122,8 @@
                 <td class="text-muted text-nowrap">
                   {% if item.cat == 'timeoff' %}
                     {{ item.date | format_date }} to {{ item.date_end | format_date }}
+                  {% elif item.cat == 'timesheet' %}
+                    {{ item.date }}
                   {% else %}
                     {{ item.date | format_date }}
                   {% endif %}

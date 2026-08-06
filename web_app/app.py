@@ -15078,9 +15078,11 @@ def approvals():
             'cat': 'medical'
         })
     for exp in pending_expenses:
+        # Try multiple field names for employee name
+        emp_name = exp.get('employee_name') or exp.get('submitted_by_name') or exp.get('requested_by_name') or '—'
         all_employee_items.append({
             'type': 'Expense',
-            'employee': exp.get('employee_name', '—'),
+            'employee': emp_name,
             'date': exp.get('date', ''),
             'sort_key': exp.get('created_at', exp.get('date', '')),
             'amount': exp.get('amount', 0),
