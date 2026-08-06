@@ -15062,13 +15062,67 @@ def approvals():
         pending_timesheets.append(s)
     pending_timesheets.sort(key=lambda s: s.get("submitted_at", ""), reverse=True)
 
+    # Aggregate all employee items (medical, expense, time off, timesheets) into one sorted list
+    all_employee_items = []
+    for claim in pending_medical:
+        all_employee_items.append({
+            'type': 'Medical',
+            'employee': claim.get('employee_name', '—'),
+            'date': claim.get('claim_date', ''),
+            'sort_key': claim.get('claim_date', ''),
+            'amount': claim.get('amount_claimed', 0),
+            'currency': claim.get('amount_currency', 'BDT'),
+            'status': claim.get('status', 'Pending'),
+            'reviewed_by': claim.get('reviewed_by', '—'),
+            'notes': claim.get('description', '—'),
+            'cat': 'medical'
+        })
+    for exp in pending_expenses:
+        all_employee_items.append({
+            'type': 'Expense',
+            'employee': exp.get('employee_name', '—'),
+            'date': exp.get('date', ''),
+            'sort_key': exp.get('created_at', exp.get('date', '')),
+            'amount': exp.get('amount', 0),
+            'currency': 'BDT',
+            'status': exp.get('status', 'Pending'),
+            'reviewed_by': exp.get('reviewed_by', '—'),
+            'notes': exp.get('description', '—') or exp.get('expense_name', '—'),
+            'cat': 'expense'
+        })
+    for req in pending_time_off:
+        all_employee_items.append({
+            'type': 'Time Off',
+            'employee': req.get('employee_name', '—'),
+            'date': req.get('start_date', ''),
+            'date_end': req.get('end_date', ''),
+            'sort_key': req.get('requested_at', ''),
+            'amount': '—',
+            'currency': '',
+            'status': req.get('status', 'Pending'),
+            'reviewed_by': req.get('reviewed_by', '—'),
+            'notes': req.get('reason', '—'),
+            'cat': 'timeoff'
+        })
+    for sheet in pending_timesheets:
+        all_employee_items.append({
+            'type': 'Timesheet',
+            'employee': sheet.get('employee_name', '—'),
+            'date': sheet.get('week_label', '—'),
+            'sort_key': sheet.get('submitted_at', ''),
+            'amount': sheet.get('total_hours', 0),
+            'currency': 'h',
+            'status': sheet.get('status', 'Submitted'),
+            'reviewed_by': sheet.get('reviewed_by', '—'),
+            'notes': sheet.get('submitted_at', '—')[:10] if sheet.get('submitted_at') else '—',
+            'cat': 'timesheet'
+        })
+    all_employee_items.sort(key=lambda x: x.get('sort_key', ''), reverse=True)
+
     return render_template("approvals.html",
                            permission_requests=_perm_reqs,
                            pending_permission_requests=_perm_reqs_pending,
-                           pending_expenses=pending_expenses,
-                           pending_medical=pending_medical,
-                           pending_time_off=pending_time_off,
-                           pending_timesheets=pending_timesheets,
+                           all_employee_items=all_employee_items,
                            currency_symbol=CURRENCY_SYMBOL,
                            now=datetime.now(COMPANY_TZ))
 
