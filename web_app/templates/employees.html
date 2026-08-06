@@ -2271,11 +2271,11 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
               <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
-              <td class="text-end fw-semibold">{{ currency_symbol }}{{ '%.2f'|format(c.amount_claimed|float) }}</td>
+              <td class="text-end fw-semibold">${{ '%.2f'|format((c.amount_claimed|float) / bdt_exchange_rate) }}</td>
               <td class="text-end text-success fw-semibold">
                 {% set _amt_appr = c.get('amount_approved') %}
                 {% if _amt_appr is not none and _amt_appr != '' %}
-                  {{ currency_symbol }}{{ '%.2f'|format(_amt_appr|float) }}
+                  ${{ '%.2f'|format((_amt_appr|float) / bdt_exchange_rate) }}
                 {% else %}—{% endif %}
               </td>
               <td>
