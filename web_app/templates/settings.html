@@ -1236,7 +1236,8 @@ function confirmApprove() {
 
 function confirmDeny() {
   if (!currentPermReqId) return;
-  var reason = document.getElementById('denyReason').value.trim();
+  var denyReasonEl = document.getElementById('denyReason');
+  var reason = denyReasonEl ? denyReasonEl.value.trim() : '';
   var modal = document.getElementById('denyPermissionModal');
   if (modal) {
     bootstrap.Modal.getInstance(modal).hide();
@@ -1265,16 +1266,20 @@ document.addEventListener('DOMContentLoaded', function() {
     btn.addEventListener('click', function() {
       currentPermReqId = this.dataset.reqId;
       currentPageUrl = this.dataset.pageUrl;
-      document.getElementById('denyReason').value = '';
-      new bootstrap.Modal(document.getElementById('approvePermissionModal')).show();
+      var denyReasonEl = document.getElementById('denyReason');
+      if (denyReasonEl) denyReasonEl.value = '';
+      var approveModalEl = document.getElementById('approvePermissionModal');
+      if (approveModalEl) new bootstrap.Modal(approveModalEl).show();
     });
   });
 
   document.querySelectorAll('.deny-perm-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       currentPermReqId = this.dataset.reqId;
-      document.getElementById('denyReason').value = '';
-      new bootstrap.Modal(document.getElementById('denyPermissionModal')).show();
+      var denyReasonEl = document.getElementById('denyReason');
+      if (denyReasonEl) denyReasonEl.value = '';
+      var denyModalEl = document.getElementById('denyPermissionModal');
+      if (denyModalEl) new bootstrap.Modal(denyModalEl).show();
     });
   });
 
