@@ -1009,7 +1009,8 @@
 
 {% block scripts %}
 <script>
-const ALL_PAGES   = {{ all_pages | tojson }};
+try {
+  const ALL_PAGES   = {{ all_pages | tojson }};
 
 function toggleCreateCommission() {
   var roleEl = document.getElementById('createUserRole');
@@ -1393,6 +1394,9 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 });
+} catch(e) {
+  console.error('Settings script error:', e);
+}
 </script>
 {% endblock %}
 
