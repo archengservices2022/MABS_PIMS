@@ -153,10 +153,6 @@
                   {% if item.amount != '—' and item.amount != None %}
                     {% if item.currency == 'h' %}
                       {% if item.amount is number %}{{ "{:.1f}".format(item.amount|float) }}h{% else %}{{ item.amount }}h{% endif %}
-                    {% elif item.currency == 'BDT' %}
-                      ৳{{ "{:,.2f}".format(item.amount|float) }}
-                    {% elif item.currency == 'USD' %}
-                      ${{ "{:,.2f}".format(item.amount|float) }}
                     {% else %}
                       ${{ "{:,.2f}".format(item.amount|float) }}
                     {% endif %}
