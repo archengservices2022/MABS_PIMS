@@ -98,21 +98,7 @@
 
     <!-- EMPLOYEE TAB (Like Delete Requests - unified list by date) -->
     <div class="tab-pane fade" id="tab-employee">
-      {% set all_items = [] %}
-      {% for claim in pending_medical or [] %}
-        {% do all_items.append({'type': 'Medical', 'employee': claim.get('employee_name', '—'), 'date': claim.get('claim_date', ''), 'sort_key': claim.get('claim_date', ''), 'amount': claim.get('amount_claimed', 0), 'currency': claim.get('amount_currency', 'BDT'), 'status': claim.get('status', 'Pending'), 'reviewed_by': claim.get('reviewed_by', '—'), 'notes': claim.get('description', '—'), 'id': claim.get('firebase_id', ''), 'cat': 'medical'}) %}
-      {% endfor %}
-      {% for exp in pending_expenses or [] %}
-        {% do all_items.append({'type': 'Expense', 'employee': exp.get('employee_name', '—'), 'date': exp.get('date', ''), 'sort_key': exp.get('created_at', exp.get('date', '')), 'amount': exp.get('amount', 0), 'currency': 'BDT', 'status': exp.get('status', 'Pending'), 'reviewed_by': exp.get('reviewed_by', '—'), 'notes': exp.get('description', '—') or exp.get('expense_name', '—'), 'id': exp.get('firebase_id', ''), 'cat': 'expense'}) %}
-      {% endfor %}
-      {% for req in pending_time_off or [] %}
-        {% do all_items.append({'type': 'Time Off', 'employee': req.get('employee_name', '—'), 'date': req.get('start_date', ''), 'date_end': req.get('end_date', ''), 'sort_key': req.get('requested_at', ''), 'amount': '—', 'currency': '', 'status': req.get('status', 'Pending'), 'reviewed_by': req.get('reviewed_by', '—'), 'notes': req.get('reason', '—'), 'id': req.get('firebase_id', ''), 'cat': 'timeoff'}) %}
-      {% endfor %}
-      {% for sheet in pending_timesheets or [] %}
-        {% do all_items.append({'type': 'Timesheet', 'employee': sheet.get('employee_name', '—'), 'date': sheet.get('week_label', '—'), 'sort_key': sheet.get('submitted_at', ''), 'amount': sheet.get('total_hours', 0), 'currency': 'h', 'status': sheet.get('status', 'Submitted'), 'reviewed_by': sheet.get('reviewed_by', '—'), 'notes': sheet.get('submitted_at', '—')[:10] if sheet.get('submitted_at') else '—', 'id': sheet.get('firebase_id', ''), 'cat': 'timesheet'}) %}
-      {% endfor %}
-
-      {% if all_items|length > 0 %}
+      {% if all_employee_items|length > 0 %}
       <div class="card-panel">
         <h6 class="section-heading mb-3"><i class="bi bi-people-fill me-1" style="color:#3b82f6;"></i>Employee Approvals</h6>
         <div class="table-responsive">
@@ -129,7 +115,7 @@
               </tr>
             </thead>
             <tbody>
-              {% for item in all_items | sort(attribute='sort_key', reverse=True) %}
+              {% for item in all_employee_items %}
               <tr>
                 <td class="fw-semibold">{{ item.employee }}</td>
                 <td><span class="badge" style="background:#3b82f6;color:white;">{{ item.type }}</span></td>
