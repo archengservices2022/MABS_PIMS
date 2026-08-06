@@ -158,9 +158,23 @@
                 </td>
                 <td class="text-muted small">{{ item.notes }}</td>
                 <td>
-                  <a href="{{ url_for('employees') }}" class="btn btn-xs btn-outline-secondary" title="Open Page">
-                    <i class="bi bi-box-arrow-up-right me-1"></i>Open
-                  </a>
+                  {% if item.cat == 'medical' %}
+                    <a href="{{ url_for('employees') }}#tab-medical" class="btn btn-xs btn-outline-secondary" title="Open Medical Claims">
+                      <i class="bi bi-box-arrow-up-right me-1"></i>Open
+                    </a>
+                  {% elif item.cat == 'expense' %}
+                    <a href="{{ url_for('employees') }}#tab-emp-expenses" class="btn btn-xs btn-outline-secondary" title="Open Expenses">
+                      <i class="bi bi-box-arrow-up-right me-1"></i>Open
+                    </a>
+                  {% elif item.cat == 'timesheet' %}
+                    <a href="{{ url_for('timesheets') }}" class="btn btn-xs btn-outline-secondary" title="Open Timesheets">
+                      <i class="bi bi-box-arrow-up-right me-1"></i>Open
+                    </a>
+                  {% else %}
+                    <a href="{{ url_for('employees') }}#tab-time-off" class="btn btn-xs btn-outline-secondary" title="Open Time Off">
+                      <i class="bi bi-box-arrow-up-right me-1"></i>Open
+                    </a>
+                  {% endif %}
                 </td>
                 <td>
                   {% if item.status == 'Pending' or item.status == 'Submitted' %}
