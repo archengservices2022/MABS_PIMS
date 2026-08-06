@@ -15136,7 +15136,7 @@ def approvals():
             'submitted_at': exp.get('created_at', ''),
             'sort_key': exp.get('created_at', exp.get('date', '')),
             'amount': exp.get('amount', 0),
-            'currency': 'BDT',
+            'currency': exp.get('currency', 'BDT'),
             'status': exp.get('status', 'Pending'),
             'reviewed_by': exp.get('reviewed_by', '—'),
             'notes': exp.get('description', '—') or exp.get('expense_name', '—'),
