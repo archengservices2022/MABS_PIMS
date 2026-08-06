@@ -729,7 +729,7 @@
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0 align-middle">
         <thead>
-          <tr><th>Employee</th><th>Type</th><th>Dates</th><th class="text-center">Hours</th><th>Reason</th><th>Requested</th><th class="text-end">Action</th></tr>
+          <tr><th>Employee</th><th>Type</th><th>Dates</th><th class="text-center">Hours</th><th>Reason</th><th>Requested</th><th></th></tr>
         </thead>
         <tbody>
         {% for r in pending_time_off %}
@@ -763,14 +763,7 @@
           </td>
           <td class="text-muted small">{{ r.reason or '—' }}</td>
           <td class="text-muted small">{{ r.requested_at[:10] | format_date }}</td>
-          <td class="text-end">
-            <button type="button" class="btn btn-xs btn-outline-success" onclick="confirmTimeOffAction('{{ r.firebase_id }}', 'approve', '{{ r.employee_name or 'this employee' }}')">
-              <i class="bi bi-check-lg"></i> Approve
-            </button>
-            <button type="button" class="btn btn-xs btn-outline-danger" onclick="confirmTimeOffAction('{{ r.firebase_id }}', 'reject', '{{ r.employee_name or 'this employee' }}')">
-              <i class="bi bi-x-lg"></i> Reject
-            </button>
-          </td>
+          <td class="text-center text-muted small">—</td>
         </tr>
         {% endfor %}
         </tbody>
