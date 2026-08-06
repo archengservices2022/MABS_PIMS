@@ -15064,7 +15064,16 @@ def approvals():
 
     # Aggregate all employee items (medical, expense, time off, timesheets) into one sorted list
     all_employee_items = []
+    now = datetime.now(timezone.utc)
     for claim in pending_medical:
+        created_at = claim.get('created_at', '')
+        days_pending = 0
+        if created_at and claim.get('status') == 'Pending':
+            try:
+                created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                days_pending = (now - created_dt).days
+            except:
+                days_pending = 0
         all_employee_items.append({
             'type': 'Medical',
             'employee': claim.get('employee_name', '—'),
@@ -15075,11 +15084,20 @@ def approvals():
             'status': claim.get('status', 'Pending'),
             'reviewed_by': claim.get('reviewed_by', '—'),
             'notes': claim.get('description', '—'),
+            'days_pending': days_pending,
             'cat': 'medical'
         })
     for exp in pending_expenses:
         # Try multiple field names for employee name
         emp_name = exp.get('employee_name') or exp.get('submitted_by_name') or exp.get('requested_by_name') or '—'
+        created_at = exp.get('created_at', '')
+        days_pending = 0
+        if created_at and exp.get('status') == 'Pending':
+            try:
+                created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                days_pending = (now - created_dt).days
+            except:
+                days_pending = 0
         all_employee_items.append({
             'type': 'Expense',
             'employee': emp_name,
@@ -15090,6 +15108,7 @@ def approvals():
             'status': exp.get('status', 'Pending'),
             'reviewed_by': exp.get('reviewed_by', '—'),
             'notes': exp.get('description', '—') or exp.get('expense_name', '—'),
+            'days_pending': days_pending,
             'cat': 'expense'
         })
     for req in pending_time_off:
@@ -15102,6 +15121,14 @@ def approvals():
                 r_hours = None
             else:
                 r_hours = (req.get('working_days', 0) or 1) * 8
+        requested_at = req.get('requested_at', '')
+        days_pending = 0
+        if requested_at and req.get('status') == 'Pending':
+            try:
+                requested_dt = datetime.fromisoformat(requested_at.replace('Z', '+00:00'))
+                days_pending = (now - requested_dt).days
+            except:
+                days_pending = 0
         all_employee_items.append({
             'type': 'Time Off',
             'employee': req.get('employee_name', '—'),
@@ -15113,9 +15140,18 @@ def approvals():
             'status': req.get('status', 'Pending'),
             'reviewed_by': req.get('reviewed_by', '—'),
             'notes': req.get('reason', '—'),
+            'days_pending': days_pending,
             'cat': 'timeoff'
         })
     for sheet in pending_timesheets:
+        submitted_at = sheet.get('submitted_at', '')
+        days_pending = 0
+        if submitted_at and sheet.get('status') == 'Submitted':
+            try:
+                submitted_dt = datetime.fromisoformat(submitted_at.replace('Z', '+00:00'))
+                days_pending = (now - submitted_dt).days
+            except:
+                days_pending = 0
         all_employee_items.append({
             'type': 'Timesheet',
             'employee': sheet.get('employee_name', '—'),
@@ -15126,6 +15162,7 @@ def approvals():
             'status': sheet.get('status', 'Submitted'),
             'reviewed_by': sheet.get('reviewed_by', '—'),
             'notes': sheet.get('submitted_at', '—')[:10] if sheet.get('submitted_at') else '—',
+            'days_pending': days_pending,
             'cat': 'timesheet'
         })
     all_employee_items.sort(key=lambda x: x.get('sort_key', ''), reverse=True)
