@@ -1788,7 +1788,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               </td>
               <td class="text-end">
                 <div class="fw-semibold" style="font-size:14px;">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</div>
-                <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * (bdt_exchange_rate or 110)) }}</div>
+                {% set rate = e|get_exchange_rate %}
+                <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * rate) }}</div>
               </td>
               <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
               <td>
@@ -1910,7 +1911,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           <td class="text-muted small">{{ e.get('vendor','—') }}</td>
           <td class="text-end">
             <div class="fw-semibold" style="font-size:14px;color:#10b981;">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</div>
-            <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * (bdt_exchange_rate or 110)) }}</div>
+            {% set rate = e|get_exchange_rate %}
+            <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * rate) }}</div>
           </td>
           <td class="text-center">
             {% if e.get('receipt_filename') or e.get('has_receipt') %}
@@ -1998,7 +2000,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           </td>
           <td class="text-end">
             <div class="fw-semibold" style="font-size:14px;color:#0D9488;">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</div>
-            <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * (bdt_exchange_rate or 110)) }}</div>
+            {% set rate = e|get_exchange_rate %}
+            <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * rate) }}</div>
           </td>
           <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
           <td>
@@ -2275,7 +2278,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               <td class="text-end text-success fw-semibold">
                 {% set _amt_appr = c.get('amount_approved') %}
                 {% if _amt_appr is not none and _amt_appr != '' %}
-                  ৳{{ '{:,.2f}'.format(_amt_appr|float) }}
+                  ${{ '{:,.2f}'.format(_amt_appr|float) }}
                 {% else %}—{% endif %}
               </td>
               <td>
@@ -2842,7 +2845,7 @@ window.openEmpExpenseEdit = function(exp) {
 
   // Fill basic fields first (use form-specific selectors to avoid matching modal fields)
   var amountUsd = exp.amount || 0;
-  var exchangeRate = {{ bdt_exchange_rate or 110 }};
+  var exchangeRate = exp.exchange_rate_used || {{ bdt_exchange_rate or 110 }};
   var amountTaka = Math.round(amountUsd * exchangeRate);
   form.querySelector('input[name="amount_taka"]').value = amountTaka || '';
   form.querySelector('input[name="date"]').value = exp.date || '';
