@@ -3768,12 +3768,81 @@ function viewReceipt(expId) {
     </div>
   </div>
 
-  <div class="text-muted small mt-2 ps-1">
-    <i class="bi bi-info-circle me-1"></i>
-    Mark commissions as paid in <a href="{{ url_for('quotes') }}?tab=salespeople">Quotes — Sales People</a>.
-  </div>
+  {% endif %}
 
-  {% else %}
+  <!-- By Project commission log -->
+  {% if project_commissions %}
+  <div class="card-panel mt-4">
+    <h6 class="section-heading mb-3"><i class="bi bi-folder2-open me-1"></i>By Project</h6>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" id="commByProjectTable" style="font-size:13px;">
+        <thead>
+          <tr>
+            <th>Project #</th>
+            <th>Client</th>
+            <th>Salesperson</th>
+            <th class="text-end">Contract Value</th>
+            <th class="text-center">Rate / Type</th>
+            <th class="text-end" style="color:#7C3AED;">Commission</th>
+            <th class="text-center">Status</th>
+            {% if user_role == 'admin' %}<th class="text-center">Action</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for pc in project_commissions %}
+          <tr>
+            <td class="fw-semibold">
+              <a href="{{ url_for('project_detail', project_id=pc.firebase_id) }}" class="text-decoration-none">
+                {{ pc.get('project_number','—') }}
+              </a>
+            </td>
+            <td>{{ pc.get('company_name','—') }}</td>
+            <td>
+              <div class="fw-semibold">{{ pc.get('salesperson','—') }}</div>
+              <div class="text-muted" style="font-size:11px;">{{ pc.get('salesperson_email','') }}</div>
+            </td>
+            <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('contract_value',0)|float) }}</td>
+            <td class="text-center text-muted small">{{ pc.get('rate_display','—') }}</td>
+            <td class="text-end fw-bold" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('commission_amount',0)|float) }}</td>
+            <td class="text-center">
+              {% if pc.get('status') == 'Paid' %}
+              <span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>
+              {% if pc.get('paid_at') %}
+              <div class="text-muted" style="font-size:10px;">{{ pc.get('paid_at','')[:10] }}</div>
+              {% endif %}
+              {% else %}
+              <span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>
+              {% endif %}
+            </td>
+            {% if user_role == 'admin' %}
+            <td class="text-center">
+              {% if pc.get('status') == 'Paid' %}
+              <button class="btn btn-xs btn-outline-secondary"
+                      onclick="commProjectToggle('{{ pc.firebase_id }}','unpay',this)"
+                      style="font-size:11px;">Mark Pending</button>
+              {% else %}
+              <button class="btn btn-xs btn-outline-success"
+                      onclick="commProjectToggle('{{ pc.firebase_id }}','pay',this)"
+                      style="font-size:11px;">Mark Paid</button>
+              {% endif %}
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="fw-bold table-light" style="border-top:2px solid #dee2e6;">
+            <td colspan="5" class="text-end text-muted small">Total Commission</td>
+            <td class="text-end" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions|sum(attribute='commission_amount')) }}</td>
+            <td{% if user_role == 'admin' %} colspan="2"{% endif %}></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if not commission_summary and not project_commissions %}
   <div class="card-panel text-center py-5">
     <i class="bi bi-cash-coin" style="font-size:40px;color:#e2e8f0;"></i>
     <div class="text-muted mt-2">No commission data yet. Set commission rates in <a href="{{ url_for('settings') }}?tab=users">Settings — Users</a>.</div>
@@ -4326,5 +4395,22 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // By Project pagination is handled inline in the tab-by-project section
+
+// Per-project commission toggle (Mark Paid / Mark Pending)
+function commProjectToggle(projectId, action, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  fetch('/api/commission/project/' + projectId + '/mark-paid', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: action === 'pay' ? 'pay' : 'unpay' })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) { location.reload(); }
+    else { alert(data.error || 'Error saving commission.'); btn.disabled = false; }
+  })
+  .catch(() => { alert('Network error.'); btn.disabled = false; });
+}
 </script>
 {% endblock %}

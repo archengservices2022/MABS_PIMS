@@ -3342,6 +3342,7 @@ def project_new():
             data["source_quote_num"]  = source_quote.get("job_number", "")
 
         pid = fb_push("/projects", data)
+        _upsert_project_commission(pid, data)
 
         if source_quote:
             fb_update(f"/job_forms/{source_quote_id}", {
@@ -4409,6 +4410,7 @@ def project_edit(project_id):
             updated["status"] = existing_status
 
         fb_update(f"/projects/{project_id}", updated)
+        _upsert_project_commission(project_id, updated)
 
         # Re-sync payment-derived status so that a fully-paid project always shows Completed.
         proj_num = updated.get("project_number", data.get("project_number", ""))
@@ -11968,7 +11970,7 @@ def financial():
     today_date = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     active_tab = request.args.get("tab", "overview")
     expense_page = request.args.get("page", "1")
-    _valid_fin_tabs = {'overview', 'income', 'expenses', 'by-project', 'balance-sheet', 'aging', 'commission'}
+    _valid_fin_tabs = {'overview', 'income', 'expenses', 'archived-expenses', 'by-project', 'balance-sheet', 'aging', 'commission'}
     if active_tab not in _valid_fin_tabs:
         active_tab = 'overview'
 
@@ -12087,6 +12089,13 @@ def financial():
     commission_total_paid      = sum(s["total_paid"]    for s in commission_summary)
     commission_total_outstanding = sum(s["outstanding"] for s in commission_summary)
 
+    # Per-project commission log
+    _raw_proj_comm = fb_get("/project_commissions") or {}
+    project_commissions = sorted(
+        [dict(v, firebase_id=k) for k, v in _raw_proj_comm.items() if isinstance(v, dict)],
+        key=lambda x: x.get("updated_at", x.get("created_at", "")), reverse=True
+    )
+
     invoiced_years = f"{prev_year} & {stat_card_year}"
 
     return render_template("financial.html",
@@ -12163,6 +12172,7 @@ def financial():
         bs_aging_totals=bs_aging_totals,
         bs_aging_total_outstanding=bs_aging_total_outstanding,
         commission_summary=commission_summary,
+        project_commissions=project_commissions,
         commission_total_earned=commission_total_earned,
         commission_total_paid=commission_total_paid,
         commission_total_outstanding=commission_total_outstanding,
@@ -14404,6 +14414,31 @@ def commission_mark_paid():
         "paid_by":          session.get("user_name", ""),
     })
     return jsonify({"ok": True, "action": "paid"})
+
+
+@app.route("/api/commission/project/<project_id>/mark-paid", methods=["POST"])
+@role_required("finance")
+def commission_project_mark_paid(project_id):
+    if normalize_role(session.get("user_role", "")) != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    data   = request.get_json() or {}
+    action = str(data.get("action", "pay")).strip()
+    if action == "unpay":
+        fb_update(f"/project_commissions/{project_id}", {
+            "status":     "Pending",
+            "paid_at":    "",
+            "paid_by":    "",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+        return jsonify({"ok": True, "action": "unpaid"})
+    fb_update(f"/project_commissions/{project_id}", {
+        "status":     "Paid",
+        "paid_at":    datetime.now(timezone.utc).isoformat(),
+        "paid_by":    session.get("user_name", session.get("user_email", "")),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return jsonify({"ok": True, "action": "paid"})
+
 
 @app.route("/employees/export-hours")
 @role_required("employees")
@@ -17577,7 +17612,61 @@ def _parse_project_form(form) -> dict:
         "budget_expenses":      _safe_float(form.get("budget_expenses", 0)),
         "budget_subcontractor": _safe_float(form.get("budget_subcontractor", 0)),
         "actual_labor_cost":    _safe_float(form.get("actual_labor_cost", 0)),
+        # ── commission override ──────────────────────────────────────────────
+        "commission_override_type":  form.get("commission_override_type", "default"),
+        "commission_override_value": _safe_float(form.get("commission_override_value", 0)),
     }
+
+def _upsert_project_commission(project_id: str, project_data: dict) -> None:
+    """Calculate and store a commission entry for a project at /project_commissions/{project_id}.
+    Preserves existing status/paid fields so editing a project doesn't reset a paid commission."""
+    sales_name     = (project_data.get("sales") or project_data.get("sales_person") or "").strip()
+    contract_value = _safe_float(project_data.get("contract_value") or project_data.get("project_amount") or 0)
+    if not sales_name or not contract_value:
+        return
+
+    sp_default_rate = 0.0
+    sp_email = (project_data.get("sales_email") or "").strip()
+    for u in _load_all_users():
+        if (u.get("username") or "").strip() == sales_name:
+            sp_default_rate = _safe_float(u.get("commission_rate", 0))
+            if not sp_email:
+                sp_email = u.get("email", "")
+            break
+
+    override_type  = (project_data.get("commission_override_type") or "default").strip()
+    override_value = _safe_float(project_data.get("commission_override_value", 0))
+
+    if override_type == "percent" and override_value > 0:
+        commission_amount = contract_value * override_value / 100
+        rate_display = f"{override_value}% (custom)"
+    elif override_type == "fixed" and override_value > 0:
+        commission_amount = override_value
+        rate_display = "Fixed amount"
+    else:
+        override_type = "default"
+        commission_amount = contract_value * sp_default_rate / 100
+        rate_display = f"{sp_default_rate}% (default)"
+
+    existing = fb_get(f"/project_commissions/{project_id}") or {}
+    fb_update(f"/project_commissions/{project_id}", {
+        "project_id":                project_id,
+        "project_number":            project_data.get("project_number", ""),
+        "company_name":              project_data.get("company_name", "") or project_data.get("company", ""),
+        "salesperson":               sales_name,
+        "salesperson_email":         sp_email,
+        "contract_value":            contract_value,
+        "commission_override_type":  override_type,
+        "commission_override_value": override_value,
+        "rate_display":              rate_display,
+        "commission_amount":         round(commission_amount, 2),
+        "status":                    existing.get("status", "Pending"),
+        "paid_at":                   existing.get("paid_at", ""),
+        "paid_by":                   existing.get("paid_by", ""),
+        "created_at":                existing.get("created_at", datetime.now(timezone.utc).isoformat()),
+        "updated_at":                datetime.now(timezone.utc).isoformat(),
+    })
+
 
 def _parse_invoice_form(form, co_number="") -> dict:
     line_items = []
