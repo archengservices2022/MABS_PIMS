@@ -3886,8 +3886,8 @@ def api_check_co_delete_approval(project_id, co_idx):
     _role = normalize_role(session.get("user_role", ""))
     _uid = session.get("user_uid", "")
 
-    # Admin can delete directly
-    if _role == "admin":
+    # Admin and accountant can delete directly
+    if _role in ("admin", "accountant"):
         return jsonify({"approved": True})
 
     # Administration needs approval
@@ -3908,8 +3908,8 @@ def co_delete(project_id, co_idx):
         flash("You don't have permission to delete change orders.", "danger")
         return _redirect_project_detail(project_id, "#tab-change-orders")
 
-    # Administration and accountant roles need admin approval to delete
-    if _role in ("administration", "accountant"):
+    # Administration role needs admin approval to delete
+    if _role == "administration":
         entity_id = f"{project_id}_{co_idx}"
         _perm = _has_approved_delete_request(_uid, "change_order", entity_id)
 

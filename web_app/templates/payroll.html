@@ -1048,6 +1048,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load salary delete permissions immediately
   refreshSalaryDeletePerms();
 
+  // Initialize advance tab data
+  initializeAdvanceTab();
+
   // Refresh permissions when returning to page (admin approval detection)
   window.addEventListener('focus', function() {
     console.log('Window focus - refreshing salary permissions');
