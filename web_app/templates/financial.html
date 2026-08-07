@@ -3771,11 +3771,25 @@ function viewReceipt(expId) {
   {% endif %}
 
   <!-- By Project commission log -->
+  {% if user_role == 'admin' and not project_commissions %}
+  <div class="card-panel mt-4 text-center py-4">
+    <i class="bi bi-folder2-open" style="font-size:32px;color:#e2e8f0;"></i>
+    <div class="text-muted mt-2 mb-3 small">No project commission entries yet.</div>
+    <button class="btn btn-sm btn-outline-primary" onclick="backfillCommissions(this)">
+      <i class="bi bi-arrow-repeat me-1"></i>Sync All Projects Now
+    </button>
+  </div>
+  {% endif %}
   {% if project_commissions %}
   <div class="card-panel mt-4">
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
       <h6 class="section-heading mb-0"><i class="bi bi-folder2-open me-1"></i>By Project</h6>
-      <div class="d-flex gap-2 flex-wrap">
+      <div class="d-flex gap-2 flex-wrap align-items-center">
+        {% if user_role == 'admin' %}
+        <button class="btn btn-xs btn-outline-secondary" onclick="backfillCommissions(this)" title="Sync all existing projects into commission log" style="font-size:11px;">
+          <i class="bi bi-arrow-repeat me-1"></i>Sync Projects
+        </button>
+        {% endif %}
         <select id="commSpFilter" class="form-select form-select-sm" style="width:auto;min-width:160px;" onchange="filterCommTable()">
           <option value="">All Salespeople</option>
           {% for sp in project_commissions|map(attribute='salesperson')|unique|sort %}
@@ -4410,6 +4424,25 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // By Project pagination is handled inline in the tab-by-project section
+
+// Backfill all existing projects into /project_commissions
+function backfillCommissions(btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Syncing…';
+  fetch('/api/commission/backfill-projects', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>' + data.synced + ' synced';
+        setTimeout(() => location.reload(), 800);
+      } else {
+        alert(data.error || 'Sync failed.');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Sync Projects';
+      }
+    })
+    .catch(() => { alert('Network error.'); btn.disabled = false; });
+}
 
 // Filter By Project commission table by salesperson and/or status
 function filterCommTable() {

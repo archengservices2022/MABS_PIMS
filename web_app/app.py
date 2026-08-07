@@ -14468,6 +14468,28 @@ def commission_project_mark_paid(project_id):
     return jsonify({"ok": True, "action": "paid"})
 
 
+@app.route("/api/commission/backfill-projects", methods=["POST"])
+@role_required("finance")
+def commission_backfill_projects():
+    """Backfill /project_commissions for all existing projects that lack an entry."""
+    if normalize_role(session.get("user_role", "")) != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    all_projects = fb_get("/projects") or {}
+    if not isinstance(all_projects, dict):
+        return jsonify({"ok": True, "synced": 0})
+    synced = 0
+    for pid, pdata in all_projects.items():
+        if not isinstance(pdata, dict):
+            continue
+        if pdata.get("status") == "Cancelled":
+            continue
+        if not (pdata.get("sales") or pdata.get("sales_person")):
+            continue
+        _upsert_project_commission(pid, pdata)
+        synced += 1
+    return jsonify({"ok": True, "synced": synced})
+
+
 @app.route("/employees/export-hours")
 @role_required("employees")
 def employee_export_hours():
