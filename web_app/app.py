@@ -887,6 +887,16 @@ def format_date_invoice_filter(date_str):
     """Jinja filter to format dates as MM-DD-YY (invoice format)."""
     return _format_date_invoice(date_str)
 
+@app.template_filter('get_exchange_rate')
+def get_exchange_rate_filter(expense):
+    """Return the BDT exchange rate for an expense dict.
+    Uses the rate stored at submission time, falling back to the current setting."""
+    stored = _safe_float(expense.get('exchange_rate') if isinstance(expense, dict) else 0)
+    if stored:
+        return stored
+    settings_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110))
+    return settings_rate or 110
+
 # ── Routes: Auth ──────────────────────────────────────────────────────────────
 @app.route("/login", methods=["GET", "POST"])
 def login():
