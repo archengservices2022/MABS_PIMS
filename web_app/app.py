@@ -4451,6 +4451,24 @@ def project_status(project_id):
     url = url_for("project_detail", project_id=project_id) + f"?page={page}"
     return redirect(url)
 
+@app.route("/projects/<project_id>/commission", methods=["POST"])
+@role_required("projects")
+def project_commission_update(project_id):
+    override_type  = request.form.get("commission_override_type", "default").strip()
+    override_value = _safe_float(request.form.get("commission_override_value", 0))
+    fb_update(f"/projects/{project_id}", {
+        "commission_override_type":  override_type,
+        "commission_override_value": override_value,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    proj = fb_get(f"/projects/{project_id}") or {}
+    proj["commission_override_type"]  = override_type
+    proj["commission_override_value"] = override_value
+    _upsert_project_commission(project_id, proj)
+    flash("Commission updated.", "success")
+    return redirect(url_for("project_detail", project_id=project_id))
+
+
 @app.route("/projects/<project_id>/stage/<int:stage_idx>/invoice", methods=["GET"])
 @role_required("projects")
 def project_stage_invoice(project_id, stage_idx):
