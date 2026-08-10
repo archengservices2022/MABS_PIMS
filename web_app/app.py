@@ -14445,7 +14445,7 @@ def commission_mark_paid():
 
 
 @app.route("/api/commission/project/<project_id>/mark-paid", methods=["POST"])
-@role_required("finance")
+@role_required("financial")
 def commission_project_mark_paid(project_id):
     if normalize_role(session.get("user_role", "")) != "admin":
         return jsonify({"error": "Admin access required"}), 403
@@ -14469,7 +14469,7 @@ def commission_project_mark_paid(project_id):
 
 
 @app.route("/api/commission/backfill-projects", methods=["POST"])
-@role_required("finance")
+@role_required("financial")
 def commission_backfill_projects():
     """Backfill /project_commissions for all existing projects that lack an entry."""
     if normalize_role(session.get("user_role", "")) != "admin":
