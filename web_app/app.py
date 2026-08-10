@@ -3657,6 +3657,15 @@ def project_detail(project_id):
     _has_del_perm = _role in ("admin", "accountant") or bool(
         _has_approved_delete_request(_uid, "project", project_id)
     )
+
+    # Commission history
+    _comm_entry = fb_get(f"/project_commissions/{project_id}") or {}
+    _raw_history = _comm_entry.get("history") or {}
+    comm_history = sorted(
+        [dict(v, _key=k) for k, v in _raw_history.items() if isinstance(v, dict)],
+        key=lambda x: x.get("changed_at", ""), reverse=True
+    ) if isinstance(_raw_history, dict) else []
+
     return render_template("project_detail.html", project=data,
                            project_invoices=project_invoices,
                            project_expenses=project_expenses,
@@ -3676,7 +3685,8 @@ def project_detail(project_id):
                            co_approved_total=co_approved_total,
                            co_contract_increase=co_contract_increase,
                            base_contract=base_contract,
-                           user_has_delete_perm=_has_del_perm)
+                           user_has_delete_perm=_has_del_perm,
+                           comm_history=comm_history)
 
 # ── Change Order Routes ───────────────────────────────────────────────────────
 
@@ -4456,6 +4466,13 @@ def project_status(project_id):
 def project_commission_update(project_id):
     override_type  = request.form.get("commission_override_type", "default").strip()
     override_value = _safe_float(request.form.get("commission_override_value", 0))
+
+    # Snapshot current commission before changing (for history)
+    current_comm = fb_get(f"/project_commissions/{project_id}") or {}
+    old_type   = current_comm.get("commission_override_type", "default")
+    old_value  = _safe_float(current_comm.get("commission_override_value", 0))
+    old_amount = _safe_float(current_comm.get("commission_amount", 0))
+
     fb_update(f"/projects/{project_id}", {
         "commission_override_type":  override_type,
         "commission_override_value": override_value,
@@ -4465,6 +4482,24 @@ def project_commission_update(project_id):
     proj["commission_override_type"]  = override_type
     proj["commission_override_value"] = override_value
     _upsert_project_commission(project_id, proj)
+
+    # Record history entry if commission actually changed
+    changed = (old_type != override_type) or (abs(old_value - override_value) > 0.001)
+    if changed:
+        new_comm   = fb_get(f"/project_commissions/{project_id}") or {}
+        new_amount = _safe_float(new_comm.get("commission_amount", 0))
+        ts_key = str(int(datetime.now(timezone.utc).timestamp() * 1000))
+        fb_update(f"/project_commissions/{project_id}/history/{ts_key}", {
+            "changed_at": datetime.now(timezone.utc).isoformat(),
+            "changed_by": session.get("user_name", session.get("user_email", "")),
+            "old_type":   old_type,
+            "old_value":  old_value,
+            "old_amount": old_amount,
+            "new_type":   override_type,
+            "new_value":  override_value,
+            "new_amount": new_amount,
+        })
+
     flash("Commission updated.", "success")
     return redirect(url_for("project_detail", project_id=project_id))
 
