@@ -12067,8 +12067,6 @@ def financial():
             if not _sp or _sp not in _sales_users_fin:
                 continue
             _rate = _sales_users_fin[_sp]["commission_rate"]
-            if not _rate:
-                continue
             _linked = _fdata.get("linked_project_id", "")
             _is_conv = _fdata.get("status", "") in _CONV_FIN or bool(_linked)
             if not _is_conv:
@@ -12104,7 +12102,6 @@ def financial():
             _sp = (_pd.get("sales") or _pd.get("sales_person") or "").strip()
             if not _sp or _sp not in _sales_users_fin: continue
             _rate = _sales_users_fin[_sp]["commission_rate"]
-            if not _rate: continue
             _pval = _safe_float(_pd.get("contract_value", 0))
             if not _pval: continue
             _period = (_pd.get("start_date") or _pd.get("created_at") or "")[:7]

@@ -3705,7 +3705,13 @@ function viewReceipt(expId) {
               <span class="badge" style="background:#7C3AED;color:#fff;font-size:10px;">Contractor</span>
               {% else %}<span class="text-muted">—</span>{% endif %}
             </td>
-            <td class="text-center text-muted">{{ sp.commission_rate }}%</td>
+            <td class="text-center">
+              {% if sp.commission_rate %}
+                <span class="text-muted">{{ sp.commission_rate }}%</span>
+              {% else %}
+                <span class="badge bg-warning text-dark" style="font-size:10px;">Not set</span>
+              {% endif %}
+            </td>
             <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(sp.total_revenue) }}</td>
             <td class="text-end fw-semibold" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(sp.total_earned) }}</td>
             <td class="text-end text-success fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(sp.total_paid) }}</td>
