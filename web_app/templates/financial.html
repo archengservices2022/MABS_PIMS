@@ -3782,15 +3782,15 @@ function viewReceipt(expId) {
   {% endif %}
   {% if project_commissions %}
   <div class="card-panel mt-4">
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
       <h6 class="section-heading mb-0"><i class="bi bi-folder2-open me-1"></i>By Project</h6>
       <div class="d-flex gap-2 flex-wrap align-items-center">
         {% if user_role == 'admin' %}
-        <button class="btn btn-xs btn-outline-secondary" onclick="backfillCommissions(this)" title="Sync all existing projects into commission log" style="font-size:11px;">
-          <i class="bi bi-arrow-repeat me-1"></i>Sync Projects
+        <button class="btn btn-xs btn-outline-secondary" onclick="backfillCommissions(this)" title="Sync all existing projects" style="font-size:11px;">
+          <i class="bi bi-arrow-repeat me-1"></i>Sync
         </button>
         {% endif %}
-        <select id="commSpFilter" class="form-select form-select-sm" style="width:auto;min-width:160px;" onchange="filterCommTable()">
+        <select id="commSpFilter" class="form-select form-select-sm" style="width:auto;min-width:150px;" onchange="filterCommTable()">
           <option value="">All Salespeople</option>
           {% for sp in project_commissions|map(attribute='salesperson')|unique|sort %}
           <option value="{{ sp }}">{{ sp }}</option>
@@ -3801,8 +3801,13 @@ function viewReceipt(expId) {
           <option value="Pending">Pending</option>
           <option value="Paid">Paid</option>
         </select>
+        <div class="form-check form-switch mb-0 ms-1" style="font-size:12px;">
+          <input class="form-check-input" type="checkbox" id="commHideZero" checked onchange="filterCommTable()">
+          <label class="form-check-label text-muted" for="commHideZero">Hide $0</label>
+        </div>
       </div>
     </div>
+    <div id="commPaginationInfo" class="text-muted mb-2" style="font-size:12px;"></div>
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0" id="commByProjectTable" style="font-size:13px;">
         <thead>
@@ -3819,7 +3824,7 @@ function viewReceipt(expId) {
         </thead>
         <tbody>
           {% for pc in project_commissions %}
-          <tr data-sp="{{ pc.get('salesperson','') }}" data-status="{{ pc.get('status','Pending') }}">
+          <tr data-sp="{{ pc.get('salesperson','') }}" data-status="{{ pc.get('status','Pending') }}" data-amount="{{ pc.get('commission_amount',0)|float }}">
             <td class="fw-semibold">
               <a href="{{ url_for('project_detail', project_id=pc.firebase_id) }}" class="text-decoration-none">
                 {{ pc.get('project_number','—') }}
@@ -3867,6 +3872,13 @@ function viewReceipt(expId) {
           </tr>
         </tfoot>
       </table>
+    </div>
+    <!-- Pagination controls -->
+    <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+      <div id="commPageInfo" class="text-muted" style="font-size:12px;"></div>
+      <nav>
+        <ul class="pagination pagination-sm mb-0" id="commPagination"></ul>
+      </nav>
     </div>
   </div>
   {% endif %}
@@ -4444,18 +4456,82 @@ function backfillCommissions(btn) {
     .catch(() => { alert('Network error.'); btn.disabled = false; });
 }
 
-// Filter By Project commission table by salesperson and/or status
-function filterCommTable() {
-  const sp     = (document.getElementById('commSpFilter').value || '').toLowerCase();
-  const status = (document.getElementById('commStatusFilter').value || '').toLowerCase();
-  document.querySelectorAll('#commByProjectTable tbody tr').forEach(function(row) {
-    const rowSp     = (row.dataset.sp     || '').toLowerCase();
-    const rowStatus = (row.dataset.status || '').toLowerCase();
-    const spMatch     = !sp     || rowSp.includes(sp);
-    const statusMatch = !status || rowStatus === status;
-    row.style.display = (spMatch && statusMatch) ? '' : 'none';
+// Commission By Project — pagination + filter
+(function() {
+  var COMM_PAGE_SIZE = 20;
+  var commCurrentPage = 1;
+
+  function getVisibleRows() {
+    var sp        = (document.getElementById('commSpFilter')    ? document.getElementById('commSpFilter').value    : '').toLowerCase();
+    var status    = (document.getElementById('commStatusFilter') ? document.getElementById('commStatusFilter').value : '').toLowerCase();
+    var hideZero  = document.getElementById('commHideZero') ? document.getElementById('commHideZero').checked : true;
+    var rows = Array.from(document.querySelectorAll('#commByProjectTable tbody tr'));
+    return rows.filter(function(row) {
+      var rowSp     = (row.dataset.sp     || '').toLowerCase();
+      var rowStatus = (row.dataset.status || '').toLowerCase();
+      var rowAmt    = parseFloat(row.dataset.amount || '0');
+      var spMatch     = !sp     || rowSp === sp.toLowerCase();
+      var statusMatch = !status || rowStatus === status;
+      var zeroMatch   = !hideZero || rowAmt > 0;
+      return spMatch && statusMatch && zeroMatch;
+    });
+  }
+
+  function renderCommPage(page) {
+    commCurrentPage = page;
+    var allRows = Array.from(document.querySelectorAll('#commByProjectTable tbody tr'));
+    allRows.forEach(function(r) { r.style.display = 'none'; });
+
+    var visible = getVisibleRows();
+    var total   = visible.length;
+    var start   = (page - 1) * COMM_PAGE_SIZE;
+    var end     = Math.min(start + COMM_PAGE_SIZE, total);
+    visible.slice(start, end).forEach(function(r) { r.style.display = ''; });
+
+    var info = document.getElementById('commPageInfo');
+    if (info) info.textContent = total === 0 ? 'No results' : 'Showing ' + (start+1) + '–' + end + ' of ' + total + ' projects';
+
+    var pages = Math.ceil(total / COMM_PAGE_SIZE);
+    var nav   = document.getElementById('commPagination');
+    if (!nav) return;
+    nav.innerHTML = '';
+    if (pages <= 1) return;
+    var mkLi = function(label, pg, disabled, active) {
+      var li = document.createElement('li');
+      li.className = 'page-item' + (disabled ? ' disabled' : '') + (active ? ' active' : '');
+      var a = document.createElement('a');
+      a.className = 'page-link';
+      a.href = '#tab-commission';
+      a.innerHTML = label;
+      if (!disabled) a.addEventListener('click', function(e) { e.preventDefault(); renderCommPage(pg); });
+      li.appendChild(a);
+      return li;
+    };
+    nav.appendChild(mkLi('&laquo;', page - 1, page === 1, false));
+    for (var p = 1; p <= pages; p++) {
+      if (pages > 7 && p > 2 && p < pages - 1 && Math.abs(p - page) > 1) {
+        if (p === 3 || p === pages - 2) { var dots = document.createElement('li'); dots.className='page-item disabled'; dots.innerHTML='<span class="page-link">…</span>'; nav.appendChild(dots); }
+        continue;
+      }
+      nav.appendChild(mkLi(p, p, false, p === page));
+    }
+    nav.appendChild(mkLi('&raquo;', page + 1, page === pages, false));
+  }
+
+  window.filterCommTable = function() { renderCommPage(1); };
+
+  document.addEventListener('DOMContentLoaded', function() {
+    // Stamp data-amount on each row for hide-zero filter
+    document.querySelectorAll('#commByProjectTable tbody tr').forEach(function(row) {
+      var amtCell = row.querySelector('td:nth-child(6)');
+      if (amtCell) {
+        var txt = amtCell.textContent.replace(/[^0-9.]/g, '');
+        row.dataset.amount = txt || '0';
+      }
+    });
+    renderCommPage(1);
   });
-}
+})();
 
 // Per-project commission toggle (Mark Paid / Mark Pending)
 function commProjectToggle(projectId, action, btn) {
