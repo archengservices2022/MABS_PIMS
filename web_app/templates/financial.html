@@ -3842,8 +3842,41 @@ function viewReceipt(expId) {
               <div class="text-muted" style="font-size:11px;">{{ pc.get('salesperson_email','') }}</div>
             </td>
             <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('contract_value',0)|float) }}</td>
-            <td class="text-center text-muted small">{{ pc.get('rate_display','—') }}</td>
-            <td class="text-end fw-bold" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('commission_amount',0)|float) }}</td>
+            <td class="text-center comm-rate-cell" id="rateCell-{{ pc.firebase_id }}"
+                data-pid="{{ pc.firebase_id }}"
+                data-type="{{ pc.get('commission_override_type','default') }}"
+                data-value="{{ pc.get('commission_override_value',0)|float }}">
+              {% if user_role == 'admin' %}
+              <span class="comm-rate-display text-muted small" style="cursor:pointer;" title="Click to edit"
+                    onclick="commRateEditOpen('{{ pc.firebase_id }}')">
+                {{ pc.get('rate_display','—') }} <i class="bi bi-pencil-fill ms-1" style="font-size:10px;opacity:.5;"></i>
+              </span>
+              <div class="comm-rate-editor d-none" style="min-width:200px;">
+                <div class="d-flex gap-1 align-items-center flex-wrap">
+                  <select class="form-select form-select-sm" style="width:auto;font-size:11px;"
+                          id="rateTypeInput-{{ pc.firebase_id }}"
+                          onchange="commRateTypeChange('{{ pc.firebase_id }}')">
+                    <option value="default" {% if pc.get('commission_override_type','default')=='default' %}selected{% endif %}>Default</option>
+                    <option value="percent" {% if pc.get('commission_override_type')=='percent' %}selected{% endif %}>Custom %</option>
+                    <option value="fixed"   {% if pc.get('commission_override_type')=='fixed' %}selected{% endif %}>Fixed $</option>
+                  </select>
+                  <input type="number" min="0" step="0.01"
+                         class="form-control form-control-sm {% if pc.get('commission_override_type','default')=='default' %}d-none{% endif %}"
+                         style="width:70px;font-size:11px;"
+                         id="rateValInput-{{ pc.firebase_id }}"
+                         value="{{ pc.get('commission_override_value',0)|float }}">
+                  <button class="btn btn-xs btn-success" style="font-size:11px;padding:2px 7px;"
+                          onclick="commRateSave('{{ pc.firebase_id }}')">Save</button>
+                  <button class="btn btn-xs btn-outline-secondary" style="font-size:11px;padding:2px 7px;"
+                          onclick="commRateEditClose('{{ pc.firebase_id }}')">✕</button>
+                </div>
+                <div id="rateErr-{{ pc.firebase_id }}" class="text-danger mt-1" style="font-size:10px;display:none;"></div>
+              </div>
+              {% else %}
+              <span class="text-muted small">{{ pc.get('rate_display','—') }}</span>
+              {% endif %}
+            </td>
+            <td class="text-end fw-bold comm-amount-cell" id="amountCell-{{ pc.firebase_id }}" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('commission_amount',0)|float) }}</td>
             <td class="text-center">
               {% if pc.get('status') == 'Paid' %}
               <span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>
@@ -4554,6 +4587,81 @@ function commProjectToggle(projectId, action, btn) {
     else { alert(data.error || 'Error saving commission.'); btn.disabled = false; }
   })
   .catch(() => { alert('Network error.'); btn.disabled = false; });
+}
+
+// ── Inline Rate/Type editor ───────────────────────────────────────────────
+function commRateEditOpen(pid) {
+  var cell = document.getElementById('rateCell-' + pid);
+  if (!cell) return;
+  cell.querySelector('.comm-rate-display').classList.add('d-none');
+  cell.querySelector('.comm-rate-editor').classList.remove('d-none');
+}
+function commRateEditClose(pid) {
+  var cell = document.getElementById('rateCell-' + pid);
+  if (!cell) return;
+  cell.querySelector('.comm-rate-display').classList.remove('d-none');
+  cell.querySelector('.comm-rate-editor').classList.add('d-none');
+  var err = document.getElementById('rateErr-' + pid);
+  if (err) { err.style.display = 'none'; err.textContent = ''; }
+}
+function commRateTypeChange(pid) {
+  var sel = document.getElementById('rateTypeInput-' + pid);
+  var inp = document.getElementById('rateValInput-' + pid);
+  if (!sel || !inp) return;
+  if (sel.value === 'default') {
+    inp.classList.add('d-none');
+  } else {
+    inp.classList.remove('d-none');
+    inp.placeholder = sel.value === 'percent' ? '%' : '$';
+  }
+}
+function commRateSave(pid) {
+  var sel    = document.getElementById('rateTypeInput-' + pid);
+  var inp    = document.getElementById('rateValInput-' + pid);
+  var errEl  = document.getElementById('rateErr-' + pid);
+  var overrideType  = sel ? sel.value : 'default';
+  var overrideValue = (overrideType === 'default') ? 0 : parseFloat(inp ? inp.value : 0) || 0;
+  if (overrideType !== 'default' && overrideValue <= 0) {
+    if (errEl) { errEl.textContent = 'Enter a value > 0'; errEl.style.display = 'block'; }
+    return;
+  }
+  var saveBtn = document.querySelector('#rateCell-' + pid + ' .btn-success');
+  if (saveBtn) saveBtn.disabled = true;
+  fetch('/api/commission/project/' + pid + '/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ commission_override_type: overrideType, commission_override_value: overrideValue })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.ok) {
+      // Update display label
+      var cell = document.getElementById('rateCell-' + pid);
+      var lbl  = cell ? cell.querySelector('.comm-rate-display') : null;
+      if (lbl) lbl.firstChild.textContent = data.rate_display + ' ';
+      // Update commission amount cell
+      var amtCell = document.getElementById('amountCell-' + pid);
+      if (amtCell) {
+        var sym = amtCell.textContent.trim().replace(/[\d,\.]/g,'')[0] || '$';
+        amtCell.textContent = sym + parseFloat(data.commission_amount).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+      }
+      // Update data- attrs on row
+      var row = cell ? cell.closest('tr') : null;
+      if (row) row.setAttribute('data-amount', data.commission_amount);
+      if (cell) {
+        cell.setAttribute('data-type', data.commission_override_type);
+        cell.setAttribute('data-value', data.commission_override_value);
+      }
+      commRateEditClose(pid);
+    } else {
+      if (errEl) { errEl.textContent = data.error || 'Error saving.'; errEl.style.display = 'block'; }
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  })
+  .catch(function() {
+    if (errEl) { errEl.textContent = 'Network error.'; errEl.style.display = 'block'; }
+    if (saveBtn) saveBtn.disabled = false;
+  });
 }
 </script>
 {% endblock %}

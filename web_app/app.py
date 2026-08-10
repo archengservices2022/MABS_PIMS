@@ -4504,6 +4504,60 @@ def project_commission_update(project_id):
     return redirect(url_for("project_detail", project_id=project_id))
 
 
+@app.route("/api/commission/project/<project_id>/update", methods=["POST"])
+@role_required("financial")
+def commission_project_update_api(project_id):
+    """JSON endpoint used by inline editor on Finance Commission tab."""
+    if normalize_role(session.get("user_role", "")) != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    data           = request.get_json() or {}
+    override_type  = str(data.get("commission_override_type", "default")).strip()
+    override_value = _safe_float(data.get("commission_override_value", 0))
+
+    current_comm = fb_get(f"/project_commissions/{project_id}") or {}
+    old_type   = current_comm.get("commission_override_type", "default")
+    old_value  = _safe_float(current_comm.get("commission_override_value", 0))
+    old_amount = _safe_float(current_comm.get("commission_amount", 0))
+
+    fb_update(f"/projects/{project_id}", {
+        "commission_override_type":  override_type,
+        "commission_override_value": override_value,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    proj = fb_get(f"/projects/{project_id}") or {}
+    proj["commission_override_type"]  = override_type
+    proj["commission_override_value"] = override_value
+    _upsert_project_commission(project_id, proj)
+
+    changed = (old_type != override_type) or (abs(old_value - override_value) > 0.001)
+    new_amount = 0.0
+    if changed:
+        new_comm   = fb_get(f"/project_commissions/{project_id}") or {}
+        new_amount = _safe_float(new_comm.get("commission_amount", 0))
+        ts_key = str(int(datetime.now(timezone.utc).timestamp() * 1000))
+        fb_update(f"/project_commissions/{project_id}/history/{ts_key}", {
+            "changed_at": datetime.now(timezone.utc).isoformat(),
+            "changed_by": session.get("user_name", session.get("user_email", "")),
+            "old_type":   old_type,
+            "old_value":  old_value,
+            "old_amount": old_amount,
+            "new_type":   override_type,
+            "new_value":  override_value,
+            "new_amount": new_amount,
+        })
+    else:
+        new_amount = old_amount
+
+    new_comm = fb_get(f"/project_commissions/{project_id}") or {}
+    return jsonify({
+        "ok":              True,
+        "commission_amount": _safe_float(new_comm.get("commission_amount", new_amount)),
+        "rate_display":      new_comm.get("rate_display", ""),
+        "commission_override_type":  override_type,
+        "commission_override_value": override_value,
+    })
+
+
 @app.route("/projects/<project_id>/stage/<int:stage_idx>/invoice", methods=["GET"])
 @role_required("projects")
 def project_stage_invoice(project_id, stage_idx):
