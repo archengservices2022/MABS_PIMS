@@ -627,8 +627,10 @@
 
         let html = '';
 
-        if (data.length > 0) {
-          console.log('Building table for', data.length, 'items');
+        const filteredData = data.filter(pc => pc.commission_amount > 0);
+
+        if (filteredData.length > 0) {
+          console.log('Building table for', filteredData.length, 'items (filtered from', data.length, ')');
           html += '<div class="table-responsive" style="width:100%;display:block;">';
           html += '<table class="table table-hover align-middle mb-0" style="font-size:13px;width:100%;">';
           html += '<thead>';
@@ -645,7 +647,7 @@
 
           let totalCommission = 0, totalAdjusted = 0, totalRemaining = 0;
 
-          data.forEach((pc, idx) => {
+          filteredData.forEach((pc, idx) => {
             console.log('Processing row', idx, ':', pc.project_number, pc.commission_amount);
             totalCommission += pc.commission_amount;
             totalAdjusted += pc.adjusted_amount;
