@@ -11411,8 +11411,23 @@ def financial():
                 # Ensure amount is always a float (some old entries might be strings)
                 edata["amount"] = _safe_float(edata.get("amount", 0))
                 # Ensure created_at exists for sorting (use fallback for old entries)
+                # Normalize all dates to ISO format for proper sorting
                 if not edata.get("created_at"):
-                    edata["created_at"] = edata.get("updated_at") or edata.get("date") or datetime.now(timezone.utc).isoformat()
+                    fallback = edata.get("updated_at") or edata.get("date") or datetime.now(timezone.utc).isoformat()
+                    # Normalize date format to ISO (handle MM-DD-YYYY and YYYY-MM-DD formats)
+                    if fallback and not fallback.startswith("202"):  # Not ISO format
+                        try:
+                            # Try MM-DD-YYYY format
+                            parts = fallback.split("-")
+                            if len(parts) == 3 and len(parts[2]) == 4:
+                                normalized = f"{parts[2]}-{parts[0]}-{parts[1]}T00:00:00Z"
+                                edata["created_at"] = normalized
+                            else:
+                                edata["created_at"] = fallback
+                        except:
+                            edata["created_at"] = fallback
+                    else:
+                        edata["created_at"] = fallback
                 # Mark receipt available for medical claim expenses even if written before has_receipt field existed
                 if not edata.get("has_receipt") and not edata.get("receipt_filename"):
                     if eid in _med_receipt_ids:
@@ -11452,7 +11467,28 @@ def financial():
         return list(grouped.values())
 
     # Keep BOTH versions: raw for expense tab (all individual entries), grouped for balance sheet
-    exp_list_all = sorted(exp_list_raw, key=lambda x: x.get("created_at", "") or x.get("date", ""), reverse=True)  # Sort by creation date (newest first)
+    # Sort by creation date (newest first) - parse dates to handle different formats
+    def parse_datetime_for_sort(date_str):
+        """Parse various date formats for sorting"""
+        if not date_str:
+            return datetime(1900, 1, 1)
+        try:
+            # Try ISO format first
+            if "T" in str(date_str):
+                return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            # Try YYYY-MM-DD
+            if str(date_str).startswith("202"):
+                return datetime.strptime(str(date_str)[:10], "%Y-%m-%d")
+            # Try MM-DD-YYYY
+            parts = str(date_str).split("-")
+            if len(parts) == 3 and len(parts[2]) == 4:
+                return datetime.strptime(f"{parts[2]}-{parts[0]}-{parts[1]}", "%Y-%m-%d")
+            # Fallback
+            return datetime(1900, 1, 1)
+        except:
+            return datetime(1900, 1, 1)
+
+    exp_list_all = sorted(exp_list_raw, key=lambda x: parse_datetime_for_sort(x.get("created_at") or x.get("date", "")), reverse=True)
 
     # Create a filtered list for Expenses tab (exclude closed/fully-adjusted advances)
     exp_list_for_tab = []
@@ -12934,8 +12970,8 @@ def financial():
 
     invoiced_years = f"{prev_year} & {stat_card_year}"
 
-    # Sort all expenses (including commissions) by created_at newest first
-    exp_list_for_tab = sorted(exp_list_for_tab, key=lambda x: x.get("created_at", "") or x.get("date", ""), reverse=True)
+    # Sort all expenses (including commissions) by created_at newest first - use proper date parsing
+    exp_list_for_tab = sorted(exp_list_for_tab, key=lambda x: parse_datetime_for_sort(x.get("created_at") or x.get("date", "")), reverse=True)
 
     return render_template("financial.html",
         total_invoiced=total_invoiced,
