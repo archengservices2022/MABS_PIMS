@@ -1953,6 +1953,7 @@ def quotes():
     all_items_raw = []
     for fid, fdata in (fb_get("/job_forms") or {}).items() if isinstance(fb_get("/job_forms") or {}, dict) else []:
         if fdata and isinstance(fdata, dict):
+            fdata["firebase_id"] = fid
             all_items_raw.append(fdata)
     available_years = sorted(
         {(d.get("date") or "")[:4] for d in all_items_raw if len((d.get("date") or "")) >= 4},
