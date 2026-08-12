@@ -625,23 +625,18 @@
       function toggleCommissionDetails(employeeNameSanitized) {
         const container = document.getElementById('commissionDetailsContainer');
         if (container.style.display === 'none') {
-          console.log('🔍 Looking for:', employeeNameSanitized);
+          // Normalize: replace underscores+spaces with single space, collapse multiple spaces
+          const normalizeForMatch = (str) => str.toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+          const searchFor = normalizeForMatch(employeeNameSanitized);
+
+          console.log('🔍 Looking for (normalized):', `"${searchFor}"`);
           console.log('Available keys:', Object.keys(commissionData).map(k => `"${k}"`).join(', '));
 
-          // Try direct match first
-          let employeeName = Object.keys(commissionData).find(name => name.replace(/\s+/g, '_') === employeeNameSanitized);
-          console.log('Direct match result:', employeeName);
-
-          // If not found, try case-insensitive and normalize spaces
-          if (!employeeName) {
-            const sanitizedLower = employeeNameSanitized.toLowerCase();
-            console.log('Trying case-insensitive with:', sanitizedLower);
-            employeeName = Object.keys(commissionData).find(name => {
-              const normalized = name.toLowerCase().replace(/\s+/g, '_');
-              console.log(`  Testing "${name}" → "${normalized}"`);
-              return normalized === sanitizedLower;
-            });
-          }
+          let employeeName = Object.keys(commissionData).find(name => {
+            const normalized = normalizeForMatch(name);
+            console.log(`  Testing "${name}" → "${normalized}"`);
+            return normalized === searchFor;
+          });
 
           console.log('✓ Final employee name:', employeeName);
           console.log('Data rows:', commissionData[employeeName] ? commissionData[employeeName].length : 'N/A');
