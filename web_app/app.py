@@ -11464,42 +11464,9 @@ def financial():
                     continue
             exp_list_for_tab.append(e)
 
-    # Add paid commissions to expenses list
-    _all_proj_commissions = fb_get("/project_commissions") or {}
-    if isinstance(_all_proj_commissions, dict):
-        for _pcid, _pc in _all_proj_commissions.items():
-            if not _pc or not isinstance(_pc, dict):
-                continue
-            if _pc.get("status", "").strip() != "Paid":
-                continue
-
-            _comm_amount = _safe_float(_pc.get("commission_amount", 0))
-            if _comm_amount <= 0:
-                continue
-
-            # Create expense-like entry for commission
-            _paid_by = _pc.get("paid_by", "")
-            _submitted_by_name = _paid_by.split("@")[0].replace(".", " ").title() if "@" in _paid_by else (_paid_by or "System")
-
-            exp_list_for_tab.append({
-                "firebase_id": _pcid,
-                "expense_type": "Commission",
-                "expense_name": f"{_pc.get('salesperson', 'Unknown')}_Commission",
-                "category": "Sales Commission",
-                "amount": _comm_amount,
-                "vendor": "Sales Commission",
-                "project_number": _pc.get("project_number", ""),
-                "date": _pc.get("paid_at", datetime.now(timezone.utc).isoformat())[:10],
-                "created_at": _pc.get("paid_at", datetime.now(timezone.utc).isoformat()),
-                "description": f"Commission - {_pc.get('salesperson', 'Unknown')}",
-                "is_commission": True,  # Flag to identify commission expenses
-                "project_id": _pcid,
-                "salesperson": _pc.get("salesperson", ""),
-                "created_by": _paid_by,
-                "submitted_by_name": _submitted_by_name,
-                "commission_rate": _pc.get("commission_rate", ""),
-                "status": _pc.get("status", ""),
-            })
+    # NOTE: Commission expenses are now saved directly to /balance_sheet_expenses
+    # when marked as paid (see commission_project_mark_paid). No need to create
+    # them dynamically here - they're included in exp_list_raw from the expenses fetch.
 
     exp_list_grouped_all = group_expenses_by_name(exp_list_raw)  # Consolidated for reference
 
