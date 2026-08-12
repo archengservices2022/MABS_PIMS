@@ -894,7 +894,8 @@ a[href*="filter_expense"]:hover {
             data-search="{{ (exp.get('expense_name','') or exp.get('description',''))|lower }} {{ exp.get('vendor','')|lower }} {{ exp.get('category','')|lower }}"
             data-type="{{ exp.get('expense_type','') }}"
             data-vendor="{{ exp.get('vendor','') }}"
-            data-date="{{ exp.get('date','') | format_date }}">
+            data-date="{{ exp.get('date','') | format_date }}"
+            data-created-at="{{ exp.get('created_at','') }}">
             <td class="text-muted small">{{ exp.get('date','—') | format_date }}</td>
             <td class="small text-muted">{{ exp.get('expense_type','—') }}</td>
             <td class="small text-muted">{{ exp.get('expense_name','—') or exp.get('description','—') }}</td>
@@ -1413,6 +1414,9 @@ function updateExpenseSummaryCards() {
 }
 
 function renderExpenseTable() {
+  // Sort table by date first (newest at top)
+  sortExpenseTableByDate();
+
   expenseFilteredRows = getVisibleExpenseRows();
   const rows = document.querySelectorAll('#expenseTableBody tr.expense-row');
   const totalPages = Math.ceil(expenseFilteredRows.length / expensePerPage);
@@ -1659,21 +1663,26 @@ function sortExpenseTableByDate() {
   const tbody = document.getElementById('expenseTableBody');
   if (!tbody) return;
 
-  const rows = Array.from(tbody.querySelectorAll('tr'));
+  const rows = Array.from(tbody.querySelectorAll('tr.expense-row'));
   rows.sort(function(a, b) {
-    const dateA = a.querySelector('td:first-child')?.textContent?.trim() || '';
-    const dateB = b.querySelector('td:first-child')?.textContent?.trim() || '';
+    // Try to get created_at from data attribute first (most accurate)
+    let dateA = a.dataset.createdAt || a.querySelector('td:first-child')?.textContent?.trim() || '';
+    let dateB = b.dataset.createdAt || b.querySelector('td:first-child')?.textContent?.trim() || '';
 
     // Parse dates - handle both "MM-DD-YYYY" and ISO formats
     const parseDate = function(dateStr) {
       if (!dateStr) return new Date(0);
-      // Try ISO format first
+      // Try ISO format first (YYYY-MM-DDTHH:MM:SS)
       if (dateStr.includes('T')) {
         return new Date(dateStr);
       }
+      // Try ISO date format (YYYY-MM-DD)
+      if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        return new Date(dateStr + 'T00:00:00Z');
+      }
       // Try MM-DD-YYYY format
       const parts = dateStr.split('-');
-      if (parts.length === 3) {
+      if (parts.length === 3 && parts[2].length === 4) {
         return new Date(parts[2], parts[0] - 1, parts[1]);
       }
       return new Date(0);
@@ -1682,7 +1691,7 @@ function sortExpenseTableByDate() {
     return parseDate(dateB) - parseDate(dateA); // Descending (newest first)
   });
 
-  // Re-append sorted rows to tbody
+  // Re-append sorted rows to tbody to maintain sort order
   rows.forEach(row => tbody.appendChild(row));
 }
 
