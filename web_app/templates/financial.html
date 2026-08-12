@@ -1829,25 +1829,37 @@ function sortExpenseTableByDate() {
 
   const rows = Array.from(tbody.querySelectorAll('tr.expense-row'));
   rows.sort(function(a, b) {
-    // Try to get created_at from data attribute first (most accurate)
-    let dateA = a.dataset.createdAt || a.querySelector('td:first-child')?.textContent?.trim() || '';
-    let dateB = b.dataset.createdAt || b.querySelector('td:first-child')?.textContent?.trim() || '';
+    // Always try to get created_at from data attribute first (most accurate for sorting)
+    let dateA = (a.dataset.createdAt || '').trim();
+    let dateB = (b.dataset.createdAt || '').trim();
 
     // Parse dates - handle both "MM-DD-YYYY" and ISO formats
     const parseDate = function(dateStr) {
       if (!dateStr) return new Date(0);
       // Try ISO format first (YYYY-MM-DDTHH:MM:SS)
       if (dateStr.includes('T')) {
-        return new Date(dateStr);
+        try {
+          return new Date(dateStr);
+        } catch (e) {
+          return new Date(0);
+        }
       }
       // Try ISO date format (YYYY-MM-DD)
-      if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        return new Date(dateStr + 'T00:00:00Z');
+      if (dateStr.match(/^\d{4}-\d{2}-\d{2}/)) {
+        try {
+          return new Date(dateStr.substring(0, 10) + 'T00:00:00Z');
+        } catch (e) {
+          return new Date(0);
+        }
       }
       // Try MM-DD-YYYY format
       const parts = dateStr.split('-');
       if (parts.length === 3 && parts[2].length === 4) {
-        return new Date(parts[2], parts[0] - 1, parts[1]);
+        try {
+          return new Date(parts[2], parts[0] - 1, parts[1]);
+        } catch (e) {
+          return new Date(0);
+        }
       }
       return new Date(0);
     };
