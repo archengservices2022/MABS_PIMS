@@ -611,11 +611,21 @@
       function toggleCommissionDetails(employeeNameSanitized) {
         const container = document.getElementById('commissionDetailsContainer');
         if (container.style.display === 'none') {
-          const employeeName = Object.keys(commissionData).find(name => name.replace(/\s+/g, '_') === employeeNameSanitized);
+          // Try direct match first
+          let employeeName = Object.keys(commissionData).find(name => name.replace(/\s+/g, '_') === employeeNameSanitized);
+
+          // If not found, try case-insensitive and normalize spaces
+          if (!employeeName) {
+            const sanitizedLower = employeeNameSanitized.toLowerCase();
+            employeeName = Object.keys(commissionData).find(name =>
+              name.toLowerCase().replace(/\s+/g, '_') === sanitizedLower
+            );
+          }
+
           console.log('Employee name sanitized:', employeeNameSanitized);
           console.log('Employee name found:', employeeName);
           console.log('Commission data keys:', Object.keys(commissionData));
-          console.log('Commission data for employee:', commissionData[employeeName]);
+          console.log('Data for this employee:', commissionData[employeeName]);
           showCommissionDetails(employeeName);
         } else {
           closeCommissionDetails();
