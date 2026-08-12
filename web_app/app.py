@@ -12762,9 +12762,12 @@ def financial():
             _d = datetime.fromisoformat(_ds)
             if _d.year == current_year:
                 # Skip salary entries (they're handled separately in monthly_salary_details)
+                # Skip commission entries (they're shown in Commission Paid table)
                 _category = _exp.get("category") or _exp.get("expense_type") or ""
                 _expense_type = _exp.get("expense_type") or ""
                 if _category.lower() == "salary" or _expense_type.lower() == "salary":
+                    continue
+                if _exp.get("is_commission") or _expense_type.lower() == "commission":
                     continue
 
                 _detail = {
