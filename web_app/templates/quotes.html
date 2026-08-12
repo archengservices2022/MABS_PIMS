@@ -590,7 +590,13 @@
           {% endif %}
         {% endfor %}
         {% for sp in valid_salespeople %}
-        {% set sp_commissions = project_commissions | selectattr('salesperson', 'equalto', sp.name) | list %}
+        {# Match project commissions by salesperson name (case-insensitive) #}
+        {% set sp_commissions = [] %}
+        {% for pc in project_commissions %}
+          {% if (pc.get('salesperson', '') or '').strip().lower() == (sp.name | trim).lower() %}
+            {% set _ = sp_commissions.append(pc) %}
+          {% endif %}
+        {% endfor %}
         '{{ sp.name | trim }}': [
           {% for pc in sp_commissions %}
           {
