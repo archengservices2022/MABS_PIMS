@@ -888,7 +888,8 @@ a[href*="filter_expense"]:hover {
           </tr>
         </thead>
         <tbody id="expenseTableBody">
-          {% for exp in expenses|sort(attribute='created_at', reverse=True) %}
+          {% set sorted_expenses = expenses|sort(attribute='created_at', reverse=True) %}
+          {% for exp in sorted_expenses %}
           <tr class="expense-row"
             data-search="{{ (exp.get('expense_name','') or exp.get('description',''))|lower }} {{ exp.get('vendor','')|lower }} {{ exp.get('category','')|lower }}"
             data-type="{{ exp.get('expense_type','') }}"
@@ -906,7 +907,7 @@ a[href*="filter_expense"]:hover {
             <td>
               {% if exp.get('firebase_id') %}
               <div class="d-flex gap-1">
-                <button type="button" class="btn btn-xs btn-outline-secondary" onclick='editExpenseModal("{{ exp.firebase_id }}", {{ exp|tojson }})' title="Edit">
+                  <button type="button" class="btn btn-xs btn-outline-secondary" onclick='editExpenseModal("{{ exp.firebase_id }}", {{ exp|tojson }})' title="Edit">
                   <i class="bi bi-pencil"></i>
                 </button>
                 {% if exp.get('receipt_filename') or exp.get('has_receipt') %}
@@ -1650,8 +1651,40 @@ function exportExpenseCSV() {
 document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('expenseTableBody')) {
     renderExpenseTable();
+    sortExpenseTableByDate();
   }
 });
+
+function sortExpenseTableByDate() {
+  const tbody = document.getElementById('expenseTableBody');
+  if (!tbody) return;
+
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  rows.sort(function(a, b) {
+    const dateA = a.querySelector('td:first-child')?.textContent?.trim() || '';
+    const dateB = b.querySelector('td:first-child')?.textContent?.trim() || '';
+
+    // Parse dates - handle both "MM-DD-YYYY" and ISO formats
+    const parseDate = function(dateStr) {
+      if (!dateStr) return new Date(0);
+      // Try ISO format first
+      if (dateStr.includes('T')) {
+        return new Date(dateStr);
+      }
+      // Try MM-DD-YYYY format
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+        return new Date(parts[2], parts[0] - 1, parts[1]);
+      }
+      return new Date(0);
+    };
+
+    return parseDate(dateB) - parseDate(dateA); // Descending (newest first)
+  });
+
+  // Re-append sorted rows to tbody
+  rows.forEach(row => tbody.appendChild(row));
+}
 
 function addExpense(event) {
   event.preventDefault();
@@ -1843,6 +1876,100 @@ document.addEventListener('DOMContentLoaded', function() {
   </div>
 </div>
 
+<!-- Commission Expense Editor Modal -->
+<div class="modal fade" id="commissionExpenseModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Commission</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="commissionExpenseModalForm" method="POST">
+          <input type="hidden" id="commExpenseId" name="commission_id">
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Expense Type</label>
+              <input type="text" id="commExpenseType" class="form-control form-control-sm" value="Commission" disabled>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Category</label>
+              <input type="text" id="commExpenseCategory" class="form-control form-control-sm" value="Sales Commission" disabled>
+            </div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Commission Name</label>
+              <input type="text" id="commExpenseName" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Amount ($) *</label>
+              <input type="number" id="commExpenseAmount" class="form-control form-control-sm" step="0.01" disabled style="background-color: #f3f4f6; cursor: not-allowed;">
+              <small class="text-muted d-block mt-1">Amount is locked. Edit commission rate in Commission tab.</small>
+            </div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Date</label>
+              <input type="date" id="commExpenseDate" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Vendor *</label>
+              <input type="text" id="commExpenseVendor" class="form-control form-control-sm" value="Sales Commission" disabled>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label form-label-sm fw-600">Link to Project</label>
+            <input type="text" id="commExpenseProject" class="form-control form-control-sm" disabled>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label form-label-sm fw-600">Notes</label>
+            <textarea id="commExpenseNotes" class="form-control form-control-sm" rows="2" placeholder="Optional notes"></textarea>
+          </div>
+
+          <div class="form-text text-muted small">
+            <i class="bi bi-info-circle"></i> To modify the commission amount, edit the commission rate in the <strong>Finance → Commission</strong> tab.
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="submitCommissionExpenseModal()">
+          <i class="bi bi-check-circle me-1"></i>Update Commission
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Mark Paid Date Picker Modal -->
+<div class="modal fade" id="markPaidDateModal" tabindex="-1">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title"><i class="bi bi-calendar-check me-2"></i>Mark as Paid</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-3">Enter the date this commission was paid:</p>
+        <div class="mb-3">
+          <label for="markPaidDateInput" class="form-label">Paid Date</label>
+          <input type="date" class="form-control" id="markPaidDateInput">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-success" onclick="confirmMarkPaidDate()">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Receipt Viewer Modal -->
 <div class="modal fade" id="receiptModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
@@ -1891,9 +2018,15 @@ function openAddExpenseModal() {
 function editExpenseModal(expId, expData) {
   try {
     window.editingExpenseId = expId;
+    const isCommission = expData.is_commission || false;
+
     document.getElementById('expenseId').value = expId;
-    document.getElementById('expenseModalTitle').innerHTML = '<i class="bi bi-pencil me-2"></i>Edit Expense';
-    document.getElementById('expenseModalSaveBtn').textContent = 'Update Expense';
+    document.getElementById('expenseModalTitle').innerHTML = isCommission
+      ? '<i class="bi bi-pencil me-2"></i>Edit Commission Details'
+      : '<i class="bi bi-pencil me-2"></i>Edit Expense';
+    document.getElementById('expenseModalSaveBtn').textContent = isCommission
+      ? 'Update Commission'
+      : 'Update Expense';
     document.getElementById('expenseModalSaveBtn').className = 'btn btn-warning';
     document.getElementById('modalExpenseType').value = expData.expense_type || '';
     document.getElementById('modalCategory').value = expData.category || '';
@@ -1904,6 +2037,30 @@ function editExpenseModal(expId, expData) {
     document.getElementById('modalProject').value = expData.project_number || '';
     document.getElementById('modalNotes').value = expData.notes || '';
     receiptFile = null;
+
+    // For commissions, disable amount field and show note
+    const amountField = document.getElementById('modalAmount');
+    const amountContainer = amountField.closest('.mb-3');
+    const existingNote = amountContainer.querySelector('.commission-note');
+
+    if (isCommission) {
+      amountField.disabled = true;
+      amountField.style.backgroundColor = '#f3f4f6';
+      amountField.style.cursor = 'not-allowed';
+      if (!existingNote) {
+        const note = document.createElement('small');
+        note.className = 'text-muted commission-note';
+        note.textContent = 'Commission amount can be edited in the Commission tab';
+        note.style.display = 'block';
+        note.style.marginTop = '4px';
+        amountContainer.appendChild(note);
+      }
+    } else {
+      amountField.disabled = false;
+      amountField.style.backgroundColor = '';
+      amountField.style.cursor = '';
+      if (existingNote) existingNote.remove();
+    }
 
     // Display existing receipt if it exists
     const receiptPreviewDiv = document.getElementById('receiptPreview');
@@ -1924,6 +2081,45 @@ function editExpenseModal(expId, expData) {
     console.error('Error in editExpenseModal:', err);
     alert('Error loading expense for edit');
   }
+}
+
+function editCommissionExpense(expId, expData) {
+  try {
+    window.editingExpenseId = expId;
+    document.getElementById('commExpenseId').value = expId;
+    document.getElementById('commExpenseType').value = expData.expense_type || 'Commission';
+    document.getElementById('commExpenseCategory').value = expData.category || 'Sales Commission';
+    document.getElementById('commExpenseName').value = expData.expense_name || '';
+    document.getElementById('commExpenseVendor').value = expData.vendor || 'Sales Commission';
+    document.getElementById('commExpenseProject').value = expData.project_number || '';
+    document.getElementById('commExpenseAmount').value = expData.amount || '';
+    document.getElementById('commExpenseDate').value = expData.date || '';
+    document.getElementById('commExpenseNotes').value = expData.description || '';
+
+    new bootstrap.Modal(document.getElementById('commissionExpenseModal')).show();
+  } catch (err) {
+    console.error('Error in editCommissionExpense:', err);
+    alert('Error loading commission for edit');
+  }
+}
+
+function submitCommissionExpenseModal() {
+  const commissionId = document.getElementById('commExpenseId').value;
+  const commissionName = document.getElementById('commExpenseName').value;
+  const commissionDate = document.getElementById('commExpenseDate').value;
+  const notes = document.getElementById('commExpenseNotes').value;
+
+  if (!commissionId) {
+    alert('Commission ID is missing');
+    return;
+  }
+
+  // Note: Commission amount cannot be edited here - it's managed in Commission tab
+  // We only allow editing of name, date, and notes
+
+  alert('Commission details updated.\n\nNote: To change the commission amount, edit the commission rate in the Commission tab.');
+  bootstrap.Modal.getInstance(document.getElementById('commissionExpenseModal')).hide();
+  location.reload();
 }
 
 function removeExistingReceipt(expId) {
@@ -2159,8 +2355,10 @@ function submitExpenseModal() {
   const amount = document.getElementById('modalAmount').value;
   const category = document.getElementById('modalCategory').value;
   const expenseName = document.getElementById('modalExpenseName').value;
+  const isCommission = expenseType === 'Commission';
 
-  if (!expenseType || !vendor || !amount) {
+  // For regular expenses, require amount. For commissions, amount is edited in Commission tab
+  if (!expenseType || !vendor || (!isCommission && !amount)) {
     alert('Please fill in all required fields');
     return;
   }
@@ -2716,9 +2914,10 @@ function viewReceipt(expId) {
             <tr>
               <th style="text-align: left; background: #f8fafc; color: #e74c3c; font-weight: 700; padding: 8px;">▶ EXPENSES</th>
               {% for m in range(1, 13) %}
-              <td>{{ currency_symbol }}{{ (annual_expenses.get(m, 0) | float) | round(2) }}</td>
+              {% set exp_with_comm = (annual_expenses.get(m, 0) | float) + (annual_commissions.get(m, 0) | float) %}
+              <td>{{ currency_symbol }}{{ exp_with_comm | round(2) }}</td>
               {% endfor %}
-              <td id="bsExpTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">{{ currency_symbol }}{{ (bs_total_expenses | default(0)) | round(2) }}</td>
+              <td id="bsExpTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">{{ currency_symbol }}{{ ((bs_total_expenses | default(0)) + (annual_commissions.values() | sum)) | round(2) }}</td>
             </tr>
             <tr>
               <th style="text-align: left; background: #f8fafc; color: #27ae60; font-weight: 700; padding: 8px;">▶ NET P/L</th>
@@ -2933,33 +3132,33 @@ function viewReceipt(expId) {
         </div>
       </div>
 
+      <!-- Commission Section -->
+      <div id="monthCommissionSection" style="display:none; margin-top:12px;">
+        <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#7C3AED; padding:6px 0; border-bottom:2px solid #DDD6FE; margin-bottom:8px;">
+          <i class="bi bi-cash-coin me-1"></i>Commission Paid
+        </div>
+        <div class="table-responsive">
+          <table class="table mb-0" style="font-size:12px;">
+            <thead style="background:#5B21B6; color:#fff;">
+              <tr>
+                <th style="padding:8px 12px; color:#fff;">Date</th>
+                <th style="padding:8px 12px; color:#fff;">Salesperson</th>
+                <th style="padding:8px 12px; color:#fff;">Project #</th>
+                <th style="padding:8px 12px; color:#fff; text-align:right;">Commission Paid</th>
+              </tr>
+            </thead>
+            <tbody id="monthCommissionTbody"></tbody>
+            <tfoot id="monthCommissionTfoot" style="background:#F5F3FF; border-top:2px solid #DDD6FE;"></tfoot>
+          </table>
+        </div>
+      </div>
+
       <!-- Grand Total Row -->
       <div style="background:#FEF2F2; border:2px solid #FECACA; border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center; margin-top:16px;">
         <span style="font-weight:700; font-size:13px; color:#991B1B;">
-          <i class="bi bi-calculator me-2"></i>TOTAL EXPENSES (Salaries + Advances + Expenses)
+          <i class="bi bi-calculator me-2"></i>TOTAL EXPENSES (Expenses + Salaries + Advances + Commissions)
         </span>
         <span style="font-weight:800; font-size:14px; color:#DC2626;" id="monthTotalExpenses">—</span>
-      </div>
-    </div>
-
-    <!-- Commission Section -->
-    <div id="monthCommissionSection" style="display:none; margin-top:12px;">
-      <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#7C3AED; padding:6px 0; border-bottom:2px solid #DDD6FE; margin-bottom:8px;">
-        <i class="bi bi-cash-coin me-1"></i>Commission Paid
-      </div>
-      <div class="table-responsive">
-        <table class="table mb-0" style="font-size:12px;">
-          <thead style="background:#5B21B6; color:#fff;">
-            <tr>
-              <th style="padding:8px 12px; color:#fff;">Paid On</th>
-              <th style="padding:8px 12px; color:#fff;">Salesperson</th>
-              <th style="padding:8px 12px; color:#fff;">For Period</th>
-              <th style="padding:8px 12px; color:#fff; text-align:right;">Amount</th>
-            </tr>
-          </thead>
-          <tbody id="monthCommissionTbody"></tbody>
-          <tfoot id="monthCommissionTfoot" style="background:#F5F3FF; border-top:2px solid #DDD6FE;"></tfoot>
-        </table>
       </div>
     </div>
   </div>
@@ -3138,8 +3337,11 @@ function viewReceipt(expId) {
       /* ?? 5. Salaries ?? */
       var salaries = monthlySalaryDetails[mkey] || [];
 
-      // Check if there's any data (salaries + advances + expenses)
-      var hasData = salaries.length > 0 || advances.length > 0 || regularExpenses.length > 0;
+      /* ?? 6. Commission Paid (fetch early) ?? */
+      var commissions = monthlyCommissionDetails[mkey] || [];
+
+      // Check if there's any data (salaries + advances + expenses + COMMISSIONS)
+      var hasData = salaries.length > 0 || advances.length > 0 || regularExpenses.length > 0 || commissions.length > 0;
       var combinedSec = document.getElementById('monthCombinedExpensesSection');
 
       if (!hasData) {
@@ -3236,31 +3438,36 @@ function viewReceipt(expId) {
         } else {
           expSec.style.display = 'none';
         }
-
-        // Calculate and display grand total
-        var grandTotal = totalSal + totalAdv + totalExp;
-        document.getElementById('monthTotalExpenses').textContent = fmt(grandTotal);
       }
 
       /* ?? 6. Commission Paid ?? */
-      var commissions = monthlyCommissionDetails[mkey] || [];
       var commSec = document.getElementById('monthCommissionSection');
+      var totalComm = 0;
       if (commissions.length > 0) {
         commSec.style.display = '';
         var cRows = commissions.map(function(c, idx) {
           var bg = idx%2===0?'#fff':'#f5f3ff';
+          var projLink = c.project_id
+            ? '<a href="/projects/'+encodeURIComponent(c.project_id)+'" style="color:#5B21B6;font-weight:700;text-decoration:none;">'+(c.project_number||'—')+'</a>'
+            : (c.project_number||'—');
           return '<tr style="background:'+bg+';border-bottom:1px solid #ddd6fe;">'
-            +'<td style="padding:8px 12px;color:#6b7280;">'+(c.paid_at||'—')+'</td>'
-            +'<td style="padding:8px 12px;font-weight:500;">'+(c.salesperson||'—')+'</td>'
-            +'<td style="padding:8px 12px;color:#6b7280;">'+(c.period||'—')+'</td>'
-            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#7C3AED;">'+fmt(c.amount)+'</td></tr>';
+            +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(c.paid_date)+'</td>'
+            +'<td style="padding:8px 12px;color:#1e293b;font-weight:500;">'+(c.salesperson||'—')+'</td>'
+            +'<td style="padding:8px 12px;font-weight:500;">'+projLink+'</td>'
+            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#2563EB;">'+fmt(c.commission_amount)+'</td></tr>';
         });
         document.getElementById('monthCommissionTbody').innerHTML = cRows.join('');
-        var totalComm = commissions.reduce(function(s,c){return s+parseFloat(c.amount||0);},0);
-        document.getElementById('monthCommissionTfoot').innerHTML = '<tr><td colspan="3" style="padding:8px 12px;font-weight:700;">Total Commission</td>'
-          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#7C3AED;font-size:13px;">'+fmt(totalComm)+'</td></tr>';
+        totalComm = commissions.reduce(function(s,c){return s+parseFloat(c.commission_amount||0);},0);
+        document.getElementById('monthCommissionTfoot').innerHTML = '<tr><td colspan="3" style="padding:8px 12px;font-weight:700;">Total Commission Paid</td>'
+          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#2563EB;font-size:13px;">'+fmt(totalComm)+'</td></tr>';
       } else {
         commSec.style.display = 'none';
+      }
+
+      // Calculate and display grand total (including commissions) - only if hasData is true
+      if (hasData) {
+        var grandTotal = totalSal + totalAdv + totalExp + totalComm;
+        document.getElementById('monthTotalExpenses').textContent = fmt(grandTotal);
       }
 
       panel.style.display = 'block';
@@ -3651,25 +3858,32 @@ function viewReceipt(expId) {
 
   <!-- KPI strip -->
   <div class="row g-3 mb-4">
-    <div class="col-6 col-md-4">
+    <div class="col-6 col-md-3">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Earned</div>
         <div style="font-size:1.6rem;font-weight:800;color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_earned) }}</div>
-        <div class="text-muted" style="font-size:11px;">all time, all salespeople</div>
+        <div class="text-muted" style="font-size:11px;">all commissions</div>
       </div>
     </div>
-    <div class="col-6 col-md-4">
+    <div class="col-6 col-md-3">
+      <div class="card-panel text-center">
+        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Adjusted</div>
+        <div style="font-size:1.6rem;font-weight:800;color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(0) }}</div>
+        <div class="text-muted" style="font-size:11px;">advance deductions</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Paid</div>
-        <div style="font-size:1.6rem;font-weight:800;color:#16a34a;">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_paid) }}</div>
-        <div class="text-muted" style="font-size:11px;">recorded payments</div>
+        <div style="font-size:1.6rem;font-weight:800;color:#059669;">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_paid) }}</div>
+        <div class="text-muted" style="font-size:11px;">paid remaining</div>
       </div>
     </div>
-    <div class="col-6 col-md-4">
+    <div class="col-6 col-md-3">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Outstanding</div>
         <div style="font-size:1.6rem;font-weight:800;color:{{ '#DC2626' if commission_total_outstanding > 0 else '#16a34a' }};">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_outstanding) }}</div>
-        <div class="text-muted" style="font-size:11px;">still owed</div>
+        <div class="text-muted" style="font-size:11px;">pending remaining</div>
       </div>
     </div>
   </div>
@@ -3824,13 +4038,16 @@ function viewReceipt(expId) {
             <th class="text-end">Contract Value</th>
             <th class="text-center">Rate / Type</th>
             <th class="text-end" style="color:#7C3AED;">Commission</th>
+            <th class="text-end" style="color:#16A34A;">Adjusted</th>
+            <th class="text-end" style="color:#2563EB;">Remaining Due</th>
             <th class="text-center">Status</th>
             {% if user_role == 'admin' %}<th class="text-center">Action</th>{% endif %}
           </tr>
         </thead>
         <tbody>
           {% for pc in project_commissions %}
-          <tr data-sp="{{ pc.get('salesperson','') }}" data-status="{{ pc.get('status','Pending') }}" data-amount="{{ pc.get('commission_amount',0)|float }}">
+          {% set display_status = 'Paid' if pc.get('deduction_status') == 'fully_covered' else pc.get('status','Pending') %}
+          <tr data-sp="{{ pc.get('salesperson','') }}" data-status="{{ display_status }}" data-amount="{{ pc.get('commission_amount',0)|float }}" data-adjusted="{{ pc.get('adjusted_amount',0)|float }}" data-remaining="{{ pc.get('remaining_due',0)|float }}" data-deduction-status="{{ pc.get('deduction_status','not_covered') }}">
             <td class="fw-semibold">
               <a href="{{ url_for('project_detail', project_id=pc.firebase_id) }}" class="text-decoration-none">
                 {{ pc.get('project_number','—') }}
@@ -3877,7 +4094,67 @@ function viewReceipt(expId) {
               {% endif %}
             </td>
             <td class="text-end fw-bold comm-amount-cell" id="amountCell-{{ pc.firebase_id }}" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('commission_amount',0)|float) }}</td>
+            <td class="text-center" style="color:#16A34A;">
+              <div style="font-weight:bold;">
+                {% if pc.get('adjusted_amount',0)|float > 0 %}
+                {{ currency_symbol }}{{ "{:,.2f}".format(pc.get('adjusted_amount',0)|float) }}
+                {% else %}
+                0
+                {% endif %}
+              </div>
+              {% if pc.get('deductions_list') and pc.deductions_list|length > 0 %}
+              <div class="text-muted" style="font-size:10px;">
+                {% set shown_advs = [] %}
+                {% for deduction in pc.deductions_list %}
+                  {% set adv_no = deduction.get('advance_no', '') %}
+                  {% if adv_no and adv_no not in shown_advs %}
+                    {% if shown_advs.append(adv_no) %}{% endif %}
+                    <a href="{{ url_for('advance_detail', advance_id=deduction.get('advance_id', '')) }}"
+                       style="color:#666; text-decoration:none; cursor:pointer;"
+                       title="View adjustment details"
+                       onmouseover="this.style.color='#16A34A'; this.style.textDecoration='underline';"
+                       onmouseout="this.style.color='#666'; this.style.textDecoration='none';">
+                      {{ adv_no }}
+                    </a><br/>
+                  {% endif %}
+                {% endfor %}
+              </div>
+              {% else %}
+              <div class="text-muted" style="font-size:10px;"></div>
+              {% endif %}
+            </td>
+            <td class="text-end" style="color:#2563EB;">
+              <strong>{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('remaining_due',0)|float) }}</strong>
+            </td>
             <td class="text-center">
+              {% set is_fully_covered = pc.get('deduction_status') == 'fully_covered' %}
+              {% set is_partially_covered = pc.get('deduction_status') == 'partially_covered' %}
+
+              {% if is_fully_covered %}
+              <div>
+                <span class="badge bg-success" style="font-size:10px;" title="All commission covered by advance deductions">
+                  <i class="bi bi-lock-fill me-1"></i>Paid (Fully Covered)
+                </span>
+                {% set deductions_dates = pc.get('deductions_list', [])|map(attribute='date')|list %}
+                {% if deductions_dates %}
+                  {% set latest_date = deductions_dates|max %}
+                  <div class="text-muted" style="font-size:10px;">{{ latest_date }}</div>
+                {% elif pc.get('paid_at') %}
+                  <div class="text-muted" style="font-size:10px;">{{ pc.get('paid_at','')[:10] }}</div>
+                {% endif %}
+              </div>
+              {% elif is_partially_covered %}
+              <div>
+                {% if pc.get('status') == 'Paid' %}
+                <span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>
+                {% if pc.get('paid_at') %}
+                <div class="text-muted" style="font-size:10px;">{{ pc.get('paid_at','')[:10] }}</div>
+                {% endif %}
+                {% else %}
+                <span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>
+                {% endif %}
+              </div>
+              {% else %}
               {% if pc.get('status') == 'Paid' %}
               <span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>
               {% if pc.get('paid_at') %}
@@ -3886,17 +4163,32 @@ function viewReceipt(expId) {
               {% else %}
               <span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>
               {% endif %}
+              {% endif %}
             </td>
             {% if user_role == 'admin' %}
             <td class="text-center">
+              {% set is_fully_covered = pc.get('deduction_status') == 'fully_covered' %}
+
+              {% if is_fully_covered %}
+              <button class="btn btn-xs btn-outline-secondary"
+                      disabled
+                      title="Status locked: All commission covered by advance deductions. Remove adjustments to unlock."
+                      style="font-size:11px;">
+                <i class="bi bi-lock-fill me-1"></i>Locked
+              </button>
+              {% else %}
               {% if pc.get('status') == 'Paid' %}
               <button class="btn btn-xs btn-outline-secondary"
                       onclick="commProjectToggle('{{ pc.firebase_id }}','unpay',this)"
+                      title="Mark as Pending"
                       style="font-size:11px;">Mark Pending</button>
               {% else %}
               <button class="btn btn-xs btn-outline-success"
-                      onclick="commProjectToggle('{{ pc.firebase_id }}','pay',this)"
+                      id="markPaidBtn-{{ pc.firebase_id }}"
+                      onclick="showMarkPaidDateModal('{{ pc.firebase_id }}', this)"
+                      title="Mark as Paid"
                       style="font-size:11px;">Mark Paid</button>
+              {% endif %}
               {% endif %}
             </td>
             {% endif %}
@@ -3907,6 +4199,8 @@ function viewReceipt(expId) {
           <tr class="fw-bold table-light" style="border-top:2px solid #dee2e6;">
             <td colspan="5" class="text-end text-muted small">Total Commission</td>
             <td class="text-end" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions|sum(attribute='commission_amount')) }}</td>
+            <td class="text-end" style="color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions|sum(attribute='adjusted_amount')) }}</td>
+            <td class="text-end" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions|sum(attribute='remaining_due')) }}</td>
             <td{% if user_role == 'admin' %} colspan="2"{% endif %}></td>
           </tr>
         </tfoot>
@@ -4530,6 +4824,10 @@ function backfillCommissions(btn) {
     var info = document.getElementById('commPageInfo');
     if (info) info.textContent = total === 0 ? 'No results' : 'Showing ' + (start+1) + '–' + end + ' of ' + total + ' projects';
 
+    // Update summary cards and table footer based on visible rows
+    updateCommissionSummaryCards(visible);
+    updateCommissionTableFooter(visible);
+
     var pages = Math.ceil(total / COMM_PAGE_SIZE);
     var nav   = document.getElementById('commPagination');
     if (!nav) return;
@@ -4557,6 +4855,96 @@ function backfillCommissions(btn) {
     nav.appendChild(mkLi('&raquo;', page + 1, page === pages, false));
   }
 
+  function updateCommissionTableFooter(visibleRows) {
+    var totalCommission = 0;
+    var totalAdjusted = 0;
+    var totalRemaining = 0;
+
+    visibleRows.forEach(function(row) {
+      var amount = parseFloat(row.dataset.amount || '0');
+      var adjusted = parseFloat(row.dataset.adjusted || '0');
+      var remaining = parseFloat(row.dataset.remaining || '0');
+
+      totalCommission += amount;
+      totalAdjusted += adjusted;
+      totalRemaining += remaining;
+    });
+
+    var format = function(num) {
+      return num.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    };
+
+    // Find and update the table footer totals
+    var table = document.getElementById('commByProjectTable');
+    if (!table) return;
+
+    var footerCells = table.querySelectorAll('tfoot tr td');
+    if (footerCells.length >= 4) {
+      // Footer structure: [label(colspan=5), commission, adjusted, remaining, action]
+      // Commission value cell (index 1)
+      footerCells[1].textContent = '$' + format(totalCommission);
+      // Adjusted value cell (index 2)
+      footerCells[2].textContent = '$' + format(totalAdjusted);
+      // Remaining Due value cell (index 3)
+      footerCells[3].textContent = '$' + format(totalRemaining);
+    }
+  }
+
+  function updateCommissionSummaryCards(visibleRows) {
+    var totalEarned = 0;
+    var totalAdjusted = 0;
+    var totalPaid = 0;
+    var totalOutstanding = 0;
+
+    visibleRows.forEach(function(row) {
+      var amount = parseFloat(row.dataset.amount || '0');
+      var adjusted = parseFloat(row.dataset.adjusted || '0');
+      var remaining = parseFloat(row.dataset.remaining || '0');
+      var status = (row.dataset.status || '').toLowerCase();
+
+      totalEarned += amount;
+      totalAdjusted += adjusted;
+
+      // Total Paid = remaining_due from Paid status rows
+      if (status === 'paid') {
+        totalPaid += remaining;
+      }
+
+      // Outstanding = remaining_due from Pending status rows
+      if (status === 'pending') {
+        totalOutstanding += remaining;
+      }
+    });
+
+    // Update the summary cards
+    var format = function(num) {
+      return num.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    };
+
+    // Find the KPI strip in the commission tab
+    var commTab = document.getElementById('tab-commission');
+    if (!commTab) return;
+
+    var cardPanels = commTab.querySelectorAll('.row.g-3.mb-4 > .col-6.col-md-3 > .card-panel');
+    if (cardPanels.length >= 4) {
+      // First card: Total Earned
+      var earnedDiv = cardPanels[0].querySelector('div[style*="font-size:1.6rem"]');
+      if (earnedDiv) earnedDiv.textContent = '$' + format(totalEarned);
+
+      // Second card: Total Adjusted
+      var adjustedDiv = cardPanels[1].querySelector('div[style*="font-size:1.6rem"]');
+      if (adjustedDiv) adjustedDiv.textContent = '$' + format(totalAdjusted);
+
+      // Third card: Total Paid
+      var paidDiv = cardPanels[2].querySelector('div[style*="font-size:1.6rem"]');
+      if (paidDiv) paidDiv.textContent = '$' + format(totalPaid);
+
+      // Fourth card: Outstanding
+      var outstandingDiv = cardPanels[3].querySelector('div[style*="font-size:1.6rem"]');
+      if (outstandingDiv) outstandingDiv.textContent = '$' + format(totalOutstanding);
+    }
+  }
+
   window.filterCommTable = function() { renderCommPage(1); };
 
   document.addEventListener('DOMContentLoaded', function() {
@@ -4572,14 +4960,15 @@ function backfillCommissions(btn) {
   });
 })();
 
-// Per-project commission toggle (Mark Paid / Mark Pending)
+// Per-project commission toggle (Mark Pending)
 function commProjectToggle(projectId, action, btn) {
   btn.disabled = true;
   btn.textContent = 'Saving…';
+
   fetch('/api/commission/project/' + projectId + '/mark-paid', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: action === 'pay' ? 'pay' : 'unpay' })
+    body: JSON.stringify({ action: 'unpay' })
   })
   .then(r => r.json())
   .then(data => {
@@ -4653,6 +5042,8 @@ function commRateSave(pid) {
         cell.setAttribute('data-value', data.commission_override_value);
       }
       commRateEditClose(pid);
+      // Refresh page to update deduction_status and remaining_due
+      setTimeout(function() { location.reload(); }, 500);
     } else {
       if (errEl) { errEl.textContent = data.error || 'Error saving.'; errEl.style.display = 'block'; }
       if (saveBtn) saveBtn.disabled = false;
@@ -4662,6 +5053,61 @@ function commRateSave(pid) {
     if (errEl) { errEl.textContent = 'Network error.'; errEl.style.display = 'block'; }
     if (saveBtn) saveBtn.disabled = false;
   });
+}
+
+// ── Date Picker Modal for Mark Paid ───────────────────────────────────────
+function showMarkPaidDateModal(projectId, btn) {
+  var modal = document.getElementById('markPaidDateModal');
+  var dateInput = document.getElementById('markPaidDateInput');
+  var today = new Date().toISOString().split('T')[0];
+  dateInput.value = today;
+
+  // Store projectId and button in data attributes
+  modal.setAttribute('data-project-id', projectId);
+  modal.setAttribute('data-button', btn.getAttribute('id') || '');
+
+  // Show modal
+  var modalInstance = new bootstrap.Modal(modal);
+  modalInstance.show();
+
+  // Focus date input
+  dateInput.focus();
+}
+
+function confirmMarkPaidDate() {
+  var modal = document.getElementById('markPaidDateModal');
+  var dateInput = document.getElementById('markPaidDateInput');
+  var projectId = modal.getAttribute('data-project-id');
+  var paidDate = dateInput.value.trim();
+
+  // Validate date format
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(paidDate)) {
+    alert('Invalid date format. Use YYYY-MM-DD');
+    return;
+  }
+
+  // Dismiss modal
+  bootstrap.Modal.getInstance(modal).hide();
+
+  // Send to backend
+  var payload = { action: 'pay', paid_at: paidDate };
+  var saveBtn = document.getElementById('markPaidBtn-' + projectId);
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+  }
+
+  fetch('/api/commission/project/' + projectId + '/mark-paid', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) { location.reload(); }
+    else { alert(data.error || 'Error saving commission.'); if (saveBtn) saveBtn.disabled = false; }
+  })
+  .catch(() => { alert('Network error.'); if (saveBtn) saveBtn.disabled = false; });
 }
 </script>
 {% endblock %}

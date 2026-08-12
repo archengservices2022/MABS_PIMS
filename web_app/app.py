@@ -596,6 +596,111 @@ def _migrate_add_co_firebase_ids():
     except Exception as e:
         log.error(f"✗ Error during CO firebase_id migration: {e}")
 
+# ── Employee Advance Commission Helpers ────────────────────────────────────
+def _calculate_employee_pending_commission(salesperson_name: str) -> float:
+    """Calculate pending (unpaid) commission for an employee by summing remaining_due from PENDING status projects only"""
+    try:
+        if not salesperson_name:
+            return 0.0
+
+        # Use actual project commission data which has accurate per-project remaining_due
+        # Only include projects with status = "Pending" (exclude "Paid" projects from deduction available)
+        all_proj_commissions = fb_get("/project_commissions") or {}
+        total_pending = 0.0
+
+        if isinstance(all_proj_commissions, dict):
+            for proj_comm in all_proj_commissions.values():
+                if not isinstance(proj_comm, dict):
+                    continue
+                if (proj_comm.get("salesperson", "").strip() or "").lower() != salesperson_name.lower():
+                    continue
+
+                # Only count projects with status = "Pending" for deduction available amount
+                if proj_comm.get("status", "").strip() != "Pending":
+                    continue
+
+                # Sum up remaining_due for pending projects only
+                remaining_due = _safe_float(proj_comm.get("remaining_due", 0))
+                total_pending += remaining_due
+
+        return max(total_pending, 0.0)
+
+    except Exception as e:
+        log.error(f"Error calculating pending commission for {salesperson_name}: {e}")
+        return 0.0
+
+def _recalculate_project_deductions_for_salesperson(salesperson_name: str):
+    """Recalculate per-project deductions for a salesperson after adjustment changes"""
+    try:
+        all_projects = fb_get("/projects") or {}
+        all_proj_commissions = fb_get("/project_commissions") or {}
+        commission_payments = fb_get("/commission_payments") or {}
+
+        # Get all deductions for this salesperson
+        deductions_by_project = {}  # {project_id: {deduction_id: amount}}
+
+        if isinstance(commission_payments, dict):
+            for cp_id, cp_data in commission_payments.items():
+                if not isinstance(cp_data, dict):
+                    continue
+                if cp_data.get("type", "").strip() != "Advance Deduction":
+                    continue
+                if (cp_data.get("salesperson", "").strip() or "").lower() != salesperson_name.lower():
+                    continue
+
+                # If this deduction has project_deductions, use it
+                if "project_deductions" in cp_data and isinstance(cp_data["project_deductions"], dict):
+                    for proj_id, amount in cp_data["project_deductions"].items():
+                        if proj_id not in deductions_by_project:
+                            deductions_by_project[proj_id] = {}
+                        deductions_by_project[proj_id][cp_id] = amount
+
+        # Update all projects for this salesperson
+        for proj_id, proj_data in all_projects.items():
+            if not isinstance(proj_data, dict):
+                continue
+            if (proj_data.get("sales", "").strip() or "").lower() != salesperson_name.lower():
+                continue
+
+            proj_comm = all_proj_commissions.get(proj_id, {})
+            if not isinstance(proj_comm, dict):
+                continue
+
+            # Update deductions for this project
+            new_deductions = deductions_by_project.get(proj_id, {})
+            total_deducted = sum(new_deductions.values())
+            remaining_due = max(_safe_float(proj_comm.get("commission_amount", 0)) - total_deducted, 0)
+
+            # Determine status
+            if remaining_due <= 0:
+                deduction_status = "fully_covered"
+            elif total_deducted > 0:
+                deduction_status = "partially_covered"
+            else:
+                deduction_status = "not_covered"
+
+            # Build deductions list
+            deductions_list = []
+            for adv_id, amt in new_deductions.items():
+                cp_data = fb_get(f"/commission_payments/{adv_id}") or {}
+                deductions_list.append({
+                    "advance_no": cp_data.get("advance_no", ""),
+                    "deduction_amount": amt,
+                    "date": cp_data.get("created_at", "")[:10] if cp_data.get("created_at") else ""
+                })
+
+            update_data = {
+                "deductions": new_deductions,
+                "total_deducted": total_deducted,
+                "remaining_due": remaining_due,
+                "deduction_status": deduction_status,
+                "deductions_list": deductions_list
+            }
+
+            fb_update(f"/project_commissions/{proj_id}", update_data)
+    except Exception as e:
+        log.error(f"Error recalculating project deductions for {salesperson_name}: {e}")
+
 # ── Employee Advance Finance Sync Helpers ────────────────────────────────────
 def _sync_advance_to_finance(advance_id: str, advance_data: dict):
     """Create/update finance expense entry for an advance"""
@@ -4500,6 +4605,13 @@ def project_commission_update(project_id):
             "new_amount": new_amount,
         })
 
+        # Recalculate deduction status when commission amount changes
+        project_data = fb_get(f"/projects/{project_id}") or {}
+        salesperson_name = project_data.get("sales", "").strip()
+        if salesperson_name:
+            # Recalculate deductions for this salesperson to update status
+            _recalculate_project_deductions_for_salesperson(salesperson_name)
+
     flash("Commission updated.", "success")
     return redirect(url_for("project_detail", project_id=project_id))
 
@@ -4549,6 +4661,17 @@ def commission_project_update_api(project_id):
         new_amount = old_amount
 
     new_comm = fb_get(f"/project_commissions/{project_id}") or {}
+
+    # Recalculate deduction status when commission amount changes
+    if changed:
+        project_data = fb_get(f"/projects/{project_id}") or {}
+        salesperson_name = project_data.get("sales", "").strip()
+        if salesperson_name:
+            # Recalculate deductions for this salesperson to update status
+            _recalculate_project_deductions_for_salesperson(salesperson_name)
+            # Fetch updated commission data
+            new_comm = fb_get(f"/project_commissions/{project_id}") or {}
+
     return jsonify({
         "ok":              True,
         "commission_amount": _safe_float(new_comm.get("commission_amount", new_amount)),
@@ -8769,62 +8892,94 @@ def payroll():
         if u.get("active", True)
     ]
 
-    # ── Commission per salesperson per period ─────────────────────────────────
-    _sales_comm_map: Dict[str, float] = {}
-    for _u in raw_users:
-        if normalize_role(_u.get("role", "")) == "sales":
-            _uname = (_u.get("username") or "").strip()
-            if _uname:
-                _sales_comm_map[_uname] = _safe_float(_u.get("commission_rate", 0))
-
-    _qraw_pay = fb_get("/job_forms") or {}
-    _praw_pay = fb_get("/projects") or {}
-    _pst_pay: Dict[str, str] = {}
-    if isinstance(_praw_pay, dict):
-        for _pid, _pd in _praw_pay.items():
-            if _pd and isinstance(_pd, dict):
-                _pst_pay[_pid] = _pd.get("status", "")
-
-    # commission_by_period[sp_name][YYYY-MM] = earned amount
+    # ── Commission per salesperson per period (based on paid_at date) ─────────────────
+    # commission_by_period[sp_name][YYYY-MM] = sum of commissions marked paid in that month
     commission_by_period: Dict[str, Dict[str, float]] = {}
-    _CONV_PAY = {"Converted", "Invoiced"}
-    if isinstance(_qraw_pay, dict):
-        for _fid, _fdata in _qraw_pay.items():
-            if not _fdata or not isinstance(_fdata, dict):
-                continue
-            _sp = (_fdata.get("salesperson") or "").strip()
-            _rate = _sales_comm_map.get(_sp, 0)
-            if not _sp or not _rate:
-                continue
-            _linked = _fdata.get("linked_project_id", "")
-            _is_conv = _fdata.get("status", "") in _CONV_PAY or bool(_linked)
-            if not _is_conv:
-                continue
-            if _linked and _pst_pay.get(_linked) == "Cancelled":
-                continue
-            _period = (_fdata.get("date") or "")[:7]
-            if not _period:
-                continue
-            _earned = _safe_float(_fdata.get("total", 0)) * _rate / 100
-            if _sp not in commission_by_period:
-                commission_by_period[_sp] = {}
-            commission_by_period[_sp][_period] = \
-                commission_by_period[_sp].get(_period, 0.0) + _earned
 
-    # Load which periods are marked paid + how much was paid
     _cpay_raw = fb_get("/commission_payments") or {}
     comm_paid_set: set = set()
     comm_paid_amounts: Dict[str, float] = {}
+
+    # Load from commission_payments (period-based and advance deduction-based)
     if isinstance(_cpay_raw, dict):
         for _cpid, _cp in _cpay_raw.items():
-            if _cp and isinstance(_cp, dict):
-                _name   = _cp.get("salesperson", "").strip().lower()
+            if not _cp or not isinstance(_cp, dict):
+                continue
+
+            _sp = (_cp.get("salesperson") or "").strip()
+            if not _sp:
+                continue
+
+            # Use paid_at date to determine the month (if available)
+            _paid_at = _cp.get("paid_at", "")
+            if _paid_at:
+                # Extract YYYY-MM from paid_at date
+                _period = _paid_at[:7]
+            else:
+                # Fallback to period field if paid_at not available
                 _period = _cp.get("period", "").strip()
-                _amt    = _safe_float(_cp.get("amount", 0))
-                if _name and _period:
-                    _k = f"{_name}|{_period}"
-                    comm_paid_set.add(_k)
-                    comm_paid_amounts[_k] = _amt
+
+            if not _period:
+                continue
+
+            # Get commission amount
+            _amt = _safe_float(_cp.get("amount", 0))
+
+            # Also sum from project_deductions if this is a project-based commission
+            if "project_deductions" in _cp and isinstance(_cp.get("project_deductions"), dict):
+                for proj_id, deduction_amt in _cp.get("project_deductions", {}).items():
+                    _amt += _safe_float(deduction_amt)
+
+            # Track old format (for backward compatibility)
+            _name_lower = _sp.lower()
+            _k = f"{_name_lower}|{_period}"
+            comm_paid_set.add(_k)
+            comm_paid_amounts[_k] = _amt
+
+            # Build commission_by_period for salary table display
+            if _sp not in commission_by_period:
+                commission_by_period[_sp] = {}
+            commission_by_period[_sp][_period] = \
+                commission_by_period[_sp].get(_period, 0.0) + _amt
+
+    # Load from project_commissions (project-level paid commissions)
+    _proj_comm_raw = fb_get("/project_commissions") or {}
+    if isinstance(_proj_comm_raw, dict):
+        for _proj_id, _pc in _proj_comm_raw.items():
+            if not _pc or not isinstance(_pc, dict):
+                continue
+
+            # Only include if status is "Paid"
+            if _pc.get("status", "").strip() != "Paid":
+                continue
+
+            _sp = (_pc.get("salesperson") or "").strip()
+            if not _sp:
+                continue
+
+            # Use paid_at date to determine the month
+            _paid_at = (_pc.get("paid_at") or "").strip()
+            if not _paid_at or len(_paid_at) < 7:
+                continue
+
+            _period = _paid_at[:7]
+
+            # Get commission amount
+            _comm_amt = _safe_float(_pc.get("commission_amount", 0))
+            if _comm_amt <= 0:
+                continue
+
+            # Track in comm_paid_set so template knows it's paid
+            _name_lower = _sp.lower()
+            _k = f"{_name_lower}|{_period}"
+            comm_paid_set.add(_k)
+            comm_paid_amounts[_k] = comm_paid_amounts.get(_k, 0.0) + _comm_amt
+
+            # Build commission_by_period for salary table display
+            if _sp not in commission_by_period:
+                commission_by_period[_sp] = {}
+            commission_by_period[_sp][_period] = \
+                commission_by_period[_sp].get(_period, 0.0) + _comm_amt
 
     # Load employee advances for immediate display
     _all_advances = fb_get("/employee_advances") or {}
@@ -10527,7 +10682,38 @@ def add_advance_adjustment():
         # Check if advance should be closed
         new_status = "Closed" if new_balance <= 0 else advance_data.get("status", "Open")
 
-        # Update the advance record with new adjusted amount, status, and add adjustment
+        # VALIDATE COMMISSION DEDUCTION FIRST (before saving advance)
+        adjustment_type = data.get("type", "").strip()
+        if adjustment_type == "Commission Deduction":
+            employee_name = advance_data.get("employee_name", "").strip()
+
+            if employee_name:
+                # Look up employee in users table to get email
+                all_users = _load_all_users()
+                user_email = ""
+                for user in all_users:
+                    if (user.get("username", "").strip() or "").lower() == employee_name.lower():
+                        user_email = user.get("email", "")
+                        break
+
+                # Calculate employee's pending commission
+                pending_commission = _calculate_employee_pending_commission(employee_name)
+
+                # Validate: deduction amount cannot exceed pending commission (BEFORE SAVING)
+                if adjustment_amount > pending_commission:
+                    return jsonify({
+                        "success": False,
+                        "error": f"Unable to apply commission deduction. Requested amount (${adjustment_amount:.2f}) exceeds the employee's available pending commission (${pending_commission:.2f})."
+                    }), 400
+
+                # Check if employee has pending commission
+                if pending_commission <= 0:
+                    return jsonify({
+                        "success": False,
+                        "error": f"Employee '{employee_name}' has $0.00 pending commission. Cannot create deduction."
+                    }), 400
+
+        # NOW SAFE TO UPDATE - all validations passed
         update_data = {
             "adjusted": new_adjusted,
             "status": new_status,
@@ -10536,6 +10722,173 @@ def add_advance_adjustment():
         fb_update(f"/employee_advances/{advance_id}", update_data)
 
         log.info(f"Adjustment added to advance {advance_no}: {adjustment['amount']}")
+
+        # Handle Commission Deduction: distribute intelligently across projects
+        if adjustment_type == "Commission Deduction":
+            employee_name = advance_data.get("employee_name", "").strip()
+
+            if employee_name:
+                # Look up employee in users table to get email
+                all_users = _load_all_users()
+                user_email = ""
+                for user in all_users:
+                    if (user.get("username", "").strip() or "").lower() == employee_name.lower():
+                        user_email = user.get("email", "")
+                        break
+
+                # Get current period for the commission payment
+                current_period = datetime.now(COMPANY_TZ).strftime("%Y-%m")
+
+                # Create a negative commission payment entry to record the deduction
+                import uuid as uuid_module
+                comm_deduction_id = f"adv_{str(uuid_module.uuid4())}"
+
+                # 1. Load all projects and their commissions
+                all_projects = fb_get("/projects") or {}
+                all_proj_commissions = fb_get("/project_commissions") or {}
+
+                # 2. Filter pending commissions for this salesperson
+                pending_projects = []
+                for proj_id, proj_data in all_projects.items():
+                    if not isinstance(proj_data, dict):
+                        continue
+                    if proj_data.get("status", "").strip() == "Cancelled":
+                        continue
+                    if (proj_data.get("sales", "").strip() or "").lower() != employee_name.lower():
+                        continue
+
+                    proj_comm = all_proj_commissions.get(proj_id, {})
+                    if not isinstance(proj_comm, dict):
+                        continue
+                    if proj_comm.get("status", "").strip() == "Paid":
+                        continue
+
+                    pending_projects.append({
+                        "project_id": proj_id,
+                        "project_number": proj_data.get("project_number", ""),
+                        "commission_amount": _safe_float(proj_comm.get("commission_amount", 0)),
+                        "current_deductions": _safe_float(proj_comm.get("total_deducted", 0)),
+                        "created_at": proj_data.get("created_at", "")
+                    })
+
+                # 3. Sort by created_at (oldest first), then by project_number
+                def get_project_sort_key(proj):
+                    try:
+                        created_at = proj.get("created_at", "9999-12-31")
+                        proj_num = proj.get("project_number", "")
+                        if "-" in proj_num:
+                            num = int(proj_num.split("-")[-1])
+                        else:
+                            num = int(proj_num) if proj_num.isdigit() else 0
+                        return (created_at, num)
+                    except (ValueError, AttributeError):
+                        return ("9999-12-31", 999999)
+
+                pending_projects.sort(key=get_project_sort_key)
+
+                # 4. Distribute deduction across projects
+                remaining_deduction = adjustment_amount
+                project_deductions = {}
+
+                for proj_info in pending_projects:
+                    if remaining_deduction <= 0:
+                        break
+
+                    proj_id = proj_info["project_id"]
+                    pending_commission = proj_info["commission_amount"] - proj_info["current_deductions"]
+
+                    # Deduct up to pending commission amount
+                    deduct_amount = min(remaining_deduction, pending_commission)
+                    if deduct_amount > 0:
+                        project_deductions[proj_id] = deduct_amount
+                        remaining_deduction -= deduct_amount
+
+                # 5. Update project_commissions with per-project deduction
+                for proj_id, deduct_amt in project_deductions.items():
+                    proj_comm = all_proj_commissions.get(proj_id, {})
+                    if not isinstance(proj_comm, dict):
+                        proj_comm = {}
+
+                    current_deductions = proj_comm.get("deductions", {})
+                    if not isinstance(current_deductions, dict):
+                        current_deductions = {}
+
+                    current_deductions[comm_deduction_id] = deduct_amt
+
+                    total_deducted = sum(current_deductions.values())
+                    remaining_due = max(_safe_float(proj_comm.get("commission_amount", 0)) - total_deducted, 0)
+
+                    # Determine coverage status
+                    if remaining_due <= 0:
+                        deduction_status = "fully_covered"
+                    elif total_deducted > 0:
+                        deduction_status = "partially_covered"
+                    else:
+                        deduction_status = "not_covered"
+
+                    # Build deductions list for display
+                    deductions_list = []
+                    for adv_id, amt in current_deductions.items():
+                        # For current adjustment being added, use form date directly (not yet in Firebase)
+                        if adv_id == comm_deduction_id:
+                            deductions_list.append({
+                                "advance_no": advance_no,
+                                "advance_id": advance_id,
+                                "deduction_amount": amt,
+                                "date": data.get("date", "")[:10] if data.get("date") else ""
+                            })
+                        else:
+                            # Fetch existing deductions from Firebase
+                            cp_data = fb_get(f"/commission_payments/{adv_id}") or {}
+                            # Use adjustment_date if available, fallback to created_at
+                            adj_date = cp_data.get("adjustment_date", "") or cp_data.get("created_at", "")
+                            deductions_list.append({
+                                "advance_no": cp_data.get("advance_no", ""),
+                                "advance_id": cp_data.get("advance_id", ""),
+                                "deduction_amount": amt,
+                                "date": adj_date[:10] if adj_date else ""
+                            })
+
+                    update_data = {
+                        "deductions": current_deductions,
+                        "total_deducted": total_deducted,
+                        "remaining_due": remaining_due,
+                        "deduction_status": deduction_status,
+                        "deductions_list": deductions_list
+                    }
+                    # Set paid_at to latest adjustment date among all deductions when fully covered
+                    if deduction_status == "fully_covered" and deductions_list:
+                        dates = [d.get("date", "") for d in deductions_list if d.get("date")]
+                        if dates:
+                            latest_date = max(dates)  # Get latest/most recent date
+                            update_data["paid_at"] = latest_date
+
+                    fb_update(f"/project_commissions/{proj_id}", update_data)
+
+                # 6. Store distribution in commission_payments
+                commission_deduction = {
+                    "period": current_period,
+                    "salesperson": employee_name,
+                    "salesperson_email": user_email,
+                    "amount": -adjustment_amount,
+                    "type": "Advance Deduction",
+                    "advance_no": advance_no,
+                    "advance_id": advance_id,
+                    "adjustment_id": adjustment_id,
+                    "adjustment_date": data.get("date", ""),  # Store the form adjustment date
+                    "reference": data.get("reference", ""),
+                    "remarks": f"Commission deduction for advance {advance_no}: {data.get('remarks', '')}",
+                    "project_deductions": project_deductions,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_by": session.get("user_name", session.get("username", "Admin"))
+                }
+
+                # Record the commission deduction
+                fb_update(f"/commission_payments/{comm_deduction_id}", commission_deduction)
+
+                # Calculate employee's pending commission after deduction
+                pending_commission = _calculate_employee_pending_commission(employee_name)
+                log.info(f"Commission deduction recorded for {employee_name}: ${adjustment_amount:.2f} distributed across {len(project_deductions)} projects, pending: ${pending_commission:.2f}")
 
         # Sync updated advance to finance expenses
         updated_advance = {**advance_data, **update_data}
@@ -10614,6 +10967,264 @@ def update_advance_adjustment():
 
         log.info(f"Adjustment updated for advance {advance_no}: {new_amount}")
 
+        # Handle Commission Deduction updates
+        adjustment_type = data.get("type", "").strip()
+        old_type = old_adjustment.get("type", "").strip()
+
+        # Check if there's an existing commission deduction entry for this adjustment
+        comm_deduction_id = None
+        comm_payments = fb_get("/commission_payments") or {}
+        if isinstance(comm_payments, dict):
+            for cp_id, cp_data in comm_payments.items():
+                if isinstance(cp_data, dict) and cp_data.get("adjustment_id") == adjustment_id:
+                    comm_deduction_id = cp_id
+                    break
+
+        if adjustment_type == "Commission Deduction":
+            employee_name = advance_data.get("employee_name", "").strip()
+
+            if employee_name:
+                # Calculate employee's pending commission
+                pending_commission = _calculate_employee_pending_commission(employee_name)
+
+                # Validate: deduction amount cannot exceed pending commission
+                if new_amount > pending_commission:
+                    return jsonify({
+                        "success": False,
+                        "error": f"Commission deduction of ${new_amount:.2f} exceeds employee's pending commission of ${pending_commission:.2f}. Maximum allowed: ${pending_commission:.2f}"
+                    }), 400
+
+                # Only update deduction if employee has pending commission
+                if pending_commission > 0:
+                    # Look up employee in users table to get email
+                    all_users = _load_all_users()
+                    user_email = ""
+                    for user in all_users:
+                        if (user.get("username", "").strip() or "").lower() == employee_name.lower():
+                            user_email = user.get("email", "")
+                            break
+
+                    # Create or update commission deduction entry
+                    if not comm_deduction_id:
+                        import uuid as uuid_module
+                        comm_deduction_id = f"adv_{str(uuid_module.uuid4())}"
+
+                    current_period = datetime.now(COMPANY_TZ).strftime("%Y-%m")
+
+                    # 1. Load all projects and their commissions
+                    all_projects = fb_get("/projects") or {}
+                    all_proj_commissions = fb_get("/project_commissions") or {}
+
+                    # 2. Filter pending commissions for this salesperson (excluding already-covered by this adjustment)
+                    pending_projects = []
+                    for proj_id, proj_data in all_projects.items():
+                        if not isinstance(proj_data, dict):
+                            continue
+                        if proj_data.get("status", "").strip() == "Cancelled":
+                            continue
+                        if (proj_data.get("sales", "").strip() or "").lower() != employee_name.lower():
+                            continue
+
+                        proj_comm = all_proj_commissions.get(proj_id, {})
+                        if not isinstance(proj_comm, dict):
+                            continue
+                        if proj_comm.get("status", "").strip() == "Paid":
+                            continue
+
+                        pending_projects.append({
+                            "project_id": proj_id,
+                            "project_number": proj_data.get("project_number", ""),
+                            "commission_amount": _safe_float(proj_comm.get("commission_amount", 0)),
+                            "current_deductions": _safe_float(proj_comm.get("total_deducted", 0)),
+                            "created_at": proj_data.get("created_at", "")
+                        })
+
+                    # 3. Sort by created_at (oldest first), then by project_number
+                    def get_project_sort_key(proj):
+                        try:
+                            created_at = proj.get("created_at", "9999-12-31")
+                            proj_num = proj.get("project_number", "")
+                            if "-" in proj_num:
+                                num = int(proj_num.split("-")[-1])
+                            else:
+                                num = int(proj_num) if proj_num.isdigit() else 0
+                            return (created_at, num)
+                        except (ValueError, AttributeError):
+                            return ("9999-12-31", 999999)
+
+                    pending_projects.sort(key=get_project_sort_key)
+
+                    # Debug: Log sort order
+                    log.info(f"Pending projects sorted (oldest first): {[(p.get('project_number'), p.get('created_at', 'NO_DATE')) for p in pending_projects]}")
+
+                    # 4. Get old project deductions to know which projects need to be cleared
+                    old_project_deductions = {}
+                    old_comm_deduction = fb_get(f"/commission_payments/{comm_deduction_id}") or {}
+                    if isinstance(old_comm_deduction, dict):
+                        old_project_deductions = old_comm_deduction.get("project_deductions", {})
+
+                    # 5. Distribute updated deduction across projects
+                    remaining_deduction = new_amount
+                    project_deductions = {}
+
+                    for proj_info in pending_projects:
+                        if remaining_deduction <= 0:
+                            break
+
+                        proj_id = proj_info["project_id"]
+                        # Calculate available commission by excluding the old deduction from this adjustment
+                        old_deduction_amt = old_project_deductions.get(proj_id, 0)
+                        available_commission = proj_info["commission_amount"] - (proj_info["current_deductions"] - old_deduction_amt)
+
+                        # Deduct up to available commission amount
+                        deduct_amount = min(remaining_deduction, available_commission)
+                        if deduct_amount > 0:
+                            project_deductions[proj_id] = deduct_amount
+                            remaining_deduction -= deduct_amount
+                            log.info(f"Redistributing to {proj_info.get('project_number')}: ${deduct_amount:.2f} (available: ${available_commission:.2f})")
+
+                    # 6. Update project_commissions with per-project deduction
+                    for proj_id, deduct_amt in project_deductions.items():
+                        proj_comm = all_proj_commissions.get(proj_id, {})
+                        if not isinstance(proj_comm, dict):
+                            proj_comm = {}
+
+                        current_deductions = proj_comm.get("deductions", {})
+                        if not isinstance(current_deductions, dict):
+                            current_deductions = {}
+
+                        current_deductions[comm_deduction_id] = deduct_amt
+
+                        total_deducted = sum(current_deductions.values())
+                        remaining_due = max(_safe_float(proj_comm.get("commission_amount", 0)) - total_deducted, 0)
+
+                        # Determine coverage status
+                        if remaining_due <= 0:
+                            deduction_status = "fully_covered"
+                        elif total_deducted > 0:
+                            deduction_status = "partially_covered"
+                        else:
+                            deduction_status = "not_covered"
+
+                        # Build deductions list for display
+                        deductions_list = []
+                        for adv_id, amt in current_deductions.items():
+                            # For current adjustment being edited, use form date directly
+                            if adv_id == comm_deduction_id:
+                                deductions_list.append({
+                                    "advance_no": advance_no,
+                                    "advance_id": advance_id,
+                                    "deduction_amount": amt,
+                                    "date": data.get("date", "")[:10] if data.get("date") else ""
+                                })
+                            else:
+                                # Fetch existing deductions from Firebase
+                                cp_data = fb_get(f"/commission_payments/{adv_id}") or {}
+                                # Use adjustment_date if available, fallback to created_at
+                                adj_date = cp_data.get("adjustment_date", "") or cp_data.get("created_at", "")
+                                deductions_list.append({
+                                    "advance_no": cp_data.get("advance_no", ""),
+                                    "advance_id": cp_data.get("advance_id", ""),
+                                    "deduction_amount": amt,
+                                    "date": adj_date[:10] if adj_date else ""
+                                })
+
+                        update_data = {
+                            "deductions": current_deductions,
+                            "total_deducted": total_deducted,
+                            "remaining_due": remaining_due,
+                            "deduction_status": deduction_status,
+                            "deductions_list": deductions_list
+                        }
+                        # Set paid_at to latest adjustment date among all deductions when fully covered
+                        if deduction_status == "fully_covered" and deductions_list:
+                            dates = [d.get("date", "") for d in deductions_list if d.get("date")]
+                            if dates:
+                                latest_date = max(dates)  # Get latest/most recent date
+                                update_data["paid_at"] = latest_date
+
+                        fb_update(f"/project_commissions/{proj_id}", update_data)
+
+                    # Clear deductions from projects that previously had them but no longer do
+                    for old_proj_id in old_project_deductions:
+                        if old_proj_id not in project_deductions:
+                            proj_comm = all_proj_commissions.get(old_proj_id, {})
+                            if isinstance(proj_comm, dict):
+                                current_deductions = proj_comm.get("deductions", {})
+                                if isinstance(current_deductions, dict) and comm_deduction_id in current_deductions:
+                                    # Remove this deduction from the project
+                                    del current_deductions[comm_deduction_id]
+
+                                    total_deducted = sum(current_deductions.values())
+                                    remaining_due = max(_safe_float(proj_comm.get("commission_amount", 0)) - total_deducted, 0)
+
+                                    # Determine coverage status
+                                    if remaining_due <= 0:
+                                        deduction_status = "fully_covered"
+                                    elif total_deducted > 0:
+                                        deduction_status = "partially_covered"
+                                    else:
+                                        deduction_status = "not_covered"
+
+                                    # Build deductions list for display
+                                    deductions_list = []
+                                    for adv_id, amt in current_deductions.items():
+                                        cp_data = fb_get(f"/commission_payments/{adv_id}") or {}
+                                        deductions_list.append({
+                                            "advance_no": cp_data.get("advance_no", ""),
+                                            "advance_id": cp_data.get("advance_id", ""),
+                                            "deduction_amount": amt,
+                                            "date": cp_data.get("created_at", "")[:10] if cp_data.get("created_at") else ""
+                                        })
+
+                                    update_data = {
+                                        "deductions": current_deductions,
+                                        "total_deducted": total_deducted,
+                                        "remaining_due": remaining_due,
+                                        "deduction_status": deduction_status,
+                                        "deductions_list": deductions_list
+                                    }
+                                    # Clear paid_at date if no longer fully covered
+                                    if deduction_status != "fully_covered":
+                                        update_data["paid_at"] = ""
+                                    fb_update(f"/project_commissions/{old_proj_id}", update_data)
+
+                    # 7. Update commission_payments with new distribution
+                    commission_deduction = {
+                        "period": current_period,
+                        "salesperson": employee_name,
+                        "salesperson_email": user_email,
+                        "amount": -new_amount,
+                        "type": "Advance Deduction",
+                        "advance_no": advance_no,
+                        "advance_id": advance_id,
+                        "adjustment_id": adjustment_id,
+                        "adjustment_date": data.get("date", ""),  # Store the form adjustment date
+                        "reference": data.get("reference", ""),
+                        "remarks": f"Commission deduction for advance {advance_no}: {data.get('remarks', '')}",
+                        "project_deductions": project_deductions,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "created_by": session.get("user_name", session.get("username", "Admin"))
+                    }
+
+                    fb_update(f"/commission_payments/{comm_deduction_id}", commission_deduction)
+                    log.info(f"Commission deduction updated for {employee_name}: ${new_amount:.2f} distributed across {len(project_deductions)} projects")
+                else:
+                    return jsonify({
+                        "success": False,
+                        "error": f"Employee '{employee_name}' has $0.00 pending commission. Cannot create deduction."
+                    }), 400
+
+        elif old_type == "Commission Deduction" and adjustment_type != "Commission Deduction" and comm_deduction_id:
+            # Remove commission deduction if type changed from Commission Deduction to something else
+            employee_name = advance_data.get("employee_name", "").strip()
+            fb_delete(f"/commission_payments/{comm_deduction_id}")
+            log.info(f"Commission deduction removed for adjustment {adjustment_id}")
+
+            # Recalculate project deductions for this salesperson
+            if employee_name:
+                _recalculate_project_deductions_for_salesperson(employee_name)
+
         # Sync updated advance to finance expenses
         updated_advance = {**advance_data, **update_data}
         _sync_advance_to_finance(advance_id, updated_advance)
@@ -10670,6 +11281,24 @@ def delete_advance_adjustment():
         fb_update(f"/employee_advances/{advance_id}", update_data)
 
         log.info(f"Adjustment deleted from advance {advance_no}: {deleted_amount}")
+
+        # Handle Commission Deduction deletion
+        deleted_type = adjustment_to_delete.get("type", "").strip()
+        employee_name = advance_data.get("employee_name", "").strip()
+
+        if deleted_type == "Commission Deduction":
+            # Find and delete associated commission deduction entry
+            comm_payments = fb_get("/commission_payments") or {}
+            if isinstance(comm_payments, dict):
+                for cp_id, cp_data in comm_payments.items():
+                    if isinstance(cp_data, dict) and cp_data.get("adjustment_id") == adjustment_id:
+                        fb_delete(f"/commission_payments/{cp_id}")
+                        log.info(f"Commission deduction removed for adjustment {adjustment_id}")
+                        break
+
+            # Recalculate project deductions for this salesperson
+            if employee_name:
+                _recalculate_project_deductions_for_salesperson(employee_name)
 
         # Sync updated advance to finance expenses
         updated_advance = {**advance_data, **update_data}
@@ -10814,6 +11443,43 @@ def financial():
                 if advance_amount <= 0:
                     continue
             exp_list_for_tab.append(e)
+
+    # Add paid commissions to expenses list
+    _all_proj_commissions = fb_get("/project_commissions") or {}
+    if isinstance(_all_proj_commissions, dict):
+        for _pcid, _pc in _all_proj_commissions.items():
+            if not _pc or not isinstance(_pc, dict):
+                continue
+            if _pc.get("status", "").strip() != "Paid":
+                continue
+
+            _comm_amount = _safe_float(_pc.get("commission_amount", 0))
+            if _comm_amount <= 0:
+                continue
+
+            # Create expense-like entry for commission
+            _paid_by = _pc.get("paid_by", "")
+            _submitted_by_name = _paid_by.split("@")[0].replace(".", " ").title() if "@" in _paid_by else (_paid_by or "System")
+
+            exp_list_for_tab.append({
+                "firebase_id": _pcid,
+                "expense_type": "Commission",
+                "expense_name": f"{_pc.get('salesperson', 'Unknown')}_Commission",
+                "category": "Sales Commission",
+                "amount": _comm_amount,
+                "vendor": "Sales Commission",
+                "project_number": _pc.get("project_number", ""),
+                "date": _pc.get("paid_at", datetime.now(timezone.utc).isoformat())[:10],
+                "created_at": _pc.get("paid_at", datetime.now(timezone.utc).isoformat()),
+                "description": f"Commission - {_pc.get('salesperson', 'Unknown')}",
+                "is_commission": True,  # Flag to identify commission expenses
+                "project_id": _pcid,
+                "salesperson": _pc.get("salesperson", ""),
+                "created_by": _paid_by,
+                "submitted_by_name": _submitted_by_name,
+                "commission_rate": _pc.get("commission_rate", ""),
+                "status": _pc.get("status", ""),
+            })
 
     exp_list_grouped_all = group_expenses_by_name(exp_list_raw)  # Consolidated for reference
 
@@ -11649,32 +12315,65 @@ def financial():
 
     # ── Commission paid — treated as a cost on the balance sheet ────────────
     _cp_bs_raw = fb_get("/commission_payments") or {}
+    all_proj_commissions = fb_get("/project_commissions") or {}
     bs_total_commission = 0.0
     total_commission_paid = 0.0
     monthly_commission_details: Dict[str, list] = {str(m): [] for m in range(1, 13)}
-    if isinstance(_cp_bs_raw, dict):
-        for _cpid, _cp in _cp_bs_raw.items():
-            if not _cp or not isinstance(_cp, dict):
+    # Populate with project commissions that are PAID (status = "Paid") - display by paid_at date
+    _paid_comm_count = 0
+    _all_statuses = []
+    if isinstance(all_proj_commissions, dict):
+        for _pcid, _pc in all_proj_commissions.items():
+            if not _pc or not isinstance(_pc, dict):
                 continue
-            _amt     = _safe_float(_cp.get("amount", 0))
-            _paid_at = (_cp.get("paid_at") or "")
+
+            _status = _pc.get("status", "").strip()
+            _paid_at = (_pc.get("paid_at") or "")
+            _proj_num = _pc.get("project_number", "N/A")
+
+            _all_statuses.append(f"{_proj_num}:{_status}")
+
+            # Only include if status is "Paid"
+            if _status != "Paid":
+                continue
+
+            if not _paid_at:
+                log.warning(f"Commission {_proj_num} has status=Paid but paid_at is empty")
+                continue
+
+            _paid_comm_count += 1
+            # Use paid_at date for month grouping (when it was marked as paid)
+            _display_date = _paid_at[:10]
+
             try:
-                _dt  = datetime.fromisoformat(_paid_at[:19])
+                _dt  = datetime.fromisoformat(_display_date)
                 _yr  = _dt.year
                 _mon = str(_dt.month)
-            except Exception:
+            except Exception as e:
+                log.warning(f"Failed to parse commission paid_at '{_paid_at}': {e}")
                 _yr, _mon = 0, "0"
-            if _yr == current_year:
-                bs_total_commission += _amt
+
+            if _yr == selected_year:
                 monthly_commission_details[_mon].append({
-                    "salesperson": _cp.get("salesperson", ""),
-                    "salesperson_email": _cp.get("salesperson_email", ""),
-                    "period":      _cp.get("period", ""),
-                    "amount":      _amt,
-                    "paid_at":     _paid_at[:10],
+                    "project_number": _pc.get("project_number", ""),
+                    "project_id": _pcid,
+                    "salesperson": _pc.get("salesperson", ""),
+                    "salesperson_email": _pc.get("salesperson_email", ""),
+                    "commission_amount": _safe_float(_pc.get("commission_amount", 0)),
+                    "paid_date": _display_date,
                 })
-            if _yr == stat_card_year:
-                total_commission_paid += _amt
+
+    log.info(f"Commission Paid: Found {_paid_comm_count} paid commissions. All statuses: {_all_statuses}. monthly_commission_details[7]={len(monthly_commission_details.get('7', []))} items")
+
+    # Calculate annual commissions by month for the Annual Financial Summary table
+    annual_commissions = {i: 0.0 for i in range(1, 13)}
+    for month_str, commissions_list in monthly_commission_details.items():
+        try:
+            month_num = int(month_str)
+            if 1 <= month_num <= 12:
+                annual_commissions[month_num] = sum(_safe_float(c.get("commission_amount", 0)) for c in commissions_list)
+        except (ValueError, TypeError):
+            pass
 
     # Recalculate net profit now that total_salaries and commissions are known
     # Using total_collected (based on payment date) instead of total_paid (invoice date)
@@ -12205,9 +12904,45 @@ def financial():
 
     # Per-project commission log
     _raw_proj_comm = fb_get("/project_commissions") or {}
+
+    project_commissions = []
+    for k, v in _raw_proj_comm.items():
+        if not isinstance(v, dict):
+            continue
+
+        pc = dict(v, firebase_id=k)
+
+        # Use per-project deduction tracking (already calculated when deduction created)
+        pc["total_deducted"] = _safe_float(pc.get("total_deducted", 0))
+        pc["adjusted_amount"] = pc["total_deducted"]  # For backward compatibility
+        pc["deduction_status"] = pc.get("deduction_status", "not_covered")
+        pc["deductions_list"] = pc.get("deductions_list", [])
+
+        # If status is Paid but no paid_at date, set to today's date
+        if pc.get("status") == "Paid" and not pc.get("paid_at"):
+            pc["paid_at"] = today_date
+
+        # Build adjustment_numbers for display from deductions_list
+        adjustment_numbers = []
+        if isinstance(pc.get("deductions_list"), list):
+            for deduction in pc["deductions_list"]:
+                advance_no = deduction.get("advance_no", "")
+                if advance_no and advance_no not in adjustment_numbers:
+                    adjustment_numbers.append(advance_no)
+
+        pc["adjustment_numbers"] = ", ".join(adjustment_numbers) if adjustment_numbers else "—"
+
+        # Always recalculate remaining_due to ensure accuracy
+        commission_amount = _safe_float(pc.get("commission_amount", 0))
+        total_deducted = _safe_float(pc.get("total_deducted", 0))
+        pc["remaining_due"] = max(commission_amount - total_deducted, 0.0)
+
+        project_commissions.append(pc)
+
     project_commissions = sorted(
-        [dict(v, firebase_id=k) for k, v in _raw_proj_comm.items() if isinstance(v, dict)],
-        key=lambda x: x.get("updated_at", x.get("created_at", "")), reverse=True
+        project_commissions,
+        key=lambda x: (x.get("created_at", "0000-00-00"), x.get("project_number", "")),
+        reverse=True
     )
 
     invoiced_years = f"{prev_year} & {stat_card_year}"
@@ -12240,6 +12975,7 @@ def financial():
         chart_expenses=json.dumps(exp_data),
         annual_revenue=annual_revenue,
         annual_expenses=annual_expenses,
+        annual_commissions=annual_commissions,
         annual_netpl=annual_netpl,
         expenses=exp_list_for_tab,
         expenses_filtered=exp_list,
@@ -14545,9 +15281,22 @@ def commission_project_mark_paid(project_id):
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
         return jsonify({"ok": True, "action": "unpaid"})
+
+    # Accept optional paid_at date, otherwise use current time
+    paid_at = data.get("paid_at", "")
+    if paid_at and isinstance(paid_at, str) and len(paid_at.strip()) > 0:
+        # User provided a date (YYYY-MM-DD format), convert to ISO datetime at midnight UTC
+        try:
+            paid_date = datetime.strptime(paid_at.strip(), "%Y-%m-%d")
+            paid_at = paid_date.replace(tzinfo=timezone.utc).isoformat()
+        except ValueError:
+            paid_at = datetime.now(timezone.utc).isoformat()
+    else:
+        paid_at = datetime.now(timezone.utc).isoformat()
+
     fb_update(f"/project_commissions/{project_id}", {
         "status":     "Paid",
-        "paid_at":    datetime.now(timezone.utc).isoformat(),
+        "paid_at":    paid_at,
         "paid_by":    session.get("user_name", session.get("user_email", "")),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     })
@@ -17785,6 +18534,17 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
         rate_display = f"{sp_default_rate}% (default)"
 
     existing = fb_get(f"/project_commissions/{project_id}") or {}
+
+    # Recalculate deduction_status based on new commission_amount and existing deductions
+    total_deducted = _safe_float(existing.get("total_deducted", 0))
+    remaining_due = max(round(commission_amount, 2) - total_deducted, 0)
+    if remaining_due <= 0:
+        deduction_status = "fully_covered"
+    elif total_deducted > 0:
+        deduction_status = "partially_covered"
+    else:
+        deduction_status = "not_covered"
+
     fb_update(f"/project_commissions/{project_id}", {
         "project_id":                project_id,
         "project_number":            project_data.get("project_number", ""),
@@ -17801,6 +18561,12 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
         "paid_by":                   existing.get("paid_by", ""),
         "created_at":                existing.get("created_at", datetime.now(timezone.utc).isoformat()),
         "updated_at":                datetime.now(timezone.utc).isoformat(),
+        # Preserve deduction-related fields and recalculate status
+        "deductions":                existing.get("deductions", {}),
+        "total_deducted":            total_deducted,
+        "remaining_due":             remaining_due,
+        "deduction_status":          deduction_status,
+        "deductions_list":           existing.get("deductions_list", []),
     })
 
 

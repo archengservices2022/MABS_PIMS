@@ -316,7 +316,6 @@
             {% else %}
             <tr>
               <td colspan="10" class="empty-state">
-                <div class="empty-state-icon">??</div>
                 <div class="empty-state-title">No Salary Entries</div>
                 <p style="margin:0;">Click "Add Salary" tab to create entries.</p>
               </td>
@@ -457,8 +456,7 @@
             <button type="submit" class="btn-primary" id="submitAdvanceBtn" style="background:#0d9488;color:white;padding:8px 16px;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;gap:6px;">
               <i class="bi bi-check-circle"></i><span id="submitAdvanceBtnText">Save</span>
             </button>
-            <button type="reset" class="btn-secondary" onclick="resetAdvanceForm()" style="background:#e2e8f0;color:#0f172a;padding:8px 16px;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px;">Cancel</button>
-            <button type="button" id="clearAdvanceFormBtn" class="btn-secondary" style="display:none;background:#e2e8f0;color:#0f172a;padding:8px 16px;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px;" onclick="clearAdvanceForm()">✕ Clear</button>
+            <button type="reset" class="btn-secondary" onclick="clearAdvanceForm()" style="background:#e2e8f0;color:#0f172a;padding:8px 16px;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px;">Cancel</button>
           </div>
         </form>
       </div>
@@ -608,6 +606,10 @@ function formatMonthLabel(period) {
 
 function buildPeriodGroups() {
   const tbody      = document.getElementById('salaryTableBody');
+
+  // Clear all existing group headers before rebuilding
+  tbody.querySelectorAll('tr.year-group-header, tr.period-group-header').forEach(hdr => hdr.remove());
+
   const rows       = Array.from(tbody.querySelectorAll('tr[data-salary]'));
   const today      = localDate(new Date());
   const currentPer = today.slice(0, 7);   // YYYY-MM
@@ -772,7 +774,7 @@ function renderSalaryDeleteButtons() {
     const hasPermission = salaryDeletePerms.has(salaryId);
 
     if (hasPermission) {
-      el.innerHTML = `<button type="button" class="btn btn-xs btn-outline-danger" title="Delete" data-salary-id="${salaryId}"><i class="bi bi-trash"></i></button>`;
+      el.innerHTML = `<button type="button" class="btn btn-xs btn-outline-danger" title="Delete" data-salary-id="${salaryId}" data-salary-delete-btn="${salaryId}"><i class="bi bi-trash"></i></button>`;
       const btn = el.querySelector('button');
       if (btn) {
         btn.addEventListener('click', function(e) {
@@ -953,17 +955,19 @@ function addSalary(e) {
   const submitBtn = document.getElementById('submitBtn');
   if (submitBtn.disabled) return;
   submitBtn.disabled = true;
+  submitBtn.style.opacity = '0.6';
+  submitBtn.style.cursor = 'not-allowed';
 
   const employeeName = (document.getElementById('sal_employee').value || '').trim();
-  if (!employeeName) { alert('Please enter an employee name'); submitBtn.disabled = false; return; }
+  if (!employeeName) { alert('Please enter an employee name'); submitBtn.disabled = false; submitBtn.style.opacity = '1'; submitBtn.style.cursor = 'pointer'; return; }
 
   const dateVal = document.getElementById('sal_date').value;
   if (dateVal > TODAY_ISO) {
-    alert('Date cannot be a future date.'); submitBtn.disabled = false; return;
+    alert('Date cannot be a future date.'); submitBtn.disabled = false; submitBtn.style.opacity = '1'; submitBtn.style.cursor = 'pointer'; return;
   }
   const amountVal = parseFloat(document.getElementById('sal_amount').value);
   if (isNaN(amountVal) || amountVal < 0) {
-    alert('Amount cannot be negative.'); submitBtn.disabled = false; return;
+    alert('Amount cannot be negative.'); submitBtn.disabled = false; submitBtn.style.opacity = '1'; submitBtn.style.cursor = 'pointer'; return;
   }
 
   const salaryId = document.getElementById('salary_id').value;
@@ -983,59 +987,110 @@ function addSalary(e) {
   .then(r => r.json())
   .then(res => {
     if (res.success || res.salary_id || res.firebase_id) {
+      const isEditing = !!salaryId;
+      // Clear form and load salaries, then show modal
       document.getElementById('salaryForm').reset();
       document.getElementById('salary_id').value = '';
-      document.getElementById('submitBtnText').textContent = 'Add Salary Entry';
-      document.querySelectorAll('.payroll-tab-content').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.payroll-tab-button').forEach(b => b.classList.remove('active'));
-      document.getElementById('salaries').classList.add('active');
-      document.querySelector('button[onclick="switchTab(\'salaries\', event)"]').classList.add('active');
-      location.reload();
+      loadSalariesAndShowModal(isEditing);
     } else {
       alert('Error: ' + (res.error || 'Failed to save salary'));
       submitBtn.disabled = false;
+      submitBtn.style.opacity = '1';
+      submitBtn.style.cursor = 'pointer';
     }
   })
   .catch(err => {
     console.error('Error:', err);
     alert('Failed to save. Please try again.');
     submitBtn.disabled = false;
+    submitBtn.style.opacity = '1';
+    submitBtn.style.cursor = 'pointer';
   });
 }
 
 var currentSalaryDeleteId = null;
 
 function deleteSalary(id) {
+  // Prevent deletion if another deletion is in progress
+  if (isSalaryDeleting) return;
+
   currentSalaryDeleteId = (id || '').trim();
   console.log(`deleteSalary called with id="${currentSalaryDeleteId}", perms=${Array.from(salaryDeletePerms)}`);
-  document.getElementById('payrollSalaryDeleteText').value = '';
-  new bootstrap.Modal(document.getElementById('payrollDeleteSalaryModal')).show();
+  new bootstrap.Modal(document.getElementById('payrollDeleteSalaryConfirmModal')).show();
 }
 
-function confirmPayrollDeleteSalary() {
-  if (!currentSalaryDeleteId) return;
-  bootstrap.Modal.getInstance(document.getElementById('payrollDeleteSalaryModal')).hide();
+function performDeleteSalary() {
+  if (!currentSalaryDeleteId || isSalaryDeleting) return;
+
+  isSalaryDeleting = true;
+  // Disable all delete buttons while deletion is in progress
+  document.querySelectorAll('[data-salary-delete-btn]').forEach(btn => {
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+    btn.style.cursor = 'not-allowed';
+  });
+
+  bootstrap.Modal.getInstance(document.getElementById('payrollDeleteSalaryConfirmModal')).hide();
 
   fetch(`/api/payroll/salaries/${currentSalaryDeleteId}`, {method: 'DELETE'})
     .then(r => r.json())
     .then(res => {
       if (res.success) {
-        const modal = bootstrap.Modal.getInstance(document.getElementById('deleteRequestModal'));
-        if (modal) modal.hide();
-        sessionStorage.setItem('salaryDeleteSuccess', 'true');
+        sessionStorage.setItem('salaryDeleteSuccess', 'Deleted');
         location.reload();
       } else {
+        isSalaryDeleting = false;
+        // Re-enable delete buttons on error
+        document.querySelectorAll('[data-salary-delete-btn]').forEach(btn => {
+          if (salaryDeletePerms.has(btn.dataset.salaryDeleteBtn)) {
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            btn.style.cursor = 'pointer';
+          }
+        });
         alert('Error: ' + (res.error || 'Unknown error'));
       }
     })
     .catch(e => {
       console.error('Error:', e);
+      isSalaryDeleting = false;
+      // Re-enable delete buttons on error
+      document.querySelectorAll('[data-salary-delete-btn]').forEach(btn => {
+        if (salaryDeletePerms.has(btn.dataset.salaryDeleteBtn)) {
+          btn.disabled = false;
+          btn.style.opacity = '1';
+          btn.style.cursor = 'pointer';
+        }
+      });
       alert('Error deleting salary');
     });
 }
 
 // Real-time filter listeners
 document.addEventListener('DOMContentLoaded', () => {
+  // Check if there's a salary success message (after page reload)
+  const salarySuccessMsg = sessionStorage.getItem('salarySuccessMsg');
+  if (salarySuccessMsg) {
+    sessionStorage.removeItem('salarySuccessMsg');
+    document.getElementById('salarySuccessTitle').textContent = salarySuccessMsg;
+    document.getElementById('salarySuccessMsg').textContent = `Salary entry has been successfully ${salarySuccessMsg.toLowerCase().includes('updated') ? 'updated' : 'added'}.`;
+    new bootstrap.Modal(document.getElementById('payrollSalarySuccessModal')).show();
+  }
+
+  // Check if there's a salary delete success message (after page reload)
+  const salaryDeleteSuccess = sessionStorage.getItem('salaryDeleteSuccess');
+  if (salaryDeleteSuccess) {
+    sessionStorage.removeItem('salaryDeleteSuccess');
+    // Refresh permissions to ensure all salaries have correct delete buttons
+    refreshSalaryDeletePerms();
+    // Show delete success modal after a brief delay to ensure UI is updated
+    setTimeout(() => {
+      document.getElementById('salarySuccessTitle').textContent = 'Deleted';
+      document.getElementById('salarySuccessMsg').textContent = 'Salary entry has been successfully deleted.';
+      new bootstrap.Modal(document.getElementById('payrollSalarySuccessModal')).show();
+    }, 300);
+  }
+
   document.getElementById('sal_date').setAttribute('max', TODAY_ISO);
   initEmployeeAutocomplete();
   document.getElementById('searchEmployee').addEventListener('input', applySalaryFilters);
@@ -1138,6 +1193,8 @@ let allEmployees = [];
 let allAdvances = {{ advances|safe }};
 let advanceDeletePerms = new Set({{ advance_delete_perms|tojson|safe }});
 let salaryDeletePerms = new Set({{ salary_delete_perms|tojson|safe }});
+let isProcessingAdvanceEdit = false;
+let isSalaryDeleting = false;
 
 // Refresh delete permissions from server
 async function refreshAdvanceDeletePerms() {
@@ -1173,29 +1230,63 @@ function initializeAdvanceTab() {
 
   // Check if there's advance data to edit
   const editDataStr = sessionStorage.getItem('editAdvanceData');
-  if (editDataStr) {
+  if (editDataStr && !isProcessingAdvanceEdit) {
+    isProcessingAdvanceEdit = true;
     const editData = JSON.parse(editDataStr);
     sessionStorage.removeItem('editAdvanceData');
 
     // Set advance_id to indicate editing mode FIRST
-    document.getElementById('advance_id').value = editData.advance_id;
+    const advIdField = document.getElementById('advance_id');
+    if (advIdField) advIdField.value = editData.advance_id;
 
-    // Autofill the form with advance data
-    document.getElementById('adv_no').value = editData.advance_no;
-    document.getElementById('adv_amount').value = editData.amount;
-    document.getElementById('adv_date').value = editData.date;
-    document.getElementById('adv_reason').value = editData.reason || '';
+    // Autofill the form with advance data (with safety checks)
+    const advNoField = document.getElementById('adv_no');
+    if (advNoField) {
+      advNoField.value = editData.advance_no;
+      // Force readonly value update
+      advNoField.setAttribute('value', editData.advance_no);
+    }
+
+    const amountField = document.getElementById('adv_amount');
+    if (amountField) amountField.value = editData.amount;
+
+    const dateField = document.getElementById('adv_date');
+    if (dateField) dateField.value = editData.date;
+
+    const reasonField = document.getElementById('adv_reason');
+    if (reasonField) reasonField.value = editData.reason || '';
+
+    const paymentField = document.getElementById('adv_payment_method');
+    if (paymentField) paymentField.value = editData.payment_method || 'Cash';
+
+    const statusField = document.getElementById('adv_status');
+    if (statusField) statusField.value = editData.status || 'Open';
 
     // Set employee dropdown - need to wait for employees to load
+    const employeeName = editData.employee_name;
     loadEmployees(() => {
       setTimeout(() => {
         const employeeSelect = document.getElementById('adv_employee');
-        // Find option matching the employee name
-        const options = employeeSelect.querySelectorAll('option');
-        for (let opt of options) {
-          if (opt.value === editData.employee_name || opt.textContent === editData.employee_name) {
-            employeeSelect.value = opt.value;
-            break;
+        if (employeeSelect) {
+          // Find option matching the employee name
+          const options = employeeSelect.querySelectorAll('option');
+          let found = false;
+          for (let opt of options) {
+            if (opt.value === employeeName || opt.textContent === employeeName) {
+              employeeSelect.value = opt.value;
+              found = true;
+              break;
+            }
+          }
+          // If not found with exact match, try trimmed comparison
+          if (!found) {
+            for (let opt of options) {
+              if ((opt.value || '').trim() === (employeeName || '').trim() ||
+                  (opt.textContent || '').trim() === (employeeName || '').trim()) {
+                employeeSelect.value = opt.value;
+                break;
+              }
+            }
           }
         }
       }, 100);
@@ -1213,7 +1304,7 @@ function initializeAdvanceTab() {
 
     // Refresh table with embedded data (don't fetch to avoid overwriting with empty data)
     refreshAdvanceTable();
-  } else {
+  } else if (!isProcessingAdvanceEdit) {
     // Set initial advance number
     if (allAdvances.length > 0) {
       document.getElementById('adv_no').value = generateAdvanceNo();
@@ -1223,14 +1314,14 @@ function initializeAdvanceTab() {
 
     loadEmployees();
 
-    // Fetch permissions first, then display table immediately
+    // Show table immediately with existing data from template
+    refreshAdvanceTable();
+
+    // Then fetch permissions and fresh data from server
     (async () => {
       await refreshAdvanceDeletePerms();
-      // Now table will render with correct permissions
+      loadAdvances();
     })();
-
-    // Load fresh data from server
-    loadAdvances();
   }
 }
 
@@ -1284,7 +1375,7 @@ function loadEmployees(callback) {
         option.textContent = emp;
         select.appendChild(option);
       });
-      // Call callback if provided
+      // Call callback if provided (even if currently editing)
       if (callback) callback();
     })
     .catch(e => console.error('Error loading employees:', e));
@@ -1302,7 +1393,10 @@ function generateAdvanceNo() {
 function clearAdvanceForm() {
   document.getElementById('advanceForm').reset();
   document.getElementById('advance_id').value = '';
-  document.getElementById('adv_no').value = generateAdvanceNo();
+
+  // Generate and set advance number
+  setAdvanceNumber();
+
   const today = new Date();
   const mm = String(today.getMonth() + 1).padStart(2, '0');
   const dd = String(today.getDate()).padStart(2, '0');
@@ -1311,11 +1405,38 @@ function clearAdvanceForm() {
   document.getElementById('adv_employee').value = '';
   document.getElementById('adv_status').value = 'Open';
   document.getElementById('submitAdvanceBtnText').textContent = 'Save Advance';
-  document.getElementById('clearAdvanceFormBtn').style.display = 'none';
+
+  // Re-enable the submit button
+  const submitBtn = document.querySelector('#advanceForm button[type="submit"]');
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.style.opacity = '1';
+    submitBtn.style.cursor = 'pointer';
+  }
+
+  // Reset button styling to default (Save state, not Update state)
+  const submitBtnElement = document.getElementById('submitAdvanceBtn');
+  if (submitBtnElement) {
+    submitBtnElement.style.background = '#10b981'; // Green for add/save
+  }
 }
 
-function editAdvanceEntry(idx) {
-  const adv = allAdvances[idx];
+function setAdvanceNumber() {
+  const nextAdvNo = generateAdvanceNo();
+  const advNoField = document.getElementById('adv_no');
+  if (advNoField) {
+    advNoField.value = nextAdvNo;
+    advNoField.setAttribute('value', nextAdvNo);
+  }
+}
+
+function editAdvanceEntry(advanceId) {
+  // Find the advance by ID, not by index
+  const adv = allAdvances.find(a => a.id === advanceId);
+  if (!adv) {
+    console.error('Advance not found:', advanceId);
+    return;
+  }
 
   // Store the advance ID for editing
   document.getElementById('advance_id').value = adv.id || '';
@@ -1337,7 +1458,6 @@ function editAdvanceEntry(idx) {
 
   // Update button text
   document.getElementById('submitAdvanceBtnText').textContent = 'Update Advance';
-  document.getElementById('clearAdvanceFormBtn').style.display = 'inline-block';
 
   // Scroll to top of page first
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1352,6 +1472,14 @@ function addAdvance(event) {
   event.preventDefault();
 
   const isEditing = document.getElementById('advance_id').value !== '';
+
+  // Disable submit button to prevent double submission
+  const submitBtn = document.querySelector('#advanceForm button[type="submit"]');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.style.opacity = '0.6';
+    submitBtn.style.cursor = 'not-allowed';
+  }
 
   // Date is already in YYYY-MM-DD format from type=date input
   const dateValue = document.getElementById('adv_date').value;
@@ -1369,6 +1497,12 @@ function addAdvance(event) {
 
   if (!advance.employee_name || !advance.amount) {
     alert('Please fill in all required fields');
+    // Re-enable button on error
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.style.opacity = '1';
+      submitBtn.style.cursor = 'pointer';
+    }
     return;
   }
 
@@ -1386,16 +1520,31 @@ function addAdvance(event) {
   .then(r => r.json())
   .then(data => {
     if (data.success) {
-      alert(isEditing ? 'Advance updated successfully!' : 'Advance saved successfully!');
+      const advanceNo = advance.advance_no;
       clearAdvanceForm();
-      loadAdvances();
+      // Load advances first, then show success modal
+      loadAdvancesAndShowModal(advanceNo, isEditing);
     } else {
       alert('Error: ' + (data.error || 'Unknown error'));
+      // Re-enable button on error
+      const submitBtn = document.querySelector('#advanceForm button[type="submit"]');
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.style.opacity = '1';
+        submitBtn.style.cursor = 'pointer';
+      }
     }
   })
   .catch(e => {
     console.error('Error:', e);
     alert('Error saving advance');
+    // Re-enable button on error
+    const submitBtn = document.querySelector('#advanceForm button[type="submit"]');
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.style.opacity = '1';
+      submitBtn.style.cursor = 'pointer';
+    }
   });
 }
 
@@ -1422,6 +1571,37 @@ function loadAdvances() {
       }
     })
     .catch(e => console.error('Error loading advances:', e));
+}
+
+function loadAdvancesAndShowModal(advanceNo, isEditing) {
+  // Load employees first
+  loadEmployees();
+
+  // Add cache-busting query parameter to ensure fresh data
+  const timestamp = new Date().getTime();
+  fetch(`{{ url_for("get_employee_advances") }}?t=${timestamp}`)
+    .then(r => r.json())
+    .then(data => {
+      allAdvances = data.advances || [];
+      refreshAdvanceDeletePerms();
+      refreshAdvanceTable();
+
+      // Update the advance number in the form to the next one (now that we have fresh data)
+      setAdvanceNumber();
+
+      // Now show the success modal after UI updates
+      document.getElementById('advanceSuccessTitle').textContent = isEditing ? 'Advance Updated' : 'Advance Added';
+      document.getElementById('advanceSuccessMsg').textContent = `Advance ${advanceNo} has been successfully ${isEditing ? 'updated' : 'added'}.`;
+      new bootstrap.Modal(document.getElementById('payrollAdvanceSuccessModal')).show();
+    })
+    .catch(e => console.error('Error loading advances:', e));
+}
+
+function loadSalariesAndShowModal(isEditing) {
+  // Store success message and reload page to fetch fresh data
+  const message = isEditing ? 'Salary Updated' : 'Salary Added';
+  sessionStorage.setItem('salarySuccessMsg', message);
+  location.reload();
 }
 
 function getUpdatedEmployeeName(storedName) {
@@ -1505,7 +1685,7 @@ function refreshAdvanceTable() {
         <td onclick="event.stopPropagation()">
           <div class="d-flex gap-1" style="justify-content:center;">
             <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit"
-              onclick="editAdvanceEntry(${idx})"><i class="bi bi-pencil"></i></button>
+              onclick="editAdvanceEntry('${advanceId}')"><i class="bi bi-pencil"></i></button>
             ${advanceDeletePerms.has(adv.advance_no) ?
               `<button type="button" class="btn btn-xs btn-outline-danger" title="Delete" onclick="deleteAdvance('${adv.advance_no || ''}')"><i class="bi bi-trash"></i></button>` :
               `<button type="button" class="btn btn-xs btn-outline-warning" title="Request Delete" onclick="openDeleteRequestModal('advance','${adv.advance_no || ''}','Advance: ${adv.advance_no || ''}')"><i class="bi bi-send"></i></button>`
@@ -1595,6 +1775,12 @@ function filterAdvanceTable() {
     row.parentNode.appendChild(row);
   });
 
+  // Move totals row to the end (after all data rows)
+  const totalsRowElement = tbody.querySelector('tr.totals-row');
+  if (totalsRowElement) {
+    tbody.appendChild(totalsRowElement);
+  }
+
   // Show or hide "no results" message
   if (visibleCount === 0 && allAdvances.length > 0) {
     const noResults = tbody.querySelector('.no-results');
@@ -1664,13 +1850,13 @@ var currentPayrollAdvanceNo = null;
 
 function deleteAdvance(advanceNo) {
   currentPayrollAdvanceNo = advanceNo;
-  document.getElementById('payrollAdvanceDeleteText').value = '';
-  new bootstrap.Modal(document.getElementById('payrollDeleteAdvanceModal')).show();
+  document.getElementById('deleteAdvanceConfirmMsg').textContent = `Are you sure you want to delete advance ${advanceNo}? This action cannot be undone.`;
+  new bootstrap.Modal(document.getElementById('payrollDeleteAdvanceConfirmModal')).show();
 }
 
-function confirmPayrollDeleteAdvance() {
+function performDeleteAdvance() {
   if (!currentPayrollAdvanceNo) return;
-  bootstrap.Modal.getInstance(document.getElementById('payrollDeleteAdvanceModal')).hide();
+  bootstrap.Modal.getInstance(document.getElementById('payrollDeleteAdvanceConfirmModal')).hide();
 
   fetch('{{ url_for("delete_employee_advance") }}', {
     method: 'POST',
@@ -1680,9 +1866,7 @@ function confirmPayrollDeleteAdvance() {
   .then(r => r.json())
   .then(data => {
     if (data.success) {
-      alert('Advance deleted successfully!');
-      loadAdvances();
-      refreshAdvanceDeletePerms();
+      location.reload();
     } else {
       alert('Error: ' + (data.error || 'Unknown error'));
     }
@@ -1807,6 +1991,96 @@ document.addEventListener('DOMContentLoaded', function() {
         <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button id="payrollSalaryDeleteBtn" class="btn btn-sm btn-danger" onclick="confirmPayrollDeleteSalary()" style="opacity: 0.5;" disabled>
           <i class="bi bi-trash me-1"></i>Delete Salary
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Success Modal: Advance Added/Updated -->
+<div class="modal fade" id="payrollAdvanceSuccessModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="border-top: 4px solid #10b981;">
+      <div class="modal-header py-3" style="background-color: #f0fdf4; border-bottom: 1px solid #d1fae5;">
+        <h6 class="modal-title" style="color: #059669;">
+          <i class="bi bi-check-circle me-2"></i><span id="advanceSuccessTitle">Advance Added</span>
+        </h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-4" style="color: #475569;">
+        <p id="advanceSuccessMsg">Employee advance has been successfully added.</p>
+      </div>
+      <div class="modal-footer py-3">
+        <button class="btn btn-sm btn-success" data-bs-dismiss="modal">
+          <i class="bi bi-check me-1"></i>OK
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Success Modal: Salary Added/Updated -->
+<div class="modal fade" id="payrollSalarySuccessModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="border-top: 4px solid #10b981;">
+      <div class="modal-header py-3" style="background-color: #f0fdf4; border-bottom: 1px solid #d1fae5;">
+        <h6 class="modal-title" style="color: #059669;">
+          <i class="bi bi-check-circle me-2"></i><span id="salarySuccessTitle">Salary Added</span>
+        </h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-4" style="color: #475569;">
+        <p id="salarySuccessMsg">Salary entry has been successfully added.</p>
+      </div>
+      <div class="modal-footer py-3">
+        <button class="btn btn-sm btn-success" data-bs-dismiss="modal">
+          <i class="bi bi-check me-1"></i>OK
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirmation Modal: Delete Advance Confirm -->
+<div class="modal fade" id="payrollDeleteAdvanceConfirmModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="border-top: 4px solid #ef4444;">
+      <div class="modal-header py-3" style="background-color: #fef2f2; border-bottom: 1px solid #fee2e2;">
+        <h6 class="modal-title" style="color: #dc2626;">
+          <i class="bi bi-trash me-2"></i>Delete Advance
+        </h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-4" style="color: #475569;">
+        <p id="deleteAdvanceConfirmMsg">Are you sure you want to delete this advance? This action cannot be undone.</p>
+      </div>
+      <div class="modal-footer py-3">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-danger" id="confirmDeleteAdvanceBtn" onclick="performDeleteAdvance()">
+          <i class="bi bi-trash me-1"></i>Delete
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirmation Modal: Delete Salary Confirm -->
+<div class="modal fade" id="payrollDeleteSalaryConfirmModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="border-top: 4px solid #ef4444;">
+      <div class="modal-header py-3" style="background-color: #fef2f2; border-bottom: 1px solid #fee2e2;">
+        <h6 class="modal-title" style="color: #dc2626;">
+          <i class="bi bi-trash me-2"></i>Delete Salary
+        </h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-4" style="color: #475569;">
+        <p>Are you sure you want to delete this salary entry? This action cannot be undone.</p>
+      </div>
+      <div class="modal-footer py-3">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-danger" id="confirmDeleteSalaryBtn" onclick="performDeleteSalary()">
+          <i class="bi bi-trash me-1"></i>Delete
         </button>
       </div>
     </div>
