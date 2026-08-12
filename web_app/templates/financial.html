@@ -940,14 +940,15 @@ a[href*="filter_expense"]:hover {
     {% endif %}
 
     <!-- Pagination Controls - Bottom -->
-    <div class="d-flex align-items-center justify-content-between mt-3 pt-3 border-top" id="expensePagerWrap">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px;padding-top:12px;border-top:1px solid #e5e7eb;" id="expensePagerWrap">
       <span id="expenseCountInfo" style="font-size:12px;color:#6b7280;"></span>
-      <div class="d-flex align-items-center justify-content-center gap-2">
-        <button type="button" id="expensePrevBtn" onclick="prevExpensePage()" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;color:#374151;">&#8249;</button>
-        <input type="number" id="expenseGoToPage" min="1" max="1" style="width:50px;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;text-align:center;font-size:13px;" placeholder="Page" />
-        <span id="expensePageInfo" style="font-size:13px;color:#6b7280;min-width:50px;text-align:center;">of 1</span>
-        <button type="button" id="expenseNextBtn" onclick="nextExpensePage()" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;color:#374151;">&#8250;</button>
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px;">
+        <button type="button" id="expensePrevBtn" onclick="prevExpensePage()" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:14px;color:#6b7280;">&#8249;</button>
+        <input type="number" id="expenseGoToPage" min="1" max="1" style="width:45px;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;text-align:center;font-size:12px;font-weight:500;" placeholder="Page" />
+        <span id="expensePageInfo" style="font-size:12px;color:#6b7280;">of 1</span>
+        <button type="button" id="expenseNextBtn" onclick="nextExpensePage()" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:14px;color:#6b7280;">&#8250;</button>
       </div>
+      <div id="expensePageNumbers" style="display:flex;align-items:center;justify-content:flex-end;gap:4px;flex-wrap:wrap;"></div>
     </div>
   </div>
 </div><!-- /tab-expenses -->
@@ -1474,6 +1475,63 @@ function renderExpenseTable() {
   if (goToPageInput) {
     goToPageInput.value = expenseCurrentPage;
     goToPageInput.max = tp;
+  }
+
+  // Generate numbered page buttons
+  const pageNumbersDiv = document.getElementById('expensePageNumbers');
+  if (pageNumbersDiv) {
+    pageNumbersDiv.innerHTML = '';
+
+    // Show page numbers (max 10 visible at once for readability)
+    const maxVisiblePages = 10;
+    let startPage = Math.max(1, expenseCurrentPage - Math.floor(maxVisiblePages / 2));
+    let endPage = Math.min(tp, startPage + maxVisiblePages - 1);
+
+    // Adjust startPage if we're near the end
+    if (endPage - startPage + 1 < maxVisiblePages) {
+      startPage = Math.max(1, endPage - maxVisiblePages + 1);
+    }
+
+    // Add ellipsis at start if needed
+    if (startPage > 1) {
+      const ellipsis = document.createElement('span');
+      ellipsis.textContent = '...';
+      ellipsis.style.cssText = 'color:#9ca3af;padding:0 4px;font-size:12px;';
+      pageNumbersDiv.appendChild(ellipsis);
+    }
+
+    // Add page number buttons
+    for (let i = startPage; i <= endPage; i++) {
+      const btn = document.createElement('button');
+      btn.textContent = i;
+      btn.type = 'button';
+      btn.onclick = () => goToExpensePage(i);
+
+      const isCurrentPage = i === expenseCurrentPage;
+      btn.style.cssText = `
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        width:28px;
+        height:28px;
+        border:1px solid ${isCurrentPage ? '#2563eb' : '#d1d5db'};
+        background:${isCurrentPage ? '#2563eb' : '#fff'};
+        color:${isCurrentPage ? '#fff' : '#6b7280'};
+        border-radius:4px;
+        cursor:pointer;
+        font-size:12px;
+        font-weight:${isCurrentPage ? '600' : '500'};
+      `;
+      pageNumbersDiv.appendChild(btn);
+    }
+
+    // Add ellipsis at end if needed
+    if (endPage < tp) {
+      const ellipsis = document.createElement('span');
+      ellipsis.textContent = '...';
+      ellipsis.style.cssText = 'color:#9ca3af;padding:0 4px;font-size:12px;';
+      pageNumbersDiv.appendChild(ellipsis);
+    }
   }
 
   const prevBtn = document.getElementById('expensePrevBtn');
