@@ -1330,26 +1330,31 @@ function getVisibleExpenseRows() {
     return matchSearch && matchType && matchVendor && matchFrom && matchTo;
   });
 
-  // Sort by date in ascending order (oldest to newest)
+  // Sort by created_at in descending order (newest first)
   filteredRows.sort((a, b) => {
-    let dateA = (a.dataset.date || '').trim();
-    let dateB = (b.dataset.date || '').trim();
+    let dateA = (a.dataset.createdAt || a.dataset.date || '').trim();
+    let dateB = (b.dataset.createdAt || b.dataset.date || '').trim();
 
-    // Convert DD-MM-YYYY to YYYY-MM-DD for proper chronological sorting
-    if (dateA && !dateA.match(/^\d{4}-\d{2}-\d{2}/)) {
-      const partsA = dateA.split('-');
-      if (partsA.length === 3) {
-        dateA = `${partsA[2]}-${partsA[0]}-${partsA[1]}`;
+    // Parse dates for comparison
+    const parseDate = function(dateStr) {
+      if (!dateStr) return new Date(0);
+      // Try ISO format first (YYYY-MM-DDTHH:MM:SS)
+      if (dateStr.includes('T')) {
+        return new Date(dateStr);
       }
-    }
-    if (dateB && !dateB.match(/^\d{4}-\d{2}-\d{2}/)) {
-      const partsB = dateB.split('-');
-      if (partsB.length === 3) {
-        dateB = `${partsB[2]}-${partsB[0]}-${partsB[1]}`;
+      // Try ISO date format (YYYY-MM-DD)
+      if (dateStr.match(/^\d{4}-\d{2}-\d{2}/)) {
+        return new Date(dateStr + 'T00:00:00Z');
       }
-    }
+      // Try MM-DD-YYYY format
+      const parts = dateStr.split('-');
+      if (parts.length === 3 && parts[2].length === 4) {
+        return new Date(parts[2], parts[0] - 1, parts[1]);
+      }
+      return new Date(0);
+    };
 
-    return dateA.localeCompare(dateB);
+    return parseDate(dateB) - parseDate(dateA); // Descending (newest first)
   });
 
   return filteredRows;
