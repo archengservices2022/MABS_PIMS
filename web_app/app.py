@@ -2694,7 +2694,7 @@ def quote_detail(quote_id):
                            ai_enabled=bool(_get_ai_client()),
                            user_has_delete_perm=_has_q_del_perm)
 
-@app.route("/quotes/<quote_id>/followup-done", methods=["POST"])
+@app.route("/quotes/<quote_id>/followup-done", methods=["GET", "POST"])
 @role_required("quotes")
 def quote_followup_done(quote_id):
     fb_update(f"/job_forms/{quote_id}", {
@@ -2704,7 +2704,7 @@ def quote_followup_done(quote_id):
     flash("Follow-up marked as done.", "success")
     return redirect(url_for("quotes", tab="followups"))
 
-@app.route("/quotes/<quote_id>/followup-snooze", methods=["POST"])
+@app.route("/quotes/<quote_id>/followup-snooze", methods=["GET", "POST"])
 @role_required("quotes")
 def quote_followup_snooze(quote_id):
     from datetime import timedelta
