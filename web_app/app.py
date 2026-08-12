@@ -15361,7 +15361,8 @@ def commission_project_mark_paid(project_id):
                 "vendor": "Sales Commission",
                 "project_number": pc.get("project_number", ""),
                 "date": paid_at[:10],
-                "created_at": paid_at,
+                "paid_at": paid_at,  # Store the actual payment date
+                "created_at": datetime.now(timezone.utc).isoformat(),  # Entry creation time (now) - for sorting newest at top
                 "description": f"Commission - {pc.get('salesperson', 'Unknown')}",
                 "is_commission": True,
                 "project_id": project_id,
