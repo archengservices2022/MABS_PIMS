@@ -15296,6 +15296,10 @@ def commission_project_mark_paid(project_id):
         return jsonify({"error": "Admin access required"}), 403
     data   = request.get_json() or {}
     action = str(data.get("action", "pay")).strip()
+
+    # Get current commission data
+    pc = fb_get(f"/project_commissions/{project_id}") or {}
+
     if action == "unpay":
         fb_update(f"/project_commissions/{project_id}", {
             "status":     "Pending",
@@ -15303,6 +15307,12 @@ def commission_project_mark_paid(project_id):
             "paid_by":    "",
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
+        # Also remove from balance_sheet_expenses if it exists there
+        existing_expenses = fb_get("/balance_sheet_expenses") or {}
+        for eid, edata in existing_expenses.items():
+            if (edata.get("is_commission") and
+                edata.get("project_id") == project_id):
+                fb_delete(f"/balance_sheet_expenses/{eid}")
         return jsonify({"ok": True, "action": "unpaid"})
 
     # Accept optional paid_at date, otherwise use current time
@@ -15317,12 +15327,56 @@ def commission_project_mark_paid(project_id):
     else:
         paid_at = datetime.now(timezone.utc).isoformat()
 
+    paid_by = session.get("user_name", session.get("user_email", ""))
+
+    # Update project_commission
     fb_update(f"/project_commissions/{project_id}", {
         "status":     "Paid",
         "paid_at":    paid_at,
-        "paid_by":    session.get("user_name", session.get("user_email", "")),
+        "paid_by":    paid_by,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     })
+
+    # Also save as expense entry in balance_sheet_expenses
+    if pc and pc.get("commission_amount"):
+        commission_amount = _safe_float(pc.get("commission_amount", 0))
+        if commission_amount > 0:
+            # Check if expense entry already exists for this commission
+            existing_expenses = fb_get("/balance_sheet_expenses") or {}
+            expense_id = None
+            for eid, edata in existing_expenses.items():
+                if (edata.get("is_commission") and
+                    edata.get("project_id") == project_id):
+                    expense_id = eid
+                    break
+
+            expense_data = {
+                "expense_type": "Commission",
+                "expense_name": f"{pc.get('salesperson', 'Unknown')}_Commission",
+                "category": "Sales Commission",
+                "amount": commission_amount,
+                "vendor": "Sales Commission",
+                "project_number": pc.get("project_number", ""),
+                "date": paid_at[:10],
+                "created_at": paid_at,
+                "description": f"Commission - {pc.get('salesperson', 'Unknown')}",
+                "is_commission": True,
+                "project_id": project_id,
+                "salesperson": pc.get("salesperson", ""),
+                "created_by": paid_by,
+                "submitted_by_name": paid_by.split("@")[0].replace(".", " ").title() if "@" in paid_by else (paid_by or "System"),
+                "commission_rate": pc.get("commission_rate", ""),
+                "status": "Paid",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+            if expense_id:
+                # Update existing expense
+                fb_update(f"/balance_sheet_expenses/{expense_id}", expense_data)
+            else:
+                # Create new expense entry
+                fb_push("/balance_sheet_expenses", expense_data)
+
     return jsonify({"ok": True, "action": "paid"})
 
 
