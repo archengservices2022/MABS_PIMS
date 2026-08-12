@@ -3862,26 +3862,28 @@ function viewReceipt(expId) {
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Earned</div>
         <div style="font-size:1.6rem;font-weight:800;color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_earned) }}</div>
-        <div class="text-muted" style="font-size:11px;">all commissions</div>
+        <div style="font-size:12px;color:#0f172a;font-weight:600;margin-top:4px;">All Commissions</div>
       </div>
     </div>
     <div class="col-6 col-md-3">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Adjusted</div>
         <div style="font-size:1.6rem;font-weight:800;color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(0) }}</div>
-        <div class="text-muted" style="font-size:11px;">advance deductions</div>
+        <div style="font-size:12px;color:#0f172a;font-weight:600;margin-top:4px;">Advance Deductions</div>
       </div>
     </div>
     <div class="col-6 col-md-3">
       <div class="card-panel text-center">
-        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Commission Paid</div>
+        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Paid</div>
         <div style="font-size:1.6rem;font-weight:800;color:#059669;">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_paid) }}</div>
+        <div style="font-size:12px;color:#0f172a;font-weight:600;margin-top:4px;">Commission Paid</div>
       </div>
     </div>
     <div class="col-6 col-md-3">
       <div class="card-panel text-center">
-        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Pending Commission</div>
+        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Outstanding</div>
         <div style="font-size:1.6rem;font-weight:800;color:{{ '#DC2626' if commission_total_outstanding > 0 else '#16a34a' }};">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_outstanding) }}</div>
+        <div style="font-size:12px;color:#0f172a;font-weight:600;margin-top:4px;">Pending Commission</div>
       </div>
     </div>
   </div>
