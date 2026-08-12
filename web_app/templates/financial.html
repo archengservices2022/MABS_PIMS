@@ -4160,7 +4160,8 @@ function viewReceipt(expId) {
               {% if pc.get('status') == 'Paid' %}
               <span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>
               {% if pc.get('paid_at') %}
-              <div class="text-muted" style="font-size:10px;">{{ pc.get('paid_at','')[:10] }}</div>
+              {% set paid_date = pc.get('paid_at','')[:10] %}
+              <div class="text-muted" style="font-size:10px;">{{ paid_date[5:7] }}-{{ paid_date[8:10] }}-{{ paid_date[0:4] }}</div>
               {% endif %}
               {% else %}
               <span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>
