@@ -1468,8 +1468,11 @@ function renderExpenseTable() {
   }
 
   const tp = totalPages || 1;
-  document.getElementById('expensePageInfo').textContent = `of ${tp}`;
-  document.getElementById('expenseCountInfo').textContent = `${currentPageRows.length} / ${expenseFilteredRows.length} expenses`;
+  const pageInfo = document.getElementById('expensePageInfo');
+  if (pageInfo) pageInfo.textContent = `of ${tp}`;
+
+  const countInfo = document.getElementById('expenseCountInfo');
+  if (countInfo) countInfo.textContent = `${currentPageRows.length} / ${expenseFilteredRows.length} expenses`;
 
   // Update go-to-page input
   const goToPageInput = document.getElementById('expenseGoToPage');
@@ -1480,8 +1483,10 @@ function renderExpenseTable() {
 
   // Generate smart pagination: 1 ... current±2 ... last
   const pageNumbersDiv = document.getElementById('expensePageNumbers');
+  console.log('DEBUG: pageNumbersDiv found:', !!pageNumbersDiv, 'tp:', tp, 'expenseFilteredRows.length:', expenseFilteredRows.length);
   if (pageNumbersDiv) {
     pageNumbersDiv.innerHTML = '';
+    console.log('DEBUG: Generating pagination buttons for', tp, 'pages');
 
     const createPageButton = (page) => {
       const btn = document.createElement('button');
@@ -1521,6 +1526,7 @@ function renderExpenseTable() {
 
       btn.onclick = () => goToExpensePage(page);
       pageNumbersDiv.appendChild(btn);
+      console.log('DEBUG: Created button for page', page);
     };
 
     const createEllipsis = () => {
@@ -1579,17 +1585,27 @@ function renderExpenseTable() {
       // Always show last page
       createPageButton(tp);
     }
+    console.log('DEBUG: Pagination rendering complete. pageNumbersDiv children:', pageNumbersDiv.children.length);
+  } else {
+    console.log('DEBUG: pageNumbersDiv not found!');
   }
 
   const prevBtn = document.getElementById('expensePrevBtn');
   const nextBtn = document.getElementById('expenseNextBtn');
   const wrap    = document.getElementById('expensePagerWrap');
-  prevBtn.disabled = expenseCurrentPage <= 1;
-  nextBtn.disabled = expenseCurrentPage >= tp;
-  prevBtn.style.opacity = expenseCurrentPage <= 1 ? '0.4' : '1';
-  prevBtn.style.cursor  = expenseCurrentPage <= 1 ? 'default' : 'pointer';
-  nextBtn.style.opacity = expenseCurrentPage >= tp ? '0.4' : '1';
-  nextBtn.style.cursor  = expenseCurrentPage >= tp ? 'default' : 'pointer';
+
+  if (prevBtn) {
+    prevBtn.disabled = expenseCurrentPage <= 1;
+    prevBtn.style.opacity = expenseCurrentPage <= 1 ? '0.4' : '1';
+    prevBtn.style.cursor  = expenseCurrentPage <= 1 ? 'default' : 'pointer';
+  }
+
+  if (nextBtn) {
+    nextBtn.disabled = expenseCurrentPage >= tp;
+    nextBtn.style.opacity = expenseCurrentPage >= tp ? '0.4' : '1';
+    nextBtn.style.cursor  = expenseCurrentPage >= tp ? 'default' : 'pointer';
+  }
+
   if (wrap) wrap.style.display = (tp <= 1 && expenseFilteredRows.length <= expensePerPage) ? 'none' : 'flex';
 
   // Update summary cards when filters are applied
