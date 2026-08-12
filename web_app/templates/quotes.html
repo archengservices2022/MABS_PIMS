@@ -591,7 +591,7 @@
         {% endfor %}
         {% for sp in valid_salespeople %}
         {% set sp_commissions = project_commissions | selectattr('salesperson', 'equalto', sp.name) | list %}
-        '{{ sp.name }}': [
+        '{{ sp.name | trim }}': [
           {% for pc in sp_commissions %}
           {
             project_number: {{ pc.get('project_number','—')|tojson }},
@@ -607,6 +607,10 @@
         ]{% if not loop.last %},{% endif %}
         {% endfor %}
       };
+      console.log('CommissionData keys available:', Object.keys(commissionData));
+      for (let key in commissionData) {
+        console.log(`  ${key}: ${commissionData[key].length} projects`);
+      }
 
       function toggleCommissionDetails(employeeNameSanitized) {
         const container = document.getElementById('commissionDetailsContainer');
