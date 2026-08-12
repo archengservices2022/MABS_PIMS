@@ -18011,7 +18011,7 @@ def _load_sales_people() -> List[dict]:
         role = normalize_role(u.get("role", ""))
         if role not in ("sales", "admin"):
             continue
-        name = (u.get("username") or "").strip()
+        name = (u.get("username") or "").strip().replace("_", " ")
         if not name:
             continue
         people.append({
