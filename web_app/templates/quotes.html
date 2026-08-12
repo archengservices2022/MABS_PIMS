@@ -637,8 +637,8 @@
           html += '<tr>';
           html += '<th>Project</th>';
           html += '<th>Client</th>';
-          html += '<th class="text-end" style="color:#7C3AED;">Commission</th>';
-          html += '<th class="text-end" style="color:#16A34A;">Adjusted</th>';
+          html += '<th class="text-end" style="color:#7C3AED;">Commission Earned</th>';
+          html += '<th class="text-end" style="color:#16A34A;">Adjusted amount</th>';
           html += '<th class="text-end" style="color:#2563EB;">Remaining Due</th>';
           html += '<th>Status</th>';
           html += '</tr>';
@@ -653,11 +653,16 @@
             totalAdjusted += pc.adjusted_amount;
             totalRemaining += pc.remaining_due;
 
-            const statusBadge = pc.deduction_status === 'fully_covered'
-              ? '<span class="badge bg-success" style="font-size:10px;"><i class="bi bi-lock-fill me-1"></i>Paid (Fully Covered)</span>'
-              : pc.status === 'Paid'
-              ? '<span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>'
-              : '<span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>';
+            let statusBadge = '';
+            if (pc.deduction_status === 'fully_covered') {
+              const paidDate = pc.paid_at ? new Date(pc.paid_at).toLocaleDateString('en-US', {month: '2-digit', day: '2-digit', year: 'numeric'}) : '';
+              statusBadge = `<div><span class="badge bg-success" style="font-size:10px;"><i class="bi bi-lock-fill me-1"></i>Paid (Fully Covered)</span>${paidDate ? `<div class="small text-muted mt-1">${paidDate}</div>` : ''}</div>`;
+            } else if (pc.status === 'Paid') {
+              const paidDate = pc.paid_at ? new Date(pc.paid_at).toLocaleDateString('en-US', {month: '2-digit', day: '2-digit', year: 'numeric'}) : '';
+              statusBadge = `<div><span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>${paidDate ? `<div class="small text-muted mt-1">${paidDate}</div>` : ''}</div>`;
+            } else {
+              statusBadge = '<span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>';
+            }
 
             html += '<tr>';
             html += `<td class="fw-semibold"><a href="/projects/${pc.firebase_id}" class="text-decoration-none">${pc.project_number}</a></td>`;
