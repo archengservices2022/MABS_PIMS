@@ -3876,14 +3876,12 @@ function viewReceipt(expId) {
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Commission Paid</div>
         <div style="font-size:1.6rem;font-weight:800;color:#059669;">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_paid) }}</div>
-        <div class="text-muted" style="font-size:11px;">marked as paid</div>
       </div>
     </div>
     <div class="col-6 col-md-3">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Pending Commission</div>
         <div style="font-size:1.6rem;font-weight:800;color:{{ '#DC2626' if commission_total_outstanding > 0 else '#16a34a' }};">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_outstanding) }}</div>
-        <div class="text-muted" style="font-size:11px;">not yet marked paid</div>
       </div>
     </div>
   </div>
