@@ -940,12 +940,12 @@ a[href*="filter_expense"]:hover {
     {% endif %}
 
     <!-- Pagination Controls - Bottom -->
-    <div style="display:flex;align-items:center;justify-content:center;margin-top:20px;padding-top:12px;border-top:1px solid #e5e7eb;gap:8px;flex-wrap:nowrap;" id="expensePagerWrap">
-      <span id="expenseCountInfo" style="font-size:12px;color:#6b7280;margin-right:auto;"></span>
-      <button type="button" id="expensePrevBtn" onclick="prevExpensePage()" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:14px;color:#6b7280;flex-shrink:0;">&#8249;</button>
-      <div id="expensePageNumbers" style="display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:nowrap;flex-shrink:0;"></div>
-      <button type="button" id="expenseNextBtn" onclick="nextExpensePage()" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:14px;color:#6b7280;flex-shrink:0;">&#8250;</button>
-      <span id="expenseCountInfo2" style="font-size:12px;color:#6b7280;margin-left:auto;"></span>
+    <div class="d-flex align-items-center justify-content-center gap-2 mt-3 pt-3 border-top" id="expensePagerWrap">
+      <button type="button" id="expensePrevBtn" onclick="prevExpensePage()" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;color:#374151;">&#8249;</button>
+      <input type="number" id="expenseGoToPage" min="1" max="1" style="width:50px;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;text-align:center;font-size:13px;font-weight:500;" placeholder="Page" />
+      <span id="expensePageInfo" style="font-size:14px;color:#374151;font-weight:500;border:1px solid #d1d5db;border-radius:6px;padding:4px 14px;background:#fff;white-space:nowrap;">of 1</span>
+      <button type="button" id="expenseNextBtn" onclick="nextExpensePage()" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;color:#374151;">&#8250;</button>
+      <span id="expenseCountInfo" style="display:none;"></span>
     </div>
   </div>
 </div><!-- /tab-expenses -->
@@ -1464,72 +1464,14 @@ function renderExpenseTable() {
   }
 
   const tp = totalPages || 1;
+  document.getElementById('expensePageInfo').textContent = `of ${tp}`;
   document.getElementById('expenseCountInfo').textContent = `${currentPageRows.length} / ${expenseFilteredRows.length} expenses`;
-  document.getElementById('expenseCountInfo2').textContent = `of ${tp}`;
 
-  // Generate numbered page buttons: first 10 + ellipsis + last 2 + next arrow
-  const pageNumbersDiv = document.getElementById('expensePageNumbers');
-  if (pageNumbersDiv) {
-    pageNumbersDiv.innerHTML = '';
-
-    // Always show first 10 pages
-    const firstPagesToShow = Math.min(10, tp);
-    for (let i = 1; i <= firstPagesToShow; i++) {
-      const btn = document.createElement('button');
-      btn.textContent = i;
-      btn.type = 'button';
-      btn.onclick = () => goToExpensePage(i);
-
-      const isCurrentPage = i === expenseCurrentPage;
-      btn.style.cssText = `
-        display:inline-flex;
-        align-items:center;
-        justify-content:center;
-        width:28px;
-        height:28px;
-        border:1px solid ${isCurrentPage ? '#2563eb' : '#d1d5db'};
-        background:${isCurrentPage ? '#2563eb' : '#fff'};
-        color:${isCurrentPage ? '#fff' : '#6b7280'};
-        border-radius:4px;
-        cursor:pointer;
-        font-size:12px;
-        font-weight:${isCurrentPage ? '600' : '500'};
-      `;
-      pageNumbersDiv.appendChild(btn);
-    }
-
-    // Add ellipsis if there are more than 12 pages (10 + 2)
-    if (tp > 12) {
-      const ellipsis = document.createElement('span');
-      ellipsis.textContent = '...';
-      ellipsis.style.cssText = 'color:#9ca3af;padding:0 4px;font-size:12px;';
-      pageNumbersDiv.appendChild(ellipsis);
-
-      // Add last 2 page numbers
-      for (let i = tp - 1; i <= tp; i++) {
-        const btn = document.createElement('button');
-        btn.textContent = i;
-        btn.type = 'button';
-        btn.onclick = () => goToExpensePage(i);
-
-        const isCurrentPage = i === expenseCurrentPage;
-        btn.style.cssText = `
-          display:inline-flex;
-          align-items:center;
-          justify-content:center;
-          width:28px;
-          height:28px;
-          border:1px solid ${isCurrentPage ? '#2563eb' : '#d1d5db'};
-          background:${isCurrentPage ? '#2563eb' : '#fff'};
-          color:${isCurrentPage ? '#fff' : '#6b7280'};
-          border-radius:4px;
-          cursor:pointer;
-          font-size:12px;
-          font-weight:${isCurrentPage ? '600' : '500'};
-        `;
-        pageNumbersDiv.appendChild(btn);
-      }
-    }
+  // Update go-to-page input
+  const goToPageInput = document.getElementById('expenseGoToPage');
+  if (goToPageInput) {
+    goToPageInput.value = expenseCurrentPage;
+    goToPageInput.max = tp;
   }
 
   const prevBtn = document.getElementById('expensePrevBtn');
@@ -1575,8 +1517,26 @@ function goToExpensePage(pageNum) {
   if (page >= 1 && page <= totalPages) {
     expenseCurrentPage = page;
     renderExpenseTable();
+  } else {
+    // Reset to current page if invalid
+    document.getElementById('expenseGoToPage').value = expenseCurrentPage;
   }
 }
+
+// Initialize go-to-page input listener
+setTimeout(function() {
+  const goToPageInput = document.getElementById('expenseGoToPage');
+  if (goToPageInput) {
+    goToPageInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        goToExpensePage(this.value);
+      }
+    });
+    goToPageInput.addEventListener('change', function() {
+      goToExpensePage(this.value);
+    });
+  }
+}, 100);
 
 function clearExpenseFilters() {
   ['expenseSearch','expenseTypeFilter','expenseVendorFilter','expenseDateFrom','expenseDateTo'].forEach(id => {
