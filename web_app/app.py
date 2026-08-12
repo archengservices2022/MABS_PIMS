@@ -18606,18 +18606,34 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
     override_type  = (project_data.get("commission_override_type") or "default").strip()
     override_value = _safe_float(project_data.get("commission_override_value", 0))
 
+    existing = fb_get(f"/project_commissions/{project_id}") or {}
+
+    # For existing projects with "default" rate, preserve the original commission amount
+    # Only recalculate for new projects or if override has changed
+    is_new_project = not existing
+    existing_override_type = existing.get("commission_override_type", "default")
+    existing_override_value = _safe_float(existing.get("commission_override_value", 0))
+
     if override_type == "percent" and override_value > 0:
         commission_amount = contract_value * override_value / 100
         rate_display = f"{override_value}% (custom)"
     elif override_type == "fixed" and override_value > 0:
         commission_amount = override_value
         rate_display = "Fixed amount"
-    else:
+    elif override_type == "default" and is_new_project:
+        # NEW project with default rate: use current rate from settings
         override_type = "default"
         commission_amount = contract_value * sp_default_rate / 100
         rate_display = f"{sp_default_rate}% (default)"
-
-    existing = fb_get(f"/project_commissions/{project_id}") or {}
+    elif override_type == "default" and not is_new_project and existing_override_type == "default":
+        # EXISTING project with default rate that hasn't changed: preserve original commission
+        commission_amount = _safe_float(existing.get("commission_amount", 0))
+        rate_display = existing.get("rate_display", f"{sp_default_rate}% (default)")
+    else:
+        # Fallback (shouldn't normally reach here)
+        override_type = "default"
+        commission_amount = contract_value * sp_default_rate / 100
+        rate_display = f"{sp_default_rate}% (default)"
 
     # Recalculate deduction_status based on new commission_amount and existing deductions
     total_deducted = _safe_float(existing.get("total_deducted", 0))
