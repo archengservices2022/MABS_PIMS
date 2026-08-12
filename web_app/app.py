@@ -10910,10 +10910,6 @@ def add_advance_adjustment():
                 pending_commission = _calculate_employee_pending_commission(employee_name)
                 log.info(f"Commission deduction recorded for {employee_name}: ${adjustment_amount:.2f} distributed across {len(project_deductions)} projects, pending: ${pending_commission:.2f}")
 
-        # Sync updated advance to finance expenses
-        updated_advance = {**advance_data, **update_data}
-        _sync_advance_to_finance(advance_id, updated_advance)
-
         return jsonify({"success": True})
     except Exception as e:
         log.error(f"Error adding adjustment: {e}")
