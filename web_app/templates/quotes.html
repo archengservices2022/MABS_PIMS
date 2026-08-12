@@ -512,7 +512,7 @@
             {% set sp_total_adjusted = sp_commissions | sum(attribute='adjusted_amount') %}
             {% set sp_total_remaining = sp_commissions | sum(attribute='remaining_due') %}
             {% set sp_total_paid = sp_commissions | sum(attribute='commission_amount') - sp_commissions | sum(attribute='remaining_due') %}
-            <tr style="cursor:pointer;" onclick="toggleCommissionDetails('{{ sp.name | replace(' ', '_') }}')">
+            <tr style="cursor:pointer;" onclick="showCommissionModal('{{ sp.name }}', '{{ sp.name | replace(' ', '_') }}')">
               <td class="fw-semibold">{{ sp.name }}</td>
               <td>
                 {% set _etype = sp_stat.employee_type if sp_stat else sp.employee_type %}
@@ -536,69 +536,6 @@
               <td class="text-end fw-semibold" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_remaining) }}</td>
               <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_paid) }}</td>
             </tr>
-            <!-- Commission Details Row (Hidden by default) -->
-            <tr id="details-{{ sp.name | replace(' ', '_') }}" style="display:none;">
-              <td colspan="10" style="padding:0;border:0;">
-                <div style="background:#f8fafc;padding:20px;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">
-                  <h6 style="margin-bottom:15px;color:#0f172a;"><i class="bi bi-graph-up me-2" style="color:#059669;"></i>Commission Details — {{ sp.name }}</h6>
-                  {% if sp_commissions %}
-                  <div class="table-responsive">
-                    <table class="table table-sm table-hover align-middle mb-0" style="font-size:12px;">
-                      <thead>
-                        <tr style="background:#f1f5f9;">
-                          <th>Project</th>
-                          <th>Client</th>
-                          <th class="text-end" style="color:#7C3AED;">Commission</th>
-                          <th class="text-end" style="color:#16A34A;">Adjusted</th>
-                          <th class="text-end" style="color:#2563EB;">Remaining</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {% for pc in sp_commissions %}
-                        <tr>
-                          <td class="fw-semibold">
-                            <a href="{{ url_for('project_detail', project_id=pc.firebase_id) }}" class="text-decoration-none">
-                              {{ pc.get('project_number','—') }}
-                            </a>
-                          </td>
-                          <td>{{ pc.get('company_name','—') }}</td>
-                          <td class="text-end fw-bold" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('commission_amount',0)|float) }}</td>
-                          <td class="text-end fw-semibold" style="color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('adjusted_amount',0)|float) }}</td>
-                          <td class="text-end fw-semibold" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('remaining_due',0)|float) }}</td>
-                          <td>
-                            {% set is_fully_covered = pc.get('deduction_status') == 'fully_covered' %}
-                            {% if is_fully_covered %}
-                            <span class="badge bg-success" style="font-size:9px;"><i class="bi bi-lock-fill me-1"></i>Paid (Fully Covered)</span>
-                            {% elif pc.get('status') == 'Paid' %}
-                            <span class="badge bg-success" style="font-size:9px;"><i class="bi bi-check-circle me-1"></i>Paid</span>
-                            {% else %}
-                            <span class="badge bg-warning text-dark" style="font-size:9px;">Pending</span>
-                            {% endif %}
-                          </td>
-                        </tr>
-                        {% endfor %}
-                      </tbody>
-                      <tfoot>
-                        <tr class="fw-bold" style="background:#f1f5f9;border-top:1px solid #e2e8f0;">
-                          <td colspan="2" class="text-end text-muted small">Totals</td>
-                          <td class="text-end" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_commissions|sum(attribute='commission_amount')) }}</td>
-                          <td class="text-end" style="color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_commissions|sum(attribute='adjusted_amount')) }}</td>
-                          <td class="text-end" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_commissions|sum(attribute='remaining_due')) }}</td>
-                          <td></td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                  {% else %}
-                  <div class="text-center text-muted py-3">
-                    <i class="bi bi-graph-up" style="font-size:20px;opacity:.3;"></i>
-                    <div class="mt-2" style="font-size:12px;">No commission details available for this employee.</div>
-                  </div>
-                  {% endif %}
-                </div>
-              </td>
-            </tr>
             {% endif %}
             {% endfor %}
           </tbody>
@@ -616,16 +553,27 @@
         </table>
       </div>
 
-      <!-- JavaScript for expanding commission details -->
-      <script>
-        function toggleCommissionDetails(employeeName) {
-          const detailsRow = document.getElementById('details-' + employeeName);
-          if (detailsRow) {
-            const isHidden = detailsRow.style.display === 'none';
-            detailsRow.style.display = isHidden ? 'table-row' : 'none';
-          }
-        }
-      </script>
+      <!-- Modal for Commission Details -->
+      <div class="modal fade" id="commissionDetailsModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header border-bottom">
+              <h6 class="modal-title" id="commissionModalTitle">
+                <i class="bi bi-graph-up me-2" style="color:#059669;"></i>Commission Details
+              </h6>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="max-height:70vh;overflow-y:auto;">
+              <div id="commissionDetailsContent">
+                <div class="text-center text-muted py-4">
+                  <i class="bi bi-hourglass-split" style="font-size:32px;opacity:.3;"></i>
+                  <div class="mt-2">Loading commission details...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
       {% else %}
       <div class="text-center text-muted py-5">
         <i class="bi bi-people" style="font-size:40px;opacity:.3;"></i>
@@ -637,6 +585,123 @@
       </div>
       {% endif %}
     </div>
+
+    <!-- Modal for Commission Details -->
+    <div class="modal fade" id="commissionDetailsModal" tabindex="-1">
+      <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header border-bottom">
+            <h6 class="modal-title" id="commissionModalTitle">
+              <i class="bi bi-graph-up me-2" style="color:#059669;"></i>Commission Details
+            </h6>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body" style="max-height:70vh;overflow-y:auto;">
+            <div id="commissionDetailsContent">
+              <div class="text-center text-muted py-4">
+                <i class="bi bi-hourglass-split" style="font-size:32px;opacity:.3;"></i>
+                <div class="mt-2">Loading commission details...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Embedded Commission Data for Modal -->
+    <script>
+      const commissionData = {
+        {% for sp in sales_people %}
+        {% if _viewer_is_admin or sp.name == _viewer_name %}
+        '{{ sp.name }}': [
+          {% set sp_commissions = project_commissions | selectattr('salesperson', 'equalto', sp.name) | list %}
+          {% for pc in sp_commissions %}
+          {
+            project_number: '{{ pc.get('project_number','—') }}',
+            company_name: '{{ pc.get('company_name','—') }}',
+            commission_amount: {{ pc.get('commission_amount',0)|float }},
+            adjusted_amount: {{ pc.get('adjusted_amount',0)|float }},
+            remaining_due: {{ pc.get('remaining_due',0)|float }},
+            status: '{{ pc.get('status','Pending') }}',
+            deduction_status: '{{ pc.get('deduction_status','not_covered') }}',
+            firebase_id: '{{ pc.firebase_id }}'
+          }{% if not loop.last %},{% endif %}
+          {% endfor %}
+        ],
+        {% endif %}
+        {% endfor %}
+      };
+
+      function showCommissionModal(employeeName, employeeNameSanitized) {
+        const data = commissionData[employeeName] || [];
+        const currencySymbol = '{{ currency_symbol }}';
+
+        let html = '<div style="margin-bottom:20px;">';
+
+        if (data.length > 0) {
+          html += '<div class="table-responsive">';
+          html += '<table class="table table-hover align-middle mb-0" style="font-size:13px;">';
+          html += '<thead>';
+          html += '<tr>';
+          html += '<th>Project</th>';
+          html += '<th>Client</th>';
+          html += '<th class="text-end" style="color:#7C3AED;">Commission</th>';
+          html += '<th class="text-end" style="color:#16A34A;">Adjusted</th>';
+          html += '<th class="text-end" style="color:#2563EB;">Remaining Due</th>';
+          html += '<th>Status</th>';
+          html += '</tr>';
+          html += '</thead>';
+          html += '<tbody>';
+
+          let totalCommission = 0, totalAdjusted = 0, totalRemaining = 0;
+
+          data.forEach(pc => {
+            totalCommission += pc.commission_amount;
+            totalAdjusted += pc.adjusted_amount;
+            totalRemaining += pc.remaining_due;
+
+            const statusBadge = pc.deduction_status === 'fully_covered'
+              ? '<span class="badge bg-success" style="font-size:10px;"><i class="bi bi-lock-fill me-1"></i>Paid (Fully Covered)</span>'
+              : pc.status === 'Paid'
+              ? '<span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>'
+              : '<span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>';
+
+            html += '<tr>';
+            html += `<td class="fw-semibold"><a href="/projects/${pc.firebase_id}" class="text-decoration-none">${pc.project_number}</a></td>`;
+            html += `<td>${pc.company_name}</td>`;
+            html += `<td class="text-end fw-bold" style="color:#7C3AED;">${currencySymbol}${pc.commission_amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+            html += `<td class="text-end fw-semibold" style="color:#16A34A;">${currencySymbol}${pc.adjusted_amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+            html += `<td class="text-end fw-semibold" style="color:#2563EB;">${currencySymbol}${pc.remaining_due.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+            html += `<td>${statusBadge}</td>`;
+            html += '</tr>';
+          });
+
+          html += '</tbody>';
+          html += '<tfoot>';
+          html += '<tr class="fw-bold table-light" style="border-top:2px solid #dee2e6;">';
+          html += '<td colspan="2" class="text-end text-muted small">Totals</td>';
+          html += `<td class="text-end" style="color:#7C3AED;">${currencySymbol}${totalCommission.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+          html += `<td class="text-end" style="color:#16A34A;">${currencySymbol}${totalAdjusted.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+          html += `<td class="text-end" style="color:#2563EB;">${currencySymbol}${totalRemaining.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+          html += '<td></td>';
+          html += '</tr>';
+          html += '</tfoot>';
+          html += '</table>';
+          html += '</div>';
+        } else {
+          html += '<div class="text-center text-muted py-5">';
+          html += '<i class="bi bi-graph-up" style="font-size:32px;opacity:.3;"></i>';
+          html += '<div class="mt-2">No commission details available for this employee.</div>';
+          html += '</div>';
+        }
+
+        html += '</div>';
+
+        document.getElementById('commissionDetailsContent').innerHTML = html;
+        document.getElementById('commissionModalTitle').textContent = 'Commission Details — ' + employeeName + ' — per-project commission tracking';
+        new bootstrap.Modal(document.getElementById('commissionDetailsModal')).show();
+      }
+    </script>
 
 </div><!-- /tab-salespeople -->
 
