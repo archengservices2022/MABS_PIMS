@@ -590,10 +590,12 @@
           {% endif %}
         {% endfor %}
         {% for sp in valid_salespeople %}
-        {# Match project commissions by salesperson name (case-insensitive) #}
+        {# Match project commissions by salesperson name (case-insensitive, underscore/space flexible) #}
         {% set sp_commissions = [] %}
+        {% set sp_name_normalized = (sp.name | trim).lower().replace('_', ' ') %}
         {% for pc in project_commissions %}
-          {% if (pc.get('salesperson', '') or '').strip().lower() == (sp.name | trim).lower() %}
+          {% set pc_name_normalized = (pc.get('salesperson', '') or '').strip().lower().replace('_', ' ') %}
+          {% if pc_name_normalized == sp_name_normalized %}
             {% set _ = sp_commissions.append(pc) %}
           {% endif %}
         {% endfor %}
