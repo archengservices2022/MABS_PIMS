@@ -632,6 +632,10 @@
         const container = document.getElementById('commissionDetailsContainer');
         if (container.style.display === 'none') {
           const employeeName = Object.keys(commissionData).find(name => name.replace(/\s+/g, '_') === employeeNameSanitized);
+          console.log('Employee name sanitized:', employeeNameSanitized);
+          console.log('Employee name found:', employeeName);
+          console.log('Commission data keys:', Object.keys(commissionData));
+          console.log('Commission data for employee:', commissionData[employeeName]);
           showCommissionDetails(employeeName);
         } else {
           closeCommissionDetails();
@@ -640,6 +644,7 @@
 
       function showCommissionDetails(employeeName) {
         const data = commissionData[employeeName] || [];
+        console.log('Showing details for:', employeeName, 'Data length:', data.length);
         const currencySymbol = '{{ currency_symbol }}';
         const container = document.getElementById('commissionDetailsContainer');
         const contentDiv = document.getElementById('commissionDetailsContent');

@@ -2178,10 +2178,16 @@ def quotes():
     for k, v in _raw_proj_comm.items():
         if isinstance(v, dict):
             pc = dict(v, firebase_id=k)
+            # Ensure all required fields are present
+            pc["salesperson"] = pc.get("salesperson", "")
+            pc["project_number"] = pc.get("project_number", "—")
+            pc["company_name"] = pc.get("company_name", "—")
+            pc["status"] = pc.get("status", "Pending")
+            pc["commission_amount"] = _safe_float(pc.get("commission_amount", 0))
             pc["total_deducted"] = _safe_float(pc.get("total_deducted", 0))
             pc["adjusted_amount"] = pc["total_deducted"]
             pc["deduction_status"] = pc.get("deduction_status", "not_covered")
-            pc["remaining_due"] = max(_safe_float(pc.get("commission_amount", 0)) - _safe_float(pc.get("total_deducted", 0)), 0.0)
+            pc["remaining_due"] = max(pc["commission_amount"] - pc["total_deducted"], 0.0)
             project_commissions.append(pc)
 
     return render_template("quotes.html", quotes=items, statuses=statuses,
