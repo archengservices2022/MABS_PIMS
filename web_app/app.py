@@ -2172,6 +2172,18 @@ def quotes():
         key=lambda x: x.get("deleted_at", ""), reverse=True
     )
 
+    # Load project commissions for Commission Details section
+    _raw_proj_comm = fb_get("/project_commissions") or {}
+    project_commissions = []
+    for k, v in _raw_proj_comm.items():
+        if isinstance(v, dict):
+            pc = dict(v, firebase_id=k)
+            pc["total_deducted"] = _safe_float(pc.get("total_deducted", 0))
+            pc["adjusted_amount"] = pc["total_deducted"]
+            pc["deduction_status"] = pc.get("deduction_status", "not_covered")
+            pc["remaining_due"] = max(_safe_float(pc.get("commission_amount", 0)) - _safe_float(pc.get("total_deducted", 0)), 0.0)
+            project_commissions.append(pc)
+
     return render_template("quotes.html", quotes=items, statuses=statuses,
                            search=search, status_filter=status_filter,
                            year_filter=year_filter, month_filter=month_filter,
@@ -2188,7 +2200,8 @@ def quotes():
                            q_pipeline=q_pipeline, q_won_val=q_won_val,
                            salesperson_stats=salesperson_stats,
                            monthly_payroll=monthly_payroll,
-                           comm_payments=_comm_payments_list)
+                           comm_payments=_comm_payments_list,
+                           project_commissions=project_commissions)
 
 @app.route("/quotes/export")
 @role_required("quotes")

@@ -563,6 +563,88 @@
       </div>
       {% endif %}
     </div>
+
+    <!-- ?? Commission Details (synced from Finance) ????????????????????? -->
+    <div class="card-panel mt-3" style="border-top:3px solid #059669;">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="panel-title mb-0">
+          <i class="bi bi-graph-up me-1" style="color:#059669;"></i>
+          Commission Details
+          <span class="text-muted fw-normal" style="font-size:12px;">— per-project commission tracking</span>
+        </h6>
+      </div>
+
+      {% set _project_commissions = project_commissions if project_commissions else [] %}
+      {% set _filtered_commissions = [] %}
+      {% for pc in _project_commissions %}
+        {% if _viewer_is_admin or pc.get('salesperson','') == _viewer_name %}
+          {% if _filtered_commissions.append(pc) %}{% endif %}
+        {% endif %}
+      {% endfor %}
+
+      {% if _filtered_commissions %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size:13px;">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th>Client</th>
+              <th>Salesperson</th>
+              <th class="text-end" style="color:#7C3AED;">Commission</th>
+              <th class="text-end" style="color:#16A34A;">Adjusted</th>
+              <th class="text-end" style="color:#2563EB;">Remaining</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for pc in _filtered_commissions %}
+            <tr>
+              <td class="fw-semibold">
+                <a href="{{ url_for('project_detail', project_id=pc.firebase_id) }}" class="text-decoration-none">
+                  {{ pc.get('project_number','—') }}
+                </a>
+              </td>
+              <td>{{ pc.get('company_name','—') }}</td>
+              <td>{{ pc.get('salesperson','—') }}</td>
+              <td class="text-end fw-bold" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('commission_amount',0)|float) }}</td>
+              <td class="text-end fw-semibold" style="color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('adjusted_amount',0)|float) }}</td>
+              <td class="text-end fw-semibold" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('remaining_due',0)|float) }}</td>
+              <td>
+                {% set is_fully_covered = pc.get('deduction_status') == 'fully_covered' %}
+                {% if is_fully_covered %}
+                <span class="badge bg-success" style="font-size:10px;">
+                  <i class="bi bi-lock-fill me-1"></i>Paid (Fully Covered)
+                </span>
+                {% elif pc.get('status') == 'Paid' %}
+                <span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>
+                {% else %}
+                <span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr class="fw-bold table-light" style="border-top:2px solid #dee2e6;">
+              <td colspan="3" class="text-end text-muted small">Totals</td>
+              <td class="text-end" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(_filtered_commissions|sum(attribute='commission_amount')) }}</td>
+              <td class="text-end" style="color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(_filtered_commissions|sum(attribute='adjusted_amount')) }}</td>
+              <td class="text-end" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(_filtered_commissions|sum(attribute='remaining_due')) }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-center text-muted py-4">
+        <i class="bi bi-graph-up" style="font-size:32px;opacity:.3;"></i>
+        <div class="mt-2">No commission details to show.
+          <div class="small mt-1">Commission details appear here once projects are synced in the Finance tab.</div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
       <!-- ?? Commission Payroll (admin only) ???????????????????????????????? -->
       {% if _viewer_is_admin %}
       <div class="card-panel mt-3" style="border-top:3px solid #7C3AED;">
