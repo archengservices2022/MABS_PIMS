@@ -12967,6 +12967,9 @@ def financial():
 
     invoiced_years = f"{prev_year} & {stat_card_year}"
 
+    # Sort all expenses (including commissions) by created_at newest first
+    exp_list_for_tab = sorted(exp_list_for_tab, key=lambda x: x.get("created_at", "") or x.get("date", ""), reverse=True)
+
     return render_template("financial.html",
         total_invoiced=total_invoiced,
         invoiced_count=invoiced_count,
