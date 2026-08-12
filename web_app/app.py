@@ -11417,7 +11417,9 @@ def financial():
                 # Ensure created_at exists for sorting (use fallback for old entries)
                 # Normalize all dates to ISO format for proper sorting
                 if not edata.get("created_at"):
-                    fallback = edata.get("updated_at") or edata.get("date") or datetime.now(timezone.utc).isoformat()
+                    # For old entries without created_at, use updated_at if available
+                    # Otherwise use current datetime so old entries don't get buried below newer ones
+                    fallback = edata.get("updated_at") or datetime.now(timezone.utc).isoformat()
                     # Normalize date format to ISO (handle MM-DD-YYYY and YYYY-MM-DD formats)
                     if fallback and not fallback.startswith("202"):  # Not ISO format
                         try:
@@ -15384,9 +15386,11 @@ def commission_project_mark_paid(project_id):
             if expense_id:
                 # Update existing expense
                 fb_update(f"/balance_sheet_expenses/{expense_id}", expense_data)
+                log.info(f"Updated commission expense {expense_id} with created_at: {expense_data.get('created_at')}")
             else:
                 # Create new expense entry
-                fb_push("/balance_sheet_expenses", expense_data)
+                exp_id = fb_push("/balance_sheet_expenses", expense_data)
+                log.info(f"Created commission expense {exp_id} with created_at: {expense_data.get('created_at')}")
 
     return jsonify({"ok": True, "action": "paid"})
 
