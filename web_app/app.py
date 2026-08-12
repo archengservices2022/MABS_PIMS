@@ -760,16 +760,24 @@ def _sync_advance_to_finance(advance_id: str, advance_data: dict):
     except Exception as e:
         log.error(f"Error syncing advance to finance: {e}")
 
-def _delete_advance_finance_entry(advance_id: str):
+def _delete_advance_finance_entry(advance_id: str, advance_no: str = ""):
     """Delete finance expense entry associated with an advance"""
     try:
         expenses = fb_get("/balance_sheet_expenses") or {}
 
         if isinstance(expenses, dict):
             for exp_id, exp_data in expenses.items():
-                if isinstance(exp_data, dict) and exp_data.get("advance_id") == advance_id:
-                    fb_delete(f"/balance_sheet_expenses/{exp_id}")
-                    break
+                if isinstance(exp_data, dict):
+                    # Try matching by advance_id first
+                    if exp_data.get("advance_id") == advance_id:
+                        fb_delete(f"/balance_sheet_expenses/{exp_id}")
+                        log.info(f"Deleted finance entry {exp_id} for advance {advance_id} by advance_id")
+                        return
+                    # Fallback: try matching by advance_no
+                    if advance_no and exp_data.get("advance_no") == advance_no:
+                        fb_delete(f"/balance_sheet_expenses/{exp_id}")
+                        log.info(f"Deleted finance entry {exp_id} for advance {advance_no} by advance_no")
+                        return
     except Exception as e:
         log.error(f"Error deleting advance finance entry: {e}")
 
@@ -11347,7 +11355,7 @@ def delete_employee_advance():
             return jsonify({"success": False, "error": "Advance not found"}), 404
 
         # Delete from finance expenses first
-        _delete_advance_finance_entry(advance_id)
+        _delete_advance_finance_entry(advance_id, advance_no)
 
         fb_delete(f"/employee_advances/{advance_id}")
         log.info(f"Employee advance deleted: {advance_no}")
