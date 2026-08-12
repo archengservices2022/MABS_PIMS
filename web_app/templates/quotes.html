@@ -511,7 +511,8 @@
             {% set sp_total_commission = sp_commissions | sum(attribute='commission_amount') %}
             {% set sp_total_adjusted = sp_commissions | sum(attribute='adjusted_amount') %}
             {% set sp_total_remaining = sp_commissions | sum(attribute='remaining_due') %}
-            {% set sp_total_paid = sp_commissions | sum(attribute='commission_amount') - sp_commissions | sum(attribute='remaining_due') %}
+            {% set sp_paid_commissions = sp_commissions | selectattr('status', 'equalto', 'Paid') | list %}
+            {% set sp_total_paid = sp_paid_commissions | sum(attribute='remaining_due') %}
             <tr style="cursor:pointer;" onclick="showCommissionModal('{{ sp.name }}', '{{ sp.name | replace(' ', '_') }}')">
               <td class="fw-semibold">{{ sp.name }}</td>
               <td>
@@ -546,7 +547,7 @@
               <td class="text-end" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='commission_amount')) }}</td>
               <td class="text-end" style="color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='adjusted_amount')) }}</td>
               <td class="text-end" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='remaining_due')) }}</td>
-              <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='commission_amount') - project_commissions | sum(attribute='remaining_due')) }}</td>
+              <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | selectattr('status', 'equalto', 'Paid') | list | sum(attribute='remaining_due')) }}</td>
             </tr>
           </tfoot>
           {% endif %}
