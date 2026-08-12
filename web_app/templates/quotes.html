@@ -583,8 +583,13 @@
     <!-- Embedded Commission Data -->
     <script>
       const commissionData = {
+        {% set valid_salespeople = [] %}
         {% for sp in sales_people %}
-        {% if _viewer_is_admin or sp.name == _viewer_name %}
+          {% if _viewer_is_admin or sp.name == _viewer_name %}
+            {% set _ = valid_salespeople.append(sp) %}
+          {% endif %}
+        {% endfor %}
+        {% for sp in valid_salespeople %}
         {% set sp_commissions = project_commissions | selectattr('salesperson', 'equalto', sp.name) | list %}
         '{{ sp.name }}': [
           {% for pc in sp_commissions %}
@@ -600,7 +605,6 @@
           }{% if not loop.last %},{% endif %}
           {% endfor %}
         ]{% if not loop.last %},{% endif %}
-        {% endif %}
         {% endfor %}
       };
 
