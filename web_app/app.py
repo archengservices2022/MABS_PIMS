@@ -11842,10 +11842,7 @@ def financial():
     # Overview KPI uses total_collected (filtered by payment date, not invoice date)
     total_outstanding = total_invoiced - total_collected
     # Use Overview-filtered expenses (filtered by present running year, not selected year)
-    # Count like Expenses tab: includes advances with adjustments, excludes salaries
-    current_year = datetime.now(COMPANY_TZ).year
-    exp_list_year_filtered = [e for e in exp_list_for_tab
-                              if _extract_year_from_date(e.get("date", "") or e.get("created_at", "")) == current_year]
+    exp_list_year_filtered = group_expenses_by_name(exp_list_for_overview)
     total_expenses    = sum(_safe_float(e.get("amount", 0)) for e in exp_list_year_filtered)
     exp_list_year_filtered_count = len(exp_list_year_filtered)
     # Net profit based on actual collected payments, not invoice dates
