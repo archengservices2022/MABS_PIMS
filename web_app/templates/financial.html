@@ -941,16 +941,14 @@ a[href*="filter_expense"]:hover {
 
     <!-- Pagination Controls - Bottom -->
     <div class="expense-pager" id="expensePagerWrap">
-      <div class="expense-pager-left">
-        <span id="expenseCountInfo" style="font-size:12px;color:#64748b;"></span>
+      <div class="expense-pager-center">
+        <button type="button" id="expensePrevBtn" onclick="prevExpensePage()" style="min-width:28px;height:28px;padding:0;border:1px solid #d9e2ec;background:#ffffff;color:#2563eb;border-radius:3px;cursor:pointer;font-size:16px;line-height:26px;">‹</button>
         <input type="number" id="expenseGoToPage" min="1" max="1" style="width:42px;height:28px;padding:0 5px;border:1px solid #d9e2ec;border-radius:3px;text-align:center;font-size:12px;outline:none;" />
-        <button type="button" onclick="goToExpensePage(parseInt(document.getElementById('expenseGoToPage').value))" style="height:28px;padding:0 9px;border:1px solid #d9e2ec;background:#f8fafc;color:#475569;border-radius:3px;cursor:pointer;font-size:12px;">Go</button>
         <span id="expensePageInfo" style="font-size:12px;color:#64748b;">of 1</span>
+        <button type="button" id="expenseNextBtn" onclick="nextExpensePage()" style="min-width:28px;height:28px;padding:0;border:1px solid #d9e2ec;background:#ffffff;color:#2563eb;border-radius:3px;cursor:pointer;font-size:16px;line-height:26px;">›</button>
       </div>
       <div class="expense-pager-right">
-        <button type="button" id="expensePrevBtn" onclick="prevExpensePage()" style="min-width:28px;height:28px;padding:0;border:1px solid #d9e2ec;background:#ffffff;color:#2563eb;border-radius:3px;cursor:pointer;font-size:16px;line-height:26px;">‹</button>
         <div id="expensePageNumbers" style="display:flex;align-items:center;gap:3px;"></div>
-        <button type="button" id="expenseNextBtn" onclick="nextExpensePage()" style="min-width:28px;height:28px;padding:0;border:1px solid #d9e2ec;background:#ffffff;color:#2563eb;border-radius:3px;cursor:pointer;font-size:16px;line-height:26px;">›</button>
       </div>
     </div>
   </div>
@@ -2792,15 +2790,15 @@ function viewReceipt(expId) {
       border-top: 1px solid #e5e7eb;
     }
 
-    .expense-pager-left {
+    .expense-pager-center {
       display: flex;
       align-items: center;
+      justify-content: center;
       gap: 6px;
-      font-size: 12px;
-      color: #64748b;
+      margin: 0 auto;
     }
 
-    .expense-pager-left input {
+    .expense-pager-center input {
       width: 42px;
       height: 28px;
       padding: 0 5px;
@@ -2809,23 +2807,6 @@ function viewReceipt(expId) {
       text-align: center;
       font-size: 12px;
       outline: none;
-    }
-
-    .expense-pager-left button {
-      height: 28px;
-      padding: 0 9px;
-      border: 1px solid #d9e2ec;
-      background: #f8fafc;
-      color: #475569;
-      border-radius: 3px;
-      cursor: pointer;
-      font-size: 12px;
-      transition: all 0.15s ease;
-    }
-
-    .expense-pager-left button:hover {
-      background: #f1f5f9;
-      border-color: #b8c7d9;
     }
 
     .expense-pager-right {
