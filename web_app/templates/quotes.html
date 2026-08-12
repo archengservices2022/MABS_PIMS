@@ -669,7 +669,8 @@
 
           let totalCommission = 0, totalAdjusted = 0, totalRemaining = 0;
 
-          data.forEach(pc => {
+          data.forEach((pc, idx) => {
+            console.log('Processing row', idx, ':', pc.project_number, pc.commission_amount);
             totalCommission += pc.commission_amount;
             totalAdjusted += pc.adjusted_amount;
             totalRemaining += pc.remaining_due;
@@ -689,6 +690,7 @@
             html += `<td>${statusBadge}</td>`;
             html += '</tr>';
           });
+          console.log('Rows added. Total HTML so far length:', html.length);
 
           html += '</tbody>';
           html += '<tfoot>';
