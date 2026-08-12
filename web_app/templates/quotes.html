@@ -488,7 +488,7 @@
 
       {% if sales_people %}
       <div class="table-responsive">
-        <table class="table table-hover mb-0 align-middle">
+        <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
           <thead>
             <tr>
               <th>Name</th>
@@ -497,15 +497,22 @@
               <th class="text-center">Converted</th>
               <th class="text-center">Win Rate</th>
               <th class="text-end">Revenue Generated</th>
-              <th class="text-center">Commission %</th>
-              <th class="text-end">Commission Earned</th>
+              <th class="text-end" style="color:#7C3AED;">Commission</th>
+              <th class="text-end" style="color:#16A34A;">Adjusted</th>
+              <th class="text-end" style="color:#2563EB;">Remaining Due</th>
+              <th class="text-end">Commission Paid</th>
             </tr>
           </thead>
           <tbody>
             {% for sp in sales_people %}
             {% if _viewer_is_admin or sp.name == _viewer_name %}
             {% set sp_stat = salesperson_stats | selectattr('name', 'equalto', sp.name) | first | default(none) %}
-            <tr>
+            {% set sp_commissions = project_commissions | selectattr('salesperson', 'equalto', sp.name) | list %}
+            {% set sp_total_commission = sp_commissions | sum(attribute='commission_amount') %}
+            {% set sp_total_adjusted = sp_commissions | sum(attribute='adjusted_amount') %}
+            {% set sp_total_remaining = sp_commissions | sum(attribute='remaining_due') %}
+            {% set sp_total_paid = sp_commissions | sum(attribute='commission_amount') - sp_commissions | sum(attribute='remaining_due') %}
+            <tr style="cursor:pointer;" onclick="toggleCommissionDetails('{{ sp.name | replace(' ', '_') }}')">
               <td class="fw-semibold">{{ sp.name }}</td>
               <td>
                 {% set _etype = sp_stat.employee_type if sp_stat else sp.employee_type %}
@@ -524,17 +531,72 @@
                 <span class="badge {{ 'bg-success' if _wr >= 50 else 'bg-secondary' }}">{{ _wr }}%</span>
               </td>
               <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(sp_stat.revenue_generated if sp_stat else 0) }}</td>
-              <td class="text-center text-muted">
-                {% set _cr = sp_stat.commission_rate if sp_stat else sp.commission_rate %}
-                {% if _cr > 0 %}{{ _cr }}%{% else %}—{% endif %}
-              </td>
-              <td class="text-end fw-bold" style="color:#7C3AED;">
-                {% set _cr = sp_stat.commission_rate if sp_stat else sp.commission_rate %}
-                {% if _cr > 0 %}
-                {{ currency_symbol }}{{ "{:,.2f}".format(sp_stat.commission_earned if sp_stat else 0) }}
-                {% else %}
-                <span class="text-muted small">Rate not set</span>
-                {% endif %}
+              <td class="text-end fw-bold" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_commission) }}</td>
+              <td class="text-end fw-semibold" style="color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_adjusted) }}</td>
+              <td class="text-end fw-semibold" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_remaining) }}</td>
+              <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_paid) }}</td>
+            </tr>
+            <!-- Commission Details Row (Hidden by default) -->
+            <tr id="details-{{ sp.name | replace(' ', '_') }}" style="display:none;">
+              <td colspan="10" style="padding:0;border:0;">
+                <div style="background:#f8fafc;padding:20px;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">
+                  <h6 style="margin-bottom:15px;color:#0f172a;"><i class="bi bi-graph-up me-2" style="color:#059669;"></i>Commission Details — {{ sp.name }}</h6>
+                  {% if sp_commissions %}
+                  <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0" style="font-size:12px;">
+                      <thead>
+                        <tr style="background:#f1f5f9;">
+                          <th>Project</th>
+                          <th>Client</th>
+                          <th class="text-end" style="color:#7C3AED;">Commission</th>
+                          <th class="text-end" style="color:#16A34A;">Adjusted</th>
+                          <th class="text-end" style="color:#2563EB;">Remaining</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for pc in sp_commissions %}
+                        <tr>
+                          <td class="fw-semibold">
+                            <a href="{{ url_for('project_detail', project_id=pc.firebase_id) }}" class="text-decoration-none">
+                              {{ pc.get('project_number','—') }}
+                            </a>
+                          </td>
+                          <td>{{ pc.get('company_name','—') }}</td>
+                          <td class="text-end fw-bold" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('commission_amount',0)|float) }}</td>
+                          <td class="text-end fw-semibold" style="color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('adjusted_amount',0)|float) }}</td>
+                          <td class="text-end fw-semibold" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('remaining_due',0)|float) }}</td>
+                          <td>
+                            {% set is_fully_covered = pc.get('deduction_status') == 'fully_covered' %}
+                            {% if is_fully_covered %}
+                            <span class="badge bg-success" style="font-size:9px;"><i class="bi bi-lock-fill me-1"></i>Paid (Fully Covered)</span>
+                            {% elif pc.get('status') == 'Paid' %}
+                            <span class="badge bg-success" style="font-size:9px;"><i class="bi bi-check-circle me-1"></i>Paid</span>
+                            {% else %}
+                            <span class="badge bg-warning text-dark" style="font-size:9px;">Pending</span>
+                            {% endif %}
+                          </td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                      <tfoot>
+                        <tr class="fw-bold" style="background:#f1f5f9;border-top:1px solid #e2e8f0;">
+                          <td colspan="2" class="text-end text-muted small">Totals</td>
+                          <td class="text-end" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_commissions|sum(attribute='commission_amount')) }}</td>
+                          <td class="text-end" style="color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_commissions|sum(attribute='adjusted_amount')) }}</td>
+                          <td class="text-end" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_commissions|sum(attribute='remaining_due')) }}</td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                  {% else %}
+                  <div class="text-center text-muted py-3">
+                    <i class="bi bi-graph-up" style="font-size:20px;opacity:.3;"></i>
+                    <div class="mt-2" style="font-size:12px;">No commission details available for this employee.</div>
+                  </div>
+                  {% endif %}
+                </div>
               </td>
             </tr>
             {% endif %}
@@ -543,15 +605,27 @@
           {% if _viewer_is_admin and salesperson_stats %}
           <tfoot>
             <tr class="fw-bold table-light" style="border-top:2px solid #dee2e6;">
-              <td colspan="5" class="text-end text-muted small">Totals</td>
-              <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(salesperson_stats|sum(attribute='revenue_generated')) }}</td>
-              <td></td>
-              <td class="text-end" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(salesperson_stats|sum(attribute='commission_earned')) }}</td>
+              <td colspan="6" class="text-end text-muted small">Totals</td>
+              <td class="text-end" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='commission_amount')) }}</td>
+              <td class="text-end" style="color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='adjusted_amount')) }}</td>
+              <td class="text-end" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='remaining_due')) }}</td>
+              <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='commission_amount') - project_commissions | sum(attribute='remaining_due')) }}</td>
             </tr>
           </tfoot>
           {% endif %}
         </table>
       </div>
+
+      <!-- JavaScript for expanding commission details -->
+      <script>
+        function toggleCommissionDetails(employeeName) {
+          const detailsRow = document.getElementById('details-' + employeeName);
+          if (detailsRow) {
+            const isHidden = detailsRow.style.display === 'none';
+            detailsRow.style.display = isHidden ? 'table-row' : 'none';
+          }
+        }
+      </script>
       {% else %}
       <div class="text-center text-muted py-5">
         <i class="bi bi-people" style="font-size:40px;opacity:.3;"></i>
