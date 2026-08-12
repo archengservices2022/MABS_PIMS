@@ -694,7 +694,10 @@
           html += '</div>';
         }
 
-        document.getElementById('detailsTitle').textContent = 'Commission Details — ' + employeeName + ' — per-project commission tracking';
+        const escapedName = employeeName.replace(/[&<>"']/g, c => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+        document.getElementById('detailsTitle').innerHTML = '<i class="bi bi-graph-up me-2" style="color:#059669;"></i>Commission Details — ' + escapedName + ' — per-project commission tracking';
         console.log('Setting innerHTML, html length:', html.length);
         console.log('First 200 chars of html:', html.substring(0, 200));
         contentDiv.innerHTML = html;
