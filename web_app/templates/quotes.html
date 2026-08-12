@@ -607,21 +607,23 @@
       const commissionData = {
         {% for sp in sales_people %}
         {% if _viewer_is_admin or sp.name == _viewer_name %}
+        {% set sp_commissions = project_commissions | selectattr('salesperson', 'equalto', sp.name) | list %}
+        {% if sp_commissions|length > 0 %}
         '{{ sp.name }}': [
-          {% set sp_commissions = project_commissions | selectattr('salesperson', 'equalto', sp.name) | list %}
           {% for pc in sp_commissions %}
           {
-            project_number: '{{ pc.get('project_number','—') }}',
-            company_name: '{{ pc.get('company_name','—') }}',
+            project_number: {{ pc.get('project_number','—')|tojson }},
+            company_name: {{ pc.get('company_name','—')|tojson }},
             commission_amount: {{ pc.get('commission_amount',0)|float }},
             adjusted_amount: {{ pc.get('adjusted_amount',0)|float }},
             remaining_due: {{ pc.get('remaining_due',0)|float }},
-            status: '{{ pc.get('status','Pending') }}',
-            deduction_status: '{{ pc.get('deduction_status','not_covered') }}',
-            firebase_id: '{{ pc.firebase_id }}'
+            status: {{ pc.get('status','Pending')|tojson }},
+            deduction_status: {{ pc.get('deduction_status','not_covered')|tojson }},
+            firebase_id: {{ pc.firebase_id|tojson }}
           }{% if not loop.last %},{% endif %}
           {% endfor %}
         ],
+        {% endif %}
         {% endif %}
         {% endfor %}
       };
