@@ -940,11 +940,14 @@ a[href*="filter_expense"]:hover {
     {% endif %}
 
     <!-- Pagination Controls - Bottom -->
-    <div class="d-flex align-items-center justify-content-center gap-2 mt-3 pt-3 border-top" id="expensePagerWrap">
-      <button type="button" id="expensePrevBtn" onclick="prevExpensePage()" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;color:#374151;">&#8249;</button>
-      <span id="expensePageInfo" style="font-size:14px;color:#374151;font-weight:500;border:1px solid #d1d5db;border-radius:6px;padding:4px 14px;background:#fff;white-space:nowrap;">Page 1 of 1</span>
-      <button type="button" id="expenseNextBtn" onclick="nextExpensePage()" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;color:#374151;">&#8250;</button>
-      <span id="expenseCountInfo" style="display:none;"></span>
+    <div class="d-flex align-items-center justify-content-between mt-3 pt-3 border-top" id="expensePagerWrap">
+      <span id="expenseCountInfo" style="font-size:12px;color:#6b7280;"></span>
+      <div class="d-flex align-items-center justify-content-center gap-2">
+        <button type="button" id="expensePrevBtn" onclick="prevExpensePage()" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;color:#374151;">&#8249;</button>
+        <input type="number" id="expenseGoToPage" min="1" max="1" style="width:50px;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;text-align:center;font-size:13px;" placeholder="Page" />
+        <span id="expensePageInfo" style="font-size:13px;color:#6b7280;min-width:50px;text-align:center;">of 1</span>
+        <button type="button" id="expenseNextBtn" onclick="nextExpensePage()" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;color:#374151;">&#8250;</button>
+      </div>
     </div>
   </div>
 </div><!-- /tab-expenses -->
@@ -1463,8 +1466,16 @@ function renderExpenseTable() {
   }
 
   const tp = totalPages || 1;
-  document.getElementById('expensePageInfo').textContent = `Page ${expenseCurrentPage} of ${tp}`;
+  document.getElementById('expensePageInfo').textContent = `of ${tp}`;
   document.getElementById('expenseCountInfo').textContent = `${currentPageRows.length} / ${expenseFilteredRows.length} expenses`;
+
+  // Update go-to-page input
+  const goToPageInput = document.getElementById('expenseGoToPage');
+  if (goToPageInput) {
+    goToPageInput.value = expenseCurrentPage;
+    goToPageInput.max = tp;
+  }
+
   const prevBtn = document.getElementById('expensePrevBtn');
   const nextBtn = document.getElementById('expenseNextBtn');
   const wrap    = document.getElementById('expensePagerWrap');
@@ -1501,6 +1512,33 @@ function nextExpensePage() {
     renderExpenseTable();
   }
 }
+
+function goToExpensePage(pageNum) {
+  const totalPages = Math.ceil(expenseFilteredRows.length / expensePerPage);
+  const page = parseInt(pageNum) || expenseCurrentPage;
+  if (page >= 1 && page <= totalPages) {
+    expenseCurrentPage = page;
+    renderExpenseTable();
+  } else {
+    // Reset to current page if invalid
+    document.getElementById('expenseGoToPage').value = expenseCurrentPage;
+  }
+}
+
+// Initialize go-to-page input listener
+setTimeout(function() {
+  const goToPageInput = document.getElementById('expenseGoToPage');
+  if (goToPageInput) {
+    goToPageInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        goToExpensePage(this.value);
+      }
+    });
+    goToPageInput.addEventListener('change', function() {
+      goToExpensePage(this.value);
+    });
+  }
+}, 100);
 
 function clearExpenseFilters() {
   ['expenseSearch','expenseTypeFilter','expenseVendorFilter','expenseDateFrom','expenseDateTo'].forEach(id => {
