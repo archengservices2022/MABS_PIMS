@@ -586,7 +586,6 @@
         {% for sp in sales_people %}
         {% if _viewer_is_admin or sp.name == _viewer_name %}
         {% set sp_commissions = project_commissions | selectattr('salesperson', 'equalto', sp.name) | list %}
-        {% if sp_commissions|length > 0 %}
         '{{ sp.name }}': [
           {% for pc in sp_commissions %}
           {
@@ -600,8 +599,7 @@
             firebase_id: {{ pc.firebase_id|tojson }}
           }{% if not loop.last %},{% endif %}
           {% endfor %}
-        ],
-        {% endif %}
+        ]{% if not loop.last %},{% endif %}
         {% endif %}
         {% endfor %}
       };
