@@ -1495,16 +1495,30 @@ function renderExpenseTable() {
         display:inline-flex;
         align-items:center;
         justify-content:center;
-        width:24px;
-        height:24px;
-        border:1px solid ${isCurrentPage ? '#2563eb' : '#d1d5db'};
-        background:${isCurrentPage ? '#2563eb' : '#fff'};
-        color:${isCurrentPage ? '#fff' : '#6b7280'};
-        border-radius:4px;
+        min-width:32px;
+        height:32px;
+        border:1px solid ${isCurrentPage ? '#0d9488' : '#e0e7ff'};
+        background:${isCurrentPage ? '#0d9488' : '#f8fafc'};
+        color:${isCurrentPage ? '#fff' : '#374151'};
+        border-radius:6px;
         cursor:pointer;
-        font-size:11px;
+        font-size:12px;
         font-weight:${isCurrentPage ? '600' : '500'};
+        transition:all 0.2s;
+        padding:0 8px;
       `;
+      btn.onmouseover = function() {
+        if (!isCurrentPage) {
+          this.style.background = '#f1f5f9';
+          this.style.borderColor = '#cbd5e1';
+        }
+      };
+      btn.onmouseout = function() {
+        if (!isCurrentPage) {
+          this.style.background = '#f8fafc';
+          this.style.borderColor = '#e0e7ff';
+        }
+      };
       pageNumbersDiv.appendChild(btn);
     }
 
@@ -1512,7 +1526,7 @@ function renderExpenseTable() {
     if (tp > 12) {
       const ellipsis = document.createElement('span');
       ellipsis.textContent = '...';
-      ellipsis.style.cssText = 'color:#9ca3af;padding:0 4px;font-size:11px;';
+      ellipsis.style.cssText = 'color:#94a3b8;font-size:12px;margin:0 4px;';
       pageNumbersDiv.appendChild(ellipsis);
 
       // Add last 2 page numbers
@@ -1527,16 +1541,30 @@ function renderExpenseTable() {
           display:inline-flex;
           align-items:center;
           justify-content:center;
-          width:24px;
-          height:24px;
-          border:1px solid ${isCurrentPage ? '#2563eb' : '#d1d5db'};
-          background:${isCurrentPage ? '#2563eb' : '#fff'};
-          color:${isCurrentPage ? '#fff' : '#6b7280'};
-          border-radius:4px;
+          min-width:32px;
+          height:32px;
+          border:1px solid ${isCurrentPage ? '#0d9488' : '#e0e7ff'};
+          background:${isCurrentPage ? '#0d9488' : '#f8fafc'};
+          color:${isCurrentPage ? '#fff' : '#374151'};
+          border-radius:6px;
           cursor:pointer;
-          font-size:11px;
+          font-size:12px;
           font-weight:${isCurrentPage ? '600' : '500'};
+          transition:all 0.2s;
+          padding:0 8px;
         `;
+        btn.onmouseover = function() {
+          if (!isCurrentPage) {
+            this.style.background = '#f1f5f9';
+            this.style.borderColor = '#cbd5e1';
+          }
+        };
+        btn.onmouseout = function() {
+          if (!isCurrentPage) {
+            this.style.background = '#f8fafc';
+            this.style.borderColor = '#e0e7ff';
+          }
+        };
         pageNumbersDiv.appendChild(btn);
       }
     }
@@ -1550,16 +1578,25 @@ function renderExpenseTable() {
       display:inline-flex;
       align-items:center;
       justify-content:center;
-      width:28px;
-      height:24px;
-      border:1px solid #d1d5db;
-      background:#fff;
-      color:#6b7280;
-      border-radius:4px;
+      min-width:32px;
+      height:32px;
+      border:1px solid #e0e7ff;
+      background:#f8fafc;
+      color:#374151;
+      border-radius:6px;
       cursor:pointer;
-      font-size:14px;
+      font-size:16px;
       font-weight:600;
+      transition:all 0.2s;
     `;
+    nextArrowBtn.onmouseover = function() {
+      this.style.background = '#f1f5f9';
+      this.style.borderColor = '#cbd5e1';
+    };
+    nextArrowBtn.onmouseout = function() {
+      this.style.background = '#f8fafc';
+      this.style.borderColor = '#e0e7ff';
+    };
     pageNumbersDiv.appendChild(nextArrowBtn);
   }
 
