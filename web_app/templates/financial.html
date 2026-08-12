@@ -1477,31 +1477,14 @@ function renderExpenseTable() {
     goToPageInput.max = tp;
   }
 
-  // Generate numbered page buttons
+  // Generate numbered page buttons: first 10 + ellipsis + last 2 + next arrow
   const pageNumbersDiv = document.getElementById('expensePageNumbers');
   if (pageNumbersDiv) {
     pageNumbersDiv.innerHTML = '';
 
-    // Show page numbers (max 10 visible at once for readability)
-    const maxVisiblePages = 10;
-    let startPage = Math.max(1, expenseCurrentPage - Math.floor(maxVisiblePages / 2));
-    let endPage = Math.min(tp, startPage + maxVisiblePages - 1);
-
-    // Adjust startPage if we're near the end
-    if (endPage - startPage + 1 < maxVisiblePages) {
-      startPage = Math.max(1, endPage - maxVisiblePages + 1);
-    }
-
-    // Add ellipsis at start if needed
-    if (startPage > 1) {
-      const ellipsis = document.createElement('span');
-      ellipsis.textContent = '...';
-      ellipsis.style.cssText = 'color:#9ca3af;padding:0 4px;font-size:12px;';
-      pageNumbersDiv.appendChild(ellipsis);
-    }
-
-    // Add page number buttons
-    for (let i = startPage; i <= endPage; i++) {
+    // Always show first 10 pages
+    const firstPagesToShow = Math.min(10, tp);
+    for (let i = 1; i <= firstPagesToShow; i++) {
       const btn = document.createElement('button');
       btn.textContent = i;
       btn.type = 'button';
@@ -1525,12 +1508,37 @@ function renderExpenseTable() {
       pageNumbersDiv.appendChild(btn);
     }
 
-    // Add ellipsis at end if needed
-    if (endPage < tp) {
+    // Add ellipsis if there are more than 12 pages (10 + 2)
+    if (tp > 12) {
       const ellipsis = document.createElement('span');
       ellipsis.textContent = '...';
       ellipsis.style.cssText = 'color:#9ca3af;padding:0 4px;font-size:12px;';
       pageNumbersDiv.appendChild(ellipsis);
+
+      // Add last 2 page numbers
+      for (let i = tp - 1; i <= tp; i++) {
+        const btn = document.createElement('button');
+        btn.textContent = i;
+        btn.type = 'button';
+        btn.onclick = () => goToExpensePage(i);
+
+        const isCurrentPage = i === expenseCurrentPage;
+        btn.style.cssText = `
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          width:28px;
+          height:28px;
+          border:1px solid ${isCurrentPage ? '#2563eb' : '#d1d5db'};
+          background:${isCurrentPage ? '#2563eb' : '#fff'};
+          color:${isCurrentPage ? '#fff' : '#6b7280'};
+          border-radius:4px;
+          cursor:pointer;
+          font-size:12px;
+          font-weight:${isCurrentPage ? '600' : '500'};
+        `;
+        pageNumbersDiv.appendChild(btn);
+      }
     }
   }
 
