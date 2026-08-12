@@ -652,6 +652,7 @@
         let html = '';
 
         if (data.length > 0) {
+          console.log('Building table for', data.length, 'items');
           html += '<div class="table-responsive">';
           html += '<table class="table table-hover align-middle mb-0" style="font-size:13px;">';
           html += '<thead>';
@@ -709,7 +710,10 @@
         }
 
         document.getElementById('detailsTitle').textContent = 'Commission Details — ' + employeeName + ' — per-project commission tracking';
+        console.log('Setting innerHTML, html length:', html.length);
+        console.log('First 200 chars of html:', html.substring(0, 200));
         contentDiv.innerHTML = html;
+        console.log('innerHTML set, contentDiv content:', contentDiv.innerHTML.substring(0, 200));
         container.style.display = 'block';
         container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
