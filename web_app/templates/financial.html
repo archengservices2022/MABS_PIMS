@@ -2781,15 +2781,12 @@ function viewReceipt(expId) {
     .expense-pager {
       display: flex;
       align-items: center;
-      justify-content: center;
       width: 100%;
       padding: 10px 12px;
       box-sizing: border-box;
       margin-top: 12px;
       padding-top: 12px;
       border-top: 1px solid #e5e7eb;
-      gap: 20px;
-      position: relative;
     }
 
     .expense-pager-center {
@@ -2797,6 +2794,7 @@ function viewReceipt(expId) {
       align-items: center;
       justify-content: center;
       gap: 6px;
+      flex: 1;
     }
 
     .expense-pager-center input {
@@ -2815,8 +2813,7 @@ function viewReceipt(expId) {
       align-items: center;
       justify-content: flex-end;
       gap: 3px;
-      position: absolute;
-      right: 12px;
+      margin-left: auto;
     }
 
     #expensePageNumbers {
