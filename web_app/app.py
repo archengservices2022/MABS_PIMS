@@ -12483,10 +12483,10 @@ def financial():
         except (ValueError, TypeError):
             pass
 
-    # Recalculate net profit now that total_salaries and commissions are known
+    # Recalculate net profit for balance sheet (includes salaries and commissions)
     # Using total_collected (based on payment date) instead of total_paid (invoice date)
-    net_profit             = total_collected - total_expenses - total_salaries - total_commission_paid
-    net_profit_after_labor = net_profit - total_labor_cost
+    bs_net_profit          = total_collected - total_expenses - total_salaries - total_commission_paid
+    net_profit_after_labor = bs_net_profit - total_labor_cost
 
     # Count unique employees with salary entries in present running year
     employees_with_salaries = set()
