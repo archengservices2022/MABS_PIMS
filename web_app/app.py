@@ -1739,27 +1739,26 @@ def dashboard():
         }
 
     elif _dash_role in ("finance", "accountant"):
-        # Finance/accountant commission summary — use project_commissions as source of truth
-        # Users may not have permission to load all salespeople data, so use direct commission records
+        # Finance/accountant commission summary from project_commissions
+        # Calculate: Earned = sum of commission_amount, Paid = sum where status="Paid"
         _dash_proj_comm = fb_get("/project_commissions") or {}
         _dash_fin_earned = 0.0
+        _dash_fin_paid = 0.0
         _dash_fin_month = 0.0
+
         if isinstance(_dash_proj_comm, dict):
             for _pc in _dash_proj_comm.values():
                 if _pc and isinstance(_pc, dict):
                     _comm_amt = _safe_float(_pc.get("commission_amount", 0))
                     _dash_fin_earned += _comm_amt
+
+                    # Count as paid only if status is "Paid"
+                    if _pc.get("status") == "Paid":
+                        _dash_fin_paid += _comm_amt
+
                     # Check if created in current month
                     if (_pc.get("created_at", "") or "").startswith(_cur_month):
                         _dash_fin_month += _comm_amt
-
-        # Get paid commissions from commission_payments
-        _dash_fin_paid = 0.0
-        _dash_comm_pay = fb_get("/commission_payments") or {}
-        if isinstance(_dash_comm_pay, dict):
-            for _cp in _dash_comm_pay.values():
-                if _cp and isinstance(_cp, dict):
-                    _dash_fin_paid += _safe_float(_cp.get("amount", 0))
 
         _dash_commission = {
             "role":        "finance" if _dash_role == "finance" else "accountant",
