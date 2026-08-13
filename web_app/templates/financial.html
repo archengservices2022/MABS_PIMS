@@ -343,8 +343,8 @@ a[href*="filter_expense"]:hover {
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
         <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_expenses) }}</div>
-        <div class="kpi-sub">{{ exp_list_year_filtered_count }} <small style="color:#94a3b8;">expenses</small></div>
-        <div class="kpi-sub"><small style="color:#94a3b8;">Across {{ stat_card_year }} Expenses</small></div>
+        <div class="kpi-sub">{{ exp_list_year_filtered_count }} expense{{ 's' if exp_list_year_filtered_count != 1 else '' }}</div>
+        <div class="kpi-sub"><small style="color:#94a3b8;">{{ stat_card_year }}</small></div>
       </div>
     </div>
     <div>
