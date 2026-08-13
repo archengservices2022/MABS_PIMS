@@ -11889,10 +11889,9 @@ def financial():
     total_tax_paid    = sum(_safe_float(p.get("amount", 0)) for inv in inv_list_filtered for p in inv.get("tax_payments", []))
     # Overview KPI uses total_collected (filtered by payment date, not invoice date)
     total_outstanding = total_invoiced - total_collected
-    # Use Overview-filtered expenses (filtered by present running year, not selected year)
-    exp_list_year_filtered = group_expenses_by_name(exp_list_for_overview)
-    total_expenses    = sum(_safe_float(e.get("amount", 0)) for e in exp_list_year_filtered)
-    exp_list_year_filtered_count = len(exp_list_year_filtered)
+    # Use same expenses as Expenses tab (exp_list_for_tab) for consistent totals
+    total_expenses    = sum(_safe_float(e.get("amount", 0)) for e in exp_list_for_tab)
+    exp_list_year_filtered_count = len(exp_list_for_tab)
     # Net profit based on actual collected payments, not invoice dates
     net_profit        = total_collected - total_expenses
 
