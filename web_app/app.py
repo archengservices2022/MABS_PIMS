@@ -12000,6 +12000,10 @@ def financial():
                 pass
 
     for exp in exp_list_raw_filtered:
+        # Skip commission expenses - they're counted separately in monthly_commission_details
+        if exp.get("is_commission"):
+            continue
+
         ds = exp.get("date", "") or ""
         try:
             exp_date = datetime.fromisoformat(ds[:10])
@@ -12476,6 +12480,8 @@ def financial():
                 annual_commissions[month_num] = sum(_safe_float(c.get("commission_amount", 0)) for c in commissions_list)
                 # Also accumulate to total_commission_paid (for balance sheet net profit calculation)
                 total_commission_paid += annual_commissions[month_num]
+                # Add commission amounts to annual_expenses (they're the remaining_due values)
+                annual_expenses[month_num] += annual_commissions[month_num]
         except (ValueError, TypeError):
             pass
 
