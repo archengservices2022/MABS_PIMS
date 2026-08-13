@@ -1767,24 +1767,23 @@ def dashboard():
             for _qid, _q in _dash_quotes.items():
                 if not _q or not isinstance(_q, dict):
                     continue
-                _q = dict(_q)
-            if not isinstance(_q, dict): continue
-            _sp = (_q.get("salesperson") or "").strip()
-            if not _sp or _sp not in _sales_users_dash: continue
-            _rate = _sales_users_dash[_sp]["commission_rate"]
-            _linked = _q.get("linked_project_id", "")
-            _is_conv = _q.get("status", "") in _CONV_DASH or bool(_linked)
-            if not _is_conv: continue
-            if _linked and _dash_proj_status_fin.get(_linked) == "Cancelled": continue
-            _qval = _safe_float(_q.get("total", 0))
-            _period = (_q.get("date") or "")[:7]
-            if _sp not in _dash_sp_totals:
-                _dash_sp_totals[_sp] = {"total_earned": 0.0, "total_paid": 0.0, "periods": {}}
-            _dash_sp_totals[_sp]["total_earned"] += _qval * _rate / 100
-            if _period:
-                if _period not in _dash_sp_totals[_sp]["periods"]:
-                    _dash_sp_totals[_sp]["periods"][_period] = {"earned": 0.0, "paid": False}
-                _dash_sp_totals[_sp]["periods"][_period]["earned"] += _qval * _rate / 100
+                if not isinstance(_q, dict): continue
+                _sp = (_q.get("salesperson") or "").strip()
+                if not _sp or _sp not in _sales_users_dash: continue
+                _rate = _sales_users_dash[_sp]["commission_rate"]
+                _linked = _q.get("linked_project_id", "")
+                _is_conv = _q.get("status", "") in _CONV_DASH or bool(_linked)
+                if not _is_conv: continue
+                if _linked and _dash_proj_status_fin.get(_linked) == "Cancelled": continue
+                _qval = _safe_float(_q.get("total", 0))
+                _period = (_q.get("date") or "")[:7]
+                if _sp not in _dash_sp_totals:
+                    _dash_sp_totals[_sp] = {"total_earned": 0.0, "total_paid": 0.0, "periods": {}}
+                _dash_sp_totals[_sp]["total_earned"] += _qval * _rate / 100
+                if _period:
+                    if _period not in _dash_sp_totals[_sp]["periods"]:
+                        _dash_sp_totals[_sp]["periods"][_period] = {"earned": 0.0, "paid": False}
+                    _dash_sp_totals[_sp]["periods"][_period]["earned"] += _qval * _rate / 100
 
         # Also include direct projects (no linked quote, not cancelled)
         if isinstance(_dash_projects, dict):
