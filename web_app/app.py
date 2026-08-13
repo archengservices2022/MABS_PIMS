@@ -12454,12 +12454,14 @@ def financial():
                 _yr, _mon = 0, "0"
 
             if _yr == selected_year:
+                # Use remaining_due instead of commission_amount (remaining after adjustments)
+                remaining_due = _safe_float(_pc.get("remaining_due", 0))
                 monthly_commission_details[_mon].append({
                     "project_number": _pc.get("project_number", ""),
                     "project_id": _pcid,
                     "salesperson": _pc.get("salesperson", ""),
                     "salesperson_email": _pc.get("salesperson_email", ""),
-                    "commission_amount": _safe_float(_pc.get("commission_amount", 0)),
+                    "commission_amount": remaining_due,
                     "paid_date": _display_date,
                 })
 
@@ -12472,6 +12474,8 @@ def financial():
             month_num = int(month_str)
             if 1 <= month_num <= 12:
                 annual_commissions[month_num] = sum(_safe_float(c.get("commission_amount", 0)) for c in commissions_list)
+                # Also accumulate to total_commission_paid (for balance sheet net profit calculation)
+                total_commission_paid += annual_commissions[month_num]
         except (ValueError, TypeError):
             pass
 
