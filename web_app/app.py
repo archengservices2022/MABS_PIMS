@@ -130,7 +130,7 @@ ROLE_PAGES = {
     "finance":        ["financial", "payroll", "employees", "timesheets"],
     "engineer":       ["employees", "timesheets"],
     "administration": ["dashboard", "projects", "invoicing", "clients", "employees", "timesheets"],
-    "accountant":     ["dashboard", "employees", "projects", "invoicing", "financial", "payroll", "timesheets", "approvals"],
+    "accountant":     [],
 }
 
 ALL_PAGES = ["dashboard", "sales_dashboard", "quotes", "projects", "invoicing", "clients", "payroll",
@@ -355,17 +355,33 @@ def normalize_role(role: str) -> str:
     r = str(role or "sales").strip().lower()
     return r if r in ROLE_PAGES else "sales"
 
-def get_allowed_pages(role: str, custom_pages=None) -> list:
+def get_accountant_permissions(uid: str) -> list:
+    """Get the list of tabs an accountant user has been granted access to."""
+    if not FIREBASE_AVAILABLE or not uid:
+        return []
+    try:
+        perms = fb_get(f"/user_permissions/accountant/{uid}") or {}
+        if isinstance(perms, dict):
+            tabs = perms.get("granted_tabs", [])
+            return tabs if isinstance(tabs, list) else []
+    except (FirebaseError, KeyError, TypeError) as e:
+        log.debug(f"Error fetching accountant permissions for {uid}: {e}")
+    return []
+
+def get_allowed_pages(role: str, custom_pages=None, uid: str = "") -> list:
     """Return the effective page list: custom override if set, else role default."""
     if custom_pages and isinstance(custom_pages, list) and len(custom_pages) > 0:
         return custom_pages
-    return ROLE_PAGES.get(normalize_role(role), [])
+    normalized_role = normalize_role(role)
+    if normalized_role == "accountant" and uid:
+        return get_accountant_permissions(uid)
+    return ROLE_PAGES.get(normalized_role, [])
 
-def can_access(role: str, page: str, custom_pages=None) -> bool:
-    return page in get_allowed_pages(role, custom_pages)
+def can_access(role: str, page: str, custom_pages=None, uid: str = "") -> bool:
+    return page in get_allowed_pages(role, custom_pages, uid)
 
-def first_page(role: str, custom_pages=None) -> str:
-    pages = get_allowed_pages(role, custom_pages)
+def first_page(role: str, custom_pages=None, uid: str = "") -> str:
+    pages = get_allowed_pages(role, custom_pages, uid)
     return pages[0] if pages else "quotes"
 
 # ── Flask app ─────────────────────────────────────────────────────────────────
@@ -488,13 +504,14 @@ def role_required(page_key):
             if "user_email" not in session:
                 return redirect(url_for("login"))
             role         = session.get("user_role", "")
+            uid          = session.get("user_uid", "")
             custom_pages = session.get("custom_pages") or None
-            if not can_access(role, page_key, custom_pages):
+            if not can_access(role, page_key, custom_pages, uid):
                 # For API endpoints, return JSON error; for pages, redirect
                 if request.path.startswith("/api/"):
                     return jsonify({"error": "Access denied"}), 403
                 flash("You don't have permission to access this page.", "danger")
-                return redirect(url_for(first_page(role, custom_pages)))
+                return redirect(url_for(first_page(role, custom_pages, uid)))
             return f(*args, **kwargs)
         return decorated
     return decorator
@@ -14933,7 +14950,7 @@ def employee_time_off_new():
 @app.route("/employees/time-off/<request_id>/<action>", methods=["POST"])
 @role_required("employees")
 def employee_time_off_action(request_id, action):
-    if normalize_role(session.get("user_role", "")) != "admin":
+    if normalize_role(session.get("user_role", "")) not in ("admin", "accountant"):
         flash("You don't have permission to do that.", "danger")
         return redirect(url_for("employees"))
 
@@ -16155,8 +16172,8 @@ def approvals():
             'days_pending': days_pending,
             'cat': 'expense'
         })
-    # Only show time off to admins (not accountants)
-    if _role == "admin":
+    # Show time off to admins and accountants
+    if _role in ("admin", "accountant"):
         for req in pending_time_off:
             # Calculate hours for time off
             r_hours = req.get('total_hours')
@@ -16719,6 +16736,39 @@ def user_role_update(uid):
     fb_update(f"/users/{uid}", {"role": new_role,
                                 "updated_at": datetime.now(timezone.utc).isoformat()})
     flash("User role updated.", "success")
+    return redirect(url_for("settings") + "?tab=users")
+
+@app.route("/api/users/<uid>/accountant-tabs", methods=["GET"])
+@login_required
+def api_get_accountant_tabs(uid):
+    """Get the list of granted tabs for an accountant user."""
+    if normalize_role(session.get("user_role", "")) != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+
+    perms = fb_get(f"/user_permissions/accountant/{uid}") or {}
+    tabs = perms.get("granted_tabs", []) if isinstance(perms, dict) else []
+    return jsonify({"granted_tabs": tabs})
+
+@app.route("/settings/user/<uid>/accountant-tabs", methods=["POST"])
+@role_required("settings")
+def user_accountant_tabs_update(uid):
+    """Admin grants specific tabs to an accountant user."""
+    user = fb_get(f"/users/{uid}") or {}
+    if not user:
+        flash("User not found.", "danger")
+        return redirect(url_for("settings") + "?tab=users")
+
+    if normalize_role(user.get("role")) != "accountant":
+        flash("This user is not an accountant.", "danger")
+        return redirect(url_for("settings") + "?tab=users")
+
+    granted_tabs = request.form.getlist("granted_tabs")
+    fb_update(f"/user_permissions/accountant/{uid}", {
+        "granted_tabs": granted_tabs,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_by": session.get("user_name") or session.get("user_email", "")
+    })
+    flash(f"Accountant access updated. Granted tabs: {', '.join(granted_tabs) if granted_tabs else 'None'}", "success")
     return redirect(url_for("settings") + "?tab=users")
 
 @app.route("/settings/user/<uid>/delete", methods=["POST"])
@@ -22258,13 +22308,13 @@ def api_timesheets_save():
     uid     = session.get("user_uid", "")
     name    = session.get("user_name", "")
     user_role = normalize_role(session.get("user_role", ""))
-    is_admin = user_role in ("admin", "administration")
+    is_admin = user_role in ("admin", "administration", "accountant")
 
     week_of = (data.get("week_of") or "").strip()
     action  = data.get("action", "draft")
     entries = data.get("entries") or []
 
-    # If admin is editing another user's timesheet, use that UID
+    # If admin/accountant is editing another user's timesheet, use that UID
     edited_uid = data.get("edited_uid", "")
     if edited_uid and is_admin:
         uid = edited_uid

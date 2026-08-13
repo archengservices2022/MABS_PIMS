@@ -50,6 +50,7 @@ ROLE_ALLOWED_PAGE_KEYS = {
     "sales":    (PAGE_QUOTES_KEY,),
     "projects": (PAGE_PROJECTS_KEY,  PAGE_INVOICING_KEY),
     "finance":  (PAGE_FINANCIAL_KEY,),
+    "accountant": (),
 }
 
 ROLE_ALLOWED_ACTIONS = {
