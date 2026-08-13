@@ -1740,10 +1740,14 @@ def dashboard():
 
     elif _dash_role in ("finance", "accountant"):
         # Finance/accountant commission summary from project_commissions
-        # Calculate: Earned = sum of commission_amount, Paid = sum where status="Paid"
+        # Earned = sum of commission_amount
+        # Paid = sum of commission_amount for status="Paid" (not "Paid (Fully Covered)")
+        # Outstanding = sum of remaining_due for status="Pending" only
+        # This Month = sum of remaining_due for status="Paid" projects from current month
         _dash_proj_comm = fb_get("/project_commissions") or {}
         _dash_fin_earned = 0.0
         _dash_fin_paid = 0.0
+        _dash_fin_outstanding = 0.0
         _dash_fin_month = 0.0
 
         if isinstance(_dash_proj_comm, dict):
@@ -1752,19 +1756,26 @@ def dashboard():
                     _comm_amt = _safe_float(_pc.get("commission_amount", 0))
                     _dash_fin_earned += _comm_amt
 
-                    # Count as paid only if status is "Paid"
-                    if _pc.get("status") == "Paid":
-                        _dash_fin_paid += _comm_amt
+                    _status = _pc.get("status", "")
+                    _remaining = _safe_float(_pc.get("remaining_due", 0))
+                    _paid_at = _pc.get("paid_at", "")
 
-                    # Check if created in current month
-                    if (_pc.get("created_at", "") or "").startswith(_cur_month):
-                        _dash_fin_month += _comm_amt
+                    # Paid = commission_amount for status="Paid" (exact match, not "Paid (Fully Covered)")
+                    if _status == "Paid":
+                        _dash_fin_paid += _comm_amt
+                        # This Month = remaining_due for Paid projects from current month
+                        if _paid_at.startswith(_cur_month):
+                            _dash_fin_month += _remaining
+
+                    # Outstanding = remaining_due for Pending status only
+                    if _status == "Pending":
+                        _dash_fin_outstanding += _remaining
 
         _dash_commission = {
             "role":        "finance" if _dash_role == "finance" else "accountant",
             "earned":      _dash_fin_earned,
             "paid":        _dash_fin_paid,
-            "total":       max(_dash_fin_earned - _dash_fin_paid, 0.0),
+            "total":       _dash_fin_outstanding,
             "this_month":  _dash_fin_month,
         }
 
