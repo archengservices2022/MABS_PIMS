@@ -12001,7 +12001,7 @@ def financial():
 
     for exp in exp_list_raw_filtered:
         # Skip commission expenses - they're counted separately in monthly_commission_details
-        if exp.get("is_commission"):
+        if exp.get("is_commission") or exp.get("expense_type") == "Commission":
             continue
 
         ds = exp.get("date", "") or ""
