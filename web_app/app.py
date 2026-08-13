@@ -15258,7 +15258,7 @@ def sync_salary_expenses():
 @app.route("/api/commission/mark-paid", methods=["POST"])
 @role_required("quotes")
 def commission_mark_paid():
-    if normalize_role(session.get("user_role", "")) != "admin":
+    if normalize_role(session.get("user_role", "")) not in ("admin", "finance", "accountant"):
         return jsonify({"error": "Admin access required"}), 403
     data = request.get_json() or {}
     period     = str(data.get("period", "")).strip()
@@ -15305,7 +15305,7 @@ def commission_mark_paid():
 @app.route("/api/commission/project/<project_id>/mark-paid", methods=["POST"])
 @role_required("financial")
 def commission_project_mark_paid(project_id):
-    if normalize_role(session.get("user_role", "")) != "admin":
+    if normalize_role(session.get("user_role", "")) not in ("admin", "finance", "accountant"):
         return jsonify({"error": "Admin access required"}), 403
     data   = request.get_json() or {}
     action = str(data.get("action", "pay")).strip()
