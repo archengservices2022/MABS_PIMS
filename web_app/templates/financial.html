@@ -348,18 +348,10 @@ a[href*="filter_expense"]:hover {
       </div>
     </div>
     <div class="col-6 col-xl-2">
-      <div class="kpi-card kpi-purple">
-        <div class="kpi-top"><span class="kpi-label">Total Salaries</span><i class="bi bi-people-fill kpi-icon-sm"></i></div>
-        <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_salaries) }}</div>
-        <div class="kpi-sub">{{ employee_count }} employee{{ 's' if employee_count != 1 else '' }}</div>
-        <div class="kpi-sub"><small style="color:#94a3b8;">{{ stat_card_year }}</small></div>
-      </div>
-    </div>
-    <div class="col-6 col-xl-2">
       <div class="kpi-card {{ 'kpi-green' if net_profit >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
         <div class="kpi-value {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">{{ currency_symbol }}{{ "{:,.2f}".format(net_profit) }}</div>
-        <div class="kpi-sub">collected — expenses — salaries</div>
+        <div class="kpi-sub">collected — expenses</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">{{ stat_card_year }}</small></div>
       </div>
     </div>
@@ -412,10 +404,6 @@ a[href*="filter_expense"]:hover {
         <div class="summary-row">
           <span class="text-muted small">Total Expenses</span>
           <span class="fw-bold text-danger">{{ currency_symbol }}{{ "{:,.2f}".format(total_expenses) }}</span>
-        </div>
-        <div class="summary-row">
-          <span class="text-muted small">Total Salaries</span>
-          <span class="fw-bold text-danger">{{ currency_symbol }}{{ "{:,.2f}".format(total_salaries) }}</span>
         </div>
         <div class="summary-row">
           <span class="text-muted small">Net Profit</span>
