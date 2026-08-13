@@ -1738,6 +1738,33 @@ def dashboard():
             "this_month":  _admin_comm_month,
         }
 
+    elif _dash_role in ("finance", "accountant"):
+        # Finance/accountant commission summary from project_commissions
+        _proj_comm = fb_get("/project_commissions") or {}
+        _fin_comm_earned = 0.0
+        _fin_comm_month = 0.0
+        if isinstance(_proj_comm, dict):
+            for _pc in _proj_comm.values():
+                if _pc and isinstance(_pc, dict):
+                    _comm_amt = _safe_float(_pc.get("commission_amount", 0))
+                    _fin_comm_earned += _comm_amt
+                    if (_pc.get("created_at", "") or "").startswith(_cur_month):
+                        _fin_comm_month += _comm_amt
+        # Get paid commissions from commission_payments
+        _fin_comm_paid = 0.0
+        _fin_comm_payments = fb_get("/commission_payments") or {}
+        if isinstance(_fin_comm_payments, dict):
+            for _fcp in _fin_comm_payments.values():
+                if _fcp and isinstance(_fcp, dict):
+                    _fin_comm_paid += _safe_float(_fcp.get("amount", 0))
+        _dash_commission = {
+            "role":        "finance" if _dash_role == "finance" else "accountant",
+            "earned":      _fin_comm_earned,
+            "paid":        _fin_comm_paid,
+            "total":       max(_fin_comm_earned - _fin_comm_paid, 0.0),
+            "this_month":  _fin_comm_month,
+        }
+
     # Pending employee expense approvals (admin only)
     pending_expenses_dash = []
     if normalize_role(session.get("user_role", "")) == "admin":

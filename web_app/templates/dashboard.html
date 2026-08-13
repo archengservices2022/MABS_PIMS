@@ -326,7 +326,7 @@
           </div>
         </div>
 
-      {% elif dash_commission.role == 'admin' %}
+      {% elif dash_commission.role in ('admin', 'finance', 'accountant') %}
         <div class="row g-2">
           <div class="col-6 col-md-3">
             <div style="background:#F5F3FF;border-radius:8px;padding:12px 14px;">
