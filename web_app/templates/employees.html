@@ -132,7 +132,7 @@
   <li class="nav-item">
     <a class="nav-link active" data-bs-toggle="tab" href="#tab-time-off">
       <i class="bi bi-calendar-event me-1"></i>Time Off
-      {% if user_role == 'admin' and pending_time_off %}
+      {% if user_role in ('admin', 'accountant') and pending_time_off %}
       <span class="badge bg-danger ms-1">{{ pending_time_off|length }}</span>
       {% endif %}
     </a>
@@ -666,8 +666,8 @@
     </div>
   </div>
 
-  {% if user_role == 'admin' %}
-  <!-- Admin: All Employees Balance -->
+  {% if user_role in ('admin', 'accountant') %}
+  <!-- Admin/Accountant: All Employees Balance -->
   <div class="card-panel mt-3">
     <h6 class="panel-title mb-3">
       <i class="bi bi-people me-1" style="color:#0D9488;"></i>All Employees — {{ current_year }} Time Off Balance
