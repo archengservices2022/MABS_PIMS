@@ -272,7 +272,7 @@
           {% set contract_val = project.get('contract_value','0') if project else '0' %}
           <input type="number" id="contractValue" name="contract_value" class="form-control"
                  value="{{ contract_val }}"
-                 min="0.01" step="0.01" required
+                 min="0" step="0.01" required
                  oninput="(function() { try { handleContractValueChange(); } catch(e) { console.error('handleContractValueChange error:', e); } updatePlanPreview(); })();"
                  data-original-value="{{ contract_val|float }}">
           {% if has_invoiced %}
@@ -986,13 +986,13 @@ function validateProjectForm(event) {
     return false;
   }
 
-  // Check if contract value is greater than 0
+  // Check if contract value is valid (not negative or NaN)
   const contractValueInput = document.getElementById('contractValue');
   const contractValue = parseFloat(contractValueInput.value);
 
-  if (!contractValueInput.disabled && (contractValue === 0 || isNaN(contractValue))) {
+  if (!contractValueInput.disabled && isNaN(contractValue)) {
     event.preventDefault();
-    alert('? Contract Value must be greater than $0.00');
+    alert('? Contract Value must be a valid number');
     contractValueInput.focus();
     return false;
   }
