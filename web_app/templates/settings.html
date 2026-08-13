@@ -527,17 +527,9 @@
                               data-name="{{ u.get('username','') | e }}"
                               data-role="{{ _role }}"
                               data-custompages="{{ (u.get('custom_pages') or []) | join(',') }}"
-                              title="Customize Pages">
+                              title="Customize Pages{% if _role == 'accountant' %} (Grant Tabs){% endif %}">
                         <i class="bi bi-layout-sidebar"></i>
                       </button>
-                      {% if _role == 'accountant' %}
-                      <button class="btn btn-xs btn-outline-success accountant-tabs-btn"
-                              data-uid="{{ u.firebase_uid }}"
-                              data-name="{{ u.get('username','') | e }}"
-                              title="Grant Tabs">
-                        <i class="bi bi-lock-fill"></i>
-                      </button>
-                      {% endif %}
                       <button class="btn btn-xs btn-outline-warning send-reset-btn"
                               data-email="{{ u.get('email','') | e }}"
                               data-name="{{ u.get('username','') | e }}"
@@ -920,32 +912,6 @@
   </div>
 </div>
 
-<!-- Accountant Tabs Modal -->
-<div class="modal fade" id="accountantTabsModal" tabindex="-1">
-  <div class="modal-dialog modal-sm">
-    <div class="modal-content">
-      <div class="modal-header py-2">
-        <h6 class="modal-title">Grant Tabs — <span id="accountantTabsUserName"></span></h6>
-        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body py-2">
-        <p class="text-muted mb-2" style="font-size:11px;">
-          Select which tabs this accountant can access and manage.
-        </p>
-        <input type="hidden" id="accountantTabsUid">
-        <div id="accountantTabsCheckboxes" class="d-flex flex-column gap-1" style="font-size:13px;">
-          {# rendered by JS #}
-        </div>
-        <div id="accountantTabsMsg" class="mt-2" style="font-size:12px;"></div>
-      </div>
-      <div class="modal-footer py-2">
-        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-sm btn-primary" onclick="saveAccountantTabs()">Save</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <!-- ?? Edit Employee Details Modal ???????????????????????????????????????????? -->
 <div class="modal fade" id="editUserModal" tabindex="-1">
   <div class="modal-dialog modal-md">
@@ -1163,27 +1129,6 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   });
-
-  document.querySelectorAll('.accountant-tabs-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      try {
-        var uid   = btn.dataset.uid;
-        var name  = btn.dataset.name;
-        var tabsUidEl = document.getElementById('accountantTabsUid');
-        if (tabsUidEl) tabsUidEl.value = uid;
-        var tabsNameEl = document.getElementById('accountantTabsUserName');
-        if (tabsNameEl) tabsNameEl.textContent = name;
-        var msgEl = document.getElementById('accountantTabsMsg');
-        if (msgEl) msgEl.innerHTML = '';
-        buildAccountantTabsCheckboxes();
-        loadAccountantTabs(uid);
-        var tabsModal = document.getElementById('accountantTabsModal');
-        if (tabsModal) new bootstrap.Modal(tabsModal).show();
-      } catch(e) {
-        console.error('Error in accountant tabs button:', e);
-      }
-    });
-  });
 });
 
 function onEditRoleChange() {
@@ -1332,61 +1277,6 @@ async function saveUserPages() {
     setTimeout(function(){ location.reload(); }, 600);
   } catch(e) {
     console.error('Save pages error:', e);
-    msg.innerHTML = '<span class="text-danger">Request failed: ' + (e.message || 'Unknown error') + '</span>';
-  }
-}
-
-function buildAccountantTabsCheckboxes() {
-  var accountantTabs = [
-    'dashboard', 'quotes', 'projects', 'invoicing', 'financial', 'payroll', 'timesheets', 'approvals', 'employees'
-  ];
-  var html = '';
-  accountantTabs.forEach(function(tab) {
-    html += '<div class="form-check">'
-          + '<input class="form-check-input accountant-tab-checkbox" type="checkbox" value="' + tab + '" id="act_' + tab + '">'
-          + '<label class="form-check-label" for="act_' + tab + '">' + (PAGE_LABELS[tab] || tab.charAt(0).toUpperCase() + tab.slice(1)) + '</label>'
-          + '</div>';
-  });
-  document.getElementById('accountantTabsCheckboxes').innerHTML = html;
-}
-
-async function loadAccountantTabs(uid) {
-  try {
-    var res = await fetch('/api/users/' + uid + '/accountant-tabs');
-    if (!res.ok) return;
-    var data = await res.json();
-    var tabs = data.granted_tabs || [];
-    document.querySelectorAll('.accountant-tab-checkbox').forEach(function(cb) {
-      cb.checked = tabs.indexOf(cb.value) !== -1;
-    });
-  } catch(e) {
-    console.warn('Could not load accountant tabs:', e);
-  }
-}
-
-async function saveAccountantTabs() {
-  var uid = document.getElementById('accountantTabsUid').value;
-  var msg = document.getElementById('accountantTabsMsg');
-  var tabs = [];
-  document.querySelectorAll('.accountant-tab-checkbox:checked').forEach(function(cb) {
-    tabs.push(cb.value);
-  });
-  msg.innerHTML = '<span class="text-muted">Saving...</span>';
-  try {
-    var res = await fetch('/settings/user/' + uid + '/accountant-tabs', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: new URLSearchParams({granted_tabs: tabs})
-    });
-    if (!res.ok) {
-      console.error('Response not ok:', res.status);
-      msg.innerHTML = '<span class="text-danger">Error: ' + res.status + '</span>';
-      return;
-    }
-    msg.innerHTML = '<span class="text-success">Saved!</span>';
-    setTimeout(function(){ location.reload(); }, 600);
-  } catch(e) {
-    console.error('Save accountant tabs error:', e);
     msg.innerHTML = '<span class="text-danger">Request failed: ' + (e.message || 'Unknown error') + '</span>';
   }
 }
