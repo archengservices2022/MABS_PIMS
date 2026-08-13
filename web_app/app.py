@@ -11604,6 +11604,9 @@ def financial():
 
     # Filter for balance sheet (only selected year)
     exp_list_raw_filtered = filter_by_year(exp_list_raw, selected_year)
+    # IMPORTANT: Exclude commission expenses from balance sheet calculation
+    # Commissions are recalculated from /project_commissions with remaining_due
+    exp_list_raw_filtered = [e for e in exp_list_raw_filtered if not e.get("is_commission")]
     exp_list_filtered = group_expenses_by_name(exp_list_raw_filtered)
 
     # Filter expenses if filter_expense parameter provided (apply to both raw and grouped lists)
