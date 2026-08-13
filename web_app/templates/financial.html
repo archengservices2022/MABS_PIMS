@@ -3170,7 +3170,7 @@ function viewReceipt(expId) {
               {% set netval = (annual_netpl.get(m, 0) | float) %}
               <td style="{{ 'color:#16a34a;' if netval >= 0 else 'color:#dc2626;' }}">{{ currency_symbol }}{{ netval | round(2) }}</td>
               {% endfor %}
-              <td id="bsNetTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">{{ currency_symbol }}{{ ((annual_revenue.values() | sum) - (bs_total_expenses | default(0))) | round(2) }}</td>
+              <td id="bsNetTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">{{ currency_symbol }}{{ ((annual_revenue.values() | sum) - (bs_total_expenses | default(0)) - (annual_commissions.values() | sum)) | round(2) }}</td>
             </tr>
           </tbody>
         </table>

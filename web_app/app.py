@@ -12483,6 +12483,9 @@ def financial():
         except (ValueError, TypeError):
             pass
 
+    # Recalculate monthly NET P/L to include commissions in the calculation
+    annual_netpl = {i: annual_revenue[i] - annual_expenses[i] - annual_commissions[i] for i in range(1, 13)}
+
     # Recalculate net profit now that total_salaries and commissions are known
     # Using total_collected (based on payment date) instead of total_paid (invoice date)
     net_profit             = total_collected - total_expenses - total_salaries - total_commission_paid
