@@ -1739,29 +1739,55 @@ def dashboard():
         }
 
     elif _dash_role in ("finance", "accountant"):
-        # Finance/accountant commission summary from project_commissions
-        _proj_comm = fb_get("/project_commissions") or {}
-        _fin_comm_earned = 0.0
+        # Finance/accountant commission summary — same calculation as admin
+        _all_users = _load_all_users()
+        _comm_map: Dict[str, float] = {}
+        for _u in _all_users:
+            if normalize_role(_u.get("role", "")) in ("sales", "admin"):
+                _uname = (_u.get("username") or "").strip()
+                if _uname:
+                    _comm_map[_uname] = _safe_float(_u.get("commission_rate", 0))
+        _fin_comm_total = 0.0
         _fin_comm_month = 0.0
-        if isinstance(_proj_comm, dict):
-            for _pc in _proj_comm.values():
-                if _pc and isinstance(_pc, dict):
-                    _comm_amt = _safe_float(_pc.get("commission_amount", 0))
-                    _fin_comm_earned += _comm_amt
-                    if (_pc.get("created_at", "") or "").startswith(_cur_month):
-                        _fin_comm_month += _comm_amt
+        for _q in quot_list:
+            if not isinstance(_q, dict): continue
+            _sp = (_q.get("salesperson") or "").strip()
+            _rate = _comm_map.get(_sp, 0)
+            if not _rate: continue
+            _linked = _q.get("linked_project_id", "")
+            _is_conv = _q.get("status", "") in _CONV_DASH or bool(_linked)
+            if _is_conv and not (_linked and _dash_proj_status.get(_linked) == "Cancelled"):
+                _qval = _safe_float(_q.get("total", 0))
+                _fin_comm_total += _qval * _rate / 100
+                if (_q.get("date", "") or "").startswith(_cur_month):
+                    _fin_comm_month += _qval * _rate / 100
+        # Also include direct projects (no linked quote, not cancelled)
+        for _pid, _pd in (projects.items() if isinstance(projects, dict) else []):
+            if not _pd or not isinstance(_pd, dict): continue
+            if _pd.get("status", "") == "Cancelled": continue
+            if (_pd.get("quote_number") or "").strip(): continue
+            _sp = (_pd.get("sales") or "").strip()
+            _rate = _comm_map.get(_sp, 0)
+            if not _rate: continue
+            _pval = _safe_float(_pd.get("contract_value", 0))
+            if not _pval: continue
+            _fin_comm_total += _pval * _rate / 100
+            if (_pd.get("date_received") or _pd.get("start_date") or "")[:7] == _cur_month:
+                _fin_comm_month += _pval * _rate / 100
         # Get paid commissions from commission_payments
         _fin_comm_paid = 0.0
         _fin_comm_payments = fb_get("/commission_payments") or {}
         if isinstance(_fin_comm_payments, dict):
             for _fcp in _fin_comm_payments.values():
                 if _fcp and isinstance(_fcp, dict):
-                    _fin_comm_paid += _safe_float(_fcp.get("amount", 0))
+                    _sp_name = (_fcp.get("salesperson") or "").strip()
+                    if _sp_name in _comm_map:
+                        _fin_comm_paid += _safe_float(_fcp.get("amount", 0))
         _dash_commission = {
             "role":        "finance" if _dash_role == "finance" else "accountant",
-            "earned":      _fin_comm_earned,
+            "earned":      _fin_comm_total,
             "paid":        _fin_comm_paid,
-            "total":       max(_fin_comm_earned - _fin_comm_paid, 0.0),
+            "total":       max(_fin_comm_total - _fin_comm_paid, 0.0),
             "this_month":  _fin_comm_month,
         }
 
