@@ -1739,56 +1739,84 @@ def dashboard():
         }
 
     elif _dash_role in ("finance", "accountant"):
-        # Finance/accountant commission summary — same calculation as admin
+        # Finance/accountant commission summary — match Finance tab calculation exactly
         _all_users = _load_all_users()
-        _comm_map: Dict[str, float] = {}
+        _sales_users_dash: Dict[str, dict] = {}
         for _u in _all_users:
-            if normalize_role(_u.get("role", "")) in ("sales", "admin"):
+            if normalize_role(_u.get("role", "")) == "sales":
                 _uname = (_u.get("username") or "").strip()
                 if _uname:
-                    _comm_map[_uname] = _safe_float(_u.get("commission_rate", 0))
-        _fin_comm_total = 0.0
-        _fin_comm_month = 0.0
+                    _sales_users_dash[_uname] = {
+                        "commission_rate": _safe_float(_u.get("commission_rate", 0)),
+                    }
+
+        _dash_sp_totals: Dict[str, dict] = {}
         for _q in quot_list:
             if not isinstance(_q, dict): continue
             _sp = (_q.get("salesperson") or "").strip()
-            _rate = _comm_map.get(_sp, 0)
-            if not _rate: continue
+            if not _sp or _sp not in _sales_users_dash: continue
+            _rate = _sales_users_dash[_sp]["commission_rate"]
             _linked = _q.get("linked_project_id", "")
             _is_conv = _q.get("status", "") in _CONV_DASH or bool(_linked)
-            if _is_conv and not (_linked and _dash_proj_status.get(_linked) == "Cancelled"):
-                _qval = _safe_float(_q.get("total", 0))
-                _fin_comm_total += _qval * _rate / 100
-                if (_q.get("date", "") or "").startswith(_cur_month):
-                    _fin_comm_month += _qval * _rate / 100
+            if not _is_conv: continue
+            if _linked and _dash_proj_status.get(_linked) == "Cancelled": continue
+            _qval = _safe_float(_q.get("total", 0))
+            _period = (_q.get("date") or "")[:7]
+            if _sp not in _dash_sp_totals:
+                _dash_sp_totals[_sp] = {"total_earned": 0.0, "total_paid": 0.0, "periods": {}}
+            _dash_sp_totals[_sp]["total_earned"] += _qval * _rate / 100
+            if _period:
+                if _period not in _dash_sp_totals[_sp]["periods"]:
+                    _dash_sp_totals[_sp]["periods"][_period] = {"earned": 0.0, "paid": False}
+                _dash_sp_totals[_sp]["periods"][_period]["earned"] += _qval * _rate / 100
+
         # Also include direct projects (no linked quote, not cancelled)
-        for _pid, _pd in (projects.items() if isinstance(projects, dict) else []):
-            if not _pd or not isinstance(_pd, dict): continue
-            if _pd.get("status", "") == "Cancelled": continue
-            if (_pd.get("quote_number") or "").strip(): continue
-            _sp = (_pd.get("sales") or "").strip()
-            _rate = _comm_map.get(_sp, 0)
-            if not _rate: continue
-            _pval = _safe_float(_pd.get("contract_value", 0))
-            if not _pval: continue
-            _fin_comm_total += _pval * _rate / 100
-            if (_pd.get("date_received") or _pd.get("start_date") or "")[:7] == _cur_month:
-                _fin_comm_month += _pval * _rate / 100
-        # Get paid commissions from commission_payments
-        _fin_comm_paid = 0.0
-        _fin_comm_payments = fb_get("/commission_payments") or {}
-        if isinstance(_fin_comm_payments, dict):
-            for _fcp in _fin_comm_payments.values():
-                if _fcp and isinstance(_fcp, dict):
-                    _sp_name = (_fcp.get("salesperson") or "").strip()
-                    if _sp_name in _comm_map:
-                        _fin_comm_paid += _safe_float(_fcp.get("amount", 0))
+        if isinstance(projects, dict):
+            for _pid, _pd in projects.items():
+                if not _pd or not isinstance(_pd, dict): continue
+                if _pd.get("status", "") == "Cancelled": continue
+                if (_pd.get("quote_number") or "").strip(): continue
+                _sp = (_pd.get("sales") or _pd.get("sales_person") or "").strip()
+                if not _sp or _sp not in _sales_users_dash: continue
+                _rate = _sales_users_dash[_sp]["commission_rate"]
+                _pval = _safe_float(_pd.get("contract_value", 0))
+                if not _pval: continue
+                _period = (_pd.get("start_date") or _pd.get("created_at") or "")[:7]
+                if _sp not in _dash_sp_totals:
+                    _dash_sp_totals[_sp] = {"total_earned": 0.0, "total_paid": 0.0, "periods": {}}
+                _dash_sp_totals[_sp]["total_earned"] += _pval * _rate / 100
+                if _period:
+                    if _period not in _dash_sp_totals[_sp]["periods"]:
+                        _dash_sp_totals[_sp]["periods"][_period] = {"earned": 0.0, "paid": False}
+                    _dash_sp_totals[_sp]["periods"][_period]["earned"] += _pval * _rate / 100
+
+        # Apply payment records (only for salespeople in totals)
+        _dash_comm_payments = fb_get("/commission_payments") or {}
+        if isinstance(_dash_comm_payments, dict):
+            for _dcp in _dash_comm_payments.values():
+                if not _dcp or not isinstance(_dcp, dict): continue
+                _sp = _dcp.get("salesperson", "")
+                _amt = _safe_float(_dcp.get("amount", 0))
+                if _sp in _dash_sp_totals:
+                    _dash_sp_totals[_sp]["total_paid"] += _amt
+
+        # Calculate totals
+        _dash_comm_total_earned = sum(s["total_earned"] for s in _dash_sp_totals.values())
+        _dash_comm_total_paid = sum(s["total_paid"] for s in _dash_sp_totals.values())
+        _dash_comm_total_outstanding = sum(max(s["total_earned"] - s["total_paid"], 0.0) for s in _dash_sp_totals.values())
+
+        # Calculate this month
+        _dash_comm_month = 0.0
+        for _s in _dash_sp_totals.values():
+            if _cur_month in _s.get("periods", {}):
+                _dash_comm_month += _s["periods"][_cur_month].get("earned", 0.0)
+
         _dash_commission = {
             "role":        "finance" if _dash_role == "finance" else "accountant",
-            "earned":      _fin_comm_total,
-            "paid":        _fin_comm_paid,
-            "total":       max(_fin_comm_total - _fin_comm_paid, 0.0),
-            "this_month":  _fin_comm_month,
+            "earned":      _dash_comm_total_earned,
+            "paid":        _dash_comm_total_paid,
+            "total":       _dash_comm_total_outstanding,
+            "this_month":  _dash_comm_month,
         }
 
     # Pending employee expense approvals (admin only)
