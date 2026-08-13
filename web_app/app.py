@@ -22124,9 +22124,9 @@ def timesheets_submit():
     current_uid = session.get("user_uid", "")  # Always keep current user's UID
     uid        = current_uid
     user_role = normalize_role(session.get("user_role", ""))
-    is_admin = user_role in ("admin", "administration")
+    is_admin = user_role in ("admin", "administration", "accountant")
 
-    # If admin is editing another user's timesheet, use that UID
+    # If admin/accountant is editing another user's timesheet, use that UID
     edit_uid = request.args.get("edit_uid", "")
     edited_employee_name = None
     if edit_uid and is_admin:
