@@ -12000,10 +12000,6 @@ def financial():
                 pass
 
     for exp in exp_list_raw_filtered:
-        # Skip commission expenses - they're counted separately in monthly_commission_details
-        if exp.get("is_commission") or exp.get("expense_type") == "Commission":
-            continue
-
         ds = exp.get("date", "") or ""
         try:
             exp_date = datetime.fromisoformat(ds[:10])
@@ -12472,16 +12468,15 @@ def financial():
     log.info(f"Commission Paid: Found {_paid_comm_count} paid commissions. All statuses: {_all_statuses}. monthly_commission_details[7]={len(monthly_commission_details.get('7', []))} items")
 
     # Calculate annual commissions by month for the Annual Financial Summary table
+    # Commissions are displayed separately in monthly breakdown, not included in EXPENSES row
     annual_commissions = {i: 0.0 for i in range(1, 13)}
     for month_str, commissions_list in monthly_commission_details.items():
         try:
             month_num = int(month_str)
             if 1 <= month_num <= 12:
                 annual_commissions[month_num] = sum(_safe_float(c.get("commission_amount", 0)) for c in commissions_list)
-                # Also accumulate to total_commission_paid (for balance sheet net profit calculation)
+                # Accumulate to total_commission_paid (for balance sheet net profit calculation)
                 total_commission_paid += annual_commissions[month_num]
-                # Add commission amounts to annual_expenses (they're the remaining_due values)
-                annual_expenses[month_num] += annual_commissions[month_num]
         except (ValueError, TypeError):
             pass
 
