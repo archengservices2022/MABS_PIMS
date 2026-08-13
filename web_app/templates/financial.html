@@ -312,9 +312,9 @@ a[href*="filter_expense"]:hover {
 
   {% set collection_pct = ((total_collected / total_invoiced * 100) if total_invoiced > 0 else 0)|round|int %}
 
-  <!-- ?? Row 1 — 6 KPI cards ??????????????????????????????????????? -->
-  <div class="row g-3 mb-4">
-    <div class="col-6 col-xl-2">
+  <!-- ?? Row 1 — 5 KPI cards ??????????????????????????????????????? -->
+  <div class="row g-2 mb-4" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));">
+    <div>
       <div class="kpi-card kpi-teal">
         <div class="kpi-top"><span class="kpi-label">Invoice Total</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
         <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_invoiced) }}</div>
@@ -322,7 +322,7 @@ a[href*="filter_expense"]:hover {
         <div class="kpi-sub"><small style="color:#94a3b8;">{{ invoiced_years }}</small></div>
       </div>
     </div>
-    <div class="col-6 col-xl-2">
+    <div>
       <div class="kpi-card kpi-green">
         <div class="kpi-top"><span class="kpi-label">Collected</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
         <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_collected) }}</div>
@@ -331,7 +331,7 @@ a[href*="filter_expense"]:hover {
         <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ collection_pct }}%"></div></div>
       </div>
     </div>
-    <div class="col-6 col-xl-2">
+    <div>
       <div class="kpi-card kpi-amber">
         <div class="kpi-top"><span class="kpi-label">Outstanding A/R</span><i class="bi bi-clock-history kpi-icon-sm"></i></div>
         <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(overview_outstanding) }}</div>
@@ -339,7 +339,7 @@ a[href*="filter_expense"]:hover {
         <div class="kpi-sub"><small style="color:#94a3b8;">Across All Years</small></div>
       </div>
     </div>
-    <div class="col-6 col-xl-2">
+    <div>
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
         <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_expenses) }}</div>
@@ -347,7 +347,7 @@ a[href*="filter_expense"]:hover {
         <div class="kpi-sub"><small style="color:#94a3b8;">Across {{ stat_card_year }} Expenses</small></div>
       </div>
     </div>
-    <div class="col-6 col-xl-2">
+    <div>
       <div class="kpi-card {{ 'kpi-green' if net_profit >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
         <div class="kpi-value {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">{{ currency_symbol }}{{ "{:,.2f}".format(net_profit) }}</div>
