@@ -699,6 +699,19 @@ def _recalculate_project_deductions_for_salesperson(salesperson_name: str):
             }
 
             fb_update(f"/project_commissions/{proj_id}", update_data)
+
+            # Also sync remaining_due to balance_sheet_expenses if commission expense entry exists
+            existing_expenses = fb_get("/balance_sheet_expenses") or {}
+            if isinstance(existing_expenses, dict):
+                for eid, edata in existing_expenses.items():
+                    if (isinstance(edata, dict) and
+                        edata.get("is_commission") and
+                        edata.get("project_id") == proj_id):
+                        fb_update(f"/balance_sheet_expenses/{eid}", {
+                            "remaining_due": remaining_due,
+                            "updated_at": datetime.now(timezone.utc).isoformat(),
+                        })
+                        break
     except Exception as e:
         log.error(f"Error recalculating project deductions for {salesperson_name}: {e}")
 
@@ -11482,6 +11495,22 @@ def financial():
                         edata["has_receipt"] = True
                 exp_list_raw.append(edata)
 
+    # Populate remaining_due for commission expenses that don't have it (backward compatibility)
+    # This handles commissions created before the remaining_due field was added
+    if isinstance(expenses, dict):
+        all_proj_comm = fb_get("/project_commissions") or {}
+        for exp_item in exp_list_raw:
+            if (isinstance(exp_item, dict) and
+                exp_item.get("is_commission") and
+                not exp_item.get("remaining_due")):
+                # Look up remaining_due from project_commissions
+                project_id = exp_item.get("project_id", "")
+                if project_id and isinstance(all_proj_comm, dict):
+                    proj_comm = all_proj_comm.get(project_id, {})
+                    if isinstance(proj_comm, dict):
+                        remaining_due = _safe_float(proj_comm.get("remaining_due", 0))
+                        exp_item["remaining_due"] = remaining_due
+
     # Group expenses by name and sum amounts
     def group_expenses_by_name(items):
         """Group expenses by name and sum amounts, preserving expense_type and category"""
@@ -15395,6 +15424,10 @@ def commission_project_mark_paid(project_id):
     if pc and pc.get("commission_amount"):
         commission_amount = _safe_float(pc.get("commission_amount", 0))
         if commission_amount > 0:
+            # Calculate remaining_due (commission_amount - total_deducted)
+            total_deducted = _safe_float(pc.get("total_deducted", 0))
+            remaining_due = max(commission_amount - total_deducted, 0)
+
             # Check if expense entry already exists for this commission
             existing_expenses = fb_get("/balance_sheet_expenses") or {}
             expense_id = None
@@ -15409,6 +15442,7 @@ def commission_project_mark_paid(project_id):
                 "expense_name": f"{pc.get('salesperson', 'Unknown')}_Commission",
                 "category": "Sales Commission",
                 "amount": commission_amount,
+                "remaining_due": remaining_due,
                 "vendor": "Sales Commission",
                 "project_number": pc.get("project_number", ""),
                 "date": paid_at[:10],
@@ -15428,11 +15462,11 @@ def commission_project_mark_paid(project_id):
             if expense_id:
                 # Update existing expense
                 fb_update(f"/balance_sheet_expenses/{expense_id}", expense_data)
-                log.info(f"Updated commission expense {expense_id} with created_at: {expense_data.get('created_at')}")
+                log.info(f"Updated commission expense {expense_id} with remaining_due: {remaining_due}")
             else:
                 # Create new expense entry
                 exp_id = fb_push("/balance_sheet_expenses", expense_data)
-                log.info(f"Created commission expense {exp_id} with created_at: {expense_data.get('created_at')}")
+                log.info(f"Created commission expense {exp_id} with remaining_due: {remaining_due}")
 
     return jsonify({"ok": True, "action": "paid"})
 
