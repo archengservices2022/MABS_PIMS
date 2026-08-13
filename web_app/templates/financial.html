@@ -4196,7 +4196,7 @@ function viewReceipt(expId) {
             <th class="text-end" style="color:#16A34A;">Adjusted</th>
             <th class="text-end" style="color:#2563EB;">Remaining Due</th>
             <th class="text-center">Status</th>
-            {% if user_role == 'admin' %}<th class="text-center">Action</th>{% endif %}
+            {% if user_role in ('admin', 'finance', 'accountant') %}<th class="text-center">Action</th>{% endif %}
           </tr>
         </thead>
         <tbody>
