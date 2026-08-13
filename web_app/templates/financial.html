@@ -890,7 +890,7 @@ a[href*="filter_expense"]:hover {
             <td class="small text-muted">{{ exp.get('category','—') }}</td>
             <td class="fw-medium">{{ exp.get('vendor','—') }}</td>
             <td class="text-muted small">{{ exp.get('project_number','—') or '—' }}</td>
-            <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(exp.get('amount',0)|float) }}</td>
+            <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format((exp.get('remaining_due',0) if exp.get('expense_type') == 'Commission' else exp.get('amount',0))|float) }}</td>
             {% set _sub = exp.get('submitted_by_name','') or exp.get('created_by','') or '' %}
             <td class="small text-muted">{{ _sub.split('@')[0].replace('.',' ').title() if '@' in _sub else (_sub or '—') }}</td>
             <td>
