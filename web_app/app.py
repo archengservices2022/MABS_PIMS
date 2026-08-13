@@ -124,7 +124,7 @@ except Exception as exc:
 
 # ── Role helpers ──────────────────────────────────────────────────────────────
 ROLE_PAGES = {
-    "admin":          ["dashboard", "quotes", "projects", "invoicing", "clients", "payroll", "financial", "settings", "employees", "sales_dashboard", "timesheets", "reviews"],
+    "admin":          ["dashboard", "quotes", "projects", "invoicing", "clients", "payroll", "financial", "settings", "employees", "sales_dashboard", "timesheets", "reviews", "approvals"],
     "sales":          ["sales_dashboard", "quotes", "clients", "employees", "timesheets"],
     "projects":       ["projects", "invoicing", "clients", "employees", "timesheets"],
     "finance":        ["financial", "payroll", "employees", "timesheets"],
