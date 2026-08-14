@@ -22987,15 +22987,6 @@ if __name__ == "__main__":
     # Run CO firebase_id migration on startup
     _migrate_add_co_firebase_ids()
 
-    # Fix historical exchange rates and currency types for old entries (one-time)
-    # This ensures old BDT entries are properly identified and displayed
-    try:
-        fixed = migrate_missing_exchange_rates(default_rate=120)
-        if fixed > 0:
-            log.info(f"✓ Migration: Fixed {fixed} old entries (currency type, exchange rate, approved amount)")
-    except Exception as e:
-        log.error(f"Migration failed: {e}")
-
     app.run(
         debug=os.environ.get("FLASK_DEBUG", "0") == "1",
         host=os.environ.get("FLASK_HOST", "0.0.0.0"),
