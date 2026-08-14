@@ -2326,7 +2326,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <thead style="background:#f8fafc;">
               <tr>
                 <th>Employee</th><th style="white-space:nowrap;">Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
-                <th class="text-end">Claimed (৳ BDT)</th><th class="text-end">Approved ($USD)</th><th>Status</th><th>Receipt</th><th>Actions</th>
+                <th class="text-end">Claimed ($USD)</th><th class="text-end">Approved ($USD)</th><th>Status</th><th>Receipt</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -3127,11 +3127,11 @@ window.openMedReview = function(claimId, empName, amtClaimed, action) {
   const submitBtn   = document.getElementById('medReviewSubmitBtn');
   if (action === 'approve') {
     approvedRow.style.display = '';
-    const bdtAmt = parseFloat(amtClaimed) || 0;
-    const usdAmt = bdtAmt / _BDT_RATE;
+    const usdAmt = parseFloat(amtClaimed) || 0;
+    const bdtAmt = usdAmt * _BDT_RATE;
     document.getElementById('medBdtInfo').innerHTML =
-      '<strong>Claimed:</strong> ৳' + bdtAmt.toLocaleString() + ' BDT' +
-      ' &nbsp;≈&nbsp; <strong>$' + usdAmt.toFixed(2) + ' USD</strong>';
+      '<strong>Claimed:</strong> $' + usdAmt.toFixed(2) + ' USD' +
+      ' &nbsp;≈&nbsp; <strong>৳' + bdtAmt.toLocaleString() + ' BDT</strong>';
     document.getElementById('medRateNote').textContent =
       'Exchange rate: ৳' + _BDT_RATE + ' = $1 USD. Adjust if needed.';
     document.getElementById('medApprovedAmt').value = usdAmt.toFixed(2);
@@ -3150,16 +3150,16 @@ window.openMedAmtEdit = function(claimId, empName, amtClaimed, amtApproved) {
   if (!form) return;
   form.action = '/employees/medical-claims/' + claimId + '/update-amount';
   document.getElementById('medAmtEditTitle').textContent = 'Correct Amount — ' + empName;
-  const bdtAmt = parseFloat(amtClaimed) || 0;
-  const suggestedUsd = bdtAmt / _BDT_RATE;
+  const usdAmt = parseFloat(amtClaimed) || 0;
+  const bdtAmt = usdAmt * _BDT_RATE;
   document.getElementById('medAmtEditInfo').innerHTML =
-    '<strong>Claimed:</strong> ৳' + bdtAmt.toLocaleString() + ' BDT' +
-    ' &nbsp;≈&nbsp; <strong>$' + suggestedUsd.toFixed(2) + ' USD</strong>' +
+    '<strong>Claimed:</strong> $' + usdAmt.toFixed(2) + ' USD' +
+    ' &nbsp;≈&nbsp; <strong>৳' + bdtAmt.toLocaleString() + ' BDT</strong>' +
     (amtApproved ? '<br><strong>Currently stored:</strong> $' + parseFloat(amtApproved).toFixed(2) + ' USD' : '');
   document.getElementById('medAmtEditRate').textContent =
     'Rate: ৳' + _BDT_RATE + ' = $1 USD';
   document.getElementById('medAmtEditUsd').value =
-    amtApproved ? parseFloat(amtApproved).toFixed(2) : suggestedUsd.toFixed(2);
+    amtApproved ? parseFloat(amtApproved).toFixed(2) : usdAmt.toFixed(2);
   new bootstrap.Modal(document.getElementById('medAmtEditModal')).show();
 };
 
