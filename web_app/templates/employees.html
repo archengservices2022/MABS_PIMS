@@ -2403,7 +2403,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                 <span class="text-muted small me-1">{{ c.reviewed_by or '' }}</span>
                 {% if c.status == 'Approved' and c.get('firebase_id') %}
                 <button class="btn btn-xs btn-outline-secondary"
-                        onclick="openMedAmtEdit('{{ c.firebase_id }}','{{ c.employee_name }}','{{ c.amount_claimed }}','{{ c.get("amount_approved","") }}')"
+                        onclick="openMedAmtEdit('{{ c.firebase_id }}','{{ c.employee_name }}','{{ c.amount_claimed }}','{{ c.get("amount_approved","") }}','{{ c.get("exchange_rate", 120) }}')"
                         title="Correct USD amount"><i class="bi bi-pencil"></i></button>
                 {% endif %}
                 {% endif %}
@@ -3171,19 +3171,20 @@ window.openMedReview = function(claimId, empName, amtClaimed, action) {
   new bootstrap.Modal(document.getElementById('medReviewModal')).show();
 };
 
-window.openMedAmtEdit = function(claimId, empName, amtClaimed, amtApproved) {
+window.openMedAmtEdit = function(claimId, empName, amtClaimed, amtApproved, exchangeRate) {
   const form = document.getElementById('medAmtEditForm');
   if (!form) return;
   form.action = '/employees/medical-claims/' + claimId + '/update-amount';
   document.getElementById('medAmtEditTitle').textContent = 'Correct Amount — ' + empName;
   const usdAmt = parseFloat(amtClaimed) || 0;
-  const bdtAmt = usdAmt * _BDT_RATE;
+  const rate = parseFloat(exchangeRate) || 120;
+  const bdtAmt = usdAmt * rate;
   document.getElementById('medAmtEditInfo').innerHTML =
     '<strong>Claimed:</strong> $' + usdAmt.toFixed(2) + ' USD' +
     ' &nbsp;≈&nbsp; <strong>৳' + bdtAmt.toLocaleString() + ' BDT</strong>' +
     (amtApproved ? '<br><strong>Currently stored:</strong> $' + parseFloat(amtApproved).toFixed(2) + ' USD' : '');
   document.getElementById('medAmtEditRate').textContent =
-    'Rate: ৳' + _BDT_RATE + ' = $1 USD';
+    'Rate: ৳' + rate + ' = $1 USD';
   document.getElementById('medAmtEditUsd').value =
     amtApproved ? parseFloat(amtApproved).toFixed(2) : usdAmt.toFixed(2);
   new bootstrap.Modal(document.getElementById('medAmtEditModal')).show();
