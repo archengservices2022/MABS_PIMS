@@ -13312,10 +13312,13 @@ def migrate_missing_exchange_rates(default_rate=120):
                 update_data["amount_claimed_bdt"] = bdt_amount
                 needs_update = True
 
-            # Set approved amount = claimed amount for old entries without approval
-            if not claim_data.get("amount_approved") or _safe_float(claim_data.get("amount_approved", 0)) == 0:
+            # Set approved amount = claimed amount for old entries (BDT entries)
+            # This ensures old claims are auto-approved with the claimed amount
+            if claim_data.get("amount_currency") == "BDT" or not claim_data.get("amount_currency"):
                 claimed_amount = _safe_float(claim_data.get("amount_claimed", 0))
-                if claimed_amount > 0:
+                approved_amount = _safe_float(claim_data.get("amount_approved", 0))
+                # For old entries: if approved != claimed, set approved = claimed
+                if claimed_amount > 0 and approved_amount != claimed_amount:
                     update_data["amount_approved"] = claimed_amount
                     needs_update = True
 
@@ -22984,14 +22987,14 @@ if __name__ == "__main__":
     # Run CO firebase_id migration on startup
     _migrate_add_co_firebase_ids()
 
-    # Fix historical exchange rates (set missing rates to 120)
-    # This ensures old entries don't change when exchange rates are updated
+    # Fix historical exchange rates and currency types for old entries (one-time)
+    # This ensures old BDT entries are properly identified and displayed
     try:
         fixed = migrate_missing_exchange_rates(default_rate=120)
         if fixed > 0:
-            log.info(f"✓ Exchange rate migration: Fixed {fixed} entries with default rate 120")
+            log.info(f"✓ Migration: Fixed {fixed} old entries (currency type, exchange rate, approved amount)")
     except Exception as e:
-        log.error(f"Exchange rate migration failed: {e}")
+        log.error(f"Migration failed: {e}")
 
     app.run(
         debug=os.environ.get("FLASK_DEBUG", "0") == "1",
