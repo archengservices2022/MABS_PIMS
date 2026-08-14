@@ -153,12 +153,19 @@
                   {% if item.amount != '—' and item.amount != None %}
                     {% if item.currency == 'h' %}
                       {% if item.amount is number %}{{ "{:.1f}".format(item.amount|float) }}h{% else %}{{ item.amount }}h{% endif %}
-                    {% elif item.cat == 'medical' %}
-                      <div>${{ "{:.2f}".format((item.amount|float) / bdt_exchange_rate) }}</div>
-                      <div class="text-muted" style="font-size:11px;">৳{{ "{:,.2f}".format(item.amount|float) }}</div>
                     {% else %}
-                      <div>${{ "{:.2f}".format(item.amount|float) }}</div>
-                      <div class="text-muted" style="font-size:11px;">৳{{ "{:,.2f}".format((item.amount|float) * bdt_exchange_rate) }}</div>
+                      {# Medical & Expense: Use stored currency type and exchange rate #}
+                      {% set curr = item.currency %}
+                      {% set rate = item.exchange_rate or 120 %}
+                      {% if curr == 'BDT' %}
+                        {# Old BDT entry: amount is in BDT, show USD as primary #}
+                        <div>${{ "{:.2f}".format((item.amount|float) / rate) }}</div>
+                        <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format(item.amount|float) }}</div>
+                      {% else %}
+                        {# USD entry: amount is in USD #}
+                        <div>${{ "{:.2f}".format(item.amount|float) }}</div>
+                        <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((item.amount|float) * rate) }}</div>
+                      {% endif %}
                     {% endif %}
                   {% else %}
                     —
