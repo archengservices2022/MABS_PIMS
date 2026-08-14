@@ -13312,6 +13312,13 @@ def migrate_missing_exchange_rates(default_rate=120):
                 update_data["amount_claimed_bdt"] = bdt_amount
                 needs_update = True
 
+            # Set approved amount = claimed amount for old entries without approval
+            if not claim_data.get("amount_approved") or _safe_float(claim_data.get("amount_approved", 0)) == 0:
+                claimed_amount = _safe_float(claim_data.get("amount_claimed", 0))
+                if claimed_amount > 0:
+                    update_data["amount_approved"] = claimed_amount
+                    needs_update = True
+
             if needs_update:
                 fb_update(f"/medical_claims/{claim_id}", update_data)
                 fixed_count += 1
