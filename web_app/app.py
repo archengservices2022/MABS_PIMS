@@ -14632,6 +14632,57 @@ def medical_claim_review(claim_id):
         "reviewed_at":     now_str,
     })
 
+    if status == "Approved" and amt_approved > 0:
+        claim = fb_get(f"/medical_claims/{claim_id}") or {}
+        # amt_approved is in USD (admin entered USD after seeing BDT→USD conversion)
+        # Preserve the original exchange rate from when the claim was submitted
+        original_exchange_rate = _safe_float(claim.get("exchange_rate", 0))
+        if original_exchange_rate > 0:
+            exchange_rate = original_exchange_rate
+        else:
+            # Fallback for old claims without exchange_rate stored
+            _emp_cfg   = load_settings().get("employee", {})
+            exchange_rate = _safe_float(_emp_cfg.get("bdt_exchange_rate", 110)) or 110
+
+        bdt_amount = amt_approved * exchange_rate
+
+        orig_currency = claim.get("amount_currency", "USD")
+        orig_usd   = _safe_float(claim.get("amount_claimed", 0))
+        admin_note = request.form.get("admin_notes", "").strip()
+        notes_parts = [f"Medical claim by {claim.get('employee_name', '')}"]
+        if orig_currency == "USD":
+            notes_parts.append(f"Original claim: ${orig_usd:,.2f} USD (at ৳{exchange_rate:.0f}/$1)")
+        if admin_note:
+            notes_parts.append(admin_note)
+        exp_data = {
+            "expense_type":         "Other Expenses",
+            "expense_name":         claim.get("description") or "Medical Allowance",
+            "description":          claim.get("description") or "Medical Allowance",
+            "amount":               amt_approved,           # USD
+            "amount_bdt":           bdt_amount,
+            "exchange_rate":        exchange_rate,
+            "category":             "Medical/Benefits",
+            "date":                 claim.get("claim_date") or now_str[:10],
+            "vendor":               "Medical Expenses",
+            "notes":                " | ".join(notes_parts),
+            "submitted_by_name":    claim.get("employee_name", ""),
+            "submitted_by_uid":     claim.get("employee_uid", ""),
+            "submitted_by_email":   "",
+            "status":               "Approved",
+            "reviewed_by":          session.get("user_name", ""),
+            "reviewed_at":          now_str,
+            "created_at":           claim.get("submitted_at", now_str),
+            "updated_at":           now_str,
+            "source":               "medical_claim",
+            "medical_claim_id":     claim_id,
+            "firebase_id":          claim_id,
+            "created_by":           claim.get("employee_name", ""),
+            "has_receipt":          bool(claim.get("has_receipt")),
+            "receipt_filename":     claim.get("receipt_filename", ""),
+        }
+        # Use claim_id as key so re-approval overwrites, not duplicates
+        fb_update(f"/expenses/{claim_id}", exp_data)
+        fb_update(f"/balance_sheet_expenses/{claim_id}", exp_data)
 
     flash(f"Claim {status.lower()} successfully.", "success")
     return redirect(url_for("employees") + "#medical")
