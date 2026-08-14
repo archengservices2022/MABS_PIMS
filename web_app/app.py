@@ -1017,12 +1017,16 @@ def format_date_invoice_filter(date_str):
 @app.template_filter('get_exchange_rate')
 def get_exchange_rate_filter(expense):
     """Return the BDT exchange rate for an expense dict.
-    Uses the rate stored at submission time, falling back to the current setting."""
+    Uses the rate stored at submission time, NEVER uses current settings rate.
+    Falls back to 120 (historical default) for very old entries without rates.
+
+    IMPORTANT: Never uses current settings rate to prevent retroactive changes!
+    """
     stored = _safe_float(expense.get('exchange_rate') if isinstance(expense, dict) else 0)
-    if stored:
+    if stored > 0:
         return stored
-    settings_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110))
-    return settings_rate or 110
+    # Fallback to 120 (historical default), NOT current settings rate
+    return 120
 
 # ── Routes: Auth ──────────────────────────────────────────────────────────────
 @app.route("/login", methods=["GET", "POST"])
@@ -13227,50 +13231,81 @@ def financial():
     )
 
 # ── Migration: Fill missing exchange_rate for historical entries ──
-def migrate_missing_exchange_rates():
+def migrate_missing_exchange_rates(default_rate=120):
     """
     Populate missing exchange_rate fields for existing expenses and medical claims.
-    Uses the current exchange rate as the baseline for all historical entries without rates.
+    Uses 120 as the default rate for all historical entries without rates.
     This is called once to fix retroactive rate changes on old entries.
+
+    Args:
+        default_rate: The exchange rate to assign to all old entries (default: 120)
     """
-    current_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+    fixed_count = 0
 
     # Fix expenses in /balance_sheet_expenses
     expenses = fb_get("/balance_sheet_expenses") or {}
-    fixed_count = 0
     for exp_id, exp_data in expenses.items():
-        if isinstance(exp_data, dict) and not exp_data.get("exchange_rate"):
-            usd_amount = _safe_float(exp_data.get("amount", 0))
-            bdt_amount = usd_amount * current_rate
-            fb_update(f"/balance_sheet_expenses/{exp_id}", {
-                "exchange_rate": current_rate,
-                "amount_bdt": bdt_amount,
-            })
-            fixed_count += 1
+        if isinstance(exp_data, dict):
+            # Only set if missing - never overwrite existing rate
+            if not exp_data.get("exchange_rate"):
+                usd_amount = _safe_float(exp_data.get("amount", 0))
+                bdt_amount = usd_amount * default_rate
+                fb_update(f"/balance_sheet_expenses/{exp_id}", {
+                    "exchange_rate": default_rate,
+                    "amount_bdt": bdt_amount,
+                })
+                fixed_count += 1
+            elif not exp_data.get("amount_bdt"):
+                # If rate exists but BDT is missing, recalculate
+                usd_amount = _safe_float(exp_data.get("amount", 0))
+                stored_rate = _safe_float(exp_data.get("exchange_rate", default_rate))
+                bdt_amount = usd_amount * stored_rate
+                fb_update(f"/balance_sheet_expenses/{exp_id}", {
+                    "amount_bdt": bdt_amount,
+                })
+                fixed_count += 1
 
     # Fix employee expenses in /expenses
     emp_expenses = fb_get("/expenses") or {}
     for exp_id, exp_data in emp_expenses.items():
-        if isinstance(exp_data, dict) and not exp_data.get("exchange_rate"):
-            usd_amount = _safe_float(exp_data.get("amount", 0))
-            bdt_amount = usd_amount * current_rate
-            fb_update(f"/expenses/{exp_id}", {
-                "exchange_rate": current_rate,
-                "amount_bdt": bdt_amount,
-            })
-            fixed_count += 1
+        if isinstance(exp_data, dict):
+            if not exp_data.get("exchange_rate"):
+                usd_amount = _safe_float(exp_data.get("amount", 0))
+                bdt_amount = usd_amount * default_rate
+                fb_update(f"/expenses/{exp_id}", {
+                    "exchange_rate": default_rate,
+                    "amount_bdt": bdt_amount,
+                })
+                fixed_count += 1
+            elif not exp_data.get("amount_bdt"):
+                usd_amount = _safe_float(exp_data.get("amount", 0))
+                stored_rate = _safe_float(exp_data.get("exchange_rate", default_rate))
+                bdt_amount = usd_amount * stored_rate
+                fb_update(f"/expenses/{exp_id}", {
+                    "amount_bdt": bdt_amount,
+                })
+                fixed_count += 1
 
     # Fix medical claims in /medical_claims
     med_claims = fb_get("/medical_claims") or {}
     for claim_id, claim_data in med_claims.items():
-        if isinstance(claim_data, dict) and not claim_data.get("exchange_rate"):
-            usd_amount = _safe_float(claim_data.get("amount_claimed", 0))
-            bdt_amount = usd_amount * current_rate
-            fb_update(f"/medical_claims/{claim_id}", {
-                "exchange_rate": current_rate,
-                "amount_claimed_bdt": bdt_amount,
-            })
-            fixed_count += 1
+        if isinstance(claim_data, dict):
+            if not claim_data.get("exchange_rate"):
+                usd_amount = _safe_float(claim_data.get("amount_claimed", 0))
+                bdt_amount = usd_amount * default_rate
+                fb_update(f"/medical_claims/{claim_id}", {
+                    "exchange_rate": default_rate,
+                    "amount_claimed_bdt": bdt_amount,
+                })
+                fixed_count += 1
+            elif not claim_data.get("amount_claimed_bdt"):
+                usd_amount = _safe_float(claim_data.get("amount_claimed", 0))
+                stored_rate = _safe_float(claim_data.get("exchange_rate", default_rate))
+                bdt_amount = usd_amount * stored_rate
+                fb_update(f"/medical_claims/{claim_id}", {
+                    "amount_claimed_bdt": bdt_amount,
+                })
+                fixed_count += 1
 
     return fixed_count
 
@@ -22932,6 +22967,15 @@ def api_timesheets_export():
 if __name__ == "__main__":
     # Run CO firebase_id migration on startup
     _migrate_add_co_firebase_ids()
+
+    # Fix historical exchange rates (set missing rates to 120)
+    # This ensures old entries don't change when exchange rates are updated
+    try:
+        fixed = migrate_missing_exchange_rates(default_rate=120)
+        if fixed > 0:
+            log.info(f"✓ Exchange rate migration: Fixed {fixed} entries with default rate 120")
+    except Exception as e:
+        log.error(f"Exchange rate migration failed: {e}")
 
     app.run(
         debug=os.environ.get("FLASK_DEBUG", "0") == "1",
