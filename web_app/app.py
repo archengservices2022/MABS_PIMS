@@ -736,11 +736,11 @@ def _sync_advance_to_finance(advance_id: str, advance_data: dict):
             description = f"Advance {advance_no} for {employee_name}"
 
         expense_data = {
-            "expense_type": "Employee Advance",
+            "expense_type": "Other Expenses",
             "expense_name": expense_name,
             "description": description,
             "amount": balance_due,
-            "category": "Advance for employee",
+            "category": "Employee Advance",
             "date": advance_data.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
             "vendor": "Employee Advances",
             "notes": f"Original: ${float(advance_data.get('amount', 0)):.2f} | Adjusted: ${float(advance_data.get('adjusted', 0)):.2f}",
@@ -8981,12 +8981,35 @@ def _migrate_medical_allowance_type() -> int:
                 updated_count += 1
     return updated_count
 
+def _migrate_advance_entry_type() -> int:
+    """Migrate all existing advance entries: expense_type 'Employee Advance' → 'Other Expenses',
+    category 'Advance for employee' → 'Employee Advance'. Returns the number of entries updated.
+    """
+    expenses = fb_get("/balance_sheet_expenses") or {}
+    updated_count = 0
+    if isinstance(expenses, dict):
+        for exp_id, exp_data in expenses.items():
+            if isinstance(exp_data, dict):
+                updated = False
+                if exp_data.get("expense_type") == "Employee Advance":
+                    exp_data["expense_type"] = "Other Expenses"
+                    updated = True
+                if exp_data.get("category") == "Advance for employee":
+                    exp_data["category"] = "Employee Advance"
+                    updated = True
+                if updated:
+                    exp_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+                    fb_update(f"/balance_sheet_expenses/{exp_id}", exp_data)
+                    updated_count += 1
+    return updated_count
+
 @app.route("/payroll")
 @role_required("payroll")
 def payroll():
     _auto_generate_monthly_salaries()
     _migrate_employee_payroll_vendor()
     _migrate_medical_allowance_type()
+    _migrate_advance_entry_type()
     employee_filter = request.args.get("employee", "")
     year_filter     = request.args.get("year", "")
     region_filter   = request.args.get("region", "")
