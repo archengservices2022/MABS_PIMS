@@ -13433,7 +13433,20 @@ def remove_expense_receipt(exp_id):
 def expense_edit(exp_id):
     try:
         usd_amount = _safe_float(request.form.get("amount", 0))
-        exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+
+        # Read existing record to preserve the original exchange rate from creation date
+        existing = fb_get(f"/balance_sheet_expenses/{exp_id}") or {}
+        original_exchange_rate = _safe_float(existing.get("exchange_rate", 0))
+
+        # ALWAYS preserve the original exchange rate (immutable after creation)
+        # This ensures historical expense entries don't change when exchange rates change
+        if original_exchange_rate > 0:
+            exchange_rate = original_exchange_rate
+        else:
+            # Fallback for old entries that don't have exchange_rate stored
+            exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+
+        # Recalculate BDT using the preserved exchange rate
         bdt_amount = usd_amount * exchange_rate
 
         data = {
@@ -14508,15 +14521,23 @@ def medical_claim_review(claim_id):
     if status == "Approved" and amt_approved > 0:
         claim = fb_get(f"/medical_claims/{claim_id}") or {}
         # amt_approved is in USD (admin entered USD after seeing BDT→USD conversion)
-        # Record original BDT amount for reference
-        _emp_cfg   = load_settings().get("employee", {})
-        bdt_rate   = _safe_float(_emp_cfg.get("bdt_exchange_rate", 110)) or 110
-        orig_currency = claim.get("amount_currency", "BDT")
-        orig_bdt   = _safe_float(claim.get("amount_claimed", 0))
+        # Preserve the original exchange rate from when the claim was submitted
+        original_exchange_rate = _safe_float(claim.get("exchange_rate", 0))
+        if original_exchange_rate > 0:
+            exchange_rate = original_exchange_rate
+        else:
+            # Fallback for old claims without exchange_rate stored
+            _emp_cfg   = load_settings().get("employee", {})
+            exchange_rate = _safe_float(_emp_cfg.get("bdt_exchange_rate", 110)) or 110
+
+        bdt_amount = amt_approved * exchange_rate
+
+        orig_currency = claim.get("amount_currency", "USD")
+        orig_usd   = _safe_float(claim.get("amount_claimed", 0))
         admin_note = request.form.get("admin_notes", "").strip()
         notes_parts = [f"Medical claim by {claim.get('employee_name', '')}"]
-        if orig_currency == "BDT":
-            notes_parts.append(f"Original claim: ৳{orig_bdt:,.0f} BDT (at ৳{bdt_rate:.0f}/$1)")
+        if orig_currency == "USD":
+            notes_parts.append(f"Original claim: ${orig_usd:,.2f} USD (at ৳{exchange_rate:.0f}/$1)")
         if admin_note:
             notes_parts.append(admin_note)
         exp_data = {
@@ -14524,9 +14545,8 @@ def medical_claim_review(claim_id):
             "expense_name":         claim.get("description") or "Medical Allowance",
             "description":          claim.get("description") or "Medical Allowance",
             "amount":               amt_approved,           # USD
-            "amount_usd":           amt_approved,
-            "amount_original":      orig_bdt,
-            "amount_currency":      orig_currency,
+            "amount_bdt":           bdt_amount,
+            "exchange_rate":        exchange_rate,
             "category":             "Medical/Benefits",
             "date":                 claim.get("claim_date") or now_str[:10],
             "vendor":               "Medical Expenses",
@@ -14655,7 +14675,23 @@ def employee_expense_submit():
             return redirect(url_for("employees") + "#expenses")
 
     usd_amount = _safe_float(request.form.get("amount", 0))
-    exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+
+    if editing_expense_id:
+        # Editing existing expense - preserve the original exchange rate
+        existing_exp = fb_get(f"/expenses/{editing_expense_id}") or {}
+        original_exchange_rate = _safe_float(existing_exp.get("exchange_rate", 0))
+
+        # ALWAYS preserve the original exchange rate from creation
+        # This ensures historical entries don't change when exchange rates change
+        if original_exchange_rate > 0:
+            exchange_rate = original_exchange_rate
+        else:
+            # Fallback for old entries without exchange_rate stored
+            exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+    else:
+        # Creating new expense - use current exchange rate
+        exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+
     bdt_amount = usd_amount * exchange_rate
 
     data = {
@@ -14692,7 +14728,7 @@ def employee_expense_submit():
             # (don't pop it from data - preserve it)
             pass
 
-        # Read existing record to detect origin before writing
+        # Read existing record again (already done above, but for clarity in sync operations)
         existing_exp = fb_get(f"/expenses/{editing_expense_id}") or {}
 
         # Update employee expense record directly (no approval needed for edits)
