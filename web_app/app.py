@@ -13223,16 +13223,23 @@ def financial():
             [dict(v, firebase_id=k) for k, v in (fb_get("/deleted_expenses") or {}).items() if isinstance(v, dict)],
             key=lambda x: x.get("deleted_at", ""), reverse=True
         ),
+        bdt_exchange_rate=_safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110,
     )
 
 @app.route("/financial/expense/new", methods=["POST"])
 @role_required("financial")
 def expense_new():
+    usd_amount = _safe_float(request.form.get("amount", 0))
+    exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+    bdt_amount = usd_amount * exchange_rate
+
     data = {
         "expense_type":      request.form.get("expense_type", ""),
         "expense_name":      request.form.get("expense_name", ""),
         "description":       request.form.get("description", "") or request.form.get("expense_name", ""),
-        "amount":            _safe_float(request.form.get("amount", 0)),
+        "amount":            usd_amount,
+        "amount_bdt":        bdt_amount,
+        "exchange_rate":     exchange_rate,
         "category":          request.form.get("category", ""),
         "date":              request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
         "vendor":            request.form.get("vendor", ""),
@@ -13425,11 +13432,17 @@ def remove_expense_receipt(exp_id):
 @role_required("financial")
 def expense_edit(exp_id):
     try:
+        usd_amount = _safe_float(request.form.get("amount", 0))
+        exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+        bdt_amount = usd_amount * exchange_rate
+
         data = {
             "expense_type":   request.form.get("expense_type", ""),
             "expense_name":   request.form.get("expense_name", ""),
             "description":    request.form.get("description", "") or request.form.get("expense_name", ""),
-            "amount":         request.form.get("amount", "0"),
+            "amount":         usd_amount,
+            "amount_bdt":     bdt_amount,
+            "exchange_rate":  exchange_rate,
             "category":       request.form.get("category", ""),
             "date":           request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
             "vendor":         request.form.get("vendor", ""),
