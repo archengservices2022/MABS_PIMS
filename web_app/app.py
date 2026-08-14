@@ -5723,6 +5723,9 @@ def api_get_projects(project_ids):
                     for s_idx, stage in enumerate(proj.get("payment_stages") or []):
                         if not isinstance(stage, dict) or s_idx in invoiced_s:
                             continue
+                        # Skip CO-linked stages — they appear in the approved_pending_cos section
+                        if stage.get("co_number"):
+                            continue
                         s_name = stage.get("name", f"Stage {s_idx + 1}")
                         blocked = any(pi not in invoiced_s for pi in range(s_idx))
                         all_pending.append({
