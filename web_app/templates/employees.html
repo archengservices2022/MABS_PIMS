@@ -2275,8 +2275,16 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
               <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
               <td class="text-end fw-semibold">
-                <div>${{ '{:,.2f}'.format(c.amount_claimed|float) }}</div>
-                <div class="text-muted" style="font-size:11px;">৳{{ '{:,.0f}'.format((c.amount_claimed|float) * (c.get('exchange_rate', 120)|float)) }}</div>
+                {% set curr = c.get('amount_currency', 'USD') %}
+                {% if curr == 'BDT' %}
+                  {# Old entry: amount_claimed is in BDT #}
+                  <div>৳{{ '{:,.0f}'.format(c.amount_claimed|float) }}</div>
+                  <div class="text-muted" style="font-size:11px;">${{ '{:,.2f}'.format((c.amount_claimed|float) / (c.get('exchange_rate', 120)|float)) }}</div>
+                {% else %}
+                  {# New entry: amount_claimed is in USD #}
+                  <div>${{ '{:,.2f}'.format(c.amount_claimed|float) }}</div>
+                  <div class="text-muted" style="font-size:11px;">৳{{ '{:,.0f}'.format((c.amount_claimed|float) * (c.get('exchange_rate', 120)|float)) }}</div>
+                {% endif %}
               </td>
               <td class="text-end text-success fw-semibold">
                 {% set _amt_appr = c.get('amount_approved') %}
