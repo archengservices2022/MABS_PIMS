@@ -296,12 +296,20 @@ a[href*="filter_expense"]:hover {
   <li class="nav-item">
     <a class="nav-link {{ 'active' if active_tab == 'commission' else '' }}" data-bs-toggle="tab" href="#tab-commission">
       <i class="bi bi-cash-coin me-1"></i>Commission
-      {% if commission_total_outstanding > 0 %}
-      <span class="badge ms-1" style="background:#7C3AED;color:#fff;">{{ commission_summary|selectattr('outstanding','greaterthan',0)|list|length }}</span>
-      {% endif %}
     </a>
   </li>
 </ul>
+
+<!-- Admin: Fix historical exchange rates -->
+{% if user_role == 'admin' %}
+<div class="alert alert-info small mb-3" style="display:none;" id="exchangeRateMigrationNotice">
+  <i class="bi bi-exclamation-circle me-2"></i>
+  <strong>Historical Expenses Need Fix:</strong> Previous entries may be using incorrect exchange rates.
+  <form method="POST" action="{{ url_for('financial_migrate_exchange_rates') }}" style="display:inline;">
+    <button type="submit" class="btn btn-sm btn-info ms-2">Fix Now</button>
+  </form>
+</div>
+{% endif %}
 
 <div class="tab-content">
 
@@ -312,9 +320,9 @@ a[href*="filter_expense"]:hover {
 
   {% set collection_pct = ((total_collected / total_invoiced * 100) if total_invoiced > 0 else 0)|round|int %}
 
-  <!-- ?? Row 1 — 6 KPI cards ??????????????????????????????????????? -->
-  <div class="row g-3 mb-4">
-    <div class="col-6 col-xl-2">
+  <!-- ?? Row 1 — 5 KPI cards ??????????????????????????????????????? -->
+  <div class="row g-2 mb-4" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));">
+    <div>
       <div class="kpi-card kpi-teal">
         <div class="kpi-top"><span class="kpi-label">Invoice Total</span><i class="bi bi-receipt-cutoff kpi-icon-sm"></i></div>
         <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_invoiced) }}</div>
@@ -322,7 +330,7 @@ a[href*="filter_expense"]:hover {
         <div class="kpi-sub"><small style="color:#94a3b8;">{{ invoiced_years }}</small></div>
       </div>
     </div>
-    <div class="col-6 col-xl-2">
+    <div>
       <div class="kpi-card kpi-green">
         <div class="kpi-top"><span class="kpi-label">Collected</span><i class="bi bi-cash-stack kpi-icon-sm"></i></div>
         <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_collected) }}</div>
@@ -331,7 +339,7 @@ a[href*="filter_expense"]:hover {
         <div class="kpi-bar"><div class="kpi-bar-fill" style="width:{{ collection_pct }}%"></div></div>
       </div>
     </div>
-    <div class="col-6 col-xl-2">
+    <div>
       <div class="kpi-card kpi-amber">
         <div class="kpi-top"><span class="kpi-label">Outstanding A/R</span><i class="bi bi-clock-history kpi-icon-sm"></i></div>
         <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(overview_outstanding) }}</div>
@@ -339,27 +347,19 @@ a[href*="filter_expense"]:hover {
         <div class="kpi-sub"><small style="color:#94a3b8;">Across All Years</small></div>
       </div>
     </div>
-    <div class="col-6 col-xl-2">
+    <div>
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
         <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_expenses) }}</div>
-        <div class="kpi-sub">{{ exp_list_year_filtered_count }} <small style="color:#94a3b8;">expenses</small></div>
-        <div class="kpi-sub"><small style="color:#94a3b8;">Across {{ stat_card_year }} Expenses</small></div>
-      </div>
-    </div>
-    <div class="col-6 col-xl-2">
-      <div class="kpi-card kpi-purple">
-        <div class="kpi-top"><span class="kpi-label">Total Salaries</span><i class="bi bi-people-fill kpi-icon-sm"></i></div>
-        <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_salaries) }}</div>
-        <div class="kpi-sub">{{ employee_count }} employee{{ 's' if employee_count != 1 else '' }}</div>
+        <div class="kpi-sub">{{ exp_list_year_filtered_count }} expense{{ 's' if exp_list_year_filtered_count != 1 else '' }}</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">{{ stat_card_year }}</small></div>
       </div>
     </div>
-    <div class="col-6 col-xl-2">
+    <div>
       <div class="kpi-card {{ 'kpi-green' if net_profit >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
         <div class="kpi-value {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">{{ currency_symbol }}{{ "{:,.2f}".format(net_profit) }}</div>
-        <div class="kpi-sub">collected — expenses — salaries</div>
+        <div class="kpi-sub">collected — expenses</div>
         <div class="kpi-sub"><small style="color:#94a3b8;">{{ stat_card_year }}</small></div>
       </div>
     </div>
@@ -412,10 +412,6 @@ a[href*="filter_expense"]:hover {
         <div class="summary-row">
           <span class="text-muted small">Total Expenses</span>
           <span class="fw-bold text-danger">{{ currency_symbol }}{{ "{:,.2f}".format(total_expenses) }}</span>
-        </div>
-        <div class="summary-row">
-          <span class="text-muted small">Total Salaries</span>
-          <span class="fw-bold text-danger">{{ currency_symbol }}{{ "{:,.2f}".format(total_salaries) }}</span>
         </div>
         <div class="summary-row">
           <span class="text-muted small">Net Profit</span>
@@ -888,25 +884,27 @@ a[href*="filter_expense"]:hover {
           </tr>
         </thead>
         <tbody id="expenseTableBody">
-          {% for exp in expenses|sort(attribute='created_at', reverse=True) %}
+          {% set sorted_expenses = expenses|sort(attribute='created_at', reverse=True) %}
+          {% for exp in sorted_expenses %}
           <tr class="expense-row"
             data-search="{{ (exp.get('expense_name','') or exp.get('description',''))|lower }} {{ exp.get('vendor','')|lower }} {{ exp.get('category','')|lower }}"
             data-type="{{ exp.get('expense_type','') }}"
             data-vendor="{{ exp.get('vendor','') }}"
-            data-date="{{ exp.get('date','') | format_date }}">
+            data-date="{{ exp.get('date','') | format_date }}"
+            data-created-at="{{ exp.get('created_at','') }}">
             <td class="text-muted small">{{ exp.get('date','—') | format_date }}</td>
             <td class="small text-muted">{{ exp.get('expense_type','—') }}</td>
             <td class="small text-muted">{{ exp.get('expense_name','—') or exp.get('description','—') }}</td>
             <td class="small text-muted">{{ exp.get('category','—') }}</td>
             <td class="fw-medium">{{ exp.get('vendor','—') }}</td>
             <td class="text-muted small">{{ exp.get('project_number','—') or '—' }}</td>
-            <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(exp.get('amount',0)|float) }}</td>
+            <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format((exp.get('remaining_due',0) if exp.get('expense_type') == 'Commission' else exp.get('amount',0))|float) }}</td>
             {% set _sub = exp.get('submitted_by_name','') or exp.get('created_by','') or '' %}
             <td class="small text-muted">{{ _sub.split('@')[0].replace('.',' ').title() if '@' in _sub else (_sub or '—') }}</td>
             <td>
               {% if exp.get('firebase_id') %}
               <div class="d-flex gap-1">
-                <button type="button" class="btn btn-xs btn-outline-secondary" onclick='editExpenseModal("{{ exp.firebase_id }}", {{ exp|tojson }})' title="Edit">
+                  <button type="button" class="btn btn-xs btn-outline-secondary" onclick='editExpenseModal("{{ exp.firebase_id }}", {{ exp|tojson }})' title="Edit">
                   <i class="bi bi-pencil"></i>
                 </button>
                 {% if exp.get('receipt_filename') or exp.get('has_receipt') %}
@@ -938,11 +936,16 @@ a[href*="filter_expense"]:hover {
     {% endif %}
 
     <!-- Pagination Controls - Bottom -->
-    <div class="d-flex align-items-center justify-content-center gap-2 mt-3 pt-3 border-top" id="expensePagerWrap">
-      <button type="button" id="expensePrevBtn" onclick="prevExpensePage()" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;color:#374151;">&#8249;</button>
-      <span id="expensePageInfo" style="font-size:14px;color:#374151;font-weight:500;border:1px solid #d1d5db;border-radius:6px;padding:4px 14px;background:#fff;white-space:nowrap;">Page 1 of 1</span>
-      <button type="button" id="expenseNextBtn" onclick="nextExpensePage()" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;color:#374151;">&#8250;</button>
-      <span id="expenseCountInfo" style="display:none;"></span>
+    <div class="expense-pager" id="expensePagerWrap">
+      <div class="expense-pager-center">
+        <button type="button" id="expensePrevBtn" onclick="prevExpensePage()" style="min-width:28px;height:28px;padding:0;border:1px solid #d9e2ec;background:#ffffff;color:#2563eb;border-radius:3px;cursor:pointer;font-size:16px;line-height:26px;">‹</button>
+        <input type="number" id="expenseGoToPage" min="1" max="1" style="width:42px;height:28px;padding:0 5px;border:1px solid #d9e2ec;border-radius:3px;text-align:center;font-size:12px;outline:none;" />
+        <span id="expensePageInfo" style="font-size:12px;color:#64748b;">of 1</span>
+        <button type="button" id="expenseNextBtn" onclick="nextExpensePage()" style="min-width:28px;height:28px;padding:0;border:1px solid #d9e2ec;background:#ffffff;color:#2563eb;border-radius:3px;cursor:pointer;font-size:16px;line-height:26px;">›</button>
+      </div>
+      <div class="expense-pager-right">
+        <div id="expensePageNumbers" style="display:flex;align-items:center;gap:3px;"></div>
+      </div>
     </div>
   </div>
 </div><!-- /tab-expenses -->
@@ -1047,8 +1050,9 @@ a[href*="filter_expense"]:hover {
           </div>
         </div>
         <div class="col-md-6">
-          <label class="form-label form-label-sm fw-600">Amount ($) *</label>
-          <input type="number" name="amount" id="expenseAmount" class="form-control form-control-sm" step="0.01" min="0" required>
+          <label class="form-label form-label-sm fw-600">Amount (USD) *</label>
+          <input type="number" name="amount" id="expenseAmount" class="form-control form-control-sm" step="0.01" min="0" required oninput="updateExpenseBdtDisplay()">
+          <small class="form-text text-muted" id="expenseBdtDisplay" style="color:#10b981;font-size:11px;margin-top:4px;"></small>
         </div>
       </div>
 
@@ -1323,26 +1327,31 @@ function getVisibleExpenseRows() {
     return matchSearch && matchType && matchVendor && matchFrom && matchTo;
   });
 
-  // Sort by date in ascending order (oldest to newest)
+  // Sort by created_at in descending order (newest first)
   filteredRows.sort((a, b) => {
-    let dateA = (a.dataset.date || '').trim();
-    let dateB = (b.dataset.date || '').trim();
+    let dateA = (a.dataset.createdAt || a.dataset.date || '').trim();
+    let dateB = (b.dataset.createdAt || b.dataset.date || '').trim();
 
-    // Convert DD-MM-YYYY to YYYY-MM-DD for proper chronological sorting
-    if (dateA && !dateA.match(/^\d{4}-\d{2}-\d{2}/)) {
-      const partsA = dateA.split('-');
-      if (partsA.length === 3) {
-        dateA = `${partsA[2]}-${partsA[0]}-${partsA[1]}`;
+    // Parse dates for comparison
+    const parseDate = function(dateStr) {
+      if (!dateStr) return new Date(0);
+      // Try ISO format first (YYYY-MM-DDTHH:MM:SS)
+      if (dateStr.includes('T')) {
+        return new Date(dateStr);
       }
-    }
-    if (dateB && !dateB.match(/^\d{4}-\d{2}-\d{2}/)) {
-      const partsB = dateB.split('-');
-      if (partsB.length === 3) {
-        dateB = `${partsB[2]}-${partsB[0]}-${partsB[1]}`;
+      // Try ISO date format (YYYY-MM-DD)
+      if (dateStr.match(/^\d{4}-\d{2}-\d{2}/)) {
+        return new Date(dateStr + 'T00:00:00Z');
       }
-    }
+      // Try MM-DD-YYYY format
+      const parts = dateStr.split('-');
+      if (parts.length === 3 && parts[2].length === 4) {
+        return new Date(parts[2], parts[0] - 1, parts[1]);
+      }
+      return new Date(0);
+    };
 
-    return dateA.localeCompare(dateB);
+    return parseDate(dateB) - parseDate(dateA); // Descending (newest first)
   });
 
   return filteredRows;
@@ -1412,6 +1421,9 @@ function updateExpenseSummaryCards() {
 }
 
 function renderExpenseTable() {
+  // Sort table by date first (newest at top)
+  sortExpenseTableByDate();
+
   expenseFilteredRows = getVisibleExpenseRows();
   const rows = document.querySelectorAll('#expenseTableBody tr.expense-row');
   const totalPages = Math.ceil(expenseFilteredRows.length / expensePerPage);
@@ -1458,17 +1470,144 @@ function renderExpenseTable() {
   }
 
   const tp = totalPages || 1;
-  document.getElementById('expensePageInfo').textContent = `Page ${expenseCurrentPage} of ${tp}`;
-  document.getElementById('expenseCountInfo').textContent = `${currentPageRows.length} / ${expenseFilteredRows.length} expenses`;
+  const pageInfo = document.getElementById('expensePageInfo');
+  if (pageInfo) pageInfo.textContent = `of ${tp}`;
+
+  const countInfo = document.getElementById('expenseCountInfo');
+  if (countInfo) countInfo.textContent = `${currentPageRows.length} / ${expenseFilteredRows.length} expenses`;
+
+  // Update go-to-page input
+  const goToPageInput = document.getElementById('expenseGoToPage');
+  if (goToPageInput) {
+    goToPageInput.value = expenseCurrentPage;
+    goToPageInput.max = tp;
+  }
+
+  // Generate smart pagination: 1 ... current±2 ... last
+  const pageNumbersDiv = document.getElementById('expensePageNumbers');
+  console.log('DEBUG: pageNumbersDiv found:', !!pageNumbersDiv, 'tp:', tp, 'expenseFilteredRows.length:', expenseFilteredRows.length);
+  if (pageNumbersDiv) {
+    pageNumbersDiv.innerHTML = '';
+    console.log('DEBUG: Generating pagination buttons for', tp, 'pages');
+
+    const createPageButton = (page) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = page;
+      const isCurrent = page === expenseCurrentPage;
+
+      btn.style.cssText = `
+        min-width: 28px;
+        height: 28px;
+        padding: 0 7px;
+        border: 1px solid ${isCurrent ? '#0d6efd' : '#d9e2ec'};
+        background: ${isCurrent ? '#0d6efd' : '#ffffff'};
+        color: ${isCurrent ? '#ffffff' : '#2563eb'};
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: ${isCurrent ? '600' : '400'};
+        line-height: 28px;
+        text-align: center;
+        transition: all 0.15s ease;
+      `;
+
+      btn.addEventListener('mouseenter', () => {
+        if (!isCurrent) {
+          btn.style.background = '#f1f5f9';
+          btn.style.borderColor = '#b8c7d9';
+        }
+      });
+
+      btn.addEventListener('mouseleave', () => {
+        if (!isCurrent) {
+          btn.style.background = '#ffffff';
+          btn.style.borderColor = '#d9e2ec';
+        }
+      });
+
+      btn.onclick = () => goToExpensePage(page);
+      pageNumbersDiv.appendChild(btn);
+      console.log('DEBUG: Created button for page', page);
+    };
+
+    const createEllipsis = () => {
+      const span = document.createElement('span');
+      span.textContent = '...';
+      span.style.cssText = `
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 20px;
+        height: 28px;
+        color: #64748b;
+        font-size: 12px;
+        user-select: none;
+      `;
+      pageNumbersDiv.appendChild(span);
+    };
+
+    // If only a few pages, show all
+    if (tp <= 8) {
+      for (let i = 1; i <= tp; i++) {
+        createPageButton(i);
+      }
+    } else {
+      // Always show page 1
+      createPageButton(1);
+
+      // Pages near current page
+      let startPage, endPage;
+      if (expenseCurrentPage <= 5) {
+        startPage = 2;
+        endPage = 6;
+      } else if (expenseCurrentPage >= tp - 4) {
+        startPage = tp - 5;
+        endPage = tp - 1;
+      } else {
+        startPage = expenseCurrentPage - 2;
+        endPage = expenseCurrentPage + 2;
+      }
+
+      // Ellipsis before middle
+      if (startPage > 2) {
+        createEllipsis();
+      }
+
+      // Middle pages
+      for (let i = startPage; i <= endPage; i++) {
+        createPageButton(i);
+      }
+
+      // Ellipsis before last
+      if (endPage < tp - 1) {
+        createEllipsis();
+      }
+
+      // Always show last page
+      createPageButton(tp);
+    }
+    console.log('DEBUG: Pagination rendering complete. pageNumbersDiv children:', pageNumbersDiv.children.length);
+  } else {
+    console.log('DEBUG: pageNumbersDiv not found!');
+  }
+
   const prevBtn = document.getElementById('expensePrevBtn');
   const nextBtn = document.getElementById('expenseNextBtn');
   const wrap    = document.getElementById('expensePagerWrap');
-  prevBtn.disabled = expenseCurrentPage <= 1;
-  nextBtn.disabled = expenseCurrentPage >= tp;
-  prevBtn.style.opacity = expenseCurrentPage <= 1 ? '0.4' : '1';
-  prevBtn.style.cursor  = expenseCurrentPage <= 1 ? 'default' : 'pointer';
-  nextBtn.style.opacity = expenseCurrentPage >= tp ? '0.4' : '1';
-  nextBtn.style.cursor  = expenseCurrentPage >= tp ? 'default' : 'pointer';
+
+  if (prevBtn) {
+    prevBtn.disabled = expenseCurrentPage <= 1;
+    prevBtn.style.opacity = expenseCurrentPage <= 1 ? '0.4' : '1';
+    prevBtn.style.cursor  = expenseCurrentPage <= 1 ? 'default' : 'pointer';
+  }
+
+  if (nextBtn) {
+    nextBtn.disabled = expenseCurrentPage >= tp;
+    nextBtn.style.opacity = expenseCurrentPage >= tp ? '0.4' : '1';
+    nextBtn.style.cursor  = expenseCurrentPage >= tp ? 'default' : 'pointer';
+  }
+
   if (wrap) wrap.style.display = (tp <= 1 && expenseFilteredRows.length <= expensePerPage) ? 'none' : 'flex';
 
   // Update summary cards when filters are applied
@@ -1496,6 +1635,33 @@ function nextExpensePage() {
     renderExpenseTable();
   }
 }
+
+function goToExpensePage(pageNum) {
+  const totalPages = Math.ceil(expenseFilteredRows.length / expensePerPage);
+  const page = parseInt(pageNum) || expenseCurrentPage;
+  if (page >= 1 && page <= totalPages) {
+    expenseCurrentPage = page;
+    renderExpenseTable();
+  } else {
+    // Reset to current page if invalid
+    document.getElementById('expenseGoToPage').value = expenseCurrentPage;
+  }
+}
+
+// Initialize go-to-page input listener
+setTimeout(function() {
+  const goToPageInput = document.getElementById('expenseGoToPage');
+  if (goToPageInput) {
+    goToPageInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        goToExpensePage(this.value);
+      }
+    });
+    goToPageInput.addEventListener('change', function() {
+      goToExpensePage(this.value);
+    });
+  }
+}, 100);
 
 function clearExpenseFilters() {
   ['expenseSearch','expenseTypeFilter','expenseVendorFilter','expenseDateFrom','expenseDateTo'].forEach(id => {
@@ -1650,8 +1816,57 @@ function exportExpenseCSV() {
 document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('expenseTableBody')) {
     renderExpenseTable();
+    sortExpenseTableByDate();
   }
 });
+
+function sortExpenseTableByDate() {
+  const tbody = document.getElementById('expenseTableBody');
+  if (!tbody) return;
+
+  const rows = Array.from(tbody.querySelectorAll('tr.expense-row'));
+  rows.sort(function(a, b) {
+    // Always try to get created_at from data attribute first (most accurate for sorting)
+    let dateA = (a.dataset.createdAt || '').trim();
+    let dateB = (b.dataset.createdAt || '').trim();
+
+    // Parse dates - handle both "MM-DD-YYYY" and ISO formats
+    const parseDate = function(dateStr) {
+      if (!dateStr) return new Date(0);
+      // Try ISO format first (YYYY-MM-DDTHH:MM:SS)
+      if (dateStr.includes('T')) {
+        try {
+          return new Date(dateStr);
+        } catch (e) {
+          return new Date(0);
+        }
+      }
+      // Try ISO date format (YYYY-MM-DD)
+      if (dateStr.match(/^\d{4}-\d{2}-\d{2}/)) {
+        try {
+          return new Date(dateStr.substring(0, 10) + 'T00:00:00Z');
+        } catch (e) {
+          return new Date(0);
+        }
+      }
+      // Try MM-DD-YYYY format
+      const parts = dateStr.split('-');
+      if (parts.length === 3 && parts[2].length === 4) {
+        try {
+          return new Date(parts[2], parts[0] - 1, parts[1]);
+        } catch (e) {
+          return new Date(0);
+        }
+      }
+      return new Date(0);
+    };
+
+    return parseDate(dateB) - parseDate(dateA); // Descending (newest first)
+  });
+
+  // Re-append sorted rows to tbody to maintain sort order
+  rows.forEach(row => tbody.appendChild(row));
+}
 
 function addExpense(event) {
   event.preventDefault();
@@ -1784,8 +1999,9 @@ document.addEventListener('DOMContentLoaded', function() {
               </div>
             </div>
             <div class="col-md-6">
-              <label class="form-label form-label-sm fw-600">Amount ($) *</label>
-              <input type="number" name="amount" id="modalAmount" class="form-control form-control-sm" step="0.01" min="0" required>
+              <label class="form-label form-label-sm fw-600">Amount (USD) *</label>
+              <input type="number" name="amount" id="modalAmount" class="form-control form-control-sm" step="0.01" min="0" required oninput="updateModalBdtDisplay()">
+              <small class="form-text text-muted" id="modalBdtDisplay" style="color:#10b981;font-size:11px;margin-top:4px;"></small>
             </div>
           </div>
 
@@ -1843,6 +2059,100 @@ document.addEventListener('DOMContentLoaded', function() {
   </div>
 </div>
 
+<!-- Commission Expense Editor Modal -->
+<div class="modal fade" id="commissionExpenseModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Commission</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="commissionExpenseModalForm" method="POST">
+          <input type="hidden" id="commExpenseId" name="commission_id">
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Expense Type</label>
+              <input type="text" id="commExpenseType" class="form-control form-control-sm" value="Commission" disabled>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Category</label>
+              <input type="text" id="commExpenseCategory" class="form-control form-control-sm" value="Sales Commission" disabled>
+            </div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Commission Name</label>
+              <input type="text" id="commExpenseName" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Amount ($) *</label>
+              <input type="number" id="commExpenseAmount" class="form-control form-control-sm" step="0.01" disabled style="background-color: #f3f4f6; cursor: not-allowed;">
+              <small class="text-muted d-block mt-1">Amount is locked. Edit commission rate in Commission tab.</small>
+            </div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Date</label>
+              <input type="date" id="commExpenseDate" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Vendor *</label>
+              <input type="text" id="commExpenseVendor" class="form-control form-control-sm" value="Sales Commission" disabled>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label form-label-sm fw-600">Link to Project</label>
+            <input type="text" id="commExpenseProject" class="form-control form-control-sm" disabled>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label form-label-sm fw-600">Notes</label>
+            <textarea id="commExpenseNotes" class="form-control form-control-sm" rows="2" placeholder="Optional notes"></textarea>
+          </div>
+
+          <div class="form-text text-muted small">
+            <i class="bi bi-info-circle"></i> To modify the commission amount, edit the commission rate in the <strong>Finance → Commission</strong> tab.
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="submitCommissionExpenseModal()">
+          <i class="bi bi-check-circle me-1"></i>Update Commission
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Mark Paid Date Picker Modal -->
+<div class="modal fade" id="markPaidDateModal" tabindex="-1">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title"><i class="bi bi-calendar-check me-2"></i>Mark as Paid</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-3">Enter the date this commission was paid:</p>
+        <div class="mb-3">
+          <label for="markPaidDateInput" class="form-label">Paid Date</label>
+          <input type="date" class="form-control" id="markPaidDateInput">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-success" onclick="confirmMarkPaidDate()">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Receipt Viewer Modal -->
 <div class="modal fade" id="receiptModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
@@ -1891,19 +2201,50 @@ function openAddExpenseModal() {
 function editExpenseModal(expId, expData) {
   try {
     window.editingExpenseId = expId;
+    const isCommission = expData.is_commission || false;
+
     document.getElementById('expenseId').value = expId;
-    document.getElementById('expenseModalTitle').innerHTML = '<i class="bi bi-pencil me-2"></i>Edit Expense';
-    document.getElementById('expenseModalSaveBtn').textContent = 'Update Expense';
+    document.getElementById('expenseModalTitle').innerHTML = isCommission
+      ? '<i class="bi bi-pencil me-2"></i>Edit Commission Details'
+      : '<i class="bi bi-pencil me-2"></i>Edit Expense';
+    document.getElementById('expenseModalSaveBtn').textContent = isCommission
+      ? 'Update Commission'
+      : 'Update Expense';
     document.getElementById('expenseModalSaveBtn').className = 'btn btn-warning';
     document.getElementById('modalExpenseType').value = expData.expense_type || '';
     document.getElementById('modalCategory').value = expData.category || '';
     document.getElementById('modalExpenseName').value = expData.expense_name || expData.description || '';
     document.getElementById('modalAmount').value = expData.amount || '';
+    updateModalBdtDisplay();
     document.getElementById('modalDate').value = expData.date || '';
     document.getElementById('modalVendor').value = expData.vendor || '';
     document.getElementById('modalProject').value = expData.project_number || '';
     document.getElementById('modalNotes').value = expData.notes || '';
     receiptFile = null;
+
+    // For commissions, disable amount field and show note
+    const amountField = document.getElementById('modalAmount');
+    const amountContainer = amountField.closest('.mb-3');
+    const existingNote = amountContainer.querySelector('.commission-note');
+
+    if (isCommission) {
+      amountField.disabled = true;
+      amountField.style.backgroundColor = '#f3f4f6';
+      amountField.style.cursor = 'not-allowed';
+      if (!existingNote) {
+        const note = document.createElement('small');
+        note.className = 'text-muted commission-note';
+        note.textContent = 'Commission amount can be edited in the Commission tab';
+        note.style.display = 'block';
+        note.style.marginTop = '4px';
+        amountContainer.appendChild(note);
+      }
+    } else {
+      amountField.disabled = false;
+      amountField.style.backgroundColor = '';
+      amountField.style.cursor = '';
+      if (existingNote) existingNote.remove();
+    }
 
     // Display existing receipt if it exists
     const receiptPreviewDiv = document.getElementById('receiptPreview');
@@ -1924,6 +2265,45 @@ function editExpenseModal(expId, expData) {
     console.error('Error in editExpenseModal:', err);
     alert('Error loading expense for edit');
   }
+}
+
+function editCommissionExpense(expId, expData) {
+  try {
+    window.editingExpenseId = expId;
+    document.getElementById('commExpenseId').value = expId;
+    document.getElementById('commExpenseType').value = expData.expense_type || 'Commission';
+    document.getElementById('commExpenseCategory').value = expData.category || 'Sales Commission';
+    document.getElementById('commExpenseName').value = expData.expense_name || '';
+    document.getElementById('commExpenseVendor').value = expData.vendor || 'Sales Commission';
+    document.getElementById('commExpenseProject').value = expData.project_number || '';
+    document.getElementById('commExpenseAmount').value = expData.amount || '';
+    document.getElementById('commExpenseDate').value = expData.date || '';
+    document.getElementById('commExpenseNotes').value = expData.description || '';
+
+    new bootstrap.Modal(document.getElementById('commissionExpenseModal')).show();
+  } catch (err) {
+    console.error('Error in editCommissionExpense:', err);
+    alert('Error loading commission for edit');
+  }
+}
+
+function submitCommissionExpenseModal() {
+  const commissionId = document.getElementById('commExpenseId').value;
+  const commissionName = document.getElementById('commExpenseName').value;
+  const commissionDate = document.getElementById('commExpenseDate').value;
+  const notes = document.getElementById('commExpenseNotes').value;
+
+  if (!commissionId) {
+    alert('Commission ID is missing');
+    return;
+  }
+
+  // Note: Commission amount cannot be edited here - it's managed in Commission tab
+  // We only allow editing of name, date, and notes
+
+  alert('Commission details updated.\n\nNote: To change the commission amount, edit the commission rate in the Commission tab.');
+  bootstrap.Modal.getInstance(document.getElementById('commissionExpenseModal')).hide();
+  location.reload();
 }
 
 function removeExistingReceipt(expId) {
@@ -2159,8 +2539,10 @@ function submitExpenseModal() {
   const amount = document.getElementById('modalAmount').value;
   const category = document.getElementById('modalCategory').value;
   const expenseName = document.getElementById('modalExpenseName').value;
+  const isCommission = expenseType === 'Commission';
 
-  if (!expenseType || !vendor || !amount) {
+  // For regular expenses, require amount. For commissions, amount is edited in Commission tab
+  if (!expenseType || !vendor || (!isCommission && !amount)) {
     alert('Please fill in all required fields');
     return;
   }
@@ -2427,6 +2809,78 @@ function viewReceipt(expId) {
     <div id="byProjectPager_pager" class="mt-2"></div>
   </div>
   <style>
+    /* Expense Pagination Styling */
+    .expense-pager {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      padding: 10px 12px;
+      box-sizing: border-box;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .expense-pager-center {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      flex: 1;
+    }
+
+    .expense-pager-center input {
+      width: 42px;
+      height: 28px;
+      padding: 0 5px;
+      border: 1px solid #d9e2ec;
+      border-radius: 3px;
+      text-align: center;
+      font-size: 12px;
+      outline: none;
+    }
+
+    .expense-pager-right {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 3px;
+      margin-left: auto;
+    }
+
+    #expensePageNumbers {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    #expensePrevBtn,
+    #expenseNextBtn {
+      min-width: 28px;
+      height: 28px;
+      padding: 0;
+      border: 1px solid #d9e2ec;
+      background: #ffffff;
+      color: #2563eb;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 26px;
+      transition: all 0.15s ease;
+    }
+
+    #expensePrevBtn:hover:not(:disabled),
+    #expenseNextBtn:hover:not(:disabled) {
+      background: #f1f5f9;
+      border-color: #b8c7d9;
+    }
+
+    #expensePrevBtn:disabled,
+    #expenseNextBtn:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
     #byProjectTableBody tr.bp-row.bp-hidden{display:none!important;}
     #byProjectTableBody tr.bp-row.bp-filtered{display:none!important;}
   </style>
@@ -2716,9 +3170,10 @@ function viewReceipt(expId) {
             <tr>
               <th style="text-align: left; background: #f8fafc; color: #e74c3c; font-weight: 700; padding: 8px;">▶ EXPENSES</th>
               {% for m in range(1, 13) %}
-              <td>{{ currency_symbol }}{{ (annual_expenses.get(m, 0) | float) | round(2) }}</td>
+              {% set exp_with_comm = (annual_expenses.get(m, 0) | float) + (annual_commissions.get(m, 0) | float) %}
+              <td>{{ currency_symbol }}{{ exp_with_comm | round(2) }}</td>
               {% endfor %}
-              <td id="bsExpTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">{{ currency_symbol }}{{ (bs_total_expenses | default(0)) | round(2) }}</td>
+              <td id="bsExpTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">{{ currency_symbol }}{{ ((bs_total_expenses | default(0)) + (annual_commissions.values() | sum)) | round(2) }}</td>
             </tr>
             <tr>
               <th style="text-align: left; background: #f8fafc; color: #27ae60; font-weight: 700; padding: 8px;">▶ NET P/L</th>
@@ -2726,7 +3181,7 @@ function viewReceipt(expId) {
               {% set netval = (annual_netpl.get(m, 0) | float) %}
               <td style="{{ 'color:#16a34a;' if netval >= 0 else 'color:#dc2626;' }}">{{ currency_symbol }}{{ netval | round(2) }}</td>
               {% endfor %}
-              <td id="bsNetTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">{{ currency_symbol }}{{ ((annual_revenue.values() | sum) - (bs_total_expenses | default(0))) | round(2) }}</td>
+              <td id="bsNetTotal" style="background: #f0fdf4; color: #0f766e; font-weight: 700;">{{ currency_symbol }}{{ ((annual_revenue.values() | sum) - (bs_total_expenses | default(0)) - (annual_commissions.values() | sum)) | round(2) }}</td>
             </tr>
           </tbody>
         </table>
@@ -2933,33 +3388,33 @@ function viewReceipt(expId) {
         </div>
       </div>
 
+      <!-- Commission Section -->
+      <div id="monthCommissionSection" style="display:none; margin-top:12px;">
+        <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#7C3AED; padding:6px 0; border-bottom:2px solid #DDD6FE; margin-bottom:8px;">
+          <i class="bi bi-cash-coin me-1"></i>Commission Paid
+        </div>
+        <div class="table-responsive">
+          <table class="table mb-0" style="font-size:12px;">
+            <thead style="background:#5B21B6; color:#fff;">
+              <tr>
+                <th style="padding:8px 12px; color:#fff;">Date</th>
+                <th style="padding:8px 12px; color:#fff;">Salesperson</th>
+                <th style="padding:8px 12px; color:#fff;">Project #</th>
+                <th style="padding:8px 12px; color:#fff; text-align:right;">Commission Paid</th>
+              </tr>
+            </thead>
+            <tbody id="monthCommissionTbody"></tbody>
+            <tfoot id="monthCommissionTfoot" style="background:#F5F3FF; border-top:2px solid #DDD6FE;"></tfoot>
+          </table>
+        </div>
+      </div>
+
       <!-- Grand Total Row -->
       <div style="background:#FEF2F2; border:2px solid #FECACA; border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center; margin-top:16px;">
         <span style="font-weight:700; font-size:13px; color:#991B1B;">
-          <i class="bi bi-calculator me-2"></i>TOTAL EXPENSES (Salaries + Advances + Expenses)
+          <i class="bi bi-calculator me-2"></i>TOTAL EXPENSES (Expenses + Salaries + Advances + Commissions)
         </span>
         <span style="font-weight:800; font-size:14px; color:#DC2626;" id="monthTotalExpenses">—</span>
-      </div>
-    </div>
-
-    <!-- Commission Section -->
-    <div id="monthCommissionSection" style="display:none; margin-top:12px;">
-      <div style="font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#7C3AED; padding:6px 0; border-bottom:2px solid #DDD6FE; margin-bottom:8px;">
-        <i class="bi bi-cash-coin me-1"></i>Commission Paid
-      </div>
-      <div class="table-responsive">
-        <table class="table mb-0" style="font-size:12px;">
-          <thead style="background:#5B21B6; color:#fff;">
-            <tr>
-              <th style="padding:8px 12px; color:#fff;">Paid On</th>
-              <th style="padding:8px 12px; color:#fff;">Salesperson</th>
-              <th style="padding:8px 12px; color:#fff;">For Period</th>
-              <th style="padding:8px 12px; color:#fff; text-align:right;">Amount</th>
-            </tr>
-          </thead>
-          <tbody id="monthCommissionTbody"></tbody>
-          <tfoot id="monthCommissionTfoot" style="background:#F5F3FF; border-top:2px solid #DDD6FE;"></tfoot>
-        </table>
       </div>
     </div>
   </div>
@@ -3138,8 +3593,11 @@ function viewReceipt(expId) {
       /* ?? 5. Salaries ?? */
       var salaries = monthlySalaryDetails[mkey] || [];
 
-      // Check if there's any data (salaries + advances + expenses)
-      var hasData = salaries.length > 0 || advances.length > 0 || regularExpenses.length > 0;
+      /* ?? 6. Commission Paid (fetch early) ?? */
+      var commissions = monthlyCommissionDetails[mkey] || [];
+
+      // Check if there's any data (salaries + advances + expenses + COMMISSIONS)
+      var hasData = salaries.length > 0 || advances.length > 0 || regularExpenses.length > 0 || commissions.length > 0;
       var combinedSec = document.getElementById('monthCombinedExpensesSection');
 
       if (!hasData) {
@@ -3236,31 +3694,36 @@ function viewReceipt(expId) {
         } else {
           expSec.style.display = 'none';
         }
-
-        // Calculate and display grand total
-        var grandTotal = totalSal + totalAdv + totalExp;
-        document.getElementById('monthTotalExpenses').textContent = fmt(grandTotal);
       }
 
       /* ?? 6. Commission Paid ?? */
-      var commissions = monthlyCommissionDetails[mkey] || [];
       var commSec = document.getElementById('monthCommissionSection');
+      var totalComm = 0;
       if (commissions.length > 0) {
         commSec.style.display = '';
         var cRows = commissions.map(function(c, idx) {
           var bg = idx%2===0?'#fff':'#f5f3ff';
+          var projLink = c.project_id
+            ? '<a href="/projects/'+encodeURIComponent(c.project_id)+'" style="color:#5B21B6;font-weight:700;text-decoration:none;">'+(c.project_number||'—')+'</a>'
+            : (c.project_number||'—');
           return '<tr style="background:'+bg+';border-bottom:1px solid #ddd6fe;">'
-            +'<td style="padding:8px 12px;color:#6b7280;">'+(c.paid_at||'—')+'</td>'
-            +'<td style="padding:8px 12px;font-weight:500;">'+(c.salesperson||'—')+'</td>'
-            +'<td style="padding:8px 12px;color:#6b7280;">'+(c.period||'—')+'</td>'
-            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#7C3AED;">'+fmt(c.amount)+'</td></tr>';
+            +'<td style="padding:8px 12px;color:#6b7280;">'+formatDate(c.paid_date)+'</td>'
+            +'<td style="padding:8px 12px;color:#1e293b;font-weight:500;">'+(c.salesperson||'—')+'</td>'
+            +'<td style="padding:8px 12px;font-weight:500;">'+projLink+'</td>'
+            +'<td style="padding:8px 12px;text-align:right;font-weight:700;color:#2563EB;">'+fmt(c.commission_amount)+'</td></tr>';
         });
         document.getElementById('monthCommissionTbody').innerHTML = cRows.join('');
-        var totalComm = commissions.reduce(function(s,c){return s+parseFloat(c.amount||0);},0);
-        document.getElementById('monthCommissionTfoot').innerHTML = '<tr><td colspan="3" style="padding:8px 12px;font-weight:700;">Total Commission</td>'
-          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#7C3AED;font-size:13px;">'+fmt(totalComm)+'</td></tr>';
+        totalComm = commissions.reduce(function(s,c){return s+parseFloat(c.commission_amount||0);},0);
+        document.getElementById('monthCommissionTfoot').innerHTML = '<tr><td colspan="3" style="padding:8px 12px;font-weight:700;">Total Commission Paid</td>'
+          +'<td style="padding:8px 12px;text-align:right;font-weight:800;color:#2563EB;font-size:13px;">'+fmt(totalComm)+'</td></tr>';
       } else {
         commSec.style.display = 'none';
+      }
+
+      // Calculate and display grand total (including commissions) - only if hasData is true
+      if (hasData) {
+        var grandTotal = totalSal + totalAdv + totalExp + totalComm;
+        document.getElementById('monthTotalExpenses').textContent = fmt(grandTotal);
       }
 
       panel.style.display = 'block';
@@ -3651,129 +4114,266 @@ function viewReceipt(expId) {
 
   <!-- KPI strip -->
   <div class="row g-3 mb-4">
-    <div class="col-6 col-md-4">
+    <div class="col-6 col-md-3">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Earned</div>
         <div style="font-size:1.6rem;font-weight:800;color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_earned) }}</div>
-        <div class="text-muted" style="font-size:11px;">all time, all salespeople</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">All Commissions</div>
       </div>
     </div>
-    <div class="col-6 col-md-4">
+    <div class="col-6 col-md-3">
+      <div class="card-panel text-center">
+        <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Adjusted</div>
+        <div style="font-size:1.6rem;font-weight:800;color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(0) }}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Advance Deductions</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Paid</div>
-        <div style="font-size:1.6rem;font-weight:800;color:#16a34a;">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_paid) }}</div>
-        <div class="text-muted" style="font-size:11px;">recorded payments</div>
+        <div style="font-size:1.6rem;font-weight:800;color:#059669;">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_paid) }}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Paid Commissions</div>
       </div>
     </div>
-    <div class="col-6 col-md-4">
+    <div class="col-6 col-md-3">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Outstanding</div>
         <div style="font-size:1.6rem;font-weight:800;color:{{ '#DC2626' if commission_total_outstanding > 0 else '#16a34a' }};">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_outstanding) }}</div>
-        <div class="text-muted" style="font-size:11px;">still owed</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Pending Commission</div>
       </div>
     </div>
   </div>
 
-  {% if commission_summary %}
-  <div class="card-panel">
-    <h6 class="section-heading mb-3"><i class="bi bi-people me-1"></i>By Salesperson</h6>
+  <!-- By Project commission log -->
+  {% if user_role == 'admin' and not project_commissions %}
+  <div class="card-panel mt-4 text-center py-4">
+    <i class="bi bi-folder2-open" style="font-size:32px;color:#e2e8f0;"></i>
+    <div class="text-muted mt-2 mb-3 small">No project commission entries yet.</div>
+    <button class="btn btn-sm btn-outline-primary" onclick="backfillCommissions(this)">
+      <i class="bi bi-arrow-repeat me-1"></i>Sync All Projects Now
+    </button>
+  </div>
+  {% endif %}
+  {% if project_commissions %}
+  <div class="card-panel mt-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+      <h6 class="section-heading mb-0"><i class="bi bi-folder2-open me-1"></i>By Project</h6>
+      <div class="d-flex gap-2 flex-wrap align-items-center">
+        {% if user_role == 'admin' %}
+        <button class="btn btn-xs btn-outline-secondary" onclick="backfillCommissions(this)" title="Sync all existing projects" style="font-size:11px;">
+          <i class="bi bi-arrow-repeat me-1"></i>Sync
+        </button>
+        {% endif %}
+        <select id="commSpFilter" class="form-select form-select-sm" style="width:auto;min-width:150px;" onchange="filterCommTable()">
+          <option value="">All Salespeople</option>
+          {% for sp in project_commissions|map(attribute='salesperson')|unique|sort %}
+          <option value="{{ sp }}">{{ sp }}</option>
+          {% endfor %}
+        </select>
+        <select id="commStatusFilter" class="form-select form-select-sm" style="width:auto;" onchange="filterCommTable()">
+          <option value="">All Status</option>
+          <option value="Pending">Pending</option>
+          <option value="Paid">Paid</option>
+        </select>
+        <div class="form-check form-switch mb-0 ms-1" style="font-size:12px;">
+          <input class="form-check-input" type="checkbox" id="commHideZero" checked onchange="filterCommTable()">
+          <label class="form-check-label text-muted" for="commHideZero">Hide $0</label>
+        </div>
+      </div>
+    </div>
+    <div id="commPaginationInfo" class="text-muted mb-2" style="font-size:12px;"></div>
     <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0" style="font-size:13px;">
+      <table class="table table-hover align-middle mb-0" id="commByProjectTable" style="font-size:13px;">
         <thead>
           <tr>
+            <th>Project #</th>
+            <th>Client</th>
             <th>Salesperson</th>
-            <th>Type</th>
-            <th class="text-center">Rate</th>
-            <th class="text-end">Revenue Generated</th>
-            <th class="text-end">Total Earned</th>
-            <th class="text-end text-success">Paid</th>
-            <th class="text-end" style="color:#DC2626;">Outstanding</th>
-            <th class="text-center">Periods</th>
+            <th class="text-end">Contract Value</th>
+            <th class="text-center">Rate / Type</th>
+            <th class="text-end" style="color:#7C3AED;">Commission</th>
+            <th class="text-end" style="color:#16A34A;">Adjusted</th>
+            <th class="text-end" style="color:#2563EB;">Remaining Due</th>
+            <th class="text-center">Status</th>
+            {% if user_role in ('admin', 'finance', 'accountant') %}<th class="text-center">Action</th>{% endif %}
           </tr>
         </thead>
         <tbody>
-          {% for sp in commission_summary %}
-          <tr>
-            <td>
-              <div class="fw-semibold">{{ sp.name }}</div>
-              <div class="text-muted" style="font-size:11px;">{{ sp.email }}</div>
+          {% for pc in project_commissions %}
+          {% set display_status = 'Paid' if pc.get('deduction_status') == 'fully_covered' else pc.get('status','Pending') %}
+          <tr data-sp="{{ pc.get('salesperson','') }}" data-status="{{ display_status }}" data-amount="{{ pc.get('commission_amount',0)|float }}" data-adjusted="{{ pc.get('adjusted_amount',0)|float }}" data-remaining="{{ pc.get('remaining_due',0)|float }}" data-deduction-status="{{ pc.get('deduction_status','not_covered') }}">
+            <td class="fw-semibold">
+              <a href="{{ url_for('project_detail', project_id=pc.firebase_id) }}" class="text-decoration-none">
+                {{ pc.get('project_number','—') }}
+              </a>
             </td>
+            <td>{{ pc.get('company_name','—') }}</td>
             <td>
-              {% if sp.employee_type == 'full_time' %}
-              <span class="badge" style="background:#0D9488;color:#fff;font-size:10px;">Full Time</span>
-              {% elif sp.employee_type == 'contractor' %}
-              <span class="badge" style="background:#7C3AED;color:#fff;font-size:10px;">Contractor</span>
-              {% else %}<span class="text-muted">—</span>{% endif %}
+              <div class="fw-semibold">{{ pc.get('salesperson','—') }}</div>
+              <div class="text-muted" style="font-size:11px;">{{ pc.get('salesperson_email','') }}</div>
             </td>
-            <td class="text-center text-muted">{{ sp.commission_rate }}%</td>
-            <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(sp.total_revenue) }}</td>
-            <td class="text-end fw-semibold" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(sp.total_earned) }}</td>
-            <td class="text-end text-success fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(sp.total_paid) }}</td>
-            <td class="text-end fw-bold {{ 'text-danger' if sp.outstanding > 0 else 'text-muted' }}">
-              {{ currency_symbol }}{{ "{:,.2f}".format(sp.outstanding) }}
+            <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('contract_value',0)|float) }}</td>
+            <td class="text-center comm-rate-cell" id="rateCell-{{ pc.firebase_id }}"
+                data-pid="{{ pc.firebase_id }}"
+                data-type="{{ pc.get('commission_override_type','default') }}"
+                data-value="{{ pc.get('commission_override_value',0)|float }}">
+              {% if user_role == 'admin' %}
+              <span class="comm-rate-display text-muted small" style="cursor:pointer;" title="Click to edit"
+                    onclick="commRateEditOpen('{{ pc.firebase_id }}')">
+                {{ pc.get('rate_display','—') }} <i class="bi bi-pencil-fill ms-1" style="font-size:10px;opacity:.5;"></i>
+              </span>
+              <div class="comm-rate-editor d-none" style="min-width:200px;">
+                <div class="d-flex gap-1 align-items-center flex-wrap">
+                  <select class="form-select form-select-sm" style="width:auto;font-size:11px;"
+                          id="rateTypeInput-{{ pc.firebase_id }}"
+                          onchange="commRateTypeChange('{{ pc.firebase_id }}')">
+                    <option value="default" {% if pc.get('commission_override_type','default')=='default' %}selected{% endif %}>Default</option>
+                    <option value="percent" {% if pc.get('commission_override_type')=='percent' %}selected{% endif %}>Custom %</option>
+                    <option value="fixed"   {% if pc.get('commission_override_type')=='fixed' %}selected{% endif %}>Fixed $</option>
+                  </select>
+                  <input type="number" min="0" step="0.01"
+                         class="form-control form-control-sm {% if pc.get('commission_override_type','default')=='default' %}d-none{% endif %}"
+                         style="width:70px;font-size:11px;"
+                         id="rateValInput-{{ pc.firebase_id }}"
+                         value="{{ pc.get('commission_override_value',0)|float }}">
+                  <button class="btn btn-xs btn-success" style="font-size:11px;padding:2px 7px;"
+                          onclick="commRateSave('{{ pc.firebase_id }}')">Save</button>
+                  <button class="btn btn-xs btn-outline-secondary" style="font-size:11px;padding:2px 7px;"
+                          onclick="commRateEditClose('{{ pc.firebase_id }}')">✕</button>
+                </div>
+                <div id="rateErr-{{ pc.firebase_id }}" class="text-danger mt-1" style="font-size:10px;display:none;"></div>
+              </div>
+              {% else %}
+              <span class="text-muted small">{{ pc.get('rate_display','—') }}</span>
+              {% endif %}
+            </td>
+            <td class="text-end fw-bold comm-amount-cell" id="amountCell-{{ pc.firebase_id }}" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('commission_amount',0)|float) }}</td>
+            <td class="text-center" style="color:#16A34A;">
+              <div style="font-weight:bold;">
+                {% if pc.get('adjusted_amount',0)|float > 0 %}
+                {{ currency_symbol }}{{ "{:,.2f}".format(pc.get('adjusted_amount',0)|float) }}
+                {% else %}
+                0
+                {% endif %}
+              </div>
+              {% if pc.get('deductions_list') and pc.deductions_list|length > 0 %}
+              <div class="text-muted" style="font-size:10px;">
+                {% set shown_advs = [] %}
+                {% for deduction in pc.deductions_list %}
+                  {% set adv_no = deduction.get('advance_no', '') %}
+                  {% if adv_no and adv_no not in shown_advs %}
+                    {% if shown_advs.append(adv_no) %}{% endif %}
+                    <a href="{{ url_for('advance_detail', advance_id=deduction.get('advance_id', '')) }}"
+                       style="color:#666; text-decoration:none; cursor:pointer;"
+                       title="View adjustment details"
+                       onmouseover="this.style.color='#16A34A'; this.style.textDecoration='underline';"
+                       onmouseout="this.style.color='#666'; this.style.textDecoration='none';">
+                      {{ adv_no }}
+                    </a><br/>
+                  {% endif %}
+                {% endfor %}
+              </div>
+              {% else %}
+              <div class="text-muted" style="font-size:10px;"></div>
+              {% endif %}
+            </td>
+            <td class="text-end" style="color:#2563EB;">
+              <strong>{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('remaining_due',0)|float) }}</strong>
             </td>
             <td class="text-center">
-              <!-- Period breakdown popover trigger -->
+              {% set is_fully_covered = pc.get('deduction_status') == 'fully_covered' %}
+              {% set is_partially_covered = pc.get('deduction_status') == 'partially_covered' %}
+
+              {% if is_fully_covered %}
+              <div>
+                <span class="badge bg-success" style="font-size:10px;" title="All commission covered by advance deductions">
+                  <i class="bi bi-lock-fill me-1"></i>Paid (Fully Covered)
+                </span>
+                {% set deductions_dates = pc.get('deductions_list', [])|map(attribute='date')|list %}
+                {% if deductions_dates %}
+                  {% set latest_date = deductions_dates|max %}
+                  <div class="text-muted" style="font-size:10px;">{{ latest_date[5:7] }}-{{ latest_date[8:10] }}-{{ latest_date[0:4] }}</div>
+                {% elif pc.get('paid_at') %}
+                  {% set paid_date = pc.get('paid_at','')[:10] %}
+                  <div class="text-muted" style="font-size:10px;">{{ paid_date[5:7] }}-{{ paid_date[8:10] }}-{{ paid_date[0:4] }}</div>
+                {% endif %}
+              </div>
+              {% elif is_partially_covered %}
+              <div>
+                {% if pc.get('status') == 'Paid' %}
+                <span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>
+                {% if pc.get('paid_at') %}
+                {% set paid_date = pc.get('paid_at','')[:10] %}
+                <div class="text-muted" style="font-size:10px;">{{ paid_date[5:7] }}-{{ paid_date[8:10] }}-{{ paid_date[0:4] }}</div>
+                {% endif %}
+                {% else %}
+                <span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>
+                {% endif %}
+              </div>
+              {% else %}
+              {% if pc.get('status') == 'Paid' %}
+              <span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>
+              {% if pc.get('paid_at') %}
+              {% set paid_date = pc.get('paid_at','')[:10] %}
+              <div class="text-muted" style="font-size:10px;">{{ paid_date[5:7] }}-{{ paid_date[8:10] }}-{{ paid_date[0:4] }}</div>
+              {% endif %}
+              {% else %}
+              <span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>
+              {% endif %}
+              {% endif %}
+            </td>
+            {% if user_role in ('admin', 'finance', 'accountant') %}
+            <td class="text-center">
+              {% set is_fully_covered = pc.get('deduction_status') == 'fully_covered' %}
+
+              {% if is_fully_covered %}
               <button class="btn btn-xs btn-outline-secondary"
-                      type="button"
-                      data-bs-toggle="collapse"
-                      data-bs-target="#periods-{{ loop.index }}"
+                      disabled
+                      title="Status locked: All commission covered by advance deductions. Remove adjustments to unlock."
                       style="font-size:11px;">
-                {{ sp.periods|length }} period{{ 's' if sp.periods|length != 1 }}
+                <i class="bi bi-lock-fill me-1"></i>Locked
               </button>
+              {% else %}
+              {% if pc.get('status') == 'Paid' %}
+              <button class="btn btn-xs btn-outline-secondary"
+                      onclick="commProjectToggle('{{ pc.firebase_id }}','unpay',this)"
+                      title="Mark as Pending"
+                      style="font-size:11px;">Mark Pending</button>
+              {% else %}
+              <button class="btn btn-xs btn-outline-success"
+                      id="markPaidBtn-{{ pc.firebase_id }}"
+                      onclick="showMarkPaidDateModal('{{ pc.firebase_id }}', this)"
+                      title="Mark as Paid"
+                      style="font-size:11px;">Mark Paid</button>
+              {% endif %}
+              {% endif %}
             </td>
-          </tr>
-          <!-- Collapsible period breakdown -->
-          <tr class="collapse" id="periods-{{ loop.index }}">
-            <td colspan="8" style="background:#f8fafc;padding:0;">
-              <table class="table table-sm mb-0" style="font-size:12px;">
-                <thead>
-                  <tr style="background:#f1f5f9;">
-                    <th class="ps-4">Period</th>
-                    <th class="text-end">Commission</th>
-                    <th class="text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for period, pdata in sp.periods.items() | sort(reverse=True) %}
-                  <tr>
-                    <td class="ps-4">{{ period }}</td>
-                    <td class="text-end fw-semibold" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(pdata.earned) }}</td>
-                    <td class="text-center">
-                      {% if pdata.paid %}
-                      <span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>
-                      {% else %}
-                      <span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>
-                      {% endif %}
-                    </td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </td>
+            {% endif %}
           </tr>
           {% endfor %}
         </tbody>
         <tfoot>
           <tr class="fw-bold table-light" style="border-top:2px solid #dee2e6;">
-            <td colspan="3" class="text-end text-muted small">Totals</td>
-            <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(commission_summary|sum(attribute='total_revenue')) }}</td>
-            <td class="text-end" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_earned) }}</td>
-            <td class="text-end text-success">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_paid) }}</td>
-            <td class="text-end text-danger">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_outstanding) }}</td>
-            <td></td>
+            <td colspan="5" class="text-end text-muted small">Total Commission</td>
+            <td class="text-end" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions|sum(attribute='commission_amount')) }}</td>
+            <td class="text-end" style="color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions|sum(attribute='adjusted_amount')) }}</td>
+            <td class="text-end" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions|sum(attribute='remaining_due')) }}</td>
+            <td{% if user_role == 'admin' %} colspan="2"{% endif %}></td>
           </tr>
         </tfoot>
       </table>
     </div>
+    <!-- Pagination controls -->
+    <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+      <div id="commPageInfo" class="text-muted" style="font-size:12px;"></div>
+      <nav>
+        <ul class="pagination pagination-sm mb-0" id="commPagination"></ul>
+      </nav>
+    </div>
   </div>
+  {% endif %}
 
-  <div class="text-muted small mt-2 ps-1">
-    <i class="bi bi-info-circle me-1"></i>
-    Mark commissions as paid in <a href="{{ url_for('quotes') }}?tab=salespeople">Quotes — Sales People</a>.
-  </div>
-
-  {% else %}
+  {% if not commission_summary and not project_commissions %}
   <div class="card-panel text-center py-5">
     <i class="bi bi-cash-coin" style="font-size:40px;color:#e2e8f0;"></i>
     <div class="text-muted mt-2">No commission data yet. Set commission rates in <a href="{{ url_for('settings') }}?tab=users">Settings — Users</a>.</div>
@@ -4326,5 +4926,375 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // By Project pagination is handled inline in the tab-by-project section
+
+// Backfill all existing projects into /project_commissions
+function backfillCommissions(btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Syncing…';
+  fetch('/api/commission/backfill-projects', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>' + data.synced + ' synced';
+        setTimeout(() => location.reload(), 800);
+      } else {
+        alert(data.error || 'Sync failed.');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Sync Projects';
+      }
+    })
+    .catch(() => { alert('Network error.'); btn.disabled = false; });
+}
+
+// Commission By Project — pagination + filter
+(function() {
+  var COMM_PAGE_SIZE = 20;
+  var commCurrentPage = 1;
+
+  function getVisibleRows() {
+    var sp        = (document.getElementById('commSpFilter')    ? document.getElementById('commSpFilter').value    : '').toLowerCase();
+    var status    = (document.getElementById('commStatusFilter') ? document.getElementById('commStatusFilter').value : '').toLowerCase();
+    var hideZero  = document.getElementById('commHideZero') ? document.getElementById('commHideZero').checked : true;
+    var rows = Array.from(document.querySelectorAll('#commByProjectTable tbody tr'));
+    return rows.filter(function(row) {
+      var rowSp     = (row.dataset.sp     || '').toLowerCase();
+      var rowStatus = (row.dataset.status || '').toLowerCase();
+      var rowAmt    = parseFloat(row.dataset.amount || '0');
+      var spMatch     = !sp     || rowSp === sp.toLowerCase();
+      var statusMatch = !status || rowStatus === status;
+      var zeroMatch   = !hideZero || rowAmt > 0;
+      return spMatch && statusMatch && zeroMatch;
+    });
+  }
+
+  function renderCommPage(page) {
+    commCurrentPage = page;
+    var allRows = Array.from(document.querySelectorAll('#commByProjectTable tbody tr'));
+    allRows.forEach(function(r) { r.style.display = 'none'; });
+
+    var visible = getVisibleRows();
+    var total   = visible.length;
+    var start   = (page - 1) * COMM_PAGE_SIZE;
+    var end     = Math.min(start + COMM_PAGE_SIZE, total);
+    visible.slice(start, end).forEach(function(r) { r.style.display = ''; });
+
+    var info = document.getElementById('commPageInfo');
+    if (info) info.textContent = total === 0 ? 'No results' : 'Showing ' + (start+1) + '–' + end + ' of ' + total + ' projects';
+
+    // Update summary cards and table footer based on visible rows
+    updateCommissionSummaryCards(visible);
+    updateCommissionTableFooter(visible);
+
+    var pages = Math.ceil(total / COMM_PAGE_SIZE);
+    var nav   = document.getElementById('commPagination');
+    if (!nav) return;
+    nav.innerHTML = '';
+    if (pages <= 1) return;
+    var mkLi = function(label, pg, disabled, active) {
+      var li = document.createElement('li');
+      li.className = 'page-item' + (disabled ? ' disabled' : '') + (active ? ' active' : '');
+      var a = document.createElement('a');
+      a.className = 'page-link';
+      a.href = '#tab-commission';
+      a.innerHTML = label;
+      if (!disabled) a.addEventListener('click', function(e) { e.preventDefault(); renderCommPage(pg); });
+      li.appendChild(a);
+      return li;
+    };
+    nav.appendChild(mkLi('&laquo;', page - 1, page === 1, false));
+    for (var p = 1; p <= pages; p++) {
+      if (pages > 7 && p > 2 && p < pages - 1 && Math.abs(p - page) > 1) {
+        if (p === 3 || p === pages - 2) { var dots = document.createElement('li'); dots.className='page-item disabled'; dots.innerHTML='<span class="page-link">…</span>'; nav.appendChild(dots); }
+        continue;
+      }
+      nav.appendChild(mkLi(p, p, false, p === page));
+    }
+    nav.appendChild(mkLi('&raquo;', page + 1, page === pages, false));
+  }
+
+  function updateCommissionTableFooter(visibleRows) {
+    var totalCommission = 0;
+    var totalAdjusted = 0;
+    var totalRemaining = 0;
+
+    visibleRows.forEach(function(row) {
+      var amount = parseFloat(row.dataset.amount || '0');
+      var adjusted = parseFloat(row.dataset.adjusted || '0');
+      var remaining = parseFloat(row.dataset.remaining || '0');
+
+      totalCommission += amount;
+      totalAdjusted += adjusted;
+      totalRemaining += remaining;
+    });
+
+    var format = function(num) {
+      return num.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    };
+
+    // Find and update the table footer totals
+    var table = document.getElementById('commByProjectTable');
+    if (!table) return;
+
+    var footerCells = table.querySelectorAll('tfoot tr td');
+    if (footerCells.length >= 4) {
+      // Footer structure: [label(colspan=5), commission, adjusted, remaining, action]
+      // Commission value cell (index 1)
+      footerCells[1].textContent = '$' + format(totalCommission);
+      // Adjusted value cell (index 2)
+      footerCells[2].textContent = '$' + format(totalAdjusted);
+      // Remaining Due value cell (index 3)
+      footerCells[3].textContent = '$' + format(totalRemaining);
+    }
+  }
+
+  function updateCommissionSummaryCards(visibleRows) {
+    var totalEarned = 0;
+    var totalAdjusted = 0;
+    var totalPaid = 0;
+    var totalOutstanding = 0;
+
+    visibleRows.forEach(function(row) {
+      var amount = parseFloat(row.dataset.amount || '0');
+      var adjusted = parseFloat(row.dataset.adjusted || '0');
+      var remaining = parseFloat(row.dataset.remaining || '0');
+      var status = (row.dataset.status || '').toLowerCase();
+
+      totalEarned += amount;
+      totalAdjusted += adjusted;
+
+      // Total Paid = remaining_due from Paid status rows
+      if (status === 'paid') {
+        totalPaid += remaining;
+      }
+
+      // Outstanding = remaining_due from Pending status rows
+      if (status === 'pending') {
+        totalOutstanding += remaining;
+      }
+    });
+
+    // Update the summary cards
+    var format = function(num) {
+      return num.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    };
+
+    // Find the KPI strip in the commission tab
+    var commTab = document.getElementById('tab-commission');
+    if (!commTab) return;
+
+    var cardPanels = commTab.querySelectorAll('.row.g-3.mb-4 > .col-6.col-md-3 > .card-panel');
+    if (cardPanels.length >= 4) {
+      // First card: Total Earned
+      var earnedDiv = cardPanels[0].querySelector('div[style*="font-size:1.6rem"]');
+      if (earnedDiv) earnedDiv.textContent = '$' + format(totalEarned);
+
+      // Second card: Total Adjusted
+      var adjustedDiv = cardPanels[1].querySelector('div[style*="font-size:1.6rem"]');
+      if (adjustedDiv) adjustedDiv.textContent = '$' + format(totalAdjusted);
+
+      // Third card: Total Paid
+      var paidDiv = cardPanels[2].querySelector('div[style*="font-size:1.6rem"]');
+      if (paidDiv) paidDiv.textContent = '$' + format(totalPaid);
+
+      // Fourth card: Outstanding
+      var outstandingDiv = cardPanels[3].querySelector('div[style*="font-size:1.6rem"]');
+      if (outstandingDiv) outstandingDiv.textContent = '$' + format(totalOutstanding);
+    }
+  }
+
+  window.filterCommTable = function() { renderCommPage(1); };
+
+  document.addEventListener('DOMContentLoaded', function() {
+    // Stamp data-amount on each row for hide-zero filter
+    document.querySelectorAll('#commByProjectTable tbody tr').forEach(function(row) {
+      var amtCell = row.querySelector('td:nth-child(6)');
+      if (amtCell) {
+        var txt = amtCell.textContent.replace(/[^0-9.]/g, '');
+        row.dataset.amount = txt || '0';
+      }
+    });
+    renderCommPage(1);
+  });
+})();
+
+// Per-project commission toggle (Mark Pending)
+function commProjectToggle(projectId, action, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  fetch('/api/commission/project/' + projectId + '/mark-paid', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'unpay' })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) { location.reload(); }
+    else { alert(data.error || 'Error saving commission.'); btn.disabled = false; }
+  })
+  .catch(() => { alert('Network error.'); btn.disabled = false; });
+}
+
+// ── Inline Rate/Type editor ───────────────────────────────────────────────
+function commRateEditOpen(pid) {
+  var cell = document.getElementById('rateCell-' + pid);
+  if (!cell) return;
+  cell.querySelector('.comm-rate-display').classList.add('d-none');
+  cell.querySelector('.comm-rate-editor').classList.remove('d-none');
+}
+function commRateEditClose(pid) {
+  var cell = document.getElementById('rateCell-' + pid);
+  if (!cell) return;
+  cell.querySelector('.comm-rate-display').classList.remove('d-none');
+  cell.querySelector('.comm-rate-editor').classList.add('d-none');
+  var err = document.getElementById('rateErr-' + pid);
+  if (err) { err.style.display = 'none'; err.textContent = ''; }
+}
+function commRateTypeChange(pid) {
+  var sel = document.getElementById('rateTypeInput-' + pid);
+  var inp = document.getElementById('rateValInput-' + pid);
+  if (!sel || !inp) return;
+  if (sel.value === 'default') {
+    inp.classList.add('d-none');
+  } else {
+    inp.classList.remove('d-none');
+    inp.placeholder = sel.value === 'percent' ? '%' : '$';
+  }
+}
+function commRateSave(pid) {
+  var sel    = document.getElementById('rateTypeInput-' + pid);
+  var inp    = document.getElementById('rateValInput-' + pid);
+  var errEl  = document.getElementById('rateErr-' + pid);
+  var overrideType  = sel ? sel.value : 'default';
+  var overrideValue = (overrideType === 'default') ? 0 : parseFloat(inp ? inp.value : 0) || 0;
+  if (overrideType !== 'default' && overrideValue <= 0) {
+    if (errEl) { errEl.textContent = 'Enter a value > 0'; errEl.style.display = 'block'; }
+    return;
+  }
+  var saveBtn = document.querySelector('#rateCell-' + pid + ' .btn-success');
+  if (saveBtn) saveBtn.disabled = true;
+  fetch('/api/commission/project/' + pid + '/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ commission_override_type: overrideType, commission_override_value: overrideValue })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.ok) {
+      // Update display label
+      var cell = document.getElementById('rateCell-' + pid);
+      var lbl  = cell ? cell.querySelector('.comm-rate-display') : null;
+      if (lbl) lbl.firstChild.textContent = data.rate_display + ' ';
+      // Update commission amount cell
+      var amtCell = document.getElementById('amountCell-' + pid);
+      if (amtCell) {
+        var sym = amtCell.textContent.trim().replace(/[\d,\.]/g,'')[0] || '$';
+        amtCell.textContent = sym + parseFloat(data.commission_amount).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+      }
+      // Update data- attrs on row
+      var row = cell ? cell.closest('tr') : null;
+      if (row) row.setAttribute('data-amount', data.commission_amount);
+      if (cell) {
+        cell.setAttribute('data-type', data.commission_override_type);
+        cell.setAttribute('data-value', data.commission_override_value);
+      }
+      commRateEditClose(pid);
+      // Refresh page to update deduction_status and remaining_due
+      setTimeout(function() { location.reload(); }, 500);
+    } else {
+      if (errEl) { errEl.textContent = data.error || 'Error saving.'; errEl.style.display = 'block'; }
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  })
+  .catch(function() {
+    if (errEl) { errEl.textContent = 'Network error.'; errEl.style.display = 'block'; }
+    if (saveBtn) saveBtn.disabled = false;
+  });
+}
+
+// ── Date Picker Modal for Mark Paid ───────────────────────────────────────
+function showMarkPaidDateModal(projectId, btn) {
+  var modal = document.getElementById('markPaidDateModal');
+  var dateInput = document.getElementById('markPaidDateInput');
+  var today = new Date().toISOString().split('T')[0];
+  dateInput.value = today;
+
+  // Store projectId and button in data attributes
+  modal.setAttribute('data-project-id', projectId);
+  modal.setAttribute('data-button', btn.getAttribute('id') || '');
+
+  // Show modal
+  var modalInstance = new bootstrap.Modal(modal);
+  modalInstance.show();
+
+  // Focus date input
+  dateInput.focus();
+}
+
+function confirmMarkPaidDate() {
+  var modal = document.getElementById('markPaidDateModal');
+  var dateInput = document.getElementById('markPaidDateInput');
+  var projectId = modal.getAttribute('data-project-id');
+  var paidDate = dateInput.value.trim();
+
+  // Validate date format
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(paidDate)) {
+    alert('Invalid date format. Use YYYY-MM-DD');
+    return;
+  }
+
+  // Dismiss modal
+  bootstrap.Modal.getInstance(modal).hide();
+
+  // Send to backend
+  var payload = { action: 'pay', paid_at: paidDate };
+  var saveBtn = document.getElementById('markPaidBtn-' + projectId);
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+  }
+
+  fetch('/api/commission/project/' + projectId + '/mark-paid', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) { location.reload(); }
+    else { alert(data.error || 'Error saving commission.'); if (saveBtn) saveBtn.disabled = false; }
+  })
+  .catch(() => { alert('Network error.'); if (saveBtn) saveBtn.disabled = false; });
+}
+
+// Display BDT equivalent for expense form
+function updateExpenseBdtDisplay() {
+  const amountInput = document.getElementById('expenseAmount');
+  const bdtDisplay = document.getElementById('expenseBdtDisplay');
+  const exchangeRate = {{ bdt_exchange_rate }};
+
+  if (amountInput && amountInput.value) {
+    const usdAmount = parseFloat(amountInput.value) || 0;
+    const bdtAmount = (usdAmount * exchangeRate).toFixed(2);
+    bdtDisplay.textContent = `৳${bdtAmount.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} BDT`;
+  } else {
+    bdtDisplay.textContent = '';
+  }
+}
+
+// Display BDT equivalent for modal edit form
+function updateModalBdtDisplay() {
+  const amountInput = document.getElementById('modalAmount');
+  const bdtDisplay = document.getElementById('modalBdtDisplay');
+  const exchangeRate = {{ bdt_exchange_rate }};
+
+  if (amountInput && amountInput.value) {
+    const usdAmount = parseFloat(amountInput.value) || 0;
+    const bdtAmount = (usdAmount * exchangeRate).toFixed(2);
+    bdtDisplay.textContent = `৳${bdtAmount.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} BDT`;
+  } else {
+    bdtDisplay.textContent = '';
+  }
+}
 </script>
 {% endblock %}

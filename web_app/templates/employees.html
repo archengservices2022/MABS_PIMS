@@ -132,7 +132,7 @@
   <li class="nav-item">
     <a class="nav-link active" data-bs-toggle="tab" href="#tab-time-off">
       <i class="bi bi-calendar-event me-1"></i>Time Off
-      {% if user_role == 'admin' and pending_time_off %}
+      {% if user_role in ('admin', 'accountant') and pending_time_off %}
       <span class="badge bg-danger ms-1">{{ pending_time_off|length }}</span>
       {% endif %}
     </a>
@@ -666,8 +666,8 @@
     </div>
   </div>
 
-  {% if user_role == 'admin' %}
-  <!-- Admin: All Employees Balance -->
+  {% if user_role in ('admin', 'accountant') %}
+  <!-- Admin/Accountant: All Employees Balance -->
   <div class="card-panel mt-3">
     <h6 class="panel-title mb-3">
       <i class="bi bi-people me-1" style="color:#0D9488;"></i>All Employees — {{ current_year }} Time Off Balance
@@ -729,7 +729,7 @@
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0 align-middle">
         <thead>
-          <tr><th>Employee</th><th>Type</th><th>Dates</th><th class="text-center">Hours</th><th>Reason</th><th>Requested</th><th></th></tr>
+          <tr><th>Employee</th><th>Type</th><th>Dates</th><th class="text-center">Hours</th><th>Reason</th><th>Requested</th><th class="text-center">Actions</th></tr>
         </thead>
         <tbody>
         {% for r in pending_time_off %}
@@ -763,7 +763,16 @@
           </td>
           <td class="text-muted small">{{ r.reason or '—' }}</td>
           <td class="text-muted small">{{ r.requested_at[:10] | format_date }}</td>
-          <td class="text-center text-muted small">—</td>
+          <td class="text-center">
+            {% if user_role in ('admin', 'accountant') %}
+              <button class="btn btn-xs btn-success me-1 approve-timeoff-btn" data-request-id="{{ r.firebase_id }}" title="Approve time off">
+                <i class="bi bi-check2"></i> Approve
+              </button>
+              <button class="btn btn-xs btn-outline-danger reject-timeoff-btn" data-request-id="{{ r.firebase_id }}" title="Reject time off">
+                <i class="bi bi-x-lg"></i> Reject
+              </button>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
         </tbody>
@@ -1147,8 +1156,8 @@ function confirmExpenseReview(expId, action, empName) {
   const headerBg = isApprove ? '#10b981' : '#ef4444';
   const title = isApprove ? 'Approve Expense' : 'Reject Expense';
   const message = isApprove
-    ? `You are about to <strong>approve</strong> <strong>${empName}</strong>'s expense. This action cannot be undone.`
-    : `You are about to <strong>reject</strong> <strong>${empName}</strong>'s expense. This action cannot be undone.`;
+    ? `You are about to <strong>Approve</strong> <strong>${empName}</strong>'s expense. This action cannot be undone.`
+    : `You are about to <strong>Reject</strong> <strong>${empName}</strong>'s expense. This action cannot be undone.`;
 
   showConfirmationModal(title, message, isApprove ? 'Approve' : 'Reject', headerBg, () => {
     const form = document.createElement('form');
@@ -1639,9 +1648,11 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           <i class="bi bi-plus-circle me-1" style="color:#0D9488;"></i>Submit Expense
         </h6>
         <form method="post" action="{{ url_for('employee_expense_submit') }}"
-              enctype="multipart/form-data" id="empExpenseForm">
+              enctype="multipart/form-data" id="empExpenseForm" onsubmit="empPrepareSubmit(event)">
           <!-- Hidden field to track expense being edited -->
           <input type="hidden" id="empEditingExpenseId" name="editing_expense_id" value="">
+          <!-- Hidden field to store original Taka amount -->
+          <input type="hidden" id="empAmountTakaHidden" name="amount_taka_original" value="">
 
           <div class="row g-2 mb-2">
             <div class="col-6">
@@ -1654,21 +1665,15 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                 {% endfor %}
               </select>
             </div>
-            <div class="col-6">
-              <label class="form-label small fw-semibold">Amount ($) <span class="text-danger">*</span></label>
-              <input type="number" name="amount" class="form-control form-control-sm"
-                     step="0.01" min="0.01" placeholder="0.00" required>
+            <div class="col-6" id="empCatSelectWrap">
+              <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
+              <select name="category" id="empExpCategory" class="form-select form-select-sm" required
+                      onchange="empUpdateNames(this.value,'empExpName')">
+                <option value="">— Select type first —</option>
+              </select>
             </div>
           </div>
 
-          <!-- Category: dropdown for O&M / Capital, free text for Other -->
-          <div class="mb-2" id="empCatSelectWrap">
-            <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
-            <select name="category" id="empExpCategory" class="form-select form-select-sm" required
-                    onchange="empUpdateNames(this.value,'empExpName')">
-              <option value="">— Select type first —</option>
-            </select>
-          </div>
           <div class="mb-2" id="empCatTextWrap" style="display:none;">
             <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
             <input type="text" name="category" id="empExpCategoryText" class="form-control form-control-sm" required
@@ -1686,6 +1691,16 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <label class="form-label small fw-semibold">Expense Name <span class="text-danger">*</span></label>
             <input type="text" name="expense_name" id="empExpNameText" class="form-control form-control-sm" required
                    placeholder="Describe the expense...">
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">Amount (USD) <span class="text-danger">*</span></label>
+            <input type="number" name="amount" id="empAmountUsd" class="form-control form-control-sm"
+                   step="0.01" min="0.01" placeholder="0.00" required oninput="empConvertAmountToBdt()">
+            <div class="mt-1" style="font-size:12px;color:#64748b;">
+              ≈ <span style="font-weight:700;color:#10b981;" id="empBdtConversion">৳0.00</span> BDT (at ৳<span id="empExchangeRateDisplay">{{ bdt_exchange_rate or 110 }}</span> per $1)
+            </div>
+            <input type="hidden" name="amount_taka" id="empAmountTaka">
           </div>
 
           <div class="row g-2 mb-2">
@@ -1771,7 +1786,11 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                 <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','—') }}</div>
                 <div class="text-muted" style="font-size:11px;">{{ e.get('expense_type','') }}</div>
               </td>
-              <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</td>
+              <td class="text-end">
+                <div class="fw-semibold" style="font-size:14px;">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</div>
+                {% set rate = e|get_exchange_rate %}
+                <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * rate) }}</div>
+              </td>
               <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
               <td>
                 {% set st = e.get('status','Pending') %}
@@ -1890,7 +1909,11 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             {% endif %}
           </td>
           <td class="text-muted small">{{ e.get('vendor','—') }}</td>
-          <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</td>
+          <td class="text-end">
+            <div class="fw-semibold" style="font-size:14px;color:#10b981;">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</div>
+            {% set rate = e|get_exchange_rate %}
+            <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * rate) }}</div>
+          </td>
           <td class="text-center">
             {% if e.get('receipt_filename') or e.get('has_receipt') %}
             <button class="btn btn-xs btn-outline-primary"
@@ -1940,6 +1963,96 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
     </div>
     {% endif %}
   </div>
+
+  <!-- Admin Only: All Submissions -->
+  {% if user_role == 'admin' %}
+  <div class="card-panel mt-4">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <h6 class="panel-title mb-0">
+        <i class="bi bi-receipt-cutoff me-1" style="color:#0D9488;"></i>All Expense Submissions
+      </h6>
+    </div>
+    {% if all_expenses %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead style="background:#f8fafc;">
+          <tr>
+            <th>Employee</th><th style="min-width:100px;">Date</th><th>Name</th>
+            <th class="text-end">Amount</th>
+            <th>Project</th><th>Status</th><th class="text-center">Receipt</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for e in all_expenses %}
+        <tr>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <span class="emp-avatar" style="width:28px;height:28px;font-size:11px;">{{ (e.submitted_by_name or 'U')[0]|upper }}</span>
+              <div class="fw-500 small">{{ e.submitted_by_name or '—' }}</div>
+            </div>
+          </td>
+          <td class="text-muted small">{{ e.get('date','—') | format_date }}</td>
+          <td>
+            <div class="fw-500" style="font-size:13px;">{{ e.get('expense_name','—') }}</div>
+            <div class="text-muted" style="font-size:11px;">
+              <span class="badge bg-light text-secondary" style="font-size:10px;">{{ e.get('expense_type','') }}</span>
+            </div>
+          </td>
+          <td class="text-end">
+            <div class="fw-semibold" style="font-size:14px;color:#0D9488;">{{ currency_symbol }}{{ "{:,.2f}".format(e.get('amount',0)|float) }}</div>
+            {% set rate = e|get_exchange_rate %}
+            <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * rate) }}</div>
+          </td>
+          <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
+          <td>
+            {% set st = e.get('status','Pending') %}
+            {% set reviewed_by = e.get('reviewed_by', '') %}
+            {% set reviewed_at = e.get('reviewed_at', '') %}
+            {% if st == 'Approved' %}
+              <span class="badge bg-success">Approved</span>
+              {% if reviewed_by %}
+              <div class="text-muted small" style="font-size:11px;margin-top:4px;">by <strong>{{ reviewed_by }}</strong></div>
+              {% if reviewed_at %}
+              <div class="text-muted small" style="font-size:10px;">{{ reviewed_at[:10] | format_date }}</div>
+              {% endif %}
+              {% endif %}
+            {% elif st == 'Rejected' %}
+              <span class="badge bg-danger">Rejected</span>
+              {% if reviewed_by %}
+              <div class="text-muted small" style="font-size:11px;margin-top:4px;">by <strong>{{ reviewed_by }}</strong></div>
+              {% if reviewed_at %}
+              <div class="text-muted small" style="font-size:10px;">{{ reviewed_at[:10] | format_date }}</div>
+              {% endif %}
+              {% endif %}
+            {% else %}
+              <span class="badge bg-warning text-dark">Pending</span>
+              <div class="text-muted small" style="font-size:11px;margin-top:4px;">Awaiting review</div>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            {% if e.get('receipt_filename') or e.get('has_receipt') %}
+            <button class="btn btn-xs btn-outline-primary"
+                    onclick="viewEmpReceipt('{{ e.firebase_id }}')"
+                    title="View receipt">
+              <i class="bi bi-paperclip"></i>
+            </button>
+            {% else %}
+            <span class="text-muted small">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-4">
+      <i class="bi bi-receipt" style="font-size:2rem;opacity:.3;display:block;margin-bottom:8px;"></i>
+      <div class="small">No expense submissions found.</div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
   {% endif %}
 
 </div><!-- /tab-emp-expenses -->
@@ -2100,12 +2213,12 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             </select>
           </div>
           <div class="mb-2">
-            <label class="form-label fw-semibold" style="font-size:12px;">Amount Claimed (৳ BDT)</label>
-            <input type="number" name="amount_claimed" id="medClaimAmtBdt" class="form-control form-control-sm"
-                   min="0.01" max="50000" step="0.01" placeholder="0.00" required oninput="updateMedUsdHint()">
-            <input type="hidden" name="amount_currency" value="BDT">
-            <div class="form-text" id="medUsdHint" style="color:#0D9488;font-size:11px;"></div>
-            <div class="form-text text-muted" style="font-size:11px;">Maximum claim: ৳50,000 BDT</div>
+            <label class="form-label fw-semibold" style="font-size:12px;">Amount Claimed (USD)</label>
+            <input type="number" name="amount_claimed" id="medClaimAmtUsd" class="form-control form-control-sm"
+                   min="0.01" max="5000" step="0.01" placeholder="0.00" required oninput="updateMedBdtHint()">
+            <input type="hidden" name="amount_currency" value="USD">
+            <div class="form-text" id="medBdtHint" style="color:#10b981;font-size:11px;"></div>
+            <div class="form-text text-muted" style="font-size:11px;">Maximum claim: $5,000 USD</div>
           </div>
           <div class="mb-2">
             <label class="form-label fw-semibold" style="font-size:12px;">Provider / Hospital</label>
@@ -2161,11 +2274,15 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
               <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
-              <td class="text-end fw-semibold">{{ currency_symbol }}{{ '%.2f'|format(c.amount_claimed|float) }}</td>
+              <td class="text-end fw-semibold">
+                <div>${{ '{:,.2f}'.format(c.amount_claimed|float) }}</div>
+                <div class="text-muted" style="font-size:11px;">৳{{ '{:,.0f}'.format((c.amount_claimed|float) * (c.get('exchange_rate', 120)|float)) }}</div>
+              </td>
               <td class="text-end text-success fw-semibold">
                 {% set _amt_appr = c.get('amount_approved') %}
                 {% if _amt_appr is not none and _amt_appr != '' %}
-                  {{ currency_symbol }}{{ '%.2f'|format(_amt_appr|float) }}
+                  <div>${{ '{:,.2f}'.format(_amt_appr|float) }}</div>
+                  <div class="text-muted" style="font-size:11px;">৳{{ '{:,.0f}'.format((_amt_appr|float) * (c.get('exchange_rate', 120)|float)) }}</div>
                 {% else %}—{% endif %}
               </td>
               <td>
@@ -2209,7 +2326,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <thead style="background:#f8fafc;">
               <tr>
                 <th>Employee</th><th style="white-space:nowrap;">Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
-                <th class="text-end">Claimed (৳ BDT)</th><th class="text-end">Approved ($USD)</th><th>Status</th><th>Receipt</th><th>Actions</th>
+                <th class="text-end">Claimed ($USD)</th><th class="text-end">Approved ($USD)</th><th>Status</th><th>Receipt</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -2221,10 +2338,14 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
               <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
-              <td class="text-end fw-semibold">৳{{ '%.2f'|format(c.amount_claimed|float) }}</td>
+              <td class="text-end fw-semibold">
+                <div>${{ '%.2f'|format(c.amount_claimed|float) }}</div>
+                <div class="text-muted" style="font-size:11px;">৳{{ '%.0f'|format((c.amount_claimed|float) * (c.get('exchange_rate', 120)|float)) }}</div>
+              </td>
               <td class="text-end fw-semibold">
                 {% if c.status == 'Approved' and c.get('amount_approved') %}
-                  {{ currency_symbol }}{{ '%.2f'|format(c.amount_approved|float) }}
+                  <div>${{ '%.2f'|format(c.amount_approved|float) }}</div>
+                  <div class="text-muted" style="font-size:11px;">৳{{ '%.0f'|format((c.amount_approved|float) * (c.get('exchange_rate', 120)|float)) }}</div>
                 {% else %}—{% endif %}
               </td>
               <td>
@@ -2731,11 +2852,15 @@ window.openEmpExpenseEdit = function(exp) {
   }, 100);
 
   // Fill basic fields first (use form-specific selectors to avoid matching modal fields)
-  form.querySelector('input[name="amount"]').value = exp.amount || '';
+  var amountUsd = exp.amount || 0;
+  var exchangeRate = exp.exchange_rate_used || {{ bdt_exchange_rate or 110 }};
+  var amountTaka = Math.round(amountUsd * exchangeRate);
+  form.querySelector('input[name="amount_taka"]').value = amountTaka || '';
   form.querySelector('input[name="date"]').value = exp.date || '';
   form.querySelector('input[name="vendor"]').value = exp.vendor || '';
   form.querySelector('select[name="project_number"]').value = exp.project_number || '';
   form.querySelector('textarea[name="notes"]').value = exp.notes || '';
+  empConvertAmountToUsd();
 
   // Handle type and category/name
   var typeEl = document.getElementById('empExpType');
@@ -2817,6 +2942,35 @@ window.openEmpExpenseEdit = function(exp) {
   }
 };
 
+window.empConvertAmountToBdt = function() {
+  const exchangeRate = {{ bdt_exchange_rate or 110 }};
+  const usdInput = document.getElementById('empAmountUsd');
+  const bdtHidden = document.getElementById('empAmountTaka');
+  const bdtDisplay = document.getElementById('empBdtConversion');
+
+  if (!usdInput || !bdtHidden || !bdtDisplay) return;
+
+  const usd = parseFloat(usdInput.value) || 0;
+  const bdt = usd * exchangeRate;
+
+  bdtHidden.value = bdt.toFixed(2);
+  bdtDisplay.textContent = '৳' + bdt.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+};
+
+// Keep old function for backward compatibility
+window.empConvertAmountToUsd = function() {
+  empConvertAmountToBdt();
+};
+
+window.empPrepareSubmit = function(event) {
+  const takaInput = document.getElementById('empAmountTaka');
+  const takaHidden = document.getElementById('empAmountTakaHidden');
+
+  if (takaInput && takaHidden) {
+    takaHidden.value = takaInput.value;
+  }
+};
+
 window.empCancelEdit = function() {
   // Reset form
   document.getElementById('empExpenseForm').reset();
@@ -2837,6 +2991,9 @@ window.empCancelEdit = function() {
   document.getElementById('empExpName').disabled = false;
   document.getElementById('empExpCategoryText').disabled = true;
   document.getElementById('empExpNameText').disabled = true;
+
+  // Reset amount conversion
+  empConvertAmountToUsd();
 };
 
 window.reviewExpenseEdit = function(expId, action) {
@@ -2942,14 +3099,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
 const _BDT_RATE = {{ bdt_exchange_rate or 110 }};
 
-function updateMedUsdHint() {
-  const bdt = parseFloat(document.getElementById('medClaimAmtBdt').value) || 0;
-  const hint = document.getElementById('medUsdHint');
-  if (bdt > 0) {
-    hint.textContent = '≈ $' + (bdt / _BDT_RATE).toFixed(2) + ' USD (at ৳' + _BDT_RATE + ' per $1)';
+function updateMedBdtHint() {
+  const usd = parseFloat(document.getElementById('medClaimAmtUsd').value) || 0;
+  const hint = document.getElementById('medBdtHint');
+  if (usd > 0) {
+    const bdt = (usd * _BDT_RATE).toFixed(2);
+    hint.textContent = '≈ ৳' + bdt.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' BDT (at ৳' + _BDT_RATE + ' per $1)';
   } else {
     hint.textContent = '';
   }
+}
+
+// Keep old function for backward compatibility
+function updateMedUsdHint() {
+  updateMedBdtHint();
 }
 
 // Medical Allowance review modal
@@ -2964,11 +3127,11 @@ window.openMedReview = function(claimId, empName, amtClaimed, action) {
   const submitBtn   = document.getElementById('medReviewSubmitBtn');
   if (action === 'approve') {
     approvedRow.style.display = '';
-    const bdtAmt = parseFloat(amtClaimed) || 0;
-    const usdAmt = bdtAmt / _BDT_RATE;
+    const usdAmt = parseFloat(amtClaimed) || 0;
+    const bdtAmt = usdAmt * _BDT_RATE;
     document.getElementById('medBdtInfo').innerHTML =
-      '<strong>Claimed:</strong> ৳' + bdtAmt.toLocaleString() + ' BDT' +
-      ' &nbsp;≈&nbsp; <strong>$' + usdAmt.toFixed(2) + ' USD</strong>';
+      '<strong>Claimed:</strong> $' + usdAmt.toFixed(2) + ' USD' +
+      ' &nbsp;≈&nbsp; <strong>৳' + bdtAmt.toLocaleString() + ' BDT</strong>';
     document.getElementById('medRateNote').textContent =
       'Exchange rate: ৳' + _BDT_RATE + ' = $1 USD. Adjust if needed.';
     document.getElementById('medApprovedAmt').value = usdAmt.toFixed(2);
@@ -2987,17 +3150,53 @@ window.openMedAmtEdit = function(claimId, empName, amtClaimed, amtApproved) {
   if (!form) return;
   form.action = '/employees/medical-claims/' + claimId + '/update-amount';
   document.getElementById('medAmtEditTitle').textContent = 'Correct Amount — ' + empName;
-  const bdtAmt = parseFloat(amtClaimed) || 0;
-  const suggestedUsd = bdtAmt / _BDT_RATE;
+  const usdAmt = parseFloat(amtClaimed) || 0;
+  const bdtAmt = usdAmt * _BDT_RATE;
   document.getElementById('medAmtEditInfo').innerHTML =
-    '<strong>Claimed:</strong> ৳' + bdtAmt.toLocaleString() + ' BDT' +
-    ' &nbsp;≈&nbsp; <strong>$' + suggestedUsd.toFixed(2) + ' USD</strong>' +
+    '<strong>Claimed:</strong> $' + usdAmt.toFixed(2) + ' USD' +
+    ' &nbsp;≈&nbsp; <strong>৳' + bdtAmt.toLocaleString() + ' BDT</strong>' +
     (amtApproved ? '<br><strong>Currently stored:</strong> $' + parseFloat(amtApproved).toFixed(2) + ' USD' : '');
   document.getElementById('medAmtEditRate').textContent =
     'Rate: ৳' + _BDT_RATE + ' = $1 USD';
   document.getElementById('medAmtEditUsd').value =
-    amtApproved ? parseFloat(amtApproved).toFixed(2) : suggestedUsd.toFixed(2);
+    amtApproved ? parseFloat(amtApproved).toFixed(2) : usdAmt.toFixed(2);
   new bootstrap.Modal(document.getElementById('medAmtEditModal')).show();
 };
+
+// Time off approval handlers - show confirmation dialog
+document.querySelectorAll('.approve-timeoff-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var requestId = this.dataset.requestId;
+    var empName = this.closest('tr').querySelector('.fw-500')?.textContent || 'Employee';
+    if (!requestId) return;
+    confirmTimeOffReview(requestId, 'approve', empName);
+  });
+});
+
+document.querySelectorAll('.reject-timeoff-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var requestId = this.dataset.requestId;
+    var empName = this.closest('tr').querySelector('.fw-500')?.textContent || 'Employee';
+    if (!requestId) return;
+    confirmTimeOffReview(requestId, 'reject', empName);
+  });
+});
+
+function confirmTimeOffReview(requestId, action, empName) {
+  const isApprove = action === 'approve';
+  const headerBg = isApprove ? '#10b981' : '#ef4444';
+  const title = isApprove ? 'Approve Time Off' : 'Reject Time Off';
+  const message = isApprove
+    ? `You are about to <strong>Approve</strong> <strong>${empName}</strong>'s time off request. This action cannot be undone.`
+    : `You are about to <strong>Reject</strong> <strong>${empName}</strong>'s time off request. This action cannot be undone.`;
+
+  showConfirmationModal(title, message, isApprove ? 'Approve' : 'Reject', headerBg, () => {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `/employees/time-off/${requestId}/${action}`;
+    document.body.appendChild(form);
+    form.submit();
+  });
+}
 </script>
 {% endblock %}
