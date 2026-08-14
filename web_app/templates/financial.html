@@ -296,9 +296,6 @@ a[href*="filter_expense"]:hover {
   <li class="nav-item">
     <a class="nav-link {{ 'active' if active_tab == 'commission' else '' }}" data-bs-toggle="tab" href="#tab-commission">
       <i class="bi bi-cash-coin me-1"></i>Commission
-      {% if commission_total_outstanding > 0 %}
-      <span class="badge ms-1" style="background:#7C3AED;color:#fff;">{{ commission_summary|selectattr('outstanding','greaterthan',0)|list|length }}</span>
-      {% endif %}
     </a>
   </li>
 </ul>
