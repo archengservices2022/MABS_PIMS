@@ -12444,14 +12444,14 @@ def financial():
                 _yr, _mon = 0, "0"
 
             if _yr == selected_year:
-                # Use commission_amount for balance sheet (actual paid commission expense)
-                commission_amt = _safe_float(_pc.get("commission_amount", 0))
+                # Use remaining_due instead of commission_amount (remaining after adjustments)
+                remaining_due = _safe_float(_pc.get("remaining_due", 0))
                 monthly_commission_details[_mon].append({
                     "project_number": _pc.get("project_number", ""),
                     "project_id": _pcid,
                     "salesperson": _pc.get("salesperson", ""),
                     "salesperson_email": _pc.get("salesperson_email", ""),
-                    "commission_amount": commission_amt,
+                    "commission_amount": remaining_due,
                     "paid_date": _display_date,
                 })
 
