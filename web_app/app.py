@@ -16466,6 +16466,10 @@ def approvals():
             'cat': 'medical'
         })
     for exp in pending_expenses:
+        # Skip expenses that are created from medical claims (they appear as Medical, not Expense)
+        if exp.get('source') == 'medical_claim':
+            continue
+
         # Try multiple field names for employee name
         emp_name = exp.get('employee_name') or exp.get('submitted_by_name') or exp.get('requested_by_name') or '—'
         created_at = exp.get('created_at', '')
