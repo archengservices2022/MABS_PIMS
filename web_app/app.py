@@ -1700,11 +1700,13 @@ def dashboard():
     elif _dash_role == "admin":
         # Admin summary: use project_commissions table (same as Sales People tab) for consistent counts
         # Earned = sum of commission_amount
+        # Adjusted = sum of total_deducted
         # Paid = sum of commission_amount for status="Paid" (not "Paid (Fully Covered)")
         # Outstanding = sum of remaining_due for status="Pending" only
         # This Month = sum of remaining_due for status="Paid" projects from current month
         _dash_proj_comm = fb_get("/project_commissions") or {}
         _dash_admin_earned = 0.0
+        _dash_admin_adjusted = 0.0
         _dash_admin_paid = 0.0
         _dash_admin_outstanding = 0.0
         _dash_admin_month = 0.0
@@ -1714,6 +1716,7 @@ def dashboard():
                 if _pc and isinstance(_pc, dict):
                     _comm_amt = _safe_float(_pc.get("commission_amount", 0))
                     _dash_admin_earned += _comm_amt
+                    _dash_admin_adjusted += _safe_float(_pc.get("total_deducted", 0))
 
                     _status = _pc.get("status", "")
                     _remaining = _safe_float(_pc.get("remaining_due", 0))
@@ -1733,6 +1736,7 @@ def dashboard():
         _dash_commission = {
             "role":        "admin",
             "earned":      _dash_admin_earned,
+            "adjusted":    _dash_admin_adjusted,
             "paid":        _dash_admin_paid,
             "total":       _dash_admin_outstanding,
             "this_month":  _dash_admin_month,
@@ -1741,11 +1745,13 @@ def dashboard():
     elif _dash_role in ("finance", "accountant"):
         # Finance/accountant commission summary from project_commissions
         # Earned = sum of commission_amount
+        # Adjusted = sum of total_deducted
         # Paid = sum of commission_amount for status="Paid" (not "Paid (Fully Covered)")
         # Outstanding = sum of remaining_due for status="Pending" only
         # This Month = sum of remaining_due for status="Paid" projects from current month
         _dash_proj_comm = fb_get("/project_commissions") or {}
         _dash_fin_earned = 0.0
+        _dash_fin_adjusted = 0.0
         _dash_fin_paid = 0.0
         _dash_fin_outstanding = 0.0
         _dash_fin_month = 0.0
@@ -1755,6 +1761,7 @@ def dashboard():
                 if _pc and isinstance(_pc, dict):
                     _comm_amt = _safe_float(_pc.get("commission_amount", 0))
                     _dash_fin_earned += _comm_amt
+                    _dash_fin_adjusted += _safe_float(_pc.get("total_deducted", 0))
 
                     _status = _pc.get("status", "")
                     _remaining = _safe_float(_pc.get("remaining_due", 0))
@@ -1774,6 +1781,7 @@ def dashboard():
         _dash_commission = {
             "role":        "finance" if _dash_role == "finance" else "accountant",
             "earned":      _dash_fin_earned,
+            "adjusted":    _dash_fin_adjusted,
             "paid":        _dash_fin_paid,
             "total":       _dash_fin_outstanding,
             "this_month":  _dash_fin_month,
