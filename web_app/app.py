@@ -8966,11 +8966,27 @@ def _migrate_employee_payroll_vendor() -> int:
                     updated_count += 1
     return updated_count
 
+def _migrate_medical_allowance_type() -> int:
+    """Migrate all existing medical allowance expenses from 'Medical' to 'Other Expenses'.
+    Returns the number of entries updated.
+    """
+    expenses = fb_get("/balance_sheet_expenses") or {}
+    updated_count = 0
+    if isinstance(expenses, dict):
+        for exp_id, exp_data in expenses.items():
+            if isinstance(exp_data, dict) and exp_data.get("expense_type") == "Medical":
+                exp_data["expense_type"] = "Other Expenses"
+                exp_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+                fb_update(f"/balance_sheet_expenses/{exp_id}", exp_data)
+                updated_count += 1
+    return updated_count
+
 @app.route("/payroll")
 @role_required("payroll")
 def payroll():
     _auto_generate_monthly_salaries()
     _migrate_employee_payroll_vendor()
+    _migrate_medical_allowance_type()
     employee_filter = request.args.get("employee", "")
     year_filter     = request.args.get("year", "")
     region_filter   = request.args.get("region", "")
@@ -14357,7 +14373,7 @@ def medical_claim_new():
         "employee_uid":      uid,
         "employee_name":     name,
         "claim_date":        request.form.get("claim_date", ""),
-        "expense_type":      request.form.get("expense_type", "Medical"),
+        "expense_type":      request.form.get("expense_type", "Other Expenses"),
         "amount_claimed":    amount,
         "amount_currency":   request.form.get("amount_currency", "BDT"),
         "description":       request.form.get("description", "").strip(),
@@ -14446,7 +14462,7 @@ def medical_claim_review(claim_id):
         if admin_note:
             notes_parts.append(admin_note)
         exp_data = {
-            "expense_type":         "Medical",
+            "expense_type":         "Other Expenses",
             "expense_name":         claim.get("description") or "Medical Allowance",
             "description":          claim.get("description") or "Medical Allowance",
             "amount":               amt_approved,           # USD
@@ -14516,7 +14532,7 @@ def medical_claim_update_amount(claim_id):
     if orig_currency == "BDT":
         notes_parts.append(f"Original claim: ৳{orig_bdt:,.0f} BDT (at ৳{bdt_rate:.0f}/$1)")
     exp_data = {
-        "expense_type":       "Medical",
+        "expense_type":       "Other Expenses",
         "expense_name":       claim.get("description") or "Medical Allowance",
         "description":        claim.get("description") or "Medical Allowance",
         "amount":             new_usd,
