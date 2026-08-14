@@ -9003,6 +9003,21 @@ def _migrate_advance_entry_type() -> int:
                     updated_count += 1
     return updated_count
 
+def _migrate_commission_type() -> int:
+    """Migrate all existing commission expenses from 'Commission' to 'Other Expenses'.
+    Returns the number of entries updated.
+    """
+    expenses = fb_get("/balance_sheet_expenses") or {}
+    updated_count = 0
+    if isinstance(expenses, dict):
+        for exp_id, exp_data in expenses.items():
+            if isinstance(exp_data, dict) and exp_data.get("expense_type") == "Commission":
+                exp_data["expense_type"] = "Other Expenses"
+                exp_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+                fb_update(f"/balance_sheet_expenses/{exp_id}", exp_data)
+                updated_count += 1
+    return updated_count
+
 @app.route("/payroll")
 @role_required("payroll")
 def payroll():
@@ -9010,6 +9025,7 @@ def payroll():
     _migrate_employee_payroll_vendor()
     _migrate_medical_allowance_type()
     _migrate_advance_entry_type()
+    _migrate_commission_type()
     employee_filter = request.args.get("employee", "")
     year_filter     = request.args.get("year", "")
     region_filter   = request.args.get("region", "")
@@ -15506,7 +15522,7 @@ def commission_project_mark_paid(project_id):
                     break
 
             expense_data = {
-                "expense_type": "Commission",
+                "expense_type": "Other Expenses",
                 "expense_name": f"{pc.get('salesperson', 'Unknown')}_Commission",
                 "category": "Sales Commission",
                 "amount": commission_amount,
