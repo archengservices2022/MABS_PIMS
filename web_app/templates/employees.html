@@ -2784,11 +2784,9 @@ window.openEmpExpenseEdit = function(exp) {
     form.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, 100);
 
-  // Fill basic fields (use form-specific selectors to avoid modal fields)
-  var amountUsd = exp.amount || 0;
-  var exchangeRate = exp.exchange_rate || 120;
-  var amountTaka = Math.round(amountUsd * exchangeRate);
-  form.querySelector('input[name="amount_taka"]').value = amountTaka || '';
+  // Fill basic fields
+  var amountUsd = parseFloat(exp.amount) || 0;
+  document.getElementById('empAmountUsd').value = amountUsd.toFixed(2);
   form.querySelector('input[name="date"]').value = exp.date || '';
   form.querySelector('input[name="vendor"]').value = exp.vendor || '';
   form.querySelector('select[name="project_number"]').value = exp.project_number || '';
