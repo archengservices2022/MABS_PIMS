@@ -98,7 +98,10 @@ try:
     else:
         # Try project-specific key first, then fallback to generic names
         _service_key_file = _project_config["service_key"]
+        _project_home_dir = Path.home() / f".{FIREBASE_PROJECT}"
         _service_key_candidates = [
+            _project_home_dir / _service_key_file,
+            _project_home_dir / "servicekey.json",
             Path.home() / ".mabs" / _service_key_file,
             DATA_DIR / _service_key_file,
             BASE_DIR / _service_key_file,
@@ -5699,6 +5702,42 @@ def api_get_projects(project_ids):
                     proj["stage_blocked"] = True
                     proj["stage_reason"] = str(e)
 
+                # Build all_pending_stages — every uninvoiced stage with is_next flag
+                try:
+                    proj_num_s = proj.get("project_number", "")
+                    invoiced_s = set()
+                    for inv_data in all_invoices.values():
+                        if not isinstance(inv_data, dict):
+                            continue
+                        if inv_data.get("meta", {}).get("project_number", "") == proj_num_s:
+                            si = inv_data.get("meta", {}).get("payment_stage_index")
+                            if si is not None:
+                                invoiced_s.add(int(si))
+                        for lp in (inv_data.get("meta", {}).get("linked_projects") or []):
+                            if isinstance(lp, dict) and lp.get("project_number") == proj_num_s:
+                                si = lp.get("payment_stage_index")
+                                if si is not None:
+                                    invoiced_s.add(int(si))
+                    all_pending = []
+                    next_idx = proj.get("next_stage_index")
+                    for s_idx, stage in enumerate(proj.get("payment_stages") or []):
+                        if not isinstance(stage, dict) or s_idx in invoiced_s:
+                            continue
+                        s_name = stage.get("name", f"Stage {s_idx + 1}")
+                        blocked = any(pi not in invoiced_s for pi in range(s_idx))
+                        all_pending.append({
+                            "stage_idx":  s_idx,
+                            "stage_name": s_name,
+                            "amount":     _safe_float(stage.get("amount", 0)),
+                            "is_next":    (s_idx == next_idx),
+                            "blocked":    blocked,
+                            "reason":     "Ready to invoice" if not blocked else "Prior stage not yet invoiced",
+                        })
+                    proj["all_pending_stages"] = all_pending
+                except Exception as e:
+                    log.error(f"Error building pending stages for {proj_id}: {e}")
+                    proj["all_pending_stages"] = []
+
                 # Detect approved COs not yet invoiced for this project
                 cos_raw = proj.get("change_orders") or []
                 if isinstance(cos_raw, dict):
@@ -6350,47 +6389,70 @@ def invoice_new():
                             stages_info.append(f"[{s_idx}]={s.get('name', '')}")
                     log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): available stages: {', '.join(stages_info) if stages_info else 'none'}")
 
-                    # Use provided stage index if available, otherwise auto-detect
-                    if i < len(stage_indices) and stage_indices[i] is not None:
-                        next_stage_idx = stage_indices[i]
-                        # Get stage name from project's payment_stages using the provided index
-                        if isinstance(stages, list) and 0 <= next_stage_idx < len(stages):
-                            next_stage_name = stages[next_stage_idx].get("name", "") if isinstance(stages[next_stage_idx], dict) else ""
-                            stage_amount = stages[next_stage_idx].get("amount", 0) if isinstance(stages[next_stage_idx], dict) else 0
+                    # Check for multi-stage selection via stages_<proj_id> param (checkbox modal)
+                    multi_stage_param = request.args.get(f"stages_{proj_id}", "")
+                    if multi_stage_param:
+                        # User selected specific stages via checkboxes — add one line item per stage
+                        for s_idx_str in multi_stage_param.split(","):
+                            s_idx_str = s_idx_str.strip()
+                            if s_idx_str.isdigit():
+                                s_idx = int(s_idx_str)
+                                if isinstance(stages, list) and 0 <= s_idx < len(stages):
+                                    s = stages[s_idx]
+                                    if isinstance(s, dict):
+                                        s_name   = s.get("name", f"Stage {s_idx + 1}")
+                                        s_amount = _safe_float(s.get("amount", 0))
+                                        if s_amount > 0:
+                                            description = f"{proj_name} — {s_name}" if s_name else proj_name
+                                            log.info(f"[PREFILL-MULTI] proj={proj_num}, stage_idx={s_idx}, name='{s_name}', amount={s_amount}")
+                                            prefill_items.append({
+                                                "description": description,
+                                                "project":     proj_num,
+                                                "amount":      f"{s_amount:.2f}",
+                                                "stage_index": s_idx,
+                                            })
+                    else:
+                        # Use provided stage index if available, otherwise auto-detect
+                        if i < len(stage_indices) and stage_indices[i] is not None:
+                            next_stage_idx = stage_indices[i]
+                            # Get stage name from project's payment_stages using the provided index
+                            if isinstance(stages, list) and 0 <= next_stage_idx < len(stages):
+                                next_stage_name = stages[next_stage_idx].get("name", "") if isinstance(stages[next_stage_idx], dict) else ""
+                                stage_amount = stages[next_stage_idx].get("amount", 0) if isinstance(stages[next_stage_idx], dict) else 0
+                            else:
+                                next_stage_name = ""
+                                stage_amount = 0
+                            log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): USING PROVIDED stage_idx={next_stage_idx}/{num_stages}, stage_name='{next_stage_name}'")
                         else:
-                            next_stage_name = ""
-                            stage_amount = 0
-                        log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): USING PROVIDED stage_idx={next_stage_idx}/{num_stages}, stage_name='{next_stage_name}'")
-                    else:
-                        # Auto-detect next payment stage for this project
-                        detection = _get_next_payment_stage(proj_data, raw_invoices)
-                        next_stage_idx = detection.get("stage_idx")
-                        next_stage_name = detection.get("stage_name")
-                        stage_amount = detection.get("amount", 0)
-                        log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): AUTO-DETECTED stage_idx={next_stage_idx}/{num_stages}, stage_name='{next_stage_name}'")
+                            # Auto-detect next payment stage for this project
+                            detection = _get_next_payment_stage(proj_data, raw_invoices)
+                            next_stage_idx = detection.get("stage_idx")
+                            next_stage_name = detection.get("stage_name")
+                            stage_amount = detection.get("amount", 0)
+                            log.info(f"[INVOICE_NEW] Project {i} ({proj_num}): AUTO-DETECTED stage_idx={next_stage_idx}/{num_stages}, stage_name='{next_stage_name}'")
 
-                    # Use stage amount if available, otherwise use outstanding balance
-                    if stage_amount > 0 and next_stage_idx is not None:
-                        amount_to_invoice = stage_amount
-                    else:
-                        contract_value = _safe_float(proj_data.get("contract_value", 0))
-                        amount_paid = _safe_float(proj_data.get("amount_paid", 0))
-                        outstanding = contract_value - amount_paid
-                        amount_to_invoice = outstanding if outstanding > 0 else contract_value
+                        # Use stage amount if available, otherwise use outstanding balance
+                        if stage_amount > 0 and next_stage_idx is not None:
+                            amount_to_invoice = stage_amount
+                        else:
+                            contract_value = _safe_float(proj_data.get("contract_value", 0))
+                            amount_paid = _safe_float(proj_data.get("amount_paid", 0))
+                            outstanding = contract_value - amount_paid
+                            amount_to_invoice = outstanding if outstanding > 0 else contract_value
 
-                    if amount_to_invoice > 0:
-                        # Include stage name in description if available
-                        description = proj_name
-                        if next_stage_name:
-                            description = f"{proj_name} — {next_stage_name}"
+                        if amount_to_invoice > 0:
+                            # Include stage name in description if available
+                            description = proj_name
+                            if next_stage_name:
+                                description = f"{proj_name} — {next_stage_name}"
 
-                        log.info(f"[PREFILL] proj={proj_num}, stage_idx={next_stage_idx}, stage_name='{next_stage_name}', description='{description}'")
-                        prefill_items.append({
-                            "description": description,
-                            "project": proj_num,
-                            "amount": f"{amount_to_invoice:.2f}",
-                            "stage_index": next_stage_idx  # Store the detected stage index
-                        })
+                            log.info(f"[PREFILL] proj={proj_num}, stage_idx={next_stage_idx}, stage_name='{next_stage_name}', description='{description}'")
+                            prefill_items.append({
+                                "description": description,
+                                "project": proj_num,
+                                "amount": f"{amount_to_invoice:.2f}",
+                                "stage_index": next_stage_idx  # Store the detected stage index
+                            })
 
                     # Add any approved COs passed via query param co_<proj_id>
                     co_indices_param = request.args.get(f"co_{proj_id}", "")

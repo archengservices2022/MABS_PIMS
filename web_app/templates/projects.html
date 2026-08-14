@@ -682,45 +682,87 @@ function openLoadModal() {
         html += `<div style="border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin-bottom:16px;">
           <table style="width:100%;border-collapse:collapse;font-size:12px;background:white;">
             <tr style="background:#f1f5f9;border-bottom:1px solid #e2e8f0;">
-              <th style="padding:12px;text-align:left;font-weight:600;color:#334155;">Project #</th>
-              <th style="padding:12px;text-align:left;font-weight:600;color:#334155;">Name</th>
-              <th style="padding:12px;text-align:left;font-weight:600;color:#334155;">Next Stage</th>
+              <th style="padding:12px;width:36px;"></th>
+              <th style="padding:12px;text-align:left;font-weight:600;color:#334155;">Stage</th>
               <th style="padding:12px;text-align:right;font-weight:600;color:#334155;width:110px;">Amount</th>
-              <th style="padding:12px;text-align:left;font-weight:600;color:#334155;">Status</th>
+              <th style="padding:12px;text-align:left;font-weight:600;color:#334155;" colspan="2">Status</th>
             </tr>`;
 
         let blockedCount = 0;
         selectedProjects.forEach((proj) => {
-          const nextStage = proj.next_stage || 'Fully Invoiced';
-          const isBlocked = proj.stage_blocked || false;
-          const amount = parseFloat(proj.next_stage_amount || 0);
-          const reason = proj.stage_reason || '';
+          const pendingStages = proj.all_pending_stages || [];
+          const isFullyInvoiced = proj.next_stage === 'Fully Invoiced' || pendingStages.length === 0;
 
-          if (isBlocked) blockedCount++;
+          if (isFullyInvoiced) {
+            // Fully invoiced — single greyed row
+            html += `<tr style="border-bottom:1px solid #f1f5f9;background:#f8fafc;opacity:.6;">
+              <td style="padding:12px;color:#1e293b;"><strong>${proj.project_number || '—'}</strong></td>
+              <td style="padding:12px;color:#64748b;" colspan="3">${proj.project_name || '—'} — All stages invoiced</td>
+              <td style="padding:12px;color:#64748b;font-size:11px;">Fully Invoiced</td>
+            </tr>`;
+            return;
+          }
 
-          const stageColor = isBlocked ? '#dc2626' : '#16a34a';
-          const reasonColor = isBlocked ? '#b45309' : '#0f766e';
-
-          html += `<tr style="border-bottom:1px solid #f1f5f9;background:${proj.firebase_id % 2 === 0 ? '#ffffff' : '#f8fafc'};">
-            <td style="padding:12px;color:#1e293b;"><strong>${proj.project_number || '—'}</strong></td>
-            <td style="padding:12px;color:#1e293b;">${proj.project_name || '—'}</td>
-            <td style="padding:12px;color:${stageColor};font-weight:600;">${nextStage}</td>
-            <td style="padding:12px;text-align:right;color:#1e293b;"><strong>${CURRENCY_SYMBOL}${amount.toFixed(2)}</strong></td>
-            <td style="padding:12px;color:${reasonColor};font-size:11px;">${reason}</td>
+          // Project header row (no checkbox — just the project identity)
+          html += `<tr style="background:#f1f5f9;border-bottom:1px solid #e2e8f0;">
+            <td style="padding:10px 12px;color:#0f172a;font-weight:700;" colspan="5">
+              <i class="bi bi-folder2-open me-1" style="color:#7C3AED;"></i>
+              ${proj.project_number || '—'} &nbsp;·&nbsp; ${proj.project_name || '—'}
+            </td>
           </tr>`;
 
-          // Show approved pending CO sub-rows
+          // One checkbox row per pending stage
+          pendingStages.forEach((stage) => {
+            const isNext    = stage.is_next;
+            const isBlocked = stage.blocked;
+            if (isBlocked) blockedCount++;
+
+            const rowBg     = isNext ? '#f0fdf4' : '#ffffff';
+            const checkId   = `stageCheck_${proj.firebase_id}_${stage.stage_idx}`;
+            const amtColor  = isBlocked ? '#dc2626' : '#1e293b';
+            const statusTxt = isBlocked ? 'Prior stage not yet invoiced' : 'Ready to invoice';
+            const statusClr = isBlocked ? '#b45309' : '#0f766e';
+
+            html += `<tr style="border-bottom:1px solid #f1f5f9;background:${rowBg};" data-proj="${proj.firebase_id}">
+              <td style="padding:8px 12px 8px 20px;">
+                <input type="checkbox" id="${checkId}"
+                       class="stage-checkbox form-check-input"
+                       data-proj="${proj.firebase_id}"
+                       data-stage="${stage.stage_idx}"
+                       ${isNext && !isBlocked ? 'checked' : ''}
+                       ${isBlocked ? 'disabled title="Prior stage must be invoiced first"' : ''}
+                       style="cursor:pointer;width:15px;height:15px;">
+              </td>
+              <td style="padding:8px 12px;color:#1e293b;font-size:12px;">
+                <label for="${checkId}" style="cursor:pointer;margin:0;">
+                  ${stage.stage_name || '—'}
+                  ${isNext ? '<span style="font-size:10px;background:#dcfce7;color:#15803d;border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:600;">Next</span>' : ''}
+                </label>
+              </td>
+              <td style="padding:8px 12px;text-align:right;color:${amtColor};font-weight:600;">
+                ${CURRENCY_SYMBOL}${parseFloat(stage.amount||0).toFixed(2)}
+              </td>
+              <td style="padding:8px 12px;color:${statusClr};font-size:11px;" colspan="2">${statusTxt}</td>
+            </tr>`;
+          });
+
+          // Approved CO sub-rows
           if (proj.approved_pending_cos && proj.approved_pending_cos.length > 0) {
             proj.approved_pending_cos.forEach(co => {
               html += `<tr style="background:#fffbeb;border-bottom:1px solid #fef3c7;border-left:3px solid #f59e0b;">
-                <td style="padding:8px 12px 8px 20px;color:#92400e;">
-                  <span style="font-size:10px;background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;padding:1px 5px;font-weight:700;margin-right:4px;">CO</span>
-                  <strong>${co.co_number || '—'}</strong>
+                <td style="padding:8px 12px 8px 20px;">
+                  <input type="checkbox" class="co-checkbox form-check-input"
+                         data-proj="${proj.firebase_id}" data-co="${co.co_idx}"
+                         checked style="cursor:pointer;width:15px;height:15px;">
                 </td>
-                <td style="padding:8px 12px;color:#78350f;font-size:12px;">${co.title || '—'}</td>
-                <td style="padding:8px 12px;color:#b45309;font-weight:600;font-size:12px;">Change Order</td>
-                <td style="padding:8px 12px;text-align:right;color:#92400e;"><strong>${CURRENCY_SYMBOL}${parseFloat(co.amount||0).toFixed(2)}</strong></td>
-                <td style="padding:8px 12px;color:#0f766e;font-size:11px;">Ready to invoice</td>
+                <td style="padding:8px 12px;color:#78350f;font-size:12px;">
+                  <span style="font-size:10px;background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;padding:1px 5px;font-weight:700;margin-right:4px;">CO</span>
+                  ${co.co_number || '—'} — ${co.title || ''}
+                </td>
+                <td style="padding:8px 12px;text-align:right;color:#92400e;font-weight:600;">
+                  ${CURRENCY_SYMBOL}${parseFloat(co.amount||0).toFixed(2)}
+                </td>
+                <td style="padding:8px 12px;color:#0f766e;font-size:11px;" colspan="2">Ready to invoice</td>
               </tr>`;
             });
           }
@@ -732,7 +774,7 @@ function openLoadModal() {
         if (blockedCount > 0) {
           html += `<div style="background:#fef3c7;border-radius:6px;padding:12px;margin-bottom:16px;border-left:4px solid #f59e0b;">
             <div style="color:#92400e;font-size:12px;font-weight:500;">
-              — ${blockedCount} project(s) have a prior stage not yet paid. They will still be loaded — confirm with client before sending.
+              ⚠ Some stages are greyed out because a prior stage has not been invoiced yet.
             </div>
           </div>`;
         }
@@ -741,7 +783,7 @@ function openLoadModal() {
         modalBody.innerHTML = html;
 
         // Check if all projects are fully invoiced
-        const allFullyInvoiced = selectedProjects.every(proj => proj.next_stage === 'Fully Invoiced');
+        const allFullyInvoiced = selectedProjects.every(proj => proj.next_stage === 'Fully Invoiced' || (proj.all_pending_stages || []).length === 0);
         const loadBtn = document.getElementById('loadToInvoiceBtn');
 
         if (allFullyInvoiced) {
@@ -781,19 +823,32 @@ function loadToInvoice() {
     return;
   }
 
-  // Build query parameters with project IDs and their corresponding stage indices
+  // Collect checked stage indices per project from checkboxes
   const params = new URLSearchParams();
   const projectIds = readyProjects.map(p => p.firebase_id);
-  const stageIndices = readyProjects.map(p => p.next_stage_index !== undefined ? p.next_stage_index : '');
-
   params.append('projects', projectIds.join(','));
-  params.append('item_stage_index', stageIndices.join(','));
 
-  // Append approved CO indices per project so invoice_new can add them as line items
   readyProjects.forEach(p => {
-    if (p.approved_pending_cos && p.approved_pending_cos.length > 0) {
-      const coIndices = p.approved_pending_cos.map(co => co.co_idx).join(',');
-      params.append(`co_${p.firebase_id}`, coIndices);
+    // Gather checked payment stage indices for this project
+    const checkedStages = [];
+    document.querySelectorAll(`.stage-checkbox[data-proj="${p.firebase_id}"]:checked`).forEach(cb => {
+      checkedStages.push(cb.getAttribute('data-stage'));
+    });
+    if (checkedStages.length > 0) {
+      params.append(`stages_${p.firebase_id}`, checkedStages.join(','));
+    } else {
+      // Fallback to auto-detected next stage index
+      const fallback = p.next_stage_index !== undefined ? p.next_stage_index : '';
+      params.append('item_stage_index', fallback);
+    }
+
+    // Gather checked CO indices for this project
+    const checkedCOs = [];
+    document.querySelectorAll(`.co-checkbox[data-proj="${p.firebase_id}"]:checked`).forEach(cb => {
+      checkedCOs.push(cb.getAttribute('data-co'));
+    });
+    if (checkedCOs.length > 0) {
+      params.append(`co_${p.firebase_id}`, checkedCOs.join(','));
     }
   });
 
