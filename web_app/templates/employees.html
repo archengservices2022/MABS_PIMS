@@ -2067,6 +2067,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
       </div>
       <form method="post" id="empExpenseEditForm" enctype="multipart/form-data">
         <div class="modal-body">
+          <div class="alert alert-info py-2 mb-3" style="font-size:12px;" id="empExpEditInfo"></div>
+          <div class="form-text text-muted mb-3" style="font-size:11px;" id="empExpEditRate"></div>
           <div class="row g-2 mb-2">
             <div class="col-6">
               <label class="form-label small fw-semibold">Expense Type <span class="text-danger">*</span></label>
@@ -2866,11 +2868,71 @@ window.openEmpExpenseEdit = function(exp) {
       exp.firebase_id,
       exp.submitted_by_name || exp.created_by || '',
       exp.amount_original || exp.amount || '',
-      exp.amount || ''
+      exp.amount || '',
+      exp.exchange_rate || 120
     );
     return;
   }
 
+  // Open expense edit modal
+  var modal = document.getElementById('empExpenseEditModal');
+  var form = modal.querySelector('form');
+  form.action = '/employees/expense/' + exp.firebase_id + '/update';
+
+  // Display info with stored exchange rate
+  var amountUsd = parseFloat(exp.amount) || 0;
+  var rate = parseFloat(exp.exchange_rate) || 120;
+  var bdtAmt = amountUsd * rate;
+
+  document.getElementById('empExpEditInfo').innerHTML =
+    '<strong>Submitted:</strong> $' + amountUsd.toFixed(2) + ' USD' +
+    ' &nbsp;≈&nbsp; <strong>৳' + bdtAmt.toLocaleString() + ' BDT</strong>';
+  document.getElementById('empExpEditRate').textContent =
+    'Rate: ৳' + rate + ' = $1 USD';
+
+  // Fill modal form fields
+  document.getElementById('editExpAmount').value = amountUsd.toFixed(2) || '';
+  document.getElementById('editExpDate').value = exp.date || '';
+  document.getElementById('editExpVendor').value = exp.vendor || '';
+  document.getElementById('editExpProject').value = exp.project_number || '';
+  document.getElementById('editExpNotes').value = exp.notes || '';
+
+  // Handle type and category/name
+  var typeEl = document.getElementById('editExpType');
+  var isOther = (exp.expense_type === 'Other Expenses');
+
+  typeEl.value = exp.expense_type || '';
+
+  if (isOther) {
+    document.getElementById('editCatSelectWrap').style.display = 'none';
+    document.getElementById('editCatTextWrap').style.display = 'block';
+    document.getElementById('editNameSelectWrap').style.display = 'none';
+    document.getElementById('editNameTextWrap').style.display = 'block';
+
+    document.getElementById('editExpCategoryText').value = exp.category || '';
+    document.getElementById('editExpNameText').value = exp.expense_name || exp.description || '';
+  } else {
+    document.getElementById('editCatSelectWrap').style.display = 'block';
+    document.getElementById('editCatTextWrap').style.display = 'none';
+    document.getElementById('editNameSelectWrap').style.display = 'block';
+    document.getElementById('editNameTextWrap').style.display = 'none';
+
+    document.getElementById('editExpCategory').value = exp.category || '';
+    document.getElementById('editExpName').value = exp.expense_name || '';
+  }
+
+  // Show receipt info if available
+  if (exp.receipt_filename) {
+    document.getElementById('editExpCurrentReceipt').textContent = '📎 Current: ' + exp.receipt_filename;
+  } else {
+    document.getElementById('editExpCurrentReceipt').textContent = '';
+  }
+
+  new bootstrap.Modal(modal).show();
+};
+
+// Old form-based editing (kept for reference, may remove if modal works well)
+window.openEmpExpenseEditForm = function(exp) {
   var form = document.getElementById('empExpenseForm');
   // Scroll down a little bit (75px)
   setTimeout(function() {
@@ -2879,7 +2941,7 @@ window.openEmpExpenseEdit = function(exp) {
 
   // Fill basic fields first (use form-specific selectors to avoid matching modal fields)
   var amountUsd = exp.amount || 0;
-  var exchangeRate = exp.exchange_rate_used || {{ bdt_exchange_rate or 110 }};
+  var exchangeRate = exp.exchange_rate || 120;
   var amountTaka = Math.round(amountUsd * exchangeRate);
   form.querySelector('input[name="amount_taka"]').value = amountTaka || '';
   form.querySelector('input[name="date"]').value = exp.date || '';
@@ -2887,85 +2949,6 @@ window.openEmpExpenseEdit = function(exp) {
   form.querySelector('select[name="project_number"]').value = exp.project_number || '';
   form.querySelector('textarea[name="notes"]').value = exp.notes || '';
   empConvertAmountToUsd();
-
-  // Handle type and category/name
-  var typeEl = document.getElementById('empExpType');
-  var isOther = (exp.expense_type === 'Other Expenses');
-
-  // Set type
-  typeEl.value = exp.expense_type || '';
-
-  // For "Other Expenses", use text inputs
-  if (isOther) {
-    document.getElementById('empCatSelectWrap').style.display = 'none';
-    document.getElementById('empCatTextWrap').style.display = 'block';
-    document.getElementById('empNameSelectWrap').style.display = 'none';
-    document.getElementById('empNameTextWrap').style.display = 'block';
-
-    document.getElementById('empExpCategory').disabled = true;
-    document.getElementById('empExpName').disabled = true;
-    document.getElementById('empExpCategoryText').disabled = false;
-    document.getElementById('empExpNameText').disabled = false;
-
-    document.getElementById('empExpCategoryText').value = exp.category || '';
-    document.getElementById('empExpNameText').value = exp.expense_name || exp.description || '';
-  } else {
-    // For other types, populate dropdowns
-    document.getElementById('empCatSelectWrap').style.display = 'block';
-    document.getElementById('empCatTextWrap').style.display = 'none';
-    document.getElementById('empNameSelectWrap').style.display = 'block';
-    document.getElementById('empNameTextWrap').style.display = 'none';
-
-    document.getElementById('empExpCategory').disabled = false;
-    document.getElementById('empExpName').disabled = false;
-    document.getElementById('empExpCategoryText').disabled = true;
-    document.getElementById('empExpNameText').disabled = true;
-
-    // Trigger category update to populate names dropdown
-    empUpdateCategories(typeEl.value, 'empExpCategory', 'empExpName');
-
-    // Set category
-    setTimeout(function() {
-      document.getElementById('empExpCategory').value = exp.category || '';
-
-      // Update names dropdown based on category
-      empUpdateNames(exp.category, 'empExpName');
-
-      // Set expense name with timeout to ensure dropdown is populated
-      setTimeout(function() {
-        var nameEl = document.getElementById('empExpName');
-        var savedName = exp.expense_name || exp.description || '';
-
-        // Add as option if not found
-        if (savedName && !Array.from(nameEl.options).find(o => o.value === savedName)) {
-          var extra = document.createElement('option');
-          extra.value = savedName;
-          extra.textContent = savedName;
-          nameEl.appendChild(extra);
-        }
-        nameEl.value = savedName;
-      }, 100);
-    }, 50);
-  }
-
-  // Mark as editing and show cancel button
-  document.getElementById('empEditingExpenseId').value = exp.firebase_id;
-  document.getElementById('empCancelEditBtn').style.display = 'block';
-  document.getElementById('empExpenseSubmitBtn').innerHTML = '<i class="bi bi-pencil me-1"></i>Update Expense';
-
-  // Make receipt optional when editing (user can upload new one or keep existing)
-  var receiptInput = document.getElementById('empReceiptInput');
-  receiptInput.required = false;
-  receiptInput.value = ''; // Clear the file input so user can choose new one
-
-  // Store current receipt info in data attribute for reference
-  receiptInput.dataset.currentReceipt = exp.receipt_filename || '';
-
-  if (exp.receipt_filename) {
-    document.getElementById('empReceiptPreview').innerHTML =
-      '<span class="badge bg-info"><i class="bi bi-paperclip me-1"></i>Current: ' + exp.receipt_filename + '</span>';
-    document.getElementById('empReceiptPreview').style.display = 'block';
-  }
 };
 
 window.empConvertAmountToBdt = function() {
