@@ -708,6 +708,22 @@ function openLoadModal() {
             <td style="padding:12px;text-align:right;color:#1e293b;"><strong>${CURRENCY_SYMBOL}${amount.toFixed(2)}</strong></td>
             <td style="padding:12px;color:${reasonColor};font-size:11px;">${reason}</td>
           </tr>`;
+
+          // Show approved pending CO sub-rows
+          if (proj.approved_pending_cos && proj.approved_pending_cos.length > 0) {
+            proj.approved_pending_cos.forEach(co => {
+              html += `<tr style="background:#fffbeb;border-bottom:1px solid #fef3c7;border-left:3px solid #f59e0b;">
+                <td style="padding:8px 12px 8px 20px;color:#92400e;">
+                  <span style="font-size:10px;background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;padding:1px 5px;font-weight:700;margin-right:4px;">CO</span>
+                  <strong>${co.co_number || '—'}</strong>
+                </td>
+                <td style="padding:8px 12px;color:#78350f;font-size:12px;">${co.title || '—'}</td>
+                <td style="padding:8px 12px;color:#b45309;font-weight:600;font-size:12px;">Change Order</td>
+                <td style="padding:8px 12px;text-align:right;color:#92400e;"><strong>${CURRENCY_SYMBOL}${parseFloat(co.amount||0).toFixed(2)}</strong></td>
+                <td style="padding:8px 12px;color:#0f766e;font-size:11px;">Ready to invoice</td>
+              </tr>`;
+            });
+          }
         });
 
         html += `</table></div>`;
@@ -772,6 +788,14 @@ function loadToInvoice() {
 
   params.append('projects', projectIds.join(','));
   params.append('item_stage_index', stageIndices.join(','));
+
+  // Append approved CO indices per project so invoice_new can add them as line items
+  readyProjects.forEach(p => {
+    if (p.approved_pending_cos && p.approved_pending_cos.length > 0) {
+      const coIndices = p.approved_pending_cos.map(co => co.co_idx).join(',');
+      params.append(`co_${p.firebase_id}`, coIndices);
+    }
+  });
 
   window.location.href = `{{ url_for('invoice_new') }}?${params.toString()}`;
 }

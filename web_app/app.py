@@ -5695,6 +5695,37 @@ def api_get_projects(project_ids):
                     proj["stage_blocked"] = True
                     proj["stage_reason"] = str(e)
 
+                # Detect approved COs not yet invoiced for this project
+                cos_raw = proj.get("change_orders") or []
+                if isinstance(cos_raw, dict):
+                    cos_raw = list(cos_raw.values())
+                proj_num_for_co = proj.get("project_number", "")
+                invoiced_co_numbers = set()
+                for inv_data in all_invoices.values():
+                    if not isinstance(inv_data, dict):
+                        continue
+                    if inv_data.get("meta", {}).get("project_number", "") != proj_num_for_co:
+                        continue
+                    for li in (inv_data.get("line_items") or []):
+                        if not isinstance(li, dict):
+                            continue
+                        desc = li.get("description", "")
+                        for co in cos_raw:
+                            if isinstance(co, dict) and co.get("co_number") and co["co_number"] in desc:
+                                invoiced_co_numbers.add(co["co_number"])
+                approved_pending_cos = []
+                for co_idx, co in enumerate(cos_raw):
+                    if isinstance(co, dict) and co.get("status") == "Approved":
+                        co_num = co.get("co_number", "")
+                        if co_num not in invoiced_co_numbers:
+                            approved_pending_cos.append({
+                                "co_number": co_num,
+                                "title":     co.get("title", ""),
+                                "amount":    _safe_float(co.get("amount", 0)),
+                                "co_idx":    co_idx,
+                            })
+                proj["approved_pending_cos"] = approved_pending_cos
+
                 projects.append(proj)
 
     return jsonify(projects)
@@ -6356,6 +6387,32 @@ def invoice_new():
                             "amount": f"{amount_to_invoice:.2f}",
                             "stage_index": next_stage_idx  # Store the detected stage index
                         })
+
+                    # Add any approved COs passed via query param co_<proj_id>
+                    co_indices_param = request.args.get(f"co_{proj_id}", "")
+                    if co_indices_param:
+                        cos_data = proj_data.get("change_orders") or []
+                        if isinstance(cos_data, dict):
+                            cos_data = list(cos_data.values())
+                        for co_idx_str in co_indices_param.split(","):
+                            co_idx_str = co_idx_str.strip()
+                            if co_idx_str.isdigit():
+                                co_idx = int(co_idx_str)
+                                if 0 <= co_idx < len(cos_data):
+                                    co = cos_data[co_idx]
+                                    if isinstance(co, dict):
+                                        co_num    = co.get("co_number", "")
+                                        co_title  = co.get("title", "")
+                                        co_amount = _safe_float(co.get("amount", 0))
+                                        if co_amount > 0:
+                                            co_desc = f"{co_title} ({co_num})" if co_title else co_num
+                                            prefill_items.append({
+                                                "description": co_desc,
+                                                "project":     proj_num,
+                                                "amount":      f"{co_amount:.2f}",
+                                                "stage_index": None,
+                                            })
+                                            log.info(f"[PREFILL-CO] proj={proj_num}, co={co_num}, amount={co_amount}")
 
                     # Use first project for client field
                     if not prefill_client:
