@@ -2887,8 +2887,8 @@ window.openEmpExpenseEdit = function(exp) {
   document.getElementById('empExpEditInfo').innerHTML =
     '<strong>Submitted:</strong> $' + amountUsd.toFixed(2) + ' USD' +
     ' &nbsp;≈&nbsp; <strong>৳' + bdtAmt.toLocaleString() + ' BDT</strong>';
-  document.getElementById('empExpEditRate').textContent =
-    'Rate: ৳' + rate + ' = $1 USD';
+  document.getElementById('empExpEditRate').innerHTML =
+    'Exchange Rate: 1 USD = <strong>৳' + rate.toFixed(0) + '</strong>';
 
   // Fill modal form fields
   document.getElementById('editExpAmount').value = amountUsd.toFixed(2) || '';
@@ -3166,8 +3166,8 @@ window.openMedAmtEdit = function(claimId, empName, amtClaimed, amtApproved, exch
     '<strong>Claimed:</strong> $' + usdAmt.toFixed(2) + ' USD' +
     ' &nbsp;≈&nbsp; <strong>৳' + bdtAmt.toLocaleString() + ' BDT</strong>' +
     (amtApproved ? '<br><strong>Currently stored:</strong> $' + parseFloat(amtApproved).toFixed(2) + ' USD' : '');
-  document.getElementById('medAmtEditRate').textContent =
-    'Rate: ৳' + rate + ' = $1 USD';
+  document.getElementById('medAmtEditRate').innerHTML =
+    'Exchange Rate: 1 USD = <strong>৳' + rate.toFixed(0) + '</strong>';
   document.getElementById('medAmtEditUsd').value =
     amtApproved ? parseFloat(amtApproved).toFixed(2) : usdAmt.toFixed(2);
   new bootstrap.Modal(document.getElementById('medAmtEditModal')).show();
