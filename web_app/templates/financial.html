@@ -4113,7 +4113,7 @@ function viewReceipt(expId) {
     <div class="col-6 col-md-3">
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Total Adjusted</div>
-        <div style="font-size:1.6rem;font-weight:800;color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(0) }}</div>
+        <div style="font-size:1.6rem;font-weight:800;color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_adjusted) }}</div>
         <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Advance Deductions</div>
       </div>
     </div>
@@ -4128,7 +4128,7 @@ function viewReceipt(expId) {
       <div class="card-panel text-center">
         <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Outstanding</div>
         <div style="font-size:1.6rem;font-weight:800;color:{{ '#DC2626' if commission_total_outstanding > 0 else '#16a34a' }};">{{ currency_symbol }}{{ "{:,.2f}".format(commission_total_outstanding) }}</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Pending Commission</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Pending <span class="badge bg-warning text-dark" style="font-size:10px;font-weight:700;">{{ commission_pending_count }}</span></div>
       </div>
     </div>
   </div>

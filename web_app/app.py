@@ -13091,6 +13091,8 @@ def financial():
 
     # Per-project commission log
     _raw_proj_comm = fb_get("/project_commissions") or {}
+    commission_total_adjusted = 0.0
+    commission_pending_count = 0
 
     project_commissions = []
     for k, v in _raw_proj_comm.items():
@@ -13123,6 +13125,11 @@ def financial():
         commission_amount = _safe_float(pc.get("commission_amount", 0))
         total_deducted = _safe_float(pc.get("total_deducted", 0))
         pc["remaining_due"] = max(commission_amount - total_deducted, 0.0)
+
+        # Accumulate totals for summary cards
+        commission_total_adjusted += total_deducted
+        if pc.get("status") == "Pending":
+            commission_pending_count += 1
 
         project_commissions.append(pc)
 
@@ -13214,8 +13221,10 @@ def financial():
         commission_summary=commission_summary,
         project_commissions=project_commissions,
         commission_total_earned=commission_total_earned,
+        commission_total_adjusted=commission_total_adjusted,
         commission_total_paid=commission_total_paid,
         commission_total_outstanding=commission_total_outstanding,
+        commission_pending_count=commission_pending_count,
         bs_total_commission=bs_total_commission,
         total_commission_paid=total_commission_paid,
         monthly_commission_details=json.dumps(monthly_commission_details),
