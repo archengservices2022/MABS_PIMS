@@ -542,9 +542,11 @@
                 <a class="act-btn view" href="{{ url_for('timesheet_detail', sheet_id=row.sheet.firebase_id) }}" title="View">
                   <i class="bi bi-eye"></i>
                 </a>
+                {% if user_role == 'admin' %}
                 <button class="act-btn del" onclick="deleteSheet('{{ row.sheet.firebase_id }}')" title="Delete">
                   <i class="bi bi-trash3"></i>
                 </button>
+                {% endif %}
               </div>
               {% else %}
               <div class="act-btns">

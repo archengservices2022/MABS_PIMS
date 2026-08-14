@@ -3,7 +3,7 @@
 {% block page_title %}Project Detail{% endblock %}
 
 {% block content %}
-{% set can_manage_projects = user_role in ('admin', 'projects', 'administration') %}
+{% set can_manage_projects = user_role in ('admin', 'projects', 'administration', 'accountant') %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div class="d-flex align-items-center gap-2">
     <a href="{{ url_for('projects') }}{% if request.args.get('page') %}?page={{ request.args.get('page') }}{% endif %}" class="btn btn-sm btn-outline-secondary">
@@ -216,6 +216,133 @@
           </div>
           {% endif %}
         </div>
+
+        <!-- Commission Card -->
+        {% if project.get('sales') %}
+        {% set comm_type   = project.get('commission_override_type', 'default') %}
+        {% set comm_val    = project.get('commission_override_value', 0)|float %}
+        {% set cv          = project.get('contract_value', 0)|float %}
+        {% set comm_amount = (cv * comm_val / 100) if comm_type == 'percent' else (comm_val if comm_type == 'fixed' else 0) %}
+        <div class="card-panel mt-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="section-heading mb-0"><i class="bi bi-cash-coin me-1"></i>Commission</h6>
+            <button class="btn btn-xs btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#commissionEditModal" style="font-size:11px;">
+              <i class="bi bi-pencil me-1"></i>Edit
+            </button>
+          </div>
+          <div class="row g-2 align-items-center">
+            <div class="col-sm-5">
+              <div class="text-muted small">Salesperson</div>
+              <div class="fw-semibold">{{ project.get('sales') }}</div>
+            </div>
+            <div class="col-sm-4">
+              <div class="text-muted small">Rate / Type</div>
+              <div class="fw-semibold">
+                {% if comm_type == 'percent' %}
+                  {{ comm_val }}% <span class="badge" style="background:#7C3AED;font-size:10px;">Custom</span>
+                {% elif comm_type == 'fixed' %}
+                  Fixed {{ currency_symbol }}{{ "{:,.2f}".format(comm_val) }} <span class="badge" style="background:#7C3AED;font-size:10px;">Custom</span>
+                {% else %}
+                  Default rate
+                {% endif %}
+              </div>
+            </div>
+            {% if comm_amount > 0 %}
+            <div class="col-sm-3 text-sm-end">
+              <div class="text-muted small">Commission</div>
+              <div class="fw-bold" style="color:#7C3AED;font-size:1.1rem;">{{ currency_symbol }}{{ "{:,.2f}".format(comm_amount) }}</div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Commission Change History -->
+        {% if comm_history %}
+        <div class="mt-2">
+          <button class="btn btn-xs btn-link text-muted p-0" type="button"
+                  data-bs-toggle="collapse" data-bs-target="#commHistoryCollapse"
+                  style="font-size:11px;">
+            <i class="bi bi-clock-history me-1"></i>{{ comm_history|length }} change{{ 's' if comm_history|length != 1 }} — view history
+          </button>
+          <div class="collapse mt-2" id="commHistoryCollapse">
+            <table class="table table-sm mb-0" style="font-size:11px;background:#f8fafc;border-radius:6px;">
+              <thead>
+                <tr style="background:#f1f5f9;">
+                  <th class="ps-2">Date</th>
+                  <th>Changed By</th>
+                  <th class="text-end">From</th>
+                  <th class="text-center">→</th>
+                  <th>To</th>
+                  <th class="text-end pe-2">New Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for h in comm_history %}
+                <tr>
+                  <td class="ps-2 text-muted">{{ h.get('changed_at','')[:10] }}</td>
+                  <td>{{ h.get('changed_by','—') }}</td>
+                  <td class="text-end text-muted">
+                    {% if h.get('old_type') == 'fixed' %}Fixed ${{ "{:,.2f}".format(h.get('old_value',0)|float) }}
+                    {% elif h.get('old_type') == 'percent' %}{{ h.get('old_value',0) }}%
+                    {% else %}Default{% endif %}
+                  </td>
+                  <td class="text-center text-muted">→</td>
+                  <td>
+                    {% if h.get('new_type') == 'fixed' %}Fixed ${{ "{:,.2f}".format(h.get('new_value',0)|float) }}
+                    {% elif h.get('new_type') == 'percent' %}{{ h.get('new_value',0) }}%
+                    {% else %}Default{% endif %}
+                  </td>
+                  <td class="text-end pe-2 fw-semibold" style="color:#7C3AED;">
+                    {{ currency_symbol }}{{ "{:,.2f}".format(h.get('new_amount',0)|float) }}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Commission Edit Modal -->
+        <div class="modal fade" id="commissionEditModal" tabindex="-1">
+          <div class="modal-dialog modal-sm">
+            <div class="modal-content">
+              <form method="POST" action="{{ url_for('project_commission_update', project_id=project.firebase_id) }}">
+                <div class="modal-header py-2">
+                  <h6 class="modal-title mb-0"><i class="bi bi-cash-coin me-1"></i>Edit Commission</h6>
+                  <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                  <div class="mb-3">
+                    <label class="form-label small fw-semibold">Commission Type</label>
+                    <select name="commission_override_type" id="commModalType" class="form-select form-select-sm" onchange="toggleCommModal()">
+                      <option value="default" {{ 'selected' if comm_type == 'default' }}>Default (salesperson rate)</option>
+                      <option value="percent" {{ 'selected' if comm_type == 'percent' }}>Custom Percentage (%)</option>
+                      <option value="fixed"   {{ 'selected' if comm_type == 'fixed' }}>Fixed Amount ($)</option>
+                    </select>
+                  </div>
+                  <div class="mb-2" id="commModalValueRow" style="{{ 'display:none' if comm_type == 'default' else '' }}">
+                    <label class="form-label small fw-semibold" id="commModalValueLabel">
+                      {% if comm_type == 'fixed' %}Amount ($){% else %}Percentage (%){% endif %}
+                    </label>
+                    <input type="number" name="commission_override_value" id="commModalValue"
+                           class="form-control form-control-sm" step="0.01" min="0"
+                           value="{{ comm_val if comm_type != 'default' else '' }}"
+                           placeholder="{{ '5' if comm_type == 'percent' else '1500' }}">
+                  </div>
+                  <div class="text-muted" style="font-size:11px;">
+                    Contract value: {{ currency_symbol }}{{ "{:,.2f}".format(cv) }}
+                  </div>
+                </div>
+                <div class="modal-footer py-2">
+                  <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                  <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% endif %}
 
         {% set stages = project.get('payment_stages') or [] %}
         {% if stages %}
@@ -918,7 +1045,7 @@
                        target="_blank" class="btn btn-xs btn-outline-secondary" title="Download CO PDF">
                       <i class="bi bi-file-earmark-pdf"></i>
                     </a>
-                    {% if user_role == 'admin' %}
+                    {% if user_role in ('admin', 'accountant') %}
                     <form method="POST" action="{{ url_for('co_delete', project_id=project.firebase_id, co_idx=co_idx) }}"
                           onsubmit="return confirm('Delete {{ co.get("co_number","CO") }} on project {{ project.get("project_number","") }}? This will update the contract value and financial totals.');">
                       <button class="btn btn-xs btn-outline-danger" title="Delete CO">
@@ -2323,7 +2450,7 @@ function showDeleteRequestModal(entityType, entityId, entityLabel, redirectUrl) 
     font-size: 13px;
     color: #64748b;
   `;
-  description.textContent = 'An admin will review your request to delete:';
+  description.textContent = 'An admin or accountant will review your request to delete:';
 
   const entityName = document.createElement('div');
   entityName.style.cssText = `
@@ -2603,6 +2730,25 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 });
+
+function toggleCommModal() {
+  const type  = document.getElementById('commModalType').value;
+  const row   = document.getElementById('commModalValueRow');
+  const label = document.getElementById('commModalValueLabel');
+  const input = document.getElementById('commModalValue');
+  if (type === 'default') {
+    row.style.display = 'none';
+  } else {
+    row.style.display = '';
+    if (type === 'percent') {
+      label.textContent = 'Percentage (%)';
+      input.placeholder = 'e.g. 5';
+    } else {
+      label.textContent = 'Amount ($)';
+      input.placeholder = 'e.g. 1500';
+    }
+  }
+}
 </script>
 
 <!-- ?? Change Order - Approve Modal ???????????????????????????????????? -->

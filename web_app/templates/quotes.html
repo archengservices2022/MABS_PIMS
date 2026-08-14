@@ -67,7 +67,9 @@
   <li class="nav-item">
     <a class="nav-link" data-bs-toggle="tab" href="#tab-salespeople" id="nav-salespeople">
       <i class="bi bi-people me-1"></i>Sales People
+      {% if session.get('user_role','') in ('admin','finance') %}
       <span class="badge bg-secondary ms-1">{{ sales_people|length }}</span>
+      {% endif %}
     </a>
   </li>
   <li class="nav-item">
@@ -488,7 +490,7 @@
 
       {% if sales_people %}
       <div class="table-responsive">
-        <table class="table table-hover mb-0 align-middle">
+        <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
           <thead>
             <tr>
               <th>Name</th>
@@ -497,15 +499,23 @@
               <th class="text-center">Converted</th>
               <th class="text-center">Win Rate</th>
               <th class="text-end">Revenue Generated</th>
-              <th class="text-center">Commission %</th>
-              <th class="text-end">Commission Earned</th>
+              <th class="text-end" style="color:#7C3AED;">Commission Earned</th>
+              <th class="text-end" style="color:#16A34A;">Adjusted</th>
+              <th class="text-end" style="color:#2563EB;">Remaining Due</th>
+              <th class="text-end">Commission Paid</th>
             </tr>
           </thead>
           <tbody>
             {% for sp in sales_people %}
             {% if _viewer_is_admin or sp.name == _viewer_name %}
             {% set sp_stat = salesperson_stats | selectattr('name', 'equalto', sp.name) | first | default(none) %}
-            <tr>
+            {% set sp_commissions = project_commissions | selectattr('salesperson', 'equalto', sp.name) | list %}
+            {% set sp_total_commission = sp_commissions | sum(attribute='commission_amount') %}
+            {% set sp_total_adjusted = sp_commissions | sum(attribute='adjusted_amount') %}
+            {% set sp_total_remaining = sp_commissions | sum(attribute='remaining_due') %}
+            {% set sp_paid_commissions = sp_commissions | selectattr('status', 'equalto', 'Paid') | list %}
+            {% set sp_total_paid = sp_paid_commissions | sum(attribute='remaining_due') %}
+            <tr style="cursor:pointer;" onclick="toggleCommissionDetails('{{ sp.name | replace(' ', '_') }}')">
               <td class="fw-semibold">{{ sp.name }}</td>
               <td>
                 {% set _etype = sp_stat.employee_type if sp_stat else sp.employee_type %}
@@ -524,18 +534,10 @@
                 <span class="badge {{ 'bg-success' if _wr >= 50 else 'bg-secondary' }}">{{ _wr }}%</span>
               </td>
               <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(sp_stat.revenue_generated if sp_stat else 0) }}</td>
-              <td class="text-center text-muted">
-                {% set _cr = sp_stat.commission_rate if sp_stat else sp.commission_rate %}
-                {% if _cr > 0 %}{{ _cr }}%{% else %}—{% endif %}
-              </td>
-              <td class="text-end fw-bold" style="color:#7C3AED;">
-                {% set _cr = sp_stat.commission_rate if sp_stat else sp.commission_rate %}
-                {% if _cr > 0 %}
-                {{ currency_symbol }}{{ "{:,.2f}".format(sp_stat.commission_earned if sp_stat else 0) }}
-                {% else %}
-                <span class="text-muted small">Rate not set</span>
-                {% endif %}
-              </td>
+              <td class="text-end fw-bold" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_commission) }}</td>
+              <td class="text-end fw-semibold" style="color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_adjusted) }}</td>
+              <td class="text-end fw-semibold" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_remaining) }}</td>
+              <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(sp_total_paid) }}</td>
             </tr>
             {% endif %}
             {% endfor %}
@@ -543,10 +545,11 @@
           {% if _viewer_is_admin and salesperson_stats %}
           <tfoot>
             <tr class="fw-bold table-light" style="border-top:2px solid #dee2e6;">
-              <td colspan="5" class="text-end text-muted small">Totals</td>
-              <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(salesperson_stats|sum(attribute='revenue_generated')) }}</td>
-              <td></td>
-              <td class="text-end" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(salesperson_stats|sum(attribute='commission_earned')) }}</td>
+              <td colspan="6" class="text-end text-muted small">Totals</td>
+              <td class="text-end" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='commission_amount')) }}</td>
+              <td class="text-end" style="color:#16A34A;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='adjusted_amount')) }}</td>
+              <td class="text-end" style="color:#2563EB;">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | sum(attribute='remaining_due')) }}</td>
+              <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(project_commissions | selectattr('status', 'equalto', 'Paid') | list | sum(attribute='remaining_due')) }}</td>
             </tr>
           </tfoot>
           {% endif %}
@@ -563,97 +566,182 @@
       </div>
       {% endif %}
     </div>
-      <!-- ?? Commission Payroll (admin only) ???????????????????????????????? -->
-      {% if _viewer_is_admin %}
-      <div class="card-panel mt-3" style="border-top:3px solid #7C3AED;">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-          <h6 class="panel-title mb-0">
-            <i class="bi bi-cash-coin me-1" style="color:#7C3AED;"></i>
-            Commission Payroll
-            <span class="text-muted fw-normal" style="font-size:12px;">— mark periods as paid</span>
-          </h6>
-        </div>
-        {% if monthly_payroll %}
-        <div class="table-responsive">
-          <table class="table table-hover align-middle mb-0" style="font-size:13px;">
-            <thead>
-              <tr>
-                <th>Period</th>
-                <th>Salesperson</th>
-                <th>Type</th>
-                <th class="text-center">Rate</th>
-                <th class="text-end">Revenue</th>
-                <th class="text-end">Commission Due</th>
-                <th class="text-center">Status</th>
-                <th class="text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody id="payrollTableBody">
-              {% for row in monthly_payroll %}
-              <tr id="payrow-{{ row.period }}-{{ row.sp_name | replace(' ','_') }}">
-                <td class="fw-semibold">{{ row.period }}</td>
-                <td>{{ row.sp_name }}</td>
-                <td>
-                  {% if row.emp_type == 'full_time' %}
-                  <span class="badge" style="background:#0D9488;color:#fff;font-size:10px;">Full Time</span>
-                  {% elif row.emp_type == 'contractor' %}
-                  <span class="badge" style="background:#7C3AED;color:#fff;font-size:10px;">Contractor</span>
-                  {% else %}<span class="text-muted">—</span>{% endif %}
-                </td>
-                <td class="text-center text-muted">{{ row.rate }}%</td>
-                <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(row.revenue) }}</td>
-                <td class="text-end fw-bold" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(row.earned) }}</td>
-                <td class="text-center">
-                  {% if row.paid %}
-                  <span class="badge bg-success" style="font-size:11px;">
-                    <i class="bi bi-check-circle me-1"></i>Paid
-                  </span>
-                  {% else %}
-                  <span class="badge bg-warning text-dark" style="font-size:11px;">Pending</span>
-                  {% endif %}
-                </td>
-                <td class="text-center">
-                  {% if row.paid %}
-                  <button class="btn btn-xs btn-outline-secondary"
-                          onclick="commissionAction('unpay','{{ row.period }}','{{ row.sp_name }}',{{ row.earned }})">
-                    <i class="bi bi-x-circle me-1"></i>Undo
-                  </button>
-                  {% else %}
-                  <button class="btn btn-xs btn-outline-success"
-                          onclick="commissionAction('pay','{{ row.period }}','{{ row.sp_name }}',{{ row.earned }})">
-                    <i class="bi bi-check-circle me-1"></i>Mark Paid
-                  </button>
-                  {% endif %}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-            <tfoot>
-              <tr class="fw-bold table-light" style="border-top:2px solid #dee2e6;">
-                <td colspan="4" class="text-end text-muted small">Totals</td>
-                <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(monthly_payroll | sum(attribute='revenue')) }}</td>
-                <td class="text-end" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(monthly_payroll | sum(attribute='earned')) }}</td>
-                <td colspan="2"></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-        {% else %}
-        <div class="text-center text-muted py-4">
-          <i class="bi bi-cash-coin" style="font-size:32px;opacity:.3;"></i>
-          <div class="mt-2">No commission payroll to show yet.
-            <div class="small mt-1">This appears once a salesperson has both a commission rate set and a converted quote.
-              {% if 'settings' in allowed_pages %}
-              <a href="{{ url_for('settings') }}?tab=users">Set commission rates in Settings ?</a>
-              {% endif %}
-            </div>
-          </div>
-        </div>
-        {% endif %}
-      </div>
-      {% endif %}
 
-  </div><!-- /tab-salespeople -->
+    <!-- Commission Details Container (Below Table) -->
+    <div id="commissionDetailsContainer" style="margin-top:20px;display:none;">
+      <div class="card-panel" style="border-top:3px solid #059669;overflow:visible;">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="panel-title mb-0" id="detailsTitle">
+            <i class="bi bi-graph-up me-2" style="color:#059669;"></i>Commission Details
+          </h6>
+          <button type="button" class="btn btn-xs btn-outline-secondary" onclick="closeCommissionDetails()">
+            <i class="bi bi-x me-1"></i>Close
+          </button>
+        </div>
+        <div id="commissionDetailsContent" style="display:block;visibility:visible;overflow:visible;"></div>
+      </div>
+    </div>
+
+    <!-- Embedded Commission Data -->
+    <script>
+      const commissionData = {
+        {% set valid_salespeople = [] %}
+        {% for sp in sales_people %}
+          {% if _viewer_is_admin or sp.name == _viewer_name %}
+            {% set _ = valid_salespeople.append(sp) %}
+          {% endif %}
+        {% endfor %}
+        {% for sp in valid_salespeople %}
+        {# Match project commissions by salesperson name (case-insensitive, underscore/space flexible) #}
+        {% set sp_commissions = [] %}
+        {% set sp_name_normalized = (sp.name | trim).lower().replace('_', ' ') %}
+        {% for pc in project_commissions %}
+          {% set pc_name_normalized = (pc.get('salesperson', '') or '').strip().lower().replace('_', ' ') %}
+          {% if pc_name_normalized == sp_name_normalized %}
+            {% set _ = sp_commissions.append(pc) %}
+          {% endif %}
+        {% endfor %}
+        '{{ sp.name | trim }}': [
+          {% for pc in sp_commissions %}
+          {
+            project_number: {{ pc.get('project_number','—')|tojson }},
+            company_name: {{ pc.get('company_name','—')|tojson }},
+            commission_amount: {{ pc.get('commission_amount',0)|float }},
+            adjusted_amount: {{ pc.get('adjusted_amount',0)|float }},
+            remaining_due: {{ pc.get('remaining_due',0)|float }},
+            status: {{ pc.get('status','Pending')|tojson }},
+            deduction_status: {{ pc.get('deduction_status','not_covered')|tojson }},
+            firebase_id: {{ pc.firebase_id|tojson }}
+          }{% if not loop.last %},{% endif %}
+          {% endfor %}
+        ]{% if not loop.last %},{% endif %}
+        {% endfor %}
+      };
+      console.log('=== CommissionData Loaded ===');
+      console.log('Total keys:', Object.keys(commissionData).length);
+      Object.keys(commissionData).forEach(key => {
+        console.log(`  Key: "${key}" (${commissionData[key].length} projects)`);
+      });
+      console.log('============================');
+
+      function toggleCommissionDetails(employeeNameSanitized) {
+        const container = document.getElementById('commissionDetailsContainer');
+        if (container.style.display === 'none') {
+          // Normalize: replace underscores+spaces with single space, collapse multiple spaces
+          const normalizeForMatch = (str) => str.toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+          const searchFor = normalizeForMatch(employeeNameSanitized);
+
+          console.log('🔍 Looking for (normalized):', `"${searchFor}"`);
+          console.log('Available keys:', Object.keys(commissionData).map(k => `"${k}"`).join(', '));
+
+          let employeeName = Object.keys(commissionData).find(name => {
+            const normalized = normalizeForMatch(name);
+            console.log(`  Testing "${name}" → "${normalized}"`);
+            return normalized === searchFor;
+          });
+
+          console.log('✓ Final employee name:', employeeName);
+          console.log('Data rows:', commissionData[employeeName] ? commissionData[employeeName].length : 'N/A');
+          showCommissionDetails(employeeName);
+        } else {
+          closeCommissionDetails();
+        }
+      }
+
+      function showCommissionDetails(employeeName) {
+        const data = commissionData[employeeName] || [];
+        console.log('Showing details for:', employeeName, 'Data length:', data.length);
+        const currencySymbol = '{{ currency_symbol }}';
+        const container = document.getElementById('commissionDetailsContainer');
+        const contentDiv = document.getElementById('commissionDetailsContent');
+
+        let html = '';
+
+        const filteredData = data.filter(pc => pc.commission_amount > 0);
+
+        if (filteredData.length > 0) {
+          console.log('Building table for', filteredData.length, 'items (filtered from', data.length, ')');
+          html += '<div class="table-responsive" style="width:100%;display:block;">';
+          html += '<table class="table table-hover align-middle mb-0" style="font-size:13px;width:100%;">';
+          html += '<thead>';
+          html += '<tr>';
+          html += '<th>Project</th>';
+          html += '<th>Client</th>';
+          html += '<th class="text-end" style="color:#7C3AED;">Commission Earned</th>';
+          html += '<th class="text-end" style="color:#16A34A;">Adjusted amount</th>';
+          html += '<th class="text-end" style="color:#2563EB;">Remaining Due</th>';
+          html += '<th>Status</th>';
+          html += '</tr>';
+          html += '</thead>';
+          html += '<tbody>';
+
+          let totalCommission = 0, totalAdjusted = 0, totalRemaining = 0;
+
+          filteredData.forEach((pc, idx) => {
+            console.log('Processing row', idx, ':', pc.project_number, pc.commission_amount);
+            totalCommission += pc.commission_amount;
+            totalAdjusted += pc.adjusted_amount;
+            totalRemaining += pc.remaining_due;
+
+            let statusBadge = '';
+            if (pc.deduction_status === 'fully_covered') {
+              const paidDate = pc.paid_at ? new Date(pc.paid_at).toLocaleDateString('en-US', {month: '2-digit', day: '2-digit', year: 'numeric'}) : '';
+              statusBadge = `<div><span class="badge bg-success" style="font-size:10px;"><i class="bi bi-lock-fill me-1"></i>Paid (Fully Covered)</span>${paidDate ? `<div class="small text-muted mt-1">${paidDate}</div>` : ''}</div>`;
+            } else if (pc.status === 'Paid') {
+              const paidDate = pc.paid_at ? new Date(pc.paid_at).toLocaleDateString('en-US', {month: '2-digit', day: '2-digit', year: 'numeric'}) : '';
+              statusBadge = `<div><span class="badge bg-success" style="font-size:10px;"><i class="bi bi-check-circle me-1"></i>Paid</span>${paidDate ? `<div class="small text-muted mt-1">${paidDate}</div>` : ''}</div>`;
+            } else {
+              statusBadge = '<span class="badge bg-warning text-dark" style="font-size:10px;">Pending</span>';
+            }
+
+            html += '<tr>';
+            html += `<td class="fw-semibold"><a href="/projects/${pc.firebase_id}" class="text-decoration-none">${pc.project_number}</a></td>`;
+            html += `<td>${pc.company_name}</td>`;
+            html += `<td class="text-end fw-bold" style="color:#7C3AED;">${currencySymbol}${pc.commission_amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+            html += `<td class="text-end fw-semibold" style="color:#16A34A;">${currencySymbol}${pc.adjusted_amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+            html += `<td class="text-end fw-semibold" style="color:#2563EB;">${currencySymbol}${pc.remaining_due.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+            html += `<td>${statusBadge}</td>`;
+            html += '</tr>';
+          });
+          console.log('Rows added. Total HTML so far length:', html.length);
+
+          html += '</tbody>';
+          html += '<tfoot>';
+          html += '<tr class="fw-bold table-light" style="border-top:2px solid #dee2e6;">';
+          html += '<td colspan="2" class="text-end text-muted small">Totals</td>';
+          html += `<td class="text-end" style="color:#7C3AED;">${currencySymbol}${totalCommission.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+          html += `<td class="text-end" style="color:#16A34A;">${currencySymbol}${totalAdjusted.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+          html += `<td class="text-end" style="color:#2563EB;">${currencySymbol}${totalRemaining.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+          html += '<td></td>';
+          html += '</tr>';
+          html += '</tfoot>';
+          html += '</table>';
+          html += '</div>';
+        } else {
+          html += '<div class="text-center text-muted py-5">';
+          html += '<i class="bi bi-graph-up" style="font-size:32px;opacity:.3;"></i>';
+          html += '<div class="mt-2">No commission details available for this employee.</div>';
+          html += '</div>';
+        }
+
+        const escapedName = employeeName.replace(/[&<>"']/g, c => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+        document.getElementById('detailsTitle').innerHTML = '<i class="bi bi-graph-up me-2" style="color:#059669;"></i>Commission Details — ' + escapedName + ' — per-project commission tracking';
+        console.log('Setting innerHTML, html length:', html.length);
+        console.log('First 200 chars of html:', html.substring(0, 200));
+        contentDiv.innerHTML = html;
+        console.log('innerHTML set, contentDiv content:', contentDiv.innerHTML.substring(0, 200));
+        container.style.display = 'block';
+        container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+
+      function closeCommissionDetails() {
+        document.getElementById('commissionDetailsContainer').style.display = 'none';
+      }
+    </script>
+
+</div><!-- /tab-salespeople -->
 
 
   <!-- ?? TAB 4 ? FOLLOW-UPS ???????????????????????????????????????????????? -->

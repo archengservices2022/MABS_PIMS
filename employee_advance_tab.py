@@ -1,11 +1,14 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional, List, Dict, Any
+from zoneinfo import ZoneInfo
 import uuid
 
 from PyQt5 import QtWidgets, QtCore, QtGui
 
 from app_logger import get_logger
+
+COMPANY_TZ = ZoneInfo("America/Chicago")
 
 _log = get_logger(__name__)
 
@@ -933,7 +936,7 @@ class AdvancementAdjustmentDialog(QtWidgets.QDialog):
         adj_type_lay = QtWidgets.QHBoxLayout()
         adj_type_lay.addWidget(QtWidgets.QLabel("Adjustment Type"))
         self.adj_type_combo = QtWidgets.QComboBox()
-        self.adj_type_combo.addItems(["Payroll Deduction", "Manual Adjustment", "Partial Payment"])
+        self.adj_type_combo.addItems(["Payroll Deduction", "Commission Deduction", "Manual Adjustment", "Partial Payment"])
         self.adj_type_combo.setStyleSheet("""
             QComboBox {
                 background: white;
@@ -1188,6 +1191,34 @@ class AdvancementAdjustmentDialog(QtWidgets.QDialog):
                 self.advance_data['adjustments'][adjustment_id] = adjustment_data
                 if new_balance <= 0:
                     self.advance_data['status'] = 'Closed'
+
+                # Handle Commission Deduction: create a negative commission payment entry
+                if adjustment_data.get('type') == 'Commission Deduction':
+                    employee_name = self.advance_data.get('employee_name', '').strip()
+                    advance_no = self.advance_data.get('advance_no', '')
+
+                    if employee_name:
+                        # Create a negative commission payment entry
+                        comm_deduction_id = f"adv_{str(uuid.uuid4())}"
+                        current_period = datetime.now(COMPANY_TZ).strftime("%Y-%m")
+
+                        commission_deduction = {
+                            'period': current_period,
+                            'salesperson': employee_name,
+                            'amount': -self.adj_amount_input.value(),
+                            'type': 'Advance Deduction',
+                            'advance_no': advance_no,
+                            'advance_id': self.advance_id,
+                            'adjustment_id': adjustment_id,
+                            'reference': self.reference_input.text() or "",
+                            'remarks': f"Commission deduction for advance {advance_no}: {self.remarks_input.toPlainText()}",
+                            'created_at': datetime.now(COMPANY_TZ).isoformat(),
+                            'created_by': 'Admin'
+                        }
+
+                        # Record the commission deduction
+                        db.reference('/commission_payments').child(comm_deduction_id).set(commission_deduction)
+                        _log.info(f"Commission deduction recorded for {employee_name}: ${self.adj_amount_input.value():.2f}")
 
                 # Sync updated advance to finance
                 parent_dialog = self.parent()

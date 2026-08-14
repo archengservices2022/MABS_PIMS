@@ -527,7 +527,7 @@
                               data-name="{{ u.get('username','') | e }}"
                               data-role="{{ _role }}"
                               data-custompages="{{ (u.get('custom_pages') or []) | join(',') }}"
-                              title="Customize Pages">
+                              title="Customize Pages{% if _role == 'accountant' %} (Grant Tabs){% endif %}">
                         <i class="bi bi-layout-sidebar"></i>
                       </button>
                       <button class="btn btn-xs btn-outline-warning send-reset-btn"
@@ -1012,9 +1012,13 @@
 const ALL_PAGES   = {{ all_pages | tojson }};
 
 function toggleCreateCommission() {
-  var role = document.getElementById('createUserRole').value;
-  document.getElementById('createCommissionSection').style.display = (role === 'sales' || role === 'admin') ? '' : 'none';
-  document.getElementById('createEmployeeTypeField').style.display = role === 'sales' ? '' : 'none';
+  var roleEl = document.getElementById('createUserRole');
+  if (!roleEl) return;
+  var role = roleEl.value;
+  var commEl = document.getElementById('createCommissionSection');
+  if (commEl) commEl.style.display = (role === 'sales' || role === 'admin') ? '' : 'none';
+  var typeEl = document.getElementById('createEmployeeTypeField');
+  if (typeEl) typeEl.style.display = role === 'sales' ? '' : 'none';
 }
 const PAGE_LABELS = {{ page_labels | tojson }};
 const ROLE_DEFAULTS = {{ role_pages | tojson }};
@@ -1022,75 +1026,120 @@ const ROLE_DEFAULTS = {{ role_pages | tojson }};
 document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.edit-user-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      var d = btn.dataset;
-      document.getElementById('editUid').value              = d.uid || '';
-      document.getElementById('editUsername').value         = d.username || '';
-      document.getElementById('editEmail').value            = d.email || '';
-      document.getElementById('editTitle').value            = d.title || '';
-      document.getElementById('editRegion').value           = d.region || '';
-      document.getElementById('editHourlyRate').value       = parseFloat(d.rate) > 0 ? parseFloat(d.rate) : '';
-      document.getElementById('editMonthlySalary').value    = parseFloat(d.salary) > 0 ? parseFloat(d.salary) : '';
-      document.getElementById('editRole').value             = (d.role || 'sales').toLowerCase();
-      document.getElementById('editStatus').value           = d.active || 'true';
-      var role = (d.role || '').toLowerCase();
-      document.getElementById('editEmployeeType').value     = d.employeeType || '';
-      document.getElementById('editCommissionRate').value   = parseFloat(d.commissionRate) > 0 ? parseFloat(d.commissionRate) : '';
-      document.getElementById('editUserMsg').innerHTML      = '';
-      var isSalesOrAdmin = role === 'sales' || role === 'admin';
-      document.getElementById('editCommissionSection').style.display = isSalesOrAdmin ? '' : 'none';
-      document.getElementById('editEmployeeTypeField').style.display = role === 'sales' ? '' : 'none';
-      new bootstrap.Modal(document.getElementById('editUserModal')).show();
+      try {
+        var d = btn.dataset;
+        var uid = document.getElementById('editUid');
+        var username = document.getElementById('editUsername');
+        var email = document.getElementById('editEmail');
+        var title = document.getElementById('editTitle');
+        var region = document.getElementById('editRegion');
+        var hourlyRate = document.getElementById('editHourlyRate');
+        var monthlySalary = document.getElementById('editMonthlySalary');
+        var roleEl = document.getElementById('editRole');
+        var status = document.getElementById('editStatus');
+        var employeeType = document.getElementById('editEmployeeType');
+        var commissionRate = document.getElementById('editCommissionRate');
+
+        if (uid) uid.value = d.uid || '';
+        if (username) username.value = d.username || '';
+        if (email) email.value = d.email || '';
+        if (title) title.value = d.title || '';
+        if (region) region.value = d.region || '';
+        if (hourlyRate) hourlyRate.value = parseFloat(d.rate) > 0 ? parseFloat(d.rate) : '';
+        if (monthlySalary) monthlySalary.value = parseFloat(d.salary) > 0 ? parseFloat(d.salary) : '';
+        if (roleEl) roleEl.value = (d.role || 'sales').toLowerCase();
+        if (status) status.value = d.active || 'true';
+        var role = (d.role || '').toLowerCase();
+        if (employeeType) employeeType.value = d.employeeType || '';
+        if (commissionRate) commissionRate.value = parseFloat(d.commissionRate) > 0 ? parseFloat(d.commissionRate) : '';
+
+        var msgEl = document.getElementById('editUserMsg');
+        if (msgEl) msgEl.innerHTML = '';
+        var isSalesOrAdmin = role === 'sales' || role === 'admin';
+        var commEl = document.getElementById('editCommissionSection');
+        if (commEl) commEl.style.display = isSalesOrAdmin ? '' : 'none';
+        var typeEl = document.getElementById('editEmployeeTypeField');
+        if (typeEl) typeEl.style.display = role === 'sales' ? '' : 'none';
+        var editModal = document.getElementById('editUserModal');
+        if (editModal) new bootstrap.Modal(editModal).show();
+      } catch(e) {
+        console.error('Error in edit user button:', e);
+      }
     });
   });
 
   document.querySelectorAll('.send-reset-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      var email = btn.dataset.email;
-      var name  = btn.dataset.name;
-      if (!confirm('Send password reset email to ' + name + ' (' + email + ')?')) return;
-      btn.disabled = true;
-      fetch('/api/admin/send-reset-email', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({email: email})
-      }).then(r => r.json()).then(data => {
+      try {
+        var email = btn.dataset.email;
+        var name  = btn.dataset.name;
+        if (!confirm('Send password reset email to ' + name + ' (' + email + ')?')) return;
+        btn.disabled = true;
+        fetch('/api/admin/send-reset-email', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({email: email})
+        }).then(r => r.json()).then(data => {
+          btn.disabled = false;
+          if (data.success) {
+            alert('Reset email sent to ' + email);
+          } else {
+            alert('Error: ' + data.error);
+          }
+        }).catch(err => {
+          btn.disabled = false;
+          console.error('Reset email error:', err);
+          alert('Network error. Please try again.');
+        });
+      } catch(e) {
         btn.disabled = false;
-        if (data.success) {
-          alert('Reset email sent to ' + email);
-        } else {
-          alert('Error: ' + data.error);
-        }
-      }).catch(() => { btn.disabled = false; alert('Network error. Please try again.'); });
+        console.error('Error in send reset button:', e);
+      }
     });
   });
 
   document.querySelectorAll('.pages-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      var uid   = btn.dataset.uid;
-      var name  = btn.dataset.name;
-      var role  = btn.dataset.role;
-      var saved;
-      var _cp = btn.dataset.custompages || '';
-      saved = _cp ? _cp.split(',') : [];
-      document.getElementById('pagesUid').value       = uid;
-      document.getElementById('pagesRole').value      = role;
-      document.getElementById('pagesUserName').textContent = name;
-      document.getElementById('pagesMsg').innerHTML   = '';
-      var badge = document.getElementById('pagesRoleBadge');
-      badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
-      badge.style.background = {admin:'#dc2626',finance:'#0D9488',projects:'#7C3AED',engineer:'#0369a1',sales:'#d97706',administration:'#92400E',accountant:'#3730A3'}[role] || '#6b7280';
-      badge.style.color = '#fff';
-      buildPagesCheckboxes(role, saved);
-      new bootstrap.Modal(document.getElementById('userPagesModal')).show();
+      try {
+        var uid   = btn.dataset.uid;
+        var name  = btn.dataset.name;
+        var role  = btn.dataset.role;
+        var saved;
+        var _cp = btn.dataset.custompages || '';
+        saved = _cp ? _cp.split(',') : [];
+        var pagesUidEl = document.getElementById('pagesUid');
+        if (pagesUidEl) pagesUidEl.value = uid;
+        var pagesRoleEl = document.getElementById('pagesRole');
+        if (pagesRoleEl) pagesRoleEl.value = role;
+        var pagesNameEl = document.getElementById('pagesUserName');
+        if (pagesNameEl) pagesNameEl.textContent = name;
+        var msgEl = document.getElementById('pagesMsg');
+        if (msgEl) msgEl.innerHTML = '';
+        var badge = document.getElementById('pagesRoleBadge');
+        if (badge) {
+          badge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+          badge.style.background = {admin:'#dc2626',finance:'#0D9488',projects:'#7C3AED',engineer:'#0369a1',sales:'#d97706',administration:'#92400E',accountant:'#3730A3'}[role] || '#6b7280';
+          badge.style.color = '#fff';
+        }
+        buildPagesCheckboxes(role, saved);
+        var pagesModal = document.getElementById('userPagesModal');
+        if (pagesModal) new bootstrap.Modal(pagesModal).show();
+      } catch(e) {
+        console.error('Error in pages button:', e);
+      }
     });
   });
 });
 
 function onEditRoleChange() {
-  var role = document.getElementById('editRole').value;
+  var roleEl = document.getElementById('editRole');
+  if (!roleEl) return;
+  var role = roleEl.value;
   var isSalesOrAdmin = role === 'sales' || role === 'admin';
-  document.getElementById('editCommissionSection').style.display = isSalesOrAdmin ? '' : 'none';
-  document.getElementById('editEmployeeTypeField').style.display = role === 'sales' ? '' : 'none';
+  var commEl = document.getElementById('editCommissionSection');
+  if (commEl) commEl.style.display = isSalesOrAdmin ? '' : 'none';
+  var typeEl = document.getElementById('editEmployeeTypeField');
+  if (typeEl) typeEl.style.display = role === 'sales' ? '' : 'none';
 }
 
 async function saveUserDetails() {
@@ -1130,19 +1179,23 @@ async function saveUserDetails() {
 
     clearTimeout(timeoutId);
 
+    if (!res.ok) {
+      console.error('Response not ok:', res.status);
+      msg.innerHTML = '<span class="text-danger">Error: ' + res.status + ' ' + res.statusText + '</span>';
+      saveBtn.disabled = false;
+      return;
+    }
+
     var data = {};
     try {
       data = await res.json();
     } catch(parseErr) {
       console.error('Response parse error:', parseErr);
-    }
-
-    if (!res.ok) {
-      var errMsg = data.error || data.message || 'Error: ' + res.status;
-      msg.innerHTML = '<span class="text-danger">' + errMsg + '</span>';
+      msg.innerHTML = '<span class="text-danger">Invalid response from server</span>';
       saveBtn.disabled = false;
       return;
     }
+
     if (data.error) {
       msg.innerHTML = '<span class="text-danger">' + data.error + '</span>';
       saveBtn.disabled = false;
@@ -1154,7 +1207,7 @@ async function saveUserDetails() {
   } catch(e) {
     clearTimeout(timeoutId);
     console.error('Save error:', e);
-    msg.innerHTML = '<span class="text-danger">Request failed: ' + (e.message || 'Network error') + '</span>';
+    msg.innerHTML = '<span class="text-danger">Request failed: ' + (e.message || 'Unknown error') + '</span>';
     saveBtn.disabled = false;
   }
 }
@@ -1192,18 +1245,40 @@ async function saveUserPages() {
   var defaults = ROLE_DEFAULTS[role] || [];
   var isDefault = defaults.length === pages.length && defaults.every(function(p){ return pages.indexOf(p) !== -1; });
   var payload = isDefault ? [] : pages;
-  msg.innerHTML = '<span class="text-muted">Saving?</span>';
+  msg.innerHTML = '<span class="text-muted">Saving...</span>';
   try {
     var res  = await fetch('/api/users/' + uid + '/pages', {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({custom_pages: payload})
     });
-    var data = await res.json();
-    if (!res.ok || data.error) { msg.innerHTML = '<span class="text-danger">' + (data.error || 'Error') + '</span>'; return; }
+
+    if (!res.ok) {
+      console.error('Response not ok:', res.status);
+      msg.innerHTML = '<span class="text-danger">Error: ' + res.status + '</span>';
+      return;
+    }
+
+    var data = {};
+    try {
+      data = await res.json();
+    } catch(parseErr) {
+      console.error('Response parse error:', parseErr);
+      msg.innerHTML = '<span class="text-danger">Invalid response from server</span>';
+      return;
+    }
+
+    if (data.error) {
+      msg.innerHTML = '<span class="text-danger">' + data.error + '</span>';
+      return;
+    }
+
     msg.innerHTML = '<span class="text-success">Saved!</span>';
     setTimeout(function(){ location.reload(); }, 600);
-  } catch(e) { msg.innerHTML = '<span class="text-danger">Request failed.</span>'; }
+  } catch(e) {
+    console.error('Save pages error:', e);
+    msg.innerHTML = '<span class="text-danger">Request failed: ' + (e.message || 'Unknown error') + '</span>';
+  }
 }
 
 var currentPermReqId = null;
@@ -1211,58 +1286,87 @@ var currentPageUrl = null;
 
 function submitPermissionRequest(action, notes) {
   if (!currentPermReqId) return;
-
-  fetch('/api/permission-requests/' + currentPermReqId + '/resolve', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({action: action, notes: notes})
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(d) {
-    if (!d.success) { alert('Error: ' + (d.error || 'Unknown')); return; }
-    location.reload();
-  })
-  .catch(function() { alert('Network error. Please try again.'); });
+  try {
+    fetch('/api/permission-requests/' + currentPermReqId + '/resolve', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action: action, notes: notes})
+    })
+    .then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(data => {
+      if (!data.success) {
+        alert('Error: ' + (data.error || 'Unknown'));
+        return;
+      }
+      location.reload();
+    })
+    .catch(err => {
+      console.error('Permission request error:', err);
+      alert('Error: ' + (err.message || 'Request failed'));
+    });
+  } catch(e) {
+    console.error('Submit permission error:', e);
+  }
 }
 
 function confirmApprove() {
   if (!currentPermReqId) return;
-  bootstrap.Modal.getInstance(document.getElementById('approvePermissionModal')).hide();
+  var modal = document.getElementById('approvePermissionModal');
+  if (modal) {
+    bootstrap.Modal.getInstance(modal).hide();
+  }
   submitPermissionRequest('approve', '');
 }
 
 function confirmDeny() {
   if (!currentPermReqId) return;
-  var reason = document.getElementById('denyReason').value.trim();
-  bootstrap.Modal.getInstance(document.getElementById('denyPermissionModal')).hide();
+  var denyReasonEl = document.getElementById('denyReason');
+  var reason = denyReasonEl ? denyReasonEl.value.trim() : '';
+  var modal = document.getElementById('denyPermissionModal');
+  if (modal) {
+    bootstrap.Modal.getInstance(modal).hide();
+  }
   submitPermissionRequest('deny', reason);
 }
 
 document.addEventListener('DOMContentLoaded', function() {
   // Clear request ID when deny modal is dismissed (e.g., by Cancel button)
-  document.getElementById('denyPermissionModal').addEventListener('hidden.bs.modal', function() {
-    currentPermReqId = null;
-  });
+  var denyModal = document.getElementById('denyPermissionModal');
+  if (denyModal) {
+    denyModal.addEventListener('hidden.bs.modal', function() {
+      currentPermReqId = null;
+    });
+  }
 
   // Clear request ID when approve modal is dismissed (e.g., by Cancel button)
-  document.getElementById('approvePermissionModal').addEventListener('hidden.bs.modal', function() {
-    currentPermReqId = null;
-  });
+  var approveModal = document.getElementById('approvePermissionModal');
+  if (approveModal) {
+    approveModal.addEventListener('hidden.bs.modal', function() {
+      currentPermReqId = null;
+    });
+  }
 
   document.querySelectorAll('.approve-perm-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       currentPermReqId = this.dataset.reqId;
       currentPageUrl = this.dataset.pageUrl;
-      document.getElementById('denyReason').value = '';
-      new bootstrap.Modal(document.getElementById('approvePermissionModal')).show();
+      var denyReasonEl = document.getElementById('denyReason');
+      if (denyReasonEl) denyReasonEl.value = '';
+      var approveModalEl = document.getElementById('approvePermissionModal');
+      if (approveModalEl) new bootstrap.Modal(approveModalEl).show();
     });
   });
 
   document.querySelectorAll('.deny-perm-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       currentPermReqId = this.dataset.reqId;
-      document.getElementById('denyReason').value = '';
-      new bootstrap.Modal(document.getElementById('denyPermissionModal')).show();
+      var denyReasonEl = document.getElementById('denyReason');
+      if (denyReasonEl) denyReasonEl.value = '';
+      var denyModalEl = document.getElementById('denyPermissionModal');
+      if (denyModalEl) new bootstrap.Modal(denyModalEl).show();
     });
   });
 

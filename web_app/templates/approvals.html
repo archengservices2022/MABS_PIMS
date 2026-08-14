@@ -59,10 +59,11 @@
                     <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
                   {% elif req.get('status') == 'approved' %}
                     <span class="badge bg-success">Approved</span>
+                    <div class="text-muted" style="font-size:11px;">by {{ req.get('reviewed_by','—') }}</div>
                     {% if req.get('admin_notes') %}<div class="text-muted" style="font-size:11px;">{{ req.admin_notes }}</div>{% endif %}
                   {% elif req.get('status') == 'completed' %}
                     <span class="badge bg-secondary">Completed</span>
-                    <div class="text-muted" style="font-size:11px;">Deleted by {{ req.get('requested_by_name','—') }}</div>
+                    <div class="text-muted" style="font-size:11px;">Deleted by {{ req.get('reviewed_by','—') }}</div>
                   {% else %}
                     <span class="badge bg-danger">Denied</span>
                     {% if req.get('admin_notes') %}<div class="text-muted" style="font-size:11px;">{{ req.admin_notes }}</div>{% endif %}
@@ -107,8 +108,9 @@
               <tr>
                 <th>Requested By</th>
                 <th>Type</th>
-                <th>Date</th>
-                <th>Amount</th>
+                <th>Period/Date</th>
+                <th>Submitted on</th>
+                <th>Amount/Hour</th>
                 <th>Notes</th>
                 <th>Page</th>
                 <th>Status</th>
@@ -140,14 +142,23 @@
                     {{ item.date | format_date }}
                   {% endif %}
                 </td>
+                <td class="text-muted text-nowrap">
+                  {% if item.submitted_at %}
+                    {{ item.submitted_at | format_date }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
                 <td>
                   {% if item.amount != '—' and item.amount != None %}
                     {% if item.currency == 'h' %}
                       {% if item.amount is number %}{{ "{:.1f}".format(item.amount|float) }}h{% else %}{{ item.amount }}h{% endif %}
-                    {% elif item.currency == 'BDT' %}
-                      ৳{{ "{:,.2f}".format(item.amount|float) }}
+                    {% elif item.cat == 'medical' %}
+                      <div>${{ "{:.2f}".format((item.amount|float) / bdt_exchange_rate) }}</div>
+                      <div class="text-muted" style="font-size:11px;">৳{{ "{:,.2f}".format(item.amount|float) }}</div>
                     {% else %}
-                      ${{ "{:,.2f}".format(item.amount|float) }}
+                      <div>${{ "{:.2f}".format(item.amount|float) }}</div>
+                      <div class="text-muted" style="font-size:11px;">৳{{ "{:,.2f}".format((item.amount|float) * bdt_exchange_rate) }}</div>
                     {% endif %}
                   {% else %}
                     —
@@ -201,9 +212,32 @@
     </div>
 </div>
 
-<!-- Modal for Delete Requests only -->
+<!-- Approve Modal -->
+<div class="modal fade" id="approvePermissionModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">Approve Delete Request</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pb-2">
+        <p class="text-muted mb-0" style="font-size:12px;">
+          Approving this request will notify the requester and allow them to proceed with the delete action.
+        </p>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-success" onclick="confirmApprove()">
+          <i class="bi bi-check-circle me-1"></i>Approve
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Deny Modal -->
 <div class="modal fade" id="denyPermissionModal" tabindex="-1">
-  <div class="modal-dialog modal-sm">
+  <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header py-2">
         <h6 class="modal-title">Deny Delete Request</h6>
@@ -211,8 +245,8 @@
       </div>
       <div class="modal-body pb-2">
         <div class="mb-3">
-          <label class="form-label fw-semibold" style="font-size:12px;">Reason (optional)</label>
-          <textarea id="denyReason" class="form-control form-control-sm" rows="2" style="font-size:12px;"></textarea>
+          <label class="form-label fw-semibold" style="font-size:12px;">Reason for Denying <span class="text-muted fw-normal">(optional)</span></label>
+          <textarea id="denyReason" class="form-control form-control-sm" placeholder="e.g., Already approved by another admin" rows="2" style="font-size:12px;"></textarea>
         </div>
       </div>
       <div class="modal-footer py-2">
@@ -250,15 +284,30 @@ document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.open-page-btn').forEach(function(btn) {
     btn.addEventListener('click', function(e) {
       e.preventDefault();
-      var url = this.getAttribute('data-url');
-      if (url) window.open(url, '_blank');
+      var storedUrl = this.getAttribute('data-url');
+      if (storedUrl) {
+        try {
+          // Extract path and hash from stored URL
+          var urlObj = new URL(storedUrl);
+          var pathWithHash = urlObj.pathname + urlObj.search + urlObj.hash;
+
+          // Apply to current domain (local or live)
+          var currentOrigin = window.location.origin;
+          var finalUrl = currentOrigin + pathWithHash;
+
+          window.open(finalUrl, '_blank');
+        } catch (err) {
+          // Fallback to stored URL if parsing fails
+          window.open(storedUrl, '_blank');
+        }
+      }
     });
   });
 
   document.querySelectorAll('.approve-perm-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       currentPermReqId = this.dataset.reqId;
-      submitPermissionRequest('approve', '');
+      new bootstrap.Modal(document.getElementById('approvePermissionModal')).show();
     });
   });
 
@@ -268,6 +317,10 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('denyReason').value = '';
       new bootstrap.Modal(document.getElementById('denyPermissionModal')).show();
     });
+  });
+
+  document.getElementById('approvePermissionModal').addEventListener('hidden.bs.modal', function() {
+    currentPermReqId = null;
   });
 
   document.getElementById('denyPermissionModal').addEventListener('hidden.bs.modal', function() {
@@ -294,6 +347,12 @@ function submitPermissionRequest(action, notes) {
     location.reload();
   })
   .catch(err => { alert('Error: ' + err.message); });
+}
+
+function confirmApprove() {
+  if (!currentPermReqId) return;
+  bootstrap.Modal.getInstance(document.getElementById('approvePermissionModal')).hide();
+  submitPermissionRequest('approve', '');
 }
 
 function confirmDeny() {
