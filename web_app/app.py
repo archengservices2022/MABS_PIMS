@@ -8946,7 +8946,7 @@ def _auto_generate_monthly_salaries() -> int:
 
 def _migrate_employee_payroll_vendor() -> int:
     """Migrate all existing salary expenses: vendor 'Employee Payroll' → 'Employee Salary',
-    expense_type 'Employee Salary' → 'Other Expense'. Returns the number of entries updated.
+    expense_type 'Employee Salary' → 'Other Expenses'. Returns the number of entries updated.
     """
     expenses = fb_get("/balance_sheet_expenses") or {}
     updated_count = 0
@@ -8958,7 +8958,7 @@ def _migrate_employee_payroll_vendor() -> int:
                     exp_data["vendor"] = "Employee Salary"
                     updated = True
                 if exp_data.get("expense_type") == "Employee Salary":
-                    exp_data["expense_type"] = "Other Expense"
+                    exp_data["expense_type"] = "Other Expenses"
                     updated = True
                 if updated:
                     exp_data["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -10318,7 +10318,7 @@ def create_salary():
             "employee_name": employee_name,
             "date": date_str,
             "amount": float(data.get("amount", 0)),
-            "expense_type": "Other Expense",
+            "expense_type": "Other Expenses",
             "expense_name": f"Employee Salary - {employee_name}",
             "category": "Salary",
             "vendor": "Employee Salary",
@@ -10394,7 +10394,7 @@ def update_salary(sal_id):
                         "employee_name": employee_name,
                         "date": date_str,
                         "amount": float(data.get("amount", 0)),
-                        "expense_type": "Other Expense",
+                        "expense_type": "Other Expenses",
                         "expense_name": f"Employee Salary - {employee_name}",
                         "category": "Salary",
                         "vendor": "Employee Salary",
@@ -10415,7 +10415,7 @@ def update_salary(sal_id):
             "employee_name": employee_name,
             "date": date_str,
             "amount": float(data.get("amount", 0)),
-            "expense_type": "Other Expense",
+            "expense_type": "Other Expenses",
             "expense_name": f"Employee Salary - {employee_name}",
             "category": "Salary",
             "vendor": "Employee Salary",
