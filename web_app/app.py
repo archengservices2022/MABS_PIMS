@@ -14413,21 +14413,27 @@ def medical_claim_form_download():
 def medical_claim_new():
     uid  = session.get("user_uid", "")
     name = session.get("user_name", "")
-    amount = request.form.get("amount_claimed", "0") or "0"
+    usd_amount = request.form.get("amount_claimed", "0") or "0"
     try:
-        amount = float(amount)
+        usd_amount = float(usd_amount)
     except ValueError:
-        amount = 0.0
-    if amount > 50000:
-        flash("Medical claim cannot exceed ৳50,000 BDT.", "danger")
+        usd_amount = 0.0
+    if usd_amount > 5000:
+        flash("Medical claim cannot exceed $5,000 USD.", "danger")
         return redirect(url_for("employees") + "#medical")
+
+    exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+    bdt_amount = usd_amount * exchange_rate
+
     claim = {
         "employee_uid":      uid,
         "employee_name":     name,
         "claim_date":        request.form.get("claim_date", ""),
         "expense_type":      request.form.get("expense_type", "Other Expenses"),
-        "amount_claimed":    amount,
-        "amount_currency":   request.form.get("amount_currency", "BDT"),
+        "amount_claimed":    usd_amount,
+        "amount_claimed_bdt": bdt_amount,
+        "amount_currency":   request.form.get("amount_currency", "USD"),
+        "exchange_rate":     exchange_rate,
         "description":       request.form.get("description", "").strip(),
         "provider":          request.form.get("provider", "").strip(),
         "receipt_ref":       request.form.get("receipt_ref", "").strip(),
@@ -14648,12 +14654,17 @@ def employee_expense_submit():
             flash("Receipt upload failed. Please try again.", "danger")
             return redirect(url_for("employees") + "#expenses")
 
+    usd_amount = _safe_float(request.form.get("amount", 0))
+    exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+    bdt_amount = usd_amount * exchange_rate
+
     data = {
         "expense_type":      request.form.get("expense_type", ""),
         "expense_name":      request.form.get("expense_name", ""),
         "description":       request.form.get("expense_name", ""),
-        "amount":            _safe_float(request.form.get("amount", 0)),
-        "amount_taka_original": _safe_float(request.form.get("amount_taka_original", 0)),
+        "amount":            usd_amount,
+        "amount_bdt":        bdt_amount,
+        "exchange_rate":     exchange_rate,
         "category":          request.form.get("category", ""),
         "date":              request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
         "vendor":            request.form.get("vendor", "").strip(),

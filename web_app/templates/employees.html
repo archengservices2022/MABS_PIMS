@@ -1694,13 +1694,13 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           </div>
 
           <div class="mb-2">
-            <label class="form-label small fw-semibold">Amount (৳ BDT) <span class="text-danger">*</span></label>
-            <input type="number" name="amount_taka" id="empAmountTaka" class="form-control form-control-sm"
-                   step="1" min="1" placeholder="0" required oninput="empConvertAmountToUsd()">
+            <label class="form-label small fw-semibold">Amount (USD) <span class="text-danger">*</span></label>
+            <input type="number" name="amount" id="empAmountUsd" class="form-control form-control-sm"
+                   step="0.01" min="0.01" placeholder="0.00" required oninput="empConvertAmountToBdt()">
             <div class="mt-1" style="font-size:12px;color:#64748b;">
-              ≈ <span style="font-weight:700;color:#0D9488;" id="empUsdConversion">$0.00</span> USD (at ৳<span id="empExchangeRateDisplay">{{ bdt_exchange_rate or 110 }}</span> per $1)
+              ≈ <span style="font-weight:700;color:#10b981;" id="empBdtConversion">৳0.00</span> BDT (at ৳<span id="empExchangeRateDisplay">{{ bdt_exchange_rate or 110 }}</span> per $1)
             </div>
-            <input type="hidden" name="amount" id="empAmountUsd">
+            <input type="hidden" name="amount_taka" id="empAmountTaka">
           </div>
 
           <div class="row g-2 mb-2">
@@ -2213,12 +2213,12 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             </select>
           </div>
           <div class="mb-2">
-            <label class="form-label fw-semibold" style="font-size:12px;">Amount Claimed (৳ BDT)</label>
-            <input type="number" name="amount_claimed" id="medClaimAmtBdt" class="form-control form-control-sm"
-                   min="0.01" max="50000" step="0.01" placeholder="0.00" required oninput="updateMedUsdHint()">
-            <input type="hidden" name="amount_currency" value="BDT">
-            <div class="form-text" id="medUsdHint" style="color:#0D9488;font-size:11px;"></div>
-            <div class="form-text text-muted" style="font-size:11px;">Maximum claim: ৳50,000 BDT</div>
+            <label class="form-label fw-semibold" style="font-size:12px;">Amount Claimed (USD)</label>
+            <input type="number" name="amount_claimed" id="medClaimAmtUsd" class="form-control form-control-sm"
+                   min="0.01" max="5000" step="0.01" placeholder="0.00" required oninput="updateMedBdtHint()">
+            <input type="hidden" name="amount_currency" value="USD">
+            <div class="form-text" id="medBdtHint" style="color:#10b981;font-size:11px;"></div>
+            <div class="form-text text-muted" style="font-size:11px;">Maximum claim: $5,000 USD</div>
           </div>
           <div class="mb-2">
             <label class="form-label fw-semibold" style="font-size:12px;">Provider / Hospital</label>
@@ -2934,19 +2934,24 @@ window.openEmpExpenseEdit = function(exp) {
   }
 };
 
-window.empConvertAmountToUsd = function() {
+window.empConvertAmountToBdt = function() {
   const exchangeRate = {{ bdt_exchange_rate or 110 }};
-  const takaInput = document.getElementById('empAmountTaka');
-  const usdHidden = document.getElementById('empAmountUsd');
-  const usdDisplay = document.getElementById('empUsdConversion');
+  const usdInput = document.getElementById('empAmountUsd');
+  const bdtHidden = document.getElementById('empAmountTaka');
+  const bdtDisplay = document.getElementById('empBdtConversion');
 
-  if (!takaInput || !usdHidden || !usdDisplay) return;
+  if (!usdInput || !bdtHidden || !bdtDisplay) return;
 
-  const taka = parseFloat(takaInput.value) || 0;
-  const usd = taka / exchangeRate;
+  const usd = parseFloat(usdInput.value) || 0;
+  const bdt = usd * exchangeRate;
 
-  usdHidden.value = usd.toFixed(2);
-  usdDisplay.textContent = '$' + usd.toFixed(2);
+  bdtHidden.value = bdt.toFixed(2);
+  bdtDisplay.textContent = '৳' + bdt.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+};
+
+// Keep old function for backward compatibility
+window.empConvertAmountToUsd = function() {
+  empConvertAmountToBdt();
 };
 
 window.empPrepareSubmit = function(event) {
@@ -3086,14 +3091,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
 const _BDT_RATE = {{ bdt_exchange_rate or 110 }};
 
-function updateMedUsdHint() {
-  const bdt = parseFloat(document.getElementById('medClaimAmtBdt').value) || 0;
-  const hint = document.getElementById('medUsdHint');
-  if (bdt > 0) {
-    hint.textContent = '≈ $' + (bdt / _BDT_RATE).toFixed(2) + ' USD (at ৳' + _BDT_RATE + ' per $1)';
+function updateMedBdtHint() {
+  const usd = parseFloat(document.getElementById('medClaimAmtUsd').value) || 0;
+  const hint = document.getElementById('medBdtHint');
+  if (usd > 0) {
+    const bdt = (usd * _BDT_RATE).toFixed(2);
+    hint.textContent = '≈ ৳' + bdt.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' BDT (at ৳' + _BDT_RATE + ' per $1)';
   } else {
     hint.textContent = '';
   }
+}
+
+// Keep old function for backward compatibility
+function updateMedUsdHint() {
+  updateMedBdtHint();
 }
 
 // Medical Allowance review modal
