@@ -1017,12 +1017,16 @@ def format_date_invoice_filter(date_str):
 @app.template_filter('get_exchange_rate')
 def get_exchange_rate_filter(expense):
     """Return the BDT exchange rate for an expense dict.
-    Uses the rate stored at submission time, falling back to the current setting."""
+    Uses the rate stored at submission time, NEVER uses current settings rate.
+    Falls back to 120 (historical default) for very old entries without rates.
+
+    IMPORTANT: Never uses current settings rate to prevent retroactive changes!
+    """
     stored = _safe_float(expense.get('exchange_rate') if isinstance(expense, dict) else 0)
-    if stored:
+    if stored > 0:
         return stored
-    settings_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110))
-    return settings_rate or 110
+    # Fallback to 120 (historical default), NOT current settings rate
+    return 120
 
 # ── Routes: Auth ──────────────────────────────────────────────────────────────
 @app.route("/login", methods=["GET", "POST"])
@@ -13280,16 +13284,121 @@ def financial():
             [dict(v, firebase_id=k) for k, v in (fb_get("/deleted_expenses") or {}).items() if isinstance(v, dict)],
             key=lambda x: x.get("deleted_at", ""), reverse=True
         ),
+        bdt_exchange_rate=_safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110,
     )
+
+# ── Migration: Fill missing exchange_rate for historical entries ──
+def migrate_missing_exchange_rates(default_rate=120):
+    """
+    Populate missing exchange_rate fields for existing expenses and medical claims.
+    Uses 120 as the default rate for all historical entries without rates.
+    This is called once to fix retroactive rate changes on old entries.
+
+    Args:
+        default_rate: The exchange rate to assign to all old entries (default: 120)
+    """
+    fixed_count = 0
+
+    # Fix expenses in /balance_sheet_expenses
+    expenses = fb_get("/balance_sheet_expenses") or {}
+    for exp_id, exp_data in expenses.items():
+        if isinstance(exp_data, dict):
+            # Only set if missing - never overwrite existing rate
+            if not exp_data.get("exchange_rate"):
+                usd_amount = _safe_float(exp_data.get("amount", 0))
+                bdt_amount = usd_amount * default_rate
+                fb_update(f"/balance_sheet_expenses/{exp_id}", {
+                    "exchange_rate": default_rate,
+                    "amount_bdt": bdt_amount,
+                })
+                fixed_count += 1
+            elif not exp_data.get("amount_bdt"):
+                # If rate exists but BDT is missing, recalculate
+                usd_amount = _safe_float(exp_data.get("amount", 0))
+                stored_rate = _safe_float(exp_data.get("exchange_rate", default_rate))
+                bdt_amount = usd_amount * stored_rate
+                fb_update(f"/balance_sheet_expenses/{exp_id}", {
+                    "amount_bdt": bdt_amount,
+                })
+                fixed_count += 1
+
+    # Fix employee expenses in /expenses
+    emp_expenses = fb_get("/expenses") or {}
+    for exp_id, exp_data in emp_expenses.items():
+        if isinstance(exp_data, dict):
+            if not exp_data.get("exchange_rate"):
+                usd_amount = _safe_float(exp_data.get("amount", 0))
+                bdt_amount = usd_amount * default_rate
+                fb_update(f"/expenses/{exp_id}", {
+                    "exchange_rate": default_rate,
+                    "amount_bdt": bdt_amount,
+                })
+                fixed_count += 1
+            elif not exp_data.get("amount_bdt"):
+                usd_amount = _safe_float(exp_data.get("amount", 0))
+                stored_rate = _safe_float(exp_data.get("exchange_rate", default_rate))
+                bdt_amount = usd_amount * stored_rate
+                fb_update(f"/expenses/{exp_id}", {
+                    "amount_bdt": bdt_amount,
+                })
+                fixed_count += 1
+
+    # Fix medical claims in /medical_claims
+    med_claims = fb_get("/medical_claims") or {}
+    for claim_id, claim_data in med_claims.items():
+        if isinstance(claim_data, dict):
+            needs_update = False
+            update_data = {}
+
+            # Set currency type for old entries (BDT if missing)
+            if not claim_data.get("amount_currency"):
+                update_data["amount_currency"] = "BDT"
+                needs_update = True
+
+            # Set exchange rate and BDT amount if missing
+            if not claim_data.get("exchange_rate"):
+                update_data["exchange_rate"] = default_rate
+                usd_amount = _safe_float(claim_data.get("amount_claimed", 0))
+                bdt_amount = usd_amount * default_rate
+                update_data["amount_claimed_bdt"] = bdt_amount
+                needs_update = True
+            elif not claim_data.get("amount_claimed_bdt"):
+                usd_amount = _safe_float(claim_data.get("amount_claimed", 0))
+                stored_rate = _safe_float(claim_data.get("exchange_rate", default_rate))
+                bdt_amount = usd_amount * stored_rate
+                update_data["amount_claimed_bdt"] = bdt_amount
+                needs_update = True
+
+            # Set approved amount = claimed amount for old entries (BDT entries)
+            # This ensures old claims are auto-approved with the claimed amount
+            if claim_data.get("amount_currency") == "BDT" or not claim_data.get("amount_currency"):
+                claimed_amount = _safe_float(claim_data.get("amount_claimed", 0))
+                approved_amount = _safe_float(claim_data.get("amount_approved", 0))
+                # For old entries: if approved != claimed, set approved = claimed
+                if claimed_amount > 0 and approved_amount != claimed_amount:
+                    update_data["amount_approved"] = claimed_amount
+                    needs_update = True
+
+            if needs_update:
+                fb_update(f"/medical_claims/{claim_id}", update_data)
+                fixed_count += 1
+
+    return fixed_count
 
 @app.route("/financial/expense/new", methods=["POST"])
 @role_required("financial")
 def expense_new():
+    usd_amount = _safe_float(request.form.get("amount", 0))
+    exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+    bdt_amount = usd_amount * exchange_rate
+
     data = {
         "expense_type":      request.form.get("expense_type", ""),
         "expense_name":      request.form.get("expense_name", ""),
         "description":       request.form.get("description", "") or request.form.get("expense_name", ""),
-        "amount":            _safe_float(request.form.get("amount", 0)),
+        "amount":            usd_amount,
+        "amount_bdt":        bdt_amount,
+        "exchange_rate":     exchange_rate,
         "category":          request.form.get("category", ""),
         "date":              request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
         "vendor":            request.form.get("vendor", ""),
@@ -13482,11 +13591,30 @@ def remove_expense_receipt(exp_id):
 @role_required("financial")
 def expense_edit(exp_id):
     try:
+        usd_amount = _safe_float(request.form.get("amount", 0))
+
+        # Read existing record to preserve the original exchange rate from creation date
+        existing = fb_get(f"/balance_sheet_expenses/{exp_id}") or {}
+        original_exchange_rate = _safe_float(existing.get("exchange_rate", 0))
+
+        # ALWAYS preserve the original exchange rate (immutable after creation)
+        # This ensures historical expense entries don't change when exchange rates change
+        if original_exchange_rate > 0:
+            exchange_rate = original_exchange_rate
+        else:
+            # Fallback for old entries that don't have exchange_rate stored
+            exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+
+        # Recalculate BDT using the preserved exchange rate
+        bdt_amount = usd_amount * exchange_rate
+
         data = {
             "expense_type":   request.form.get("expense_type", ""),
             "expense_name":   request.form.get("expense_name", ""),
             "description":    request.form.get("description", "") or request.form.get("expense_name", ""),
-            "amount":         request.form.get("amount", "0"),
+            "amount":         usd_amount,
+            "amount_bdt":     bdt_amount,
+            "exchange_rate":  exchange_rate,
             "category":       request.form.get("category", ""),
             "date":           request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
             "vendor":         request.form.get("vendor", ""),
@@ -14232,6 +14360,18 @@ def export_balance_sheet(fmt):
         flash(f"Export failed: {str(e)}", "danger")
         return redirect(url_for("financial") + "?tab=balance-sheet")
 
+@app.route("/financial/migrate-exchange-rates", methods=["POST"])
+@role_required("admin")
+def financial_migrate_exchange_rates():
+    """Fix historical expense entries by populating missing exchange_rate fields"""
+    try:
+        fixed_count = migrate_missing_exchange_rates()
+        flash(f"✓ Fixed {fixed_count} expense entries with current exchange rate.", "success")
+    except Exception as e:
+        log.error(f"Migration error: {e}")
+        flash(f"✗ Migration failed: {str(e)}", "danger")
+    return redirect(url_for("financial"))
+
 # ── Routes: Employees ─────────────────────────────────────────────────────────
 @app.route("/employees")
 @role_required("employees")
@@ -14457,21 +14597,27 @@ def medical_claim_form_download():
 def medical_claim_new():
     uid  = session.get("user_uid", "")
     name = session.get("user_name", "")
-    amount = request.form.get("amount_claimed", "0") or "0"
+    usd_amount = request.form.get("amount_claimed", "0") or "0"
     try:
-        amount = float(amount)
+        usd_amount = float(usd_amount)
     except ValueError:
-        amount = 0.0
-    if amount > 50000:
-        flash("Medical claim cannot exceed ৳50,000 BDT.", "danger")
+        usd_amount = 0.0
+    if usd_amount > 5000:
+        flash("Medical claim cannot exceed $5,000 USD.", "danger")
         return redirect(url_for("employees") + "#medical")
+
+    exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+    bdt_amount = usd_amount * exchange_rate
+
     claim = {
         "employee_uid":      uid,
         "employee_name":     name,
         "claim_date":        request.form.get("claim_date", ""),
         "expense_type":      request.form.get("expense_type", "Other Expenses"),
-        "amount_claimed":    amount,
-        "amount_currency":   request.form.get("amount_currency", "BDT"),
+        "amount_claimed":    usd_amount,
+        "amount_claimed_bdt": bdt_amount,
+        "amount_currency":   request.form.get("amount_currency", "USD"),
+        "exchange_rate":     exchange_rate,
         "description":       request.form.get("description", "").strip(),
         "provider":          request.form.get("provider", "").strip(),
         "receipt_ref":       request.form.get("receipt_ref", "").strip(),
@@ -14546,15 +14692,23 @@ def medical_claim_review(claim_id):
     if status == "Approved" and amt_approved > 0:
         claim = fb_get(f"/medical_claims/{claim_id}") or {}
         # amt_approved is in USD (admin entered USD after seeing BDT→USD conversion)
-        # Record original BDT amount for reference
-        _emp_cfg   = load_settings().get("employee", {})
-        bdt_rate   = _safe_float(_emp_cfg.get("bdt_exchange_rate", 110)) or 110
-        orig_currency = claim.get("amount_currency", "BDT")
-        orig_bdt   = _safe_float(claim.get("amount_claimed", 0))
+        # Preserve the original exchange rate from when the claim was submitted
+        original_exchange_rate = _safe_float(claim.get("exchange_rate", 0))
+        if original_exchange_rate > 0:
+            exchange_rate = original_exchange_rate
+        else:
+            # Fallback for old claims without exchange_rate stored
+            _emp_cfg   = load_settings().get("employee", {})
+            exchange_rate = _safe_float(_emp_cfg.get("bdt_exchange_rate", 110)) or 110
+
+        bdt_amount = amt_approved * exchange_rate
+
+        orig_currency = claim.get("amount_currency", "USD")
+        orig_usd   = _safe_float(claim.get("amount_claimed", 0))
         admin_note = request.form.get("admin_notes", "").strip()
         notes_parts = [f"Medical claim by {claim.get('employee_name', '')}"]
-        if orig_currency == "BDT":
-            notes_parts.append(f"Original claim: ৳{orig_bdt:,.0f} BDT (at ৳{bdt_rate:.0f}/$1)")
+        if orig_currency == "USD":
+            notes_parts.append(f"Original claim: ${orig_usd:,.2f} USD (at ৳{exchange_rate:.0f}/$1)")
         if admin_note:
             notes_parts.append(admin_note)
         exp_data = {
@@ -14562,9 +14716,8 @@ def medical_claim_review(claim_id):
             "expense_name":         claim.get("description") or "Medical Allowance",
             "description":          claim.get("description") or "Medical Allowance",
             "amount":               amt_approved,           # USD
-            "amount_usd":           amt_approved,
-            "amount_original":      orig_bdt,
-            "amount_currency":      orig_currency,
+            "amount_bdt":           bdt_amount,
+            "exchange_rate":        exchange_rate,
             "category":             "Medical/Benefits",
             "date":                 claim.get("claim_date") or now_str[:10],
             "vendor":               "Medical Expenses",
@@ -14692,12 +14845,33 @@ def employee_expense_submit():
             flash("Receipt upload failed. Please try again.", "danger")
             return redirect(url_for("employees") + "#expenses")
 
+    usd_amount = _safe_float(request.form.get("amount", 0))
+
+    if editing_expense_id:
+        # Editing existing expense - preserve the original exchange rate
+        existing_exp = fb_get(f"/expenses/{editing_expense_id}") or {}
+        original_exchange_rate = _safe_float(existing_exp.get("exchange_rate", 0))
+
+        # ALWAYS preserve the original exchange rate from creation
+        # This ensures historical entries don't change when exchange rates change
+        if original_exchange_rate > 0:
+            exchange_rate = original_exchange_rate
+        else:
+            # Fallback for old entries without exchange_rate stored
+            exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+    else:
+        # Creating new expense - use current exchange rate
+        exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+
+    bdt_amount = usd_amount * exchange_rate
+
     data = {
         "expense_type":      request.form.get("expense_type", ""),
         "expense_name":      request.form.get("expense_name", ""),
         "description":       request.form.get("expense_name", ""),
-        "amount":            _safe_float(request.form.get("amount", 0)),
-        "amount_taka_original": _safe_float(request.form.get("amount_taka_original", 0)),
+        "amount":            usd_amount,
+        "amount_bdt":        bdt_amount,
+        "exchange_rate":     exchange_rate,
         "category":          request.form.get("category", ""),
         "date":              request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
         "vendor":            request.form.get("vendor", "").strip(),
@@ -14725,7 +14899,7 @@ def employee_expense_submit():
             # (don't pop it from data - preserve it)
             pass
 
-        # Read existing record to detect origin before writing
+        # Read existing record again (already done above, but for clarity in sync operations)
         existing_exp = fb_get(f"/expenses/{editing_expense_id}") or {}
 
         # Update employee expense record directly (no approval needed for edits)
@@ -16341,6 +16515,7 @@ def approvals():
             'sort_key': claim.get('submitted_at', ''),
             'amount': claim.get('amount_claimed', 0),
             'currency': claim.get('amount_currency', 'BDT'),
+            'exchange_rate': claim.get('exchange_rate', 120),
             'status': claim.get('status', 'Pending'),
             'reviewed_by': claim.get('reviewed_by', '—'),
             'notes': claim.get('description', '—'),
@@ -16348,6 +16523,10 @@ def approvals():
             'cat': 'medical'
         })
     for exp in pending_expenses:
+        # Skip expenses that are created from medical claims (they appear as Medical, not Expense)
+        if exp.get('source') == 'medical_claim':
+            continue
+
         # Try multiple field names for employee name
         emp_name = exp.get('employee_name') or exp.get('submitted_by_name') or exp.get('requested_by_name') or '—'
         created_at = exp.get('created_at', '')
@@ -16366,6 +16545,7 @@ def approvals():
             'sort_key': exp.get('created_at', exp.get('date', '')),
             'amount': exp.get('amount', 0),
             'currency': exp.get('currency', 'USD'),
+            'exchange_rate': exp.get('exchange_rate', 120),
             'status': exp.get('status', 'Pending'),
             'reviewed_by': exp.get('reviewed_by', '—'),
             'notes': exp.get('description', '—') or exp.get('expense_name', '—'),

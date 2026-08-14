@@ -296,12 +296,20 @@ a[href*="filter_expense"]:hover {
   <li class="nav-item">
     <a class="nav-link {{ 'active' if active_tab == 'commission' else '' }}" data-bs-toggle="tab" href="#tab-commission">
       <i class="bi bi-cash-coin me-1"></i>Commission
-      {% if commission_total_outstanding > 0 %}
-      <span class="badge ms-1" style="background:#7C3AED;color:#fff;">{{ commission_summary|selectattr('outstanding','greaterthan',0)|list|length }}</span>
-      {% endif %}
     </a>
   </li>
 </ul>
+
+<!-- Admin: Fix historical exchange rates -->
+{% if user_role == 'admin' %}
+<div class="alert alert-info small mb-3" style="display:none;" id="exchangeRateMigrationNotice">
+  <i class="bi bi-exclamation-circle me-2"></i>
+  <strong>Historical Expenses Need Fix:</strong> Previous entries may be using incorrect exchange rates.
+  <form method="POST" action="{{ url_for('financial_migrate_exchange_rates') }}" style="display:inline;">
+    <button type="submit" class="btn btn-sm btn-info ms-2">Fix Now</button>
+  </form>
+</div>
+{% endif %}
 
 <div class="tab-content">
 
@@ -1042,8 +1050,9 @@ a[href*="filter_expense"]:hover {
           </div>
         </div>
         <div class="col-md-6">
-          <label class="form-label form-label-sm fw-600">Amount ($) *</label>
-          <input type="number" name="amount" id="expenseAmount" class="form-control form-control-sm" step="0.01" min="0" required>
+          <label class="form-label form-label-sm fw-600">Amount (USD) *</label>
+          <input type="number" name="amount" id="expenseAmount" class="form-control form-control-sm" step="0.01" min="0" required oninput="updateExpenseBdtDisplay()">
+          <small class="form-text text-muted" id="expenseBdtDisplay" style="color:#10b981;font-size:11px;margin-top:4px;"></small>
         </div>
       </div>
 
@@ -1990,8 +1999,9 @@ document.addEventListener('DOMContentLoaded', function() {
               </div>
             </div>
             <div class="col-md-6">
-              <label class="form-label form-label-sm fw-600">Amount ($) *</label>
-              <input type="number" name="amount" id="modalAmount" class="form-control form-control-sm" step="0.01" min="0" required>
+              <label class="form-label form-label-sm fw-600">Amount (USD) *</label>
+              <input type="number" name="amount" id="modalAmount" class="form-control form-control-sm" step="0.01" min="0" required oninput="updateModalBdtDisplay()">
+              <small class="form-text text-muted" id="modalBdtDisplay" style="color:#10b981;font-size:11px;margin-top:4px;"></small>
             </div>
           </div>
 
@@ -2205,6 +2215,7 @@ function editExpenseModal(expId, expData) {
     document.getElementById('modalCategory').value = expData.category || '';
     document.getElementById('modalExpenseName').value = expData.expense_name || expData.description || '';
     document.getElementById('modalAmount').value = expData.amount || '';
+    updateModalBdtDisplay();
     document.getElementById('modalDate').value = expData.date || '';
     document.getElementById('modalVendor').value = expData.vendor || '';
     document.getElementById('modalProject').value = expData.project_number || '';
@@ -5254,6 +5265,36 @@ function confirmMarkPaidDate() {
     else { alert(data.error || 'Error saving commission.'); if (saveBtn) saveBtn.disabled = false; }
   })
   .catch(() => { alert('Network error.'); if (saveBtn) saveBtn.disabled = false; });
+}
+
+// Display BDT equivalent for expense form
+function updateExpenseBdtDisplay() {
+  const amountInput = document.getElementById('expenseAmount');
+  const bdtDisplay = document.getElementById('expenseBdtDisplay');
+  const exchangeRate = {{ bdt_exchange_rate }};
+
+  if (amountInput && amountInput.value) {
+    const usdAmount = parseFloat(amountInput.value) || 0;
+    const bdtAmount = (usdAmount * exchangeRate).toFixed(2);
+    bdtDisplay.textContent = `৳${bdtAmount.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} BDT`;
+  } else {
+    bdtDisplay.textContent = '';
+  }
+}
+
+// Display BDT equivalent for modal edit form
+function updateModalBdtDisplay() {
+  const amountInput = document.getElementById('modalAmount');
+  const bdtDisplay = document.getElementById('modalBdtDisplay');
+  const exchangeRate = {{ bdt_exchange_rate }};
+
+  if (amountInput && amountInput.value) {
+    const usdAmount = parseFloat(amountInput.value) || 0;
+    const bdtAmount = (usdAmount * exchangeRate).toFixed(2);
+    bdtDisplay.textContent = `৳${bdtAmount.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} BDT`;
+  } else {
+    bdtDisplay.textContent = '';
+  }
 }
 </script>
 {% endblock %}
