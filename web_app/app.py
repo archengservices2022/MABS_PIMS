@@ -13290,21 +13290,30 @@ def migrate_missing_exchange_rates(default_rate=120):
     med_claims = fb_get("/medical_claims") or {}
     for claim_id, claim_data in med_claims.items():
         if isinstance(claim_data, dict):
+            needs_update = False
+            update_data = {}
+
+            # Set currency type for old entries (BDT if missing)
+            if not claim_data.get("amount_currency"):
+                update_data["amount_currency"] = "BDT"
+                needs_update = True
+
+            # Set exchange rate and BDT amount if missing
             if not claim_data.get("exchange_rate"):
+                update_data["exchange_rate"] = default_rate
                 usd_amount = _safe_float(claim_data.get("amount_claimed", 0))
                 bdt_amount = usd_amount * default_rate
-                fb_update(f"/medical_claims/{claim_id}", {
-                    "exchange_rate": default_rate,
-                    "amount_claimed_bdt": bdt_amount,
-                })
-                fixed_count += 1
+                update_data["amount_claimed_bdt"] = bdt_amount
+                needs_update = True
             elif not claim_data.get("amount_claimed_bdt"):
                 usd_amount = _safe_float(claim_data.get("amount_claimed", 0))
                 stored_rate = _safe_float(claim_data.get("exchange_rate", default_rate))
                 bdt_amount = usd_amount * stored_rate
-                fb_update(f"/medical_claims/{claim_id}", {
-                    "amount_claimed_bdt": bdt_amount,
-                })
+                update_data["amount_claimed_bdt"] = bdt_amount
+                needs_update = True
+
+            if needs_update:
+                fb_update(f"/medical_claims/{claim_id}", update_data)
                 fixed_count += 1
 
     return fixed_count
