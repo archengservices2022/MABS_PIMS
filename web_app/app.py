@@ -13226,6 +13226,54 @@ def financial():
         bdt_exchange_rate=_safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110,
     )
 
+# ── Migration: Fill missing exchange_rate for historical entries ──
+def migrate_missing_exchange_rates():
+    """
+    Populate missing exchange_rate fields for existing expenses and medical claims.
+    Uses the current exchange rate as the baseline for all historical entries without rates.
+    This is called once to fix retroactive rate changes on old entries.
+    """
+    current_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+
+    # Fix expenses in /balance_sheet_expenses
+    expenses = fb_get("/balance_sheet_expenses") or {}
+    fixed_count = 0
+    for exp_id, exp_data in expenses.items():
+        if isinstance(exp_data, dict) and not exp_data.get("exchange_rate"):
+            usd_amount = _safe_float(exp_data.get("amount", 0))
+            bdt_amount = usd_amount * current_rate
+            fb_update(f"/balance_sheet_expenses/{exp_id}", {
+                "exchange_rate": current_rate,
+                "amount_bdt": bdt_amount,
+            })
+            fixed_count += 1
+
+    # Fix employee expenses in /expenses
+    emp_expenses = fb_get("/expenses") or {}
+    for exp_id, exp_data in emp_expenses.items():
+        if isinstance(exp_data, dict) and not exp_data.get("exchange_rate"):
+            usd_amount = _safe_float(exp_data.get("amount", 0))
+            bdt_amount = usd_amount * current_rate
+            fb_update(f"/expenses/{exp_id}", {
+                "exchange_rate": current_rate,
+                "amount_bdt": bdt_amount,
+            })
+            fixed_count += 1
+
+    # Fix medical claims in /medical_claims
+    med_claims = fb_get("/medical_claims") or {}
+    for claim_id, claim_data in med_claims.items():
+        if isinstance(claim_data, dict) and not claim_data.get("exchange_rate"):
+            usd_amount = _safe_float(claim_data.get("amount_claimed", 0))
+            bdt_amount = usd_amount * current_rate
+            fb_update(f"/medical_claims/{claim_id}", {
+                "exchange_rate": current_rate,
+                "amount_claimed_bdt": bdt_amount,
+            })
+            fixed_count += 1
+
+    return fixed_count
+
 @app.route("/financial/expense/new", methods=["POST"])
 @role_required("financial")
 def expense_new():
@@ -14200,6 +14248,18 @@ def export_balance_sheet(fmt):
         log.error(f"Balance sheet export error: {_tb.format_exc()}")
         flash(f"Export failed: {str(e)}", "danger")
         return redirect(url_for("financial") + "?tab=balance-sheet")
+
+@app.route("/financial/migrate-exchange-rates", methods=["POST"])
+@role_required("admin")
+def financial_migrate_exchange_rates():
+    """Fix historical expense entries by populating missing exchange_rate fields"""
+    try:
+        fixed_count = migrate_missing_exchange_rates()
+        flash(f"✓ Fixed {fixed_count} expense entries with current exchange rate.", "success")
+    except Exception as e:
+        log.error(f"Migration error: {e}")
+        flash(f"✗ Migration failed: {str(e)}", "danger")
+    return redirect(url_for("financial"))
 
 # ── Routes: Employees ─────────────────────────────────────────────────────────
 @app.route("/employees")

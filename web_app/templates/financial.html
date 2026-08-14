@@ -300,6 +300,17 @@ a[href*="filter_expense"]:hover {
   </li>
 </ul>
 
+<!-- Admin: Fix historical exchange rates -->
+{% if user_role == 'admin' %}
+<div class="alert alert-info small mb-3" style="display:none;" id="exchangeRateMigrationNotice">
+  <i class="bi bi-exclamation-circle me-2"></i>
+  <strong>Historical Expenses Need Fix:</strong> Previous entries may be using incorrect exchange rates.
+  <form method="POST" action="{{ url_for('financial_migrate_exchange_rates') }}" style="display:inline;">
+    <button type="submit" class="btn btn-sm btn-info ms-2">Fix Now</button>
+  </form>
+</div>
+{% endif %}
+
 <div class="tab-content">
 
 <!-- ????????????????????????????????????????????????????????????????
