@@ -8944,10 +8944,33 @@ def _auto_generate_monthly_salaries() -> int:
         created += 1
     return created
 
+def _migrate_employee_payroll_vendor() -> int:
+    """Migrate all existing salary expenses: vendor 'Employee Payroll' → 'Employee Salary',
+    expense_type 'Employee Salary' → 'Other Expense'. Returns the number of entries updated.
+    """
+    expenses = fb_get("/balance_sheet_expenses") or {}
+    updated_count = 0
+    if isinstance(expenses, dict):
+        for exp_id, exp_data in expenses.items():
+            if isinstance(exp_data, dict):
+                updated = False
+                if exp_data.get("vendor") == "Employee Payroll":
+                    exp_data["vendor"] = "Employee Salary"
+                    updated = True
+                if exp_data.get("expense_type") == "Employee Salary":
+                    exp_data["expense_type"] = "Other Expense"
+                    updated = True
+                if updated:
+                    exp_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+                    fb_update(f"/balance_sheet_expenses/{exp_id}", exp_data)
+                    updated_count += 1
+    return updated_count
+
 @app.route("/payroll")
 @role_required("payroll")
 def payroll():
     _auto_generate_monthly_salaries()
+    _migrate_employee_payroll_vendor()
     employee_filter = request.args.get("employee", "")
     year_filter     = request.args.get("year", "")
     region_filter   = request.args.get("region", "")
@@ -10295,10 +10318,10 @@ def create_salary():
             "employee_name": employee_name,
             "date": date_str,
             "amount": float(data.get("amount", 0)),
-            "expense_type": "Employee Salary",
+            "expense_type": "Other Expense",
             "expense_name": f"Employee Salary - {employee_name}",
             "category": "Salary",
-            "vendor": "Employee Payroll",
+            "vendor": "Employee Salary",
             "description": f"Employee Salary for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else ""),
             "region": region,
             "salary_id": sal_id,
@@ -10371,10 +10394,10 @@ def update_salary(sal_id):
                         "employee_name": employee_name,
                         "date": date_str,
                         "amount": float(data.get("amount", 0)),
-                        "expense_type": "Employee Salary",
+                        "expense_type": "Other Expense",
                         "expense_name": f"Employee Salary - {employee_name}",
                         "category": "Salary",
-                        "vendor": "Employee Payroll",
+                        "vendor": "Employee Salary",
                         "description": f"Employee Salary for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else ""),
                         "region": region,
                         "submitted_by_name": exp_data.get("submitted_by_name", current_user),
@@ -10392,10 +10415,10 @@ def update_salary(sal_id):
             "employee_name": employee_name,
             "date": date_str,
             "amount": float(data.get("amount", 0)),
-            "expense_type": "Employee Salary",
+            "expense_type": "Other Expense",
             "expense_name": f"Employee Salary - {employee_name}",
             "category": "Salary",
-            "vendor": "Employee Payroll",
+            "vendor": "Employee Salary",
             "description": f"Employee Salary for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else ""),
             "region": region,
             "salary_id": sal_id,
