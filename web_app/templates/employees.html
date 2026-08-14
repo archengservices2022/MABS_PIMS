@@ -2274,11 +2274,15 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
               <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
-              <td class="text-end fw-semibold">৳{{ '{:,.2f}'.format(c.amount_claimed|float) }}</td>
+              <td class="text-end fw-semibold">
+                <div>${{ '{:,.2f}'.format(c.amount_claimed|float) }}</div>
+                <div class="text-muted" style="font-size:11px;">৳{{ '{:,.0f}'.format((c.amount_claimed|float) * (c.get('exchange_rate', 120)|float)) }}</div>
+              </td>
               <td class="text-end text-success fw-semibold">
                 {% set _amt_appr = c.get('amount_approved') %}
                 {% if _amt_appr is not none and _amt_appr != '' %}
-                  ${{ '{:,.2f}'.format(_amt_appr|float) }}
+                  <div>${{ '{:,.2f}'.format(_amt_appr|float) }}</div>
+                  <div class="text-muted" style="font-size:11px;">৳{{ '{:,.0f}'.format((_amt_appr|float) * (c.get('exchange_rate', 120)|float)) }}</div>
                 {% else %}—{% endif %}
               </td>
               <td>
@@ -2334,10 +2338,14 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
               <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
-              <td class="text-end fw-semibold">৳{{ '%.2f'|format(c.amount_claimed|float) }}</td>
+              <td class="text-end fw-semibold">
+                <div>${{ '%.2f'|format(c.amount_claimed|float) }}</div>
+                <div class="text-muted" style="font-size:11px;">৳{{ '%.0f'|format((c.amount_claimed|float) * (c.get('exchange_rate', 120)|float)) }}</div>
+              </td>
               <td class="text-end fw-semibold">
                 {% if c.status == 'Approved' and c.get('amount_approved') %}
-                  {{ currency_symbol }}{{ '%.2f'|format(c.amount_approved|float) }}
+                  <div>${{ '%.2f'|format(c.amount_approved|float) }}</div>
+                  <div class="text-muted" style="font-size:11px;">৳{{ '%.0f'|format((c.amount_approved|float) * (c.get('exchange_rate', 120)|float)) }}</div>
                 {% else %}—{% endif %}
               </td>
               <td>
