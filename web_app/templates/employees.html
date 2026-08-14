@@ -2347,13 +2347,25 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
               <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
               <td class="text-end fw-semibold">
-                <div>${{ '%.2f'|format(c.amount_claimed|float) }}</div>
-                <div class="text-muted" style="font-size:11px;">৳{{ '%.0f'|format((c.amount_claimed|float) * (c.get('exchange_rate', 120)|float)) }}</div>
+                {% set curr = c.get('amount_currency', 'USD') %}
+                {% if curr == 'BDT' %}
+                  <div>৳{{ '{:,.0f}'.format(c.amount_claimed|float) }}</div>
+                  <div class="text-muted" style="font-size:11px;">${{ '{:,.2f}'.format((c.amount_claimed|float) / (c.get('exchange_rate', 120)|float)) }}</div>
+                {% else %}
+                  <div>${{ '%.2f'|format(c.amount_claimed|float) }}</div>
+                  <div class="text-muted" style="font-size:11px;">৳{{ '%.0f'|format((c.amount_claimed|float) * (c.get('exchange_rate', 120)|float)) }}</div>
+                {% endif %}
               </td>
               <td class="text-end fw-semibold">
                 {% if c.status == 'Approved' and c.get('amount_approved') %}
-                  <div>${{ '%.2f'|format(c.amount_approved|float) }}</div>
-                  <div class="text-muted" style="font-size:11px;">৳{{ '%.0f'|format((c.amount_approved|float) * (c.get('exchange_rate', 120)|float)) }}</div>
+                  {% set curr = c.get('amount_currency', 'USD') %}
+                  {% if curr == 'BDT' %}
+                    <div>৳{{ '{:,.0f}'.format(c.amount_approved|float) }}</div>
+                    <div class="text-muted" style="font-size:11px;">${{ '{:,.2f}'.format((c.amount_approved|float) / (c.get('exchange_rate', 120)|float)) }}</div>
+                  {% else %}
+                    <div>${{ '%.2f'|format(c.amount_approved|float) }}</div>
+                    <div class="text-muted" style="font-size:11px;">৳{{ '%.0f'|format((c.amount_approved|float) * (c.get('exchange_rate', 120)|float)) }}</div>
+                  {% endif %}
                 {% else %}—{% endif %}
               </td>
               <td>
