@@ -1698,57 +1698,44 @@ def dashboard():
         }
 
     elif _dash_role == "admin":
-        # Admin summary: total commissions across all salespeople and admin users with commission rates
-        _all_users = _load_all_users()
-        _comm_map: Dict[str, float] = {}
-        for _u in _all_users:
-            if normalize_role(_u.get("role", "")) in ("sales", "admin"):
-                _uname = (_u.get("username") or "").strip()
-                if _uname:
-                    _comm_map[_uname] = _safe_float(_u.get("commission_rate", 0))
-        _admin_comm_total = 0.0
-        _admin_comm_month = 0.0
-        for _q in quot_list:
-            if not isinstance(_q, dict): continue
-            _sp = (_q.get("salesperson") or "").strip()
-            _rate = _comm_map.get(_sp, 0)
-            if not _rate: continue
-            _linked = _q.get("linked_project_id", "")
-            _is_conv = _q.get("status", "") in _CONV_DASH or bool(_linked)
-            if _is_conv and not (_linked and _dash_proj_status.get(_linked) == "Cancelled"):
-                _qval = _safe_float(_q.get("total", 0))
-                _admin_comm_total += _qval * _rate / 100
-                if (_q.get("date", "") or "").startswith(_cur_month):
-                    _admin_comm_month += _qval * _rate / 100
-        # Also include direct projects (no linked quote, not cancelled)
-        for _pid, _pd in (projects.items() if isinstance(projects, dict) else []):
-            if not _pd or not isinstance(_pd, dict): continue
-            if _pd.get("status", "") == "Cancelled": continue
-            if (_pd.get("quote_number") or "").strip(): continue  # already counted via quote
-            _sp = (_pd.get("sales") or "").strip()
-            _rate = _comm_map.get(_sp, 0)
-            if not _rate: continue
-            _pval = _safe_float(_pd.get("contract_value", 0))
-            if not _pval: continue
-            _admin_comm_total += _pval * _rate / 100
-            if (_pd.get("date_received") or _pd.get("start_date") or "")[:7] == _cur_month:
-                _admin_comm_month += _pval * _rate / 100
-        # Subtract already-paid commissions so dashboard shows outstanding balance
-        # Only count payments for salespersons with a commission rate set (matches Sales People tab logic)
-        _dash_comm_paid = 0.0
-        _dash_comm_payments = fb_get("/commission_payments") or {}
-        if isinstance(_dash_comm_payments, dict):
-            for _dcp in _dash_comm_payments.values():
-                if _dcp and isinstance(_dcp, dict):
-                    _sp_name = (_dcp.get("salesperson") or "").strip()
-                    if _sp_name in _comm_map:
-                        _dash_comm_paid += _safe_float(_dcp.get("amount", 0))
+        # Admin summary: use project_commissions table (same as Sales People tab) for consistent counts
+        # Earned = sum of commission_amount
+        # Paid = sum of commission_amount for status="Paid" (not "Paid (Fully Covered)")
+        # Outstanding = sum of remaining_due for status="Pending" only
+        # This Month = sum of remaining_due for status="Paid" projects from current month
+        _dash_proj_comm = fb_get("/project_commissions") or {}
+        _dash_admin_earned = 0.0
+        _dash_admin_paid = 0.0
+        _dash_admin_outstanding = 0.0
+        _dash_admin_month = 0.0
+
+        if isinstance(_dash_proj_comm, dict):
+            for _pc in _dash_proj_comm.values():
+                if _pc and isinstance(_pc, dict):
+                    _comm_amt = _safe_float(_pc.get("commission_amount", 0))
+                    _dash_admin_earned += _comm_amt
+
+                    _status = _pc.get("status", "")
+                    _remaining = _safe_float(_pc.get("remaining_due", 0))
+                    _paid_at = _pc.get("paid_at", "")
+
+                    # Paid = commission_amount for status="Paid" (exact match, not "Paid (Fully Covered)")
+                    if _status == "Paid":
+                        _dash_admin_paid += _comm_amt
+                        # This Month = remaining_due for Paid projects from current month
+                        if _paid_at.startswith(_cur_month):
+                            _dash_admin_month += _remaining
+
+                    # Outstanding = remaining_due for Pending status only
+                    if _status == "Pending":
+                        _dash_admin_outstanding += _remaining
+
         _dash_commission = {
             "role":        "admin",
-            "earned":      _admin_comm_total,
-            "paid":        _dash_comm_paid,
-            "total":       max(_admin_comm_total - _dash_comm_paid, 0.0),
-            "this_month":  _admin_comm_month,
+            "earned":      _dash_admin_earned,
+            "paid":        _dash_admin_paid,
+            "total":       _dash_admin_outstanding,
+            "this_month":  _dash_admin_month,
         }
 
     elif _dash_role in ("finance", "accountant"):
