@@ -6205,23 +6205,40 @@ def invoice_new():
                 if not proj_num:
                     continue
 
-                # Calculate project's invoice amount from line items
-                proj_amount = sum(_safe_float(item.get("amount", 0))
-                                for item in line_items
-                                if isinstance(item, dict) and
-                                (item.get("project_number") == proj_num or not item.get("project_number")))
+                # Get stage index to filter line items and payments correctly
+                _stage_idx = proj_info.get("payment_stage_index") if isinstance(proj_info, dict) else None
 
-                # Calculate already received
-                proj_received = sum(_safe_float(p.get("amount", 0))
-                                  for p in payment_log
-                                  if p.get("project_number") == proj_num)
+                # Calculate line item amount for this specific stage (or all if no stage specified)
+                if _stage_idx is not None:
+                    proj_amount = sum(_safe_float(item.get("amount", 0))
+                                    for item in line_items
+                                    if isinstance(item, dict) and
+                                    item.get("project_number") == proj_num and
+                                    item.get("payment_stage_index") == _stage_idx)
+                else:
+                    # No stage specified, use all line items for project
+                    proj_amount = sum(_safe_float(item.get("amount", 0))
+                                    for item in line_items
+                                    if isinstance(item, dict) and
+                                    (item.get("project_number") == proj_num or not item.get("project_number")))
+
+                # Calculate already received for this specific stage
+                if _stage_idx is not None:
+                    proj_received = sum(_safe_float(p.get("amount", 0))
+                                      for p in payment_log
+                                      if p.get("project_number") == proj_num and
+                                      str(p.get("stage_index", "")) == str(_stage_idx))
+                else:
+                    # No stage specified, use all payments for project
+                    proj_received = sum(_safe_float(p.get("amount", 0))
+                                      for p in payment_log
+                                      if p.get("project_number") == proj_num)
 
                 proj_needs = max(0, proj_amount - proj_received)
 
                 if proj_needs > 0:
                     allocate = min(proj_needs, remaining)
-                    # Get stage name and index for this project from linked_projects, fallback to invoice meta
-                    _stage_idx = proj_info.get("payment_stage_index") if isinstance(proj_info, dict) else None
+                    # Get stage name for this project/stage from linked_projects, fallback to invoice meta
                     if _stage_idx is None:
                         _stage_idx = data["meta"].get("payment_stage_index")
 
