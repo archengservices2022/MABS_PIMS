@@ -3639,10 +3639,10 @@ def project_detail(project_id):
             invoice_number = stage.get("invoice_number", "")
             if idx in stage_invoices:
                 for inv in stage_invoices[idx]:
-                    # Sum invoice payments using payment_log filtered by project_number and stage_index
+                    # Sum invoice payments using payment_log filtered by project_number (not share-based)
                     # Don't include tax payments in amount_paid - tax is tracked separately
                     inv_meta = inv.get("meta", {}) or {}
-                    proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (inv.get("payment_log", []) or []) if p.get("project_number") == proj_num and str(p.get("stage_index", "")) == str(idx))
+                    proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (inv.get("payment_log", []) or []) if p.get("project_number") == proj_num)
 
                     # Fallback: if payment_log entries don't have project_number (legacy data),
                     # use the stage's amount_paid from allocation
@@ -4845,7 +4845,6 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
         "amount":      str(amount),
         "project_number": proj_num,
         "stage_name": stage_name,
-        "payment_stage_index": stage_idx,
         "co_number": co_number,
         "co_firebase_id": co_firebase_id,
         "powo_number": powo_number,
@@ -4879,7 +4878,6 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
             "amount":      str(co_amt),
             "project_number": proj_num,
             "stage_name": co_stage_name,
-            "payment_stage_index": co_idx,
             "co_number": co_stage_co_number,
             "co_firebase_id": co_stage_co_firebase_id,
             "powo_number": co_stage_powo,
@@ -6579,16 +6577,14 @@ def invoice_detail(invoice_id):
     enriched_payment_log = []
     line_items = data.get("line_items", []) or []
 
-    # Map payment_log entries by project and stage_index for easy lookup
-    payment_log_by_proj_stage = {}
+    # Map payment_log entries by project for easy lookup
+    payment_log_by_proj = {}
     for p_idx, p in enumerate(payment_log):
         if isinstance(p, dict):
             proj = p.get("project_number", "")
-            stage_idx = p.get("stage_index", "")
-            key = (proj, stage_idx)
-            if key not in payment_log_by_proj_stage:
-                payment_log_by_proj_stage[key] = []
-            payment_log_by_proj_stage[key].append((p_idx, p))
+            if proj not in payment_log_by_proj:
+                payment_log_by_proj[proj] = []
+            payment_log_by_proj[proj].append((p_idx, p))
 
     # Process line_items in order (matches Invoice Details table order)
     for line_item in line_items:
@@ -6639,16 +6635,14 @@ def invoice_detail(invoice_id):
                 except (ValueError, TypeError):
                     payment_row["stage_name"] = "Invoice Payment"
 
-        # Get payment details from payment_log for this project and stage
-        stage_idx = line_item.get("payment_stage_index", "")
-        payment_key = (proj_num, str(stage_idx))
-        if payment_key in payment_log_by_proj_stage and payment_log_by_proj_stage[payment_key]:
-            first_payment_idx, first_payment = payment_log_by_proj_stage[payment_key][0]
+        # Get payment details from payment_log for this project
+        if proj_num in payment_log_by_proj and payment_log_by_proj[proj_num]:
+            first_payment_idx, first_payment = payment_log_by_proj[proj_num][0]
             payment_row["date"] = first_payment.get("date", "")
             payment_row["method"] = first_payment.get("method", "")
             payment_row["reference"] = first_payment.get("reference", "")
             payment_row["notes"] = first_payment.get("notes", "")
-            # Store the index of the first payment for this project/stage (for edit/delete)
+            # Store the index of the first payment for this project (for edit/delete)
             payment_row["payment_log_index"] = first_payment_idx
 
         enriched_payment_log.append(payment_row)
