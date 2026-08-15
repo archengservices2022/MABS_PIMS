@@ -6571,31 +6571,81 @@ def invoice_detail(invoice_id):
                     linked_project = pdata
                 linked_projects.append(pdata)
 
-    # Enrich payment_log with project names, firebase_id, and stage names
+    # Build payment history with one row per stage/line_item
+    # This ensures the display matches the Invoice Details table order
     raw_proj = fb_get("/projects") or {}
     enriched_payment_log = []
-    for payment in payment_log:
-        payment_copy = dict(payment)
-        proj_num = payment_copy.get("project_number", "")
+    line_items = data.get("line_items", []) or []
 
-        if proj_num:
-            # Find project data to get name, firebase_id and stage
-            for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
-                if not isinstance(pdata, dict):
-                    continue
-                if pdata.get("project_number") == proj_num:
-                    payment_copy["project_name"] = pdata.get("project_name", "")
-                    payment_copy["project_firebase_id"] = pid  # Add firebase_id for link
-                    # Find the stage name and status from payment_stages
-                    stages = pdata.get("payment_stages", [])
-                    if isinstance(stages, list):
-                        for stage in stages:
-                            if isinstance(stage, dict) and stage.get("invoice_id") == invoice_id:
-                                payment_copy["stage_name"] = stage.get("name", "Invoice Payment")
-                                payment_copy["stage_status"] = stage.get("status", "Invoiced")
-                                break
-                    break
-        enriched_payment_log.append(payment_copy)
+    # Map payment_log entries by project for easy lookup
+    payment_log_by_proj = {}
+    for p_idx, p in enumerate(payment_log):
+        if isinstance(p, dict):
+            proj = p.get("project_number", "")
+            if proj not in payment_log_by_proj:
+                payment_log_by_proj[proj] = []
+            payment_log_by_proj[proj].append((p_idx, p))
+
+    # Process line_items in order (matches Invoice Details table order)
+    for line_item in line_items:
+        if not isinstance(line_item, dict):
+            continue
+
+        proj_num = line_item.get("project_number", "")
+        if not proj_num:
+            continue
+
+        payment_row = {
+            "project_number": proj_num,
+            "line_item_amount": line_item.get("amount", 0),
+            "date": "",
+            "method": "",
+            "reference": "",
+            "notes": "",
+        }
+
+        # Find project data to get name, firebase_id, and stage details
+        proj_id = None
+        proj_data = None
+        for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
+            if not isinstance(pdata, dict):
+                continue
+            if pdata.get("project_number") == proj_num:
+                proj_id = pid
+                proj_data = pdata
+                break
+
+        if proj_data:
+            payment_row["project_name"] = proj_data.get("project_name", "")
+            payment_row["project_firebase_id"] = proj_id
+
+            # Find the matching stage in payment_stages
+            payment_stage_index = line_item.get("payment_stage_index")
+            stages = proj_data.get("payment_stages", [])
+            if isinstance(stages, list) and payment_stage_index is not None:
+                try:
+                    stage_idx = int(payment_stage_index)
+                    if 0 <= stage_idx < len(stages):
+                        stage = stages[stage_idx]
+                        if isinstance(stage, dict):
+                            payment_row["stage_name"] = stage.get("name", "Invoice Payment")
+                            payment_row["stage_status"] = stage.get("status", "Invoiced")
+                            # Amount paid comes from the stage's amount_paid field
+                            payment_row["amount_paid"] = _safe_float(stage.get("amount_paid", 0))
+                except (ValueError, TypeError):
+                    payment_row["stage_name"] = "Invoice Payment"
+
+        # Get payment details from payment_log for this project
+        if proj_num in payment_log_by_proj and payment_log_by_proj[proj_num]:
+            first_payment_idx, first_payment = payment_log_by_proj[proj_num][0]
+            payment_row["date"] = first_payment.get("date", "")
+            payment_row["method"] = first_payment.get("method", "")
+            payment_row["reference"] = first_payment.get("reference", "")
+            payment_row["notes"] = first_payment.get("notes", "")
+            # Store the index of the first payment for this project (for edit/delete)
+            payment_row["payment_log_index"] = first_payment_idx
+
+        enriched_payment_log.append(payment_row)
 
     # Tax payments kept separate from projects (no enrichment with project data)
     tax_log = data.get("tax_payments", [])
@@ -17997,61 +18047,25 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
         # Very small payment (rounding), skip
         return
 
-    # Get linked projects with their stage indices
-    linked_projects_meta = meta.get("linked_projects", [])
-    if not isinstance(linked_projects_meta, list):
-        linked_projects_meta = []
-
-    log.info(f"[SEQ_ALLOC] linked_projects_meta from metadata: {linked_projects_meta}")
-
-    # If no linked_projects metadata, try to build from line_items
-    # (Works even when payment_log is empty after deletion)
-    if len(linked_projects_meta) < 2:
-        line_items = invoice.get("line_items", [])
-        if isinstance(line_items, list) and len(line_items) > 0:
-            # Extract unique project numbers from line_items
-            projects_in_items = set()
-            for item in line_items:
-                if isinstance(item, dict):
-                    proj_num = item.get("project_number", "")
-                    if proj_num:
-                        projects_in_items.add(proj_num)
-
-            # If line_items has 2+ projects, build linked_projects from them
-            if len(projects_in_items) >= 2:
-                log.info(f"[SEQ_ALLOC] Found {len(projects_in_items)} projects in line_items, building linked_projects")
-                # For each project found, use the main invoice's stage index
-                main_stage_idx = meta.get("payment_stage_index", 0)
-                linked_projects_meta = [
-                    {"project_number": proj_num, "payment_stage_index": main_stage_idx}
-                    for proj_num in sorted(projects_in_items)
-                ]
-
-        if len(linked_projects_meta) < 1:
-            log.info(f"[SEQ_ALLOC] NO projects found, skipping sequential allocation")
-            return
-
-    log.info(f"[SEQ_ALLOC] Found {len(linked_projects_meta)} linked projects, starting allocation")
-
-    # Load all projects once
+    # Build stage allocation list from line_items to handle multiple stages per project
+    # Match line_items to project stages by comparing names
+    line_items = invoice.get("line_items", []) or []
     all_projects = fb_get("/projects") or {}
 
-    # Track which projects we'll update (to reset and recalculate)
-    projects_to_update = {}  # pid -> (pdata, stage_idx)
+    stage_data_list = []  # (proj_num, stage_idx, line_amount, proj_id, proj_data)
 
-    # Build list AND reset stages in-memory (don't wait for Firebase)
-    projects_data = []
-    for proj_info in linked_projects_meta:
-        if not isinstance(proj_info, dict):
-            continue
-        proj_num = proj_info.get("project_number", "")
-        stage_idx = proj_info.get("payment_stage_index", -1)
-
-        if not proj_num or stage_idx < 0:
-            log.warning(f"[SEQ_ALLOC] Skipping invalid proj_info: {proj_info}")
+    for line_item in line_items:
+        if not isinstance(line_item, dict):
             continue
 
-        # Find project in all_projects
+        proj_num = line_item.get("project_number", "")
+        line_amount = _safe_float(line_item.get("amount", 0))
+        line_desc = (line_item.get("description") or "").strip()
+
+        if not proj_num:
+            continue
+
+        # Find project
         proj_id = None
         proj_data = None
         if isinstance(all_projects, dict):
@@ -18062,68 +18076,77 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
                     break
 
         if not proj_id or not proj_data:
-            log.warning(f"[SEQ_ALLOC] Project {proj_num} not found in database")
+            log.warning(f"[SEQ_ALLOC] Project {proj_num} not found")
             continue
 
-        projects_data.append((proj_num, stage_idx, proj_id, proj_data))
+        # Try to match line_item to a stage by name or other attributes
+        # First check if line_item has explicit payment_stage_index
+        stage_idx = None
+        if "payment_stage_index" in line_item:
+            try:
+                stage_idx = int(line_item["payment_stage_index"])
+            except (ValueError, TypeError):
+                pass
 
-    # SORT BY PROJECT NUMBER (extract last digits and sort numerically)
-    # e.g., "MABS-202606-005" -> extract "005" and sort as 5, "MABS-202606-006" -> 6
-    projects_data.sort(key=lambda x: int(x[0][-3:]) if x[0][-3:].isdigit() else x[0])
-    log.info(f"[SEQ_ALLOC] Sorted projects: {[p[0] for p in projects_data]}")
+        # If no explicit stage_index, try to match by description/name
+        if stage_idx is None and line_desc:
+            stages = proj_data.get("payment_stages", [])
+            if isinstance(stages, list):
+                for idx, stage in enumerate(stages):
+                    if isinstance(stage, dict):
+                        stage_name = stage.get("name", "").strip()
+                        # Match if stage name is in line description
+                        if stage_name and stage_name in line_desc:
+                            stage_idx = idx
+                            log.info(f"[SEQ_ALLOC] Matched line_item '{line_desc}' to stage {idx} '{stage_name}'")
+                            break
 
-    # Determine allocation strategy: use per-project payment_log sums when entries
-    # are tagged with project_number (modern data); fall back to sequential distribution
-    # for legacy invoices whose payment_log entries have no project_number.
-    payment_log_entries = invoice.get("payment_log", []) or []
-    has_tagged_payments = any(
-        isinstance(p, dict) and p.get("project_number")
-        for p in payment_log_entries
-    )
+        # If still no match and this is a single-stage project, use index 0
+        if stage_idx is None:
+            stages = proj_data.get("payment_stages", [])
+            if isinstance(stages, list) and len(stages) == 1:
+                stage_idx = 0
+                log.info(f"[SEQ_ALLOC] Single-stage project {proj_num}, using stage 0")
 
-    allocations = {}  # proj_num -> amount
+        if stage_idx is not None:
+            stage_data_list.append((proj_num, stage_idx, line_amount, proj_id, proj_data))
+        else:
+            log.warning(f"[SEQ_ALLOC] Could not find stage for line_item: {line_desc} in {proj_num}")
 
-    if has_tagged_payments:
-        # Modern path: each payment_log entry knows which project it belongs to
-        log.info("[SEQ_ALLOC] Using per-project payment_log sums (tagged payments)")
-        for proj_num, stage_idx, proj_id, proj_data in projects_data:
-            proj_paid = sum(
-                _safe_float(p.get("amount", 0))
-                for p in payment_log_entries
-                if isinstance(p, dict) and p.get("project_number") == proj_num
-            )
-            allocations[proj_num] = proj_paid
-            log.info(f"[SEQ_ALLOC] {proj_num}: payment_log sum=${proj_paid}")
-    else:
-        # Legacy path: no project_number tags — distribute total sequentially
-        log.info("[SEQ_ALLOC] No tagged payments — using sequential allocation")
-        remaining = total_paid
-        for proj_num, stage_idx, proj_id, proj_data in projects_data:
-            stages = proj_data.get("payment_stages") or []
-            if not (0 <= stage_idx < len(stages)):
-                log.warning(f"[SEQ_ALLOC] Invalid stage_idx {stage_idx} for {proj_num}")
-                continue
+    if not stage_data_list:
+        log.info(f"[SEQ_ALLOC] No stage items matched, skipping allocation")
+        return
 
-            stage = stages[stage_idx]
-            stage_amount = _safe_float(stage.get("amount", 0))
+    log.info(f"[SEQ_ALLOC] Processing {len(stage_data_list)} stages for allocation")
+    projects_data = stage_data_list
 
-            if remaining <= 0.01:
-                allocations[proj_num] = 0
-                log.info(f"[SEQ_ALLOC] No remaining amount for {proj_num}")
-                continue
+    # Allocate payment sequentially to each stage (in invoice line_item order)
+    # This ensures multiple stages from same project each get their own payment
+    remaining = total_paid
+    stage_allocations = {}  # (proj_num, stage_idx) -> amount
 
-            if stage_amount <= 0:
-                log.info(f"[SEQ_ALLOC] Skipping {proj_num} - stage amount is 0")
-                continue
+    log.info(f"[SEQ_ALLOC] Starting allocation with total_paid={total_paid}")
 
-            allocated = min(remaining, stage_amount)
-            allocations[proj_num] = allocated
-            remaining -= allocated
-            log.info(f"[SEQ_ALLOC] {proj_num}: stage_amount=${stage_amount}, allocated=${allocated}, remaining=${remaining}")
+    for proj_num, stage_idx, line_amount, proj_id, proj_data in projects_data:
+        if remaining <= 0.01:
+            log.info(f"[SEQ_ALLOC] No remaining amount for {proj_num} stage {stage_idx}")
+            stage_allocations[(proj_num, stage_idx)] = 0
+            continue
 
-    # Update each project with its allocated amount
-    for proj_num, stage_idx, proj_id, proj_data in projects_data:
-        allocated = allocations.get(proj_num, 0)
+        # Allocate up to the line_item amount
+        allocated = min(remaining, line_amount)
+        stage_allocations[(proj_num, stage_idx)] = allocated
+        remaining -= allocated
+        log.info(f"[SEQ_ALLOC] {proj_num} stage {stage_idx}: line_amount=${line_amount}, allocated=${allocated}, remaining=${remaining}")
+
+    # Group allocations by project for summary updates
+    allocations_by_proj = {}  # proj_num -> total allocated to all stages
+    for (proj_num, stage_idx), amount in stage_allocations.items():
+        allocations_by_proj[proj_num] = allocations_by_proj.get(proj_num, 0) + amount
+
+    # Update each stage with its allocated amount
+    for proj_num, stage_idx, line_amount, proj_id, proj_data in projects_data:
+        allocated = stage_allocations.get((proj_num, stage_idx), 0)
 
         stages = proj_data.get("payment_stages") or []
 
@@ -18141,41 +18164,51 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
             else:
                 stage["status"] = "Pending Invoice"
 
-            log.info(f"[SEQ_ALLOC] {proj_num}: allocated=${allocated}, status={stage['status']}")
+            log.info(f"[SEQ_ALLOC] {proj_num} stage {stage_idx}: amount_paid=${allocated}, status={stage['status']}")
         else:
-            log.warning(f"[SEQ_ALLOC] Invalid stage_idx {stage_idx} for {proj_num}, still updating amount_paid")
+            log.warning(f"[SEQ_ALLOC] Invalid stage_idx {stage_idx} for {proj_num}")
 
-        # Update project amount_paid — but never zero-out a Completed project
+    # Update each project once (after all its stages are updated)
+    updated_projects = set()
+    for proj_num, stage_idx, line_amount, proj_id, proj_data in projects_data:
+        if proj_id in updated_projects:
+            continue  # Already updated this project
+        updated_projects.add(proj_id)
+
+        # Use total allocated to all stages in this project for amount_paid
+        total_allocated = allocations_by_proj.get(proj_num, 0)
+
+        stages = proj_data.get("payment_stages") or []
         contract_val = _safe_float(proj_data.get("contract_value", 0))
         current_status = proj_data.get("status", "Not Started")
         existing_paid = _safe_float(proj_data.get("amount_paid", 0))
 
         # Skip writing amount_paid=0 for a done project — it would corrupt the record
-        if current_status in ("Completed", "invoiced_Fully paid") and allocated <= 0.01 and existing_paid > 0:
+        if current_status in ("Completed", "invoiced_Fully paid") and total_allocated <= 0.01 and existing_paid > 0:
             updates = {
                 "payment_stages": stages,
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
         else:
             updates = {
-                "amount_paid": allocated,
+                "amount_paid": total_allocated,
                 "payment_stages": stages,
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
 
         # Update project status if needed (never downgrade invoiced_Fully paid/Cancelled)
         if current_status not in ("invoiced_Fully paid", "Cancelled"):
-            if contract_val > 0 and allocated >= contract_val - 0.01:
+            if contract_val > 0 and total_allocated >= contract_val - 0.01:
                 updates["status"] = "invoiced_Fully paid"
-            elif contract_val > 0 and 0 < allocated < contract_val - 0.01 and \
+            elif contract_val > 0 and 0 < total_allocated < contract_val - 0.01 and \
                     current_status not in ("On Hold", "invoiced_Fully paid", "Cancelled",
                                           "Ready to Sent", "Sent out_Invoiced", "Sent out_Not Invoiced"):
                 updates["status"] = "invoiced_Partially paid"
-            elif allocated > 0 and current_status == "Not Started":
+            elif total_allocated > 0 and current_status == "Not Started":
                 updates["status"] = "In Progress"
 
         fb_update(f"/projects/{proj_id}", updates)
-        log.info(f"[SEQ_ALLOC] Updated project {proj_num}: amount_paid={allocated}")
+        log.info(f"[SEQ_ALLOC] Updated project {proj_num}: total_amount_paid={total_allocated}")
 
 def _sync_project_payment(project_number: str) -> None:
     """Recalculate project.amount_paid from invoice payment_logs (ground truth)

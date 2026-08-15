@@ -473,20 +473,22 @@
                 {% endif %}
               </td>
               <td style="padding:10px 12px; color:#475569;">{{ payment.get('date','—') | format_date }}</td>
-              <td style="padding:10px 12px; text-align:right; font-weight:600; color:#15803D;">{{ currency_symbol }}{{ "{:,.2f}".format(payment.get('amount',0)|float) }}</td>
+              <td style="padding:10px 12px; text-align:right; font-weight:600; color:#15803D;">{{ currency_symbol }}{{ "{:,.2f}".format(payment.get('amount_paid', 0)|float) }}</td>
               <td style="padding:10px 12px; color:#475569;">{{ payment.get('stage_name', 'Invoice Payment') }}</td>
               <td style="padding:10px 12px; color:#475569;">{{ payment.get('method','—') }}</td>
               <td style="padding:10px 12px; text-align:center;">
+                {% if payment.get('amount_paid', 0)|float > 0 %}
                 <button type="button" class="btn btn-xs btn-outline-primary" title="Edit"
                   data-payment-type="invoice"
-                  data-payment-index="{{ loop.index0 }}"
-                  data-payment-amount="{{ payment.get('amount', 0) }}"
+                  data-payment-index="{{ payment.get('payment_log_index', 0) }}"
+                  data-payment-amount="{{ payment.get('amount_paid', 0) }}"
                   data-payment-date="{{ payment.get('date', '') }}"
                   data-payment-method="{{ payment.get('method', '') }}"
                   data-payment-reference="{{ payment.get('reference', '') }}"
                   data-payment-notes="{{ payment.get('notes', '') }}"
                   onclick="scrollToEditPaymentForm(this)"><i class="bi bi-pencil"></i></button>
-                <button type="button" class="btn btn-xs btn-outline-danger" title="Delete" onclick="deletePayment('invoice', {{ loop.index0 }})"><i class="bi bi-trash"></i></button>
+                <button type="button" class="btn btn-xs btn-outline-danger" title="Delete" onclick="deletePayment('invoice', {{ payment.get('payment_log_index', 0) }})"><i class="bi bi-trash"></i></button>
+                {% endif %}
               </td>
             </tr>
             {% endfor %}
