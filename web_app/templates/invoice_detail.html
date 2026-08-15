@@ -784,14 +784,14 @@ function checkIfFullyPaid() {
   const isFullyPaid = (amountPaid >= total) && (taxPaid >= taxAmount);
   const statusSelect = document.getElementById('detailStatusSelect');
 
-  if (isFullyPaid && statusSelect.value === 'Paid') {
+  if (isFullyPaid && statusSelect && statusSelect.value === 'Paid') {
     statusSelect.disabled = true;
     statusSelect.style.opacity = '0.6';
     statusSelect.title = 'Invoice is fully paid - status cannot be changed';
     // Show locked message if needed
     const lockedMsg = document.getElementById('fullyPaidMessage');
     if (lockedMsg) lockedMsg.style.display = 'block';
-  } else {
+  } else if (statusSelect) {
     statusSelect.disabled = false;
     statusSelect.style.opacity = '1';
     statusSelect.title = '';

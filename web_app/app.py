@@ -21563,55 +21563,41 @@ def payment_sequential(invoice_id):
                 log.info(f"[PAYMENT_DIST] Recorded ${distribute_to_proj} payment for project {main_project}")
 
     # Fallback: if still have remaining_to_distribute and linked_projects, distribute there too
-    elif remaining_to_distribute > 0 and linked_projects:
-        # SORT linked_projects by project number (001, 002, 003...) before distributing
-        # Handle both dict and string formats
-        def get_sort_key(x):
-            proj_num = x.get("project_number", "") if isinstance(x, dict) else x
-            if proj_num and proj_num[-3:].isdigit():
-                return int(proj_num[-3:])
-            return proj_num
-        sorted_projects = sorted(linked_projects, key=get_sort_key)
-        for proj_info in sorted_projects:
+    elif remaining_to_distribute > 0 and line_items:
+        # For multi-project/multi-stage invoices, iterate through line_items in order
+        # Each line_item is a unique (project, stage) combination
+        for item in line_items:
             if remaining_to_distribute <= 0:
+                break
+            if not isinstance(item, dict):
                 continue
 
-            # Handle both dict and string formats for project_info
-            if isinstance(proj_info, dict):
-                project_number = proj_info.get("project_number", "")
-            else:
-                project_number = proj_info
+            project_number = item.get("project_number", "").strip() or main_project
             if not project_number:
                 continue
 
-            # Find project amount from line items
-            proj_amount = 0
-            for item in line_items:
-                if isinstance(item, dict):
-                    item_proj = item.get("project_number", "").strip() or main_project
-                    if item_proj == project_number:
-                        proj_amount += _safe_float(item.get("amount", 0))
-
-            if proj_amount <= 0:
+            item_amount = _safe_float(item.get("amount", 0))
+            if item_amount <= 0:
                 continue
 
-            # Calculate how much this project has already received
+            # Calculate how much this (project, stage) pair has already received
+            item_stage_idx = item.get("payment_stage_index", "")
             proj_received = sum(
                 _safe_float(p.get("amount", 0))
                 for p in payment_log
-                if p.get("project_number") == project_number
+                if p.get("project_number") == project_number and str(p.get("stage_index", "")) == str(item_stage_idx)
             )
 
-            # How much more does this project need?
-            proj_needs = max(0, proj_amount - proj_received)
+            # How much more does this stage need?
+            stage_needs = max(0, item_amount - proj_received)
 
-            if proj_needs > 0:
-                # Distribute amount to this project
-                distribute_to_proj = min(proj_needs, remaining_to_distribute)
+            if stage_needs > 0:
+                # Distribute amount to this stage
+                distribute_to_stage = min(stage_needs, remaining_to_distribute)
 
-                # Determine stage name - try multiple sources
-                _stage_name = meta.get("payment_stage", "")
-                _stage_idx = meta.get("payment_stage_index")
+                # Get stage name from line item or fallback to description
+                _stage_name = item.get("stage_name", "") or item.get("display_stage_name", "") or item.get("description", "")
+                _stage_idx = item.get("payment_stage_index")
 
                 # Convert stage_index to int if available
                 if _stage_idx is not None:
@@ -21625,7 +21611,7 @@ def payment_sequential(invoice_id):
                     _stage_name = f"Stage {_stage_idx + 1}"
 
                 payment_entry = {
-                    "amount":     str(distribute_to_proj),
+                    "amount":     str(distribute_to_stage),
                     "date":       request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
                     "method":     request.form.get("method", ""),
                     "reference":  request.form.get("reference", ""),
@@ -21638,7 +21624,7 @@ def payment_sequential(invoice_id):
                     "stage_index": _stage_idx or "",
                 }
                 payment_log.append(payment_entry)
-                remaining_to_distribute -= distribute_to_proj
+                remaining_to_distribute -= distribute_to_stage
 
     # Step 2: Distribute remaining to tax
     if remaining_to_distribute > 0 and tax_amount > 0:
