@@ -3644,10 +3644,19 @@ def project_detail(project_id):
                     inv_meta = inv.get("meta", {}) or {}
                     proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (inv.get("payment_log", []) or []) if p.get("project_number") == proj_num and str(p.get("stage_index", "")) == str(idx))
 
-                    # Fallback: if payment_log entries don't have project_number (legacy data),
-                    # use the stage's amount_paid from allocation
+                    # Fallback 1: if no payments found by stage_index (old invoice without payment_stage_index in line items),
+                    # try to allocate by stage amount ratio
                     if proj_payments == 0 and proj_num in _invoice_linked_projects(inv):
-                        proj_payments = _safe_float(stage.get("amount_paid", 0))
+                        inv_meta = inv.get("meta", {}) or {}
+                        total_inv_paid = _safe_float(inv_meta.get("amount_paid", 0))
+                        total_inv_amount = _safe_float(inv_meta.get("total", 0))
+                        if total_inv_amount > 0 and total_inv_paid > 0:
+                            # Calculate this stage's share of the invoice
+                            stage_share = _safe_float(stage.get("amount", 0)) / total_inv_amount
+                            proj_payments = total_inv_paid * stage_share
+                        else:
+                            # Fallback 2: use the stage's stored amount_paid
+                            proj_payments = _safe_float(stage.get("amount_paid", 0))
 
                     amount_paid += proj_payments
                     due_date = due_date or inv_meta.get("due_date", "")
