@@ -5944,7 +5944,7 @@ def invoice_new():
     clients  = _load_clients()
     projects = _load_projects_list()
     if request.method == "POST":
-        stage_idx_raw = request.form.get("payment_stage_index", "")
+        stage_idx_raw = request.form.get("payment_stage_index", "") or request.args.get("stage_idx", "")
         is_single_project = stage_idx_raw != ""
 
         # Extract CO number early so it can be used in line item creation
@@ -6041,8 +6041,8 @@ def invoice_new():
         if co_number:
             data["meta"]["co_number"] = co_number
 
-        stage_idx_raw = request.form.get("payment_stage_index", "")
-        stage_name    = request.form.get("payment_stage", "")
+        stage_idx_raw = request.form.get("payment_stage_index", "") or request.args.get("stage_idx", "")
+        stage_name    = request.form.get("payment_stage", "") or request.args.get("stage_name", "")
 
         # If no co_number from form, try to get from stage_name or URL parameter
         if not co_number:
@@ -6474,14 +6474,21 @@ def invoice_new():
                                         co_title  = co.get("title", "")
                                         co_amount = _safe_float(co.get("amount", 0))
                                         if co_amount > 0:
+                                            # Find the payment stage for this CO
+                                            co_stage_idx = None
+                                            for s_idx, s in enumerate(stages if isinstance(stages, list) else []):
+                                                if isinstance(s, dict) and s.get("co_number") == co_num:
+                                                    co_stage_idx = s_idx
+                                                    break
+
                                             co_desc = f"{co_title} ({co_num})" if co_title else co_num
                                             prefill_items.append({
                                                 "description": co_desc,
                                                 "project":     proj_num,
                                                 "amount":      f"{co_amount:.2f}",
-                                                "stage_index": None,
+                                                "stage_index": co_stage_idx,
                                             })
-                                            log.info(f"[PREFILL-CO] proj={proj_num}, co={co_num}, amount={co_amount}")
+                                            log.info(f"[PREFILL-CO] proj={proj_num}, co={co_num}, amount={co_amount}, stage_idx={co_stage_idx}")
 
                     # Use first project for client field
                     if not prefill_client:
@@ -6713,27 +6720,6 @@ def invoice_detail(invoice_id):
                                 if item.get("co_firebase_id"):
                                     break
                                 break
-
-                # If CO firebase_id exists, ALWAYS fetch fresh/latest POWO from that CO
-                # This ensures the description shows the current PO/WO even if it was updated after invoice creation
-                if item.get("co_firebase_id"):
-                    co_firebase_id = item.get("co_firebase_id")
-                    try:
-                        # Search through all projects' change_orders for this firebase_id
-                        for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
-                            if isinstance(pdata, dict):
-                                cos = pdata.get("change_orders") or []
-                                if isinstance(cos, dict):
-                                    cos = list(cos.values())
-                                for co in (cos if isinstance(cos, list) else []):
-                                    if isinstance(co, dict) and co.get("firebase_id") == co_firebase_id:
-                                        powo = co.get("po_wo_number", "").strip()
-                                        if powo:
-                                            item["powo_number"] = powo
-                                            log.info(f"[INVOICE_DETAIL] CO firebase_id={co_firebase_id}: fetched fresh powo='{powo}'")
-                                        break
-                    except Exception as e:
-                        log.error(f"[INVOICE_DETAIL] Error fetching fresh PO/WO for CO {co_firebase_id}: {e}")
 
                 # Always fetch fresh POWO from project for non-CO stages (auto-updates when project POWO changes)
                 if proj_num:

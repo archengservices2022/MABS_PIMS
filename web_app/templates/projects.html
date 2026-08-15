@@ -755,7 +755,7 @@ function openLoadModal() {
                 </td>
                 <td style="padding:8px 12px;color:#78350f;font-size:12px;">
                   <span style="font-size:10px;background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;padding:1px 5px;font-weight:700;margin-right:4px;">CO</span>
-                  ${co.co_number || '—'} — ${co.title || ''}
+                  CO ${co.co_number || '—'}${co.title ? ' — ' + co.title : ''}
                 </td>
                 <td style="padding:8px 12px;text-align:right;color:#92400e;font-weight:600;">
                   ${CURRENCY_SYMBOL}${parseFloat(co.amount||0).toFixed(2)}
