@@ -6641,27 +6641,9 @@ def invoice_detail(invoice_id):
 
         # Get payment details from payment_log for this project and stage
         stage_idx = line_item.get("payment_stage_index", "")
-        stage_name = line_item.get("stage_name", "")
         payment_key = (proj_num, str(stage_idx))
-
-        first_payment = None
-        first_payment_idx = None
-
-        # Try lookup by (project, stage_index) first
-        if stage_idx and payment_key in payment_log_by_proj_stage and payment_log_by_proj_stage[payment_key]:
+        if payment_key in payment_log_by_proj_stage and payment_log_by_proj_stage[payment_key]:
             first_payment_idx, first_payment = payment_log_by_proj_stage[payment_key][0]
-        else:
-            # Fallback: match by project and stage_name for existing invoices without payment_stage_index
-            if stage_name and proj_num:
-                for p_idx, p in enumerate(payment_log):
-                    if (p.get("project_number") == proj_num and
-                        p.get("stage_name") == stage_name and
-                        _safe_float(p.get("amount", 0)) > 0):
-                        first_payment_idx = p_idx
-                        first_payment = p
-                        break
-
-        if first_payment:
             payment_row["date"] = first_payment.get("date", "")
             payment_row["method"] = first_payment.get("method", "")
             payment_row["reference"] = first_payment.get("reference", "")
