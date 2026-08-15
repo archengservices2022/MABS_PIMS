@@ -346,7 +346,7 @@
 
         {% set stages = project.get('payment_stages') or [] %}
         {% if stages %}
-        {% set ns = namespace(first_pending=none, down_payment_count=0, installment_count=0) %}
+        {% set ns = namespace(first_pending=none, down_payment_count=0, installment_count=0, current_installment_num=0) %}
         {# Count down payment and installment stages #}
         {% for s in stages %}
           {% if s.get('co_number') or ('CO' in s.get('name','') and ' – ' in s.get('name','')) %}
@@ -415,13 +415,7 @@
                   {% endif %}
                 {% else %}
                   {# Installment stages #}
-                  {% set current_installment_num = 0 %}
-                  {% for prev_stage in stages[:loop.index0] %}
-                    {% if 'Down Payment' not in prev_stage.get('name','') and not prev_stage.get('co_number') and not ('CO' in prev_stage.get('name','') and ' – ' in prev_stage.get('name','')) %}
-                      {% set current_installment_num = current_installment_num + 1 %}
-                    {% endif %}
-                  {% endfor %}
-                  {% set current_installment_num = current_installment_num + 1 %}
+                  {% set ns.current_installment_num = ns.current_installment_num + 1 %}
 
                   {# Determine display format based on total installments #}
                   {% if ns.installment_count == 1 and ns.down_payment_count > 0 %}
@@ -432,10 +426,10 @@
                     {% set display_stage_name = 'Final Payment' %}
                   {% elif ns.down_payment_count > 0 %}
                     {# Multiple installments with down payment = "Installment X of Y" #}
-                    {% set display_stage_name = 'Installment ' + current_installment_num|string + ' of ' + ns.installment_count|string %}
+                    {% set display_stage_name = 'Installment ' + ns.current_installment_num|string + ' of ' + ns.installment_count|string %}
                   {% else %}
                     {# Multiple installments without down payment = "Installment X of Y" #}
-                    {% set display_stage_name = 'Installment ' + current_installment_num|string + ' of ' + ns.installment_count|string %}
+                    {% set display_stage_name = 'Installment ' + ns.current_installment_num|string + ' of ' + ns.installment_count|string %}
                   {% endif %}
                 {% endif %}
                 <tr>
