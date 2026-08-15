@@ -6153,10 +6153,12 @@ def invoice_new():
                                 stage_idx_str = str(stage_idx)
                                 break
 
-                # Calculate this project's line item amount (not including tax)
-                # Only sum line items that explicitly match this project
+                # Calculate this project's line item amount for this stage (not including tax)
+                # Only sum line items that explicitly match this project AND this stage
                 project_line_amount = sum(_safe_float(item.get("amount", 0)) for item in line_items
-                                         if isinstance(item, dict) and item.get("project_number", "").strip() == proj_num)
+                                         if isinstance(item, dict) and
+                                         item.get("project_number", "").strip() == proj_num and
+                                         int(item.get("payment_stage_index", -1)) == stage_idx)
 
 
                 # Mark as invoiced if we have a stage index, otherwise skip this project
