@@ -18079,34 +18079,82 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
             log.warning(f"[SEQ_ALLOC] Project {proj_num} not found")
             continue
 
-        # Try to match line_item to a stage by name or other attributes
-        # First check if line_item has explicit payment_stage_index
+        # Try to match line_item to a stage
+        # First: explicit payment_stage_index (modern invoices)
         stage_idx = None
-        if "payment_stage_index" in line_item:
+        if line_item.get("payment_stage_index") is not None:
             try:
                 stage_idx = int(line_item["payment_stage_index"])
             except (ValueError, TypeError):
                 pass
 
-        # If no explicit stage_index, try to match by description/name
+        # Second: match by description/name (fallback for old invoices)
+        if stage_idx is None and line_desc:
+            stages = proj_data.get("payment_stages", [])
+            if isinstance(stages, list):
+                # Try exact match first
+                for idx, stage in enumerate(stages):
+                    if isinstance(stage, dict):
+                        stage_name = stage.get("name", "").strip()
+                        if stage_name and stage_name.lower() == line_desc.lower():
+                            stage_idx = idx
+                            log.info(f"[SEQ_ALLOC] Exact match: '{line_desc}' to stage {idx}")
+                            break
+
+        # Third: partial match (if line_desc contains stage_name)
         if stage_idx is None and line_desc:
             stages = proj_data.get("payment_stages", [])
             if isinstance(stages, list):
                 for idx, stage in enumerate(stages):
                     if isinstance(stage, dict):
                         stage_name = stage.get("name", "").strip()
-                        # Match if stage name is in line description
-                        if stage_name and stage_name in line_desc:
+                        if stage_name and stage_name.lower() in line_desc.lower():
                             stage_idx = idx
-                            log.info(f"[SEQ_ALLOC] Matched line_item '{line_desc}' to stage {idx} '{stage_name}'")
+                            log.info(f"[SEQ_ALLOC] Partial match: '{line_desc}' contains stage '{stage_name}' (idx {idx})")
                             break
 
-        # If still no match and this is a single-stage project, use index 0
+        # Fourth: match "Full Payment" with "Final Payment" etc (common variations)
+        if stage_idx is None and line_desc:
+            stages = proj_data.get("payment_stages", [])
+            if isinstance(stages, list):
+                # Map common stage name variations
+                variations = {
+                    "full payment": ["final payment", "full payment"],
+                    "down payment": ["down payment", "deposit"],
+                    "retainage": ["retainage", "retention"],
+                }
+                line_lower = line_desc.lower().strip()
+                for idx, stage in enumerate(stages):
+                    if isinstance(stage, dict):
+                        stage_name = stage.get("name", "").strip().lower()
+                        # Check if line_desc and stage_name are in the same variation group
+                        for base, variants in variations.items():
+                            if line_lower in variants and stage_name in variants:
+                                stage_idx = idx
+                                log.info(f"[SEQ_ALLOC] Variation match: '{line_desc}' ~ '{stage.get('name')}' (idx {idx})")
+                                break
+                    if stage_idx is not None:
+                        break
+
+        # Fifth: single-stage project or first unmatched stage
         if stage_idx is None:
             stages = proj_data.get("payment_stages", [])
-            if isinstance(stages, list) and len(stages) == 1:
-                stage_idx = 0
-                log.info(f"[SEQ_ALLOC] Single-stage project {proj_num}, using stage 0")
+            if isinstance(stages, list):
+                if len(stages) == 1:
+                    stage_idx = 0
+                    log.info(f"[SEQ_ALLOC] Single-stage project {proj_num}, using stage 0")
+                else:
+                    # For multi-stage projects, try to find a stage that hasn't been invoiced yet
+                    for idx, stage in enumerate(stages):
+                        if isinstance(stage, dict):
+                            if not stage.get("invoice_id"):
+                                stage_idx = idx
+                                log.info(f"[SEQ_ALLOC] Using first uninvoiced stage {idx} for {proj_num}")
+                                break
+                    # If all stages are invoiced, use the first one (for re-invoicing scenarios)
+                    if stage_idx is None and len(stages) > 0:
+                        stage_idx = 0
+                        log.info(f"[SEQ_ALLOC] All stages invoiced, using first stage for {proj_num}")
 
         if stage_idx is not None:
             stage_data_list.append((proj_num, stage_idx, line_amount, proj_id, proj_data))
