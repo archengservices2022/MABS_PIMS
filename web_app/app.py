@@ -18136,30 +18136,36 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
                     if stage_idx is not None:
                         break
 
-        # Fifth: single-stage project or first unmatched stage
-        if stage_idx is None:
+        # Fifth: match by line_item amount (for old invoices without stage indices)
+        if stage_idx is None and line_amount > 0:
             stages = proj_data.get("payment_stages", [])
             if isinstance(stages, list):
-                if len(stages) == 1:
-                    stage_idx = 0
-                    log.info(f"[SEQ_ALLOC] Single-stage project {proj_num}, using stage 0")
-                else:
-                    # For multi-stage projects, try to find a stage that hasn't been invoiced yet
-                    for idx, stage in enumerate(stages):
-                        if isinstance(stage, dict):
-                            if not stage.get("invoice_id"):
-                                stage_idx = idx
-                                log.info(f"[SEQ_ALLOC] Using first uninvoiced stage {idx} for {proj_num}")
-                                break
-                    # If all stages are invoiced, use the first one (for re-invoicing scenarios)
-                    if stage_idx is None and len(stages) > 0:
-                        stage_idx = 0
-                        log.info(f"[SEQ_ALLOC] All stages invoiced, using first stage for {proj_num}")
+                # Try to match stage by amount (with small tolerance for rounding)
+                for idx, stage in enumerate(stages):
+                    if isinstance(stage, dict):
+                        stage_amount = _safe_float(stage.get("amount", 0))
+                        # Match if amounts are within $0.01
+                        if abs(stage_amount - line_amount) < 0.01:
+                            stage_idx = idx
+                            log.info(f"[SEQ_ALLOC] Matched by amount: ${line_amount} to stage {idx} (${stage_amount})")
+                            break
+
+        # Sixth: single-stage project fallback
+        if stage_idx is None:
+            stages = proj_data.get("payment_stages", [])
+            if isinstance(stages, list) and len(stages) == 1:
+                stage_idx = 0
+                log.info(f"[SEQ_ALLOC] Single-stage project {proj_num}, using stage 0")
 
         if stage_idx is not None:
             stage_data_list.append((proj_num, stage_idx, line_amount, proj_id, proj_data))
         else:
-            log.warning(f"[SEQ_ALLOC] Could not find stage for line_item: {line_desc} in {proj_num}")
+            log.warning(f"[SEQ_ALLOC] Could not find stage for line_item: {line_desc} (${line_amount}) in {proj_num}")
+            # Last resort: if no match found and project is single-stage, use it anyway
+            stages = proj_data.get("payment_stages", [])
+            if isinstance(stages, list) and len(stages) == 1:
+                log.info(f"[SEQ_ALLOC] Using only stage (0) for single-stage project {proj_num}")
+                stage_data_list.append((proj_num, 0, line_amount, proj_id, proj_data))
 
     if not stage_data_list:
         log.info(f"[SEQ_ALLOC] No stage items matched, skipping allocation")
