@@ -6124,14 +6124,34 @@ def invoice_new():
 
             line_items = data.get("line_items", []) or []
 
+            # Also build a map of (project, stage_index) from line_items for accurate linked_projects
+            # This handles cases where line_items have payment_stage_index but item_stage_indices might not
+            line_item_stages = {}
+            for item in line_items:
+                if isinstance(item, dict):
+                    proj = item.get("project_number", "").strip()
+                    stage_idx = item.get("payment_stage_index")
+                    if proj and stage_idx is not None:
+                        key = (proj, stage_idx)
+                        if key not in line_item_stages:
+                            line_item_stages[key] = True
 
             for i, proj_num in enumerate(item_projects):
                 if not proj_num or not proj_num.strip():
                     continue
                 proj_num = proj_num.strip()
 
-                # Get the stage index for this project
+                # Get the stage index for this project from form OR from line_items
                 stage_idx_str = item_stage_indices[i].strip() if i < len(item_stage_indices) and item_stage_indices[i] else ""
+
+                # Fallback: check if line_items has payment_stage_index for this project
+                if not stage_idx_str:
+                    for item in line_items:
+                        if isinstance(item, dict) and item.get("project_number", "").strip() == proj_num:
+                            stage_idx = item.get("payment_stage_index")
+                            if stage_idx is not None:
+                                stage_idx_str = str(stage_idx)
+                                break
 
                 # Calculate this project's line item amount (not including tax)
                 # Only sum line items that explicitly match this project
