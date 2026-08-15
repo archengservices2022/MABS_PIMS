@@ -18111,12 +18111,14 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
     meta = invoice.get("meta", {}) or {}
     total_paid = _safe_float(meta.get("amount_paid", 0))
 
+    print(f"[SEQ_ALLOC] Starting sequential allocation for invoice {invoice_id}, total_paid={total_paid}")
     log.info(f"[SEQ_ALLOC] Starting sequential allocation for invoice {invoice_id}, total_paid={total_paid}")
 
     # If total_paid is $0, we need to CLEAR all project amounts, not skip
     # This handles the case when all payments are deleted
     if total_paid <= 0.01 and total_paid > 0:
         # Very small payment (rounding), skip
+        print(f"[SEQ_ALLOC] Small payment, skipping")
         return
 
     # Build stage allocation list from line_items to handle multiple stages per project
@@ -18240,9 +18242,13 @@ def _allocate_invoice_payment_sequential(invoice_id: str) -> None:
                 stage_data_list.append((proj_num, 0, line_amount, proj_id, proj_data))
 
     if not stage_data_list:
+        print(f"[SEQ_ALLOC] No stage items matched, skipping allocation")
         log.info(f"[SEQ_ALLOC] No stage items matched, skipping allocation")
         return
 
+    print(f"[SEQ_ALLOC] Processing {len(stage_data_list)} stages for allocation")
+    for proj_num, stage_idx, line_amount, proj_id, proj_data in stage_data_list:
+        print(f"[SEQ_ALLOC_ITEM] {proj_num} stage {stage_idx}: ${line_amount}")
     log.info(f"[SEQ_ALLOC] Processing {len(stage_data_list)} stages for allocation")
     projects_data = stage_data_list
 
