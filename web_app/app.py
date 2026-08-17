@@ -22041,40 +22041,12 @@ def payment_edit(invoice_id, idx):
     # Get invoice details for redistribution
     tax_amount = _safe_float(meta.get("tax_amount", 0))
     line_items = inv_data.get("line_items", []) or []
-    main_project = meta.get("project_number", "")
 
     # Rebuild payment_log sequentially (same logic as invoice_update_amount)
     new_payment_log = []
     new_tax_log = []
     remaining_to_distribute = new_total_paid
 
-    # Extract ALL projects from both line_items AND linked_projects metadata
-    projects_from_items = set()
-    for item in line_items:
-        if isinstance(item, dict):
-            proj_num = item.get("project_number", "")
-            if proj_num:
-                projects_from_items.add(proj_num)
-
-    projects_from_meta = set()
-    for proj_info in (meta.get("linked_projects") or []):
-        if isinstance(proj_info, dict):
-            proj_num = proj_info.get("project_number", "")
-            if proj_num:
-                projects_from_meta.add(proj_num)
-
-    # Merge both sets
-    all_projects = projects_from_items | projects_from_meta
-
-    # Build linked_projects from merged list
-    linked_projects = []
-    if all_projects:
-        linked_projects = [
-            {"project_number": proj_num, "payment_stage_index": meta.get("payment_stage_index", 0)}
-            for proj_num in sorted(all_projects)
-        ]
-    elif not linked_projects and main_project:
-        linked_projects = [{"project_number": main_project, "payment_stage_index": meta.get("payment_stage_index", 0)}]
 
     # Get the project of the payment being edited (to apply form fields only to that project)
     old_project = log[idx].get("project_number", "") if idx < len(log) else ""
@@ -22089,73 +22061,72 @@ def payment_edit(invoice_id, idx):
                 key = (old_proj, old_stage)
                 old_payments_by_key[key] = old_p
 
-    # Step 1: Distribute to projects sequentially (same as invoice_update_amount)
-    if linked_projects:
-        def get_sort_key(x):
-            proj_num = x.get("project_number", "") if isinstance(x, dict) else x
+    # Step 1: Distribute to projects/stages sequentially (iterate through line_items for all stages)
+    if line_items:
+        def get_sort_key(item):
+            proj_num = item.get("project_number", "") if isinstance(item, dict) else item
             if proj_num and proj_num[-3:].isdigit():
-                return int(proj_num[-3:])
-            return proj_num
-        sorted_projects = sorted(linked_projects, key=get_sort_key)
+                return (int(proj_num[-3:]), item.get("payment_stage_index", 0) if isinstance(item, dict) else 0)
+            return (proj_num, item.get("payment_stage_index", 0) if isinstance(item, dict) else 0)
+        sorted_line_items = sorted(line_items, key=get_sort_key)
 
-        for proj_info in sorted_projects:
+        for line_item in sorted_line_items:
             if remaining_to_distribute <= 0:
                 break
 
-            proj_num = proj_info.get("project_number", "") if isinstance(proj_info, dict) else proj_info
+            if not isinstance(line_item, dict):
+                continue
+
+            proj_num = line_item.get("project_number", "").strip()
             if not proj_num:
                 continue
 
-            # Get this project's line item amount
-            proj_amount = sum(_safe_float(item.get("amount", 0)) for item in line_items
-                            if isinstance(item, dict) and item.get("project_number", "").strip() == proj_num)
+            # Get this line item's amount
+            item_amount = _safe_float(line_item.get("amount", 0))
+            if item_amount <= 0:
+                continue
 
-            if proj_amount > 0:
-                distribute_to_proj = min(proj_amount, remaining_to_distribute)
+            distribute_to_item = min(item_amount, remaining_to_distribute)
 
-                # Get stage info
-                _stage_name = meta.get("payment_stage", "")
-                _stage_idx = meta.get("payment_stage_index")
-                if _stage_idx is not None:
-                    try:
-                        _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
-                        # Look up actual stage name from project's payment_stages
-                        all_projs = fb_get("/projects") or {}
-                        for _pid, _pdata in (all_projs.items() if isinstance(all_projs, dict) else []):
-                            if isinstance(_pdata, dict) and _pdata.get("project_number") == proj_num:
-                                _stages = _pdata.get("payment_stages", [])
-                                if isinstance(_stages, list) and 0 <= _stage_idx < len(_stages):
-                                    _stage_name = (_stages[_stage_idx].get("name", "") or "").strip()
-                                break
-                    except (ValueError, TypeError):
-                        _stage_idx = None
+            # Get stage info from line item
+            _stage_idx = line_item.get("payment_stage_index")
+            _stage_name = line_item.get("payment_stage_name", "") or ""
 
-                if not _stage_name and _stage_idx is not None:
-                    _stage_name = f"Stage {_stage_idx + 1}"
+            if _stage_idx is not None:
+                try:
+                    _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
+                except (ValueError, TypeError):
+                    _stage_idx = None
 
-                # Only apply form fields (date, method, etc.) to the project being edited
-                # For other projects, preserve original payment details
-                is_edited_project = (proj_num == old_project)
+            if not _stage_name and _stage_idx is not None:
+                _stage_name = f"Stage {_stage_idx + 1}"
 
-                # Try to find matching old payment entry by (project_number, stage_index)
-                orig_payment = None
-                if not is_edited_project:
-                    key = (proj_num, str(_stage_idx) if _stage_idx is not None else "")
-                    orig_payment = old_payments_by_key.get(key)
+            # Only apply form fields (date, method, etc.) to the project/stage being edited
+            # For other entries, preserve original payment details
+            is_edited_entry = (proj_num == old_project) and (
+                log[idx].get("stage_index") == str(_stage_idx) if _stage_idx is not None else
+                log[idx].get("stage_index", "") == ""
+            )
 
-                new_payment_log.append({
-                    "amount": str(distribute_to_proj),
-                    "date": request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")) if is_edited_project else (orig_payment.get("date", "") if orig_payment else datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
-                    "method": request.form.get("method", "") if is_edited_project else (orig_payment.get("method", "") if orig_payment else ""),
-                    "reference": request.form.get("reference", "") if is_edited_project else (orig_payment.get("reference", "") if orig_payment else ""),
-                    "notes": request.form.get("notes", "") if is_edited_project else (orig_payment.get("notes", "") if orig_payment else ""),
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "project_number": proj_num,
-                    "invoice_number": meta.get("invoice_number", ""),
-                    "stage_name": _stage_name,
-                    "stage_index": str(_stage_idx) if _stage_idx is not None else "",
-                })
-                remaining_to_distribute -= distribute_to_proj
+            # Try to find matching old payment entry by (project_number, stage_index)
+            orig_payment = None
+            if not is_edited_entry:
+                key = (proj_num, str(_stage_idx) if _stage_idx is not None else "")
+                orig_payment = old_payments_by_key.get(key)
+
+            new_payment_log.append({
+                "amount": str(distribute_to_item),
+                "date": request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")) if is_edited_entry else (orig_payment.get("date", "") if orig_payment else datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
+                "method": request.form.get("method", "") if is_edited_entry else (orig_payment.get("method", "") if orig_payment else ""),
+                "reference": request.form.get("reference", "") if is_edited_entry else (orig_payment.get("reference", "") if orig_payment else ""),
+                "notes": request.form.get("notes", "") if is_edited_entry else (orig_payment.get("notes", "") if orig_payment else ""),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "project_number": proj_num,
+                "invoice_number": meta.get("invoice_number", ""),
+                "stage_name": _stage_name,
+                "stage_index": str(_stage_idx) if _stage_idx is not None else "",
+            })
+            remaining_to_distribute -= distribute_to_item
 
     # Step 2: Preserve existing tax payments and only add new ones if remainder
     old_tax_log = inv_data.get("tax_payments", []) or []
