@@ -3651,9 +3651,10 @@ def project_detail(project_id):
                     if payment_log:
                         log.info(f"[PROJECT_DETAIL_LOG] invoice={inv.get('firebase_id')}, entries={[{'amt': p.get('amount'), 'proj': p.get('project_number'), 'stg': p.get('stage_index')} for p in payment_log]}")
 
+                    # For multi-project invoices, match only if BOTH project AND stage match
+                    # Don't use fallback (empty stage_index) as it would count the same payment for all stages
                     proj_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log
-                                       if (p.get("project_number") == proj_num or not p.get("project_number"))
-                                           and (str(p.get("stage_index", "")) == str(idx) or (p.get("stage_index") is None or p.get("stage_index") == "")))
+                                       if p.get("project_number") == proj_num and str(p.get("stage_index", "")) == str(idx))
 
                     log.info(f"[PROJECT_DETAIL_PAID] project={proj_num}, stage={idx}, payment_log_count={len(payment_log)}, matched_payments={proj_payments}")
 
