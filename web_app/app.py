@@ -12630,6 +12630,7 @@ def financial():
     _proj_num_to_id = {p.get("project_number", ""): p.get("firebase_id", "") for p in projects_list}
     _proj_num_to_data = {p.get("project_number", ""): p for p in projects_list}
     monthly_payment_details = {str(i): [] for i in range(1, 13)}
+    _debug_payment_log = []  # Debug: collect all payments for logging
     for _inv in inv_list:
         _inv_id   = _inv.get("firebase_id", "")
         _inv_meta = _inv.get("meta", {}) or {}
@@ -12641,13 +12642,65 @@ def financial():
                 _pay_dt = datetime.fromisoformat(_pay_ds[:10])
                 if _pay_dt.year == current_year:
                     _mkey = str(_pay_dt.month)
-                    _proj_num = _pay.get("project_number", "") or _inv_meta.get("project_number", "")
+                    _proj_num = _pay.get("project_number", "").strip() or ""
 
-                    # Extract stage name: try payment entry first, then stage_index lookup, then line items, then invoice meta
+                    # For multi-project invoices: if payment doesn't have explicit project_number,
+                    # search line_items to find the matching (project, stage) combination
+                    if not _proj_num:
+                        _pay_stage_name = _pay.get("stage_name", "").strip()
+                        _pay_stage_idx = _pay.get("stage_index")
+
+                        # Strategy 1: Match by stage_index + stage_name together (most reliable)
+                        if _pay_stage_idx is not None and _pay_stage_name:
+                            _line_items = _inv.get("line_items", []) or []
+                            for _li in _line_items:
+                                if not isinstance(_li, dict):
+                                    continue
+                                _li_stage_idx = _li.get("payment_stage_index")
+                                _li_stage_name = _li.get("stage_name", "").strip()
+                                # Match both stage_index and stage_name
+                                if (str(_li_stage_idx) == str(_pay_stage_idx) and
+                                    _li_stage_name.lower() == _pay_stage_name.lower()):
+                                    _proj_num = _li.get("project_number", "").strip() or ""
+                                    if _proj_num:
+                                        break
+
+                        # Strategy 2: Match by stage_name only (if stage_index matching failed)
+                        if not _proj_num and _pay_stage_name:
+                            _line_items = _inv.get("line_items", []) or []
+                            for _li in _line_items:
+                                if not isinstance(_li, dict):
+                                    continue
+                                _li_stage_name = _li.get("stage_name", "").strip()
+                                if _li_stage_name.lower() == _pay_stage_name.lower():
+                                    _proj_num = _li.get("project_number", "").strip() or ""
+                                    if _proj_num:
+                                        break
+
+                        # Strategy 3: Match by stage_index only (with stage_index verification via project)
+                        if not _proj_num and _pay_stage_idx is not None:
+                            _linked_projects = _inv_meta.get("linked_projects", [])
+                            if isinstance(_linked_projects, list):
+                                for _lp in _linked_projects:
+                                    if isinstance(_lp, dict) and str(_lp.get("payment_stage_index")) == str(_pay_stage_idx):
+                                        _proj_num = _lp.get("project_number", "").strip() or ""
+                                        if _proj_num:
+                                            break
+
+                        # Final fallback: use invoice's single project number
+                        if not _proj_num:
+                            _proj_num = _inv_meta.get("project_number", "")
+
+                    # Extract stage name: ALWAYS prioritize stage_name from payment_log (it's most reliable)
                     _stage = _pay.get("stage_name", "").strip()
-                    _stage_from_payment_entry = bool(_stage)  # Track if stage came directly from payment entry
+                    _stage_from_payment = bool(_stage)  # Track if stage came directly from payment_log
+                    _pay_stage_idx = _pay.get("stage_index")
 
-                    # If stage still empty, try to look it up from project payment_stages using stage_index
+                    # Debug: Log what we're reading from payment
+                    if _inv_num == "INV-202608-001":
+                        log.info(f"[PAYMENT_READ] payment: proj={_proj_num}, stage_name='{_stage}', stage_index={_pay_stage_idx}")
+
+                    # Only do lookups if stage_name is NOT in payment_log
                     if not _stage:
                         _stage_idx = _pay.get("stage_index")
 
@@ -12695,9 +12748,9 @@ def financial():
                     if not _stage:
                         _stage = _inv_meta.get("payment_stage", "")
 
-                    # FINAL VERIFICATION: For multi-project invoices, verify stage_name using linked_projects stage_index
-                    # This ensures we display the correct invoiced stage even if payment_log has wrong stage_name
-                    if _stage and _proj_num != "TAX":
+                    # FINAL VERIFICATION: Only verify stage if it wasn't directly from payment_log
+                    # payment_log stage_name is the source of truth; don't override it with linked_projects
+                    if _stage and not _stage_from_payment and _proj_num != "TAX":
                         _linked_projects = _inv_meta.get("linked_projects", [])
                         if isinstance(_linked_projects, list):
                             for _lp in _linked_projects:
@@ -12717,8 +12770,8 @@ def financial():
                                     break
 
                     # Final fallback: infer stage from payment amount if available
-                    # Only do this if stage wasn't directly from payment entry
-                    if not _stage_from_payment_entry and (not _stage or _stage == _inv_meta.get("payment_stage", "")) and _proj_num != "TAX":
+                    # Only do this if stage wasn't found in payment_log or lookups
+                    if (not _stage or _stage == _inv_meta.get("payment_stage", "")) and _proj_num != "TAX":
                         _paid_amount = _safe_float(_pay.get("amount", 0))
                         if _paid_amount > 0:
                             _proj_data = _proj_num_to_data.get(_proj_num, {})
@@ -12809,7 +12862,7 @@ def financial():
                         if isinstance(_li, dict):
                             _subtotal += _safe_float(_li.get("amount", 0))
 
-                    monthly_payment_details[_mkey].append({
+                    _payment_row = {
                         "project_number": _proj_num,
                         "project_id":     _proj_num_to_id.get(_proj_num, ""),
                         "invoice_id":     _inv_id,
@@ -12819,7 +12872,11 @@ def financial():
                         "total_amount":   _subtotal if _subtotal > 0 else _inv_total,
                         "paid_amount":    _safe_float(_pay.get("amount", 0)),
                         "paid_date":      _pay_ds,
-                    })
+                    }
+                    monthly_payment_details[_mkey].append(_payment_row)
+                    # Debug logging for INV-202608-001
+                    if _inv_num == "INV-202608-001":
+                        log.info(f"[MONTHLY_PAYMENT] Added payment: proj={_proj_num}, stage={_stage_label}, amount={_payment_row.get('paid_amount')}, date={_pay_ds}")
             except Exception:
                 pass
         for _tpay in (_inv.get("tax_payments", []) or []):
@@ -12840,17 +12897,30 @@ def financial():
                     })
             except Exception:
                 pass
-    # Merge multiple partial payments for the same invoice+project+date into one row
-    # But keep payments on different dates as separate rows
+    # Merge multiple partial payments for the same invoice+project+stage+date into one row
+    # But keep different stages as separate rows
     for _mk in monthly_payment_details:
         _merged: dict = {}
         for _row in monthly_payment_details[_mk]:
-            _key = (_row["invoice_id"], _row["project_number"], _row["paid_date"])
+            _key = (_row["invoice_id"], _row["project_number"], _row["stage"], _row["paid_date"])
             if _key in _merged:
                 _merged[_key]["paid_amount"] += _row["paid_amount"]
             else:
                 _merged[_key] = dict(_row)
-        monthly_payment_details[_mk] = sorted(_merged.values(), key=lambda x: (x.get("project_number", ""), x.get("paid_date", "")))
+        # Sort by: invoice_number first, then project_number, then paid_date, then stage_amount
+        monthly_payment_details[_mk] = sorted(_merged.values(), key=lambda x: (
+            x.get("invoice_number", ""),
+            x.get("project_number", ""),
+            x.get("paid_date", ""),
+            float(x.get("stage_amount", 0))
+        ))
+
+        # Debug: Log August (month 8) payment details
+        if _mk == "8":
+            log.info(f"[MONTHLY_PAYMENT_FINAL_AUG] Month {_mk} has {len(monthly_payment_details[_mk])} entries after merge")
+            for _entry in monthly_payment_details[_mk]:
+                if _entry.get("invoice_number") == "INV-202608-001":
+                    log.info(f"  - {_entry.get('project_number')} / {_entry.get('stage')} / ${_entry.get('paid_amount')}")
 
     # ── Chart data for overview pie charts ────────────────────────────────────
     inv_status_counts = {}
