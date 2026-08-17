@@ -6549,6 +6549,121 @@ def invoice_new():
                            invoiced_stages_map=invoiced_stages_map, lock_unit_price=lock_unit_price,
                            default_tax_rate=default_tax_rate)
 
+def _repair_payment_log_stage_index(invoice_data):
+    """
+    Repair payment_log entries by adding missing stage_index values.
+
+    OLD PAYMENT_LOG STRUCTURE (broken - no stage_index):
+        {amount: $2000, project: MABS-202608104, stage_index: ""}
+
+    REPAIRED STRUCTURE (fixed - each stage gets its own entry):
+        Split into multiple entries with correct stage_index values
+        based on matching to line_items.
+
+    This function:
+    1. Finds payment_log entries without stage_index
+    2. Matches them to line_items by (project_number, stage_order)
+    3. Rebuilds payment_log with correct stage_index values
+    4. Saves the repaired invoice back to Firebase
+    """
+    if not isinstance(invoice_data, dict):
+        return invoice_data
+
+    payment_log = invoice_data.get("payment_log", [])
+    if not isinstance(payment_log, list) or not payment_log:
+        return invoice_data
+
+    # Check if repair is needed: any entries without stage_index?
+    needs_repair = any(
+        isinstance(p, dict) and not p.get("stage_index")
+        for p in payment_log
+    )
+
+    if not needs_repair:
+        return invoice_data
+
+    log.info("[REPAIR_PAYMENT_LOG] Invoice has payment_log entries without stage_index, attempting repair")
+
+    line_items = invoice_data.get("line_items", []) or []
+    if not isinstance(line_items, list) or not line_items:
+        log.warning("[REPAIR_PAYMENT_LOG] Cannot repair: no line_items found")
+        return invoice_data
+
+    # Build a mapping of (project_number, stage_index) to line_item order
+    # This helps us know which stage_index each line_item represents
+    stage_map = {}  # (proj_num, stage_order) -> stage_idx
+    proj_stage_counter = {}  # proj_num -> current stage_order
+
+    for line_item in line_items:
+        if not isinstance(line_item, dict):
+            continue
+        proj_num = line_item.get("project_number", "")
+        if not proj_num:
+            continue
+
+        # Get the explicit stage_index if available, or derive from order
+        explicit_stage_idx = line_item.get("payment_stage_index")
+        if explicit_stage_idx is not None:
+            explicit_stage_idx = str(explicit_stage_idx)
+
+        # Count this project's stages for sequential assignment
+        if proj_num not in proj_stage_counter:
+            proj_stage_counter[proj_num] = 0
+
+        stage_order = proj_stage_counter[proj_num]
+        proj_stage_counter[proj_num] += 1
+
+        # Map using explicit stage_index if available, otherwise use order
+        key = (proj_num, stage_order)
+        stage_map[key] = explicit_stage_idx if explicit_stage_idx else str(stage_order)
+
+    # Rebuild payment_log with stage_index values
+    # For old payments without stage_index, assign them to stages sequentially
+    new_payment_log = []
+    proj_payment_counter = {}  # proj_num -> how many payments have we assigned
+
+    for payment in payment_log:
+        if not isinstance(payment, dict):
+            new_payment_log.append(payment)
+            continue
+
+        # Copy the payment entry
+        new_payment = dict(payment)
+        proj_num = new_payment.get("project_number", "")
+
+        # If it already has a stage_index, keep it as-is
+        if new_payment.get("stage_index"):
+            new_payment_log.append(new_payment)
+            continue
+
+        # This payment is missing stage_index - repair it by assigning to next available stage
+        if proj_num:
+            if proj_num not in proj_payment_counter:
+                proj_payment_counter[proj_num] = 0
+
+            stage_order = proj_payment_counter[proj_num]
+            key = (proj_num, stage_order)
+
+            # Get the stage_index for this (project, order) combination
+            if key in stage_map:
+                assigned_stage_idx = stage_map[key]
+                new_payment["stage_index"] = assigned_stage_idx
+                log.info(f"[REPAIR_PAYMENT_LOG] Assigned stage_index={assigned_stage_idx} to payment for {proj_num}")
+            else:
+                # Fallback: use the stage_order as stage_index
+                new_payment["stage_index"] = str(stage_order)
+                log.info(f"[REPAIR_PAYMENT_LOG] Assigned fallback stage_index={stage_order} to payment for {proj_num}")
+
+            proj_payment_counter[proj_num] += 1
+
+        new_payment_log.append(new_payment)
+
+    # Update the invoice with repaired payment_log
+    invoice_data["payment_log"] = new_payment_log
+    log.info(f"[REPAIR_PAYMENT_LOG] Repair complete: {len(new_payment_log)} payment entries with stage_index")
+
+    return invoice_data
+
 @app.route("/invoicing/<invoice_id>", methods=["GET"])
 @role_required("invoicing")
 def invoice_detail(invoice_id):
@@ -6556,6 +6671,15 @@ def invoice_detail(invoice_id):
     if not data:
         abort(404)
     data["firebase_id"] = invoice_id
+
+    # Repair payment_log if needed (add missing stage_index values)
+    data = _repair_payment_log_stage_index(data)
+
+    # Save repaired data back to Firebase if it was modified
+    payment_log_before = fb_get(f"/invoices/{invoice_id}").get("payment_log", []) if fb_get(f"/invoices/{invoice_id}") else []
+    if data.get("payment_log") != payment_log_before:
+        log.info(f"[REPAIR_PAYMENT_LOG] Saving repaired payment_log for invoice {invoice_id}")
+        fb_update(f"/invoices/{invoice_id}", {"payment_log": data.get("payment_log", [])})
 
     # Linked project(s) — an invoice can bill multiple projects via per-line-item overrides
     linked_project = None
