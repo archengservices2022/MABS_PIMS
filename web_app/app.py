@@ -19500,6 +19500,36 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
         "deductions_list":           existing.get("deductions_list", []),
     })
 
+    # Sync commission to balance_sheet_expenses so project_detail displays it
+    proj_num = project_data.get("project_number", "")
+    if proj_num:
+        bs_exp = fb_get("/balance_sheet_expenses") or {}
+        exp_id = None
+        for eid, edata in bs_exp.items():
+            if isinstance(edata, dict) and edata.get("project_number") == proj_num and edata.get("type") == "commission":
+                exp_id = eid
+                break
+
+        if exp_id:
+            fb_update(f"/balance_sheet_expenses/{exp_id}", {
+                "amount": round(commission_amount, 2),
+                "description": f"Commission - {sales_name}",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+        else:
+            # Create new commission entry in balance_sheet_expenses
+            ref = fb_ref(f"/balance_sheet_expenses/{project_id}_commission")
+            if ref:
+                ref.set({
+                    "project_number": proj_num,
+                    "type": "commission",
+                    "description": f"Commission - {sales_name}",
+                    "amount": round(commission_amount, 2),
+                    "date": datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                })
+
 
 def _parse_invoice_form(form, co_number="") -> dict:
     line_items = []
