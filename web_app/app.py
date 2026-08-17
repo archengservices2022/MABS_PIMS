@@ -6733,75 +6733,25 @@ def invoice_detail(invoice_id):
     # This ensures the display matches the Invoice Details table order
     raw_proj = fb_get("/projects") or {}
     enriched_payment_log = []
-    line_items = data.get("line_items", []) or []
 
-    # Map payment_log entries by (project_number, stage_index) for accurate lookup
-    # Handle both new format (with stage_index) and legacy format (without stage_index)
-    # For legacy payments without stage_index, map them sequentially to line_items
-    payment_log_by_stage = {}  # (proj, stage_idx_str) -> (p_idx, p)
-    used_payment_indices = set()  # Track which payment_log indices have been claimed
-
-    # First pass: Map payments that have explicit stage_index values
-    for p_idx, p in enumerate(payment_log):
-        if isinstance(p, dict):
-            proj = p.get("project_number", "")
-            stage_idx = p.get("stage_index")
-            if stage_idx is not None:  # Only map if stage_index is explicitly set
-                stage_idx_str = str(stage_idx)
-                key = (proj, stage_idx_str)
-                payment_log_by_stage[key] = (p_idx, p)
-                used_payment_indices.add(p_idx)
-
-    # Second pass: Map legacy payments (without stage_index) by sequential assignment
-    # For each project, assign remaining payments to line_items in order
-    if len(used_payment_indices) < len(payment_log):
-        # There are unmapped legacy payments - assign them sequentially
-        legacy_payments_by_proj = {}  # proj -> [list of (p_idx, p) for unplaimed payments]
-        for p_idx, p in enumerate(payment_log):
-            if p_idx not in used_payment_indices and isinstance(p, dict):
-                proj = p.get("project_number", "")
-                if proj not in legacy_payments_by_proj:
-                    legacy_payments_by_proj[proj] = []
-                legacy_payments_by_proj[proj].append((p_idx, p))
-
-        # Assign legacy payments to stages based on line_item order
-        legacy_claim_idx = {}  # proj -> current index in legacy_payments_by_proj[proj]
-        for line_idx, line_item in enumerate(line_items):
-            if isinstance(line_item, dict):
-                proj_num = line_item.get("project_number", "")
-                payment_stage_index = line_item.get("payment_stage_index")
-                stage_idx_str = str(payment_stage_index) if payment_stage_index is not None else ""
-                key = (proj_num, stage_idx_str)
-
-                # Skip if already has explicit mapping
-                if key in payment_log_by_stage:
-                    continue
-
-                # Assign next available legacy payment for this project
-                if proj_num in legacy_payments_by_proj:
-                    claim_pos = legacy_claim_idx.get(proj_num, 0)
-                    if claim_pos < len(legacy_payments_by_proj[proj_num]):
-                        p_idx, p = legacy_payments_by_proj[proj_num][claim_pos]
-                        payment_log_by_stage[key] = (p_idx, p)
-                        used_payment_indices.add(p_idx)
-                        legacy_claim_idx[proj_num] = claim_pos + 1
-
-    # Process line_items in order (matches Invoice Details table order)
-    for line_item in line_items:
-        if not isinstance(line_item, dict):
+    # Iterate through payment_log directly - this is the source of truth for actual payments
+    # Each payment_log entry represents a payment made to a specific stage
+    for p_idx, payment in enumerate(payment_log):
+        if not isinstance(payment, dict):
             continue
 
-        proj_num = line_item.get("project_number", "")
+        proj_num = payment.get("project_number", "")
         if not proj_num:
             continue
 
         payment_row = {
             "project_number": proj_num,
-            "line_item_amount": line_item.get("amount", 0),
-            "date": "",
-            "method": "",
-            "reference": "",
-            "notes": "",
+            "date": payment.get("date", ""),
+            "method": payment.get("method", ""),
+            "reference": payment.get("reference", ""),
+            "notes": payment.get("notes", ""),
+            "amount_paid": _safe_float(payment.get("amount", 0)),
+            "payment_log_index": p_idx,
         }
 
         # Find project data to get name, firebase_id, and stage details
@@ -6819,44 +6769,26 @@ def invoice_detail(invoice_id):
             payment_row["project_name"] = proj_data.get("project_name", "")
             payment_row["project_firebase_id"] = proj_id
 
-            # Find the matching stage in payment_stages
-            payment_stage_index = line_item.get("payment_stage_index")
-            stages = proj_data.get("payment_stages", [])
-            if isinstance(stages, list) and payment_stage_index is not None:
+            # Get stage name from payment's stage_index
+            stage_idx_str = payment.get("stage_index", "")
+            if stage_idx_str:
                 try:
-                    stage_idx = int(payment_stage_index)
-                    if 0 <= stage_idx < len(stages):
+                    stage_idx = int(stage_idx_str)
+                    stages = proj_data.get("payment_stages", [])
+                    if isinstance(stages, list) and 0 <= stage_idx < len(stages):
                         stage = stages[stage_idx]
                         if isinstance(stage, dict):
                             payment_row["stage_name"] = stage.get("name", "Invoice Payment")
-                            payment_row["stage_status"] = stage.get("status", "Invoiced")
-                            # Amount paid comes from the stage's amount_paid field
-                            payment_row["amount_paid"] = _safe_float(stage.get("amount_paid", 0))
+                        else:
+                            payment_row["stage_name"] = payment.get("stage_name", "Invoice Payment")
+                    else:
+                        payment_row["stage_name"] = payment.get("stage_name", "Invoice Payment")
                 except (ValueError, TypeError):
-                    payment_row["stage_name"] = "Invoice Payment"
+                    payment_row["stage_name"] = payment.get("stage_name", "Invoice Payment")
+            else:
+                payment_row["stage_name"] = payment.get("stage_name", "Invoice Payment")
 
-        # Get payment details from payment_log for this specific project+stage combination
-        # Use stage_index to match to the correct payment entry, not just project
-        # CRITICAL: Normalize stage_index to string to match payment_log_by_stage keys
-        payment_stage_index = line_item.get("payment_stage_index")
-        stage_idx_str = str(payment_stage_index) if payment_stage_index is not None else ""
-        stage_key = (proj_num, stage_idx_str)
-        if stage_key in payment_log_by_stage:
-            payment_idx, payment_entry = payment_log_by_stage[stage_key]
-            payment_row["date"] = payment_entry.get("date", "")
-            payment_row["method"] = payment_entry.get("method", "")
-            payment_row["reference"] = payment_entry.get("reference", "")
-            payment_row["notes"] = payment_entry.get("notes", "")
-            # Use payment_log entry amount (not stage.amount_paid which gets recalculated)
-            payment_row["amount_paid"] = _safe_float(payment_entry.get("amount", 0))
-            # Store the index of the payment for this specific stage (for edit/delete)
-            payment_row["payment_log_index"] = payment_idx
-
-        # Only include this row if it has a payment_log entry (something to delete)
-        # Don't include rows with only amount_paid but no payment - they can't be edited/deleted
-        has_payment_log_entry = stage_key in payment_log_by_stage
-        if has_payment_log_entry:
-            enriched_payment_log.append(payment_row)
+        enriched_payment_log.append(payment_row)
 
     # Tax payments kept separate from projects (no enrichment with project data)
     tax_log = data.get("tax_payments", [])
