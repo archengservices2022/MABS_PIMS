@@ -21362,7 +21362,12 @@ def payment_add(invoice_id):
                     break
 
                 # Get the stage index for this line item
-                stage_idx = line_item.get("payment_stage_index", inv_meta.get("payment_stage_index", ""))
+                stage_idx = line_item.get("payment_stage_index")
+                if stage_idx is None:
+                    stage_idx = inv_meta.get("payment_stage_index")
+                # Ensure stage_idx is a valid type (int or string number), not empty
+                if stage_idx == "" or stage_idx is None:
+                    stage_idx = 0  # Default to stage 0 if not specified
                 stage_name = line_item.get("stage_name", inv_meta.get("payment_stage", ""))
 
                 # Check if this stage already has a payment
