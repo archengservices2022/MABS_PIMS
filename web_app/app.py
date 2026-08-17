@@ -6592,15 +6592,55 @@ def invoice_detail(invoice_id):
     line_items = data.get("line_items", []) or []
 
     # Map payment_log entries by (project_number, stage_index) for accurate lookup
-    # This ensures each stage gets matched to its own payment entry, not just the first one
-    # CRITICAL: Normalize stage_index to string for consistent matching
-    payment_log_by_stage = {}
+    # Handle both new format (with stage_index) and legacy format (without stage_index)
+    # For legacy payments without stage_index, map them sequentially to line_items
+    payment_log_by_stage = {}  # (proj, stage_idx_str) -> (p_idx, p)
+    used_payment_indices = set()  # Track which payment_log indices have been claimed
+
+    # First pass: Map payments that have explicit stage_index values
     for p_idx, p in enumerate(payment_log):
         if isinstance(p, dict):
             proj = p.get("project_number", "")
-            stage_idx = str(p.get("stage_index", "")) if p.get("stage_index") is not None else ""
-            key = (proj, stage_idx)
-            payment_log_by_stage[key] = (p_idx, p)
+            stage_idx = p.get("stage_index")
+            if stage_idx is not None:  # Only map if stage_index is explicitly set
+                stage_idx_str = str(stage_idx)
+                key = (proj, stage_idx_str)
+                payment_log_by_stage[key] = (p_idx, p)
+                used_payment_indices.add(p_idx)
+
+    # Second pass: Map legacy payments (without stage_index) by sequential assignment
+    # For each project, assign remaining payments to line_items in order
+    if len(used_payment_indices) < len(payment_log):
+        # There are unmapped legacy payments - assign them sequentially
+        legacy_payments_by_proj = {}  # proj -> [list of (p_idx, p) for unplaimed payments]
+        for p_idx, p in enumerate(payment_log):
+            if p_idx not in used_payment_indices and isinstance(p, dict):
+                proj = p.get("project_number", "")
+                if proj not in legacy_payments_by_proj:
+                    legacy_payments_by_proj[proj] = []
+                legacy_payments_by_proj[proj].append((p_idx, p))
+
+        # Assign legacy payments to stages based on line_item order
+        legacy_claim_idx = {}  # proj -> current index in legacy_payments_by_proj[proj]
+        for line_idx, line_item in enumerate(line_items):
+            if isinstance(line_item, dict):
+                proj_num = line_item.get("project_number", "")
+                payment_stage_index = line_item.get("payment_stage_index")
+                stage_idx_str = str(payment_stage_index) if payment_stage_index is not None else ""
+                key = (proj_num, stage_idx_str)
+
+                # Skip if already has explicit mapping
+                if key in payment_log_by_stage:
+                    continue
+
+                # Assign next available legacy payment for this project
+                if proj_num in legacy_payments_by_proj:
+                    claim_pos = legacy_claim_idx.get(proj_num, 0)
+                    if claim_pos < len(legacy_payments_by_proj[proj_num]):
+                        p_idx, p = legacy_payments_by_proj[proj_num][claim_pos]
+                        payment_log_by_stage[key] = (p_idx, p)
+                        used_payment_indices.add(p_idx)
+                        legacy_claim_idx[proj_num] = claim_pos + 1
 
     # Process line_items in order (matches Invoice Details table order)
     for line_item in line_items:
