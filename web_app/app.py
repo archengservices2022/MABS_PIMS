@@ -21766,7 +21766,13 @@ def payment_sequential(invoice_id):
 
             # Get the explicit stage_index from line_item (for multi-stage projects)
             _stage_idx = line_item.get("payment_stage_index")
-            stage_idx_str = str(_stage_idx) if _stage_idx is not None else ""
+            if _stage_idx is None:
+                # Fallback to invoice's payment_stage_index if line_item doesn't have it
+                _stage_idx = meta.get("payment_stage_index")
+            # Ensure stage_idx is valid (int or string number), not empty
+            if _stage_idx == "" or _stage_idx is None:
+                _stage_idx = 0  # Default to stage 0 if not specified
+            stage_idx_str = str(_stage_idx)
 
             # Calculate how much THIS SPECIFIC STAGE has already received
             stage_already_paid = sum(
@@ -21795,7 +21801,7 @@ def payment_sequential(invoice_id):
                     "project_number": proj_num,
                     "invoice_number": meta.get("invoice_number", ""),
                     "stage_name": _stage_name,
-                    "stage_index": str(_stage_idx) if _stage_idx is not None else "",
+                    "stage_index": str(_stage_idx),
                 }
                 payment_log.append(payment_entry)
                 remaining_to_distribute -= stage_allocation
