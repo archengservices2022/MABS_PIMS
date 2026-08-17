@@ -21862,27 +21862,35 @@ def payment_delete(invoice_id, idx):
     deleted_amount = _safe_float(deleted_entry.get("amount", 0))
     log.info(f"[DELETE_PAYMENT] Deleting payment index {idx}: project={deleted_proj}, stage={deleted_stage}, amount=${deleted_amount}")
 
-    # Remove only this one payment entry
-    payment_log.pop(idx)
+    # Calculate the amount to delete
+    deleted_amount = _safe_float(deleted_entry.get("amount", 0))
 
-    total       = _safe_float(inv_data.get("meta", {}).get("total", 0))
-    amount_paid = sum(_safe_float(p["amount"]) for p in payment_log)
-    any_paid    = amount_paid > 0
+    # Calculate new total paid AFTER deletion
+    amount_paid = sum(_safe_float(p["amount"]) for p in payment_log if p != deleted_entry)
+
+    log.info(f"[DELETE_PAYMENT] After removal: {len(payment_log) - 1} payment entries remain (was {len(payment_log)}), total_paid=${amount_paid}")
+
+    # Update invoice meta with new amount_paid
+    meta = inv_data.get("meta", {}) or {}
+    meta["amount_paid"] = str(amount_paid)
+    meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    # Calculate new status based on new total paid
     fresh_inv = dict(inv_data)
-    fresh_inv["payment_log"] = payment_log
-    new_status  = _calculate_invoice_status(fresh_inv)
-
-    log.info(f"[DELETE_PAYMENT] After removal: {len(payment_log)} payment entries remain, total_paid=${amount_paid}")
+    fresh_inv["payment_log"] = [p for p in payment_log if p != deleted_entry]
+    fresh_inv["meta"] = meta
+    new_status = _calculate_invoice_status(fresh_inv)
 
     fb_update(f"/invoices/{invoice_id}", {
-        "payment_log":      payment_log,
+        "payment_log":      [p for p in payment_log if p != deleted_entry],
         "meta/amount_paid": str(amount_paid),
         "meta/status":      new_status,
-        "meta/updated_at":  datetime.now(timezone.utc).isoformat(),
+        "meta/updated_at":  meta.get("updated_at"),
     })
+
     # Use sequential allocation for ALL invoices - ensures both project.amount_paid and stage.amount_paid are updated
     # This re-allocates remaining payments to their correct stages
-    log.info(f"[DELETE_PAYMENT] Running sequential allocation with total_paid=${amount_paid}")
+    log.info(f"[DELETE_PAYMENT] Running sequential allocation with new total_paid=${amount_paid}")
     _allocate_invoice_payment_sequential(invoice_id)
 
     # Sync project-level amount_paid (sum of all invoices for each project)
