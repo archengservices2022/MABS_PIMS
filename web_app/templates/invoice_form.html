@@ -145,8 +145,44 @@
             <label class="form-label">Payment Date</label>
             <input type="date" name="payment_date" class="form-control">
           </div>
+          <div class="col-md-2" id="paymentReferenceWrap" style="display:none;">
+            <label class="form-label">Reference</label>
+            <input type="text" name="payment_reference" class="form-control" placeholder="e.g. Check #">
+          </div>
         </div>
       </div>
+
+      {% if invoice and invoice.get('payment_log') %}
+      <div class="card-panel mb-3">
+        <h6 class="section-heading mb-3">Payment History</h6>
+        <div class="table-responsive">
+          <table class="table table-sm" style="font-size:0.9rem;">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Amount</th>
+                <th>Stage</th>
+                <th>Method</th>
+                <th>Reference</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for payment in invoice.get('payment_log', []) %}
+              {% if payment and payment.get('amount') %}
+              <tr>
+                <td>{{ payment.get('date', '—') }}</td>
+                <td>${{ "{:,.2f}".format(payment.get('amount', 0)|float) }}</td>
+                <td>{{ payment.get('stage_name', '—') }}</td>
+                <td>{{ payment.get('method', '—') }}</td>
+                <td>{{ payment.get('reference', '—') }}</td>
+              </tr>
+              {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
 
       <div class="card-panel mb-3">
         <div class="d-flex justify-content-between align-items-center mb-3">
