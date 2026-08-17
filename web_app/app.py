@@ -7019,6 +7019,30 @@ def invoice_edit(invoice_id):
         # Handle invoice update
         data = _parse_invoice_form(request.form)
 
+        # For invoice edit: if stage indices were lost during form submission,
+        # reconstruct them from the existing invoice by matching line items
+        if invoice_data and data.get("line_items"):
+            existing_items = invoice_data.get("line_items", []) or []
+            new_items = data.get("line_items", []) or []
+
+            # Build a map of existing items: (proj, desc) -> payment_stage_index
+            existing_map = {}
+            for item in existing_items:
+                if isinstance(item, dict):
+                    proj = item.get("project_number", "")
+                    desc = item.get("description", "").strip()
+                    key = (proj, desc)
+                    existing_map[key] = item.get("payment_stage_index")
+
+            # Apply existing stage indices to new items if missing
+            for item in new_items:
+                if isinstance(item, dict) and item.get("payment_stage_index") is None:
+                    proj = item.get("project_number", "")
+                    desc = item.get("description", "").strip()
+                    key = (proj, desc)
+                    if key in existing_map:
+                        item["payment_stage_index"] = existing_map[key]
+
         # Update metadata with current timestamp
         data["meta"]["updated_at"] = datetime.now(timezone.utc).isoformat()
         data["meta"]["updated_by"] = session.get("user_email", "")
