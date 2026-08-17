@@ -22051,46 +22051,80 @@ def payment_edit(invoice_id, idx):
     # Merge both sets
     all_projects = projects_from_items | projects_from_meta
 
+    # Build linked_projects from merged list
+    linked_projects = []
+    if all_projects:
+        linked_projects = [
+            {"project_number": proj_num, "payment_stage_index": meta.get("payment_stage_index", 0)}
+            for proj_num in sorted(all_projects)
+        ]
+    elif not linked_projects and main_project:
+        linked_projects = [{"project_number": main_project, "payment_stage_index": meta.get("payment_stage_index", 0)}]
+
     # Get the project of the payment being edited (to apply form fields only to that project)
     old_project = log[idx].get("project_number", "") if idx < len(log) else ""
-    old_stage_idx = log[idx].get("stage_index", "") if idx < len(log) else ""
 
-    # Step 1: Distribute to projects/stages sequentially by iterating through line_items
-    # Line items already have payment_stage_index set for each stage, so use them directly
-    if isinstance(line_items, list):
-        for line_item in line_items:
-            if remaining_to_distribute <= 0.01:
+    # Step 1: Distribute to projects sequentially (same as invoice_update_amount)
+    if linked_projects:
+        def get_sort_key(x):
+            proj_num = x.get("project_number", "") if isinstance(x, dict) else x
+            if proj_num and proj_num[-3:].isdigit():
+                return int(proj_num[-3:])
+            return proj_num
+        sorted_projects = sorted(linked_projects, key=get_sort_key)
+
+        for proj_info in sorted_projects:
+            if remaining_to_distribute <= 0:
                 break
-            if not isinstance(line_item, dict):
+
+            proj_num = proj_info.get("project_number", "") if isinstance(proj_info, dict) else proj_info
+            if not proj_num:
                 continue
 
-            proj_num = line_item.get("project_number", "").strip()
-            if not proj_num and main_project:
-                proj_num = main_project
+            # Get this project's line item amount
+            proj_amount = sum(_safe_float(item.get("amount", 0)) for item in line_items
+                            if isinstance(item, dict) and item.get("project_number", "").strip() == proj_num)
 
-            stage_idx = line_item.get("payment_stage_index")
-            stage_name = line_item.get("stage_name", "")
-            item_amount = _safe_float(line_item.get("amount", 0))
+            if proj_amount > 0:
+                distribute_to_proj = min(proj_amount, remaining_to_distribute)
 
-            if item_amount > 0:
-                distribute_to_item = min(item_amount, remaining_to_distribute)
+                # Get stage info
+                _stage_name = meta.get("payment_stage", "")
+                _stage_idx = meta.get("payment_stage_index")
+                if _stage_idx is not None:
+                    try:
+                        _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
+                        # Look up actual stage name from project's payment_stages
+                        all_projs = fb_get("/projects") or {}
+                        for _pid, _pdata in (all_projs.items() if isinstance(all_projs, dict) else []):
+                            if isinstance(_pdata, dict) and _pdata.get("project_number") == proj_num:
+                                _stages = _pdata.get("payment_stages", [])
+                                if isinstance(_stages, list) and 0 <= _stage_idx < len(_stages):
+                                    _stage_name = (_stages[_stage_idx].get("name", "") or "").strip()
+                                break
+                    except (ValueError, TypeError):
+                        _stage_idx = None
 
-                # Only apply form fields (date, method, etc.) to the payment being edited
-                is_edited_payment = (proj_num == old_project and str(stage_idx) == str(old_stage_idx))
+                if not _stage_name and _stage_idx is not None:
+                    _stage_name = f"Stage {_stage_idx + 1}"
+
+                # Only apply form fields (date, method, etc.) to the project being edited
+                # Other projects get default values
+                is_edited_project = (proj_num == old_project)
 
                 new_payment_log.append({
-                    "amount": str(distribute_to_item),
-                    "date": request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")) if is_edited_payment else datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
-                    "method": request.form.get("method", "") if is_edited_payment else "",
-                    "reference": request.form.get("reference", "") if is_edited_payment else "",
-                    "notes": request.form.get("notes", "") if is_edited_payment else "",
+                    "amount": str(distribute_to_proj),
+                    "date": request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")) if is_edited_project else datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
+                    "method": request.form.get("method", "") if is_edited_project else "",
+                    "reference": request.form.get("reference", "") if is_edited_project else "",
+                    "notes": request.form.get("notes", "") if is_edited_project else "",
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "project_number": proj_num,
                     "invoice_number": meta.get("invoice_number", ""),
-                    "stage_name": stage_name,
-                    "stage_index": str(stage_idx) if stage_idx is not None else "",
+                    "stage_name": _stage_name,
+                    "stage_index": str(_stage_idx) if _stage_idx is not None else "",
                 })
-                remaining_to_distribute -= distribute_to_item
+                remaining_to_distribute -= distribute_to_proj
 
     # Step 2: Preserve existing tax payments and only add new ones if remainder
     old_tax_log = inv_data.get("tax_payments", []) or []
