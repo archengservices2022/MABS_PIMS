@@ -17815,13 +17815,13 @@ def _calculate_invoice_status(inv_data: dict) -> str:
     """Calculate invoice status based on amount_paid vs total.
 
     Uses meta.amount_paid as the source of truth (maintained by all payment paths).
-    Respects admin-set terminal statuses (Paid, Cancelled).
+    Respects Cancelled as terminal, but recalculates Paid status based on current payments.
     """
     meta = inv_data.get("meta", {}) or {}
     stored_status = meta.get("status", "Draft")
 
-    # Respect admin-set terminal statuses
-    if stored_status in ("Paid", "Cancelled"):
+    # Respect Cancelled as terminal status (only admin can set this)
+    if stored_status == "Cancelled":
         return stored_status
 
     invoice_total = _safe_float(meta.get("total", 0))
@@ -17833,7 +17833,9 @@ def _calculate_invoice_status(inv_data: dict) -> str:
     today      = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     is_overdue = bool(due_date and due_date < today)
 
-
+    # Automatically update Paid status if payments change
+    # If fully paid -> becomes Partially Paid when payment deleted
+    # If fully paid -> becomes Pending when all payments deleted
     if invoice_total > 0 and total_paid >= invoice_total - 0.01:
         return "Paid"
     elif total_paid > 0:
@@ -17841,7 +17843,7 @@ def _calculate_invoice_status(inv_data: dict) -> str:
     elif is_overdue and stored_status not in ("Draft", "Cancelled"):
         return "Overdue"
     else:
-        return stored_status
+        return "Pending"
 
 def _derive_stage_index_from_line_items(project_number: str, line_items: list) -> int:
     """Try to find stage_index from line items by looking for paid stage references."""
