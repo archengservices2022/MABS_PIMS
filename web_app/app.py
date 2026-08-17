@@ -6847,6 +6847,8 @@ def invoice_detail(invoice_id):
             payment_row["method"] = payment_entry.get("method", "")
             payment_row["reference"] = payment_entry.get("reference", "")
             payment_row["notes"] = payment_entry.get("notes", "")
+            # Use payment_log entry amount (not stage.amount_paid which gets recalculated)
+            payment_row["amount_paid"] = _safe_float(payment_entry.get("amount", 0))
             # Store the index of the payment for this specific stage (for edit/delete)
             payment_row["payment_log_index"] = payment_idx
 
