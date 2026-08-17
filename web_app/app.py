@@ -3760,22 +3760,19 @@ def project_detail(project_id):
         project_paid = invoice["_project_paid"]
 
 
-        # Status based on this project's amounts
-        if project_paid >= (project_invoice_due - 0.01):
-            invoice["_display_status"] = "Paid"
-        elif project_paid > 0:
-            invoice["_display_status"] = "Partial"
-        else:
-            # Check if overdue
-            due_date = meta.get("due_date", "")
-            today = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
-            if due_date and due_date < today:
-                invoice["_display_status"] = "Overdue"
-            else:
-                invoice["_display_status"] = "Sent"
+        # Use stored status, don't calculate it based on payments
+        stored_status = meta.get("status", "Draft")
 
-        # CRITICAL: Ensure meta.status is updated for the invoice card display
-        meta["status"] = invoice["_display_status"]
+        # Check if overdue: if status is Sent/Viewed/Partial and due date is passed
+        due_date = meta.get("due_date", "")
+        today = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
+        if stored_status in ("Sent", "Viewed", "Partial") and due_date and due_date < today:
+            invoice["_display_status"] = "Overdue"
+        else:
+            invoice["_display_status"] = stored_status
+
+        # Use stored status, don't overwrite with calculated status
+        meta["status"] = stored_status
 
     # Load expenses linked to this project
     raw_exp = fb_get("/balance_sheet_expenses") or {}
@@ -5479,15 +5476,17 @@ def invoicing():
     items.sort(key=lambda x: x.get("meta", {}).get("created_at", ""), reverse=True)
     all_invoices_raw = list(items)
 
-    # Calculate status for all invoices BEFORE filtering (so filter uses calculated status, not stored status)
+    # Use stored status from meta, don't recalculate
+    # Check for overdue: if status is Sent/Viewed/Partial and due date is passed
     today_str = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     for inv in items:
         m = inv.get("meta", {})
-        calculated_status = _calculate_invoice_status(inv)
-        m["status"] = calculated_status
+        stored_status = m.get("status", "Draft")
         due = m.get("due_date", "") or ""
-        if calculated_status in ("Sent", "Viewed", "Partial") and due and due < today_str:
+        if stored_status in ("Sent", "Viewed", "Partial") and due and due < today_str:
             m["status"] = "Overdue"
+        else:
+            m["status"] = stored_status
 
     search        = request.args.get("q", "").strip().lower()
     status_filter = request.args.get("status", "")
@@ -5495,16 +5494,6 @@ def invoicing():
     date_to       = request.args.get("to", "")
     client_filter = request.args.get("client", "")
     plant_filter  = request.args.get("plant", "").strip().upper()
-
-    # Recalculate status for every invoice BEFORE filtering so status_filter works correctly
-    today_str = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
-    for inv in items:
-        m = inv.get("meta", {})
-        calculated_status = _calculate_invoice_status(inv)
-        due = m.get("due_date", "") or ""
-        if calculated_status in ("Sent", "Viewed", "Partial") and due and due < today_str:
-            calculated_status = "Overdue"
-        m["status"] = calculated_status
 
     # IMPORTANT: Create items_for_collected from ALL invoices first
     # Then apply ONLY status/client/plant/search filters (NO invoice date filter)
