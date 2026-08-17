@@ -3643,8 +3643,11 @@ def project_detail(project_id):
                     # This ensures each stage only counts payments meant for that stage
                     inv_meta = inv.get("meta", {}) or {}
                     # Filter by stage_index to ensure this stage only gets its own payments
+                    # Use lenient matching (like payment recording does) to handle multi-project invoices
+                    # where payment_log entries might not have project_number/stage_index set
                     proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (inv.get("payment_log", []) or [])
-                                       if p.get("project_number") == proj_num and str(p.get("stage_index", "")) == str(idx))
+                                       if (p.get("project_number") == proj_num or not p.get("project_number"))
+                                           and (str(p.get("stage_index", "")) == str(idx) or not p.get("stage_index")))
 
                     # Fallback: if payment_log entries don't have stage_index (legacy data),
                     # use the stage's amount_paid from allocation
