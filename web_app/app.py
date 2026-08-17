@@ -6840,8 +6840,8 @@ def invoice_detail(invoice_id):
             stage_idx = "0"
         payment_row["line_item_index"] = line_item_map.get((proj_num, stage_idx), 9999)
 
-    # Sort by line_item_index to match invoice line item order (oldest to newest)
-    enriched_payment_log.sort(key=lambda x: x.get("line_item_index", 9999))
+    # Sort by line_item_index in reverse order (newest to oldest)
+    enriched_payment_log.sort(key=lambda x: x.get("line_item_index", 9999), reverse=True)
 
     # Tax payments kept separate from projects (no enrichment with project data)
     tax_log = data.get("tax_payments", [])
