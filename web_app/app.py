@@ -22079,15 +22079,15 @@ def payment_edit(invoice_id, idx):
     # Get the project of the payment being edited (to apply form fields only to that project)
     old_project = log[idx].get("project_number", "") if idx < len(log) else ""
 
-    # Build map of old payment entries by project_number for preserving details
-    old_payments_by_proj = {}  # proj_num -> list of old payment entries
+    # Build map of old payment entries by (project_number, stage_index) for precise matching
+    old_payments_by_key = {}  # (proj_num, stage_idx) -> old payment entry
     for old_p in log:
         if isinstance(old_p, dict):
             old_proj = old_p.get("project_number", "")
+            old_stage = old_p.get("stage_index", "")
             if old_proj:
-                if old_proj not in old_payments_by_proj:
-                    old_payments_by_proj[old_proj] = []
-                old_payments_by_proj[old_proj].append(old_p)
+                key = (old_proj, old_stage)
+                old_payments_by_key[key] = old_p
 
     # Step 1: Distribute to projects sequentially (same as invoice_update_amount)
     if linked_projects:
@@ -22097,9 +22097,6 @@ def payment_edit(invoice_id, idx):
                 return int(proj_num[-3:])
             return proj_num
         sorted_projects = sorted(linked_projects, key=get_sort_key)
-
-        # Track how many entries we've created per project (for preserving original dates)
-        proj_entry_count = {}
 
         for proj_info in sorted_projects:
             if remaining_to_distribute <= 0:
@@ -22140,13 +22137,11 @@ def payment_edit(invoice_id, idx):
                 # For other projects, preserve original payment details
                 is_edited_project = (proj_num == old_project)
 
-                # Try to find matching old payment entry to preserve details
+                # Try to find matching old payment entry by (project_number, stage_index)
                 orig_payment = None
-                if not is_edited_project and proj_num in old_payments_by_proj:
-                    entry_pos = proj_entry_count.get(proj_num, 0)
-                    if entry_pos < len(old_payments_by_proj[proj_num]):
-                        orig_payment = old_payments_by_proj[proj_num][entry_pos]
-                        proj_entry_count[proj_num] = entry_pos + 1
+                if not is_edited_project:
+                    key = (proj_num, str(_stage_idx) if _stage_idx is not None else "")
+                    orig_payment = old_payments_by_key.get(key)
 
                 new_payment_log.append({
                     "amount": str(distribute_to_proj),
