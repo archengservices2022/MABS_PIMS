@@ -209,21 +209,11 @@ def _normalise_state(value) -> str:
     return ""
 
 def _project_plant_display(project: dict) -> str:
+    # Only return actual plant field from project, don't extract from site_address
     for key in ("plant", "plant_location", "state"):
         state = _normalise_state(project.get(key))
         if state:
             return state
-
-    for key in ("site_address", "project_site_address", "project_name", "mail_address"):
-        text = str(project.get(key) or "")
-        if not text:
-            continue
-        abbr_matches = _STATE_ABBR_RE.findall(text)
-        if abbr_matches:
-            return abbr_matches[-1].upper()
-        name_matches = _STATE_NAME_RE.findall(text)
-        if name_matches:
-            return US_STATE_NAMES.get(name_matches[-1].upper(), "")
     return ""
 
 def _project_number_sort_key(project: dict):
