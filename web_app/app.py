@@ -21748,6 +21748,7 @@ def payment_sequential(invoice_id):
     # CRITICAL: Iterate through line_items (not linked_projects) to handle multiple stages per project
     # Each line_item is a unique (project, stage) combination
     # This ensures proper per-stage payment allocation and tracking
+    # Payments are allocated in line_item order (invoice order), not project order
     if remaining_to_distribute > 0 and line_items:
         for line_idx, line_item in enumerate(line_items):
             if not isinstance(line_item, dict):
