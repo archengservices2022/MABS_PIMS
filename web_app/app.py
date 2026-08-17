@@ -21751,7 +21751,7 @@ def payment_sequential(invoice_id):
                     "project_number": proj_num,
                     "invoice_number": meta.get("invoice_number", ""),
                     "stage_name": _stage_name,
-                    "stage_index": _stage_idx or "",
+                    "stage_index": str(_stage_idx) if _stage_idx is not None else "",
                 }
                 payment_log.append(payment_entry)
                 remaining_to_distribute -= stage_allocation
