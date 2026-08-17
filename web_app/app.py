@@ -3609,20 +3609,27 @@ def project_detail(project_id):
                 if proj_num not in linked_projects:
                     continue
 
-                # For multi-project invoices, find the stage index from linked_projects
-                stage_idx = -1
+                # For multi-project invoices, find ALL stage indices for this project
+                # A single project can appear multiple times with different stages
                 lp_list = inv_meta.get("linked_projects") or []
+                stage_indices = []
+
                 if isinstance(lp_list, list):
                     for lp in lp_list:
                         if isinstance(lp, dict) and lp.get("project_number") == proj_num:
+                            # Found a linked_project entry for this project
                             stage_idx = lp.get("payment_stage_index", -1)
-                            break
+                            if stage_idx >= 0:
+                                stage_indices.append(stage_idx)
 
-                # Fallback to old single-project format
-                if stage_idx < 0:
+                # Fallback to old single-project format if no linked_projects found
+                if not stage_indices:
                     stage_idx = inv_meta.get("payment_stage_index", -1)
+                    if stage_idx >= 0:
+                        stage_indices.append(stage_idx)
 
-                if stage_idx >= 0:
+                # Add invoice to stage_invoices for EACH stage it covers
+                for stage_idx in stage_indices:
                     if stage_idx not in stage_invoices:
                         stage_invoices[stage_idx] = []
                     stage_invoices[stage_idx].append(inv)
