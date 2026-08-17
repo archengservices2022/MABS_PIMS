@@ -21778,20 +21778,21 @@ def payment_sequential(invoice_id):
     amount_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
     tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
 
-    fresh_inv = dict(inv_data)
-    fresh_inv["payment_log"] = payment_log
-    new_status = _calculate_invoice_status(fresh_inv)
+    # Keep the current status - don't auto-calculate it
+    # Status should only be changed when the user explicitly sets it via UPDATE STATUS
+    meta = inv_data.get("meta", {}) or {}
+    current_status = meta.get("status", "Draft")
 
     log.info(f"[FIREBASE_SAVE] Saving payment_log with {len(payment_log)} entries for invoice {invoice_id}")
-    log.info(f"[STATUS_UPDATE] Setting invoice status to: {new_status}")
+    log.info(f"[STATUS_UPDATE] Preserving invoice status: {current_status}")
     fb_update(f"/invoices/{invoice_id}", {
         "payment_log":      payment_log,
         "meta/amount_paid": str(amount_paid),
         "meta/tax_paid":    str(tax_paid),
-        "meta/status":      new_status,
+        "meta/status":      current_status,
         "meta/updated_at":  datetime.now(timezone.utc).isoformat(),
     })
-    log.info(f"[FIREBASE_SAVED] Invoice updated successfully with status={new_status}")
+    log.info(f"[FIREBASE_SAVED] Invoice updated successfully with status={current_status}")
 
     # Use sequential allocation for multi-project invoices FIRST
     # Then update stage statuses using the allocated amounts
