@@ -208,6 +208,57 @@ def _normalise_state(value) -> str:
         return US_STATE_NAMES[cleaned]
     return ""
 
+def _backfill_payment_log_stage_names():
+    """Backfill stage_name in payment_log entries using project payment_stages data."""
+    invoices = fb_get("/invoices") or {}
+    all_projects = fb_get("/projects") or {}
+
+    updated_count = 0
+    for inv_id, inv_data in invoices.items():
+        if not isinstance(inv_data, dict):
+            continue
+
+        payment_log = inv_data.get("payment_log", []) or []
+        updated = False
+
+        for payment in payment_log:
+            if not isinstance(payment, dict):
+                continue
+
+            # Skip if stage_name is already set
+            if payment.get("stage_name", "").strip():
+                continue
+
+            proj_num = payment.get("project_number", "")
+            if not proj_num:
+                continue
+
+            # Look up stage name from project
+            stage_idx_str = payment.get("stage_index", "")
+            if not stage_idx_str:
+                continue
+
+            try:
+                stage_idx = int(stage_idx_str)
+                for pid, pdata in all_projects.items():
+                    if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
+                        stages = pdata.get("payment_stages", [])
+                        if isinstance(stages, list) and 0 <= stage_idx < len(stages):
+                            stage_name = (stages[stage_idx].get("name", "") or "").strip()
+                            if stage_name:
+                                payment["stage_name"] = stage_name
+                                updated = True
+                                updated_count += 1
+                        break
+            except (ValueError, TypeError):
+                continue
+
+        if updated:
+            fb_update(f"/invoices/{inv_id}", {"payment_log": payment_log})
+
+    log.info(f"[BACKFILL_STAGE_NAMES] Updated {updated_count} payment entries with stage names")
+    return updated_count
+
 def _project_plant_display(project: dict) -> str:
     # Only return actual plant field from project, don't extract from site_address
     for key in ("plant", "plant_location", "state"):
@@ -11913,6 +11964,9 @@ def delete_employee_advance():
 @app.route("/financial")
 @role_required("financial")
 def financial():
+    # Backfill stage_name in payment_log for existing invoices (one-time migration)
+    _backfill_payment_log_stage_names()
+
     # Re-sync all advances to ensure expense entries have correct data
     _resync_all_advances()
 
