@@ -6850,11 +6850,10 @@ def invoice_detail(invoice_id):
             # Store the index of the payment for this specific stage (for edit/delete)
             payment_row["payment_log_index"] = payment_idx
 
-        # Only include this row if it has actual payment data
-        # (either a payment_log entry OR an amount_paid > 0)
+        # Only include this row if it has a payment_log entry (something to delete)
+        # Don't include rows with only amount_paid but no payment - they can't be edited/deleted
         has_payment_log_entry = stage_key in payment_log_by_stage
-        has_amount_paid = _safe_float(payment_row.get("amount_paid", 0)) > 0
-        if has_payment_log_entry or has_amount_paid:
+        if has_payment_log_entry:
             enriched_payment_log.append(payment_row)
 
     # Tax payments kept separate from projects (no enrichment with project data)
