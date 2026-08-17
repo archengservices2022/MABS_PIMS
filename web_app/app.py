@@ -21868,13 +21868,13 @@ def payment_delete(invoice_id, idx):
     deleted_amount = _safe_float(deleted_entry.get("amount", 0))
     log.info(f"[DELETE_PAYMENT] Deleting payment index {idx}: project={deleted_proj}, stage={deleted_stage}, amount=${deleted_amount}")
 
-    # Calculate the amount to delete
-    deleted_amount = _safe_float(deleted_entry.get("amount", 0))
+    # Delete by index, not by comparing dictionaries (which may fail due to structure differences)
+    new_payment_log = [p for i, p in enumerate(payment_log) if i != idx]
 
     # Calculate new total paid AFTER deletion
-    amount_paid = sum(_safe_float(p["amount"]) for p in payment_log if p != deleted_entry)
+    amount_paid = sum(_safe_float(p.get("amount", 0)) for p in new_payment_log)
 
-    log.info(f"[DELETE_PAYMENT] After removal: {len(payment_log) - 1} payment entries remain (was {len(payment_log)}), total_paid=${amount_paid}")
+    log.info(f"[DELETE_PAYMENT] After removal: {len(new_payment_log)} payment entries remain (was {len(payment_log)}), total_paid=${amount_paid}")
 
     # Update invoice meta with new amount_paid
     meta = inv_data.get("meta", {}) or {}
@@ -21883,12 +21883,12 @@ def payment_delete(invoice_id, idx):
 
     # Calculate new status based on new total paid
     fresh_inv = dict(inv_data)
-    fresh_inv["payment_log"] = [p for p in payment_log if p != deleted_entry]
+    fresh_inv["payment_log"] = new_payment_log
     fresh_inv["meta"] = meta
     new_status = _calculate_invoice_status(fresh_inv)
 
     fb_update(f"/invoices/{invoice_id}", {
-        "payment_log":      [p for p in payment_log if p != deleted_entry],
+        "payment_log":      new_payment_log,
         "meta/amount_paid": str(amount_paid),
         "meta/status":      new_status,
         "meta/updated_at":  meta.get("updated_at"),
