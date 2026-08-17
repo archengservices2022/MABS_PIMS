@@ -6797,9 +6797,13 @@ def invoice_detail(invoice_id):
     enriched_tax_payments = [dict(payment) for payment in tax_log]
 
     # Calculate current status based on actual payments (not stored status)
-    calculated_status = _calculate_invoice_status(data)
-    # Update the invoice data with calculated status for display
-    data["meta"]["status"] = calculated_status
+    # Use the stored status from meta, don't calculate/overwrite it
+    # The status should be what the user explicitly set in UPDATE STATUS
+    # No auto-calculation of status based on payments
+    stored_status = data.get("meta", {}).get("status", "Draft")
+    if not stored_status:
+        stored_status = "Draft"
+    data["meta"]["status"] = stored_status
 
     # Ensure tax_paid is set in meta for template compatibility
     if "tax_paid" not in data["meta"]:
@@ -21386,14 +21390,16 @@ def payment_add(invoice_id):
         log.append(payment_entry)
 
     amount_paid = sum(_safe_float(p.get("amount", 0)) for p in log)
-    fresh_inv = dict(inv_data)
-    fresh_inv["payment_log"] = log
-    new_status = _calculate_invoice_status(fresh_inv)
+
+    # Keep the current status - don't auto-calculate it
+    # Status should only be changed when the user explicitly sets it via UPDATE STATUS
+    meta = inv_data.get("meta", {}) or {}
+    current_status = meta.get("status", "Draft")
 
     fb_update(f"/invoices/{invoice_id}", {
         "payment_log":      log,
         "meta/amount_paid": str(amount_paid),
-        "meta/status":      new_status,
+        "meta/status":      current_status,
         "meta/updated_at":  datetime.now(timezone.utc).isoformat(),
     })
 
@@ -21621,14 +21627,16 @@ def payment_full(invoice_id):
         log.append(payment_entry)
 
     amount_paid = sum(_safe_float(p.get("amount", 0)) for p in log)
-    fresh_inv = dict(inv_data)
-    fresh_inv["payment_log"] = log
-    new_status = _calculate_invoice_status(fresh_inv)
+
+    # Keep the current status - don't auto-calculate it
+    # Status should only be changed when the user explicitly sets it via UPDATE STATUS
+    meta = inv_data.get("meta", {}) or {}
+    current_status = meta.get("status", "Draft")
 
     fb_update(f"/invoices/{invoice_id}", {
         "payment_log":      log,
         "meta/amount_paid": str(amount_paid),
-        "meta/status":      new_status,
+        "meta/status":      current_status,
         "meta/updated_at":  datetime.now(timezone.utc).isoformat(),
     })
 
@@ -21839,11 +21847,12 @@ def payment_delete(invoice_id, idx):
     meta["amount_paid"] = str(amount_paid)
     meta["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-    # Calculate new status based on new total paid
-    fresh_inv = dict(inv_data)
-    fresh_inv["payment_log"] = new_payment_log
-    fresh_inv["meta"] = meta
-    new_status = _calculate_invoice_status(fresh_inv)
+    # If all payments are deleted, set status to "Sent"
+    # Otherwise keep the current status (don't auto-calculate)
+    if len(new_payment_log) == 0:
+        new_status = "Sent"
+    else:
+        new_status = meta.get("status", "Draft")
 
     fb_update(f"/invoices/{invoice_id}", {
         "payment_log":      new_payment_log,
