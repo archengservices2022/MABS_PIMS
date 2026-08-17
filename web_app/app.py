@@ -21689,143 +21689,61 @@ def payment_sequential(invoice_id):
     if not linked_projects and main_project:
         linked_projects = [{"project_number": main_project, "payment_stage_index": meta.get("payment_stage_index", 0)}]
 
-    # Step 1: For multi-project invoices, skip single primary_project allocation
-    # Go straight to sequential distribution across all linked_projects (sorted)
-    # For single-project invoices, handle main_project normally
-    is_multi = len(linked_projects) > 1
+    # CRITICAL: Iterate through line_items (not linked_projects) to handle multiple stages per project
+    # Each line_item is a unique (project, stage) combination
+    # This ensures proper per-stage payment allocation and tracking
+    if remaining_to_distribute > 0 and line_items:
+        for line_idx, line_item in enumerate(line_items):
+            if not isinstance(line_item, dict):
+                continue
 
-    if not is_multi and remaining_to_distribute > 0 and main_project:
-        # Single-project invoice: allocate to main_project
-        # Calculate total project invoice amount from line items (excluding tax)
-        proj_amount = 0
-        for item in line_items:
-            if isinstance(item, dict):
-                proj_amount += _safe_float(item.get("amount", 0))
-
-        if proj_amount > 0:
-            # Calculate how much this project has already received
-            proj_received = sum(
-                _safe_float(p.get("amount", 0))
-                for p in payment_log
-                if p.get("project_number") == main_project
-            )
-
-            # How much more does this project need?
-            proj_needs = max(0, proj_amount - proj_received)
-
-            if proj_needs > 0:
-                # Distribute amount to this project
-                distribute_to_proj = min(proj_needs, remaining_to_distribute)
-
-                # Determine stage name - try multiple sources
-                _stage_name = meta.get("payment_stage", "")
-                _stage_idx = meta.get("payment_stage_index")
-
-                # Convert stage_index to int if available
-                if _stage_idx is not None:
-                    try:
-                        _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
-                    except (ValueError, TypeError):
-                        _stage_idx = None
-
-                # If stage_name is empty but we have stage_index, generate a fallback
-                if not _stage_name and _stage_idx is not None:
-                    _stage_name = f"Stage {_stage_idx + 1}"
-
-                payment_entry = {
-                    "amount":     str(distribute_to_proj),
-                    "date":       request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
-                    "method":     request.form.get("method", ""),
-                    "reference":  request.form.get("reference", ""),
-                    "notes":      request.form.get("notes", ""),
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "project_number": main_project,
-                    # Metadata for tracking
-                    "invoice_number": meta.get("invoice_number", ""),
-                    "stage_name": _stage_name,
-                    "stage_index": _stage_idx or "",
-                }
-                payment_log.append(payment_entry)
-                remaining_to_distribute -= distribute_to_proj
-                log.info(f"[PAYMENT_DIST] Recorded ${distribute_to_proj} payment for project {main_project}")
-
-    # Fallback: if still have remaining_to_distribute and linked_projects, distribute there too
-    elif remaining_to_distribute > 0 and linked_projects:
-        # SORT linked_projects by project number (001, 002, 003...) before distributing
-        # Handle both dict and string formats
-        def get_sort_key(x):
-            proj_num = x.get("project_number", "") if isinstance(x, dict) else x
-            if proj_num and proj_num[-3:].isdigit():
-                return int(proj_num[-3:])
-            return proj_num
-        sorted_projects = sorted(linked_projects, key=get_sort_key)
-        for proj_info in sorted_projects:
             if remaining_to_distribute <= 0:
+                break
+
+            proj_num = line_item.get("project_number", "").strip() or main_project
+            if not proj_num:
                 continue
 
-            # Handle both dict and string formats for project_info
-            if isinstance(proj_info, dict):
-                project_number = proj_info.get("project_number", "")
-            else:
-                project_number = proj_info
-            if not project_number:
+            line_amount = _safe_float(line_item.get("amount", 0))
+            if line_amount <= 0:
                 continue
 
-            # Find project amount from line items
-            proj_amount = 0
-            for item in line_items:
-                if isinstance(item, dict):
-                    item_proj = item.get("project_number", "").strip() or main_project
-                    if item_proj == project_number:
-                        proj_amount += _safe_float(item.get("amount", 0))
+            # Get the explicit stage_index from line_item (for multi-stage projects)
+            _stage_idx = line_item.get("payment_stage_index")
+            stage_idx_str = str(_stage_idx) if _stage_idx is not None else ""
 
-            if proj_amount <= 0:
-                continue
-
-            # Calculate how much this project has already received
-            proj_received = sum(
+            # Calculate how much THIS SPECIFIC STAGE has already received
+            stage_already_paid = sum(
                 _safe_float(p.get("amount", 0))
                 for p in payment_log
-                if p.get("project_number") == project_number
+                if p.get("project_number") == proj_num and str(p.get("stage_index", "")) == stage_idx_str
             )
 
-            # How much more does this project need?
-            proj_needs = max(0, proj_amount - proj_received)
+            # How much more does THIS STAGE need?
+            stage_remaining = max(0, line_amount - stage_already_paid)
 
-            if proj_needs > 0:
-                # Distribute amount to this project
-                distribute_to_proj = min(proj_needs, remaining_to_distribute)
+            if stage_remaining > 0:
+                # Allocate to this stage
+                stage_allocation = min(remaining_to_distribute, stage_remaining)
 
-                # Determine stage name - try multiple sources
-                _stage_name = meta.get("payment_stage", "")
-                _stage_idx = meta.get("payment_stage_index")
-
-                # Convert stage_index to int if available
-                if _stage_idx is not None:
-                    try:
-                        _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
-                    except (ValueError, TypeError):
-                        _stage_idx = None
-
-                # If stage_name is empty but we have stage_index, generate a fallback
-                if not _stage_name and _stage_idx is not None:
-                    _stage_name = f"Stage {_stage_idx + 1}"
+                # Get stage name from line_item
+                _stage_name = line_item.get("stage_name") or ""
 
                 payment_entry = {
-                    "amount":     str(distribute_to_proj),
+                    "amount":     str(stage_allocation),
                     "date":       request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
                     "method":     request.form.get("method", ""),
                     "reference":  request.form.get("reference", ""),
                     "notes":      request.form.get("notes", ""),
                     "created_at": datetime.now(timezone.utc).isoformat(),
-                    "project_number": project_number,
-                    # Metadata for tracking
+                    "project_number": proj_num,
                     "invoice_number": meta.get("invoice_number", ""),
                     "stage_name": _stage_name,
                     "stage_index": _stage_idx or "",
                 }
                 payment_log.append(payment_entry)
-                remaining_to_distribute -= distribute_to_proj
+                remaining_to_distribute -= stage_allocation
+                log.info(f"[PAYMENT_ALLOC] Allocated ${stage_allocation} to {proj_num} stage {stage_idx_str}")
 
     # Step 2: Distribute remaining to tax
     if remaining_to_distribute > 0 and tax_amount > 0:
