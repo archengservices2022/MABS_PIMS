@@ -19506,15 +19506,7 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
         bs_exp = fb_get("/balance_sheet_expenses") or {}
         exp_id = None
         for eid, edata in bs_exp.items():
-            if not isinstance(edata, dict):
-                continue
-            # Match commission expenses by project_number and commission indicators
-            # (type="commission" OR category="Sales Commission" OR is_commission=True)
-            matches_project = edata.get("project_number") == proj_num
-            is_commission_type = (edata.get("type") == "commission" or
-                                   edata.get("category") == "Sales Commission" or
-                                   edata.get("is_commission"))
-            if matches_project and is_commission_type:
+            if isinstance(edata, dict) and edata.get("project_number") == proj_num and edata.get("type") == "commission":
                 exp_id = eid
                 break
 
@@ -19531,8 +19523,6 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
                 ref.set({
                     "project_number": proj_num,
                     "type": "commission",
-                    "category": "Sales Commission",
-                    "is_commission": True,
                     "description": f"Commission - {sales_name}",
                     "amount": round(commission_amount, 2),
                     "date": datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
@@ -21434,20 +21424,7 @@ def payment_add(invoice_id):
                 # Ensure stage_idx is a valid type (int or string number), not empty
                 if stage_idx == "" or stage_idx is None:
                     stage_idx = 0  # Default to stage 0 if not specified
-
-                # Get stage_name: try line_item first, then look up from project payment_stages, then fallback to invoice
-                stage_name = line_item.get("stage_name", "").strip()
-                if not stage_name and proj_num:
-                    # Look up stage name from project's payment_stages using stage_index
-                    all_projects = fb_get("/projects") or {}
-                    for pid, pdata in all_projects.items():
-                        if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
-                            stages = pdata.get("payment_stages", [])
-                            if isinstance(stages, list) and isinstance(stage_idx, int) and 0 <= stage_idx < len(stages):
-                                stage_name = (stages[stage_idx].get("name", "") or "").strip()
-                            break
-                if not stage_name:
-                    stage_name = inv_meta.get("payment_stage", "")
+                stage_name = line_item.get("stage_name", inv_meta.get("payment_stage", ""))
 
                 # Check if this stage already has a payment
                 stage_already_paid = sum(_safe_float(p.get("amount", 0)) for p in log
@@ -21862,21 +21839,8 @@ def payment_sequential(invoice_id):
                 # Allocate to this stage
                 stage_allocation = min(remaining_to_distribute, stage_remaining)
 
-                # Get stage_name: try line_item first, then look up from project payment_stages
-                _stage_name = (line_item.get("stage_name") or "").strip()
-                if not _stage_name and proj_num:
-                    # Look up stage name from project's payment_stages using stage_index
-                    all_projects = fb_get("/projects") or {}
-                    for pid, pdata in all_projects.items():
-                        if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
-                            stages = pdata.get("payment_stages", [])
-                            try:
-                                stage_idx_int = int(_stage_idx) if isinstance(_stage_idx, (int, str)) else 0
-                                if isinstance(stages, list) and 0 <= stage_idx_int < len(stages):
-                                    _stage_name = (stages[stage_idx_int].get("name", "") or "").strip()
-                            except (ValueError, TypeError):
-                                pass
-                            break
+                # Get stage name from line_item
+                _stage_name = line_item.get("stage_name") or ""
 
                 payment_entry = {
                     "amount":     str(stage_allocation),
