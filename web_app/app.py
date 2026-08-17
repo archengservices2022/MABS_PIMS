@@ -18060,10 +18060,8 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
         linked_invoice_number = None
 
         if is_multi_project:
-            # For multi-project invoices, use the stage's amount_paid (not the project total)
-            project_paid = _safe_float(stage.get("amount_paid", 0))
-
-            # Also find and set the invoice_number for this stage
+            # For multi-project invoices, sum payments from payment_log (just like single-project)
+            # Do NOT use stage.get("amount_paid") as it hasn't been updated yet
             if isinstance(all_invoices, dict):
                 for inv_id, inv in all_invoices.items():
                     if not isinstance(inv, dict):
@@ -18086,12 +18084,26 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
                                     break
 
                     if is_for_this_stage:
-                        if not linked_invoice_number:
-                            linked_invoice_id = inv_id
-                            linked_invoice_number = inv_meta.get("invoice_number", "")
-                            # For current invoice, prioritize it
-                            if inv_id == invoice_id:
-                                break
+                        # Sum payments for this invoice (filter by project_number AND stage_index)
+                        inv_payment_log = inv.get("payment_log", [])
+                        if isinstance(inv_payment_log, list):
+                            # Sum only payments for this project AND this specific stage
+                            inv_payments = sum(
+                                _safe_float(p.get("amount", 0))
+                                for p in inv_payment_log
+                                if (p.get("project_number") == project_number or not p.get("project_number"))
+                                    and (str(p.get("stage_index", "")) == str(stage_index) or not p.get("stage_index"))
+                            )
+                            project_paid += inv_payments
+
+                        # Track invoice_id and invoice_number if this invoice has actual payments or is the current invoice
+                        if inv_payments > 0 or inv_id == invoice_id:
+                            if inv_id == invoice_id or not linked_invoice_id:
+                                linked_invoice_id = inv_id
+                                linked_invoice_number = inv_meta.get("invoice_number", "")
+                                # For current invoice, prioritize it
+                                if inv_id == invoice_id:
+                                    break
         else:
             # Sum payments from ALL invoices linked to this stage for this project
             if isinstance(all_invoices, dict):
