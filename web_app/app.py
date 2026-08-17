@@ -6820,18 +6820,16 @@ def invoice_detail(invoice_id):
                 stage_idx = "0"
             line_item_map[(proj_num, stage_idx)] = li_idx
 
-    # Add line_item_index to each payment for sorting
+    # Add stage_index as integer for sorting
     for payment_row in enriched_payment_log:
-        proj_num = payment_row.get("project_number", "")
-        stage_idx = payment_row.get("stage_index", "0")
+        stage_idx_str = payment_row.get("stage_index", "0")
         try:
-            stage_idx = str(int(stage_idx)) if stage_idx else "0"
+            payment_row["stage_idx_int"] = int(stage_idx_str) if stage_idx_str else 0
         except (ValueError, TypeError):
-            stage_idx = "0"
-        payment_row["line_item_index"] = line_item_map.get((proj_num, stage_idx), 9999)
+            payment_row["stage_idx_int"] = 0
 
-    # Sort by line_item_index in reverse order (newest to oldest)
-    enriched_payment_log.sort(key=lambda x: x.get("line_item_index", 9999), reverse=True)
+    # Sort by project_number, then by stage_index (natural order)
+    enriched_payment_log.sort(key=lambda x: (x.get("project_number", ""), x.get("stage_idx_int", 0)))
 
     # Tax payments kept separate from projects (no enrichment with project data)
     tax_log = data.get("tax_payments", [])
@@ -12852,7 +12850,7 @@ def financial():
                 _merged[_key]["paid_amount"] += _row["paid_amount"]
             else:
                 _merged[_key] = dict(_row)
-        monthly_payment_details[_mk] = sorted(_merged.values(), key=lambda x: x.get("paid_date", ""))
+        monthly_payment_details[_mk] = sorted(_merged.values(), key=lambda x: (x.get("project_number", ""), x.get("paid_date", "")))
 
     # ── Chart data for overview pie charts ────────────────────────────────────
     inv_status_counts = {}
