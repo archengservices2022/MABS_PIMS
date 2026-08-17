@@ -19506,7 +19506,15 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
         bs_exp = fb_get("/balance_sheet_expenses") or {}
         exp_id = None
         for eid, edata in bs_exp.items():
-            if isinstance(edata, dict) and edata.get("project_number") == proj_num and edata.get("type") == "commission":
+            if not isinstance(edata, dict):
+                continue
+            # Match commission expenses by project_number and commission indicators
+            # (type="commission" OR category="Sales Commission" OR is_commission=True)
+            matches_project = edata.get("project_number") == proj_num
+            is_commission_type = (edata.get("type") == "commission" or
+                                   edata.get("category") == "Sales Commission" or
+                                   edata.get("is_commission"))
+            if matches_project and is_commission_type:
                 exp_id = eid
                 break
 
@@ -19523,6 +19531,8 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
                 ref.set({
                     "project_number": proj_num,
                     "type": "commission",
+                    "category": "Sales Commission",
+                    "is_commission": True,
                     "description": f"Commission - {sales_name}",
                     "amount": round(commission_amount, 2),
                     "date": datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
