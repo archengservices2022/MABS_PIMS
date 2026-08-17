@@ -3645,14 +3645,23 @@ def project_detail(project_id):
                     # Filter by stage_index to ensure this stage only gets its own payments
                     # Use lenient matching (like payment recording does) to handle multi-project invoices
                     # where payment_log entries might not have project_number/stage_index set
-                    proj_payments = sum(_safe_float(p.get("amount", 0)) for p in (inv.get("payment_log", []) or [])
+                    payment_log = inv.get("payment_log", []) or []
+
+                    # Debug: log all payment entries
+                    if payment_log:
+                        log.info(f"[PROJECT_DETAIL_LOG] invoice={inv.get('firebase_id')}, entries={[{'amt': p.get('amount'), 'proj': p.get('project_number'), 'stg': p.get('stage_index')} for p in payment_log]}")
+
+                    proj_payments = sum(_safe_float(p.get("amount", 0)) for p in payment_log
                                        if (p.get("project_number") == proj_num or not p.get("project_number"))
-                                           and (str(p.get("stage_index", "")) == str(idx) or not p.get("stage_index")))
+                                           and (str(p.get("stage_index", "")) == str(idx) or (p.get("stage_index") is None or p.get("stage_index") == "")))
+
+                    log.info(f"[PROJECT_DETAIL_PAID] project={proj_num}, stage={idx}, payment_log_count={len(payment_log)}, matched_payments={proj_payments}")
 
                     # Fallback: if payment_log entries don't have stage_index (legacy data),
                     # use the stage's amount_paid from allocation
                     if proj_payments == 0 and proj_num in _invoice_linked_projects(inv):
                         proj_payments = _safe_float(stage.get("amount_paid", 0))
+                        log.info(f"[PROJECT_DETAIL_FALLBACK] Using stage.amount_paid: {proj_payments}")
 
                     amount_paid += proj_payments
                     due_date = due_date or inv_meta.get("due_date", "")
