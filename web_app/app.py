@@ -6775,6 +6775,7 @@ def invoice_detail(invoice_id):
             "notes": payment.get("notes", ""),
             "amount_paid": _safe_float(payment.get("amount", 0)),
             "payment_log_index": p_idx,
+            "stage_index": payment.get("stage_index", "0"),
         }
 
         # Find project data to get name, firebase_id, and stage details
@@ -6812,6 +6813,35 @@ def invoice_detail(invoice_id):
                 payment_row["stage_name"] = payment.get("stage_name", "Invoice Payment")
 
         enriched_payment_log.append(payment_row)
+
+    # Sort enriched_payment_log by line_item order to match invoice display
+    # Build mapping of (project_number, stage_index) -> line_item_index
+    line_item_map = {}  # (proj_num, stage_idx) -> line_item_index
+    line_items_for_order = data.get("line_items", []) or []
+    for li_idx, line_item in enumerate(line_items_for_order):
+        if not isinstance(line_item, dict):
+            continue
+        proj_num = line_item.get("project_number", "")
+        stage_idx_str = line_item.get("payment_stage_index", "0")
+        if proj_num:
+            try:
+                stage_idx = str(int(stage_idx_str)) if stage_idx_str else "0"
+            except (ValueError, TypeError):
+                stage_idx = "0"
+            line_item_map[(proj_num, stage_idx)] = li_idx
+
+    # Add line_item_index to each payment for sorting
+    for payment_row in enriched_payment_log:
+        proj_num = payment_row.get("project_number", "")
+        stage_idx = payment_row.get("stage_index", "0")
+        try:
+            stage_idx = str(int(stage_idx)) if stage_idx else "0"
+        except (ValueError, TypeError):
+            stage_idx = "0"
+        payment_row["line_item_index"] = line_item_map.get((proj_num, stage_idx), 9999)
+
+    # Sort by line_item_index to match invoice line item order
+    enriched_payment_log.sort(key=lambda x: x.get("line_item_index", 9999))
 
     # Tax payments kept separate from projects (no enrichment with project data)
     tax_log = data.get("tax_payments", [])
