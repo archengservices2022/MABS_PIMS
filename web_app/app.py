@@ -18086,6 +18086,7 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
                     if is_for_this_stage:
                         # Sum payments for this invoice (filter by project_number AND stage_index)
                         inv_payment_log = inv.get("payment_log", [])
+                        inv_payments = 0  # CRITICAL: Initialize to 0 for each stage iteration
                         if isinstance(inv_payment_log, list):
                             # Sum only payments for this project AND this specific stage
                             inv_payments = sum(
