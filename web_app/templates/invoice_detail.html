@@ -88,7 +88,8 @@
 {% set wf_quote = source_quote %}
 {% set wf_quote_id = source_quote.firebase_id if source_quote else '' %}
 {% if linked_projects|length > 1 %}
-  {% set wf_project = {'project_number': 'Multiple Projects', 'status': 'Active', '_is_multiple': true, '_count': linked_projects|length} %}
+  {% set line_items_list = invoice.get('line_items', []) or [] %}
+  {% set wf_project = {'project_number': 'Multiple Projects', 'status': 'Active', '_is_multiple': true, '_count': line_items_list|length} %}
   {% set wf_project_id = 'multiple' %}
 {% else %}
   {% set wf_project = linked_project %}
@@ -175,7 +176,8 @@
           {% if linked_projects and linked_projects|length > 1 %}
             <!-- Multi-project invoice -->
             <div style="font-size:0.8rem; color:#64748B; margin-top:4px;">
-              <strong>Multiple Projects</strong> ({{ linked_projects|length }} projects)
+              {% set line_item_count = invoice.get('line_items', [])|length or 0 %}
+              <strong>Multiple Projects</strong> ({{ line_item_count }} {{ 'item' if line_item_count == 1 else 'items' }})
             </div>
           {% elif meta.get('project_number') %}
             <!-- Single project invoice -->
