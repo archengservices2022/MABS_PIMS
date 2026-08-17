@@ -3714,6 +3714,19 @@ def project_detail(project_id):
     # Sort by invoice_date DESC, then created_at DESC (for same-date invoices, newest first)
     project_invoices.sort(key=lambda x: (x.get("meta", {}).get("invoice_date", ""), x.get("meta", {}).get("created_at", "")), reverse=True)
 
+    # Ensure all invoices have amount_paid and tax_paid in meta (for display/workflow tracker)
+    for invoice in project_invoices:
+        if "meta" not in invoice:
+            invoice["meta"] = {}
+        if "amount_paid" not in invoice["meta"]:
+            payment_log = invoice.get("payment_log", []) or []
+            total_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
+            invoice["meta"]["amount_paid"] = str(total_paid) if total_paid > 0 else "0"
+        if "tax_paid" not in invoice["meta"]:
+            tax_log = invoice.get("tax_payments", []) or []
+            tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+            invoice["meta"]["tax_paid"] = str(tax_paid) if tax_paid > 0 else "0"
+
     # Recalculate fresh statuses for display (based on actual payments)
     for invoice in project_invoices:
         # Calculate project-specific paid amount from payment_log (filtered by project_number)
@@ -3760,19 +3773,31 @@ def project_detail(project_id):
         project_paid = invoice["_project_paid"]
 
 
-        # Use stored status, don't calculate it based on payments
+        # Show Paid if fully paid, otherwise show stored status with overdue check
         stored_status = meta.get("status", "Draft")
+
+        # Calculate if fully paid
+        total = _safe_float(meta.get("total", 0))
+        amt_paid = _safe_float(meta.get("amount_paid", 0))
+        tax_paid = _safe_float(meta.get("tax_paid", 0))
+        balance = total - amt_paid - tax_paid
 
         # Check if overdue: if status is Sent/Viewed/Partial and due date is passed
         due_date = meta.get("due_date", "")
         today = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
-        if stored_status in ("Sent", "Viewed", "Partial") and due_date and due_date < today:
+
+        if balance <= 0:
+            # Fully paid - show Paid
+            invoice["_display_status"] = "Paid"
+        elif stored_status in ("Sent", "Viewed", "Partial") and due_date and due_date < today:
+            # Not fully paid but overdue
             invoice["_display_status"] = "Overdue"
         else:
+            # Use stored status
             invoice["_display_status"] = stored_status
 
-        # Use stored status, don't overwrite with calculated status
-        meta["status"] = stored_status
+        # Display status for template/workflow tracker
+        meta["status"] = invoice["_display_status"]
 
     # Load expenses linked to this project
     raw_exp = fb_get("/balance_sheet_expenses") or {}
@@ -5476,17 +5501,26 @@ def invoicing():
     items.sort(key=lambda x: x.get("meta", {}).get("created_at", ""), reverse=True)
     all_invoices_raw = list(items)
 
-    # Use stored status from meta, don't recalculate
+    # Use stored status from meta, but show Paid if fully paid
     # Check for overdue: if status is Sent/Viewed/Partial and due date is passed
     today_str = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")
     for inv in items:
         m = inv.get("meta", {})
         stored_status = m.get("status", "Draft")
-        due = m.get("due_date", "") or ""
-        if stored_status in ("Sent", "Viewed", "Partial") and due and due < today_str:
-            m["status"] = "Overdue"
+        total = _safe_float(m.get("total", 0))
+        amt_paid = _safe_float(m.get("amount_paid", 0))
+        tax_paid = _safe_float(m.get("tax_paid", 0))
+        balance = total - amt_paid - tax_paid
+
+        # Show Paid if fully paid, otherwise use stored status with overdue check
+        if balance <= 0:
+            m["status"] = "Paid"
         else:
-            m["status"] = stored_status
+            due = m.get("due_date", "") or ""
+            if stored_status in ("Sent", "Viewed", "Partial") and due and due < today_str:
+                m["status"] = "Overdue"
+            else:
+                m["status"] = stored_status
 
     search        = request.args.get("q", "").strip().lower()
     status_filter = request.args.get("status", "")
@@ -6785,10 +6819,7 @@ def invoice_detail(invoice_id):
         tax_log = []
     enriched_tax_payments = [dict(payment) for payment in tax_log]
 
-    # Calculate current status based on actual payments (not stored status)
-    # Use the stored status from meta, don't calculate/overwrite it
-    # The status should be what the user explicitly set in UPDATE STATUS
-    # No auto-calculation of status based on payments
+    # Use stored status from meta (set manually via UPDATE STATUS or auto-updated by payment changes)
     stored_status = data.get("meta", {}).get("status", "Draft")
     if not stored_status:
         stored_status = "Draft"
@@ -6856,6 +6887,7 @@ def invoice_detail(invoice_id):
                         item["stage_name"] = co_num
 
                 # Always fetch site_address fresh from project (auto-updates when project address changes)
+                # Also fetch POWO if not already present
                 if proj_num:
                     for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
                         if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
@@ -6871,6 +6903,18 @@ def invoice_detail(invoice_id):
                                     site_addr = site_addr[:match.start()].strip().rstrip(",").strip()
 
                                 item["site_address"] = site_addr
+
+                            # Fetch POWO from CO if not already present
+                            if not item.get("powo_number"):
+                                co_firebase_id = item.get("co_firebase_id", "")
+                                if co_firebase_id:
+                                    cos = pdata.get("change_orders") or []
+                                    if isinstance(cos, dict):
+                                        cos = list(cos.values())
+                                    for co in (cos if isinstance(cos, list) else []):
+                                        if isinstance(co, dict) and co.get("firebase_id") == co_firebase_id:
+                                            item["powo_number"] = co.get("po_wo_number", "").strip()
+                                            break
                             break
 
                 # If CO number but no firebase_id, try to find it (for old invoices)
@@ -7464,11 +7508,8 @@ def api_get_invoice(invoice_id):
     if not invoice:
         return jsonify({"error": "Invoice not found"}), 404
 
-    # CRITICAL: Recalculate status based on actual payments (not stored status)
-    meta = invoice.get("meta", {}) or {}
-    recalc_status = _calculate_invoice_status(invoice)
-    if meta:
-        meta["status"] = recalc_status
+    # Use stored status, don't recalculate
+    # Status should be what the user explicitly set in UPDATE STATUS
 
     return jsonify(invoice)
 
@@ -21380,10 +21421,26 @@ def payment_add(invoice_id):
 
     amount_paid = sum(_safe_float(p.get("amount", 0)) for p in log)
 
-    # Keep the current status - don't auto-calculate it
-    # Status should only be changed when the user explicitly sets it via UPDATE STATUS
+    # Auto-update status based on payment state (but respect manual/terminal statuses)
     meta = inv_data.get("meta", {}) or {}
     current_status = meta.get("status", "Draft")
+    total = _safe_float(meta.get("total", 0))
+    tax_paid = _safe_float(meta.get("tax_paid", 0))
+    balance = total - amount_paid - tax_paid
+
+    # Only auto-update if status is in a transient state (not manually set to Cancelled)
+    if current_status != "Cancelled":
+        if balance <= 0:
+            # Fully paid
+            new_status = "Paid"
+        elif amount_paid > 0:
+            # Partially paid
+            new_status = "Partial"
+        else:
+            # No payment yet - keep current
+            new_status = current_status
+
+        current_status = new_status
 
     fb_update(f"/invoices/{invoice_id}", {
         "payment_log":      log,
@@ -21767,13 +21824,28 @@ def payment_sequential(invoice_id):
     amount_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
     tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
 
-    # Keep the current status - don't auto-calculate it
-    # Status should only be changed when the user explicitly sets it via UPDATE STATUS
+    # Auto-update status based on payment state (but respect manual/terminal statuses)
     meta = inv_data.get("meta", {}) or {}
     current_status = meta.get("status", "Draft")
+    total = _safe_float(meta.get("total", 0))
+    balance = total - amount_paid - tax_paid
+
+    # Only auto-update if status is in a transient state (not manually set to Cancelled)
+    if current_status != "Cancelled":
+        if balance <= 0:
+            # Fully paid
+            new_status = "Paid"
+        elif amount_paid > 0:
+            # Partially paid
+            new_status = "Partial"
+        else:
+            # No payment yet - keep current
+            new_status = current_status
+
+        current_status = new_status
 
     log.info(f"[FIREBASE_SAVE] Saving payment_log with {len(payment_log)} entries for invoice {invoice_id}")
-    log.info(f"[STATUS_UPDATE] Preserving invoice status: {current_status}")
+    log.info(f"[STATUS_UPDATE] Auto-updated invoice status: {current_status}")
     fb_update(f"/invoices/{invoice_id}", {
         "payment_log":      payment_log,
         "meta/amount_paid": str(amount_paid),
@@ -21837,12 +21909,20 @@ def payment_delete(invoice_id, idx):
     meta["amount_paid"] = str(amount_paid)
     meta["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-    # If all payments are deleted, set status to "Sent"
-    # Otherwise keep the current status (don't auto-calculate)
+    # Auto-update status based on remaining payments
+    total = _safe_float(meta.get("total", 0))
+    tax_paid = _safe_float(meta.get("tax_paid", 0))
+    balance = total - amount_paid - tax_paid
+
     if len(new_payment_log) == 0:
+        # All payments deleted → status = "Sent"
         new_status = "Sent"
+    elif balance > 0:
+        # Some payments remain but not fully paid → status = "Partial"
+        new_status = "Partial"
     else:
-        new_status = meta.get("status", "Draft")
+        # Fully paid → status = "Paid"
+        new_status = "Paid"
 
     fb_update(f"/invoices/{invoice_id}", {
         "payment_log":      new_payment_log,
@@ -21899,9 +21979,26 @@ def tax_payment_delete(invoice_id, idx):
 
     tax_log.pop(idx)
     tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+
+    # Auto-update status based on remaining payments
+    meta = inv_data.get("meta", {}) or {}
+    amount_paid = _safe_float(meta.get("amount_paid", 0))
+    total = _safe_float(meta.get("total", 0))
+    balance = total - amount_paid - tax_paid
+
+    payment_log = inv_data.get("payment_log", []) or []
+    if len(payment_log) == 0 and tax_paid == 0:
+        # All payments (both regular and tax) deleted → status = "Sent"
+        new_status = "Sent"
+    elif balance > 0:
+        # Some payments remain but not fully paid → status = "Partial"
+        new_status = "Partial"
+    else:
+        # Fully paid → status = "Paid"
+        new_status = "Paid"
+
     fresh_inv = dict(inv_data)
     fresh_inv["tax_payments"] = tax_log
-    new_status = _calculate_invoice_status(fresh_inv)
 
     fb_update(f"/invoices/{invoice_id}", {
         "tax_payments":     tax_log,

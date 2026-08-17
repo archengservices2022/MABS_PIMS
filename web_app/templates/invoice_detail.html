@@ -1,5 +1,9 @@
 ﻿{% extends "base.html" %}
 {% set meta = invoice.get('meta', {}) %}
+{% set amt_paid = meta.get('amount_paid',0)|float %}
+{% set tax_paid = meta.get('tax_paid',0)|float %}
+{% set balance = meta.get('total',0)|float - amt_paid - tax_paid %}
+{% set display_status = 'Paid' if balance <= 0 else meta.get('status','Draft') %}
 {% block title %}Invoice {{ meta.get('invoice_number','') }}{% endblock %}
 {% block page_title %}Invoice Detail{% endblock %}
 
@@ -14,8 +18,8 @@
             onclick="copyNumber('{{ meta.get('invoice_number','') }}', this)">
       <i class="bi bi-copy"></i>
     </button>
-    <span class="badge status-{{ meta.get('status','Draft')|lower|replace(' ','-') }}">
-      {{ meta.get('status','Draft') }}
+    <span class="badge status-{{ display_status|lower|replace(' ','-') }}">
+      {{ display_status }}
     </span>
   </div>
   <div class="d-flex gap-2 flex-wrap">
@@ -132,10 +136,7 @@
   <div class="col-lg-8">
     <!-- Invoice preview card -->
     {% set inv_status = meta.get('status','Draft') %}
-    {% set is_paid_inv = inv_status == 'Paid' %}
-    {% set amt_paid = meta.get('amount_paid',0)|float %}
-    {% set tax_paid = meta.get('tax_paid',0)|float %}
-    {% set balance = meta.get('total',0)|float - amt_paid - tax_paid %}
+    {% set is_paid_inv = balance <= 0 %}
     <div class="mb-3" style="background:#fff; border:1px solid #E2E8F0; border-radius:12px; overflow:hidden; position:relative;">
 
       {% if is_paid_inv %}
@@ -188,8 +189,8 @@
           {% endif %}
         </div>
         <div class="text-end">
-          <span class="badge status-{{ inv_status|lower|replace(' ','-') }}" style="font-size:0.75rem; padding:5px 12px;">
-            {{ inv_status }}
+          <span class="badge status-{{ display_status|lower|replace(' ','-') }}" style="font-size:0.75rem; padding:5px 12px;">
+            {{ display_status }}
           </span>
           {% if meta.get('payment_method') %}
           <div style="font-size:0.75rem; color:#64748B; margin-top:4px;">
@@ -259,19 +260,12 @@
                 {%- endif -%}
               </td>
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem;">
-                {%- if powo -%}
-                  {%- if addr -%}
-                    {{ powo }} - {{ addr }}
-                  {%- else -%}
-                    {{ powo }}
-                  {%- endif -%}
+                {%- if powo and addr -%}
+                  {{ powo }} - {{ addr }}
+                {%- elif powo -%}
+                  {{ powo }}
                 {%- elif addr -%}
-                  {%- set addr_clean = addr.split(' – ')[0].strip() if ' – ' in addr else addr -%}
-                  {{ addr_clean }}
-                {%- elif 'co' in desc.lower() and ' – ' in desc -%}
-                  {%- set co_part = desc.split(' – ')[0].strip() -%}
-                  {%- set addr_part = desc.split(' – ', 1)[1].strip() -%}
-                  {{ co_part }} - {{ addr_part }}
+                  {{ addr }}
                 {%- else -%}
                   {{ desc }}
                 {%- endif -%}

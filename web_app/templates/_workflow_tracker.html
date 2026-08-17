@@ -2,7 +2,12 @@
    Caller must set: wf_step, wf_quote, wf_quote_id, wf_project, wf_project_id,
                     wf_invoice, wf_invoice_id  before {% include %} this file. #}
 
-{% set _inv_status = wf_invoice.get('meta',{}).get('status','') if wf_invoice else '' %}
+{% if wf_invoice %}
+  {% set _inv_meta = wf_invoice.get('meta',{}) %}
+  {% set _inv_status = _inv_meta.get('status','') %}
+{% else %}
+  {% set _inv_status = '' %}
+{% endif %}
 {% set _inv_is_draft = wf_invoice and _inv_status == 'Draft' %}
 
 <div class="wf-bar mb-4">
