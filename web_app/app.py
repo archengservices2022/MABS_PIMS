@@ -15122,6 +15122,235 @@ def api_employee_summary(uid):
     })
 
 
+@app.route("/employee_profile/<uid>")
+@login_required
+def employee_profile(uid):
+    """Full employee profile page — 360° view."""
+    _role = normalize_role(session.get("user_role", ""))
+    is_admin = _role in ("admin", "accountant")
+    if not is_admin and session.get("user_uid", "") != uid:
+        flash("Access denied.", "danger")
+        return redirect(url_for("employees"))
+
+    user = fb_get(f"/users/{uid}") or {}
+    if not user:
+        flash("Employee not found.", "danger")
+        return redirect(url_for("employees"))
+
+    name      = (user.get("username") or user.get("name") or "").strip()
+    email     = user.get("email", "")
+    role      = user.get("role", "")
+    dept      = user.get("department", "")
+    title     = user.get("title", "")
+    hire_date = user.get("hire_date", "")
+    phone     = user.get("phone", "")
+    region    = user.get("region", "")
+    emp_id    = user.get("emp_id", "")
+
+    now      = datetime.now(COMPANY_TZ)
+    year_str = str(now.year)
+
+    # ── Tenure ────────────────────────────────────────────────────────────────
+    tenure_label = ""
+    if hire_date:
+        try:
+            hd = datetime.strptime(hire_date[:10], "%Y-%m-%d")
+            delta = now.date() - hd.date()
+            years  = delta.days // 365
+            months = (delta.days % 365) // 30
+            if years > 0:
+                tenure_label = f"{years}Y {months}M"
+            else:
+                tenure_label = f"{months}M"
+        except Exception:
+            pass
+
+    # ── Salary records ─────────────────────────────────────────────────────────
+    all_salaries  = fb_get("/salaries") or {}
+    emp_sal_recs  = sorted(
+        [v for v in all_salaries.values() if isinstance(v, dict) and
+         (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)],
+        key=lambda x: x.get("date", ""), reverse=True
+    )
+    # base rate (monthly or hourly) from most recent salary record or user profile
+    if emp_sal_recs:
+        base_salary   = _safe_float(emp_sal_recs[0].get("amount", 0))
+        salary_type   = emp_sal_recs[0].get("salary_type", "Salary")
+    else:
+        base_salary   = _safe_float(user.get("monthly_salary", 0) or user.get("hourly_rate", 0))
+        salary_type   = "Hourly" if user.get("hourly_rate") and not user.get("monthly_salary") else "Monthly"
+
+    total_salary_paid = sum(
+        _safe_float(s.get("amount", 0)) for s in emp_sal_recs
+        if s.get("salary_type", "Salary") in ("Salary", "Monthly", "")
+        and s.get("salary_status", "").lower() in ("paid", "")
+    )
+    total_bonus_paid = sum(
+        _safe_float(s.get("amount", 0)) for s in emp_sal_recs
+        if "bonus" in (s.get("salary_type", "") or "").lower()
+        and s.get("salary_status", "").lower() in ("paid", "")
+    )
+    # Benefits = Medical Allowance, Transport Allowance, and other allowances
+    total_benefits = sum(
+        _safe_float(s.get("amount", 0)) for s in emp_sal_recs
+        if any(k in (s.get("salary_type", "") or "").lower()
+               for k in ("medical", "transport", "allowance", "benefit", "reimburs"))
+    )
+    # Deductions from salary records
+    total_deductions = sum(
+        _safe_float(s.get("amount", 0)) for s in emp_sal_recs
+        if any(k in (s.get("salary_type", "") or "").lower()
+               for k in ("deduction",))
+    )
+
+    # ── Advances ──────────────────────────────────────────────────────────────
+    all_advances  = fb_get("/employee_advances") or {}
+    emp_advances  = sorted(
+        [v for v in all_advances.values() if isinstance(v, dict) and
+         (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)],
+        key=lambda x: x.get("date", ""), reverse=True
+    )
+    total_advance    = sum(_safe_float(a.get("amount", 0)) for a in emp_advances)
+    advance_balance  = sum(
+        max(_safe_float(a.get("amount", 0)) - _safe_float(a.get("adjusted_amount", 0)), 0)
+        for a in emp_advances if a.get("status", "").lower() != "closed"
+    )
+
+    # ── Commission ────────────────────────────────────────────────────────────
+    commission_rate  = _safe_float(user.get("commission_rate", 0))
+    all_pcomm        = fb_get("/project_commissions") or {}
+    commission_earned = sum(
+        _safe_float(v.get("commission_amount", 0))
+        for v in all_pcomm.values()
+        if isinstance(v, dict) and (v.get("salesperson") or "").strip() == name
+    )
+    commission_paid = sum(
+        _safe_float(v.get("commission_amount", 0))
+        for v in all_pcomm.values()
+        if isinstance(v, dict) and (v.get("salesperson") or "").strip() == name
+        and v.get("status") == "Paid"
+    )
+
+    # ── Expenses (reimbursements, other) ──────────────────────────────────────
+    all_expenses = fb_get("/expenses") or {}
+    emp_expenses = [v for v in all_expenses.values() if isinstance(v, dict) and
+                    (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)
+                    and v.get("status") in ("approved", "Approved", "")]
+    expenses_ytd = sum(
+        _safe_float(v.get("amount", 0)) for v in emp_expenses
+        if (v.get("date") or v.get("expense_date") or "").startswith(year_str)
+    )
+    other_allowances = sum(_safe_float(v.get("amount", 0)) for v in emp_expenses)
+
+    # ── Time entries ──────────────────────────────────────────────────────────
+    emp_entries  = [e for e in _load_time_entries()
+                    if e.get("employee_uid") == uid and e.get("status") == "closed"]
+    total_mins   = sum(_safe_float(e.get("duration_minutes", 0)) for e in emp_entries)
+    total_hours  = round(total_mins / 60.0, 1)
+    # Split billable (has project) vs admin (no project)
+    billable_mins   = sum(_safe_float(e.get("duration_minutes", 0)) for e in emp_entries if e.get("project_number"))
+    admin_mins      = sum(_safe_float(e.get("duration_minutes", 0)) for e in emp_entries if not e.get("project_number"))
+    billable_hours  = round(billable_mins / 60.0, 1)
+    nonbillable_hrs = round(admin_mins / 60.0, 1)
+
+    projects_worked = len(set(e.get("project_number") for e in emp_entries if e.get("project_number")))
+
+    # Avg hours per week over last 8 weeks
+    eight_weeks_ago = (now - timedelta(weeks=8)).strftime("%Y-%m-%d")
+    recent_entries  = [e for e in emp_entries if (e.get("date") or e.get("clock_in", "")[:10]) >= eight_weeks_ago]
+    recent_mins     = sum(_safe_float(e.get("duration_minutes", 0)) for e in recent_entries)
+    avg_hrs_week    = round(recent_mins / 60.0 / 8.0, 1)
+
+    # ── Time off ──────────────────────────────────────────────────────────────
+    all_time_off  = _load_time_off_requests()
+    tob           = _time_off_balance(all_time_off, uid, now.year, hire_date)
+    pto_allotment  = tob.get("pto_allotment", 0)
+    pto_remaining  = tob.get("pto_remaining", 0)
+    pto_used       = tob.get("pto_used", 0)
+    sick_allotment = tob.get("sick_allotment", 0)
+    sick_remaining = tob.get("sick_remaining", 0)
+    sick_used      = tob.get("sick_used", 0)
+    leave_taken_hrs = tob.get("used_hours", 0)
+
+    # Leave taken in days
+    leave_taken_days = round(leave_taken_hrs / 8.0, 1)
+
+    # ── Reviews ───────────────────────────────────────────────────────────────
+    all_reviews  = fb_get("/reviews") or {}
+    emp_reviews  = sorted(
+        [v for v in all_reviews.values() if isinstance(v, dict) and
+         (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)],
+        key=lambda x: x.get("review_date", ""), reverse=True
+    )
+
+    # ── Cost to company & distribution ────────────────────────────────────────
+    total_cost_to_company = total_salary_paid + total_bonus_paid + total_benefits + other_allowances
+
+    # Recent slices for tables
+    recent_payroll  = emp_sal_recs[:10]
+    recent_advances = emp_advances[:5]
+
+    # Recent projects (last 5 distinct)
+    seen_proj = set()
+    recent_projects = []
+    for e in emp_entries:
+        pn = e.get("project_number")
+        if pn and pn not in seen_proj:
+            seen_proj.add(pn)
+            recent_projects.append({
+                "project_number": pn,
+                "project_name":   e.get("project_name", ""),
+            })
+        if len(recent_projects) >= 5:
+            break
+
+    return render_template("employee_profile.html",
+        emp=user,
+        uid=uid,
+        name=name,
+        email=email,
+        role=role,
+        dept=dept,
+        title=title,
+        hire_date=hire_date,
+        phone=phone,
+        region=region,
+        emp_id=emp_id,
+        tenure_label=tenure_label,
+        base_salary=base_salary,
+        salary_type=salary_type,
+        total_salary_paid=total_salary_paid,
+        total_bonus_paid=total_bonus_paid,
+        total_benefits=total_benefits,
+        total_deductions=total_deductions,
+        total_advance=total_advance,
+        advance_balance=advance_balance,
+        commission_rate=commission_rate,
+        commission_earned=commission_earned,
+        commission_paid=commission_paid,
+        expenses_ytd=expenses_ytd,
+        other_allowances=other_allowances,
+        total_cost_to_company=total_cost_to_company,
+        total_hours=total_hours,
+        billable_hours=billable_hours,
+        nonbillable_hrs=nonbillable_hrs,
+        avg_hrs_week=avg_hrs_week,
+        projects_worked=projects_worked,
+        pto_allotment=pto_allotment,
+        pto_remaining=pto_remaining,
+        pto_used=pto_used,
+        sick_allotment=sick_allotment,
+        sick_remaining=sick_remaining,
+        sick_used=sick_used,
+        leave_taken_days=leave_taken_days,
+        recent_payroll=recent_payroll,
+        recent_advances=recent_advances,
+        recent_projects=recent_projects,
+        emp_reviews=emp_reviews,
+        is_admin=is_admin,
+    )
+
+
 @app.route("/employees")
 @role_required("employees")
 def employees():

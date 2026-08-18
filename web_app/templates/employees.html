@@ -1376,9 +1376,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               <span class="emp-avatar">{{ (u.username or 'U')[0]|upper }}</span>
               <div>
                 <div class="fw-semibold">
-                  <a href="#" class="text-decoration-none text-dark emp-summary-link"
-                     data-uid="{{ u.firebase_uid }}"
-                     onclick="openEmpSummary('{{ u.firebase_uid }}','{{ u.username or '' }}'); return false;">
+                  <a href="{{ url_for('employee_profile', uid=u.firebase_uid) }}"
+                     class="text-decoration-none text-dark emp-summary-link">
                     {{ u.username or '—' }}
                   </a>
                 </div>
