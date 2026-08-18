@@ -799,6 +799,24 @@ def _resync_all_advances():
     except Exception as e:
         log.error(f"Error re-syncing advances: {e}")
 
+def _cleanup_unpaid_commissions():
+    """Remove unpaid commission expenses from balance_sheet_expenses. Commission expenses should only appear when paid."""
+    try:
+        expenses = fb_get("/balance_sheet_expenses") or {}
+        if isinstance(expenses, dict):
+            for exp_id, exp_data in expenses.items():
+                if isinstance(exp_data, dict):
+                    # Check if this is a commission expense
+                    is_commission = exp_data.get("is_commission") or exp_data.get("category") == "Sales Commission"
+                    if is_commission:
+                        # Remove if status is not "Paid" or status is missing
+                        exp_status = exp_data.get("status", "")
+                        if exp_status != "Paid":
+                            fb_delete(f"/balance_sheet_expenses/{exp_id}")
+                            log.info(f"Cleaned up unpaid commission expense {exp_id} (status: {exp_status})")
+    except Exception as e:
+        log.error(f"Error cleaning up unpaid commissions: {e}")
+
 def _sync_employee_name_in_advance_finances(employee_id: str, old_name: str, new_name: str):
     """Sync employee name changes to all advance finance entries"""
     try:
@@ -11939,6 +11957,9 @@ def financial():
     # Re-sync all advances to ensure expense entries have correct data
     _resync_all_advances()
 
+    # Cleanup: Remove any unpaid commission expenses from balance_sheet_expenses
+    _cleanup_unpaid_commissions()
+
     # Sequential — Firebase Admin SDK shares one HTTP session; concurrent ThreadPoolExecutor calls return empty dicts
     invoices = fb_get("/invoices") or {}
     deleted_invoices = fb_get("/deleted_invoices") or {}
@@ -16265,6 +16286,36 @@ def commission_backfill_projects():
         _upsert_project_commission(pid, pdata)
         synced += 1
     return jsonify({"ok": True, "synced": synced})
+
+
+@app.route("/api/commission/cleanup-unpaid", methods=["POST"])
+@role_required("financial")
+def commission_cleanup_unpaid():
+    """Remove unpaid commission expenses from balance_sheet_expenses. Commission expenses should only appear when paid."""
+    if normalize_role(session.get("user_role", "")) not in ("admin", "finance"):
+        return jsonify({"error": "Admin/Finance access required"}), 403
+
+    expenses = fb_get("/balance_sheet_expenses") or {}
+    removed_count = 0
+
+    if isinstance(expenses, dict):
+        for exp_id, exp_data in expenses.items():
+            if isinstance(exp_data, dict):
+                # Check if this is a commission expense
+                is_commission = exp_data.get("is_commission") or exp_data.get("category") == "Sales Commission"
+                if is_commission:
+                    # Remove if status is not "Paid" or status is missing
+                    exp_status = exp_data.get("status", "")
+                    if exp_status != "Paid":
+                        fb_delete(f"/balance_sheet_expenses/{exp_id}")
+                        removed_count += 1
+                        log.info(f"Removed unpaid commission expense {exp_id} (status: {exp_status})")
+
+    return jsonify({
+        "ok": True,
+        "removed_count": removed_count,
+        "message": f"Removed {removed_count} unpaid commission expenses from Finance tab"
+    })
 
 
 @app.route("/employees/export-hours")
