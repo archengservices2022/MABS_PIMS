@@ -64,7 +64,11 @@
 
 <!-- Breadcrumb -->
 <div class="prof-breadcrumb">
-  <a href="{{ url_for('employees') }}">← Employees</a> &nbsp;/&nbsp; {{ name or 'Employee Profile' }}
+  <a href="{{ url_for('employees') }}">← Employees</a>
+  &nbsp;/&nbsp;
+  <a href="{{ url_for('employees') }}#tab-team">Team</a>
+  &nbsp;/&nbsp;
+  {{ name or 'Employee Profile' }}
 </div>
 
 <!-- Header -->
@@ -122,22 +126,22 @@
     <div class="kpi-value">{{ tenure_label or '—' }}</div>
     {% if hire_date %}<div class="kpi-sub">Since {{ hire_date | format_date }}</div>{% endif %}
   </a>
-  <a class="kpi-card" href="{{ url_for('payroll') }}">
+  <a class="kpi-card" href="{{ url_for('payroll') }}?employee={{ name | urlencode }}">
     <div class="kpi-label">Total Salary</div>
     <div class="kpi-value text-green">{{ currency_symbol }}{{ '{:,.0f}'.format(total_salary_paid) }}</div>
     <div class="kpi-sub">All time paid</div>
   </a>
-  <a class="kpi-card" href="{{ url_for('payroll') }}">
+  <a class="kpi-card" href="{{ url_for('payroll') }}?employee={{ name | urlencode }}">
     <div class="kpi-label">Total Benefits</div>
     <div class="kpi-value">{{ currency_symbol }}{{ '{:,.0f}'.format(total_benefits) }}</div>
     <div class="kpi-sub">Medical &amp; allowances</div>
   </a>
-  <a class="kpi-card" href="{{ url_for('payroll') }}#advances">
+  <a class="kpi-card" href="{{ url_for('payroll') }}?employee={{ name | urlencode }}#advances">
     <div class="kpi-label">Total Advance</div>
     <div class="kpi-value">{{ currency_symbol }}{{ '{:,.0f}'.format(total_advance) }}</div>
     <div class="kpi-sub">Advances given</div>
   </a>
-  <a class="kpi-card" href="{{ url_for('payroll') }}#advances">
+  <a class="kpi-card" href="{{ url_for('payroll') }}?employee={{ name | urlencode }}#advances">
     <div class="kpi-label">Outstanding</div>
     <div class="kpi-value {% if advance_balance > 0 %}text-amber{% endif %}">
       {{ currency_symbol }}{{ '{:,.0f}'.format(advance_balance) }}
@@ -196,7 +200,7 @@
   <div class="sum-panel">
     <div class="sum-head">
       <i class="bi bi-cash-coin me-2" style="color:#0D9488;"></i>Compensation Summary
-      <a href="{{ url_for('payroll') }}" class="float-end" style="font-size:11px;color:#0D9488;text-decoration:none;">View Payroll →</a>
+      <a href="{{ url_for('payroll') }}?employee={{ name | urlencode }}" class="float-end" style="font-size:11px;color:#0D9488;text-decoration:none;">View Payroll →</a>
     </div>
     <div class="sum-row">
       <span class="sum-row-label">Total Salary Paid</span>
@@ -296,7 +300,7 @@
   <div class="prof-table-card flex-grow-1" style="min-width:300px;">
     <div class="prof-table-head">
       <span class="prof-table-title"><i class="bi bi-receipt me-1" style="color:#0D9488;"></i>Recent Payroll History</span>
-      <a href="{{ url_for('payroll') }}" class="btn btn-xs btn-outline-secondary" style="font-size:11px;">View All</a>
+      <a href="{{ url_for('payroll') }}?employee={{ name | urlencode }}" class="btn btn-xs btn-outline-secondary" style="font-size:11px;">View All</a>
     </div>
     <div class="prof-table-wrap">
       <table class="table table-sm table-hover mb-0 align-middle">
@@ -305,7 +309,7 @@
         </thead>
         <tbody>
         {% for s in recent_payroll %}
-        <tr onclick="window.location='{{ url_for('payroll') }}'">
+        <tr onclick="window.location='{{ url_for('payroll') }}?employee={{ name | urlencode }}'">
           <td class="text-muted">{{ (s.get('date') or '—') | format_date }}</td>
           <td>{{ s.get('salary_type','Salary') }}</td>
           <td class="text-end fw-600 text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(s.get('amount',0)|float) }}</td>
