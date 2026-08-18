@@ -616,11 +616,19 @@
           <i class="bi bi-calendar-check me-1" style="color:#0D9488;"></i>My Requests
         </h6>
         {% if my_time_off %}
+        {% set to_items_per_page = 8 %}
+        {% set to_total_items = my_time_off|length %}
+        {% set to_total_pages = ((to_total_items - 1) // to_items_per_page) + 1 %}
+        {% set to_current_page = request.args.get('to_page', 1)|int %}
+        {% set to_start_index = (to_current_page - 1) * to_items_per_page %}
+        {% set to_end_index = to_start_index + to_items_per_page %}
+        {% set to_paginated = my_time_off[to_start_index:to_end_index] %}
+
         <div class="table-responsive">
           <table class="table table-sm table-hover mb-0 align-middle">
             <thead><tr><th>Type</th><th>Dates</th><th>Hours</th><th>Reason</th><th>Status</th></tr></thead>
             <tbody>
-            {% for r in my_time_off %}
+            {% for r in to_paginated %}
             {% set r_hours = r.get('total_hours') %}
             {% if r_hours is none %}
               {% if r.type == 'Half Day' %}{% set r_hours = 4 %}
@@ -656,6 +664,24 @@
             </tbody>
           </table>
         </div>
+
+        <!-- Pagination -->
+        {% if to_total_pages > 1 %}
+        <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
+          <a href="?to_page={{ [1, to_current_page - 1]|max }}#tab-time-off" class="btn btn-sm btn-outline-secondary" {% if to_current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+            <i class="bi bi-chevron-left"></i>
+          </a>
+
+          <input type="number" min="1" max="{{ to_total_pages }}" value="{{ to_current_page }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
+                 onchange="window.location='?to_page=' + Math.max(1, Math.min(this.value, {{ to_total_pages }})) + '#tab-time-off'">
+
+          <span class="text-muted small">of {{ to_total_pages }}</span>
+
+          <a href="?to_page={{ [to_total_pages, to_current_page + 1]|min }}#tab-time-off" class="btn btn-sm btn-outline-secondary" {% if to_current_page == to_total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+            <i class="bi bi-chevron-right"></i>
+          </a>
+        </div>
+        {% endif %}
         {% else %}
         <div class="text-center text-muted py-4">
           <i class="bi bi-calendar-x" style="font-size:32px;opacity:.3;"></i>
