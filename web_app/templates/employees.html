@@ -2698,9 +2698,37 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
         if (pane) {
           pane.classList.add('show', 'active');
         }
+        // Update pagination links to preserve current tab hash
+        updatePaginationLinksWithHash(tabName);
       }, 0);
     });
   });
+
+  // Update pagination links to include current tab hash
+  function updatePaginationLinksWithHash(tabName) {
+    const currentHash = '#' + tabName;
+    // Update anchor pagination links
+    document.querySelectorAll('a[href^="?"]').forEach(link => {
+      const href = link.getAttribute('href');
+      // Remove existing hash if present and add current hash
+      const cleanHref = href.split('#')[0];
+      link.setAttribute('href', cleanHref + currentHash);
+    });
+    // Update input onchange handlers
+    document.querySelectorAll('input[type="number"][onchange*="window.location"]').forEach(input => {
+      const onchange = input.getAttribute('onchange');
+      // Extract the base URL without hash
+      const baseMatch = onchange.match(/window\.location='([^']+)'/);
+      if (baseMatch) {
+        const baseUrl = baseMatch[1].split('#')[0];
+        input.setAttribute('onchange', "window.location='" + baseUrl + currentHash + "'");
+      }
+    });
+  }
+
+  // Initialize pagination links with current tab on page load
+  const currentTab = (window.location.hash || '').replace('#','') || 'time-off';
+  updatePaginationLinksWithHash(currentTab);
 })();
 
 // Team hours period selector
