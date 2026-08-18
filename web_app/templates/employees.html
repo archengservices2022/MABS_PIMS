@@ -2151,7 +2151,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                    accept="image/*,.pdf" style="font-size:12px;">
             <div class="form-text text-muted" style="font-size:11px;">PDF or image (JPG, PNG). Optional.</div>
           </div>
-          <div class="d-flex gap-2">
+          <div class="d-grid gap-2">
             <button type="submit" class="btn btn-sm btn-teal">
               <i class="bi bi-send me-1"></i>Submit Claim
             </button>
@@ -2273,6 +2273,14 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
       <div class="card-panel mt-3">
         <h6 class="panel-title mb-3"><i class="bi bi-people me-1" style="color:#7C3AED;"></i>All Employee Claims</h6>
         {% if all_medical_claims %}
+        {% set items_per_page_admin = 15 %}
+        {% set total_items_admin = all_medical_claims|length %}
+        {% set total_pages_admin = ((total_items_admin - 1) // items_per_page_admin) + 1 %}
+        {% set current_page_admin = request.args.get('all_med_page', 1)|int %}
+        {% set start_index_admin = (current_page_admin - 1) * items_per_page_admin %}
+        {% set end_index_admin = start_index_admin + items_per_page_admin %}
+        {% set paginated_claims_admin = all_medical_claims[start_index_admin:end_index_admin] %}
+
         <div class="table-responsive">
           <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
             <thead style="background:#f8fafc;">
@@ -2282,7 +2290,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               </tr>
             </thead>
             <tbody>
-            {% for c in all_medical_claims %}
+            {% for c in paginated_claims_admin %}
             <tr>
               <td><strong>{{ c.employee_name or '—' }}</strong></td>
               <td style="white-space:nowrap;">{{ c.claim_date or '—' }}</td>
@@ -2352,6 +2360,24 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             </tbody>
           </table>
         </div>
+
+        <!-- Pagination -->
+        {% if total_pages_admin > 1 %}
+        <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
+          <a href="?all_med_page={{ [1, current_page_admin - 1]|max }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page_admin == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+            <i class="bi bi-chevron-left"></i>
+          </a>
+
+          <input type="number" min="1" max="{{ total_pages_admin }}" value="{{ current_page_admin }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
+                 onchange="window.location='?all_med_page=' + Math.max(1, Math.min(this.value, {{ total_pages_admin }})) + '#tab-medical'">
+
+          <span class="text-muted small">of {{ total_pages_admin }}</span>
+
+          <a href="?all_med_page={{ [total_pages_admin, current_page_admin + 1]|min }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page_admin == total_pages_admin %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+            <i class="bi bi-chevron-right"></i>
+          </a>
+        </div>
+        {% endif %}
         {% else %}
         <div class="text-center text-muted py-4 small">No claims from any employee yet.</div>
         {% endif %}
