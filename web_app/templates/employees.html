@@ -2245,27 +2245,18 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
 
         <!-- Pagination -->
         {% if total_pages > 1 %}
-        <div class="d-flex justify-content-center align-items-center gap-2 mt-3">
-          <a href="?med_page=1#tab-medical" class="btn btn-sm btn-outline-secondary {% if current_page == 1 %}disabled{% endif %}" title="First page">
-            <i class="bi bi-chevron-double-left"></i>
-          </a>
-          <a href="?med_page={{ current_page - 1 }}#tab-medical" class="btn btn-sm btn-outline-secondary {% if current_page == 1 %}disabled{% endif %}" title="Previous page">
+        <div class="d-flex justify-content-center align-items-center gap-2 mt-4" style="padding: 20px 0;">
+          <a href="?med_page={{ [1, current_page - 1]|max }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
             <i class="bi bi-chevron-left"></i>
           </a>
 
-          {% for page_num in range(1, total_pages + 1) %}
-            {% if page_num == current_page %}
-            <button class="btn btn-sm btn-teal" disabled>{{ page_num }}</button>
-            {% else %}
-            <a href="?med_page={{ page_num }}#tab-medical" class="btn btn-sm btn-outline-secondary">{{ page_num }}</a>
-            {% endif %}
-          {% endfor %}
+          <input type="number" min="1" max="{{ total_pages }}" value="{{ current_page }}" class="form-control" style="width:60px;text-align:center;"
+                 onchange="window.location='?med_page=' + Math.max(1, Math.min(this.value, {{ total_pages }})) + '#tab-medical'">
 
-          <a href="?med_page={{ current_page + 1 }}#tab-medical" class="btn btn-sm btn-outline-secondary {% if current_page == total_pages %}disabled{% endif %}" title="Next page">
+          <span class="text-muted small">of {{ total_pages }}</span>
+
+          <a href="?med_page={{ [total_pages, current_page + 1]|min }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page == total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
             <i class="bi bi-chevron-right"></i>
-          </a>
-          <a href="?med_page={{ total_pages }}#tab-medical" class="btn btn-sm btn-outline-secondary {% if current_page == total_pages %}disabled{% endif %}" title="Last page">
-            <i class="bi bi-chevron-double-right"></i>
           </a>
         </div>
         {% endif %}
