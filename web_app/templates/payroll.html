@@ -1002,10 +1002,12 @@ function addSalary(e) {
   .then(res => {
     if (res.success || res.salary_id || res.firebase_id) {
       const isEditing = !!salaryId;
+      // Capture salary type BEFORE resetting form
+      const salaryType = data.salary_type || 'Salary';
       // Clear form and load salaries, then show modal
       document.getElementById('salaryForm').reset();
       document.getElementById('salary_id').value = '';
-      loadSalariesAndShowModal(isEditing);
+      loadSalariesAndShowModal(isEditing, salaryType);
     } else {
       alert('Error: ' + (res.error || 'Failed to save salary'));
       submitBtn.disabled = false;
@@ -1620,13 +1622,13 @@ function loadAdvancesAndShowModal(advanceNo, isEditing) {
     .catch(e => console.error('Error loading advances:', e));
 }
 
-function loadSalariesAndShowModal(isEditing) {
+function loadSalariesAndShowModal(isEditing, salaryType) {
   // Store success message and reload page to fetch fresh data
-  const salaryType = document.getElementById('sal_type').value || 'Salary';
+  const type = salaryType || document.getElementById('sal_type').value || 'Salary';
   const action = isEditing ? 'Updated' : 'Added';
-  const message = `${salaryType} ${action}`;
+  const message = `${type} ${action}`;
   sessionStorage.setItem('salarySuccessMsg', message);
-  sessionStorage.setItem('salaryType', salaryType);
+  sessionStorage.setItem('salaryType', type);
   location.reload();
 }
 
