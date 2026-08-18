@@ -14142,6 +14142,9 @@ def remove_expense_receipt(exp_id):
         # Remove from /expense_receipts (primary storage location)
         fb_delete(f"/expense_receipts/{exp_id}")
 
+        # Remove from /medical_claim_receipts (for medical claim expenses)
+        fb_delete(f"/medical_claim_receipts/{exp_id}")
+
         # Sync removal to /expenses if it's an employee expense
         if fb_get(f"/expenses/{exp_id}"):
             fb_update(f"/expenses/{exp_id}", {

@@ -2175,6 +2175,25 @@ document.addEventListener('DOMContentLoaded', function() {
   </div>
 </div>
 
+<!-- Receipt Deletion Confirmation Modal -->
+<div class="modal fade" id="receiptDeleteConfirmModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-trash me-2"></i>Remove Receipt</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to remove this receipt?</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="receiptDeleteConfirmBtn" onclick="proceedRemoveReceipt()">Remove Receipt</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 let receiptFile = null;
 
@@ -2249,19 +2268,37 @@ function editExpenseModal(expId, expData) {
       if (existingNote) existingNote.remove();
     }
 
-    // Display existing receipt if it exists
+    // Display existing receipt if it exists - fetch fresh data from backend to ensure we have latest receipt_filename
     const receiptPreviewDiv = document.getElementById('receiptPreview');
-    if (expData.receipt_filename) {
-      receiptPreviewDiv.innerHTML = `
-        <div class="alert alert-info py-2 px-3 small">
-          <i class="bi bi-file-earmark me-1"></i><strong>Current Receipt:</strong> ${expData.receipt_filename}
-          <button type="button" class="btn btn-xs btn-outline-danger ms-2" onclick="removeExistingReceipt('${expId}')">Remove</button>
-          <button type="button" class="btn btn-xs btn-outline-primary ms-1" onclick="viewReceipt('${expId}')">View</button>
-        </div>
-      `;
-    } else {
-      receiptPreviewDiv.innerHTML = '';
-    }
+    fetch(`/api/expense/${expId}/receipt`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.filename) {
+          receiptPreviewDiv.innerHTML = `
+            <div class="alert alert-info py-2 px-3 small">
+              <i class="bi bi-file-earmark me-1"></i><strong>Current Receipt:</strong> ${data.filename}
+              <button type="button" class="btn btn-xs btn-outline-danger ms-2" onclick="removeExistingReceipt('${expId}')">Remove</button>
+              <button type="button" class="btn btn-xs btn-outline-primary ms-1" onclick="viewReceipt('${expId}')">View</button>
+            </div>
+          `;
+        } else {
+          receiptPreviewDiv.innerHTML = '';
+        }
+      })
+      .catch(err => {
+        // Fallback to checking expData
+        if (expData.receipt_filename) {
+          receiptPreviewDiv.innerHTML = `
+            <div class="alert alert-info py-2 px-3 small">
+              <i class="bi bi-file-earmark me-1"></i><strong>Current Receipt:</strong> ${expData.receipt_filename}
+              <button type="button" class="btn btn-xs btn-outline-danger ms-2" onclick="removeExistingReceipt('${expId}')">Remove</button>
+              <button type="button" class="btn btn-xs btn-outline-primary ms-1" onclick="viewReceipt('${expId}')">View</button>
+            </div>
+          `;
+        } else {
+          receiptPreviewDiv.innerHTML = '';
+        }
+      });
 
     new bootstrap.Modal(document.getElementById('expenseModal')).show();
   } catch (err) {
@@ -2309,16 +2346,69 @@ function submitCommissionExpenseModal() {
   location.reload();
 }
 
+var _pendingReceiptDeleteId = null;
+
 function removeExistingReceipt(expId) {
-  if (!confirm('Are you sure you want to remove this receipt?')) return;
-  fetch(`/financial/expense/${expId}/remove-receipt`, { method: 'POST' })
+  // First check if user has permission to delete
+  fetch(`/api/expense/${expId}/receipt/can-delete`)
     .then(r => r.json())
-    .then(d => {
-      if (d.success) {
-        document.getElementById('receiptPreview').innerHTML = '';
+    .then(data => {
+      if (data.success && data.can_delete) {
+        // User has permission - show confirmation dialog
+        _pendingReceiptDeleteId = expId;
+        new bootstrap.Modal(document.getElementById('receiptDeleteConfirmModal')).show();
+      } else if (data.success && !data.can_delete) {
+        // User needs approval - show delete request modal instead
+        openDeleteRequestModal('receipt', expId, 'Receipt');
+      } else {
+        alert('Error checking permissions');
       }
     })
-    .catch(e => console.error('Error: ' + e));
+    .catch(err => {
+      console.error('Error:', err);
+      alert('Error checking permissions');
+    });
+}
+
+function proceedRemoveReceipt() {
+  if (!_pendingReceiptDeleteId) return;
+  const expId = _pendingReceiptDeleteId;
+  const btn = document.getElementById('receiptDeleteConfirmBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Removing...';
+
+  fetch(`/financial/expense/${expId}/remove-receipt`, { method: 'POST' })
+    .then(r => {
+      if (r.status === 403) {
+        return r.json().then(d => {
+          bootstrap.Modal.getInstance(document.getElementById('receiptDeleteConfirmModal')).hide();
+          if (d.permission_required) {
+            openDeleteRequestModal('receipt', expId, 'Receipt');
+          } else {
+            alert('Failed to remove receipt: ' + (d.error || 'Access denied'));
+          }
+          btn.disabled = false;
+          btn.innerHTML = 'Remove Receipt';
+        });
+      }
+      return r.json().then(d => {
+        if (d.success) {
+          bootstrap.Modal.getInstance(document.getElementById('receiptDeleteConfirmModal')).hide();
+          document.getElementById('receiptPreview').innerHTML = '';
+          alert('Receipt removed successfully.');
+          location.reload();
+        } else {
+          alert('Failed to remove receipt: ' + (d.error || 'Unknown error'));
+          btn.disabled = false;
+          btn.innerHTML = 'Remove Receipt';
+        }
+      });
+    })
+    .catch(e => {
+      alert('Error removing receipt: ' + e);
+      btn.disabled = false;
+      btn.innerHTML = 'Remove Receipt';
+    });
 }
 
 function initModalDropdowns() {
