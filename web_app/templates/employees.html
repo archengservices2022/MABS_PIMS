@@ -2646,15 +2646,20 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
   // Directly use the hash as-is (e.g., #tab-medical, #tab-emp-expenses)
   // The hash already contains the full Bootstrap target ID
   let targetTabId = window.location.hash;
+  console.log('Page load: window.location.hash =', targetTabId || '(empty)');
 
   // If no hash in URL, restore from sessionStorage
   if (!targetTabId) {
     targetTabId = sessionStorage.getItem('empTabPersist');
+    console.log('No hash in URL, checking sessionStorage: empTabPersist =', targetTabId || '(empty)');
   }
 
   // Only default to Time Off if no hash and no sessionStorage entry
   if (!targetTabId) {
     targetTabId = '#tab-time-off';
+    console.log('No hash or sessionStorage, defaulting to Time Off');
+  } else {
+    console.log('Activating tab:', targetTabId);
   }
 
   // Find the nav link that matches this tab ID
@@ -2677,13 +2682,19 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
     }
   }
 
-  // Save active tab to both URL hash and sessionStorage when user clicks a tab
+  // Save active tab to sessionStorage BEFORE Bootstrap processes the click
   document.querySelectorAll('#empTabs .nav-link').forEach(link => {
+    link.addEventListener('mousedown', e => {
+      const tabId = link.getAttribute('href'); // Full href like #tab-emp-expenses
+      // Save to sessionStorage immediately (before Bootstrap tab component processes)
+      sessionStorage.setItem('empTabPersist', tabId);
+      console.log('Tab clicked, saved to sessionStorage:', tabId);
+    });
     link.addEventListener('click', e => {
       const tabId = link.getAttribute('href'); // Full href like #tab-emp-expenses
       // Update URL to reflect active tab (clears pagination parameters)
       history.replaceState(null, '', '/employees' + tabId);
-      // Save to sessionStorage for persistence across module navigation
+      // Double-save to sessionStorage for persistence across module navigation
       sessionStorage.setItem('empTabPersist', tabId);
 
       // Explicitly manage tab pane display
