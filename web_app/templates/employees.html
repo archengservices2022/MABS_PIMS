@@ -2169,7 +2169,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               <tr>
                 <th style="white-space:nowrap;">Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
                 <th class="text-end">Claimed</th><th class="text-end">Approved</th>
-                <th>Status</th><th>Notes</th><th>Receipt</th>
+                <th>Status</th><th>Receipt</th>
               </tr>
             </thead>
             <tbody>
@@ -2214,7 +2214,6 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                   {{ cs }}
                 </span>
               </td>
-              <td class="text-muted small">{{ c.admin_notes or '—' }}</td>
               <td>
                 {% if c.get('has_receipt') and c.get('firebase_id') %}
                 <a href="{{ url_for('medical_claim_receipt', claim_id=c.firebase_id) }}" target="_blank"
