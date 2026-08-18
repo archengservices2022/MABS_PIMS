@@ -15,12 +15,14 @@
 .prof-meta   { font-size:12px; color:#64748b; display:flex; align-items:center; gap:6px; }
 .prof-meta i { color:#94a3b8; }
 
-/* KPI cards row */
+/* KPI cards */
 .kpi-strip   { display:grid; grid-template-columns:repeat(8,1fr); gap:12px; margin-bottom:20px; }
 @media(max-width:1100px){ .kpi-strip { grid-template-columns:repeat(4,1fr); } }
 @media(max-width:640px) { .kpi-strip { grid-template-columns:repeat(2,1fr); } }
 .kpi-card    { background:#fff; border-radius:10px; padding:14px 16px;
-               box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0; }
+               box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;
+               text-decoration:none; display:block; transition:box-shadow .15s,border-color .15s; }
+.kpi-card:hover { box-shadow:0 4px 12px rgba(0,0,0,.1); border-color:#0D9488; text-decoration:none; }
 .kpi-label   { font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
 .kpi-value   { font-size:17px; font-weight:800; color:#0f172a; line-height:1.1; }
 .kpi-sub     { font-size:10px; color:#94a3b8; margin-top:2px; }
@@ -51,19 +53,18 @@
 .prof-table-title { font-size:13px; font-weight:700; color:#0f172a; }
 .prof-table-wrap  { overflow-x:auto; }
 .prof-table-wrap table { font-size:12px; width:100%; }
+.prof-table-wrap tbody tr { cursor:pointer; }
+.prof-table-wrap tbody tr:hover td { background:#f8fafc; }
 
 .text-green { color:#16a34a; }
 .text-amber { color:#b45309; }
 .text-red   { color:#be123c; }
 .text-blue  { color:#1d4ed8; }
-
-.dist-bar-wrap { margin-top:8px; background:#f1f5f9; border-radius:6px; height:6px; overflow:hidden; }
-.dist-bar      { height:6px; background:linear-gradient(90deg,#0D9488,#7C3AED); border-radius:6px; }
 </style>
 
 <!-- Breadcrumb -->
 <div class="prof-breadcrumb">
-  <a href="{{ url_for('employees') }}">← Employees</a> &nbsp;/&nbsp; Employee Profile
+  <a href="{{ url_for('employees') }}">← Employees</a> &nbsp;/&nbsp; {{ name or 'Employee Profile' }}
 </div>
 
 <!-- Header -->
@@ -84,68 +85,80 @@
         <span class="prof-meta"><i class="bi bi-clock-history"></i> Tenure {{ tenure_label }}</span>
         {% endif %}
         {% if email %}
-        <span class="prof-meta"><i class="bi bi-envelope"></i> {{ email }}</span>
+        <span class="prof-meta"><i class="bi bi-envelope"></i>
+          <a href="mailto:{{ email }}" class="text-muted" style="text-decoration:none;">{{ email }}</a>
+        </span>
         {% endif %}
         {% if phone %}
-        <span class="prof-meta"><i class="bi bi-phone"></i> {{ phone }}</span>
+        <span class="prof-meta"><i class="bi bi-phone"></i>
+          <a href="tel:{{ phone }}" class="text-muted" style="text-decoration:none;">{{ phone }}</a>
+        </span>
         {% endif %}
       </div>
     </div>
     {% if is_admin %}
-    <div class="d-flex gap-2 align-items-center">
+    <div class="d-flex gap-2 align-items-center flex-wrap">
       <span class="badge status-{{ (emp.get('employee_status','Active'))|lower }}">{{ emp.get('employee_status','Active') }}</span>
-      <a href="{{ url_for('employees') }}?edit={{ uid }}" class="btn btn-sm btn-outline-secondary">
-        <i class="bi bi-pencil me-1"></i>Edit Profile
-      </a>
+      {% if emp.get('employee_status') != 'Terminated' %}
+      <button class="btn btn-sm btn-outline-danger"
+              onclick="openTerminateModal('{{ uid }}','{{ name }}')">
+        <i class="bi bi-person-x me-1"></i>Terminate
+      </button>
+      {% else %}
+      <button class="btn btn-sm btn-outline-success"
+              onclick="reactivateEmployee('{{ uid }}','{{ name }}')">
+        <i class="bi bi-person-check me-1"></i>Reactivate
+      </button>
+      {% endif %}
     </div>
     {% endif %}
   </div>
 </div>
 
-<!-- KPI strip -->
+<!-- KPI strip — each card links to its detail page -->
 <div class="kpi-strip">
-  <div class="kpi-card">
+  <a class="kpi-card" href="{{ url_for('employees') }}">
     <div class="kpi-label">Tenure</div>
     <div class="kpi-value">{{ tenure_label or '—' }}</div>
     {% if hire_date %}<div class="kpi-sub">Since {{ hire_date | format_date }}</div>{% endif %}
-  </div>
-  <div class="kpi-card">
+  </a>
+  <a class="kpi-card" href="{{ url_for('payroll') }}">
     <div class="kpi-label">Total Salary</div>
     <div class="kpi-value text-green">{{ currency_symbol }}{{ '{:,.0f}'.format(total_salary_paid) }}</div>
     <div class="kpi-sub">All time paid</div>
-  </div>
-  <div class="kpi-card">
+  </a>
+  <a class="kpi-card" href="{{ url_for('payroll') }}">
     <div class="kpi-label">Total Benefits</div>
     <div class="kpi-value">{{ currency_symbol }}{{ '{:,.0f}'.format(total_benefits) }}</div>
     <div class="kpi-sub">Medical &amp; allowances</div>
-  </div>
-  <div class="kpi-card">
+  </a>
+  <a class="kpi-card" href="{{ url_for('payroll') }}#advances">
     <div class="kpi-label">Total Advance</div>
     <div class="kpi-value">{{ currency_symbol }}{{ '{:,.0f}'.format(total_advance) }}</div>
     <div class="kpi-sub">Advances given</div>
-  </div>
-  <div class="kpi-card">
+  </a>
+  <a class="kpi-card" href="{{ url_for('payroll') }}#advances">
     <div class="kpi-label">Outstanding</div>
     <div class="kpi-value {% if advance_balance > 0 %}text-amber{% endif %}">
       {{ currency_symbol }}{{ '{:,.0f}'.format(advance_balance) }}
     </div>
     <div class="kpi-sub">Advance balance</div>
-  </div>
-  <div class="kpi-card">
+  </a>
+  <a class="kpi-card" href="{{ url_for('projects') }}">
     <div class="kpi-label">Projects</div>
     <div class="kpi-value">{{ projects_worked }}</div>
     <div class="kpi-sub">Worked on</div>
-  </div>
-  <div class="kpi-card">
+  </a>
+  <a class="kpi-card" href="{{ url_for('employees') }}#timesheets">
     <div class="kpi-label">Total Hours</div>
     <div class="kpi-value">{{ '{:,.0f}'.format(total_hours) }}</div>
     <div class="kpi-sub">All time logged</div>
-  </div>
-  <div class="kpi-card">
+  </a>
+  <a class="kpi-card" href="{{ url_for('employees') }}#time-off">
     <div class="kpi-label">Leave Taken</div>
     <div class="kpi-value">{{ leave_taken_days }}</div>
     <div class="kpi-sub">Days this year</div>
-  </div>
+  </a>
 </div>
 
 <!-- Financial Overview -->
@@ -153,9 +166,7 @@
   <div class="fin-card">
     <div class="fin-title"><i class="bi bi-building me-1"></i>Total Cost to Company</div>
     <div class="fin-big text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(total_cost_to_company) }}</div>
-    <div class="fin-detail">
-      Salary + Bonus + Benefits + Allowances
-    </div>
+    <div class="fin-detail">Salary + Bonus + Benefits + Allowances</div>
   </div>
   <div class="fin-card">
     <div class="fin-title"><i class="bi bi-person-workspace me-1"></i>Hours Contribution</div>
@@ -183,7 +194,10 @@
 
   <!-- Compensation Summary -->
   <div class="sum-panel">
-    <div class="sum-head"><i class="bi bi-cash-coin me-2" style="color:#0D9488;"></i>Compensation Summary</div>
+    <div class="sum-head">
+      <i class="bi bi-cash-coin me-2" style="color:#0D9488;"></i>Compensation Summary
+      <a href="{{ url_for('payroll') }}" class="float-end" style="font-size:11px;color:#0D9488;text-decoration:none;">View Payroll →</a>
+    </div>
     <div class="sum-row">
       <span class="sum-row-label">Total Salary Paid</span>
       <span class="sum-row-val text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(total_salary_paid) }}</span>
@@ -212,10 +226,13 @@
 
   <!-- Work Summary -->
   <div class="sum-panel">
-    <div class="sum-head"><i class="bi bi-briefcase me-2" style="color:#7C3AED;"></i>Work Summary</div>
+    <div class="sum-head">
+      <i class="bi bi-briefcase me-2" style="color:#7C3AED;"></i>Work Summary
+      <a href="{{ url_for('employees') }}#timesheets" class="float-end" style="font-size:11px;color:#7C3AED;text-decoration:none;">View Timesheets →</a>
+    </div>
     <div class="sum-row">
       <span class="sum-row-label">Projects Worked</span>
-      <span class="sum-row-val">{{ projects_worked }}</span>
+      <a href="{{ url_for('projects') }}" class="sum-row-val text-blue" style="text-decoration:none;">{{ projects_worked }}</a>
     </div>
     <div class="sum-row">
       <span class="sum-row-label">Total Hours Logged</span>
@@ -241,7 +258,10 @@
 
   <!-- Leave Summary -->
   <div class="sum-panel">
-    <div class="sum-head"><i class="bi bi-calendar-check me-2" style="color:#3b82f6;"></i>Leave Summary</div>
+    <div class="sum-head">
+      <i class="bi bi-calendar-check me-2" style="color:#3b82f6;"></i>Leave Summary
+      <a href="{{ url_for('employees') }}#time-off" class="float-end" style="font-size:11px;color:#3b82f6;text-decoration:none;">View Leave →</a>
+    </div>
     <div class="sum-row">
       <span class="sum-row-label">Annual Leave Entitlement</span>
       <span class="sum-row-val">{{ pto_allotment }} days</span>
@@ -269,7 +289,7 @@
   </div>
 </div>
 
-<!-- Bottom tables: Payroll | Projects | Advances -->
+<!-- Bottom tables -->
 <div class="d-flex flex-wrap gap-3 mb-4">
 
   <!-- Recent Payroll History -->
@@ -281,24 +301,18 @@
     <div class="prof-table-wrap">
       <table class="table table-sm table-hover mb-0 align-middle">
         <thead style="background:#f8fafc; font-size:11px;">
-          <tr>
-            <th>Date</th><th>Type</th><th class="text-end">Amount</th><th>Status</th>
-          </tr>
+          <tr><th>Date</th><th>Type</th><th class="text-end">Amount</th><th>Status</th></tr>
         </thead>
         <tbody>
         {% for s in recent_payroll %}
-        <tr>
+        <tr onclick="window.location='{{ url_for('payroll') }}'">
           <td class="text-muted">{{ (s.get('date') or '—') | format_date }}</td>
           <td>{{ s.get('salary_type','Salary') }}</td>
           <td class="text-end fw-600 text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(s.get('amount',0)|float) }}</td>
-          <td>
-            <span class="badge status-{{ (s.get('salary_status','Paid'))|lower }}">
-              {{ s.get('salary_status','Paid') }}
-            </span>
-          </td>
+          <td><span class="badge status-{{ (s.get('salary_status','paid'))|lower }}">{{ s.get('salary_status','Paid') }}</span></td>
         </tr>
         {% else %}
-        <tr><td colspan="4" class="text-muted text-center py-3" style="font-size:12px;">No payroll records</td></tr>
+        <tr><td colspan="4" class="text-muted text-center py-3" style="font-size:12px;">No payroll records yet</td></tr>
         {% endfor %}
         </tbody>
       </table>
@@ -309,20 +323,22 @@
   <div class="prof-table-card" style="min-width:260px;flex:1;">
     <div class="prof-table-head">
       <span class="prof-table-title"><i class="bi bi-folder me-1" style="color:#7C3AED;"></i>Recent Projects</span>
+      <a href="{{ url_for('projects') }}" class="btn btn-xs btn-outline-secondary" style="font-size:11px;">All Projects</a>
     </div>
     <div class="prof-table-wrap">
       <table class="table table-sm table-hover mb-0 align-middle">
         <thead style="background:#f8fafc; font-size:11px;">
-          <tr><th>Project #</th><th>Name</th></tr>
+          <tr><th>Project #</th><th>Name</th><th>Status</th></tr>
         </thead>
         <tbody>
         {% for p in recent_projects %}
-        <tr>
+        <tr onclick="window.location='{% if p.firebase_id %}{{ url_for('project_detail', project_id=p.firebase_id) }}{% else %}{{ url_for('projects') }}{% endif %}'">
           <td><span class="badge" style="background:#ede9fe;color:#5b21b6;font-size:11px;">{{ p.project_number }}</span></td>
-          <td class="text-muted small">{{ (p.project_name or '—')[:32] }}</td>
+          <td class="text-muted small">{{ (p.project_name or '—')[:30] }}</td>
+          <td>{% if p.status %}<span class="badge status-{{ p.status|lower }}">{{ p.status }}</span>{% else %}—{% endif %}</td>
         </tr>
         {% else %}
-        <tr><td colspan="2" class="text-muted text-center py-3" style="font-size:12px;">No project time logged</td></tr>
+        <tr><td colspan="3" class="text-muted text-center py-3" style="font-size:12px;">No project time logged</td></tr>
         {% endfor %}
         </tbody>
       </table>
@@ -333,6 +349,7 @@
   <div class="prof-table-card" style="min-width:280px;flex:1;">
     <div class="prof-table-head">
       <span class="prof-table-title"><i class="bi bi-wallet2 me-1" style="color:#b45309;"></i>Recent Advances</span>
+      <a href="{{ url_for('payroll') }}#advances" class="btn btn-xs btn-outline-secondary" style="font-size:11px;">View All</a>
     </div>
     <div class="prof-table-wrap">
       <table class="table table-sm table-hover mb-0 align-middle">
@@ -342,15 +359,13 @@
         <tbody>
         {% for a in recent_advances %}
         {% set bal = [a.get('amount',0)|float - a.get('adjusted_amount',0)|float, 0]|max %}
-        <tr>
+        <tr onclick="window.location='{% if a.firebase_id %}{{ url_for('advance_detail', advance_id=a.firebase_id) }}{% else %}{{ url_for('payroll') }}{% endif %}'">
           <td class="text-muted small">{{ (a.get('date') or '—') | format_date }}</td>
           <td class="text-end fw-600">{{ currency_symbol }}{{ '{:,.2f}'.format(a.get('amount',0)|float) }}</td>
           <td class="text-end {% if bal > 0 %}text-amber fw-600{% else %}text-muted{% endif %}">
             {{ currency_symbol }}{{ '{:,.2f}'.format(bal) }}
           </td>
-          <td>
-            <span class="badge status-{{ (a.get('status','open'))|lower }}">{{ a.get('status','Open') }}</span>
-          </td>
+          <td><span class="badge status-{{ (a.get('status','open'))|lower }}">{{ a.get('status','Open') }}</span></td>
         </tr>
         {% else %}
         <tr><td colspan="4" class="text-muted text-center py-3" style="font-size:12px;">No advances</td></tr>
@@ -361,4 +376,94 @@
   </div>
 
 </div>
+
+<!-- Reuse termination/reactivation modals from employees.html via JS -->
+{% if is_admin %}
+<!-- Termination Confirmation Modal -->
+<div class="modal fade" id="terminateModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:440px;">
+    <div class="modal-content" style="border-radius:12px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.15);">
+      <div class="modal-header" style="background:#ef4444;border-radius:12px 12px 0 0;padding:14px 20px;">
+        <h6 class="modal-title text-white fw-700 mb-0" id="terminateModalTitle">
+          <i class="bi bi-person-x me-2"></i>Terminate Employee
+        </h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4">
+        <div class="alert alert-warning d-flex gap-2 align-items-start py-2 mb-3" style="font-size:13px;">
+          <i class="bi bi-exclamation-triangle-fill mt-1 flex-shrink-0"></i>
+          <div>This will <strong>immediately disable</strong> the employee's login access. Their data is preserved.</div>
+        </div>
+        <input type="hidden" id="terminateUid">
+        <div class="mb-3">
+          <label class="form-label fw-600" style="font-size:13px;">Termination Date <span class="text-danger">*</span></label>
+          <input type="date" id="terminateDate" class="form-control form-control-sm">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-600" style="font-size:13px;">Reason <span class="text-danger">*</span></label>
+          <select id="terminateReason" class="form-select form-select-sm">
+            <option value="">— Select reason —</option>
+            <option value="Resignation">Resignation</option>
+            <option value="Layoff">Layoff</option>
+            <option value="Contract Ended">Contract Ended</option>
+            <option value="Performance">Performance</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-600" style="font-size:13px;">Notes</label>
+          <textarea id="terminateNotes" class="form-control form-control-sm" rows="2" placeholder="Optional notes..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-danger" id="btnTerminateConfirm">
+          <i class="bi bi-person-x me-1"></i>Confirm Termination
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function openTerminateModal(uid, name) {
+  document.getElementById('terminateUid').value = uid;
+  document.getElementById('terminateDate').value = new Date().toISOString().slice(0,10);
+  document.getElementById('terminateReason').value = '';
+  document.getElementById('terminateNotes').value = '';
+  document.getElementById('terminateModalTitle').innerHTML =
+    `<i class="bi bi-person-x me-2"></i>Terminate: ${name}`;
+  new bootstrap.Modal(document.getElementById('terminateModal')).show();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnTerminateConfirm')?.addEventListener('click', () => {
+    const uid    = document.getElementById('terminateUid').value;
+    const date   = document.getElementById('terminateDate').value;
+    const reason = document.getElementById('terminateReason').value;
+    const notes  = document.getElementById('terminateNotes').value;
+    if (!date || !reason) { alert('Please fill in the Termination Date and Reason.'); return; }
+    const btn = document.getElementById('btnTerminateConfirm');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
+    fetch(`/api/employee/${uid}/terminate`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({termination_date:date, reason, notes})
+    }).then(r=>r.json()).then(d=>{
+      if (d.error) { alert('Error: '+d.error); btn.disabled=false; btn.innerHTML='<i class="bi bi-person-x me-1"></i>Confirm Termination'; return; }
+      location.reload();
+    }).catch(()=>{ alert('Request failed.'); btn.disabled=false; btn.innerHTML='<i class="bi bi-person-x me-1"></i>Confirm Termination'; });
+  });
+});
+
+function reactivateEmployee(uid, name) {
+  if (!confirm(`Reactivate ${name}? This will re-enable their login access.`)) return;
+  fetch(`/api/employee/${uid}/reactivate`, {method:'POST', headers:{'Content-Type':'application/json'}})
+    .then(r=>r.json())
+    .then(d=>{ if (d.error){alert('Error: '+d.error); return;} location.reload(); })
+    .catch(()=>alert('Request failed.'));
+}
+</script>
+{% endif %}
+
 {% endblock %}
