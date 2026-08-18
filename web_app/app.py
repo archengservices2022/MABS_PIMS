@@ -14147,12 +14147,23 @@ def remove_expense_receipt(exp_id):
         fb_delete(f"/medical_claim_receipts/{exp_id}")
 
         # Sync removal to /expenses if it's an employee expense
-        if fb_get(f"/expenses/{exp_id}"):
+        emp_exp = fb_get(f"/expenses/{exp_id}")
+        if emp_exp:
             fb_update(f"/expenses/{exp_id}", {
                 "receipt_base64": "",
                 "receipt_filename": "",
                 "receipt_type": "",
                 "has_receipt": False
+            })
+
+        # Also update the medical claim if this expense was created from one
+        balance_sheet_exp = fb_get(f"/balance_sheet_expenses/{exp_id}") or {}
+        if balance_sheet_exp.get("source") == "medical_claim":
+            medical_claim_id = balance_sheet_exp.get("medical_claim_id") or exp_id
+            fb_update(f"/medical_claims/{medical_claim_id}", {
+                "has_receipt": False,
+                "receipt_filename": "",
+                "updated_at": datetime.now(timezone.utc).isoformat()
             })
 
         # Mark permission request as completed if one was used
