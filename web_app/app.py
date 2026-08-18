@@ -809,40 +809,63 @@ def _cleanup_unpaid_commissions():
                     # Check if this is a commission expense
                     is_commission = exp_data.get("is_commission") or exp_data.get("category") == "Sales Commission"
                     if is_commission:
-                        # Fix expense_name format: should be "Commission: Salesperson" not old formats
-                        salesperson = exp_data.get("salesperson", "")
-                        current_name = exp_data.get("expense_name", "")
-                        expected_name = f"Commission: {salesperson}" if salesperson else "Commission: Unknown"
-
-                        if current_name != expected_name:
-                            # Update to correct format
-                            fb_update(f"/balance_sheet_expenses/{exp_id}", {
-                                "expense_name": expected_name,
-                                "updated_at": datetime.now(timezone.utc).isoformat(),
-                            })
-                            log.info(f"Fixed commission expense name {exp_id}: {current_name} -> {expected_name}")
-
                         # Remove if status is not "Paid" or status is missing
                         exp_status = exp_data.get("status", "")
                         if exp_status != "Paid":
                             fb_delete(f"/balance_sheet_expenses/{exp_id}")
                             log.info(f"Cleaned up unpaid commission expense {exp_id} (status: {exp_status})")
-
-                    # Also fix salary expense names to use colon format: "Employee Salary: Name"
-                    if exp_data.get("expense_type") == "Employee Salary" or exp_data.get("category") == "Salary":
-                        employee_name = exp_data.get("employee_name", "")
-                        current_name = exp_data.get("expense_name", "")
-                        expected_name = f"Employee Salary: {employee_name}" if employee_name else "Employee Salary"
-
-                        if current_name and current_name != expected_name:
-                            # Update to correct format
-                            fb_update(f"/balance_sheet_expenses/{exp_id}", {
-                                "expense_name": expected_name,
-                                "updated_at": datetime.now(timezone.utc).isoformat(),
-                            })
-                            log.info(f"Fixed salary expense name {exp_id}: {current_name} -> {expected_name}")
     except Exception as e:
         log.error(f"Error cleaning up unpaid commissions: {e}")
+
+def _normalize_all_expense_names():
+    """Normalize all expense names to Type: Name format for consistency."""
+    try:
+        expenses = fb_get("/balance_sheet_expenses") or {}
+        normalized_count = 0
+
+        if isinstance(expenses, dict):
+            for exp_id, exp_data in expenses.items():
+                if not isinstance(exp_data, dict):
+                    continue
+
+                updates = {}
+                current_name = exp_data.get("expense_name", "")
+                employee_name = exp_data.get("employee_name", "")
+                salesperson = exp_data.get("salesperson", "")
+
+                # Fix salary expense names
+                if (exp_data.get("expense_type") == "Employee Salary" or exp_data.get("category") == "Salary") and employee_name:
+                    expected_name = f"Employee Salary: {employee_name}"
+                    if current_name != expected_name:
+                        updates["expense_name"] = expected_name
+
+                # Fix commission expense names
+                if (exp_data.get("is_commission") or exp_data.get("category") == "Sales Commission") and salesperson:
+                    expected_name = f"Commission: {salesperson}"
+                    if current_name != expected_name:
+                        updates["expense_name"] = expected_name
+
+                # Fix medical/bonus expense names
+                if ("Medical" in current_name or exp_data.get("category") in ("Medical/Benefits", "Medical Claim")) and employee_name and not current_name.startswith("Medical"):
+                    expected_name = f"Medical: {employee_name}"
+                    if current_name != expected_name:
+                        updates["expense_name"] = expected_name
+
+                if ("Bonus" in current_name or exp_data.get("category") == "Bonus") and employee_name and not current_name.startswith("Bonus"):
+                    expected_name = f"Bonus: {employee_name}"
+                    if current_name != expected_name:
+                        updates["expense_name"] = expected_name
+
+                # Apply updates
+                if updates:
+                    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+                    fb_update(f"/balance_sheet_expenses/{exp_id}", updates)
+                    normalized_count += 1
+
+            if normalized_count > 0:
+                log.info(f"Normalized {normalized_count} expense names to Type: Name format")
+    except Exception as e:
+        log.error(f"Error normalizing expense names: {e}")
 
 def _sync_employee_name_in_advance_finances(employee_id: str, old_name: str, new_name: str):
     """Sync employee name changes to all advance finance entries"""
@@ -11984,8 +12007,9 @@ def financial():
     # Re-sync all advances to ensure expense entries have correct data
     _resync_all_advances()
 
-    # Cleanup: Remove any unpaid commission expenses from balance_sheet_expenses
+    # Cleanup: Remove any unpaid commission expenses and normalize all expense names
     _cleanup_unpaid_commissions()
+    _normalize_all_expense_names()
 
     # Sequential — Firebase Admin SDK shares one HTTP session; concurrent ThreadPoolExecutor calls return empty dicts
     invoices = fb_get("/invoices") or {}
@@ -16342,6 +16366,66 @@ def commission_cleanup_unpaid():
         "ok": True,
         "removed_count": removed_count,
         "message": f"Removed {removed_count} unpaid commission expenses from Finance tab"
+    })
+
+
+@app.route("/api/expense/normalize-names", methods=["POST"])
+@role_required("financial")
+def normalize_expense_names():
+    """Normalize all old expense names to new format: Type: Name"""
+    if normalize_role(session.get("user_role", "")) not in ("admin", "finance"):
+        return jsonify({"error": "Admin/Finance access required"}), 403
+
+    expenses = fb_get("/balance_sheet_expenses") or {}
+    updated_count = 0
+
+    if isinstance(expenses, dict):
+        for exp_id, exp_data in expenses.items():
+            if not isinstance(exp_data, dict):
+                continue
+
+            updates = {}
+            current_name = exp_data.get("expense_name", "")
+            employee_name = exp_data.get("employee_name", "")
+            salesperson = exp_data.get("salesperson", "")
+
+            # Fix salary expense names
+            if (exp_data.get("expense_type") == "Employee Salary" or exp_data.get("category") == "Salary") and employee_name:
+                expected_name = f"Employee Salary: {employee_name}"
+                if current_name != expected_name:
+                    updates["expense_name"] = expected_name
+                    log.info(f"Updated salary expense {exp_id}: '{current_name}' -> '{expected_name}'")
+
+            # Fix commission expense names
+            if (exp_data.get("is_commission") or exp_data.get("category") == "Sales Commission") and salesperson:
+                expected_name = f"Commission: {salesperson}"
+                if current_name != expected_name:
+                    updates["expense_name"] = expected_name
+                    log.info(f"Updated commission expense {exp_id}: '{current_name}' -> '{expected_name}'")
+
+            # Fix medical/bonus expense names
+            if ("Medical" in current_name or exp_data.get("category") in ("Medical/Benefits", "Medical Claim")) and employee_name and not current_name.startswith("Medical"):
+                expected_name = f"Medical: {employee_name}"
+                if current_name != expected_name:
+                    updates["expense_name"] = expected_name
+                    log.info(f"Updated medical expense {exp_id}: '{current_name}' -> '{expected_name}'")
+
+            if ("Bonus" in current_name or exp_data.get("category") == "Bonus") and employee_name and not current_name.startswith("Bonus"):
+                expected_name = f"Bonus: {employee_name}"
+                if current_name != expected_name:
+                    updates["expense_name"] = expected_name
+                    log.info(f"Updated bonus expense {exp_id}: '{current_name}' -> '{expected_name}'")
+
+            # Apply updates
+            if updates:
+                updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+                fb_update(f"/balance_sheet_expenses/{exp_id}", updates)
+                updated_count += 1
+
+    return jsonify({
+        "ok": True,
+        "updated_count": updated_count,
+        "message": f"Normalized {updated_count} expense names to Type: Name format"
     })
 
 
