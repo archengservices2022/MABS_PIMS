@@ -1156,7 +1156,7 @@ function confirmTimeOffAction(requestId, action, employeeName) {
     : `You are about to <strong>reject</strong> <strong>${employeeName}</strong>'s time-off request. This action cannot be undone.`;
 
   showConfirmationModal(title, message, isApprove ? 'Approve' : 'Reject', headerBg, () => {
-    const currentTab = (window.location.hash || '').replace('#','') || 'time-off';
+    const currentTab = window.location.hash || '#tab-time-off';
     sessionStorage.setItem('empTabPersist', currentTab);
     const form = document.createElement('form');
     form.method = 'POST';
@@ -1171,7 +1171,7 @@ function confirmExpenseDelete(expId) {
   const message = '<strong>Are you sure you want to delete this expense?</strong><br><br>This action cannot be undone.';
 
   showConfirmationModal(title, message, 'Delete', '#dc2626', () => {
-    const currentTab = (window.location.hash || '').replace('#','') || 'expenses';
+    const currentTab = window.location.hash || '#tab-emp-expenses';
     sessionStorage.setItem('empTabPersist', currentTab);
     const form = document.createElement('form');
     form.method = 'POST';
@@ -1190,7 +1190,7 @@ function confirmExpenseReview(expId, action, empName) {
     : `You are about to <strong>Reject</strong> <strong>${empName}</strong>'s expense. This action cannot be undone.`;
 
   showConfirmationModal(title, message, isApprove ? 'Approve' : 'Reject', headerBg, () => {
-    const currentTab = (window.location.hash || '').replace('#','') || 'expenses';
+    const currentTab = window.location.hash || '#tab-emp-expenses';
     sessionStorage.setItem('empTabPersist', currentTab);
     const form = document.createElement('form');
     form.method = 'POST';
@@ -1872,7 +1872,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <thead>
               <tr>
                 <th style="min-width:120px;">Expense Date</th><th style="min-width:200px;">Name</th><th class="text-end">Amount</th>
-                <th>Project</th><th style="min-width:90px;">Submitted On</th><th>Status</th><th class="text-center">Receipt</th><th></th>
+                <th>Project</th><th style="min-width:125px;">Submitted On</th><th>Status</th><th class="text-center">Receipt</th><th></th>
               </tr>
             </thead>
             <tbody id="allSubmissionsTbody">
@@ -1889,7 +1889,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                 <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * rate) }}</div>
               </td>
               <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
-              <td class="text-muted small">{{ e.get('created_at','—') | format_date }}</td>
+              <td class="text-muted small" style="min-width:125px;">{{ e.get('created_at','—') | format_date }}</td>
               <td>
                 {% set st = e.get('status','Pending') %}
                 {% set edit_st = e.get('edit_status', '') %}
@@ -2113,7 +2113,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           <tr>
             <th>Employee</th><th style="min-width:130px;">Expense Date</th><th>Name</th>
             <th class="text-end">Amount</th>
-            <th>Project</th><th style="min-width:130px;">Submitted On</th><th>Status</th><th class="text-center">Receipt</th><th></th>
+            <th>Project</th><th style="min-width:140px;">Submitted On</th><th>Status</th><th class="text-center">Receipt</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -2138,7 +2138,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * rate) }}</div>
           </td>
           <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
-          <td class="text-muted small">{{ e.get('created_at','—') | format_date }}</td>
+          <td class="text-muted small" style="min-width:140px;">{{ e.get('created_at','—') | format_date }}</td>
           <td>
             {% set st = e.get('status','Pending') %}
             {% set reviewed_by = e.get('reviewed_by', '') %}
@@ -2342,19 +2342,20 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
             <thead style="background:#f8fafc;">
               <tr>
-                <th style="white-space:nowrap;">Expense Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
+                <th style="min-width:125px;">Submitted On</th><th style="white-space:nowrap;">Expense Date</th><th>Type</th><th>Provider</th><th>Description</th><th style="min-width:80px;">Ref #</th>
                 <th class="text-end">Claimed</th><th class="text-end">Approved</th>
-                <th>Status</th><th>Submitted On</th><th>Receipt</th>
+                <th>Status</th><th>Receipt</th>
               </tr>
             </thead>
             <tbody>
             {% for c in paginated_claims %}
             <tr>
+              <td class="text-muted small" style="min-width:125px;">{{ c.get('submitted_at','') | format_date }}</td>
               <td style="white-space:nowrap;">{{ c.claim_date | format_date }}</td>
               <td>{{ c.expense_type or '—' }}</td>
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
-              <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
+              <td class="text-muted small" style="min-width:80px;">{{ c.get('receipt_ref') or '—' }}</td>
               <td class="text-end fw-semibold">
                 {% set curr = c.get('amount_currency', 'USD') %}
                 {% if curr == 'BDT' %}
@@ -2388,8 +2389,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                   {% else %}background:#fef9c3;color:#92400e;{% endif %}">
                   {{ cs }}
                 </span>
+                {% if c.get('reviewed_at','') %}<div class="text-muted small" style="margin-top:3px;">{{ c.get('reviewed_at','') | format_date }}</div>{% endif %}
               </td>
-              <td class="text-muted small">{{ c.get('submitted_at','') | format_date }}</td>
               <td>
                 {% if c.get('has_receipt') and c.get('firebase_id') %}
                 <a href="{{ url_for('medical_claim_receipt', claim_id=c.firebase_id) }}" target="_blank"
@@ -2448,13 +2449,14 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
             <thead style="background:#f8fafc;">
               <tr>
-                <th>Employee</th><th style="white-space:nowrap;">Expense Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
-                <th class="text-end">Claimed ($USD)</th><th class="text-end">Approved ($USD)</th><th>Status</th><th>Submitted On</th><th>Receipt</th><th>Actions</th>
+                <th>Submitted On</th><th>Employee</th><th style="white-space:nowrap;">Expense Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
+                <th class="text-end">Claimed ($USD)</th><th class="text-end">Approved ($USD)</th><th>Status</th><th>Receipt</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
             {% for c in paginated_claims_admin %}
             <tr>
+              <td class="text-muted small">{{ c.get('submitted_at','') | format_date }}</td>
               <td><strong>{{ c.employee_name or '—' }}</strong></td>
               <td style="white-space:nowrap;">{{ c.claim_date | format_date }}</td>
               <td>{{ c.expense_type or '—' }}</td>
@@ -2491,8 +2493,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                   {% else %}background:#fef9c3;color:#92400e;{% endif %}">
                   {{ cs }}
                 </span>
+                {% if c.get('reviewed_at','') %}<div class="text-muted small" style="margin-top:3px;">{{ c.get('reviewed_at','') | format_date }}</div>{% endif %}
               </td>
-              <td class="text-muted small">{{ c.get('submitted_at','') | format_date }}</td>
               <td>
                 {% if c.get('has_receipt') and c.get('firebase_id') %}
                 <a href="{{ url_for('medical_claim_receipt', claim_id=c.firebase_id) }}" target="_blank"
@@ -2642,61 +2644,52 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
 // Tab persistence via URL hash and sessionStorage
 // Preserves the active tab across refreshes, actions, and navigation
 (function () {
-  const map = { 'time-off':'', profile:'#tab-profile', 'emp-expenses':'', medical:'', 'my-reviews':'', team:'#tab-team', directory:'#tab-directory', clock:'#tab-clock' };
+  // Directly use the hash as-is (e.g., #tab-medical, #tab-emp-expenses)
+  // The hash already contains the full Bootstrap target ID
+  let targetTabId = window.location.hash;
+  console.log('Page load: window.location.hash =', targetTabId || '(empty)');
 
-  // Priority 1: Check URL hash (direct navigation, refresh, or explicit tab selection)
-  let hash = (window.location.hash || '').replace('#','');
-
-  // Priority 2: If no hash, restore from sessionStorage (persists across navigation to other modules)
-  if (!hash) {
-    hash = sessionStorage.getItem('empTabPersist') || 'time-off';
+  // Default to Time Off if no hash (when returning from other modules)
+  if (!targetTabId) {
+    targetTabId = '#tab-time-off';
+    console.log('No hash in URL, defaulting to Time Off');
+  } else {
+    console.log('Activating tab:', targetTabId);
   }
 
-  // Priority 3: Only fall back to time-off if nothing was found
-  const target = map[hash] || '#tab-time-off';
+  // Find the nav link that matches this tab ID
+  const targetNavLink = document.querySelector('#empTabs .nav-link[href="' + targetTabId + '"]');
 
-  // Directly activate the correct tab by managing CSS classes
-  // Remove active from all nav links
+  // Deactivate all tabs first
   document.querySelectorAll('#empTabs .nav-link').forEach(link => {
     link.classList.remove('active');
   });
-  // Remove show/active from all tab panes
   document.querySelectorAll('.tab-content .tab-pane').forEach(pane => {
     pane.classList.remove('show', 'active');
   });
 
-  // Activate the target tab - try querySelector first, then fallback to iteration
-  let targetNavLink = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
-
-  // If not found by direct query, iterate through all links
-  if (!targetNavLink) {
-    const allLinks = document.querySelectorAll('#empTabs .nav-link');
-    for (let link of allLinks) {
-      if (link.getAttribute('href') === target) {
-        targetNavLink = link;
-        break;
-      }
+  // Activate the target tab if found
+  if (targetNavLink) {
+    targetNavLink.classList.add('active');
+    const targetPane = document.querySelector(targetTabId);
+    if (targetPane) {
+      targetPane.classList.add('show', 'active');
     }
   }
 
-  // Add active class to nav link if found
-  if (targetNavLink) {
-    targetNavLink.classList.add('active');
-  }
-
-  // Activate the corresponding tab pane
-  const targetPane = document.querySelector(target);
-  if (targetPane) {
-    targetPane.classList.add('show', 'active');
-  }
-
-  // Save active tab to both URL hash and sessionStorage when user clicks a tab
+  // Save active tab to sessionStorage BEFORE Bootstrap processes the click
   document.querySelectorAll('#empTabs .nav-link').forEach(link => {
+    link.addEventListener('mousedown', e => {
+      const tabId = link.getAttribute('href'); // Full href like #tab-emp-expenses
+      // Save to sessionStorage immediately (before Bootstrap tab component processes)
+      sessionStorage.setItem('empTabPersist', tabId);
+      console.log('Tab clicked, saved to sessionStorage:', tabId);
+    });
     link.addEventListener('click', e => {
       const tabId = link.getAttribute('href'); // Full href like #tab-emp-expenses
       // Update URL to reflect active tab (clears pagination parameters)
       history.replaceState(null, '', '/employees' + tabId);
-      // Save to sessionStorage for persistence across module navigation
+      // Double-save to sessionStorage for persistence across module navigation
       sessionStorage.setItem('empTabPersist', tabId);
 
       // Explicitly manage tab pane display
@@ -2717,29 +2710,47 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
     });
   });
 
+  // Intercept ALL pagination/query parameter links and add current tab hash
+  document.addEventListener('click', function(e) {
+    const link = e.target.closest('a[href*="?"]');
+    if (!link) return;
+
+    const href = link.getAttribute('href');
+    if (!href.includes('?')) return;
+
+    const currentHash = window.location.hash || '#tab-time-off';
+    const hashlessHref = href.split('#')[0];
+    const newHref = hashlessHref + currentHash;
+
+    e.preventDefault();
+    window.location.href = newHref;
+    console.log('Pagination link clicked, adding hash:', newHref);
+  });
+
   // Update pagination links to include current tab hash
   function updatePaginationLinksWithHash(tabId) {
     const currentHash = tabId; // tabId is already like #tab-emp-expenses
-    // Update anchor pagination links
-    document.querySelectorAll('a[href^="?"]').forEach(link => {
+
+    // Update anchor pagination links with query params
+    document.querySelectorAll('a[href*="?"]').forEach(link => {
       const href = link.getAttribute('href');
-      // Remove existing hash if present and add current hash
       const cleanHref = href.split('#')[0];
       link.setAttribute('href', cleanHref + currentHash);
     });
-    // Update input onchange handlers - preserve the page calculation, just append hash
+
+    // Update input onchange handlers - replace window.location assignments
     document.querySelectorAll('input[type="number"][onchange*="window.location"]').forEach(input => {
       let onchange = input.getAttribute('onchange');
       // Remove any existing hash from the onchange
-      onchange = onchange.replace(/#[a-zA-Z0-9-]+'/, "'");
-      // Append current hash before the closing quote
-      onchange = onchange.replace("')", "' + '" + currentHash + "')");
+      onchange = onchange.replace(/#[a-zA-Z0-9\-]+'/, "'");
+      // Append current hash before the final quote
+      onchange = onchange.replace(/'\s*$/, "' + '" + currentHash + "'");
       input.setAttribute('onchange', onchange);
     });
   }
 
   // Initialize pagination links with current tab on page load
-  const currentTabId = window.location.hash || sessionStorage.getItem('empTabPersist') || '#tab-time-off';
+  const currentTabId = window.location.hash || '#tab-time-off';
   updatePaginationLinksWithHash(currentTabId);
 })();
 
@@ -3378,7 +3389,7 @@ window.openMedReview = function(claimId, empName, amtClaimed, action) {
 
 // Preserve tab when submitting medical review form
 document.getElementById('medReviewForm')?.addEventListener('submit', function() {
-  const currentTab = (window.location.hash || '').replace('#','') || 'medical';
+  const currentTab = window.location.hash || '#tab-medical';
   sessionStorage.setItem('empTabPersist', currentTab);
 });
 
@@ -3403,7 +3414,13 @@ window.openMedAmtEdit = function(claimId, empName, amtClaimed, amtApproved, exch
 
 // Preserve tab when submitting medical amount edit form
 document.getElementById('medAmtEditForm')?.addEventListener('submit', function() {
-  const currentTab = (window.location.hash || '').replace('#','') || 'medical';
+  const currentTab = window.location.hash || '#tab-medical';
+  sessionStorage.setItem('empTabPersist', currentTab);
+});
+
+// Preserve tab when submitting expense rejection form
+document.getElementById('empExpenseRejectForm')?.addEventListener('submit', function() {
+  const currentTab = window.location.hash || '#tab-emp-expenses';
   sessionStorage.setItem('empTabPersist', currentTab);
 });
 
