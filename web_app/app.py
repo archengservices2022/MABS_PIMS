@@ -15353,7 +15353,7 @@ def medical_claim_new():
         usd_amount = 0.0
     if usd_amount > 5000:
         flash("Medical claim cannot exceed $5,000 USD.", "danger")
-        return redirect(url_for("employees") + "#medical")
+        return redirect(url_for("employees") + "#tab-medical")
 
     exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
     bdt_amount = usd_amount * exchange_rate
@@ -15394,7 +15394,7 @@ def medical_claim_new():
         except Exception as _e:
             log.error(f"Medical claim receipt upload error: {_e}")
     flash("Medical allowance claim submitted successfully.", "success")
-    return redirect(url_for("employees") + "#medical")
+    return redirect(url_for("employees") + "#tab-medical")
 
 @app.route("/employees/medical-claims/<claim_id>/receipt")
 @role_required("employees")
@@ -15407,12 +15407,12 @@ def medical_claim_receipt(claim_id):
     fname = rec.get("receipt_filename", "receipt")
     if not b64:
         flash("Receipt file not found for this claim.", "warning")
-        return redirect(url_for("employees") + "#medical")
+        return redirect(url_for("employees") + "#tab-medical")
     try:
         content = base64.b64decode(b64)
     except Exception:
         flash("Receipt file could not be read.", "danger")
-        return redirect(url_for("employees") + "#medical")
+        return redirect(url_for("employees") + "#tab-medical")
     return _Resp(content, mimetype=mime,
                  headers={"Content-Disposition": f'inline; filename="{fname}"'})
 
@@ -15422,7 +15422,7 @@ def medical_claim_receipt(claim_id):
 def medical_claim_review(claim_id):
     if normalize_role(session.get("user_role", "")) not in ("admin", "accountant"):
         flash("Admin access required.", "danger")
-        return redirect(url_for("employees") + "#medical")
+        return redirect(url_for("employees") + "#tab-medical")
     action = request.form.get("action", "")
     status = "Approved" if action == "approve" else "Rejected"
     try:
@@ -15491,7 +15491,7 @@ def medical_claim_review(claim_id):
         fb_update(f"/balance_sheet_expenses/{claim_id}", exp_data)
 
     flash(f"Claim {status.lower()} successfully.", "success")
-    return redirect(url_for("employees") + "#medical")
+    return redirect(url_for("employees") + "#tab-medical")
 
 
 @app.route("/employees/medical-claims/<claim_id>/update-amount", methods=["POST"])
@@ -15499,15 +15499,15 @@ def medical_claim_review(claim_id):
 def medical_claim_update_amount(claim_id):
     if normalize_role(session.get("user_role", "")) not in ("admin", "accountant"):
         flash("Admin access required.", "danger")
-        return redirect(url_for("employees") + "#medical")
+        return redirect(url_for("employees") + "#tab-medical")
     try:
         new_usd = round(float(request.form.get("amount_approved_usd", 0) or 0), 2)
     except ValueError:
         flash("Invalid amount.", "danger")
-        return redirect(url_for("employees") + "#medical")
+        return redirect(url_for("employees") + "#tab-medical")
     if new_usd <= 0:
         flash("Amount must be greater than zero.", "danger")
-        return redirect(url_for("employees") + "#medical")
+        return redirect(url_for("employees") + "#tab-medical")
 
     now_str = datetime.now(timezone.utc).isoformat()
     claim = fb_get(f"/medical_claims/{claim_id}") or {}
@@ -15560,7 +15560,7 @@ def medical_claim_update_amount(claim_id):
     fb_update(f"/balance_sheet_expenses/{claim_id}", exp_data)
 
     flash("Approved amount updated and expense synced to Financial.", "success")
-    return redirect(url_for("employees") + "#medical")
+    return redirect(url_for("employees") + "#tab-medical")
 
 
 @app.route("/employees/expenses/submit", methods=["POST"])
@@ -15576,7 +15576,7 @@ def employee_expense_submit():
     has_receipt = 'receipt' in request.files and request.files['receipt'].filename
     if not editing_expense_id and not has_receipt:
         flash("A receipt is required to submit an expense.", "danger")
-        return redirect(url_for("employees") + "#expenses")
+        return redirect(url_for("employees") + "#tab-emp-expenses")
 
     receipt_base64 = None
     receipt_filename = None
@@ -15592,7 +15592,7 @@ def employee_expense_submit():
         except Exception as e:
             app.logger.error(f"Expense receipt upload error: {e}")
             flash("Receipt upload failed. Please try again.", "danger")
-            return redirect(url_for("employees") + "#expenses")
+            return redirect(url_for("employees") + "#tab-emp-expenses")
 
     usd_amount = _safe_float(request.form.get("amount", 0))
 
@@ -15688,7 +15688,7 @@ def employee_expense_submit():
             })
         flash("Expense submitted and pending admin approval.", "success")
 
-    return redirect(url_for("employees") + "#expenses")
+    return redirect(url_for("employees") + "#tab-emp-expenses")
 
 
 @app.route("/employees/expenses/<exp_id>/edit/review", methods=["POST"])
@@ -15697,13 +15697,13 @@ def employee_expense_edit_review(exp_id):
     """Approve/reject pending edits to an expense"""
     if normalize_role(session.get("user_role", "")) not in ("admin", "accountant"):
         flash("Admin access required.", "danger")
-        return redirect(url_for("employees") + "#expenses")
+        return redirect(url_for("employees") + "#tab-emp-expenses")
 
     action = request.form.get("action", "")
     review_note = request.form.get("review_note", "").strip()
     if action not in ("approve", "reject"):
         flash("Invalid action.", "danger")
-        return redirect(url_for("employees") + "#expenses")
+        return redirect(url_for("employees") + "#tab-emp-expenses")
 
     now_str = datetime.now(timezone.utc).isoformat()
     exp_data = fb_get(f"/expenses/{exp_id}") or {}
@@ -15746,7 +15746,7 @@ def employee_expense_edit_review(exp_id):
         fb_update(f"/expenses/{exp_id}", exp_data)
         flash("Edit rejected. Original expense data kept.", "success")
 
-    return redirect(url_for("employees") + "#expenses")
+    return redirect(url_for("employees") + "#tab-emp-expenses")
 
 
 @app.route("/employees/expenses/<exp_id>/review", methods=["POST"])
@@ -15754,13 +15754,13 @@ def employee_expense_edit_review(exp_id):
 def employee_expense_review(exp_id):
     if normalize_role(session.get("user_role", "")) not in ("admin", "accountant"):
         flash("Admin access required.", "danger")
-        return redirect(url_for("employees") + "#expenses")
+        return redirect(url_for("employees") + "#tab-emp-expenses")
 
     action = request.form.get("action", "")
     review_note = request.form.get("review_note", "").strip()
     if action not in ("approve", "reject"):
         flash("Invalid action.", "danger")
-        return redirect(url_for("employees") + "#expenses")
+        return redirect(url_for("employees") + "#tab-emp-expenses")
 
     new_status = "Approved" if action == "approve" else "Rejected"
     now_str = datetime.now(timezone.utc).isoformat()
@@ -15781,7 +15781,7 @@ def employee_expense_review(exp_id):
             fb_update(f"/balance_sheet_expenses/{exp_id}", exp_data)
 
     flash(f"Expense {new_status.lower()}.", "success")
-    return redirect(url_for("employees") + "#expenses")
+    return redirect(url_for("employees") + "#tab-emp-expenses")
 
 
 @app.route("/employees/expenses/<exp_id>/receipt", methods=["GET"])
@@ -15819,7 +15819,7 @@ def employee_expense_edit(exp_id):
     # Only admin/accountant can edit expenses
     if role not in ("admin", "accountant"):
         flash("Only admins can edit expenses.", "danger")
-        return redirect(url_for("employees") + "#expenses")
+        return redirect(url_for("employees") + "#tab-emp-expenses")
 
     updates = {
         "expense_type":   request.form.get("expense_type", ""),
@@ -15848,7 +15848,7 @@ def employee_expense_edit(exp_id):
         except Exception as e:
             app.logger.error(f"Expense receipt update error: {e}")
             flash("Receipt upload failed. Other changes were not saved.", "danger")
-            return redirect(url_for("employees") + "#expenses")
+            return redirect(url_for("employees") + "#tab-emp-expenses")
 
     # Update in employee expenses
     fb_update(f"/expenses/{exp_id}", updates)
@@ -15863,7 +15863,7 @@ def employee_expense_edit(exp_id):
             "reviewed_at":     datetime.now(timezone.utc).isoformat(),
         })
     flash("Expense updated successfully.", "success")
-    return redirect(url_for("employees") + "#expenses")
+    return redirect(url_for("employees") + "#tab-emp-expenses")
 
 
 @app.route("/employees/expenses/<exp_id>/delete", methods=["POST"])
@@ -15875,14 +15875,14 @@ def employee_expense_delete(exp_id):
     # Submitter can delete their own Pending; admin/accountant can delete anything
     if role not in ("admin", "accountant") and exp_data.get("submitted_by_uid") != uid:
         flash("You can only delete your own expenses.", "danger")
-        return redirect(url_for("employees") + "#expenses")
+        return redirect(url_for("employees") + "#tab-emp-expenses")
     if role not in ("admin", "accountant") and exp_data.get("status", "Pending") != "Pending":
         flash("Only pending expenses can be deleted.", "danger")
-        return redirect(url_for("employees") + "#expenses")
+        return redirect(url_for("employees") + "#tab-emp-expenses")
 
     fb_delete(f"/expenses/{exp_id}")
     flash("Expense deleted.", "success")
-    return redirect(url_for("employees") + "#expenses")
+    return redirect(url_for("employees") + "#tab-emp-expenses")
 
 
 @app.route("/employees/clock-in", methods=["POST"])
@@ -16063,7 +16063,7 @@ def employee_time_off_new():
         "review_note":     "",
     })
     flash("Time off request submitted.", "success")
-    return redirect(url_for("employees") + "#time-off")
+    return redirect(url_for("employees") + "#tab-time-off")
 
 @app.route("/employees/time-off/<request_id>/<action>", methods=["POST"])
 @role_required("employees")
@@ -16083,7 +16083,7 @@ def employee_time_off_action(request_id, action):
         "reviewed_at": datetime.now(timezone.utc).isoformat(),
     })
     flash(f"Time off request {new_status.lower()}.", "success")
-    return redirect(url_for("employees") + "#time-off")
+    return redirect(url_for("employees") + "#tab-time-off")
 
 @app.route("/employees/<uid>/update", methods=["POST"])
 @role_required("employees")
@@ -16107,7 +16107,7 @@ def employee_update(uid):
         updates["monthly_salary"] = _safe_float(request.form.get("monthly_salary", 0))
     fb_update(f"/users/{uid}", updates)
     flash("Employee details updated.", "success")
-    return redirect(url_for("employees") + "#team")
+    return redirect(url_for("employees") + "#tab-team")
 
 @app.route("/api/users/<uid>/pages", methods=["PATCH"])
 @role_required("settings")
@@ -16652,7 +16652,7 @@ def normalize_expense_names():
 def employee_export_hours():
     if normalize_role(session.get("user_role", "")) != "admin":
         flash("You don't have permission to do that.", "danger")
-        return redirect(url_for("employees") + "#team")
+        return redirect(url_for("employees") + "#tab-team")
 
     import csv
     import io as _io
@@ -16694,7 +16694,7 @@ def employee_close_entry(entry_id):
     entry = fb_get(f"/time_entries/{entry_id}")
     if not entry or entry.get("status") != "open":
         flash("Time entry not found or already closed.", "danger")
-        return redirect(url_for("employees") + "#team")
+        return redirect(url_for("employees") + "#tab-team")
 
     is_owner = entry.get("employee_uid") == session.get("user_uid", "")
     is_admin = normalize_role(session.get("user_role", "")) == "admin"
