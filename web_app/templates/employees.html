@@ -668,16 +668,16 @@
         <!-- Pagination -->
         {% if to_total_pages > 1 %}
         <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
-          <a href="?to_page={{ [1, to_current_page - 1]|max }}#tab-time-off" class="btn btn-sm btn-outline-secondary" {% if to_current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+          <a href="?to_page={{ [1, to_current_page - 1]|max }}" class="btn btn-sm btn-outline-secondary" {% if to_current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
             <i class="bi bi-chevron-left"></i>
           </a>
 
           <input type="number" min="1" max="{{ to_total_pages }}" value="{{ to_current_page }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
-                 onchange="window.location='?to_page=' + Math.max(1, Math.min(this.value, {{ to_total_pages }})) + '#tab-time-off'">
+                 onchange="window.location='?to_page=' + Math.max(1, Math.min(this.value, {{ to_total_pages }})) + ''">
 
           <span class="text-muted small">of {{ to_total_pages }}</span>
 
-          <a href="?to_page={{ [to_total_pages, to_current_page + 1]|min }}#tab-time-off" class="btn btn-sm btn-outline-secondary" {% if to_current_page == to_total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+          <a href="?to_page={{ [to_total_pages, to_current_page + 1]|min }}" class="btn btn-sm btn-outline-secondary" {% if to_current_page == to_total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
             <i class="bi bi-chevron-right"></i>
           </a>
         </div>
@@ -1938,16 +1938,16 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
         <!-- Pagination -->
         {% if exp_total_pages > 1 %}
         <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
-          <a href="?exp_page={{ [1, exp_current_page - 1]|max }}#tab-emp-expenses" class="btn btn-sm btn-outline-secondary" {% if exp_current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+          <a href="?exp_page={{ [1, exp_current_page - 1]|max }}" class="btn btn-sm btn-outline-secondary" {% if exp_current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
             <i class="bi bi-chevron-left"></i>
           </a>
 
           <input type="number" min="1" max="{{ exp_total_pages }}" value="{{ exp_current_page }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
-                 onchange="window.location='?exp_page=' + Math.max(1, Math.min(this.value, {{ exp_total_pages }})) + '#tab-emp-expenses'">
+                 onchange="window.location='?exp_page=' + Math.max(1, Math.min(this.value, {{ exp_total_pages }})) + ''">
 
           <span class="text-muted small">of {{ exp_total_pages }}</span>
 
-          <a href="?exp_page={{ [exp_total_pages, exp_current_page + 1]|min }}#tab-emp-expenses" class="btn btn-sm btn-outline-secondary" {% if exp_current_page == exp_total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+          <a href="?exp_page={{ [exp_total_pages, exp_current_page + 1]|min }}" class="btn btn-sm btn-outline-secondary" {% if exp_current_page == exp_total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
             <i class="bi bi-chevron-right"></i>
           </a>
         </div>
@@ -2069,16 +2069,16 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
     <!-- Pagination -->
     {% if pending_total_pages > 1 %}
     <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
-      <a href="?pend_page={{ [1, pending_current_page - 1]|max }}#tab-emp-expenses" class="btn btn-sm btn-outline-secondary" {% if pending_current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+      <a href="?pend_page={{ [1, pending_current_page - 1]|max }}" class="btn btn-sm btn-outline-secondary" {% if pending_current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
         <i class="bi bi-chevron-left"></i>
       </a>
 
       <input type="number" min="1" max="{{ pending_total_pages }}" value="{{ pending_current_page }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
-             onchange="window.location='?pend_page=' + Math.max(1, Math.min(this.value, {{ pending_total_pages }})) + '#tab-emp-expenses'">
+             onchange="window.location='?pend_page=' + Math.max(1, Math.min(this.value, {{ pending_total_pages }})) + ''">
 
       <span class="text-muted small">of {{ pending_total_pages }}</span>
 
-      <a href="?pend_page={{ [pending_total_pages, pending_current_page + 1]|min }}#tab-emp-expenses" class="btn btn-sm btn-outline-secondary" {% if pending_current_page == pending_total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+      <a href="?pend_page={{ [pending_total_pages, pending_current_page + 1]|min }}" class="btn btn-sm btn-outline-secondary" {% if pending_current_page == pending_total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
         <i class="bi bi-chevron-right"></i>
       </a>
     </div>
@@ -2192,16 +2192,16 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
     <!-- Pagination -->
     {% if all_total_pages > 1 %}
     <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
-      <a href="?all_exp_page={{ [1, all_current_page - 1]|max }}#tab-emp-expenses" class="btn btn-sm btn-outline-secondary" {% if all_current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+      <a href="?all_exp_page={{ [1, all_current_page - 1]|max }}" class="btn btn-sm btn-outline-secondary" {% if all_current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
         <i class="bi bi-chevron-left"></i>
       </a>
 
       <input type="number" min="1" max="{{ all_total_pages }}" value="{{ all_current_page }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
-             onchange="window.location='?all_exp_page=' + Math.max(1, Math.min(this.value, {{ all_total_pages }})) + '#tab-emp-expenses'">
+             onchange="window.location='?all_exp_page=' + Math.max(1, Math.min(this.value, {{ all_total_pages }})) + ''">
 
       <span class="text-muted small">of {{ all_total_pages }}</span>
 
-      <a href="?all_exp_page={{ [all_total_pages, all_current_page + 1]|min }}#tab-emp-expenses" class="btn btn-sm btn-outline-secondary" {% if all_current_page == all_total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+      <a href="?all_exp_page={{ [all_total_pages, all_current_page + 1]|min }}" class="btn btn-sm btn-outline-secondary" {% if all_current_page == all_total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
         <i class="bi bi-chevron-right"></i>
       </a>
     </div>
@@ -2408,16 +2408,16 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
         <!-- Pagination -->
         {% if total_pages > 1 %}
         <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
-          <a href="?med_page={{ [1, current_page - 1]|max }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+          <a href="?med_page={{ [1, current_page - 1]|max }}" class="btn btn-sm btn-outline-secondary" {% if current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
             <i class="bi bi-chevron-left"></i>
           </a>
 
           <input type="number" min="1" max="{{ total_pages }}" value="{{ current_page }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
-                 onchange="window.location='?med_page=' + Math.max(1, Math.min(this.value, {{ total_pages }})) + '#tab-medical'">
+                 onchange="window.location='?med_page=' + Math.max(1, Math.min(this.value, {{ total_pages }})) + ''">
 
           <span class="text-muted small">of {{ total_pages }}</span>
 
-          <a href="?med_page={{ [total_pages, current_page + 1]|min }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page == total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+          <a href="?med_page={{ [total_pages, current_page + 1]|min }}" class="btn btn-sm btn-outline-secondary" {% if current_page == total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
             <i class="bi bi-chevron-right"></i>
           </a>
         </div>
@@ -2528,16 +2528,16 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
         <!-- Pagination -->
         {% if total_pages_admin > 1 %}
         <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
-          <a href="?all_med_page={{ [1, current_page_admin - 1]|max }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page_admin == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+          <a href="?all_med_page={{ [1, current_page_admin - 1]|max }}" class="btn btn-sm btn-outline-secondary" {% if current_page_admin == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
             <i class="bi bi-chevron-left"></i>
           </a>
 
           <input type="number" min="1" max="{{ total_pages_admin }}" value="{{ current_page_admin }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
-                 onchange="window.location='?all_med_page=' + Math.max(1, Math.min(this.value, {{ total_pages_admin }})) + '#tab-medical'">
+                 onchange="window.location='?all_med_page=' + Math.max(1, Math.min(this.value, {{ total_pages_admin }})) + ''">
 
           <span class="text-muted small">of {{ total_pages_admin }}</span>
 
-          <a href="?all_med_page={{ [total_pages_admin, current_page_admin + 1]|min }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page_admin == total_pages_admin %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+          <a href="?all_med_page={{ [total_pages_admin, current_page_admin + 1]|min }}" class="btn btn-sm btn-outline-secondary" {% if current_page_admin == total_pages_admin %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
             <i class="bi bi-chevron-right"></i>
           </a>
         </div>
@@ -2643,7 +2643,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
 // Tab persistence via URL hash and sessionStorage
 // Preserves the active tab across refreshes, actions, and navigation
 (function () {
-  const map = { 'time-off':'#tab-time-off', profile:'#tab-profile', 'emp-expenses':'#tab-emp-expenses', medical:'#tab-medical', 'my-reviews':'#tab-my-reviews', team:'#tab-team', directory:'#tab-directory', clock:'#tab-clock' };
+  const map = { 'time-off':'', profile:'#tab-profile', 'emp-expenses':'', medical:'', 'my-reviews':'', team:'#tab-team', directory:'#tab-directory', clock:'#tab-clock' };
 
   // Priority 1: Check URL hash (direct navigation, refresh, or explicit tab selection)
   let hash = (window.location.hash || '').replace('#','');
@@ -2654,7 +2654,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
   }
 
   // Priority 3: Only fall back to time-off if nothing was found
-  const target = map[hash] || '#tab-time-off';
+  const target = map[hash] || '';
 
   // Explicitly activate the correct tab nav link
   const navLink = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
