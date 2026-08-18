@@ -143,14 +143,6 @@
     </a>
     {% endif %}
 
-    {% if 'payroll' in allowed_pages %}
-    <a href="{{ url_for('payroll') }}"
-       class="nav-item accent-orange {% if request.endpoint == 'payroll' %}active{% endif %}">
-      <span class="nav-icon"><i class="bi bi-cash-coin"></i></span>
-      <span class="nav-label">Payroll</span>
-    </a>
-    {% endif %}
-
     {% if 'financial' in allowed_pages %}
     <a href="{{ url_for('financial') }}"
        class="nav-item accent-teal {% if request.endpoint == 'financial' %}active{% endif %}">
@@ -159,28 +151,48 @@
     </a>
     {% endif %}
 
-    {% if 'employees' in allowed_pages %}
-    <a href="{{ url_for('employees') }}"
-       class="nav-item accent-purple {% if request.endpoint in ['employees', 'employee_profile'] %}active{% endif %}">
-      <span class="nav-icon"><i class="bi bi-people-fill"></i></span>
-      <span class="nav-label">Employees</span>
-    </a>
-    {% endif %}
-
-    {% if 'timesheets' in allowed_pages %}
-    <a href="{{ url_for('timesheets') }}"
-       class="nav-item nav-sub accent-blue {% if request.endpoint in ['timesheets','timesheets_submit','timesheet_detail'] %}active{% endif %}">
-      <span class="nav-icon"><i class="bi bi-calendar-week-fill"></i></span>
-      <span class="nav-label">Timesheets</span>
-    </a>
-    {% endif %}
-
-    {% if 'reviews' in allowed_pages %}
-    <a href="{{ url_for('reviews') }}"
-       class="nav-item accent-teal {% if request.endpoint in ['reviews','reviews_new','review_detail','review_edit','review_acknowledge','review_delete'] %}active{% endif %}">
-      <span class="nav-icon"><i class="bi bi-clipboard-check-fill"></i></span>
-      <span class="nav-label">Reviews</span>
-    </a>
+    {% if 'employees' in allowed_pages or 'timesheets' in allowed_pages or 'payroll' in allowed_pages or 'reviews' in allowed_pages %}
+    {% set emp_active = request.endpoint in ['employees','employee_profile','timesheets','timesheets_submit','timesheet_detail','payroll','reviews','reviews_new','review_detail','review_edit','review_acknowledge','review_delete'] %}
+    <div class="nav-group">
+      <button class="nav-item accent-purple nav-group-toggle w-100 {% if emp_active %}active{% endif %}"
+              onclick="toggleNavGroup(this)" type="button"
+              data-target="empSubNav"
+              style="border:none;background:none;text-align:left;cursor:pointer;">
+        <span class="nav-icon"><i class="bi bi-people-fill"></i></span>
+        <span class="nav-label">Employees</span>
+        <span class="nav-chevron ms-auto"><i class="bi bi-chevron-down" style="font-size:10px;transition:transform .2s;"></i></span>
+      </button>
+      <div id="empSubNav" class="nav-sub-group {% if not emp_active %}collapsed{% endif %}">
+        {% if 'employees' in allowed_pages %}
+        <a href="{{ url_for('employees') }}"
+           class="nav-item nav-sub accent-purple {% if request.endpoint in ['employees','employee_profile'] %}active{% endif %}">
+          <span class="nav-icon"><i class="bi bi-person-lines-fill"></i></span>
+          <span class="nav-label">Team</span>
+        </a>
+        {% endif %}
+        {% if 'timesheets' in allowed_pages %}
+        <a href="{{ url_for('timesheets') }}"
+           class="nav-item nav-sub accent-blue {% if request.endpoint in ['timesheets','timesheets_submit','timesheet_detail'] %}active{% endif %}">
+          <span class="nav-icon"><i class="bi bi-calendar-week-fill"></i></span>
+          <span class="nav-label">Timesheets</span>
+        </a>
+        {% endif %}
+        {% if 'payroll' in allowed_pages %}
+        <a href="{{ url_for('payroll') }}"
+           class="nav-item nav-sub accent-orange {% if request.endpoint == 'payroll' %}active{% endif %}">
+          <span class="nav-icon"><i class="bi bi-cash-coin"></i></span>
+          <span class="nav-label">Payroll</span>
+        </a>
+        {% endif %}
+        {% if 'reviews' in allowed_pages %}
+        <a href="{{ url_for('reviews') }}"
+           class="nav-item nav-sub accent-teal {% if request.endpoint in ['reviews','reviews_new','review_detail','review_edit','review_acknowledge','review_delete'] %}active{% endif %}">
+          <span class="nav-icon"><i class="bi bi-clipboard-check-fill"></i></span>
+          <span class="nav-label">Reviews</span>
+        </a>
+        {% endif %}
+      </div>
+    </div>
     {% endif %}
 
     {% if 'approvals' in allowed_pages %}
@@ -386,6 +398,16 @@ function pagerMarkAndRefresh(pager, allRows, visSet) {
 {% block scripts %}{% endblock %}
 
 <script>
+// Expandable nav group toggle
+function toggleNavGroup(btn) {
+  var targetId = btn.getAttribute('data-target');
+  var sub = document.getElementById(targetId);
+  if (!sub) return;
+  var isCollapsed = sub.classList.contains('collapsed');
+  sub.classList.toggle('collapsed', !isCollapsed);
+  btn.classList.toggle('active', isCollapsed);
+}
+
 // Sidebar toggle — drawer on mobile, collapse on desktop
 var _sidebar  = document.getElementById('sidebar');
 var _overlay  = document.getElementById('sidebarOverlay');
