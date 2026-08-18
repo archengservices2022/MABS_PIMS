@@ -1840,8 +1840,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           <table class="table table-sm table-hover mb-0 align-middle" id="allSubmissionsTable">
             <thead>
               <tr>
-                <th style="min-width:100px;">Date</th><th>Name</th><th class="text-end">Amount</th>
-                <th>Project</th><th>Status</th><th class="text-center">Receipt</th><th></th>
+                <th style="min-width:100px;">Expense Date</th><th>Name</th><th class="text-end">Amount</th>
+                <th>Project</th><th>Submitted On</th><th>Status</th><th class="text-center">Receipt</th><th></th>
               </tr>
             </thead>
             <tbody id="allSubmissionsTbody">
@@ -1858,6 +1858,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                 <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * rate) }}</div>
               </td>
               <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
+              <td class="text-muted small">{{ e.get('created_at','—') | format_date }}</td>
               <td>
                 {% set st = e.get('status','Pending') %}
                 {% set edit_st = e.get('edit_status', '') %}
@@ -1953,9 +1954,9 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
       <table class="table table-sm table-hover mb-0 align-middle">
         <thead>
           <tr>
-            <th>Employee</th><th>Date</th><th>Type</th><th>Name</th>
+            <th>Employee</th><th>Expense Date</th><th>Type</th><th>Name</th>
             <th>Vendor</th><th class="text-end">Amount</th>
-            <th class="text-center">Receipt</th><th class="text-end">Action</th>
+            <th class="text-center">Receipt</th><th>Submitted On</th><th class="text-end">Action</th>
           </tr>
         </thead>
         <tbody>
@@ -2000,6 +2001,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <span class="text-muted small">—</span>
             {% endif %}
           </td>
+          <td class="text-muted small">{{ e.get('created_at','—') | format_date }}</td>
           <td class="text-end">
             <div class="d-flex gap-1 justify-content-end">
               {% set emp_name = e.get('employee_name', 'Employee') %}
