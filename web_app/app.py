@@ -14099,6 +14099,18 @@ def expense_restore(exp_id):
 @app.route("/financial/expense/<exp_id>/remove-receipt", methods=["POST"])
 @role_required("financial")
 def remove_expense_receipt(exp_id):
+    # Check if user has permission to delete (admins/accountants don't need approval)
+    _role = normalize_role(session.get("user_role", ""))
+    _uid  = session.get("user_uid", "")
+    _perm = None
+
+    if _role not in ("admin", "accountant"):
+        # Non-admin users need an approved delete request
+        _perm = _has_approved_delete_request(_uid, "receipt", exp_id)
+        if not _perm:
+            # No approved request found - return 403 and show permission request modal
+            return jsonify({"success": False, "error": "Permission denied", "permission_required": True}), 403
+
     try:
         # Remove from /balance_sheet_expenses
         fb_update(f"/balance_sheet_expenses/{exp_id}", {
@@ -14117,6 +14129,10 @@ def remove_expense_receipt(exp_id):
                 "receipt_filename": "",
                 "receipt_type": ""
             })
+
+        # Mark permission request as completed if one was used
+        if _perm:
+            fb_update(f"/permission_requests/{_perm['firebase_id']}", {"status": "completed"})
 
         return jsonify({"success": True})
     except Exception as e:
@@ -14286,17 +14302,28 @@ def get_expense_receipt(exp_id):
             "filename": med_receipt.get("receipt_filename", "receipt"),
         })
 
-    # Fallback: check if receipt is stored in expense data (legacy entries)
+    # Fallback: check if receipt is stored in expense data (legacy entries or medical claims)
     expenses = fb_get("/balance_sheet_expenses") or {}
     if isinstance(expenses, dict) and exp_id in expenses:
         exp = expenses[exp_id]
-        if isinstance(exp, dict) and 'receipt_base64' in exp:
-            return jsonify({
-                "success": True,
-                "receipt": exp.get('receipt_base64'),
-                "fileType": exp.get('receipt_type', 'image/jpeg'),
-                "filename": exp.get('receipt_filename', 'receipt')
-            })
+        if isinstance(exp, dict):
+            # Check if receipt_base64 is stored in expense
+            if 'receipt_base64' in exp:
+                return jsonify({
+                    "success": True,
+                    "receipt": exp.get('receipt_base64'),
+                    "fileType": exp.get('receipt_type', 'image/jpeg'),
+                    "filename": exp.get('receipt_filename', 'receipt')
+                })
+            # If expense has receipt_filename but not base64 (medical claim case), still return success
+            # This allows the UI to show receipt preview even if full data isn't loaded yet
+            if exp.get('receipt_filename'):
+                return jsonify({
+                    "success": True,
+                    "receipt": None,
+                    "fileType": exp.get('receipt_type', 'image/jpeg'),
+                    "filename": exp.get('receipt_filename', 'receipt')
+                })
     return jsonify({"success": False, "error": "Receipt not found"})
 
 def _compute_balance_sheet_data(year: int) -> dict:
@@ -15722,6 +15749,16 @@ def medical_claim_review(claim_id):
         # Use claim_id as key so re-approval overwrites, not duplicates
         fb_update(f"/expenses/{claim_id}", exp_data)
         fb_update(f"/balance_sheet_expenses/{claim_id}", exp_data)
+
+        # Sync receipt from medical_claim_receipts to expense_receipts if it exists
+        if bool(claim.get("has_receipt")):
+            med_receipt = fb_get(f"/medical_claim_receipts/{claim_id}") or {}
+            if isinstance(med_receipt, dict) and med_receipt.get("receipt_base64"):
+                fb_update(f"/expense_receipts/{claim_id}", {
+                    "receipt_base64": med_receipt.get("receipt_base64"),
+                    "receipt_filename": med_receipt.get("receipt_filename", ""),
+                    "receipt_type": med_receipt.get("receipt_type", "application/octet-stream")
+                })
 
     flash(f"Claim {status.lower()} successfully.", "success")
     return redirect(url_for("employees") + "#tab-medical")
@@ -20176,10 +20213,12 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
     existing = fb_get(f"/project_commissions/{project_id}") or {}
 
     # For existing projects with "default" rate, preserve the original commission amount
-    # Only recalculate for new projects or if override has changed
+    # Only recalculate for new projects, if override has changed, or if salesperson changed
     is_new_project = not existing
     existing_override_type = existing.get("commission_override_type", "default")
     existing_override_value = _safe_float(existing.get("commission_override_value", 0))
+    existing_salesperson = (existing.get("salesperson") or "").strip()
+    salesperson_changed = existing_salesperson and existing_salesperson != sales_name
 
     if override_type == "percent" and override_value > 0:
         commission_amount = contract_value * override_value / 100
@@ -20192,12 +20231,12 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
         override_type = "default"
         commission_amount = contract_value * sp_default_rate / 100
         rate_display = f"{sp_default_rate}% (default)"
-    elif override_type == "default" and not is_new_project and existing_override_type == "default":
-        # EXISTING project with default rate that hasn't changed: preserve original commission
+    elif override_type == "default" and not is_new_project and existing_override_type == "default" and not salesperson_changed:
+        # EXISTING project with default rate, same salesperson: preserve original commission
         commission_amount = _safe_float(existing.get("commission_amount", 0))
         rate_display = existing.get("rate_display", f"{sp_default_rate}% (default)")
     else:
-        # Fallback (shouldn't normally reach here)
+        # Recalculate for: salesperson changed, override changed from non-default to default, or fallback
         override_type = "default"
         commission_amount = contract_value * sp_default_rate / 100
         rate_display = f"{sp_default_rate}% (default)"
