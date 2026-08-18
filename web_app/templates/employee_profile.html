@@ -64,7 +64,11 @@
 
 <!-- Breadcrumb -->
 <div class="prof-breadcrumb">
-  <a href="{{ url_for('employees') }}">← Employees</a> &nbsp;/&nbsp; {{ name or 'Employee Profile' }}
+  <a href="{{ url_for('employees') }}">← Employees</a>
+  &nbsp;/&nbsp;
+  <a href="{{ url_for('employees') }}#team">My Team</a>
+  &nbsp;/&nbsp;
+  {{ name or 'Employee Profile' }}
 </div>
 
 <!-- Header -->
