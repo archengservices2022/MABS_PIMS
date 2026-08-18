@@ -5159,6 +5159,7 @@ def project_delete(project_id):
     fb_update(f"/deleted_projects/{project_id}", archive)
 
     fb_delete(f"/projects/{project_id}")
+    fb_delete(f"/project_commissions/{project_id}")
     cache_bust("projects_list")
 
     # If project was created from a quote, reset quote status to "Approved"
@@ -14095,6 +14096,25 @@ def expense_restore(exp_id):
     fb_delete(f"/deleted_expenses/{exp_id}")
     flash("Expense restored successfully.", "success")
     return redirect(url_for("financial", tab="expenses"))
+
+@app.route("/api/expense/<exp_id>/receipt/can-delete", methods=["GET"])
+@role_required("financial")
+def can_delete_receipt(exp_id):
+    """Check if user can delete a receipt (has approval or is admin/accountant)"""
+    _role = normalize_role(session.get("user_role", ""))
+    _uid = session.get("user_uid", "")
+
+    # Admins and accountants can always delete
+    if _role in ("admin", "accountant"):
+        return jsonify({"success": True, "can_delete": True})
+
+    # Check if user has approved delete request
+    _perm = _has_approved_delete_request(_uid, "receipt", exp_id)
+    if _perm:
+        return jsonify({"success": True, "can_delete": True})
+
+    # User needs approval
+    return jsonify({"success": True, "can_delete": False})
 
 @app.route("/financial/expense/<exp_id>/remove-receipt", methods=["POST"])
 @role_required("financial")
