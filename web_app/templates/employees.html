@@ -130,7 +130,7 @@
 <!-- ?? Tab bar ??????????????????????????????????????????????????????????????? -->
 <ul class="nav nav-tabs mb-4" id="empTabs">
   <li class="nav-item">
-    <a class="nav-link" data-bs-toggle="tab" href="#tab-time-off">
+    <a class="nav-link active" data-bs-toggle="tab" href="#tab-time-off">
       <i class="bi bi-calendar-event me-1"></i>Time Off
       {% if user_role in ('admin', 'accountant') and pending_time_off %}
       <span class="badge bg-danger ms-1">{{ pending_time_off|length }}</span>
@@ -496,7 +496,7 @@
 <!-- ??????????????????????????????????????????????????????????????????????????
      TIME OFF
 ?????????????????????????????????????????????????????????????????????????? -->
-<div class="tab-pane fade" id="tab-time-off">
+<div class="tab-pane fade show active" id="tab-time-off">
 
   {% set bal = my_time_off_balance %}
   {% set pto_pct  = ((bal.pto_used_hours  / bal.pto_allotment_hours)  * 100) | int if bal.pto_allotment_hours  > 0 else 0 %}
@@ -2655,17 +2655,50 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
 
   // Priority 3: Only fall back to time-off if nothing was found
   const target = map[hash] || '#tab-time-off';
-  const el = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
-  if (el) new bootstrap.Tab(el).show();
+
+  // Explicitly activate the correct tab nav link
+  const navLink = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
+  if (navLink) {
+    // Remove active from all nav links
+    document.querySelectorAll('#empTabs .nav-link').forEach(link => {
+      link.classList.remove('active');
+    });
+    // Add active to selected nav link
+    navLink.classList.add('active');
+
+    // Remove show/active from all tab panes
+    document.querySelectorAll('.tab-content .tab-pane').forEach(pane => {
+      pane.classList.remove('show', 'active');
+    });
+    // Add show/active to corresponding tab pane
+    const pane = document.querySelector(target);
+    if (pane) {
+      pane.classList.add('show', 'active');
+    }
+  }
 
   // Save active tab to both URL hash and sessionStorage when user clicks a tab
   document.querySelectorAll('#empTabs .nav-link').forEach(link => {
-    link.addEventListener('shown.bs.tab', e => {
-      const tabName = (e.target.getAttribute('href') || '').replace('#tab-','');
+    link.addEventListener('click', e => {
+      const tabName = (link.getAttribute('href') || '').replace('#tab-','');
       // Update URL to reflect active tab (clears pagination parameters)
       history.replaceState(null, '', '/employees#' + tabName);
       // Save to sessionStorage for persistence across module navigation
       sessionStorage.setItem('empTabPersist', tabName);
+
+      // Explicitly manage tab pane display
+      setTimeout(() => {
+        // Remove show/active from all tab panes
+        document.querySelectorAll('.tab-content .tab-pane').forEach(pane => {
+          pane.classList.remove('show', 'active');
+        });
+        // Add show/active to corresponding tab pane
+        const paneId = link.getAttribute('href');
+        const pane = document.querySelector(paneId);
+        if (pane) {
+          pane.classList.add('show', 'active');
+        }
+      }, 0);
     });
   });
 })();
