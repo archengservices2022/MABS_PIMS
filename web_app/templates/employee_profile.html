@@ -153,12 +153,12 @@
     <div class="kpi-value">{{ projects_worked }}</div>
     <div class="kpi-sub">Worked on</div>
   </a>
-  <a class="kpi-card" href="{{ url_for('employees') }}#timesheets">
+  <a class="kpi-card" href="{{ url_for('timesheets') }}">
     <div class="kpi-label">Total Hours</div>
     <div class="kpi-value">{{ '{:,.0f}'.format(total_hours) }}</div>
     <div class="kpi-sub">All time logged</div>
   </a>
-  <a class="kpi-card" href="{{ url_for('employees') }}#time-off">
+  <a class="kpi-card" href="{{ url_for('employees') }}#tab-time-off">
     <div class="kpi-label">Leave Taken</div>
     <div class="kpi-value">{{ leave_taken_days }}</div>
     <div class="kpi-sub">Days this year</div>
@@ -232,7 +232,7 @@
   <div class="sum-panel">
     <div class="sum-head">
       <i class="bi bi-briefcase me-2" style="color:#7C3AED;"></i>Work Summary
-      <a href="{{ url_for('employees') }}#timesheets" class="float-end" style="font-size:11px;color:#7C3AED;text-decoration:none;">View Timesheets →</a>
+      <a href="{{ url_for('timesheets') }}" class="float-end" style="font-size:11px;color:#7C3AED;text-decoration:none;">View Timesheets →</a>
     </div>
     <div class="sum-row">
       <span class="sum-row-label">Projects Worked</span>
@@ -264,7 +264,7 @@
   <div class="sum-panel">
     <div class="sum-head">
       <i class="bi bi-calendar-check me-2" style="color:#3b82f6;"></i>Leave Summary
-      <a href="{{ url_for('employees') }}#time-off" class="float-end" style="font-size:11px;color:#3b82f6;text-decoration:none;">View Leave →</a>
+      <a href="{{ url_for('employees') }}#tab-time-off" class="float-end" style="font-size:11px;color:#3b82f6;text-decoration:none;">View Leave →</a>
     </div>
     <div class="sum-row">
       <span class="sum-row-label">Annual Leave Entitlement</span>
