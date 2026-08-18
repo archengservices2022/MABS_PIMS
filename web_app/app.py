@@ -10958,7 +10958,7 @@ def delete_salary(sal_id):
                 log.info(f"Marked permission request {req_id} as completed")
                 break
 
-    return jsonify({"success": True})
+    return jsonify({"success": True, "salary_type": salary_data.get("salary_type", "Salary")})
 
 # ── Employee Advance Routes ──────────────────────────────────────────────────────
 

@@ -1050,7 +1050,9 @@ function performDeleteSalary() {
     .then(r => r.json())
     .then(res => {
       if (res.success) {
+        const deletedType = res.salary_type || 'Salary';
         sessionStorage.setItem('salaryDeleteSuccess', 'Deleted');
+        sessionStorage.setItem('deletedType', deletedType);
         location.reload();
       } else {
         isSalaryDeleting = false;
@@ -1084,23 +1086,30 @@ function performDeleteSalary() {
 document.addEventListener('DOMContentLoaded', () => {
   // Check if there's a salary success message (after page reload)
   const salarySuccessMsg = sessionStorage.getItem('salarySuccessMsg');
+  const salaryType = sessionStorage.getItem('salaryType') || 'Salary';
   if (salarySuccessMsg) {
     sessionStorage.removeItem('salarySuccessMsg');
+    sessionStorage.removeItem('salaryType');
+    const isUpdating = salarySuccessMsg.toLowerCase().includes('updated');
+    const typeLabel = salaryType.toLowerCase();
+    const action = isUpdating ? 'updated' : 'added';
     document.getElementById('salarySuccessTitle').textContent = salarySuccessMsg;
-    document.getElementById('salarySuccessMsg').textContent = `Salary entry has been successfully ${salarySuccessMsg.toLowerCase().includes('updated') ? 'updated' : 'added'}.`;
+    document.getElementById('salarySuccessMsg').textContent = `${salaryType} entry has been successfully ${action}.`;
     new bootstrap.Modal(document.getElementById('payrollSalarySuccessModal')).show();
   }
 
   // Check if there's a salary delete success message (after page reload)
   const salaryDeleteSuccess = sessionStorage.getItem('salaryDeleteSuccess');
+  const deletedType = sessionStorage.getItem('deletedType') || 'Salary';
   if (salaryDeleteSuccess) {
     sessionStorage.removeItem('salaryDeleteSuccess');
+    sessionStorage.removeItem('deletedType');
     // Refresh permissions to ensure all salaries have correct delete buttons
     refreshSalaryDeletePerms();
     // Show delete success modal after a brief delay to ensure UI is updated
     setTimeout(() => {
       document.getElementById('salarySuccessTitle').textContent = 'Deleted';
-      document.getElementById('salarySuccessMsg').textContent = 'Salary entry has been successfully deleted.';
+      document.getElementById('salarySuccessMsg').textContent = `${deletedType} entry has been successfully deleted.`;
       new bootstrap.Modal(document.getElementById('payrollSalarySuccessModal')).show();
     }, 300);
   }
@@ -1613,8 +1622,11 @@ function loadAdvancesAndShowModal(advanceNo, isEditing) {
 
 function loadSalariesAndShowModal(isEditing) {
   // Store success message and reload page to fetch fresh data
-  const message = isEditing ? 'Salary Updated' : 'Salary Added';
+  const salaryType = document.getElementById('sal_type').value || 'Salary';
+  const action = isEditing ? 'Updated' : 'Added';
+  const message = `${salaryType} ${action}`;
   sessionStorage.setItem('salarySuccessMsg', message);
+  sessionStorage.setItem('salaryType', salaryType);
   location.reload();
 }
 
