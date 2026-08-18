@@ -1872,7 +1872,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <thead>
               <tr>
                 <th style="min-width:120px;">Expense Date</th><th style="min-width:200px;">Name</th><th class="text-end">Amount</th>
-                <th>Project</th><th style="min-width:120px;">Submitted On</th><th>Status</th><th class="text-center">Receipt</th><th></th>
+                <th>Project</th><th style="min-width:130px;">Submitted On</th><th>Status</th><th class="text-center">Receipt</th><th></th>
               </tr>
             </thead>
             <tbody id="allSubmissionsTbody">
@@ -1889,7 +1889,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                 <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * rate) }}</div>
               </td>
               <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
-              <td class="text-muted small" style="min-width:120px;">{{ e.get('created_at','—') | format_date }}</td>
+              <td class="text-muted small" style="min-width:130px;">{{ e.get('created_at','—') | format_date }}</td>
               <td>
                 {% set st = e.get('status','Pending') %}
                 {% set edit_st = e.get('edit_status', '') %}
@@ -2113,7 +2113,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           <tr>
             <th>Employee</th><th style="min-width:130px;">Expense Date</th><th>Name</th>
             <th class="text-end">Amount</th>
-            <th>Project</th><th style="min-width:130px;">Submitted On</th><th>Status</th><th class="text-center">Receipt</th><th></th>
+            <th>Project</th><th style="min-width:140px;">Submitted On</th><th>Status</th><th class="text-center">Receipt</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -2138,7 +2138,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * rate) }}</div>
           </td>
           <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
-          <td class="text-muted small">{{ e.get('created_at','—') | format_date }}</td>
+          <td class="text-muted small" style="min-width:140px;">{{ e.get('created_at','—') | format_date }}</td>
           <td>
             {% set st = e.get('status','Pending') %}
             {% set reviewed_by = e.get('reviewed_by', '') %}
@@ -2342,7 +2342,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
             <thead style="background:#f8fafc;">
               <tr>
-                <th style="min-width:120px;">Submitted On</th><th style="white-space:nowrap;">Expense Date</th><th>Type</th><th>Provider</th><th>Description</th><th style="min-width:80px;">Ref #</th>
+                <th style="min-width:140px;">Submitted On</th><th style="white-space:nowrap;">Expense Date</th><th>Type</th><th>Provider</th><th>Description</th><th style="min-width:80px;">Ref #</th>
                 <th class="text-end">Claimed</th><th class="text-end">Approved</th>
                 <th>Status</th><th>Receipt</th>
               </tr>
@@ -2350,7 +2350,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <tbody>
             {% for c in paginated_claims %}
             <tr>
-              <td class="text-muted small" style="min-width:120px;">{{ c.get('submitted_at','') | format_date }}</td>
+              <td class="text-muted small" style="min-width:140px;">{{ c.get('submitted_at','') | format_date }}</td>
               <td style="white-space:nowrap;">{{ c.claim_date | format_date }}</td>
               <td>{{ c.expense_type or '—' }}</td>
               <td class="text-muted">{{ c.provider or '—' }}</td>
