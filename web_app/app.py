@@ -9691,7 +9691,7 @@ def payroll_export_csv():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    headers = ["Employee", "Date", "Amount", "Region", "Notes", "Status"]
+    headers = ["Employee", "Type", "Date", "Amount", "Region", "Notes", "Status"]
     w.writerow(headers)
 
     from collections import defaultdict
@@ -9717,6 +9717,7 @@ def payroll_export_csv():
                 for sal in grouped[year][month][day]:
                     w.writerow([
                         sal.get("employee_name", ""),
+                        sal.get("salary_type", "Salary"),
                         fmt_date(sal.get("date", "")),
                         f"{_safe_float(sal.get('amount', 0)):.2f}",
                         sal.get("region", ""),
@@ -9785,7 +9786,7 @@ def payroll_export_excel():
     ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     co = company_info()
-    ws.merge_cells('A1:F1')
+    ws.merge_cells('A1:G1')
     title_cell = ws.cell(row=1, column=1, value=f"{co.get('name','')} - Payroll Report")
     title_cell.font = title_font
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -9798,7 +9799,7 @@ def payroll_export_excel():
         parts = d.split("-")
         return f"{parts[1]}-{parts[2]}-{parts[0]}" if len(parts) == 3 else d
 
-    headers = ["Employee", "Date", "Amount", "Region", "Notes", "Status"]
+    headers = ["Employee", "Type", "Date", "Amount", "Region", "Notes", "Status"]
     header_row = 2
     for col, h in enumerate(headers, 1):
         cell = ws.cell(row=header_row, column=col, value=h)
@@ -9828,13 +9829,13 @@ def payroll_export_excel():
         for month in sorted(grouped[year].keys()):
             for day in sorted(grouped[year][month].keys()):
                 for sal in grouped[year][month][day]:
-                    row = [sal.get("employee_name", ""), fmt_excel_date(sal.get("date", "")),
+                    row = [sal.get("employee_name", ""), sal.get("salary_type", "Salary"), fmt_excel_date(sal.get("date", "")),
                            _safe_float(sal.get("amount", 0)), sal.get("region", ""), sal.get("notes", ""), sal.get("salary_status", "")]
                     for ci, val in enumerate(row, 1):
                         cell = ws.cell(row=ri, column=ci, value=val)
                         if ri % 2 == 0:
                             cell.fill = alt_fill
-                        if ci == 3:
+                        if ci == 4:
                             cell.number_format = '"$"#,##0.00'
                         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
                     ri += 1
@@ -9960,7 +9961,7 @@ def payroll_export_pdf():
 
     # Add Salary section if type is "salary"
     if export_type == "salary":
-        hdrs = ["Employee", "Date", "Amount", "Region", "Notes", "Status"]
+        hdrs = ["Employee", "Type", "Date", "Amount", "Region", "Notes", "Status"]
         data = [hdrs]
 
         grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
@@ -9984,6 +9985,7 @@ def payroll_export_pdf():
                     for sal in grouped[year][month][day]:
                         data.append([
                             Paragraph(sal.get("employee_name", "—"), cell_style),
+                            Paragraph(sal.get("salary_type", "Salary"), cell_style),
                             Paragraph(fmt_pdf_date(sal.get("date", "")), cell_style),
                             Paragraph(f"${_safe_float(sal.get('amount', 0)):,.2f}", cell_style),
                             Paragraph(sal.get("region", "—"), cell_style),
@@ -9991,7 +9993,7 @@ def payroll_export_pdf():
                             Paragraph(sal.get("salary_status", "—"), cell_style),
                         ])
 
-        cw = [1.8*inch, 1.0*inch, 1.0*inch, 1.2*inch, 1.5*inch, 1.0*inch]
+        cw = [1.5*inch, 0.8*inch, 0.9*inch, 1.0*inch, 1.0*inch, 1.3*inch, 0.9*inch]
         tbl = Table(data, colWidths=cw, repeatRows=1)
         tbl.setStyle(TableStyle([
             ("BACKGROUND",    (0,0), (-1,0), colors.HexColor("#0F172A")),
@@ -10752,6 +10754,7 @@ def create_salary():
         "region":        region,
         "year":          year,
         "salary_status": data.get("salary_status", "Paid"),
+        "salary_type":   data.get("salary_type", "Salary"),
         "created_at":    datetime.now(timezone.utc).isoformat(),
     }
 
@@ -10763,23 +10766,32 @@ def create_salary():
     salary_status = data.get("salary_status", "Paid")
     if salary_status == "Paid":
         employee_name = data.get("employee_name", "")
+        salary_type = data.get("salary_type", "Salary")
         # Get current user's display name from database
         user_uid = session.get("user_uid", "")
         submitted_by_name = "System"
         if user_uid:
             user_data = fb_get(f"/users/{user_uid}") or {}
             submitted_by_name = user_data.get("display_name", session.get("user_name", session.get("username", "System")))
+
+        # Determine category and labels based on salary_type
+        category = "Bonus" if salary_type == "Bonus" else "Salary"
+        expense_name = f"Employee {salary_type} - {employee_name}"
+        description = f"Employee {salary_type} for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else "")
+        vendor = f"Employee {salary_type}"
+
         expense_data = {
             "employee_name": employee_name,
             "date": date_str,
             "amount": float(data.get("amount", 0)),
             "expense_type": "Other Expenses",
-            "expense_name": f"Employee Salary - {employee_name}",
-            "category": "Salary",
-            "vendor": "Employee Salary",
-            "description": f"Employee Salary for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else ""),
+            "expense_name": expense_name,
+            "category": category,
+            "vendor": vendor,
+            "description": description,
             "region": region,
             "salary_id": sal_id,
+            "salary_type": salary_type,
             "submitted_by_name": submitted_by_name,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -10823,6 +10835,7 @@ def update_salary(sal_id):
         "region":        region,
         "year":          year,
         "salary_status": data.get("salary_status", "Paid"),
+        "salary_type":   data.get("salary_type", "Salary"),
         "updated_at":    datetime.now(timezone.utc).isoformat(),
     }
     fb_update(f"/balance_sheet_salary/{sal_id}", sal_data)
@@ -10844,17 +10857,23 @@ def update_salary(sal_id):
             if isinstance(exp_data, dict) and exp_data.get("salary_id") == sal_id:
                 expense_exists = True
                 if salary_status == "Paid":
+                    salary_type = data.get("salary_type", "Salary")
+                    category = "Bonus" if salary_type == "Bonus" else "Salary"
+                    expense_name = f"Employee {salary_type} - {employee_name}"
+                    description = f"Employee {salary_type} for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else "")
+                    vendor = f"Employee {salary_type}"
                     # Update expense with professional fields, preserving original submitted_by_name
                     expense_update = {
                         "employee_name": employee_name,
                         "date": date_str,
                         "amount": float(data.get("amount", 0)),
                         "expense_type": "Other Expenses",
-                        "expense_name": f"Employee Salary - {employee_name}",
-                        "category": "Salary",
-                        "vendor": "Employee Salary",
-                        "description": f"Employee Salary for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else ""),
+                        "expense_name": expense_name,
+                        "category": category,
+                        "vendor": vendor,
+                        "description": description,
                         "region": region,
+                        "salary_type": salary_type,
                         "submitted_by_name": exp_data.get("submitted_by_name", current_user),
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
@@ -10866,17 +10885,23 @@ def update_salary(sal_id):
 
     # If status is "Paid" but expense doesn't exist, create it
     if salary_status == "Paid" and not expense_exists:
+        salary_type = data.get("salary_type", "Salary")
+        category = "Bonus" if salary_type == "Bonus" else "Salary"
+        expense_name = f"Employee {salary_type} - {employee_name}"
+        description = f"Employee {salary_type} for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else "")
+        vendor = f"Employee {salary_type}"
         expense_data = {
             "employee_name": employee_name,
             "date": date_str,
             "amount": float(data.get("amount", 0)),
             "expense_type": "Other Expenses",
-            "expense_name": f"Employee Salary - {employee_name}",
-            "category": "Salary",
-            "vendor": "Employee Salary",
-            "description": f"Employee Salary for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else ""),
+            "expense_name": expense_name,
+            "category": category,
+            "vendor": vendor,
+            "description": description,
             "region": region,
             "salary_id": sal_id,
+            "salary_type": salary_type,
             "submitted_by_name": current_user,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }

@@ -175,7 +175,7 @@
       <i class="bi bi-receipt me-2" style="font-size:16px;"></i>Salaries
     </button>
     <button class="payroll-tab-button" onclick="switchTab('add-salary', event)">
-      <i class="bi bi-plus-circle me-2" style="font-size:16px;"></i>Add Salary
+      <i class="bi bi-plus-circle me-2" style="font-size:16px;"></i>Add Salary/Bonus
     </button>
     <button class="payroll-tab-button" onclick="switchTab('employee-advance', event)">
       <i class="bi bi-wallet2 me-2" style="font-size:16px;"></i>Employee Advance
@@ -188,7 +188,7 @@
   <!-- ?? Salaries Tab ?????????????????????????????????????????? -->
   <div id="salaries" class="payroll-tab-content active">
     <div class="salaries-section">
-      <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Salary Records</h5>
+      <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Salary & Bonus Records</h5>
 
       <!-- Summary Cards (server-rendered) -->
       {% set paid_salaries = salaries | selectattr('salary_status','equalto','Paid') | list %}
@@ -254,9 +254,10 @@
           <thead>
             <tr>
               <th>Employee</th>
+              <th>Type</th>
               <th>Date</th>
               <th>Period</th>
-              <th>Salary</th>
+              <th>Amount</th>
               <th>Commission</th>
               <th>Total</th>
               <th>Status</th>
@@ -277,9 +278,11 @@
               {% set sal_comm = ((_paid_comm | float) if (comm_paid and _paid_comm is not none) else (commission_by_period.get(sal_emp, {}).get(sal_period, 0) | float)) %}
               {% set sal_total = sal.amount | float + sal_comm %}
               {% set ss = sal.get('salary_status','Pending') %}
+              {% set sal_type = sal.get('salary_type','Salary') %}
               {% set _comm_pending_warn = ss == 'Paid' and sal_comm > 0 and not comm_paid %}
               <tr data-salary="1" data-employee="{{ sal_emp | lower }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}" data-amount="{{ sal.amount | float }}">
                 <td><strong>{{ sal_emp or '—' }}</strong></td>
+                <td><span style="display:inline-block;padding:3px 8px;border-radius:14px;font-size:11px;font-weight:600;{% if sal_type == 'Bonus' %}background:#fcd34d;color:#78350f;{% else %}background:#dbeafe;color:#1e40af;{% endif %}">{{ sal_type }}</span></td>
                 <td>{{ sal.date[5:7] + '-' + sal.date[8:10] + '-' + sal.date[0:4] if sal.date and sal.date|length >= 10 else '—' }}</td>
                 <td style="color:#475569;font-size:.82rem;">{{ sal_period or '—' }}</td>
                 <td>{{ currency_symbol }}{{ "{:,.2f}".format(sal.amount | float) }}</td>
@@ -307,7 +310,7 @@
                 <td>{{ sal.notes or '—' }}</td>
                 <td>
                   <div class="d-flex gap-1" style="justify-content:center;">
-                    <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit" onclick="editSalary('{{ sal.firebase_id }}','{{ sal_emp | replace("'","&#39;") }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace("'","&#39;") }}','{{ sal.get('salary_status','Pending') }}')"><i class="bi bi-pencil"></i></button>
+                    <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit" onclick="editSalary('{{ sal.firebase_id }}','{{ sal_emp | replace("'","&#39;") }}','{{ sal.date }}','{{ sal.amount }}','{{ sal.region }}','{{ (sal.notes or '') | replace("'","&#39;") }}','{{ sal.get('salary_status','Pending') }}','{{ sal_type }}')"><i class="bi bi-pencil"></i></button>
                     <span id="salary-action-{{ sal.firebase_id }}"></span>
                   </div>
                 </td>
@@ -330,7 +333,7 @@
   <!-- ?? Add Salary Tab ???????????????????????????????????????? -->
   <div id="add-salary" class="payroll-tab-content">
     <div>
-      <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Add Salary Entry</h5>
+      <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Add Salary/Bonus Entry</h5>
 
       <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:25px;">
         <form id="salaryForm" onsubmit="addSalary(event)">
@@ -342,6 +345,14 @@
                 <input type="text" id="sal_employee" class="form-control form-control-sm" placeholder="Type or select employee..." required />
                 <div class="dropdown-list" id="sal_employee_dropdown" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #e2e8f0;border-top:none;max-height:200px;overflow-y:auto;display:none;z-index:1000;"></div>
               </div>
+            </div>
+
+            <div class="form-group">
+              <label for="sal_type">Type</label>
+              <select id="sal_type" required>
+                <option value="Salary">Salary</option>
+                <option value="Bonus">Bonus</option>
+              </select>
             </div>
 
             <div class="form-group">
@@ -364,7 +375,7 @@
             </div>
 
             <div class="form-group">
-              <label for="sal_status">Salary Status</label>
+              <label for="sal_status">Status</label>
               <select id="sal_status">
                 <option value="Pending">Pending</option>
                 <option value="Paid">Paid</option>
@@ -374,7 +385,7 @@
 
             <div class="form-group" style="grid-column:1/-1;">
               <label for="sal_notes">Notes</label>
-              <input type="text" id="sal_notes" placeholder="e.g., Monthly salary, Bonus, etc." />
+              <input type="text" id="sal_notes" placeholder="e.g., Monthly salary, Performance bonus, etc." />
             </div>
           </div>
 
@@ -926,7 +937,7 @@ function renderEmployeeOptions(filter) {
   });
 }
 
-function editSalary(id, employee, date, amount, region, notes, status) {
+function editSalary(id, employee, date, amount, region, notes, status, type) {
   document.getElementById('salary_id').value = id;
   document.getElementById('sal_employee').value = employee;
   document.getElementById('sal_date').value = date;
@@ -934,7 +945,8 @@ function editSalary(id, employee, date, amount, region, notes, status) {
   document.getElementById('sal_region').value = region;
   document.getElementById('sal_notes').value = notes || '';
   document.getElementById('sal_status').value = status || 'Pending';
-  document.getElementById('submitBtnText').textContent = 'Update Salary Entry';
+  document.getElementById('sal_type').value = type || 'Salary';
+  document.getElementById('submitBtnText').textContent = 'Update ' + (type === 'Bonus' ? 'Bonus' : 'Salary') + ' Entry';
   // Switch to add-salary tab
   document.querySelectorAll('.payroll-tab-content').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.payroll-tab-button').forEach(b => b.classList.remove('active'));
@@ -945,6 +957,7 @@ function editSalary(id, employee, date, amount, region, notes, status) {
 
 function resetSalaryForm() {
   document.getElementById('salary_id').value = '';
+  document.getElementById('sal_type').value = 'Salary';
   document.getElementById('submitBtnText').textContent = 'Add Salary Entry';
 }
 
@@ -978,6 +991,7 @@ function addSalary(e) {
     region:         document.getElementById('sal_region').value,
     notes:          document.getElementById('sal_notes').value,
     salary_status:  document.getElementById('sal_status').value || 'Pending',
+    salary_type:    document.getElementById('sal_type').value || 'Salary',
   };
 
   const method = salaryId ? 'PUT' : 'POST';
