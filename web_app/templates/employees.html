@@ -2342,14 +2342,15 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
             <thead style="background:#f8fafc;">
               <tr>
-                <th style="white-space:nowrap;">Expense Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
+                <th>Submitted On</th><th style="white-space:nowrap;">Expense Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
                 <th class="text-end">Claimed</th><th class="text-end">Approved</th>
-                <th>Status</th><th>Submitted On</th><th>Receipt</th>
+                <th>Status</th><th>Approved Date</th><th>Receipt</th>
               </tr>
             </thead>
             <tbody>
             {% for c in paginated_claims %}
             <tr>
+              <td class="text-muted small">{{ c.get('submitted_at','') | format_date }}</td>
               <td style="white-space:nowrap;">{{ c.claim_date | format_date }}</td>
               <td>{{ c.expense_type or '—' }}</td>
               <td class="text-muted">{{ c.provider or '—' }}</td>
@@ -2389,7 +2390,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                   {{ cs }}
                 </span>
               </td>
-              <td class="text-muted small">{{ c.get('submitted_at','') | format_date }}</td>
+              <td class="text-muted small">{% if c.get('reviewed_at','') %}{{ c.get('reviewed_at','') | format_date }}{% else %}—{% endif %}</td>
               <td>
                 {% if c.get('has_receipt') and c.get('firebase_id') %}
                 <a href="{{ url_for('medical_claim_receipt', claim_id=c.firebase_id) }}" target="_blank"
@@ -2448,13 +2449,14 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
             <thead style="background:#f8fafc;">
               <tr>
-                <th>Employee</th><th style="white-space:nowrap;">Expense Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
-                <th class="text-end">Claimed ($USD)</th><th class="text-end">Approved ($USD)</th><th>Status</th><th>Submitted On</th><th>Receipt</th><th>Actions</th>
+                <th>Submitted On</th><th>Employee</th><th style="white-space:nowrap;">Expense Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
+                <th class="text-end">Claimed ($USD)</th><th class="text-end">Approved ($USD)</th><th>Status</th><th>Approved Date</th><th>Receipt</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
             {% for c in paginated_claims_admin %}
             <tr>
+              <td class="text-muted small">{{ c.get('submitted_at','') | format_date }}</td>
               <td><strong>{{ c.employee_name or '—' }}</strong></td>
               <td style="white-space:nowrap;">{{ c.claim_date | format_date }}</td>
               <td>{{ c.expense_type or '—' }}</td>
@@ -2492,7 +2494,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                   {{ cs }}
                 </span>
               </td>
-              <td class="text-muted small">{{ c.get('submitted_at','') | format_date }}</td>
+              <td class="text-muted small">{% if c.get('reviewed_at','') %}{{ c.get('reviewed_at','') | format_date }}{% else %}—{% endif %}</td>
               <td>
                 {% if c.get('has_receipt') and c.get('firebase_id') %}
                 <a href="{{ url_for('medical_claim_receipt', claim_id=c.firebase_id) }}" target="_blank"
