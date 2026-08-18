@@ -880,6 +880,7 @@ a[href*="filter_expense"]:hover {
             <th style="color:#fff;font-weight:700;">Project</th>
             <th style="color:#fff;font-weight:700;" class="text-end">Amount</th>
             <th style="color:#fff;font-weight:700;">Submitted By</th>
+            <th style="color:#fff;font-weight:700;">Notes</th>
             <th style="color:#fff;font-weight:700;"></th>
           </tr>
         </thead>
@@ -899,8 +900,18 @@ a[href*="filter_expense"]:hover {
             <td class="fw-medium">{{ exp.get('vendor','—') }}</td>
             <td class="text-muted small">{{ exp.get('project_number','—') or '—' }}</td>
             <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format((exp.get('remaining_due',0) if exp.get('expense_type') == 'Commission' else exp.get('amount',0))|float) }}</td>
-            {% set _sub = exp.get('submitted_by_name','') or exp.get('created_by','') or '' %}
-            <td class="small text-muted">{{ _sub.split('@')[0].replace('.',' ').title() if '@' in _sub else (_sub or '—') }}</td>
+            <td class="small">
+              {% set _sub = exp.get('submitted_by_name','') or exp.get('created_by','') or '' %}
+              <div class="text-muted">{{ _sub.split('@')[0].replace('.',' ').title() if '@' in _sub else (_sub or '—') }}</div>
+              <div class="text-muted" style="font-size:0.85em;opacity:0.8;">{{ exp.get('created_at','—') | format_date }}</div>
+            </td>
+            <td class="small text-muted">
+              {% if exp.get('employee_name') %}
+                Employee: {{ exp.get('employee_name') }} - {{ exp.get('expense_type','') }} - {{ currency_symbol }}{{ "{:,.2f}".format(exp.get('amount',0)|float) }}
+              {% else %}
+                {{ exp.get('notes','—') }}
+              {% endif %}
+            </td>
             <td>
               {% if exp.get('firebase_id') %}
               <div class="d-flex gap-1">

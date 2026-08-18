@@ -228,6 +228,11 @@
         <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
           <div class="d-flex gap-2 align-items-center flex-wrap">
             <input type="text" id="searchEmployee" placeholder="Search employee..." class="form-control form-control-sm" style="width:200px;">
+            <select id="filterType" class="form-select form-select-sm" style="width:160px;">
+              <option value="">All Types</option>
+              <option value="Salary">Salary</option>
+              <option value="Bonus">Bonus</option>
+            </select>
             <select id="filterRegion" class="form-select form-select-sm" style="width:180px;">
               <option value="">All Regions</option>
               <option value="Inside America">Inside America</option>
@@ -280,7 +285,7 @@
               {% set ss = sal.get('salary_status','Pending') %}
               {% set sal_type = sal.get('salary_type','Salary') %}
               {% set _comm_pending_warn = ss == 'Paid' and sal_comm > 0 and not comm_paid %}
-              <tr data-salary="1" data-employee="{{ sal_emp | lower }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}" data-amount="{{ sal.amount | float }}">
+              <tr data-salary="1" data-employee="{{ sal_emp | lower }}" data-type="{{ sal_type }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}" data-amount="{{ sal.amount | float }}">
                 <td><strong>{{ sal_emp or '—' }}</strong></td>
                 <td><span style="display:inline-block;padding:3px 8px;border-radius:14px;font-size:11px;font-weight:600;{% if sal_type == 'Bonus' %}background:#fcd34d;color:#78350f;{% else %}background:#dbeafe;color:#1e40af;{% endif %}">{{ sal_type }}</span></td>
                 <td>{{ sal.date[5:7] + '-' + sal.date[8:10] + '-' + sal.date[0:4] if sal.date and sal.date|length >= 10 else '—' }}</td>
@@ -812,6 +817,7 @@ function renderSalaryDeleteButtons() {
 
 function applySalaryFilters() {
   const search   = document.getElementById('searchEmployee').value.toLowerCase();
+  const type     = document.getElementById('filterType').value;
   const region   = document.getElementById('filterRegion').value;
   const dateFrom = document.getElementById('dateFrom').value;
   const dateTo   = document.getElementById('dateTo').value;
@@ -823,10 +829,12 @@ function applySalaryFilters() {
 
   document.querySelectorAll('#salaryTableBody tr[data-salary]').forEach(row => {
     const emp    = (row.dataset.employee || '').toLowerCase();
+    const salType = row.dataset.type || 'Salary';
     const reg    = row.dataset.region || '';
     const date   = row.dataset.date || '';
     const period = row.dataset.periodGroup || '';
     const passes = (!search || emp.includes(search))
+                && (!type || salType === type)
                 && (!region || reg === region)
                 && (!dateFrom || date >= dateFrom)
                 && (!dateTo   || date <= dateTo);
@@ -892,6 +900,7 @@ function setDateRange(range) {
 
 function clearFilters() {
   document.getElementById('searchEmployee').value = '';
+  document.getElementById('filterType').value     = '';
   document.getElementById('filterRegion').value   = '';
   document.getElementById('dateFrom').value        = '';
   document.getElementById('dateTo').value          = '';
@@ -1119,6 +1128,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('sal_date').setAttribute('max', TODAY_ISO);
   initEmployeeAutocomplete();
   document.getElementById('searchEmployee').addEventListener('input', applySalaryFilters);
+  document.getElementById('filterType').addEventListener('change', applySalaryFilters);
   document.getElementById('filterRegion').addEventListener('change', applySalaryFilters);
   document.getElementById('dateFrom').addEventListener('change', applySalaryFilters);
   document.getElementById('dateTo').addEventListener('change', applySalaryFilters);
