@@ -2693,11 +2693,11 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
   // Save active tab to both URL hash and sessionStorage when user clicks a tab
   document.querySelectorAll('#empTabs .nav-link').forEach(link => {
     link.addEventListener('click', e => {
-      const tabName = (link.getAttribute('href') || '').replace('#tab-','');
+      const tabId = link.getAttribute('href'); // Full href like #tab-emp-expenses
       // Update URL to reflect active tab (clears pagination parameters)
-      history.replaceState(null, '', '/employees#' + tabName);
+      history.replaceState(null, '', '/employees' + tabId);
       // Save to sessionStorage for persistence across module navigation
-      sessionStorage.setItem('empTabPersist', tabName);
+      sessionStorage.setItem('empTabPersist', tabId);
 
       // Explicitly manage tab pane display
       setTimeout(() => {
@@ -2712,14 +2712,14 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           pane.classList.add('show', 'active');
         }
         // Update pagination links to preserve current tab hash
-        updatePaginationLinksWithHash(tabName);
+        updatePaginationLinksWithHash(tabId);
       }, 0);
     });
   });
 
   // Update pagination links to include current tab hash
-  function updatePaginationLinksWithHash(tabName) {
-    const currentHash = '#' + tabName;
+  function updatePaginationLinksWithHash(tabId) {
+    const currentHash = tabId; // tabId is already like #tab-emp-expenses
     // Update anchor pagination links
     document.querySelectorAll('a[href^="?"]').forEach(link => {
       const href = link.getAttribute('href');
@@ -2739,8 +2739,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
   }
 
   // Initialize pagination links with current tab on page load
-  const currentTab = (window.location.hash || '').replace('#','') || 'time-off';
-  updatePaginationLinksWithHash(currentTab);
+  const currentTabId = window.location.hash || sessionStorage.getItem('empTabPersist') || '#tab-time-off';
+  updatePaginationLinksWithHash(currentTabId);
 })();
 
 // Team hours period selector
