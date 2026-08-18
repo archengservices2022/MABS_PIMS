@@ -14225,6 +14225,38 @@ def expense_edit(exp_id):
                     app.logger.error(f"Receipt upload error: {e}")
         # Read existing record to detect origin before overwriting
         existing = fb_get(f"/balance_sheet_expenses/{exp_id}") or {}
+
+        # Handle deferred receipt deletion if user marked receipt for deletion and clicked Update Expense
+        if request.form.get('delete_receipt') == 'true':
+            # Call the receipt deletion endpoint
+            try:
+                # Check permission
+                _uid = session.get("user_id", "")
+                user_role = normalize_role(session.get("user_role", ""))
+                has_approval = user_role in ("admin", "accountant") or _has_approved_delete_request(_uid, "receipt", exp_id)
+
+                if not has_approval:
+                    return jsonify({
+                        "success": False,
+                        "error": "You don't have permission to delete this receipt",
+                        "permission_required": True
+                    }), 403
+
+                # Delete receipt from all locations
+                fb_update(f"/balance_sheet_expenses/{exp_id}", {"receipt_base64": None, "receipt_filename": None, "receipt_type": None, "has_receipt": False})
+                fb_update(f"/expenses/{exp_id}", {"receipt_base64": None, "receipt_filename": None, "receipt_type": None, "has_receipt": False})
+                fb_delete(f"/expense_receipts/{exp_id}")
+
+                # If this is a medical claim expense, also update medical claims
+                if existing.get("source") == "medical_claim":
+                    fb_update(f"/medical_claims/{exp_id}", {"has_receipt": False})
+                    fb_delete(f"/medical_claim_receipts/{exp_id}")
+
+                cache_bust("financial")
+                cache_bust("expenses")
+            except Exception as e:
+                app.logger.error(f"Receipt deletion error: {e}", exc_info=True)
+                return jsonify({"success": False, "error": f"Receipt deletion error: {str(e)}"}), 500
         fb_update(f"/balance_sheet_expenses/{exp_id}", data)
 
         # If this expense originated as an employee submission, keep it in sync

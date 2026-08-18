@@ -2347,6 +2347,7 @@ function submitCommissionExpenseModal() {
 }
 
 var _pendingReceiptDeleteId = null;
+var _receiptToDelete = null;
 
 function removeExistingReceipt(expId) {
   // First check if user has permission to delete
@@ -2373,53 +2374,23 @@ function removeExistingReceipt(expId) {
 function proceedRemoveReceipt() {
   if (!_pendingReceiptDeleteId) return;
   const expId = _pendingReceiptDeleteId;
-  const btn = document.getElementById('receiptDeleteConfirmBtn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Removing...';
 
-  fetch(`/financial/expense/${expId}/remove-receipt`, { method: 'POST' })
-    .then(r => {
-      if (r.status === 403) {
-        return r.json().then(d => {
-          bootstrap.Modal.getInstance(document.getElementById('receiptDeleteConfirmModal')).hide();
-          if (d.permission_required) {
-            openDeleteRequestModal('receipt', expId, 'Receipt');
-          } else {
-            alert('Failed to remove receipt: ' + (d.error || 'Access denied'));
-          }
-          btn.disabled = false;
-          btn.innerHTML = 'Remove Receipt';
-        });
-      }
-      return r.json().then(d => {
-        if (d.success) {
-          // Hide the confirmation modal
-          bootstrap.Modal.getInstance(document.getElementById('receiptDeleteConfirmModal')).hide();
-          // Clear receipt preview immediately (remove the Remove/View buttons)
-          document.getElementById('receiptPreview').innerHTML = '';
-          // Show success message in a toast instead of alert
-          const toastEl = document.createElement('div');
-          toastEl.className = 'position-fixed bottom-0 end-0 p-3';
-          toastEl.style.zIndex = 9999;
-          toastEl.innerHTML = '<div class="toast show align-items-center text-bg-success border-0" role="alert"><div class="d-flex"><div class="toast-body"><i class="bi bi-check-circle me-2"></i>Receipt removed successfully.</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
-          document.body.appendChild(toastEl);
-          setTimeout(() => toastEl.remove(), 4000);
-          // Reload page to update action table and remove receipt icon
-          setTimeout(() => location.reload(), 2000);
-          btn.disabled = false;
-          btn.innerHTML = 'Remove Receipt';
-        } else {
-          alert('Failed to remove receipt: ' + (d.error || 'Unknown error'));
-          btn.disabled = false;
-          btn.innerHTML = 'Remove Receipt';
-        }
-      });
-    })
-    .catch(e => {
-      alert('Error removing receipt: ' + e);
-      btn.disabled = false;
-      btn.innerHTML = 'Remove Receipt';
-    });
+  // Mark receipt for deletion (will be deleted when user clicks Update Expense)
+  _receiptToDelete = expId;
+
+  // Hide the confirmation modal
+  bootstrap.Modal.getInstance(document.getElementById('receiptDeleteConfirmModal')).hide();
+
+  // Clear receipt preview immediately from UI
+  document.getElementById('receiptPreview').innerHTML = '';
+
+  // Show info message
+  const toastEl = document.createElement('div');
+  toastEl.className = 'position-fixed bottom-0 end-0 p-3';
+  toastEl.style.zIndex = 9999;
+  toastEl.innerHTML = '<div class="toast show align-items-center text-bg-info border-0" role="alert"><div class="d-flex"><div class="toast-body"><i class="bi bi-info-circle me-2"></i>Receipt marked for removal. Click Update Expense to save.</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
+  document.body.appendChild(toastEl);
+  setTimeout(() => toastEl.remove(), 5000);
 }
 
 function initModalDropdowns() {
@@ -2662,6 +2633,11 @@ function submitExpenseModal() {
   data.append('project_number', document.getElementById('modalProject').value);
   data.append('notes', document.getElementById('modalNotes').value);
   if (receiptFile) data.append('receipt', receiptFile);
+  // If user marked receipt for deletion, include flag
+  if (_receiptToDelete === expenseId) {
+    data.append('delete_receipt', 'true');
+    _receiptToDelete = null; // Reset flag after use
+  }
 
   const endpoint = expenseId
     ? `/financial/expense/${expenseId}/edit`
