@@ -14917,6 +14917,87 @@ def financial_migrate_exchange_rates():
     return redirect(url_for("financial"))
 
 # ── Routes: Employees ─────────────────────────────────────────────────────────
+@app.route("/api/employee/<uid>/terminate", methods=["POST"])
+@login_required
+def api_employee_terminate(uid):
+    """Disable Firebase Auth login + mark employee as Terminated."""
+    if normalize_role(session.get("user_role", "")) != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+    if uid == session.get("user_uid", ""):
+        return jsonify({"error": "You cannot terminate your own account"}), 400
+
+    data             = request.get_json() or {}
+    term_date        = data.get("termination_date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"))
+    term_reason      = data.get("reason", "").strip()
+    term_notes       = data.get("notes", "").strip()
+    terminated_by    = session.get("user_name", session.get("user_email", ""))
+
+    # Disable Firebase Auth account
+    auth_disabled = False
+    try:
+        from firebase_admin import auth as fb_auth
+        fb_auth.update_user(uid, disabled=True)
+        auth_disabled = True
+    except Exception as e:
+        log.error(f"Failed to disable Firebase Auth for {uid}: {e}")
+
+    # Update database record
+    fb_update(f"/users/{uid}", {
+        "employee_status":   "Terminated",
+        "active":            False,
+        "terminated_at":     term_date,
+        "termination_reason": term_reason,
+        "termination_notes": term_notes,
+        "terminated_by":     terminated_by,
+        "updated_at":        datetime.now(timezone.utc).isoformat(),
+    })
+
+    user = fb_get(f"/users/{uid}") or {}
+    return jsonify({
+        "ok":           True,
+        "auth_disabled": auth_disabled,
+        "name":          user.get("username", ""),
+        "status":        "Terminated",
+    })
+
+
+@app.route("/api/employee/<uid>/reactivate", methods=["POST"])
+@login_required
+def api_employee_reactivate(uid):
+    """Re-enable Firebase Auth login + mark employee as Active."""
+    if normalize_role(session.get("user_role", "")) != "admin":
+        return jsonify({"error": "Admin access required"}), 403
+
+    # Re-enable Firebase Auth account
+    auth_enabled = False
+    try:
+        from firebase_admin import auth as fb_auth
+        fb_auth.update_user(uid, disabled=False)
+        auth_enabled = True
+    except Exception as e:
+        log.error(f"Failed to re-enable Firebase Auth for {uid}: {e}")
+
+    fb_update(f"/users/{uid}", {
+        "employee_status":   "Active",
+        "active":            True,
+        "reactivated_at":    datetime.now(timezone.utc).isoformat(),
+        "reactivated_by":    session.get("user_name", session.get("user_email", "")),
+        "terminated_at":     "",
+        "termination_reason": "",
+        "termination_notes": "",
+        "terminated_by":     "",
+        "updated_at":        datetime.now(timezone.utc).isoformat(),
+    })
+
+    user = fb_get(f"/users/{uid}") or {}
+    return jsonify({
+        "ok":          True,
+        "auth_enabled": auth_enabled,
+        "name":         user.get("username", ""),
+        "status":       "Active",
+    })
+
+
 @app.route("/api/employee/<uid>/summary")
 @login_required
 def api_employee_summary(uid):

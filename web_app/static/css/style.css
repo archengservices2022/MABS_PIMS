@@ -452,6 +452,7 @@ body {
 .status-pending     { background:#FEF9C3; color:#A16207; }
 .status-active      { background:#DCFCE7; color:#15803D; }
 .status-inactive    { background:var(--slate-100); color:var(--slate-600); }
+.status-terminated  { background:#FFE4E6; color:#BE123C; }
 .status-open        { background:#FEF9C3; color:#A16207; }
 .status-closed      { background:var(--slate-100); color:var(--slate-600); }
 .status-ready-to-sent           { background:#FEF3C7; color:#B45309; }

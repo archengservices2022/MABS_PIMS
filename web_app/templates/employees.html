@@ -1313,11 +1313,14 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
   </div>
   {% endif %}
 
+  {% set active_users     = all_users | selectattr('employee_status', 'ne', 'Terminated') | list %}
+  {% set terminated_users = all_users | selectattr('employee_status', 'equalto', 'Terminated') | list %}
+
   <div class="card-panel mb-3">
     <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
       <h6 class="panel-title mb-0">
         <i class="bi bi-people me-1" style="color:#0D9488;"></i>All Employees
-        <span class="text-muted fw-normal small ms-1">({{ all_users|length }})</span>
+        <span class="text-muted fw-normal small ms-1">({{ active_users|length }})</span>
       </h6>
       <a href="{{ url_for('settings') }}?tab=users" class="btn btn-xs btn-outline-secondary">
         <i class="bi bi-person-plus me-1"></i>Add Employee
@@ -1333,7 +1336,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           </tr>
         </thead>
         <tbody>
-        {% for u in all_users %}
+        {% for u in active_users %}
         {% set open_entry = open_entries_by_uid.get(u.firebase_uid) %}
         <tr>
           <td>
@@ -1402,6 +1405,55 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
       </table>
     </div>
   </div>
+
+  {% if terminated_users %}
+  <div class="card-panel mb-3" style="border-left:4px solid #ef4444;">
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+      <h6 class="panel-title mb-0" style="color:#b91c1c;">
+        <i class="bi bi-person-x me-1"></i>Terminated Employees
+        <span class="text-muted fw-normal small ms-1">({{ terminated_users|length }})</span>
+      </h6>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle" style="font-size:13px;opacity:.8;">
+        <thead style="background:#fff5f5;">
+          <tr>
+            <th>Employee</th><th>Title</th><th>Department</th>
+            <th>Terminated Date</th><th>Reason</th>
+            {% if user_role == 'admin' %}<th class="text-end">Action</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+        {% for u in terminated_users %}
+        <tr style="background:#fafafa;">
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <span class="emp-avatar" style="background:#94a3b8;font-size:13px;">{{ (u.username or 'U')[0]|upper }}</span>
+              <div>
+                <div class="fw-semibold text-muted">{{ u.username or '—' }}</div>
+                <div class="text-muted" style="font-size:11px;">{{ u.email or '' }}</div>
+              </div>
+            </div>
+          </td>
+          <td class="text-muted small">{{ u.title or '—' }}</td>
+          <td class="text-muted small">{{ u.get('department') or '—' }}</td>
+          <td class="text-muted small">{{ (u.get('terminated_at') or '—') | format_date }}</td>
+          <td class="text-muted small">{{ u.get('termination_reason') or '—' }}</td>
+          {% if user_role == 'admin' %}
+          <td class="text-end">
+            <button class="btn btn-xs btn-outline-success"
+                    onclick="reactivateEmployee('{{ u.firebase_uid }}','{{ u.username or '' }}')">
+              <i class="bi bi-person-check me-1"></i>Reactivate
+            </button>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
 
   <div class="card-panel">
     <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
@@ -3128,13 +3180,18 @@ function confirmTimeOffReview(requestId, action, empName) {
 }
 
 // ── Employee Summary Modal ────────────────────────────────────────────────
+let _empSummaryUid = null;
+
 function openEmpSummary(uid, name) {
+  _empSummaryUid = uid;
   const modal = new bootstrap.Modal(document.getElementById('empSummaryModal'));
   document.getElementById('empSummaryName').textContent = name;
   document.getElementById('empSummaryBody').innerHTML = `
     <div class="text-center py-4 text-muted">
       <div class="spinner-border spinner-border-sm me-2"></div> Loading...
     </div>`;
+  const footer = document.getElementById('empSummaryFooter');
+  if (footer) footer.style.display = 'none';
   modal.show();
 
   fetch(`/api/employee/${uid}/summary`)
@@ -3221,11 +3278,77 @@ function openEmpSummary(uid, name) {
             </div>
           </div>
         </div>`;
+
+      // Show terminate button for active non-self employees (admin only)
+      if (footer && uid !== '{{ session.get("user_uid","") }}') {
+        footer.style.display = 'flex';
+        const btnT = document.getElementById('btnTerminateEmp');
+        if (btnT) btnT.onclick = () => openTerminateModal(uid, d.name||name);
+      }
     })
     .catch(() => {
       document.getElementById('empSummaryBody').innerHTML =
         '<div class="text-danger text-center py-3">Failed to load summary.</div>';
     });
+}
+
+function openTerminateModal(uid, name) {
+  // Close summary modal first
+  bootstrap.Modal.getInstance(document.getElementById('empSummaryModal'))?.hide();
+  document.getElementById('terminateUid').value = uid;
+  document.getElementById('terminateDate').value = new Date().toISOString().slice(0,10);
+  document.getElementById('terminateReason').value = '';
+  document.getElementById('terminateNotes').value = '';
+  const m = new bootstrap.Modal(document.getElementById('terminateModal'));
+  document.getElementById('terminateModal').querySelector('.modal-title').innerHTML =
+    `<i class="bi bi-person-x me-2"></i>Terminate: ${name}`;
+  m.show();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnTerminateConfirm')?.addEventListener('click', () => {
+    const uid    = document.getElementById('terminateUid').value;
+    const date   = document.getElementById('terminateDate').value;
+    const reason = document.getElementById('terminateReason').value;
+    const notes  = document.getElementById('terminateNotes').value;
+
+    if (!date || !reason) {
+      alert('Please fill in the Termination Date and Reason.');
+      return;
+    }
+
+    const btn = document.getElementById('btnTerminateConfirm');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
+
+    fetch(`/api/employee/${uid}/terminate`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({termination_date: date, reason, notes})
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { alert('Error: ' + d.error); btn.disabled=false; btn.innerHTML='<i class="bi bi-person-x me-1"></i>Confirm Termination'; return; }
+      bootstrap.Modal.getInstance(document.getElementById('terminateModal'))?.hide();
+      location.reload();
+    })
+    .catch(() => {
+      alert('Request failed. Please try again.');
+      btn.disabled=false;
+      btn.innerHTML='<i class="bi bi-person-x me-1"></i>Confirm Termination';
+    });
+  });
+});
+
+function reactivateEmployee(uid, name) {
+  if (!confirm(`Reactivate ${name}? This will re-enable their login access.`)) return;
+  fetch(`/api/employee/${uid}/reactivate`, {method:'POST', headers:{'Content-Type':'application/json'}})
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { alert('Error: ' + d.error); return; }
+      location.reload();
+    })
+    .catch(() => alert('Request failed. Please try again.'));
 }
 </script>
 
@@ -3238,6 +3361,59 @@ function openEmpSummary(uid, name) {
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body p-4" id="empSummaryBody"></div>
+      {% if user_role == 'admin' %}
+      <div class="modal-footer border-0 pt-0" id="empSummaryFooter" style="display:none;">
+        <button type="button" class="btn btn-sm btn-outline-danger" id="btnTerminateEmp">
+          <i class="bi bi-person-x me-1"></i>Terminate Employee
+        </button>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Termination Confirmation Modal -->
+<div class="modal fade" id="terminateModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:440px;">
+    <div class="modal-content" style="border-radius:12px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.15);">
+      <div class="modal-header" style="background:#ef4444;border-radius:12px 12px 0 0;padding:14px 20px;">
+        <h6 class="modal-title text-white fw-700 mb-0">
+          <i class="bi bi-person-x me-2"></i>Terminate Employee
+        </h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4">
+        <div class="alert alert-warning d-flex gap-2 align-items-start py-2 mb-3" style="font-size:13px;">
+          <i class="bi bi-exclamation-triangle-fill mt-1 flex-shrink-0"></i>
+          <div>This will <strong>immediately disable</strong> the employee's login access. Their data (timesheets, payroll, documents) will be preserved.</div>
+        </div>
+        <input type="hidden" id="terminateUid">
+        <div class="mb-3">
+          <label class="form-label fw-600" style="font-size:13px;">Termination Date <span class="text-danger">*</span></label>
+          <input type="date" id="terminateDate" class="form-control form-control-sm">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-600" style="font-size:13px;">Reason <span class="text-danger">*</span></label>
+          <select id="terminateReason" class="form-select form-select-sm">
+            <option value="">— Select reason —</option>
+            <option value="Resignation">Resignation</option>
+            <option value="Layoff">Layoff</option>
+            <option value="Contract Ended">Contract Ended</option>
+            <option value="Performance">Performance</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-600" style="font-size:13px;">Notes</label>
+          <textarea id="terminateNotes" class="form-control form-control-sm" rows="2" placeholder="Optional notes..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-danger" id="btnTerminateConfirm">
+          <i class="bi bi-person-x me-1"></i>Confirm Termination
+        </button>
+      </div>
     </div>
   </div>
 </div>
