@@ -2666,11 +2666,26 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
     pane.classList.remove('show', 'active');
   });
 
-  // Activate the target tab
-  const targetNavLink = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
+  // Activate the target tab - try querySelector first, then fallback to iteration
+  let targetNavLink = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
+
+  // If not found by direct query, iterate through all links
+  if (!targetNavLink) {
+    const allLinks = document.querySelectorAll('#empTabs .nav-link');
+    for (let link of allLinks) {
+      if (link.getAttribute('href') === target) {
+        targetNavLink = link;
+        break;
+      }
+    }
+  }
+
+  // Add active class to nav link if found
   if (targetNavLink) {
     targetNavLink.classList.add('active');
   }
+
+  // Activate the corresponding tab pane
   const targetPane = document.querySelector(target);
   if (targetPane) {
     targetPane.classList.add('show', 'active');
