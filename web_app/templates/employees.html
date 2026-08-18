@@ -2644,32 +2644,28 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
 (function () {
   const map = { clock:'#tab-clock', 'time-off':'#tab-time-off', profile:'#tab-profile', team:'#tab-team', directory:'#tab-directory', medical:'#tab-medical', expenses:'#tab-emp-expenses', reviews:'#tab-my-reviews' };
 
-  // Check URL hash first, then sessionStorage if coming from within employees page
+  // Check URL hash first (direct navigation or refresh)
   let hash = (window.location.hash || '').replace('#','');
-  if (!hash) {
-    // Check if user came from within the employees page (via action/form submission)
-    // or from outside (via navigation to a different section)
-    const referrer = document.referrer;
-    const isFromEmployeesPage = referrer.includes('/employees');
 
-    if (isFromEmployeesPage) {
-      // User performed an action on employees page, restore the tab they were on
-      hash = sessionStorage.getItem('empTabPersist') || 'time-off';
-    } else {
-      // User is navigating from outside (different section), default to time-off
-      hash = 'time-off';
-      sessionStorage.removeItem('empTabPersist');
-    }
+  // If no hash, check sessionStorage (only after form submission)
+  if (!hash) {
+    hash = sessionStorage.getItem('empTabPersist') || 'time-off';
+  }
+
+  // If hash exists in URL, clear sessionStorage to allow fresh tab on next reload
+  if (window.location.hash) {
+    sessionStorage.removeItem('empTabPersist');
   }
 
   const target = map[hash] || '#tab-time-off';
   const el = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
   if (el) new bootstrap.Tab(el).show();
 
+  // Update hash and sessionStorage when user manually clicks a tab
   document.querySelectorAll('#empTabs .nav-link').forEach(link => {
     link.addEventListener('shown.bs.tab', e => {
       const tabName = (e.target.getAttribute('href') || '').replace('#tab-','');
-      history.replaceState(null, '', '#' + tabName);
+      window.location.hash = tabName;
       sessionStorage.setItem('empTabPersist', tabName);
     });
   });
