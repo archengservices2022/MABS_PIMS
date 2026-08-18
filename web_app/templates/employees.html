@@ -2245,12 +2245,12 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
 
         <!-- Pagination -->
         {% if total_pages > 1 %}
-        <div class="d-flex justify-content-center align-items-center gap-2 mt-4" style="padding: 20px 0;">
+        <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
           <a href="?med_page={{ [1, current_page - 1]|max }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
             <i class="bi bi-chevron-left"></i>
           </a>
 
-          <input type="number" min="1" max="{{ total_pages }}" value="{{ current_page }}" class="form-control" style="width:60px;text-align:center;"
+          <input type="number" min="1" max="{{ total_pages }}" value="{{ current_page }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
                  onchange="window.location='?med_page=' + Math.max(1, Math.min(this.value, {{ total_pages }})) + '#tab-medical'">
 
           <span class="text-muted small">of {{ total_pages }}</span>
