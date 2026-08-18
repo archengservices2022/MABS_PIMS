@@ -2665,7 +2665,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
   document.querySelectorAll('#empTabs .nav-link').forEach(link => {
     link.addEventListener('shown.bs.tab', e => {
       const tabName = (e.target.getAttribute('href') || '').replace('#tab-','');
-      history.replaceState(null, '', '#' + tabName);
+      // Clear all pagination query parameters when switching tabs
+      history.replaceState(null, '', '/employees#' + tabName);
       sessionStorage.setItem('empTabPersist', tabName);
     });
   });
