@@ -809,6 +809,17 @@ def _cleanup_unpaid_commissions():
                     # Check if this is a commission expense
                     is_commission = exp_data.get("is_commission") or exp_data.get("category") == "Sales Commission"
                     if is_commission:
+                        # Fix expense_name format: should be "Salesperson_Commission" not "Commission - Salesperson"
+                        salesperson = exp_data.get("salesperson", "")
+                        current_name = exp_data.get("expense_name", "")
+                        if salesperson and (current_name.startswith("Commission -") or current_name != f"{salesperson}_Commission"):
+                            # Update to correct format
+                            fb_update(f"/balance_sheet_expenses/{exp_id}", {
+                                "expense_name": f"{salesperson}_Commission",
+                                "updated_at": datetime.now(timezone.utc).isoformat(),
+                            })
+                            log.info(f"Fixed commission expense name {exp_id}: {current_name} -> {salesperson}_Commission")
+
                         # Remove if status is not "Paid" or status is missing
                         exp_status = exp_data.get("status", "")
                         if exp_status != "Paid":
