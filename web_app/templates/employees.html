@@ -2203,7 +2203,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                    accept="image/*,.pdf" style="font-size:12px;">
             <div class="form-text text-muted" style="font-size:11px;">PDF or image (JPG, PNG). Optional.</div>
           </div>
-          <div class="d-flex gap-2">
+          <div class="d-grid gap-2">
             <button type="submit" class="btn btn-sm btn-teal">
               <i class="bi bi-send me-1"></i>Submit Claim
             </button>
@@ -2221,17 +2221,25 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
       <div class="card-panel">
         <h6 class="panel-title mb-3"><i class="bi bi-clock-history me-1" style="color:#0D9488;"></i>My Claims</h6>
         {% if my_medical_claims %}
+        {% set items_per_page = 10 %}
+        {% set total_items = my_medical_claims|length %}
+        {% set total_pages = ((total_items - 1) // items_per_page) + 1 %}
+        {% set current_page = request.args.get('med_page', 1)|int %}
+        {% set start_index = (current_page - 1) * items_per_page %}
+        {% set end_index = start_index + items_per_page %}
+        {% set paginated_claims = my_medical_claims[start_index:end_index] %}
+
         <div class="table-responsive">
           <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
             <thead style="background:#f8fafc;">
               <tr>
-                <th style="white-space:nowrap;">Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
+                <th style="white-space:nowrap;">Expense Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
                 <th class="text-end">Claimed</th><th class="text-end">Approved</th>
-                <th>Status</th><th>Notes</th><th>Receipt</th>
+                <th>Status</th><th>Submitted On</th><th>Receipt</th>
               </tr>
             </thead>
             <tbody>
-            {% for c in my_medical_claims %}
+            {% for c in paginated_claims %}
             <tr>
               <td style="white-space:nowrap;">{{ c.claim_date or '—' }}</td>
               <td>{{ c.expense_type or '—' }}</td>
@@ -2272,7 +2280,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                   {{ cs }}
                 </span>
               </td>
-              <td class="text-muted small">{{ c.admin_notes or '—' }}</td>
+              <td class="text-muted small">{{ c.get('created_at','') | format_date }}</td>
               <td>
                 {% if c.get('has_receipt') and c.get('firebase_id') %}
                 <a href="{{ url_for('medical_claim_receipt', claim_id=c.firebase_id) }}" target="_blank"
@@ -2286,6 +2294,24 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             </tbody>
           </table>
         </div>
+
+        <!-- Pagination -->
+        {% if total_pages > 1 %}
+        <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
+          <a href="?med_page={{ [1, current_page - 1]|max }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+            <i class="bi bi-chevron-left"></i>
+          </a>
+
+          <input type="number" min="1" max="{{ total_pages }}" value="{{ current_page }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
+                 onchange="window.location='?med_page=' + Math.max(1, Math.min(this.value, {{ total_pages }})) + '#tab-medical'">
+
+          <span class="text-muted small">of {{ total_pages }}</span>
+
+          <a href="?med_page={{ [total_pages, current_page + 1]|min }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page == total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+            <i class="bi bi-chevron-right"></i>
+          </a>
+        </div>
+        {% endif %}
         {% else %}
         <div class="text-center text-muted py-5">
           <i class="bi bi-heart-pulse" style="font-size:36px;opacity:.25;"></i>
@@ -2299,16 +2325,24 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
       <div class="card-panel mt-3">
         <h6 class="panel-title mb-3"><i class="bi bi-people me-1" style="color:#7C3AED;"></i>All Employee Claims</h6>
         {% if all_medical_claims %}
+        {% set items_per_page_admin = 15 %}
+        {% set total_items_admin = all_medical_claims|length %}
+        {% set total_pages_admin = ((total_items_admin - 1) // items_per_page_admin) + 1 %}
+        {% set current_page_admin = request.args.get('all_med_page', 1)|int %}
+        {% set start_index_admin = (current_page_admin - 1) * items_per_page_admin %}
+        {% set end_index_admin = start_index_admin + items_per_page_admin %}
+        {% set paginated_claims_admin = all_medical_claims[start_index_admin:end_index_admin] %}
+
         <div class="table-responsive">
           <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
             <thead style="background:#f8fafc;">
               <tr>
-                <th>Employee</th><th style="white-space:nowrap;">Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
-                <th class="text-end">Claimed ($USD)</th><th class="text-end">Approved ($USD)</th><th>Status</th><th>Receipt</th><th>Actions</th>
+                <th>Employee</th><th style="white-space:nowrap;">Expense Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
+                <th class="text-end">Claimed ($USD)</th><th class="text-end">Approved ($USD)</th><th>Status</th><th>Submitted On</th><th>Receipt</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
-            {% for c in all_medical_claims %}
+            {% for c in paginated_claims_admin %}
             <tr>
               <td><strong>{{ c.employee_name or '—' }}</strong></td>
               <td style="white-space:nowrap;">{{ c.claim_date or '—' }}</td>
@@ -2347,6 +2381,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                   {{ cs }}
                 </span>
               </td>
+              <td class="text-muted small">{{ c.get('created_at','') | format_date }}</td>
               <td>
                 {% if c.get('has_receipt') and c.get('firebase_id') %}
                 <a href="{{ url_for('medical_claim_receipt', claim_id=c.firebase_id) }}" target="_blank"
@@ -2377,6 +2412,24 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             </tbody>
           </table>
         </div>
+
+        <!-- Pagination -->
+        {% if total_pages_admin > 1 %}
+        <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
+          <a href="?all_med_page={{ [1, current_page_admin - 1]|max }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page_admin == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+            <i class="bi bi-chevron-left"></i>
+          </a>
+
+          <input type="number" min="1" max="{{ total_pages_admin }}" value="{{ current_page_admin }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
+                 onchange="window.location='?all_med_page=' + Math.max(1, Math.min(this.value, {{ total_pages_admin }})) + '#tab-medical'">
+
+          <span class="text-muted small">of {{ total_pages_admin }}</span>
+
+          <a href="?all_med_page={{ [total_pages_admin, current_page_admin + 1]|min }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page_admin == total_pages_admin %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+            <i class="bi bi-chevron-right"></i>
+          </a>
+        </div>
+        {% endif %}
         {% else %}
         <div class="text-center text-muted py-4 small">No claims from any employee yet.</div>
         {% endif %}
