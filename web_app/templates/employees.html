@@ -330,7 +330,7 @@
             <form method="post" action="{{ url_for('employee_log_time') }}" class="text-start">
               <div class="row g-2 mb-2">
                 <div class="col-6">
-                  <label class="form-label" style="font-size:11px;font-weight:600;color:#64748b;">Date</label>
+                  <label class="form-label" style="font-size:11px;font-weight:600;color:#64748b;">Expense Date</label>
                   <input type="date" name="date" class="form-control form-control-sm"
                          value="{{ today_str }}" max="{{ today_str }}" required>
                 </div>
@@ -1705,7 +1705,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
 
           <div class="row g-2 mb-2">
             <div class="col-6">
-              <label class="form-label small fw-semibold">Date <span class="text-danger">*</span></label>
+              <label class="form-label small fw-semibold">Expense Date <span class="text-danger">*</span></label>
               <input type="date" name="date" class="form-control form-control-sm"
                      value="{{ today_str }}" required>
             </div>
