@@ -2280,7 +2280,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                   {{ cs }}
                 </span>
               </td>
-              <td class="text-muted small">{{ c.get('created_at','') | format_date }}</td>
+              <td class="text-muted small">{{ c.get('submitted_at','') | format_date }}</td>
               <td>
                 {% if c.get('has_receipt') and c.get('firebase_id') %}
                 <a href="{{ url_for('medical_claim_receipt', claim_id=c.firebase_id) }}" target="_blank"
@@ -2383,7 +2383,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                   {{ cs }}
                 </span>
               </td>
-              <td class="text-muted small">{{ c.get('created_at','') | format_date }}</td>
+              <td class="text-muted small">{{ c.get('submitted_at','') | format_date }}</td>
               <td>
                 {% if c.get('has_receipt') and c.get('firebase_id') %}
                 <a href="{{ url_for('medical_claim_receipt', claim_id=c.firebase_id) }}" target="_blank"
