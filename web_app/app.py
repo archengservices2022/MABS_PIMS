@@ -809,22 +809,38 @@ def _cleanup_unpaid_commissions():
                     # Check if this is a commission expense
                     is_commission = exp_data.get("is_commission") or exp_data.get("category") == "Sales Commission"
                     if is_commission:
-                        # Fix expense_name format: should be "Salesperson_Commission" not "Commission - Salesperson"
+                        # Fix expense_name format: should be "Commission: Salesperson" not old formats
                         salesperson = exp_data.get("salesperson", "")
                         current_name = exp_data.get("expense_name", "")
-                        if salesperson and (current_name.startswith("Commission -") or current_name != f"{salesperson}_Commission"):
+                        expected_name = f"Commission: {salesperson}" if salesperson else "Commission: Unknown"
+
+                        if current_name != expected_name:
                             # Update to correct format
                             fb_update(f"/balance_sheet_expenses/{exp_id}", {
-                                "expense_name": f"{salesperson}_Commission",
+                                "expense_name": expected_name,
                                 "updated_at": datetime.now(timezone.utc).isoformat(),
                             })
-                            log.info(f"Fixed commission expense name {exp_id}: {current_name} -> {salesperson}_Commission")
+                            log.info(f"Fixed commission expense name {exp_id}: {current_name} -> {expected_name}")
 
                         # Remove if status is not "Paid" or status is missing
                         exp_status = exp_data.get("status", "")
                         if exp_status != "Paid":
                             fb_delete(f"/balance_sheet_expenses/{exp_id}")
                             log.info(f"Cleaned up unpaid commission expense {exp_id} (status: {exp_status})")
+
+                    # Also fix salary expense names to use colon format: "Employee Salary: Name"
+                    if exp_data.get("expense_type") == "Employee Salary" or exp_data.get("category") == "Salary":
+                        employee_name = exp_data.get("employee_name", "")
+                        current_name = exp_data.get("expense_name", "")
+                        expected_name = f"Employee Salary: {employee_name}" if employee_name else "Employee Salary"
+
+                        if current_name and current_name != expected_name:
+                            # Update to correct format
+                            fb_update(f"/balance_sheet_expenses/{exp_id}", {
+                                "expense_name": expected_name,
+                                "updated_at": datetime.now(timezone.utc).isoformat(),
+                            })
+                            log.info(f"Fixed salary expense name {exp_id}: {current_name} -> {expected_name}")
     except Exception as e:
         log.error(f"Error cleaning up unpaid commissions: {e}")
 
@@ -16011,7 +16027,7 @@ def user_details_update(uid):
                     if correct_emp_name and stored_emp_name != correct_emp_name:
                         update_data = {
                             "employee_name": correct_emp_name,
-                            "expense_name": f"Employee Salary - {correct_emp_name}",
+                            "expense_name": f"Employee Salary: {correct_emp_name}",
                             "updated_at": now_iso,
                         }
 
@@ -16114,7 +16130,7 @@ def sync_salary_expenses():
                     if correct_emp_name and stored_emp_name != correct_emp_name:
                         update_data = {
                             "employee_name": correct_emp_name,
-                            "expense_name": f"Employee Salary - {correct_emp_name}",
+                            "expense_name": f"Employee Salary: {correct_emp_name}",
                             "updated_at": now_iso,
                         }
 
@@ -16245,7 +16261,7 @@ def commission_project_mark_paid(project_id):
 
             expense_data = {
                 "expense_type": "Other Expenses",
-                "expense_name": f"{pc.get('salesperson', 'Unknown')}_Commission",
+                "expense_name": f"Commission: {pc.get('salesperson', 'Unknown')}",
                 "category": "Sales Commission",
                 "amount": commission_amount,
                 "remaining_due": remaining_due,
