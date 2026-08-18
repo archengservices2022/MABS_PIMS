@@ -13826,6 +13826,17 @@ def expense_new():
     exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
     bdt_amount = usd_amount * exchange_rate
 
+    category = request.form.get("category", "")
+    expense_status = request.form.get("status", "Approved")
+    is_commission = request.form.get("is_commission", "false").lower() == "true"
+
+    # Reject commission expenses unless marked as Paid
+    if (is_commission or category == "Sales Commission") and expense_status != "Paid":
+        return jsonify({
+            "success": False,
+            "error": "Commission expenses can only be saved when marked as 'Paid'. Please mark the commission as paid or use the project commission workflow."
+        }), 400
+
     data = {
         "expense_type":      request.form.get("expense_type", ""),
         "expense_name":      request.form.get("expense_name", ""),
@@ -13833,7 +13844,7 @@ def expense_new():
         "amount":            usd_amount,
         "amount_bdt":        bdt_amount,
         "exchange_rate":     exchange_rate,
-        "category":          request.form.get("category", ""),
+        "category":          category,
         "date":              request.form.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
         "vendor":            request.form.get("vendor", ""),
         "project_number":    request.form.get("project_number", ""),
@@ -13841,10 +13852,15 @@ def expense_new():
         "created_by":        session.get("user_email", ""),
         "submitted_by_name": session.get("user_name", ""),
         "submitted_by_uid":  session.get("user_uid", ""),
-        "status":            "Approved",
+        "status":            expense_status,
         "created_at":        datetime.now(timezone.utc).isoformat(),
         "updated_at":        datetime.now(timezone.utc).isoformat(),
     }
+
+    # Preserve commission flag if provided
+    if is_commission:
+        data["is_commission"] = True
+
     # Handle receipt upload (base64 encoding)
     receipt_base64 = None
     receipt_filename = None
@@ -14146,6 +14162,15 @@ def expense_edit(exp_id):
 
                 # Auto-sync to advance entry
                 fb_update(f"/employee_advances/{advance_id}", advance_update)
+
+        # Commission expense visibility control: only keep in balance_sheet_expenses if paid
+        is_commission = existing.get("is_commission") or existing.get("category") == "Sales Commission"
+        if is_commission:
+            expense_status = data.get("status", existing.get("status", ""))
+            if expense_status != "Paid":
+                # Remove from balance_sheet_expenses if it's not marked as paid
+                fb_delete(f"/balance_sheet_expenses/{exp_id}")
+                return jsonify({"success": True, "expense_id": exp_id, "note": "Commission removed from expenses (only paid commissions are shown)"})
 
         return jsonify({"success": True, "expense_id": exp_id})
     except Exception as e:
