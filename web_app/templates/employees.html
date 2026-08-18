@@ -2739,6 +2739,18 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
   // Initialize pagination links with current tab on page load
   const currentTabId = window.location.hash || sessionStorage.getItem('empTabPersist') || '#tab-time-off';
   updatePaginationLinksWithHash(currentTabId);
+
+  // Save current active tab whenever page becomes visible (user returns from another tab)
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) {
+      const activeLink = document.querySelector('#empTabs .nav-link.active');
+      if (activeLink) {
+        const tabId = activeLink.getAttribute('href');
+        sessionStorage.setItem('empTabPersist', tabId);
+        console.log('Page became visible, saved active tab to sessionStorage:', tabId);
+      }
+    }
+  });
 })();
 
 // Team hours period selector
