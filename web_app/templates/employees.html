@@ -2342,7 +2342,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           <table class="table table-hover mb-0 align-middle" style="font-size:13px;">
             <thead style="background:#f8fafc;">
               <tr>
-                <th>Submitted On</th><th style="white-space:nowrap;">Expense Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
+                <th style="min-width:100px;">Submitted On</th><th style="white-space:nowrap;">Expense Date</th><th>Type</th><th>Provider</th><th>Description</th><th style="min-width:80px;">Ref #</th>
                 <th class="text-end">Claimed</th><th class="text-end">Approved</th>
                 <th>Status</th><th>Receipt</th>
               </tr>
@@ -2350,12 +2350,12 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <tbody>
             {% for c in paginated_claims %}
             <tr>
-              <td class="text-muted small">{{ c.get('submitted_at','') | format_date }}</td>
+              <td class="text-muted small" style="min-width:100px;">{{ c.get('submitted_at','') | format_date }}</td>
               <td style="white-space:nowrap;">{{ c.claim_date | format_date }}</td>
               <td>{{ c.expense_type or '—' }}</td>
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
-              <td class="text-muted small">{{ c.get('receipt_ref') or '—' }}</td>
+              <td class="text-muted small" style="min-width:80px;">{{ c.get('receipt_ref') or '—' }}</td>
               <td class="text-end fw-semibold">
                 {% set curr = c.get('amount_currency', 'USD') %}
                 {% if curr == 'BDT' %}
