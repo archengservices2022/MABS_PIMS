@@ -14159,6 +14159,10 @@ def remove_expense_receipt(exp_id):
         if _perm:
             fb_update(f"/permission_requests/{_perm['firebase_id']}", {"status": "completed"})
 
+        # Clear any caches to ensure fresh data on reload
+        cache_bust("financial")
+        cache_bust("expenses")
+
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
