@@ -2643,52 +2643,38 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
 // Tab persistence via URL hash and sessionStorage
 // Preserves the active tab across refreshes, actions, and navigation
 (function () {
-  const map = { 'time-off':'', profile:'#tab-profile', 'emp-expenses':'', medical:'', 'my-reviews':'', team:'#tab-team', directory:'#tab-directory', clock:'#tab-clock' };
+  // Directly use the hash as-is (e.g., #tab-medical, #tab-emp-expenses)
+  // The hash already contains the full Bootstrap target ID
+  let targetTabId = window.location.hash;
 
-  // Priority 1: Check URL hash (direct navigation, refresh, or explicit tab selection)
-  let hash = (window.location.hash || '').replace('#','');
-
-  // Priority 2: If no hash, restore from sessionStorage (persists across navigation to other modules)
-  if (!hash) {
-    hash = sessionStorage.getItem('empTabPersist') || 'time-off';
+  // If no hash in URL, restore from sessionStorage
+  if (!targetTabId) {
+    targetTabId = sessionStorage.getItem('empTabPersist');
   }
 
-  // Priority 3: Only fall back to time-off if nothing was found
-  const target = map[hash] || '#tab-time-off';
+  // Only default to Time Off if no hash and no sessionStorage entry
+  if (!targetTabId) {
+    targetTabId = '#tab-time-off';
+  }
 
-  // Directly activate the correct tab by managing CSS classes
-  // Remove active from all nav links
+  // Find the nav link that matches this tab ID
+  const targetNavLink = document.querySelector('#empTabs .nav-link[href="' + targetTabId + '"]');
+
+  // Deactivate all tabs first
   document.querySelectorAll('#empTabs .nav-link').forEach(link => {
     link.classList.remove('active');
   });
-  // Remove show/active from all tab panes
   document.querySelectorAll('.tab-content .tab-pane').forEach(pane => {
     pane.classList.remove('show', 'active');
   });
 
-  // Activate the target tab - try querySelector first, then fallback to iteration
-  let targetNavLink = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
-
-  // If not found by direct query, iterate through all links
-  if (!targetNavLink) {
-    const allLinks = document.querySelectorAll('#empTabs .nav-link');
-    for (let link of allLinks) {
-      if (link.getAttribute('href') === target) {
-        targetNavLink = link;
-        break;
-      }
-    }
-  }
-
-  // Add active class to nav link if found
+  // Activate the target tab if found
   if (targetNavLink) {
     targetNavLink.classList.add('active');
-  }
-
-  // Activate the corresponding tab pane
-  const targetPane = document.querySelector(target);
-  if (targetPane) {
-    targetPane.classList.add('show', 'active');
+    const targetPane = document.querySelector(targetTabId);
+    if (targetPane) {
+      targetPane.classList.add('show', 'active');
+    }
   }
 
   // Save active tab to both URL hash and sessionStorage when user clicks a tab
