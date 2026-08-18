@@ -2648,16 +2648,10 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
   let targetTabId = window.location.hash;
   console.log('Page load: window.location.hash =', targetTabId || '(empty)');
 
-  // If no hash in URL, restore from sessionStorage
-  if (!targetTabId) {
-    targetTabId = sessionStorage.getItem('empTabPersist');
-    console.log('No hash in URL, checking sessionStorage: empTabPersist =', targetTabId || '(empty)');
-  }
-
-  // Only default to Time Off if no hash and no sessionStorage entry
+  // Default to Time Off if no hash (when returning from other modules)
   if (!targetTabId) {
     targetTabId = '#tab-time-off';
-    console.log('No hash or sessionStorage, defaulting to Time Off');
+    console.log('No hash in URL, defaulting to Time Off');
   } else {
     console.log('Activating tab:', targetTabId);
   }
@@ -2737,20 +2731,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
   }
 
   // Initialize pagination links with current tab on page load
-  const currentTabId = window.location.hash || sessionStorage.getItem('empTabPersist') || '#tab-time-off';
+  const currentTabId = window.location.hash || '#tab-time-off';
   updatePaginationLinksWithHash(currentTabId);
-
-  // Save current active tab whenever page becomes visible (user returns from another tab)
-  document.addEventListener('visibilitychange', function() {
-    if (!document.hidden) {
-      const activeLink = document.querySelector('#empTabs .nav-link.active');
-      if (activeLink) {
-        const tabId = activeLink.getAttribute('href');
-        sessionStorage.setItem('empTabPersist', tabId);
-        console.log('Page became visible, saved active tab to sessionStorage:', tabId);
-      }
-    }
-  });
 })();
 
 // Team hours period selector
