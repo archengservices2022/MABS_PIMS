@@ -2641,40 +2641,30 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
 })();
 
 // Tab persistence via URL hash and sessionStorage
+// Preserves the active tab across refreshes, actions, and navigation
 (function () {
   const map = { clock:'#tab-clock', 'time-off':'#tab-time-off', profile:'#tab-profile', team:'#tab-team', directory:'#tab-directory', medical:'#tab-medical', expenses:'#tab-emp-expenses', reviews:'#tab-my-reviews' };
 
-  // Check URL hash first (direct navigation or refresh)
+  // Priority 1: Check URL hash (direct navigation, refresh, or explicit tab selection)
   let hash = (window.location.hash || '').replace('#','');
 
-  // If no hash in URL, determine if we came from within employees page or from outside
+  // Priority 2: If no hash, restore from sessionStorage (persists across navigation to other modules)
   if (!hash) {
-    const referrer = document.referrer;
-    const isFromEmployeesPage = referrer.includes('/employees');
-
-    if (isFromEmployeesPage) {
-      // Came from form submission within employees page, restore from sessionStorage
-      hash = sessionStorage.getItem('empTabPersist') || 'time-off';
-    } else {
-      // Coming from outside (different section), default to time-off and clear sessionStorage
-      hash = 'time-off';
-      sessionStorage.removeItem('empTabPersist');
-    }
-  } else {
-    // Hash exists in URL, clear sessionStorage for next time
-    sessionStorage.removeItem('empTabPersist');
+    hash = sessionStorage.getItem('empTabPersist') || 'time-off';
   }
 
+  // Priority 3: Only fall back to time-off if nothing was found
   const target = map[hash] || '#tab-time-off';
   const el = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
   if (el) new bootstrap.Tab(el).show();
 
-  // Update hash and sessionStorage when user manually clicks a tab
+  // Save active tab to both URL hash and sessionStorage when user clicks a tab
   document.querySelectorAll('#empTabs .nav-link').forEach(link => {
     link.addEventListener('shown.bs.tab', e => {
       const tabName = (e.target.getAttribute('href') || '').replace('#tab-','');
-      // Clear all pagination query parameters when switching tabs
+      // Update URL to reflect active tab (clears pagination parameters)
       history.replaceState(null, '', '/employees#' + tabName);
+      // Save to sessionStorage for persistence across module navigation
       sessionStorage.setItem('empTabPersist', tabName);
     });
   });
