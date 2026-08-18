@@ -1,0 +1,364 @@
+{% extends "base.html" %}
+{% block title %}{{ name }} — Employee Profile{% endblock %}
+
+{% block content %}
+<style>
+.prof-breadcrumb { font-size:13px; color:#64748b; margin-bottom:12px; }
+.prof-breadcrumb a { color:#0D9488; text-decoration:none; }
+.prof-header { background:#fff; border-radius:12px; padding:24px 28px; margin-bottom:20px;
+               box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0; }
+.prof-avatar { width:64px; height:64px; border-radius:50%; font-size:26px; font-weight:800;
+               background:linear-gradient(135deg,#7C3AED,#0D9488); color:#fff;
+               display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.prof-name   { font-size:22px; font-weight:800; color:#0f172a; line-height:1.2; }
+.prof-sub    { font-size:13px; color:#64748b; }
+.prof-meta   { font-size:12px; color:#64748b; display:flex; align-items:center; gap:6px; }
+.prof-meta i { color:#94a3b8; }
+
+/* KPI cards row */
+.kpi-strip   { display:grid; grid-template-columns:repeat(8,1fr); gap:12px; margin-bottom:20px; }
+@media(max-width:1100px){ .kpi-strip { grid-template-columns:repeat(4,1fr); } }
+@media(max-width:640px) { .kpi-strip { grid-template-columns:repeat(2,1fr); } }
+.kpi-card    { background:#fff; border-radius:10px; padding:14px 16px;
+               box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0; }
+.kpi-label   { font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
+.kpi-value   { font-size:17px; font-weight:800; color:#0f172a; line-height:1.1; }
+.kpi-sub     { font-size:10px; color:#94a3b8; margin-top:2px; }
+
+/* Financial bar */
+.fin-strip   { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:20px; }
+@media(max-width:768px){ .fin-strip { grid-template-columns:1fr; } }
+.fin-card    { background:#fff; border-radius:10px; padding:20px 24px;
+               box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0; }
+.fin-title   { font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
+.fin-big     { font-size:26px; font-weight:900; color:#0f172a; }
+.fin-detail  { font-size:12px; color:#64748b; margin-top:6px; }
+
+/* Summary panels */
+.summary-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:20px; }
+@media(max-width:900px){ .summary-grid { grid-template-columns:1fr 1fr; } }
+@media(max-width:600px){ .summary-grid { grid-template-columns:1fr; } }
+.sum-panel  { background:#fff; border-radius:10px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0; }
+.sum-head   { font-size:13px; font-weight:700; color:#0f172a; border-bottom:1px solid #f1f5f9; padding-bottom:10px; margin-bottom:12px; }
+.sum-row    { display:flex; justify-content:space-between; align-items:center; font-size:13px; padding:5px 0; }
+.sum-row-label { color:#64748b; }
+.sum-row-val   { font-weight:700; color:#0f172a; }
+.sum-total  { border-top:2px solid #e2e8f0; margin-top:6px; padding-top:8px; font-weight:800; font-size:14px; }
+
+/* Tables */
+.prof-table-card { background:#fff; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0; overflow:hidden; margin-bottom:20px; }
+.prof-table-head { padding:14px 20px; border-bottom:1px solid #f1f5f9; display:flex; align-items:center; justify-content:space-between; }
+.prof-table-title { font-size:13px; font-weight:700; color:#0f172a; }
+.prof-table-wrap  { overflow-x:auto; }
+.prof-table-wrap table { font-size:12px; width:100%; }
+
+.text-green { color:#16a34a; }
+.text-amber { color:#b45309; }
+.text-red   { color:#be123c; }
+.text-blue  { color:#1d4ed8; }
+
+.dist-bar-wrap { margin-top:8px; background:#f1f5f9; border-radius:6px; height:6px; overflow:hidden; }
+.dist-bar      { height:6px; background:linear-gradient(90deg,#0D9488,#7C3AED); border-radius:6px; }
+</style>
+
+<!-- Breadcrumb -->
+<div class="prof-breadcrumb">
+  <a href="{{ url_for('employees') }}">← Employees</a> &nbsp;/&nbsp; Employee Profile
+</div>
+
+<!-- Header -->
+<div class="prof-header">
+  <div class="d-flex align-items-start gap-4 flex-wrap">
+    <div class="prof-avatar">{{ (name or 'U')[0]|upper }}</div>
+    <div class="flex-grow-1">
+      <div class="prof-name">{{ name or '—' }}</div>
+      <div class="prof-sub mb-2">{{ title or role|capitalize or '—' }}{% if dept %} &nbsp;·&nbsp; {{ dept }}{% endif %}</div>
+      <div class="d-flex flex-wrap gap-3">
+        {% if emp_id %}
+        <span class="prof-meta"><i class="bi bi-person-badge"></i> {{ emp_id }}</span>
+        {% endif %}
+        {% if hire_date %}
+        <span class="prof-meta"><i class="bi bi-calendar3"></i> Joined {{ hire_date | format_date }}</span>
+        {% endif %}
+        {% if tenure_label %}
+        <span class="prof-meta"><i class="bi bi-clock-history"></i> Tenure {{ tenure_label }}</span>
+        {% endif %}
+        {% if email %}
+        <span class="prof-meta"><i class="bi bi-envelope"></i> {{ email }}</span>
+        {% endif %}
+        {% if phone %}
+        <span class="prof-meta"><i class="bi bi-phone"></i> {{ phone }}</span>
+        {% endif %}
+      </div>
+    </div>
+    {% if is_admin %}
+    <div class="d-flex gap-2 align-items-center">
+      <span class="badge status-{{ (emp.get('employee_status','Active'))|lower }}">{{ emp.get('employee_status','Active') }}</span>
+      <a href="{{ url_for('employees') }}?edit={{ uid }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-pencil me-1"></i>Edit Profile
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- KPI strip -->
+<div class="kpi-strip">
+  <div class="kpi-card">
+    <div class="kpi-label">Tenure</div>
+    <div class="kpi-value">{{ tenure_label or '—' }}</div>
+    {% if hire_date %}<div class="kpi-sub">Since {{ hire_date | format_date }}</div>{% endif %}
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Total Salary</div>
+    <div class="kpi-value text-green">{{ currency_symbol }}{{ '{:,.0f}'.format(total_salary_paid) }}</div>
+    <div class="kpi-sub">All time paid</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Total Benefits</div>
+    <div class="kpi-value">{{ currency_symbol }}{{ '{:,.0f}'.format(total_benefits) }}</div>
+    <div class="kpi-sub">Medical &amp; allowances</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Total Advance</div>
+    <div class="kpi-value">{{ currency_symbol }}{{ '{:,.0f}'.format(total_advance) }}</div>
+    <div class="kpi-sub">Advances given</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Outstanding</div>
+    <div class="kpi-value {% if advance_balance > 0 %}text-amber{% endif %}">
+      {{ currency_symbol }}{{ '{:,.0f}'.format(advance_balance) }}
+    </div>
+    <div class="kpi-sub">Advance balance</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Projects</div>
+    <div class="kpi-value">{{ projects_worked }}</div>
+    <div class="kpi-sub">Worked on</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Total Hours</div>
+    <div class="kpi-value">{{ '{:,.0f}'.format(total_hours) }}</div>
+    <div class="kpi-sub">All time logged</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Leave Taken</div>
+    <div class="kpi-value">{{ leave_taken_days }}</div>
+    <div class="kpi-sub">Days this year</div>
+  </div>
+</div>
+
+<!-- Financial Overview -->
+<div class="fin-strip">
+  <div class="fin-card">
+    <div class="fin-title"><i class="bi bi-building me-1"></i>Total Cost to Company</div>
+    <div class="fin-big text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(total_cost_to_company) }}</div>
+    <div class="fin-detail">
+      Salary + Bonus + Benefits + Allowances
+    </div>
+  </div>
+  <div class="fin-card">
+    <div class="fin-title"><i class="bi bi-person-workspace me-1"></i>Hours Contribution</div>
+    <div class="fin-big">{{ '{:,.1f}'.format(total_hours) }} <span style="font-size:14px;font-weight:400;color:#64748b;">hrs</span></div>
+    <div class="fin-detail">{{ '{:,.1f}'.format(billable_hours) }} project hrs &nbsp;·&nbsp; {{ '{:,.1f}'.format(nonbillable_hrs) }} admin hrs</div>
+  </div>
+  <div class="fin-card">
+    {% if commission_rate > 0 %}
+    <div class="fin-title"><i class="bi bi-graph-up me-1"></i>Commission</div>
+    <div class="fin-big text-green">{{ commission_rate }}%</div>
+    <div class="fin-detail">
+      Earned {{ currency_symbol }}{{ '{:,.2f}'.format(commission_earned) }} &nbsp;·&nbsp;
+      Paid {{ currency_symbol }}{{ '{:,.2f}'.format(commission_paid) }}
+    </div>
+    {% else %}
+    <div class="fin-title"><i class="bi bi-activity me-1"></i>Avg Hours / Week</div>
+    <div class="fin-big">{{ avg_hrs_week }}</div>
+    <div class="fin-detail">Last 8 weeks</div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Summary panels -->
+<div class="summary-grid">
+
+  <!-- Compensation Summary -->
+  <div class="sum-panel">
+    <div class="sum-head"><i class="bi bi-cash-coin me-2" style="color:#0D9488;"></i>Compensation Summary</div>
+    <div class="sum-row">
+      <span class="sum-row-label">Total Salary Paid</span>
+      <span class="sum-row-val text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(total_salary_paid) }}</span>
+    </div>
+    <div class="sum-row">
+      <span class="sum-row-label">Total Bonus Paid</span>
+      <span class="sum-row-val">{{ currency_symbol }}{{ '{:,.2f}'.format(total_bonus_paid) }}</span>
+    </div>
+    <div class="sum-row">
+      <span class="sum-row-label">Total Commission</span>
+      <span class="sum-row-val">{{ currency_symbol }}{{ '{:,.2f}'.format(commission_paid) }}</span>
+    </div>
+    <div class="sum-row">
+      <span class="sum-row-label">Benefits &amp; Allowances</span>
+      <span class="sum-row-val">{{ currency_symbol }}{{ '{:,.2f}'.format(total_benefits) }}</span>
+    </div>
+    <div class="sum-row">
+      <span class="sum-row-label">Other Reimbursements</span>
+      <span class="sum-row-val">{{ currency_symbol }}{{ '{:,.2f}'.format(expenses_ytd) }}</span>
+    </div>
+    <div class="sum-row sum-total">
+      <span>Total Cost to Company</span>
+      <span class="text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(total_cost_to_company) }}</span>
+    </div>
+  </div>
+
+  <!-- Work Summary -->
+  <div class="sum-panel">
+    <div class="sum-head"><i class="bi bi-briefcase me-2" style="color:#7C3AED;"></i>Work Summary</div>
+    <div class="sum-row">
+      <span class="sum-row-label">Projects Worked</span>
+      <span class="sum-row-val">{{ projects_worked }}</span>
+    </div>
+    <div class="sum-row">
+      <span class="sum-row-label">Total Hours Logged</span>
+      <span class="sum-row-val">{{ '{:,.1f}'.format(total_hours) }} hrs</span>
+    </div>
+    <div class="sum-row">
+      <span class="sum-row-label">Project Hours</span>
+      <span class="sum-row-val text-blue">{{ '{:,.1f}'.format(billable_hours) }} hrs</span>
+    </div>
+    <div class="sum-row">
+      <span class="sum-row-label">Admin / General Hours</span>
+      <span class="sum-row-val">{{ '{:,.1f}'.format(nonbillable_hrs) }} hrs</span>
+    </div>
+    <div class="sum-row">
+      <span class="sum-row-label">Avg Hours / Week</span>
+      <span class="sum-row-val">{{ avg_hrs_week }} hrs</span>
+    </div>
+    <div class="sum-row sum-total">
+      <span>Total Reviews</span>
+      <span>{{ emp_reviews|length }}</span>
+    </div>
+  </div>
+
+  <!-- Leave Summary -->
+  <div class="sum-panel">
+    <div class="sum-head"><i class="bi bi-calendar-check me-2" style="color:#3b82f6;"></i>Leave Summary</div>
+    <div class="sum-row">
+      <span class="sum-row-label">Annual Leave Entitlement</span>
+      <span class="sum-row-val">{{ pto_allotment }} days</span>
+    </div>
+    <div class="sum-row">
+      <span class="sum-row-label">Sick Leave Entitlement</span>
+      <span class="sum-row-val">{{ sick_allotment }} days</span>
+    </div>
+    <div class="sum-row">
+      <span class="sum-row-label">Leave Taken (days)</span>
+      <span class="sum-row-val text-amber">{{ leave_taken_days }} days</span>
+    </div>
+    <div class="sum-row">
+      <span class="sum-row-label">Annual Leave Remaining</span>
+      <span class="sum-row-val text-green">{{ pto_remaining }} days</span>
+    </div>
+    <div class="sum-row">
+      <span class="sum-row-label">Sick Leave Remaining</span>
+      <span class="sum-row-val text-blue">{{ sick_remaining }} days</span>
+    </div>
+    <div class="sum-row sum-total">
+      <span>Total Remaining</span>
+      <span class="text-green">{{ (pto_remaining + sick_remaining) | round(1) }} days</span>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom tables: Payroll | Projects | Advances -->
+<div class="d-flex flex-wrap gap-3 mb-4">
+
+  <!-- Recent Payroll History -->
+  <div class="prof-table-card flex-grow-1" style="min-width:300px;">
+    <div class="prof-table-head">
+      <span class="prof-table-title"><i class="bi bi-receipt me-1" style="color:#0D9488;"></i>Recent Payroll History</span>
+      <a href="{{ url_for('payroll') }}" class="btn btn-xs btn-outline-secondary" style="font-size:11px;">View All</a>
+    </div>
+    <div class="prof-table-wrap">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead style="background:#f8fafc; font-size:11px;">
+          <tr>
+            <th>Date</th><th>Type</th><th class="text-end">Amount</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for s in recent_payroll %}
+        <tr>
+          <td class="text-muted">{{ (s.get('date') or '—') | format_date }}</td>
+          <td>{{ s.get('salary_type','Salary') }}</td>
+          <td class="text-end fw-600 text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(s.get('amount',0)|float) }}</td>
+          <td>
+            <span class="badge status-{{ (s.get('salary_status','Paid'))|lower }}">
+              {{ s.get('salary_status','Paid') }}
+            </span>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-muted text-center py-3" style="font-size:12px;">No payroll records</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Recent Projects -->
+  <div class="prof-table-card" style="min-width:260px;flex:1;">
+    <div class="prof-table-head">
+      <span class="prof-table-title"><i class="bi bi-folder me-1" style="color:#7C3AED;"></i>Recent Projects</span>
+    </div>
+    <div class="prof-table-wrap">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead style="background:#f8fafc; font-size:11px;">
+          <tr><th>Project #</th><th>Name</th></tr>
+        </thead>
+        <tbody>
+        {% for p in recent_projects %}
+        <tr>
+          <td><span class="badge" style="background:#ede9fe;color:#5b21b6;font-size:11px;">{{ p.project_number }}</span></td>
+          <td class="text-muted small">{{ (p.project_name or '—')[:32] }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="2" class="text-muted text-center py-3" style="font-size:12px;">No project time logged</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Recent Advances -->
+  <div class="prof-table-card" style="min-width:280px;flex:1;">
+    <div class="prof-table-head">
+      <span class="prof-table-title"><i class="bi bi-wallet2 me-1" style="color:#b45309;"></i>Recent Advances</span>
+    </div>
+    <div class="prof-table-wrap">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead style="background:#f8fafc; font-size:11px;">
+          <tr><th>Date</th><th class="text-end">Amount</th><th class="text-end">Balance</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+        {% for a in recent_advances %}
+        {% set bal = [a.get('amount',0)|float - a.get('adjusted_amount',0)|float, 0]|max %}
+        <tr>
+          <td class="text-muted small">{{ (a.get('date') or '—') | format_date }}</td>
+          <td class="text-end fw-600">{{ currency_symbol }}{{ '{:,.2f}'.format(a.get('amount',0)|float) }}</td>
+          <td class="text-end {% if bal > 0 %}text-amber fw-600{% else %}text-muted{% endif %}">
+            {{ currency_symbol }}{{ '{:,.2f}'.format(bal) }}
+          </td>
+          <td>
+            <span class="badge status-{{ (a.get('status','open'))|lower }}">{{ a.get('status','Open') }}</span>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-muted text-center py-3" style="font-size:12px;">No advances</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
