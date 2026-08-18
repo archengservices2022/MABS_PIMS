@@ -17586,6 +17586,7 @@ def approvals():
             'exchange_rate': claim.get('exchange_rate', 120),
             'status': claim.get('status', 'Pending'),
             'reviewed_by': claim.get('reviewed_by', '—'),
+            'reviewed_at': claim.get('reviewed_at', ''),
             'notes': claim.get('description', '—'),
             'days_pending': days_pending,
             'cat': 'medical'
@@ -17616,6 +17617,7 @@ def approvals():
             'exchange_rate': exp.get('exchange_rate', 120),
             'status': exp.get('status', 'Pending'),
             'reviewed_by': exp.get('reviewed_by', '—'),
+            'reviewed_at': exp.get('reviewed_at', ''),
             'notes': exp.get('description', '—') or exp.get('expense_name', '—'),
             'days_pending': days_pending,
             'cat': 'expense'
@@ -17651,6 +17653,7 @@ def approvals():
                 'currency': 'h',
                 'status': req.get('status', 'Pending'),
                 'reviewed_by': req.get('reviewed_by', '—'),
+                'reviewed_at': req.get('reviewed_at', ''),
                 'notes': req.get('reason', '—'),
                 'days_pending': days_pending,
                 'cat': 'timeoff'
@@ -17667,6 +17670,7 @@ def approvals():
         # Use sent_back_by if status is Draft, otherwise use approved_by
         reviewed_by = sheet.get('sent_back_by') if sheet.get('status') == 'Draft' else sheet.get('approved_by', '—')
         reviewed_by = reviewed_by or '—'
+        reviewed_at_ts = sheet.get('sent_back_at') if sheet.get('status') == 'Draft' else sheet.get('approved_at', '')
         all_employee_items.append({
             'type': 'Timesheet',
             'employee': sheet.get('employee_name', '—'),
@@ -17677,6 +17681,7 @@ def approvals():
             'currency': 'h',
             'status': sheet.get('status', 'Submitted'),
             'reviewed_by': reviewed_by,
+            'reviewed_at': reviewed_at_ts,
             'sent_back': sheet.get('status') == 'Draft' and sheet.get('sent_back_by'),
             'notes': sheet.get('submitted_at', '—')[:10] if sheet.get('submitted_at') else '—',
             'week_of': sheet.get('week_of', ''),
