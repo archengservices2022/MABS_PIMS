@@ -130,7 +130,7 @@
 <!-- ?? Tab bar ??????????????????????????????????????????????????????????????? -->
 <ul class="nav nav-tabs mb-4" id="empTabs">
   <li class="nav-item">
-    <a class="nav-link active" data-bs-toggle="tab" href="#tab-time-off">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-time-off">
       <i class="bi bi-calendar-event me-1"></i>Time Off
       {% if user_role in ('admin', 'accountant') and pending_time_off %}
       <span class="badge bg-danger ms-1">{{ pending_time_off|length }}</span>
@@ -496,7 +496,7 @@
 <!-- ??????????????????????????????????????????????????????????????????????????
      TIME OFF
 ?????????????????????????????????????????????????????????????????????????? -->
-<div class="tab-pane fade show active" id="tab-time-off">
+<div class="tab-pane fade" id="tab-time-off">
 
   {% set bal = my_time_off_balance %}
   {% set pto_pct  = ((bal.pto_used_hours  / bal.pto_allotment_hours)  * 100) | int if bal.pto_allotment_hours  > 0 else 0 %}
@@ -2658,22 +2658,36 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
 
   // Explicitly activate the correct tab nav link
   const navLink = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
-  if (navLink) {
-    // Remove active from all nav links
-    document.querySelectorAll('#empTabs .nav-link').forEach(link => {
-      link.classList.remove('active');
-    });
-    // Add active to selected nav link
-    navLink.classList.add('active');
 
-    // Remove show/active from all tab panes
-    document.querySelectorAll('.tab-content .tab-pane').forEach(pane => {
-      pane.classList.remove('show', 'active');
-    });
-    // Add show/active to corresponding tab pane
+  // Remove active from all nav links and show/active from all panes first
+  document.querySelectorAll('#empTabs .nav-link').forEach(link => {
+    link.classList.remove('active');
+  });
+  document.querySelectorAll('.tab-content .tab-pane').forEach(pane => {
+    pane.classList.remove('show', 'active');
+  });
+
+  // Now activate the correct tab
+  if (navLink) {
+    navLink.classList.add('active');
     const pane = document.querySelector(target);
     if (pane) {
       pane.classList.add('show', 'active');
+    }
+  } else if (target) {
+    // Fallback: if nav link not found, try to activate just the pane
+    const pane = document.querySelector(target);
+    if (pane) {
+      pane.classList.add('show', 'active');
+      // Also try to find and activate the nav link by different method
+      const href = target;
+      const links = document.querySelectorAll('#empTabs .nav-link');
+      for (let link of links) {
+        if (link.getAttribute('href') === href) {
+          link.classList.add('active');
+          break;
+        }
+      }
     }
   }
 
