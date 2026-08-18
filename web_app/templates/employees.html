@@ -1156,7 +1156,7 @@ function confirmTimeOffAction(requestId, action, employeeName) {
     : `You are about to <strong>reject</strong> <strong>${employeeName}</strong>'s time-off request. This action cannot be undone.`;
 
   showConfirmationModal(title, message, isApprove ? 'Approve' : 'Reject', headerBg, () => {
-    const currentTab = (window.location.hash || '').replace('#','') || 'time-off';
+    const currentTab = window.location.hash || '#tab-time-off';
     sessionStorage.setItem('empTabPersist', currentTab);
     const form = document.createElement('form');
     form.method = 'POST';
@@ -1171,7 +1171,7 @@ function confirmExpenseDelete(expId) {
   const message = '<strong>Are you sure you want to delete this expense?</strong><br><br>This action cannot be undone.';
 
   showConfirmationModal(title, message, 'Delete', '#dc2626', () => {
-    const currentTab = (window.location.hash || '').replace('#','') || 'expenses';
+    const currentTab = window.location.hash || '#tab-emp-expenses';
     sessionStorage.setItem('empTabPersist', currentTab);
     const form = document.createElement('form');
     form.method = 'POST';
@@ -1190,7 +1190,7 @@ function confirmExpenseReview(expId, action, empName) {
     : `You are about to <strong>Reject</strong> <strong>${empName}</strong>'s expense. This action cannot be undone.`;
 
   showConfirmationModal(title, message, isApprove ? 'Approve' : 'Reject', headerBg, () => {
-    const currentTab = (window.location.hash || '').replace('#','') || 'expenses';
+    const currentTab = window.location.hash || '#tab-emp-expenses';
     sessionStorage.setItem('empTabPersist', currentTab);
     const form = document.createElement('form');
     form.method = 'POST';
@@ -3365,7 +3365,7 @@ window.openMedReview = function(claimId, empName, amtClaimed, action) {
 
 // Preserve tab when submitting medical review form
 document.getElementById('medReviewForm')?.addEventListener('submit', function() {
-  const currentTab = (window.location.hash || '').replace('#','') || 'medical';
+  const currentTab = window.location.hash || '#tab-medical';
   sessionStorage.setItem('empTabPersist', currentTab);
 });
 
@@ -3390,7 +3390,13 @@ window.openMedAmtEdit = function(claimId, empName, amtClaimed, amtApproved, exch
 
 // Preserve tab when submitting medical amount edit form
 document.getElementById('medAmtEditForm')?.addEventListener('submit', function() {
-  const currentTab = (window.location.hash || '').replace('#','') || 'medical';
+  const currentTab = window.location.hash || '#tab-medical';
+  sessionStorage.setItem('empTabPersist', currentTab);
+});
+
+// Preserve tab when submitting expense rejection form
+document.getElementById('empExpenseRejectForm')?.addEventListener('submit', function() {
+  const currentTab = window.location.hash || '#tab-emp-expenses';
   sessionStorage.setItem('empTabPersist', currentTab);
 });
 
