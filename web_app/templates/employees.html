@@ -2360,9 +2360,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                 {% set curr = c.get('amount_currency', 'USD') %}
                 {% if curr == 'BDT' %}
                   {# Old entry: amount_claimed is in BDT, show as USD primary #}
-                  {% set bdt_amt = (c.amount_claimed|float) * 100 %}
-                  <div>${{ '{:,.2f}'.format(bdt_amt / (c.get('exchange_rate', 120)|float)) }}</div>
-                  <div class="text-muted" style="font-size:11px;">৳{{ '{:,.0f}'.format(bdt_amt) }}</div>
+                  <div>${{ '{:,.2f}'.format((c.amount_claimed|float) / (c.get('exchange_rate', 120)|float)) }}</div>
+                  <div class="text-muted" style="font-size:11px;">৳{{ '{:,.0f}'.format(c.amount_claimed|float) }}</div>
                 {% else %}
                   {# New entry: amount_claimed is in USD #}
                   <div>${{ '{:,.2f}'.format(c.amount_claimed|float) }}</div>
@@ -2374,9 +2373,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                 {% if _amt_appr is not none and _amt_appr != '' %}
                   {% set curr = c.get('amount_currency', 'USD') %}
                   {% if curr == 'BDT' %}
-                    {% set bdt_amt = (_amt_appr|float) * 100 %}
-                    <div>${{ '{:,.2f}'.format(bdt_amt / (c.get('exchange_rate', 120)|float)) }}</div>
-                    <div class="text-muted" style="font-size:11px;">৳{{ '{:,.0f}'.format(bdt_amt) }}</div>
+                    <div>${{ '{:,.2f}'.format((_amt_appr|float) / (c.get('exchange_rate', 120)|float)) }}</div>
+                    <div class="text-muted" style="font-size:11px;">৳{{ '{:,.0f}'.format(_amt_appr|float) }}</div>
                   {% else %}
                     <div>${{ '{:,.2f}'.format(_amt_appr|float) }}</div>
                     <div class="text-muted" style="font-size:11px;">৳{{ '{:,.0f}'.format((_amt_appr|float) * (c.get('exchange_rate', 120)|float)) }}</div>
@@ -2469,9 +2467,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               <td class="text-end fw-semibold">
                 {% set curr = c.get('amount_currency', 'USD') %}
                 {% if curr == 'BDT' %}
-                  {% set bdt_amt = (c.amount_claimed|float) * 100 %}
-                  <div>${{ '%.2f'|format(bdt_amt / (c.get('exchange_rate', 120)|float)) }}</div>
-                  <div class="text-muted" style="font-size:11px;">৳{{ '%.0f'|format(bdt_amt) }}</div>
+                  <div>${{ '%.2f'|format((c.amount_claimed|float) / (c.get('exchange_rate', 120)|float)) }}</div>
+                  <div class="text-muted" style="font-size:11px;">৳{{ '%.0f'|format(c.amount_claimed|float) }}</div>
                 {% else %}
                   <div>${{ '%.2f'|format(c.amount_claimed|float) }}</div>
                   <div class="text-muted" style="font-size:11px;">৳{{ '%.0f'|format((c.amount_claimed|float) * (c.get('exchange_rate', 120)|float)) }}</div>
@@ -2481,9 +2478,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                 {% if c.status == 'Approved' and c.get('amount_approved') %}
                   {% set curr = c.get('amount_currency', 'USD') %}
                   {% if curr == 'BDT' %}
-                    {% set bdt_amt = (c.amount_approved|float) * 100 %}
-                    <div>${{ '%.2f'|format(bdt_amt / (c.get('exchange_rate', 120)|float)) }}</div>
-                    <div class="text-muted" style="font-size:11px;">৳{{ '%.0f'|format(bdt_amt) }}</div>
+                    <div>${{ '%.2f'|format((c.amount_approved|float) / (c.get('exchange_rate', 120)|float)) }}</div>
+                    <div class="text-muted" style="font-size:11px;">৳{{ '%.0f'|format(c.amount_approved|float) }}</div>
                   {% else %}
                     <div>${{ '%.2f'|format(c.amount_approved|float) }}</div>
                     <div class="text-muted" style="font-size:11px;">৳{{ '%.0f'|format((c.amount_approved|float) * (c.get('exchange_rate', 120)|float)) }}</div>
