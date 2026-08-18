@@ -2383,12 +2383,13 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               </td>
               <td>
                 {% set cs = c.status or 'Pending' %}
-                <span class="badge" style="font-size:11px;
-                  {% if cs == 'Approved' %}background:#dcfce7;color:#15803d;
-                  {% elif cs == 'Rejected' %}background:#fee2e2;color:#991b1b;
-                  {% else %}background:#fef9c3;color:#92400e;{% endif %}">
-                  {{ cs }}
-                </span>
+                {% if cs == 'Approved' %}
+                  <span class="badge bg-success">{{ cs }}</span>
+                {% elif cs == 'Rejected' %}
+                  <span class="badge bg-danger">{{ cs }}</span>
+                {% else %}
+                  <span class="badge" style="background:#fef9c3;color:#92400e;">{{ cs }}</span>
+                {% endif %}
                 {% if c.get('reviewed_at','') %}<div class="text-muted small" style="margin-top:3px;">{{ c.get('reviewed_at','') | format_date }}</div>{% endif %}
               </td>
               <td>
@@ -2487,12 +2488,13 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               </td>
               <td>
                 {% set cs = c.status or 'Pending' %}
-                <span class="badge" style="font-size:11px;
-                  {% if cs == 'Approved' %}background:#dcfce7;color:#15803d;
-                  {% elif cs == 'Rejected' %}background:#fee2e2;color:#991b1b;
-                  {% else %}background:#fef9c3;color:#92400e;{% endif %}">
-                  {{ cs }}
-                </span>
+                {% if cs == 'Approved' %}
+                  <span class="badge bg-success">{{ cs }}</span>
+                {% elif cs == 'Rejected' %}
+                  <span class="badge bg-danger">{{ cs }}</span>
+                {% else %}
+                  <span class="badge" style="background:#fef9c3;color:#92400e;">{{ cs }}</span>
+                {% endif %}
                 {% if c.get('reviewed_at','') %}<div class="text-muted small" style="margin-top:3px;">{{ c.get('reviewed_at','') | format_date }}</div>{% endif %}
               </td>
               <td>
