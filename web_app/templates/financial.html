@@ -872,7 +872,7 @@ a[href*="filter_expense"]:hover {
       <table class="table table-hover table-sm mb-0 align-middle" id="expenseTable">
         <thead style="background:#1e293b;">
           <tr>
-            <th style="color:#fff;font-weight:700;">Date</th>
+            <th style="color:#fff;font-weight:700;">Expense Date</th>
             <th style="color:#fff;font-weight:700;">Expense Type</th>
             <th style="color:#fff;font-weight:700;">Expense Name</th>
             <th style="color:#fff;font-weight:700;">Category</th>
@@ -880,7 +880,6 @@ a[href*="filter_expense"]:hover {
             <th style="color:#fff;font-weight:700;">Project</th>
             <th style="color:#fff;font-weight:700;" class="text-end">Amount</th>
             <th style="color:#fff;font-weight:700;">Submitted By</th>
-            <th style="color:#fff;font-weight:700;">Notes</th>
             <th style="color:#fff;font-weight:700;"></th>
           </tr>
         </thead>
@@ -904,13 +903,6 @@ a[href*="filter_expense"]:hover {
               {% set _sub = exp.get('submitted_by_name','') or exp.get('created_by','') or '' %}
               <div class="text-muted">{{ _sub.split('@')[0].replace('.',' ').title() if '@' in _sub else (_sub or '—') }}</div>
               <div class="text-muted" style="font-size:0.85em;opacity:0.8;">{{ exp.get('created_at','—') | format_date }}</div>
-            </td>
-            <td class="small text-muted">
-              {% if exp.get('employee_name') %}
-                Employee: {{ exp.get('employee_name') }} - {{ exp.get('expense_type','') }} - {{ currency_symbol }}{{ "{:,.2f}".format(exp.get('amount',0)|float) }}
-              {% else %}
-                {{ exp.get('notes','—') }}
-              {% endif %}
             </td>
             <td>
               {% if exp.get('firebase_id') %}
@@ -1069,7 +1061,7 @@ a[href*="filter_expense"]:hover {
 
       <div class="row g-3 mb-3">
         <div class="col-md-6">
-          <label class="form-label form-label-sm fw-600">Date</label>
+          <label class="form-label form-label-sm fw-600">Expense Date</label>
           <input type="date" name="date" id="expenseDate" class="form-control form-control-sm" value="{{ today_date }}">
         </div>
         <div class="col-md-6">
@@ -2018,7 +2010,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
           <div class="row g-3 mb-3">
             <div class="col-md-6">
-              <label class="form-label form-label-sm fw-600">Date</label>
+              <label class="form-label form-label-sm fw-600">Expense Date</label>
               <input type="date" name="date" id="modalDate" class="form-control form-control-sm">
             </div>
             <div class="col-md-6">
@@ -2107,7 +2099,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
           <div class="row g-3 mb-3">
             <div class="col-md-6">
-              <label class="form-label form-label-sm fw-600">Date</label>
+              <label class="form-label form-label-sm fw-600">Expense Date</label>
               <input type="date" id="commExpenseDate" class="form-control form-control-sm">
             </div>
             <div class="col-md-6">
