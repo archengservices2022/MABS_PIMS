@@ -391,7 +391,7 @@
 
           <div style="display:flex;gap:10px;">
             <button type="submit" class="btn-primary" id="submitBtn">
-              <i class="bi bi-check-circle me-1"></i><span id="submitBtnText">Add Salary Entry</span>
+              <i class="bi bi-check-circle me-1"></i><span id="submitBtnText">Add Salary/Bonus Entry</span>
             </button>
             <button type="reset" class="btn-secondary" onclick="resetSalaryForm()">Clear</button>
           </div>
@@ -958,7 +958,7 @@ function editSalary(id, employee, date, amount, region, notes, status, type) {
 function resetSalaryForm() {
   document.getElementById('salary_id').value = '';
   document.getElementById('sal_type').value = 'Salary';
-  document.getElementById('submitBtnText').textContent = 'Add Salary Entry';
+  document.getElementById('submitBtnText').textContent = 'Add Salary/Bonus Entry';
 }
 
 function addSalary(e) {
