@@ -3278,9 +3278,13 @@ function openEmpSummary(uid, name) {
         <div class="row g-3">
           <div class="col-6">
             <div style="background:#f0fdf4;border-radius:8px;padding:14px;border-left:3px solid #16a34a;">
-              <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Salary</div>
+              <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">
+                ${d.salary_type === 'Hourly' ? 'Hourly Rate' : 'Salary'}
+              </div>
               <div style="font-size:18px;font-weight:800;color:#15803d;">
-                ${d.latest_salary > 0 ? sym+fmt(d.latest_salary)+'/mo' : '—'}
+                ${d.latest_salary > 0
+                  ? (d.salary_type === 'Hourly' ? sym+fmt(d.latest_salary)+'/hr' : sym+fmt(d.latest_salary)+'/mo')
+                  : '—'}
               </div>
             </div>
           </div>
@@ -3295,13 +3299,15 @@ function openEmpSummary(uid, name) {
           <div class="col-6">
             <div style="background:#eff6ff;border-radius:8px;padding:14px;border-left:3px solid #3b82f6;">
               <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">PTO Left</div>
-              <div style="font-size:18px;font-weight:800;color:#1d4ed8;">${d.pto_remaining} days</div>
+              <div style="font-size:18px;font-weight:800;color:#1d4ed8;">${d.pto_remaining} <span style="font-size:13px;">days</span></div>
+              <div style="font-size:10px;color:#94a3b8;margin-top:2px;">of ${d.pto_allotment} allotted</div>
             </div>
           </div>
           <div class="col-6">
             <div style="background:#fdf4ff;border-radius:8px;padding:14px;border-left:3px solid #a855f7;">
               <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Sick Left</div>
-              <div style="font-size:18px;font-weight:800;color:#7e22ce;">${d.sick_remaining} days</div>
+              <div style="font-size:18px;font-weight:800;color:#7e22ce;">${d.sick_remaining} <span style="font-size:13px;">days</span></div>
+              <div style="font-size:10px;color:#94a3b8;margin-top:2px;">of ${d.sick_allotment} allotted</div>
             </div>
           </div>
           ${d.commission_rate > 0 ? `
