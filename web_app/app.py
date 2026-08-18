@@ -14334,13 +14334,15 @@ def get_expense_receipt(exp_id):
 
     # Fallback: check /medical_claim_receipts (expenses sourced from medical claims)
     med_receipt = fb_get(f"/medical_claim_receipts/{exp_id}") or {}
-    if isinstance(med_receipt, dict) and med_receipt.get("receipt_base64"):
-        return jsonify({
-            "success": True,
-            "receipt": med_receipt.get("receipt_base64"),
-            "fileType": med_receipt.get("receipt_type", "image/jpeg"),
-            "filename": med_receipt.get("receipt_filename", "receipt"),
-        })
+    if isinstance(med_receipt, dict):
+        # Return success if receipt_base64 exists, or just if receipt_filename exists
+        if med_receipt.get("receipt_base64") or med_receipt.get("receipt_filename"):
+            return jsonify({
+                "success": True,
+                "receipt": med_receipt.get("receipt_base64"),
+                "fileType": med_receipt.get("receipt_type", "image/jpeg"),
+                "filename": med_receipt.get("receipt_filename", "receipt"),
+            })
 
     # Fallback: check if receipt is stored in expense data (legacy entries or medical claims)
     expenses = fb_get("/balance_sheet_expenses") or {}
