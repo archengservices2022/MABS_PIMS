@@ -496,7 +496,7 @@
 <!-- ??????????????????????????????????????????????????????????????????????????
      TIME OFF
 ?????????????????????????????????????????????????????????????????????????? -->
-<div class="tab-pane fade" id="tab-time-off">
+<div class="tab-pane fade show active" id="tab-time-off">
 
   {% set bal = my_time_off_balance %}
   {% set pto_pct  = ((bal.pto_used_hours  / bal.pto_allotment_hours)  * 100) | int if bal.pto_allotment_hours  > 0 else 0 %}
@@ -2656,40 +2656,49 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
   // Priority 3: Only fall back to time-off if nothing was found
   const target = map[hash] || '#tab-time-off';
 
-  // Explicitly activate the correct tab nav link
-  const navLink = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
+  // Explicitly activate the correct tab using Bootstrap Tab API
+  function activateTab(tabSelector) {
+    // Remove active from all nav links and show/active from all panes
+    document.querySelectorAll('#empTabs .nav-link').forEach(link => {
+      link.classList.remove('active');
+    });
+    document.querySelectorAll('.tab-content .tab-pane').forEach(pane => {
+      pane.classList.remove('show', 'active');
+    });
 
-  // Remove active from all nav links and show/active from all panes first
-  document.querySelectorAll('#empTabs .nav-link').forEach(link => {
-    link.classList.remove('active');
-  });
-  document.querySelectorAll('.tab-content .tab-pane').forEach(pane => {
-    pane.classList.remove('show', 'active');
-  });
-
-  // Now activate the correct tab
-  if (navLink) {
-    navLink.classList.add('active');
-    const pane = document.querySelector(target);
-    if (pane) {
-      pane.classList.add('show', 'active');
-    }
-  } else if (target) {
-    // Fallback: if nav link not found, try to activate just the pane
-    const pane = document.querySelector(target);
-    if (pane) {
-      pane.classList.add('show', 'active');
-      // Also try to find and activate the nav link by different method
-      const href = target;
-      const links = document.querySelectorAll('#empTabs .nav-link');
-      for (let link of links) {
-        if (link.getAttribute('href') === href) {
-          link.classList.add('active');
-          break;
+    // Try to activate using Bootstrap's Tab API
+    const navLink = document.querySelector('#empTabs .nav-link[href="' + tabSelector + '"]');
+    if (navLink) {
+      try {
+        const tab = new bootstrap.Tab(navLink);
+        tab.show();
+      } catch (e) {
+        // Fallback to manual activation if Bootstrap Tab fails
+        navLink.classList.add('active');
+        const pane = document.querySelector(tabSelector);
+        if (pane) {
+          pane.classList.add('show', 'active');
+        }
+      }
+    } else {
+      // If nav link not found by href, manually set the pane
+      const pane = document.querySelector(tabSelector);
+      if (pane) {
+        pane.classList.add('show', 'active');
+        // Find and activate the corresponding nav link
+        const links = document.querySelectorAll('#empTabs .nav-link');
+        for (let link of links) {
+          if (link.getAttribute('href') === tabSelector) {
+            link.classList.add('active');
+            break;
+          }
         }
       }
     }
   }
+
+  // Activate the correct tab
+  activateTab(target);
 
   // Save active tab to both URL hash and sessionStorage when user clicks a tab
   document.querySelectorAll('#empTabs .nav-link').forEach(link => {
