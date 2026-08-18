@@ -171,7 +171,13 @@
                     —
                   {% endif %}
                 </td>
-                <td class="text-muted small">{{ item.notes }}</td>
+                <td class="text-muted small">
+                  {% if item.type == 'Timesheet' %}
+                    {{ item.employee }} submitted timesheet
+                  {% else %}
+                    {{ item.notes }}
+                  {% endif %}
+                </td>
                 <td>
                   {% if item.cat == 'medical' %}
                     <a href="{{ url_for('employees') }}#medical" class="btn btn-xs btn-outline-secondary" title="Open Medical Claims">

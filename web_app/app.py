@@ -14136,7 +14136,8 @@ def remove_expense_receipt(exp_id):
         fb_update(f"/balance_sheet_expenses/{exp_id}", {
             "receipt_base64": "",
             "receipt_filename": "",
-            "receipt_type": ""
+            "receipt_type": "",
+            "has_receipt": False
         })
 
         # Remove from /expense_receipts (primary storage location)
@@ -14150,7 +14151,8 @@ def remove_expense_receipt(exp_id):
             fb_update(f"/expenses/{exp_id}", {
                 "receipt_base64": "",
                 "receipt_filename": "",
-                "receipt_type": ""
+                "receipt_type": "",
+                "has_receipt": False
             })
 
         # Mark permission request as completed if one was used
