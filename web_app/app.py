@@ -15018,15 +15018,27 @@ def api_employee_summary(uid):
     dept     = user.get("department", "")
     hire_date = user.get("hire_date", "")
 
-    # Latest salary
+    # Latest salary — try payroll records first, fall back to user profile rate
     all_salaries = fb_get("/salaries") or {}
     emp_salaries = sorted(
         [v for v in all_salaries.values() if isinstance(v, dict) and
          (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)],
         key=lambda x: x.get("date", ""), reverse=True
     )
-    latest_salary = _safe_float(emp_salaries[0].get("amount", 0)) if emp_salaries else 0
-    salary_type   = emp_salaries[0].get("salary_type", "") if emp_salaries else ""
+    if emp_salaries:
+        latest_salary = _safe_float(emp_salaries[0].get("amount", 0))
+        salary_type   = emp_salaries[0].get("salary_type", "Salary")
+    else:
+        # Fall back to salary rate stored on the user profile
+        if user.get("monthly_salary"):
+            latest_salary = _safe_float(user.get("monthly_salary", 0))
+            salary_type   = "Monthly"
+        elif user.get("hourly_rate"):
+            latest_salary = _safe_float(user.get("hourly_rate", 0))
+            salary_type   = "Hourly"
+        else:
+            latest_salary = 0.0
+            salary_type   = ""
 
     # Outstanding advance balance
     all_advances = fb_get("/employee_advances") or {}
@@ -15044,8 +15056,10 @@ def api_employee_summary(uid):
     now = datetime.now(COMPANY_TZ)
     all_time_off = _load_time_off_requests()
     tob = _time_off_balance(all_time_off, uid, now.year, hire_date)
-    pto_remaining  = tob.get("pto_remaining_days", 0)
-    sick_remaining = tob.get("sick_remaining_days", 0)
+    pto_allotment  = tob.get("pto_allotment", 0)
+    pto_remaining  = tob.get("pto_remaining", 0)
+    sick_allotment = tob.get("sick_allotment", 0)
+    sick_remaining = tob.get("sick_remaining", 0)
 
     # Commission
     commission_rate = _safe_float(user.get("commission_rate", 0))
@@ -15094,8 +15108,10 @@ def api_employee_summary(uid):
         "latest_salary":    latest_salary,
         "salary_type":      salary_type,
         "advance_balance":  round(advance_balance, 2),
-        "pto_remaining":    pto_remaining,
-        "sick_remaining":   sick_remaining,
+        "pto_allotment":    round(pto_allotment, 1),
+        "pto_remaining":    round(pto_remaining, 1),
+        "sick_allotment":   round(sick_allotment, 1),
+        "sick_remaining":   round(sick_remaining, 1),
         "commission_rate":  commission_rate,
         "commission_earned": round(commission_earned, 2),
         "commission_paid":   round(commission_paid, 2),
