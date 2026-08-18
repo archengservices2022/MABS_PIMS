@@ -169,7 +169,7 @@
 
     {% if 'employees' in allowed_pages %}
     <a href="{{ url_for('employees') }}"
-       class="nav-item accent-purple {% if request.endpoint == 'employees' %}active{% endif %}">
+       class="nav-item accent-purple {% if request.endpoint in ['employees', 'employee_profile'] %}active{% endif %}">
       <span class="nav-icon"><i class="bi bi-people-fill"></i></span>
       <span class="nav-label">Employees</span>
     </a>
