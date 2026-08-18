@@ -14231,7 +14231,7 @@ def expense_edit(exp_id):
             # Call the receipt deletion endpoint
             try:
                 # Check permission
-                _uid = session.get("user_id", "")
+                _uid = session.get("user_uid", "")
                 user_role = normalize_role(session.get("user_role", ""))
                 has_approval = user_role in ("admin", "accountant") or _has_approved_delete_request(_uid, "receipt", exp_id)
 
