@@ -14917,6 +14917,114 @@ def financial_migrate_exchange_rates():
     return redirect(url_for("financial"))
 
 # ── Routes: Employees ─────────────────────────────────────────────────────────
+@app.route("/api/employee/<uid>/summary")
+@login_required
+def api_employee_summary(uid):
+    """Quick summary for the employee popup modal."""
+    _role = normalize_role(session.get("user_role", ""))
+    is_admin = _role in ("admin", "accountant")
+    # Non-admins can only see their own summary
+    if not is_admin and session.get("user_uid", "") != uid:
+        return jsonify({"error": "Access denied"}), 403
+
+    user = fb_get(f"/users/{uid}") or {}
+    if not user:
+        return jsonify({"error": "Employee not found"}), 404
+
+    name     = (user.get("username") or user.get("name") or "").strip()
+    email    = user.get("email", "")
+    role     = user.get("role", "")
+    dept     = user.get("department", "")
+    hire_date = user.get("hire_date", "")
+
+    # Latest salary
+    all_salaries = fb_get("/salaries") or {}
+    emp_salaries = sorted(
+        [v for v in all_salaries.values() if isinstance(v, dict) and
+         (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)],
+        key=lambda x: x.get("date", ""), reverse=True
+    )
+    latest_salary = _safe_float(emp_salaries[0].get("amount", 0)) if emp_salaries else 0
+    salary_type   = emp_salaries[0].get("salary_type", "") if emp_salaries else ""
+
+    # Outstanding advance balance
+    all_advances = fb_get("/employee_advances") or {}
+    advance_balance = 0.0
+    for adv in all_advances.values():
+        if not isinstance(adv, dict):
+            continue
+        if adv.get("employee_uid") == uid or (adv.get("employee_name") or "").strip() == name:
+            amt      = _safe_float(adv.get("amount", 0))
+            adjusted = _safe_float(adv.get("adjusted_amount", 0))
+            if adv.get("status", "").lower() != "closed":
+                advance_balance += max(amt - adjusted, 0)
+
+    # Time off balance
+    now = datetime.now(COMPANY_TZ)
+    all_time_off = _load_time_off_requests()
+    tob = _time_off_balance(all_time_off, uid, now.year, hire_date)
+    pto_remaining  = tob.get("pto_remaining_days", 0)
+    sick_remaining = tob.get("sick_remaining_days", 0)
+
+    # Commission
+    commission_rate = _safe_float(user.get("commission_rate", 0))
+    all_pcomm = fb_get("/project_commissions") or {}
+    commission_earned = sum(
+        _safe_float(v.get("commission_amount", 0))
+        for v in all_pcomm.values()
+        if isinstance(v, dict) and (v.get("salesperson") or "").strip() == name
+    )
+    commission_paid = sum(
+        _safe_float(v.get("commission_amount", 0))
+        for v in all_pcomm.values()
+        if isinstance(v, dict) and (v.get("salesperson") or "").strip() == name
+        and v.get("status") == "Paid"
+    )
+
+    # Expenses this year
+    year_str = str(now.year)
+    all_expenses = fb_get("/expenses") or {}
+    expenses_ytd = sum(
+        _safe_float(v.get("amount", 0))
+        for v in all_expenses.values()
+        if isinstance(v, dict)
+        and (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)
+        and (v.get("date") or v.get("expense_date") or "").startswith(year_str)
+        and v.get("status") in ("approved", "Approved", "")
+    )
+
+    # Last review
+    all_reviews = fb_get("/reviews") or {}
+    emp_reviews = sorted(
+        [v for v in all_reviews.values() if isinstance(v, dict) and
+         (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)],
+        key=lambda x: x.get("review_date", ""), reverse=True
+    )
+    last_review_date   = emp_reviews[0].get("review_date", "") if emp_reviews else ""
+    last_review_rating = emp_reviews[0].get("overall_rating", "") if emp_reviews else ""
+
+    return jsonify({
+        "uid":              uid,
+        "name":             name,
+        "email":            email,
+        "role":             role,
+        "department":       dept,
+        "hire_date":        hire_date,
+        "latest_salary":    latest_salary,
+        "salary_type":      salary_type,
+        "advance_balance":  round(advance_balance, 2),
+        "pto_remaining":    pto_remaining,
+        "sick_remaining":   sick_remaining,
+        "commission_rate":  commission_rate,
+        "commission_earned": round(commission_earned, 2),
+        "commission_paid":   round(commission_paid, 2),
+        "expenses_ytd":     round(expenses_ytd, 2),
+        "last_review_date": last_review_date,
+        "last_review_rating": str(last_review_rating),
+        "total_reviews":    len(emp_reviews),
+    })
+
+
 @app.route("/employees")
 @role_required("employees")
 def employees():

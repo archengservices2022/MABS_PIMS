@@ -1340,7 +1340,13 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <div class="d-flex align-items-center gap-2">
               <span class="emp-avatar">{{ (u.username or 'U')[0]|upper }}</span>
               <div>
-                <div class="fw-semibold">{{ u.username or '—' }}</div>
+                <div class="fw-semibold">
+                  <a href="#" class="text-decoration-none text-dark emp-summary-link"
+                     data-uid="{{ u.firebase_uid }}"
+                     onclick="openEmpSummary('{{ u.firebase_uid }}','{{ u.username or '' }}'); return false;">
+                    {{ u.username or '—' }}
+                  </a>
+                </div>
                 <div class="text-muted" style="font-size:11px;">{{ u.email or '' }}</div>
               </div>
             </div>
@@ -3119,5 +3125,120 @@ function confirmTimeOffReview(requestId, action, empName) {
     form.submit();
   });
 }
+
+// ── Employee Summary Modal ────────────────────────────────────────────────
+function openEmpSummary(uid, name) {
+  const modal = new bootstrap.Modal(document.getElementById('empSummaryModal'));
+  document.getElementById('empSummaryName').textContent = name;
+  document.getElementById('empSummaryBody').innerHTML = `
+    <div class="text-center py-4 text-muted">
+      <div class="spinner-border spinner-border-sm me-2"></div> Loading...
+    </div>`;
+  modal.show();
+
+  fetch(`/api/employee/${uid}/summary`)
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) {
+        document.getElementById('empSummaryBody').innerHTML =
+          `<div class="text-danger text-center py-3">${d.error}</div>`;
+        return;
+      }
+      const sym = '{{ currency_symbol }}';
+      const fmt = n => parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+      const badge = (txt, cls) => txt ? `<span class="badge ${cls}" style="font-size:11px;">${txt}</span>` : '';
+
+      document.getElementById('empSummaryBody').innerHTML = `
+        <div class="d-flex align-items-center gap-3 mb-4">
+          <div style="width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#0D9488);
+                      color:#fff;font-size:22px;font-weight:700;display:flex;align-items:center;justify-content:center;">
+            ${(d.name||'?')[0].toUpperCase()}
+          </div>
+          <div>
+            <div style="font-size:16px;font-weight:700;color:#0f172a;">${d.name}</div>
+            <div style="font-size:12px;color:#64748b;">${d.email}</div>
+            <div class="mt-1">
+              ${badge(d.role ? d.role.charAt(0).toUpperCase()+d.role.slice(1) : '', 'bg-primary')}
+              ${badge(d.department, 'bg-secondary')}
+              ${d.hire_date ? `<span style="font-size:11px;color:#94a3b8;">Since ${d.hire_date}</span>` : ''}
+            </div>
+          </div>
+        </div>
+        <div class="row g-3">
+          <div class="col-6">
+            <div style="background:#f0fdf4;border-radius:8px;padding:14px;border-left:3px solid #16a34a;">
+              <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Salary</div>
+              <div style="font-size:18px;font-weight:800;color:#15803d;">
+                ${d.latest_salary > 0 ? sym+fmt(d.latest_salary)+'/mo' : '—'}
+              </div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div style="background:${d.advance_balance>0?'#fef3c7':'#f8fafc'};border-radius:8px;padding:14px;border-left:3px solid ${d.advance_balance>0?'#f59e0b':'#e2e8f0'};">
+              <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Advance Owed</div>
+              <div style="font-size:18px;font-weight:800;color:${d.advance_balance>0?'#b45309':'#64748b'};">
+                ${d.advance_balance > 0 ? sym+fmt(d.advance_balance) : 'None'}
+              </div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div style="background:#eff6ff;border-radius:8px;padding:14px;border-left:3px solid #3b82f6;">
+              <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">PTO Left</div>
+              <div style="font-size:18px;font-weight:800;color:#1d4ed8;">${d.pto_remaining} days</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div style="background:#fdf4ff;border-radius:8px;padding:14px;border-left:3px solid #a855f7;">
+              <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Sick Left</div>
+              <div style="font-size:18px;font-weight:800;color:#7e22ce;">${d.sick_remaining} days</div>
+            </div>
+          </div>
+          ${d.commission_rate > 0 ? `
+          <div class="col-6">
+            <div style="background:#fefce8;border-radius:8px;padding:14px;border-left:3px solid #eab308;">
+              <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Commission Rate</div>
+              <div style="font-size:18px;font-weight:800;color:#854d0e;">${d.commission_rate}%</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div style="background:#fefce8;border-radius:8px;padding:14px;border-left:3px solid #eab308;">
+              <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Commission Earned</div>
+              <div style="font-size:18px;font-weight:800;color:#854d0e;">${sym}${fmt(d.commission_earned)}</div>
+            </div>
+          </div>` : ''}
+          <div class="col-6">
+            <div style="background:#f8fafc;border-radius:8px;padding:14px;border-left:3px solid #e2e8f0;">
+              <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Expenses YTD</div>
+              <div style="font-size:18px;font-weight:800;color:#334155;">${d.expenses_ytd > 0 ? sym+fmt(d.expenses_ytd) : '—'}</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div style="background:#f8fafc;border-radius:8px;padding:14px;border-left:3px solid #e2e8f0;">
+              <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Reviews</div>
+              <div style="font-size:18px;font-weight:800;color:#334155;">${d.total_reviews}</div>
+              ${d.last_review_date ? `<div style="font-size:10px;color:#94a3b8;">Last: ${d.last_review_date}</div>` : ''}
+            </div>
+          </div>
+        </div>`;
+    })
+    .catch(() => {
+      document.getElementById('empSummaryBody').innerHTML =
+        '<div class="text-danger text-center py-3">Failed to load summary.</div>';
+    });
+}
 </script>
+
+<!-- Employee Summary Modal -->
+<div class="modal fade" id="empSummaryModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:480px;">
+    <div class="modal-content" style="border-radius:12px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.15);">
+      <div class="modal-header" style="background:linear-gradient(135deg,#7C3AED,#0D9488);border-radius:12px 12px 0 0;padding:16px 20px;">
+        <h6 class="modal-title text-white fw-700 mb-0" id="empSummaryName"></h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4" id="empSummaryBody"></div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
