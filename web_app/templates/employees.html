@@ -2082,7 +2082,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           <tr>
             <th>Employee</th><th style="min-width:130px;">Expense Date</th><th>Name</th>
             <th class="text-end">Amount</th>
-            <th>Project</th><th style="min-width:130px;">Submitted On</th><th>Status</th><th class="text-center">Receipt</th>
+            <th>Project</th><th style="min-width:130px;">Submitted On</th><th>Status</th><th class="text-center">Receipt</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -2143,6 +2143,13 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             {% else %}
             <span class="text-muted small">—</span>
             {% endif %}
+          </td>
+          <td>
+            <button class="btn btn-xs btn-outline-secondary"
+                    onclick='openEmpExpenseEdit({{ e|tojson }})'
+                    title="Edit">
+              <i class="bi bi-pencil"></i>
+            </button>
           </td>
         </tr>
         {% endfor %}
