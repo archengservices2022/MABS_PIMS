@@ -1828,6 +1828,14 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           <i class="bi bi-clock-history me-1" style="color:#0D9488;"></i>My Submissions
         </h6>
         {% if my_expenses %}
+        {% set exp_items_per_page = 7 %}
+        {% set exp_total_items = my_expenses|length %}
+        {% set exp_total_pages = ((exp_total_items - 1) // exp_items_per_page) + 1 %}
+        {% set exp_current_page = request.args.get('exp_page', 1)|int %}
+        {% set exp_start_index = (exp_current_page - 1) * exp_items_per_page %}
+        {% set exp_end_index = exp_start_index + exp_items_per_page %}
+        {% set exp_paginated = my_expenses[exp_start_index:exp_end_index] %}
+
         <div class="table-responsive">
           <table class="table table-sm table-hover mb-0 align-middle" id="allSubmissionsTable">
             <thead>
@@ -1837,7 +1845,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               </tr>
             </thead>
             <tbody id="allSubmissionsTbody">
-            {% for e in my_expenses %}
+            {% for e in exp_paginated %}
             <tr>
               <td class="text-muted small">{{ e.get('date','—') | format_date }}</td>
               <td>
@@ -1893,16 +1901,24 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             </tbody>
           </table>
         </div>
-        <!-- Pagination controls -->
-        <div class="d-flex align-items-center justify-content-between mt-2" id="submissionsPagination" style="display:none!important;">
-          <button class="btn btn-xs btn-outline-secondary" id="submissionsPrev" onclick="submissionsGoPage(-1)">
-            <i class="bi bi-chevron-left"></i> Prev
-          </button>
-          <span class="text-muted small" id="submissionsPageInfo"></span>
-          <button class="btn btn-xs btn-outline-secondary" id="submissionsNext" onclick="submissionsGoPage(1)">
-            Next <i class="bi bi-chevron-right"></i>
-          </button>
+
+        <!-- Pagination -->
+        {% if exp_total_pages > 1 %}
+        <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
+          <a href="?exp_page={{ [1, exp_current_page - 1]|max }}#tab-emp-expenses" class="btn btn-sm btn-outline-secondary" {% if exp_current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+            <i class="bi bi-chevron-left"></i>
+          </a>
+
+          <input type="number" min="1" max="{{ exp_total_pages }}" value="{{ exp_current_page }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
+                 onchange="window.location='?exp_page=' + Math.max(1, Math.min(this.value, {{ exp_total_pages }})) + '#tab-emp-expenses'">
+
+          <span class="text-muted small">of {{ exp_total_pages }}</span>
+
+          <a href="?exp_page={{ [exp_total_pages, exp_current_page + 1]|min }}#tab-emp-expenses" class="btn btn-sm btn-outline-secondary" {% if exp_current_page == exp_total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+            <i class="bi bi-chevron-right"></i>
+          </a>
         </div>
+        {% endif %}
         {% else %}
         <div class="text-center text-muted py-5">
           <i class="bi bi-receipt" style="font-size:2rem;opacity:.3;display:block;margin-bottom:8px;"></i>
@@ -1925,6 +1941,14 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
       {% endif %}
     </div>
     {% if pending_expenses %}
+    {% set pending_items_per_page = 15 %}
+    {% set pending_total_items = pending_expenses|length %}
+    {% set pending_total_pages = ((pending_total_items - 1) // pending_items_per_page) + 1 %}
+    {% set pending_current_page = request.args.get('pend_page', 1)|int %}
+    {% set pending_start_index = (pending_current_page - 1) * pending_items_per_page %}
+    {% set pending_end_index = pending_start_index + pending_items_per_page %}
+    {% set pending_paginated = pending_expenses[pending_start_index:pending_end_index] %}
+
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0 align-middle">
         <thead>
@@ -1935,7 +1959,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           </tr>
         </thead>
         <tbody>
-        {% for e in pending_expenses %}
+        {% for e in pending_paginated %}
         <tr>
           <td>
             <div class="d-flex align-items-center gap-2">
@@ -2007,6 +2031,24 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
         </tbody>
       </table>
     </div>
+
+    <!-- Pagination -->
+    {% if pending_total_pages > 1 %}
+    <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
+      <a href="?pend_page={{ [1, pending_current_page - 1]|max }}#tab-emp-expenses" class="btn btn-sm btn-outline-secondary" {% if pending_current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+        <i class="bi bi-chevron-left"></i>
+      </a>
+
+      <input type="number" min="1" max="{{ pending_total_pages }}" value="{{ pending_current_page }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
+             onchange="window.location='?pend_page=' + Math.max(1, Math.min(this.value, {{ pending_total_pages }})) + '#tab-emp-expenses'">
+
+      <span class="text-muted small">of {{ pending_total_pages }}</span>
+
+      <a href="?pend_page={{ [pending_total_pages, pending_current_page + 1]|min }}#tab-emp-expenses" class="btn btn-sm btn-outline-secondary" {% if pending_current_page == pending_total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+        <i class="bi bi-chevron-right"></i>
+      </a>
+    </div>
+    {% endif %}
     {% else %}
     <div class="text-center text-muted py-3">
       <i class="bi bi-check-circle" style="font-size:28px;opacity:.3;"></i>
