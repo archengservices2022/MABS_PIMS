@@ -2241,7 +2241,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <tbody>
             {% for c in paginated_claims %}
             <tr>
-              <td style="white-space:nowrap;">{{ c.claim_date or '—' }}</td>
+              <td style="white-space:nowrap;">{{ c.claim_date | format_date }}</td>
               <td>{{ c.expense_type or '—' }}</td>
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
@@ -2347,7 +2347,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             {% for c in paginated_claims_admin %}
             <tr>
               <td><strong>{{ c.employee_name or '—' }}</strong></td>
-              <td style="white-space:nowrap;">{{ c.claim_date or '—' }}</td>
+              <td style="white-space:nowrap;">{{ c.claim_date | format_date }}</td>
               <td>{{ c.expense_type or '—' }}</td>
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
