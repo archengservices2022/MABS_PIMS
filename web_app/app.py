@@ -15165,42 +15165,40 @@ def employee_profile(uid):
         except Exception:
             pass
 
-    # ── Salary records ─────────────────────────────────────────────────────────
-    all_salaries  = fb_get("/salaries") or {}
+    # ── Salary records (stored in /balance_sheet_salary) ──────────────────────
+    all_salaries  = fb_get("/balance_sheet_salary") or {}
     emp_sal_recs  = sorted(
-        [v for v in all_salaries.values() if isinstance(v, dict) and
+        [dict(v, firebase_id=k) for k, v in all_salaries.items() if isinstance(v, dict) and
          (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)],
         key=lambda x: x.get("date", ""), reverse=True
     )
-    # base rate (monthly or hourly) from most recent salary record or user profile
+    # base rate from most recent record or user profile fallback
     if emp_sal_recs:
-        base_salary   = _safe_float(emp_sal_recs[0].get("amount", 0))
-        salary_type   = emp_sal_recs[0].get("salary_type", "Salary")
+        base_salary = _safe_float(emp_sal_recs[0].get("amount", 0))
+        salary_type = emp_sal_recs[0].get("salary_type", "Salary")
     else:
-        base_salary   = _safe_float(user.get("monthly_salary", 0) or user.get("hourly_rate", 0))
-        salary_type   = "Hourly" if user.get("hourly_rate") and not user.get("monthly_salary") else "Monthly"
+        base_salary = _safe_float(user.get("monthly_salary", 0) or user.get("hourly_rate", 0))
+        salary_type = "Hourly" if user.get("hourly_rate") and not user.get("monthly_salary") else "Monthly"
+
+    def _is_paid(s):
+        return s.get("salary_status", "Paid").lower() in ("paid", "")
 
     total_salary_paid = sum(
         _safe_float(s.get("amount", 0)) for s in emp_sal_recs
-        if s.get("salary_type", "Salary") in ("Salary", "Monthly", "")
-        and s.get("salary_status", "").lower() in ("paid", "")
+        if s.get("salary_type", "Salary") in ("Salary", "Monthly", "") and _is_paid(s)
     )
     total_bonus_paid = sum(
         _safe_float(s.get("amount", 0)) for s in emp_sal_recs
-        if "bonus" in (s.get("salary_type", "") or "").lower()
-        and s.get("salary_status", "").lower() in ("paid", "")
+        if "bonus" in (s.get("salary_type", "") or "").lower() and _is_paid(s)
     )
-    # Benefits = Medical Allowance, Transport Allowance, and other allowances
     total_benefits = sum(
         _safe_float(s.get("amount", 0)) for s in emp_sal_recs
         if any(k in (s.get("salary_type", "") or "").lower()
                for k in ("medical", "transport", "allowance", "benefit", "reimburs"))
     )
-    # Deductions from salary records
     total_deductions = sum(
         _safe_float(s.get("amount", 0)) for s in emp_sal_recs
-        if any(k in (s.get("salary_type", "") or "").lower()
-               for k in ("deduction",))
+        if "deduction" in (s.get("salary_type", "") or "").lower()
     )
 
     # ── Advances ──────────────────────────────────────────────────────────────
