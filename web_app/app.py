@@ -15206,7 +15206,7 @@ def employee_profile(uid):
     # ── Advances ──────────────────────────────────────────────────────────────
     all_advances  = fb_get("/employee_advances") or {}
     emp_advances  = sorted(
-        [v for v in all_advances.values() if isinstance(v, dict) and
+        [dict(v, firebase_id=k) for k, v in all_advances.items() if isinstance(v, dict) and
          (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)],
         key=lambda x: x.get("date", ""), reverse=True
     )
@@ -15290,16 +15290,20 @@ def employee_profile(uid):
     recent_payroll  = emp_sal_recs[:10]
     recent_advances = emp_advances[:5]
 
-    # Recent projects (last 5 distinct)
+    # Recent projects (last 5 distinct) — look up firebase_id for linking
+    _proj_by_num = {p.get("project_number"): p for p in _load_projects_list() if p.get("project_number")}
     seen_proj = set()
     recent_projects = []
     for e in emp_entries:
         pn = e.get("project_number")
         if pn and pn not in seen_proj:
             seen_proj.add(pn)
+            proj_rec = _proj_by_num.get(pn, {})
             recent_projects.append({
                 "project_number": pn,
-                "project_name":   e.get("project_name", ""),
+                "project_name":   e.get("project_name", "") or proj_rec.get("project_name", ""),
+                "firebase_id":    proj_rec.get("firebase_id", ""),
+                "status":         proj_rec.get("status", ""),
             })
         if len(recent_projects) >= 5:
             break
