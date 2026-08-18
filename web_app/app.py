@@ -10775,7 +10775,7 @@ def create_salary():
             submitted_by_name = user_data.get("display_name", session.get("user_name", session.get("username", "System")))
 
         # Determine category and labels based on salary_type
-        category = "Bonus" if salary_type == "Bonus" else "Salary"
+        category = "Bonuses" if salary_type == "Bonus" else "Salary"
         expense_name = f"Employee {salary_type} - {employee_name}"
         description = f"Employee {salary_type} for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else "")
         vendor = f"Employee {salary_type}"
@@ -10858,7 +10858,7 @@ def update_salary(sal_id):
                 expense_exists = True
                 if salary_status == "Paid":
                     salary_type = data.get("salary_type", "Salary")
-                    category = "Bonus" if salary_type == "Bonus" else "Salary"
+                    category = "Bonuses" if salary_type == "Bonus" else "Salary"
                     expense_name = f"Employee {salary_type} - {employee_name}"
                     description = f"Employee {salary_type} for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else "")
                     vendor = f"Employee {salary_type}"
@@ -10886,7 +10886,7 @@ def update_salary(sal_id):
     # If status is "Paid" but expense doesn't exist, create it
     if salary_status == "Paid" and not expense_exists:
         salary_type = data.get("salary_type", "Salary")
-        category = "Bonus" if salary_type == "Bonus" else "Salary"
+        category = "Bonuses" if salary_type == "Bonus" else "Salary"
         expense_name = f"Employee {salary_type} - {employee_name}"
         description = f"Employee {salary_type} for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else "")
         vendor = f"Employee {salary_type}"
