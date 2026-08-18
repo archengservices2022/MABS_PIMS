@@ -2729,12 +2729,22 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
   // Update pagination links to include current tab hash
   function updatePaginationLinksWithHash(tabId) {
     const currentHash = tabId; // tabId is already like #tab-emp-expenses
-    // Update anchor pagination links
+
+    // Update anchor pagination links with query params
     document.querySelectorAll('a[href*="?"]').forEach(link => {
       const href = link.getAttribute('href');
-      // Remove existing hash if present and add current hash
       const cleanHref = href.split('#')[0];
       link.setAttribute('href', cleanHref + currentHash);
+    });
+
+    // Update input onchange handlers - replace window.location assignments
+    document.querySelectorAll('input[type="number"][onchange*="window.location"]').forEach(input => {
+      let onchange = input.getAttribute('onchange');
+      // Remove any existing hash from the onchange
+      onchange = onchange.replace(/#[a-zA-Z0-9\-]+'/, "'");
+      // Append current hash before the final quote
+      onchange = onchange.replace(/'\s*$/, "' + '" + currentHash + "'");
+      input.setAttribute('onchange', onchange);
     });
   }
 
