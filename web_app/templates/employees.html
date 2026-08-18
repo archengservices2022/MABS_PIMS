@@ -2643,7 +2643,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
 // Tab persistence via URL hash and sessionStorage
 // Preserves the active tab across refreshes, actions, and navigation
 (function () {
-  const map = { clock:'#tab-clock', 'time-off':'#tab-time-off', profile:'#tab-profile', team:'#tab-team', directory:'#tab-directory', medical:'#tab-medical', expenses:'#tab-emp-expenses', reviews:'#tab-my-reviews' };
+  const map = { 'time-off':'#tab-time-off', profile:'#tab-profile', 'emp-expenses':'#tab-emp-expenses', medical:'#tab-medical', 'my-reviews':'#tab-my-reviews', team:'#tab-team', directory:'#tab-directory', clock:'#tab-clock' };
 
   // Priority 1: Check URL hash (direct navigation, refresh, or explicit tab selection)
   let hash = (window.location.hash || '').replace('#','');
