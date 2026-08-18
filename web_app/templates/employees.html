@@ -2654,7 +2654,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
   }
 
   // Priority 3: Only fall back to time-off if nothing was found
-  const target = map[hash] || '';
+  const target = map[hash] || '#tab-time-off';
 
   // Explicitly activate the correct tab nav link
   const navLink = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
@@ -2714,15 +2714,14 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
       const cleanHref = href.split('#')[0];
       link.setAttribute('href', cleanHref + currentHash);
     });
-    // Update input onchange handlers
+    // Update input onchange handlers - preserve the page calculation, just append hash
     document.querySelectorAll('input[type="number"][onchange*="window.location"]').forEach(input => {
-      const onchange = input.getAttribute('onchange');
-      // Extract the base URL without hash
-      const baseMatch = onchange.match(/window\.location='([^']+)'/);
-      if (baseMatch) {
-        const baseUrl = baseMatch[1].split('#')[0];
-        input.setAttribute('onchange', "window.location='" + baseUrl + currentHash + "'");
-      }
+      let onchange = input.getAttribute('onchange');
+      // Remove any existing hash from the onchange
+      onchange = onchange.replace(/#[a-zA-Z0-9-]+'/, "'");
+      // Append current hash before the closing quote
+      onchange = onchange.replace("')", "' + '" + currentHash + "')");
+      input.setAttribute('onchange', onchange);
     });
   }
 
