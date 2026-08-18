@@ -2344,7 +2344,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               <tr>
                 <th>Submitted On</th><th style="white-space:nowrap;">Expense Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
                 <th class="text-end">Claimed</th><th class="text-end">Approved</th>
-                <th>Status</th><th>Approved Date</th><th>Receipt</th>
+                <th>Status</th><th>Receipt</th>
               </tr>
             </thead>
             <tbody>
@@ -2389,8 +2389,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                   {% else %}background:#fef9c3;color:#92400e;{% endif %}">
                   {{ cs }}
                 </span>
+                {% if c.get('reviewed_at','') %}<div class="text-muted small" style="margin-top:3px;">{{ c.get('reviewed_at','') | format_date }}</div>{% endif %}
               </td>
-              <td class="text-muted small">{% if c.get('reviewed_at','') %}{{ c.get('reviewed_at','') | format_date }}{% else %}—{% endif %}</td>
               <td>
                 {% if c.get('has_receipt') and c.get('firebase_id') %}
                 <a href="{{ url_for('medical_claim_receipt', claim_id=c.firebase_id) }}" target="_blank"
@@ -2450,7 +2450,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <thead style="background:#f8fafc;">
               <tr>
                 <th>Submitted On</th><th>Employee</th><th style="white-space:nowrap;">Expense Date</th><th>Type</th><th>Provider</th><th>Description</th><th>Ref #</th>
-                <th class="text-end">Claimed ($USD)</th><th class="text-end">Approved ($USD)</th><th>Status</th><th>Approved Date</th><th>Receipt</th><th>Actions</th>
+                <th class="text-end">Claimed ($USD)</th><th class="text-end">Approved ($USD)</th><th>Status</th><th>Receipt</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -2493,8 +2493,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                   {% else %}background:#fef9c3;color:#92400e;{% endif %}">
                   {{ cs }}
                 </span>
+                {% if c.get('reviewed_at','') %}<div class="text-muted small" style="margin-top:3px;">{{ c.get('reviewed_at','') | format_date }}</div>{% endif %}
               </td>
-              <td class="text-muted small">{% if c.get('reviewed_at','') %}{{ c.get('reviewed_at','') | format_date }}{% else %}—{% endif %}</td>
               <td>
                 {% if c.get('has_receipt') and c.get('firebase_id') %}
                 <a href="{{ url_for('medical_claim_receipt', claim_id=c.firebase_id) }}" target="_blank"
