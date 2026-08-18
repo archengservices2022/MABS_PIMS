@@ -130,7 +130,7 @@
 <!-- ?? Tab bar ??????????????????????????????????????????????????????????????? -->
 <ul class="nav nav-tabs mb-4" id="empTabs">
   <li class="nav-item">
-    <a class="nav-link active" data-bs-toggle="tab" href="#tab-time-off">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-time-off">
       <i class="bi bi-calendar-event me-1"></i>Time Off
       {% if user_role in ('admin', 'accountant') and pending_time_off %}
       <span class="badge bg-danger ms-1">{{ pending_time_off|length }}</span>
@@ -496,7 +496,7 @@
 <!-- ??????????????????????????????????????????????????????????????????????????
      TIME OFF
 ?????????????????????????????????????????????????????????????????????????? -->
-<div class="tab-pane fade show active" id="tab-time-off">
+<div class="tab-pane fade" id="tab-time-off">
 
   {% set bal = my_time_off_balance %}
   {% set pto_pct  = ((bal.pto_used_hours  / bal.pto_allotment_hours)  * 100) | int if bal.pto_allotment_hours  > 0 else 0 %}
@@ -616,11 +616,19 @@
           <i class="bi bi-calendar-check me-1" style="color:#0D9488;"></i>My Requests
         </h6>
         {% if my_time_off %}
+        {% set to_items_per_page = 8 %}
+        {% set to_total_items = my_time_off|length %}
+        {% set to_total_pages = ((to_total_items - 1) // to_items_per_page) + 1 %}
+        {% set to_current_page = request.args.get('to_page', 1)|int %}
+        {% set to_start_index = (to_current_page - 1) * to_items_per_page %}
+        {% set to_end_index = to_start_index + to_items_per_page %}
+        {% set to_paginated = my_time_off[to_start_index:to_end_index] %}
+
         <div class="table-responsive">
           <table class="table table-sm table-hover mb-0 align-middle">
             <thead><tr><th>Type</th><th>Dates</th><th>Hours</th><th>Reason</th><th>Status</th></tr></thead>
             <tbody>
-            {% for r in my_time_off %}
+            {% for r in to_paginated %}
             {% set r_hours = r.get('total_hours') %}
             {% if r_hours is none %}
               {% if r.type == 'Half Day' %}{% set r_hours = 4 %}
@@ -656,6 +664,24 @@
             </tbody>
           </table>
         </div>
+
+        <!-- Pagination -->
+        {% if to_total_pages > 1 %}
+        <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
+          <a href="?to_page={{ [1, to_current_page - 1]|max }}" class="btn btn-sm btn-outline-secondary" {% if to_current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+            <i class="bi bi-chevron-left"></i>
+          </a>
+
+          <input type="number" min="1" max="{{ to_total_pages }}" value="{{ to_current_page }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
+                 onchange="window.location='?to_page=' + Math.max(1, Math.min(this.value, {{ to_total_pages }})) + ''">
+
+          <span class="text-muted small">of {{ to_total_pages }}</span>
+
+          <a href="?to_page={{ [to_total_pages, to_current_page + 1]|min }}" class="btn btn-sm btn-outline-secondary" {% if to_current_page == to_total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+            <i class="bi bi-chevron-right"></i>
+          </a>
+        </div>
+        {% endif %}
         {% else %}
         <div class="text-center text-muted py-4">
           <i class="bi bi-calendar-x" style="font-size:32px;opacity:.3;"></i>
@@ -1130,6 +1156,8 @@ function confirmTimeOffAction(requestId, action, employeeName) {
     : `You are about to <strong>reject</strong> <strong>${employeeName}</strong>'s time-off request. This action cannot be undone.`;
 
   showConfirmationModal(title, message, isApprove ? 'Approve' : 'Reject', headerBg, () => {
+    const currentTab = (window.location.hash || '').replace('#','') || 'time-off';
+    sessionStorage.setItem('empTabPersist', currentTab);
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = `/employees/time-off/${requestId}/${action}`;
@@ -1143,6 +1171,8 @@ function confirmExpenseDelete(expId) {
   const message = '<strong>Are you sure you want to delete this expense?</strong><br><br>This action cannot be undone.';
 
   showConfirmationModal(title, message, 'Delete', '#dc2626', () => {
+    const currentTab = (window.location.hash || '').replace('#','') || 'expenses';
+    sessionStorage.setItem('empTabPersist', currentTab);
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = `/employees/expenses/${expId}/delete`;
@@ -1160,6 +1190,8 @@ function confirmExpenseReview(expId, action, empName) {
     : `You are about to <strong>Reject</strong> <strong>${empName}</strong>'s expense. This action cannot be undone.`;
 
   showConfirmationModal(title, message, isApprove ? 'Approve' : 'Reject', headerBg, () => {
+    const currentTab = (window.location.hash || '').replace('#','') || 'expenses';
+    sessionStorage.setItem('empTabPersist', currentTab);
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = `/employees/expenses/${expId}/review`;
@@ -1828,16 +1860,24 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           <i class="bi bi-clock-history me-1" style="color:#0D9488;"></i>My Submissions
         </h6>
         {% if my_expenses %}
+        {% set exp_items_per_page = 6 %}
+        {% set exp_total_items = my_expenses|length %}
+        {% set exp_total_pages = ((exp_total_items - 1) // exp_items_per_page) + 1 %}
+        {% set exp_current_page = request.args.get('exp_page', 1)|int %}
+        {% set exp_start_index = (exp_current_page - 1) * exp_items_per_page %}
+        {% set exp_end_index = exp_start_index + exp_items_per_page %}
+        {% set exp_paginated = my_expenses[exp_start_index:exp_end_index] %}
+
         <div class="table-responsive">
           <table class="table table-sm table-hover mb-0 align-middle" id="allSubmissionsTable">
             <thead>
               <tr>
-                <th style="min-width:100px;">Date</th><th>Name</th><th class="text-end">Amount</th>
-                <th>Project</th><th>Status</th><th class="text-center">Receipt</th><th></th>
+                <th style="min-width:120px;">Expense Date</th><th style="min-width:200px;">Name</th><th class="text-end">Amount</th>
+                <th>Project</th><th style="min-width:90px;">Submitted On</th><th>Status</th><th class="text-center">Receipt</th><th></th>
               </tr>
             </thead>
             <tbody id="allSubmissionsTbody">
-            {% for e in my_expenses %}
+            {% for e in exp_paginated %}
             <tr>
               <td class="text-muted small">{{ e.get('date','—') | format_date }}</td>
               <td>
@@ -1850,6 +1890,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                 <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * rate) }}</div>
               </td>
               <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
+              <td class="text-muted small">{{ e.get('created_at','—') | format_date }}</td>
               <td>
                 {% set st = e.get('status','Pending') %}
                 {% set edit_st = e.get('edit_status', '') %}
@@ -1893,16 +1934,24 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             </tbody>
           </table>
         </div>
-        <!-- Pagination controls -->
-        <div class="d-flex align-items-center justify-content-between mt-2" id="submissionsPagination" style="display:none!important;">
-          <button class="btn btn-xs btn-outline-secondary" id="submissionsPrev" onclick="submissionsGoPage(-1)">
-            <i class="bi bi-chevron-left"></i> Prev
-          </button>
-          <span class="text-muted small" id="submissionsPageInfo"></span>
-          <button class="btn btn-xs btn-outline-secondary" id="submissionsNext" onclick="submissionsGoPage(1)">
-            Next <i class="bi bi-chevron-right"></i>
-          </button>
+
+        <!-- Pagination -->
+        {% if exp_total_pages > 1 %}
+        <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
+          <a href="?exp_page={{ [1, exp_current_page - 1]|max }}" class="btn btn-sm btn-outline-secondary" {% if exp_current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+            <i class="bi bi-chevron-left"></i>
+          </a>
+
+          <input type="number" min="1" max="{{ exp_total_pages }}" value="{{ exp_current_page }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
+                 onchange="window.location='?exp_page=' + Math.max(1, Math.min(this.value, {{ exp_total_pages }})) + ''">
+
+          <span class="text-muted small">of {{ exp_total_pages }}</span>
+
+          <a href="?exp_page={{ [exp_total_pages, exp_current_page + 1]|min }}" class="btn btn-sm btn-outline-secondary" {% if exp_current_page == exp_total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+            <i class="bi bi-chevron-right"></i>
+          </a>
         </div>
+        {% endif %}
         {% else %}
         <div class="text-center text-muted py-5">
           <i class="bi bi-receipt" style="font-size:2rem;opacity:.3;display:block;margin-bottom:8px;"></i>
@@ -1925,17 +1974,25 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
       {% endif %}
     </div>
     {% if pending_expenses %}
+    {% set pending_items_per_page = 15 %}
+    {% set pending_total_items = pending_expenses|length %}
+    {% set pending_total_pages = ((pending_total_items - 1) // pending_items_per_page) + 1 %}
+    {% set pending_current_page = request.args.get('pend_page', 1)|int %}
+    {% set pending_start_index = (pending_current_page - 1) * pending_items_per_page %}
+    {% set pending_end_index = pending_start_index + pending_items_per_page %}
+    {% set pending_paginated = pending_expenses[pending_start_index:pending_end_index] %}
+
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0 align-middle">
         <thead>
           <tr>
-            <th>Employee</th><th>Date</th><th>Type</th><th>Name</th>
+            <th>Employee</th><th>Expense Date</th><th>Type</th><th>Name</th>
             <th>Vendor</th><th class="text-end">Amount</th>
-            <th class="text-center">Receipt</th><th class="text-end">Action</th>
+            <th class="text-center">Receipt</th><th>Submitted On</th><th class="text-end">Action</th>
           </tr>
         </thead>
         <tbody>
-        {% for e in pending_expenses %}
+        {% for e in pending_paginated %}
         <tr>
           <td>
             <div class="d-flex align-items-center gap-2">
@@ -1976,6 +2033,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <span class="text-muted small">—</span>
             {% endif %}
           </td>
+          <td class="text-muted small">{{ e.get('created_at','—') | format_date }}</td>
           <td class="text-end">
             <div class="d-flex gap-1 justify-content-end">
               {% set emp_name = e.get('employee_name', 'Employee') %}
@@ -2007,6 +2065,24 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
         </tbody>
       </table>
     </div>
+
+    <!-- Pagination -->
+    {% if pending_total_pages > 1 %}
+    <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
+      <a href="?pend_page={{ [1, pending_current_page - 1]|max }}" class="btn btn-sm btn-outline-secondary" {% if pending_current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+        <i class="bi bi-chevron-left"></i>
+      </a>
+
+      <input type="number" min="1" max="{{ pending_total_pages }}" value="{{ pending_current_page }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
+             onchange="window.location='?pend_page=' + Math.max(1, Math.min(this.value, {{ pending_total_pages }})) + ''">
+
+      <span class="text-muted small">of {{ pending_total_pages }}</span>
+
+      <a href="?pend_page={{ [pending_total_pages, pending_current_page + 1]|min }}" class="btn btn-sm btn-outline-secondary" {% if pending_current_page == pending_total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+        <i class="bi bi-chevron-right"></i>
+      </a>
+    </div>
+    {% endif %}
     {% else %}
     <div class="text-center text-muted py-3">
       <i class="bi bi-check-circle" style="font-size:28px;opacity:.3;"></i>
@@ -2024,17 +2100,25 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
       </h6>
     </div>
     {% if all_expenses %}
+    {% set all_items_per_page = 10 %}
+    {% set all_total_items = all_expenses|length %}
+    {% set all_total_pages = ((all_total_items - 1) // all_items_per_page) + 1 %}
+    {% set all_current_page = request.args.get('all_exp_page', 1)|int %}
+    {% set all_start_index = (all_current_page - 1) * all_items_per_page %}
+    {% set all_end_index = all_start_index + all_items_per_page %}
+    {% set all_paginated = all_expenses[all_start_index:all_end_index] %}
+
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0 align-middle">
         <thead style="background:#f8fafc;">
           <tr>
-            <th>Employee</th><th style="min-width:100px;">Date</th><th>Name</th>
+            <th>Employee</th><th style="min-width:130px;">Expense Date</th><th>Name</th>
             <th class="text-end">Amount</th>
-            <th>Project</th><th>Status</th><th class="text-center">Receipt</th>
+            <th>Project</th><th style="min-width:130px;">Submitted On</th><th>Status</th><th class="text-center">Receipt</th><th></th>
           </tr>
         </thead>
         <tbody>
-        {% for e in all_expenses %}
+        {% for e in all_paginated %}
         <tr>
           <td>
             <div class="d-flex align-items-center gap-2">
@@ -2055,6 +2139,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((e.get('amount',0)|float) * rate) }}</div>
           </td>
           <td class="text-muted small">{{ e.get('project_number','—') or '—' }}</td>
+          <td class="text-muted small">{{ e.get('created_at','—') | format_date }}</td>
           <td>
             {% set st = e.get('status','Pending') %}
             {% set reviewed_by = e.get('reviewed_by', '') %}
@@ -2091,11 +2176,36 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <span class="text-muted small">—</span>
             {% endif %}
           </td>
+          <td>
+            <button class="btn btn-xs btn-outline-secondary"
+                    onclick='openEmpExpenseEdit({{ e|tojson }})'
+                    title="Edit">
+              <i class="bi bi-pencil"></i>
+            </button>
+          </td>
         </tr>
         {% endfor %}
         </tbody>
       </table>
     </div>
+
+    <!-- Pagination -->
+    {% if all_total_pages > 1 %}
+    <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
+      <a href="?all_exp_page={{ [1, all_current_page - 1]|max }}" class="btn btn-sm btn-outline-secondary" {% if all_current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+        <i class="bi bi-chevron-left"></i>
+      </a>
+
+      <input type="number" min="1" max="{{ all_total_pages }}" value="{{ all_current_page }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
+             onchange="window.location='?all_exp_page=' + Math.max(1, Math.min(this.value, {{ all_total_pages }})) + ''">
+
+      <span class="text-muted small">of {{ all_total_pages }}</span>
+
+      <a href="?all_exp_page={{ [all_total_pages, all_current_page + 1]|min }}" class="btn btn-sm btn-outline-secondary" {% if all_current_page == all_total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+        <i class="bi bi-chevron-right"></i>
+      </a>
+    </div>
+    {% endif %}
     {% else %}
     <div class="text-center text-muted py-4">
       <i class="bi bi-receipt" style="font-size:2rem;opacity:.3;display:block;margin-bottom:8px;"></i>
@@ -2203,7 +2313,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                    accept="image/*,.pdf" style="font-size:12px;">
             <div class="form-text text-muted" style="font-size:11px;">PDF or image (JPG, PNG). Optional.</div>
           </div>
-          <div class="d-grid gap-2">
+          <div class="d-flex gap-2">
             <button type="submit" class="btn btn-sm btn-teal">
               <i class="bi bi-send me-1"></i>Submit Claim
             </button>
@@ -2221,7 +2331,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
       <div class="card-panel">
         <h6 class="panel-title mb-3"><i class="bi bi-clock-history me-1" style="color:#0D9488;"></i>My Claims</h6>
         {% if my_medical_claims %}
-        {% set items_per_page = 10 %}
+        {% set items_per_page = 8 %}
         {% set total_items = my_medical_claims|length %}
         {% set total_pages = ((total_items - 1) // items_per_page) + 1 %}
         {% set current_page = request.args.get('med_page', 1)|int %}
@@ -2241,7 +2351,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <tbody>
             {% for c in paginated_claims %}
             <tr>
-              <td style="white-space:nowrap;">{{ c.claim_date or '—' }}</td>
+              <td style="white-space:nowrap;">{{ c.claim_date | format_date }}</td>
               <td>{{ c.expense_type or '—' }}</td>
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
@@ -2280,7 +2390,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                   {{ cs }}
                 </span>
               </td>
-              <td class="text-muted small">{{ c.get('created_at','') | format_date }}</td>
+              <td class="text-muted small">{{ c.get('submitted_at','') | format_date }}</td>
               <td>
                 {% if c.get('has_receipt') and c.get('firebase_id') %}
                 <a href="{{ url_for('medical_claim_receipt', claim_id=c.firebase_id) }}" target="_blank"
@@ -2298,16 +2408,16 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
         <!-- Pagination -->
         {% if total_pages > 1 %}
         <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
-          <a href="?med_page={{ [1, current_page - 1]|max }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+          <a href="?med_page={{ [1, current_page - 1]|max }}" class="btn btn-sm btn-outline-secondary" {% if current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
             <i class="bi bi-chevron-left"></i>
           </a>
 
           <input type="number" min="1" max="{{ total_pages }}" value="{{ current_page }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
-                 onchange="window.location='?med_page=' + Math.max(1, Math.min(this.value, {{ total_pages }})) + '#tab-medical'">
+                 onchange="window.location='?med_page=' + Math.max(1, Math.min(this.value, {{ total_pages }})) + ''">
 
           <span class="text-muted small">of {{ total_pages }}</span>
 
-          <a href="?med_page={{ [total_pages, current_page + 1]|min }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page == total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+          <a href="?med_page={{ [total_pages, current_page + 1]|min }}" class="btn btn-sm btn-outline-secondary" {% if current_page == total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
             <i class="bi bi-chevron-right"></i>
           </a>
         </div>
@@ -2319,9 +2429,11 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
         </div>
         {% endif %}
       </div>
+    </div>
 
-      <!-- Admin/Accountant: All Claims -->
-      {% if user_role in ('admin', 'accountant') %}
+    <!-- Admin/Accountant: All Claims (Full Width) -->
+    {% if user_role in ('admin', 'accountant') %}
+    <div class="col-12">
       <div class="card-panel mt-3">
         <h6 class="panel-title mb-3"><i class="bi bi-people me-1" style="color:#7C3AED;"></i>All Employee Claims</h6>
         {% if all_medical_claims %}
@@ -2345,7 +2457,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             {% for c in paginated_claims_admin %}
             <tr>
               <td><strong>{{ c.employee_name or '—' }}</strong></td>
-              <td style="white-space:nowrap;">{{ c.claim_date or '—' }}</td>
+              <td style="white-space:nowrap;">{{ c.claim_date | format_date }}</td>
               <td>{{ c.expense_type or '—' }}</td>
               <td class="text-muted">{{ c.provider or '—' }}</td>
               <td class="text-muted small">{{ c.get('description') or '—' }}</td>
@@ -2381,7 +2493,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                   {{ cs }}
                 </span>
               </td>
-              <td class="text-muted small">{{ c.get('created_at','') | format_date }}</td>
+              <td class="text-muted small">{{ c.get('submitted_at','') | format_date }}</td>
               <td>
                 {% if c.get('has_receipt') and c.get('firebase_id') %}
                 <a href="{{ url_for('medical_claim_receipt', claim_id=c.firebase_id) }}" target="_blank"
@@ -2416,16 +2528,16 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
         <!-- Pagination -->
         {% if total_pages_admin > 1 %}
         <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
-          <a href="?all_med_page={{ [1, current_page_admin - 1]|max }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page_admin == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+          <a href="?all_med_page={{ [1, current_page_admin - 1]|max }}" class="btn btn-sm btn-outline-secondary" {% if current_page_admin == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
             <i class="bi bi-chevron-left"></i>
           </a>
 
           <input type="number" min="1" max="{{ total_pages_admin }}" value="{{ current_page_admin }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
-                 onchange="window.location='?all_med_page=' + Math.max(1, Math.min(this.value, {{ total_pages_admin }})) + '#tab-medical'">
+                 onchange="window.location='?all_med_page=' + Math.max(1, Math.min(this.value, {{ total_pages_admin }})) + ''">
 
           <span class="text-muted small">of {{ total_pages_admin }}</span>
 
-          <a href="?all_med_page={{ [total_pages_admin, current_page_admin + 1]|min }}#tab-medical" class="btn btn-sm btn-outline-secondary" {% if current_page_admin == total_pages_admin %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+          <a href="?all_med_page={{ [total_pages_admin, current_page_admin + 1]|min }}" class="btn btn-sm btn-outline-secondary" {% if current_page_admin == total_pages_admin %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
             <i class="bi bi-chevron-right"></i>
           </a>
         </div>
@@ -2434,8 +2546,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
         <div class="text-center text-muted py-4 small">No claims from any employee yet.</div>
         {% endif %}
       </div>
-      {% endif %}
     </div>
+    {% endif %}
   </div>
 </div>
 
@@ -2528,20 +2640,108 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
   tick(); setInterval(tick, 1000);
 })();
 
-// Tab persistence via URL hash
+// Tab persistence via URL hash and sessionStorage
+// Preserves the active tab across refreshes, actions, and navigation
 (function () {
-  const map = { clock:'#tab-clock', 'time-off':'#tab-time-off', profile:'#tab-profile', team:'#tab-team', directory:'#tab-directory', medical:'#tab-medical', expenses:'#tab-emp-expenses', reviews:'#tab-my-reviews' };
-  const hash = (window.location.hash || '').replace('#','');
-  const target = map[hash];
-  if (target) {
-    const el = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
-    if (el) new bootstrap.Tab(el).show();
+  const map = { 'time-off':'', profile:'#tab-profile', 'emp-expenses':'', medical:'', 'my-reviews':'', team:'#tab-team', directory:'#tab-directory', clock:'#tab-clock' };
+
+  // Priority 1: Check URL hash (direct navigation, refresh, or explicit tab selection)
+  let hash = (window.location.hash || '').replace('#','');
+
+  // Priority 2: If no hash, restore from sessionStorage (persists across navigation to other modules)
+  if (!hash) {
+    hash = sessionStorage.getItem('empTabPersist') || 'time-off';
   }
+
+  // Priority 3: Only fall back to time-off if nothing was found
+  const target = map[hash] || '#tab-time-off';
+
+  // Directly activate the correct tab by managing CSS classes
+  // Remove active from all nav links
   document.querySelectorAll('#empTabs .nav-link').forEach(link => {
-    link.addEventListener('shown.bs.tab', e => {
-      history.replaceState(null, '', '#' + (e.target.getAttribute('href') || '').replace('#tab-',''));
+    link.classList.remove('active');
+  });
+  // Remove show/active from all tab panes
+  document.querySelectorAll('.tab-content .tab-pane').forEach(pane => {
+    pane.classList.remove('show', 'active');
+  });
+
+  // Activate the target tab - try querySelector first, then fallback to iteration
+  let targetNavLink = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
+
+  // If not found by direct query, iterate through all links
+  if (!targetNavLink) {
+    const allLinks = document.querySelectorAll('#empTabs .nav-link');
+    for (let link of allLinks) {
+      if (link.getAttribute('href') === target) {
+        targetNavLink = link;
+        break;
+      }
+    }
+  }
+
+  // Add active class to nav link if found
+  if (targetNavLink) {
+    targetNavLink.classList.add('active');
+  }
+
+  // Activate the corresponding tab pane
+  const targetPane = document.querySelector(target);
+  if (targetPane) {
+    targetPane.classList.add('show', 'active');
+  }
+
+  // Save active tab to both URL hash and sessionStorage when user clicks a tab
+  document.querySelectorAll('#empTabs .nav-link').forEach(link => {
+    link.addEventListener('click', e => {
+      const tabName = (link.getAttribute('href') || '').replace('#tab-','');
+      // Update URL to reflect active tab (clears pagination parameters)
+      history.replaceState(null, '', '/employees#' + tabName);
+      // Save to sessionStorage for persistence across module navigation
+      sessionStorage.setItem('empTabPersist', tabName);
+
+      // Explicitly manage tab pane display
+      setTimeout(() => {
+        // Remove show/active from all tab panes
+        document.querySelectorAll('.tab-content .tab-pane').forEach(pane => {
+          pane.classList.remove('show', 'active');
+        });
+        // Add show/active to corresponding tab pane
+        const paneId = link.getAttribute('href');
+        const pane = document.querySelector(paneId);
+        if (pane) {
+          pane.classList.add('show', 'active');
+        }
+        // Update pagination links to preserve current tab hash
+        updatePaginationLinksWithHash(tabName);
+      }, 0);
     });
   });
+
+  // Update pagination links to include current tab hash
+  function updatePaginationLinksWithHash(tabName) {
+    const currentHash = '#' + tabName;
+    // Update anchor pagination links
+    document.querySelectorAll('a[href^="?"]').forEach(link => {
+      const href = link.getAttribute('href');
+      // Remove existing hash if present and add current hash
+      const cleanHref = href.split('#')[0];
+      link.setAttribute('href', cleanHref + currentHash);
+    });
+    // Update input onchange handlers - preserve the page calculation, just append hash
+    document.querySelectorAll('input[type="number"][onchange*="window.location"]').forEach(input => {
+      let onchange = input.getAttribute('onchange');
+      // Remove any existing hash from the onchange
+      onchange = onchange.replace(/#[a-zA-Z0-9-]+'/, "'");
+      // Append current hash before the closing quote
+      onchange = onchange.replace("')", "' + '" + currentHash + "')");
+      input.setAttribute('onchange', onchange);
+    });
+  }
+
+  // Initialize pagination links with current tab on page load
+  const currentTab = (window.location.hash || '').replace('#','') || 'time-off';
+  updatePaginationLinksWithHash(currentTab);
 })();
 
 // Team hours period selector
@@ -3177,6 +3377,12 @@ window.openMedReview = function(claimId, empName, amtClaimed, action) {
   new bootstrap.Modal(document.getElementById('medReviewModal')).show();
 };
 
+// Preserve tab when submitting medical review form
+document.getElementById('medReviewForm')?.addEventListener('submit', function() {
+  const currentTab = (window.location.hash || '').replace('#','') || 'medical';
+  sessionStorage.setItem('empTabPersist', currentTab);
+});
+
 window.openMedAmtEdit = function(claimId, empName, amtClaimed, amtApproved, exchangeRate) {
   const form = document.getElementById('medAmtEditForm');
   if (!form) return;
@@ -3195,6 +3401,12 @@ window.openMedAmtEdit = function(claimId, empName, amtClaimed, amtApproved, exch
     amtApproved ? parseFloat(amtApproved).toFixed(2) : usdAmt.toFixed(2);
   new bootstrap.Modal(document.getElementById('medAmtEditModal')).show();
 };
+
+// Preserve tab when submitting medical amount edit form
+document.getElementById('medAmtEditForm')?.addEventListener('submit', function() {
+  const currentTab = (window.location.hash || '').replace('#','') || 'medical';
+  sessionStorage.setItem('empTabPersist', currentTab);
+});
 
 // Time off approval handlers - show confirmation dialog
 document.querySelectorAll('.approve-timeoff-btn').forEach(function(btn) {
