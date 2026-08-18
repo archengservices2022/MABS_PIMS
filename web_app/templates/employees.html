@@ -2221,7 +2221,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
       <div class="card-panel">
         <h6 class="panel-title mb-3"><i class="bi bi-clock-history me-1" style="color:#0D9488;"></i>My Claims</h6>
         {% if my_medical_claims %}
-        {% set items_per_page = 10 %}
+        {% set items_per_page = 8 %}
         {% set total_items = my_medical_claims|length %}
         {% set total_pages = ((total_items - 1) // items_per_page) + 1 %}
         {% set current_page = request.args.get('med_page', 1)|int %}
