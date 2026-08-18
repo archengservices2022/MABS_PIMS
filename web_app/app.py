@@ -10848,6 +10848,10 @@ def create_salary():
         description = f"Employee {salary_type} for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else "")
         vendor = f"Employee {salary_type}"
 
+        # Build notes field: include employee name and any user notes
+        user_notes = data.get('notes', '').strip()
+        notes = f"{employee_name} - {user_notes}" if user_notes else f"{employee_name} - {salary_type}"
+
         expense_data = {
             "employee_name": employee_name,
             "date": date_str,
@@ -10857,6 +10861,7 @@ def create_salary():
             "category": category,
             "vendor": vendor,
             "description": description,
+            "notes": notes,
             "region": region,
             "salary_id": sal_id,
             "salary_type": salary_type,
@@ -10930,6 +10935,9 @@ def update_salary(sal_id):
                     expense_name = f"Employee {salary_type} - {employee_name}"
                     description = f"Employee {salary_type} for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else "")
                     vendor = f"Employee {salary_type}"
+                    # Build notes field: include employee name and any user notes
+                    user_notes = data.get('notes', '').strip()
+                    notes = f"{employee_name} - {user_notes}" if user_notes else f"{employee_name} - {salary_type}"
                     # Update expense with professional fields, preserving original submitted_by_name
                     expense_update = {
                         "employee_name": employee_name,
@@ -10940,6 +10948,7 @@ def update_salary(sal_id):
                         "category": category,
                         "vendor": vendor,
                         "description": description,
+                        "notes": notes,
                         "region": region,
                         "salary_type": salary_type,
                         "submitted_by_name": exp_data.get("submitted_by_name", current_user),
@@ -10958,6 +10967,9 @@ def update_salary(sal_id):
         expense_name = f"Employee {salary_type} - {employee_name}"
         description = f"Employee {salary_type} for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else "")
         vendor = f"Employee {salary_type}"
+        # Build notes field: include employee name and any user notes
+        user_notes = data.get('notes', '').strip()
+        notes = f"{employee_name} - {user_notes}" if user_notes else f"{employee_name} - {salary_type}"
         expense_data = {
             "employee_name": employee_name,
             "date": date_str,
@@ -10967,6 +10979,7 @@ def update_salary(sal_id):
             "category": category,
             "vendor": vendor,
             "description": description,
+            "notes": notes,
             "region": region,
             "salary_id": sal_id,
             "salary_type": salary_type,
