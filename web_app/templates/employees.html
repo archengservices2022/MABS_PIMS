@@ -2647,13 +2647,21 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
   // Check URL hash first (direct navigation or refresh)
   let hash = (window.location.hash || '').replace('#','');
 
-  // If no hash, check sessionStorage (only after form submission)
+  // If no hash in URL, determine if we came from within employees page or from outside
   if (!hash) {
-    hash = sessionStorage.getItem('empTabPersist') || 'time-off';
-  }
+    const referrer = document.referrer;
+    const isFromEmployeesPage = referrer.includes('/employees');
 
-  // If hash exists in URL, clear sessionStorage to allow fresh tab on next reload
-  if (window.location.hash) {
+    if (isFromEmployeesPage) {
+      // Came from form submission within employees page, restore from sessionStorage
+      hash = sessionStorage.getItem('empTabPersist') || 'time-off';
+    } else {
+      // Coming from outside (different section), default to time-off and clear sessionStorage
+      hash = 'time-off';
+      sessionStorage.removeItem('empTabPersist');
+    }
+  } else {
+    // Hash exists in URL, clear sessionStorage for next time
     sessionStorage.removeItem('empTabPersist');
   }
 
