@@ -2068,6 +2068,14 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
       </h6>
     </div>
     {% if all_expenses %}
+    {% set all_items_per_page = 10 %}
+    {% set all_total_items = all_expenses|length %}
+    {% set all_total_pages = ((all_total_items - 1) // all_items_per_page) + 1 %}
+    {% set all_current_page = request.args.get('all_exp_page', 1)|int %}
+    {% set all_start_index = (all_current_page - 1) * all_items_per_page %}
+    {% set all_end_index = all_start_index + all_items_per_page %}
+    {% set all_paginated = all_expenses[all_start_index:all_end_index] %}
+
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0 align-middle">
         <thead style="background:#f8fafc;">
@@ -2078,7 +2086,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
           </tr>
         </thead>
         <tbody>
-        {% for e in all_expenses %}
+        {% for e in all_paginated %}
         <tr>
           <td>
             <div class="d-flex align-items-center gap-2">
@@ -2141,6 +2149,24 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
         </tbody>
       </table>
     </div>
+
+    <!-- Pagination -->
+    {% if all_total_pages > 1 %}
+    <div class="d-flex justify-content-center align-items-center gap-2 mt-2" style="padding: 8px 0;">
+      <a href="?all_exp_page={{ [1, all_current_page - 1]|max }}#tab-emp-expenses" class="btn btn-sm btn-outline-secondary" {% if all_current_page == 1 %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+        <i class="bi bi-chevron-left"></i>
+      </a>
+
+      <input type="number" min="1" max="{{ all_total_pages }}" value="{{ all_current_page }}" class="form-control form-control-sm" style="width:60px;text-align:center;height:36px;padding:4px;"
+             onchange="window.location='?all_exp_page=' + Math.max(1, Math.min(this.value, {{ all_total_pages }})) + '#tab-emp-expenses'">
+
+      <span class="text-muted small">of {{ all_total_pages }}</span>
+
+      <a href="?all_exp_page={{ [all_total_pages, all_current_page + 1]|min }}#tab-emp-expenses" class="btn btn-sm btn-outline-secondary" {% if all_current_page == all_total_pages %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
+        <i class="bi bi-chevron-right"></i>
+      </a>
+    </div>
+    {% endif %}
     {% else %}
     <div class="text-center text-muted py-4">
       <i class="bi bi-receipt" style="font-size:2rem;opacity:.3;display:block;margin-bottom:8px;"></i>
