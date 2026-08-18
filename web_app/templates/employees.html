@@ -1156,6 +1156,8 @@ function confirmTimeOffAction(requestId, action, employeeName) {
     : `You are about to <strong>reject</strong> <strong>${employeeName}</strong>'s time-off request. This action cannot be undone.`;
 
   showConfirmationModal(title, message, isApprove ? 'Approve' : 'Reject', headerBg, () => {
+    const currentTab = (window.location.hash || '').replace('#','') || 'time-off';
+    sessionStorage.setItem('empTabPersist', currentTab);
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = `/employees/time-off/${requestId}/${action}`;
@@ -1169,6 +1171,8 @@ function confirmExpenseDelete(expId) {
   const message = '<strong>Are you sure you want to delete this expense?</strong><br><br>This action cannot be undone.';
 
   showConfirmationModal(title, message, 'Delete', '#dc2626', () => {
+    const currentTab = (window.location.hash || '').replace('#','') || 'expenses';
+    sessionStorage.setItem('empTabPersist', currentTab);
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = `/employees/expenses/${expId}/delete`;
@@ -1186,6 +1190,8 @@ function confirmExpenseReview(expId, action, empName) {
     : `You are about to <strong>Reject</strong> <strong>${empName}</strong>'s expense. This action cannot be undone.`;
 
   showConfirmationModal(title, message, isApprove ? 'Approve' : 'Reject', headerBg, () => {
+    const currentTab = (window.location.hash || '').replace('#','') || 'expenses';
+    sessionStorage.setItem('empTabPersist', currentTab);
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = `/employees/expenses/${expId}/review`;
@@ -2634,18 +2640,28 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
   tick(); setInterval(tick, 1000);
 })();
 
-// Tab persistence via URL hash
+// Tab persistence via URL hash and sessionStorage
 (function () {
   const map = { clock:'#tab-clock', 'time-off':'#tab-time-off', profile:'#tab-profile', team:'#tab-team', directory:'#tab-directory', medical:'#tab-medical', expenses:'#tab-emp-expenses', reviews:'#tab-my-reviews' };
-  const hash = (window.location.hash || '').replace('#','');
-  const target = map[hash];
-  if (target) {
-    const el = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
-    if (el) new bootstrap.Tab(el).show();
+
+  // Check URL hash first, then sessionStorage, default to time-off
+  let hash = (window.location.hash || '').replace('#','');
+  if (!hash) {
+    hash = sessionStorage.getItem('empTabPersist') || 'time-off';
   }
+
+  const target = map[hash] || '#tab-time-off';
+  const el = document.querySelector('#empTabs .nav-link[href="' + target + '"]');
+  if (el) new bootstrap.Tab(el).show();
+
+  // Clear sessionStorage after restoring
+  sessionStorage.removeItem('empTabPersist');
+
   document.querySelectorAll('#empTabs .nav-link').forEach(link => {
     link.addEventListener('shown.bs.tab', e => {
-      history.replaceState(null, '', '#' + (e.target.getAttribute('href') || '').replace('#tab-',''));
+      const tabName = (e.target.getAttribute('href') || '').replace('#tab-','');
+      history.replaceState(null, '', '#' + tabName);
+      sessionStorage.setItem('empTabPersist', tabName);
     });
   });
 })();
@@ -3283,6 +3299,12 @@ window.openMedReview = function(claimId, empName, amtClaimed, action) {
   new bootstrap.Modal(document.getElementById('medReviewModal')).show();
 };
 
+// Preserve tab when submitting medical review form
+document.getElementById('medReviewForm')?.addEventListener('submit', function() {
+  const currentTab = (window.location.hash || '').replace('#','') || 'medical';
+  sessionStorage.setItem('empTabPersist', currentTab);
+});
+
 window.openMedAmtEdit = function(claimId, empName, amtClaimed, amtApproved, exchangeRate) {
   const form = document.getElementById('medAmtEditForm');
   if (!form) return;
@@ -3301,6 +3323,12 @@ window.openMedAmtEdit = function(claimId, empName, amtClaimed, amtApproved, exch
     amtApproved ? parseFloat(amtApproved).toFixed(2) : usdAmt.toFixed(2);
   new bootstrap.Modal(document.getElementById('medAmtEditModal')).show();
 };
+
+// Preserve tab when submitting medical amount edit form
+document.getElementById('medAmtEditForm')?.addEventListener('submit', function() {
+  const currentTab = (window.location.hash || '').replace('#','') || 'medical';
+  sessionStorage.setItem('empTabPersist', currentTab);
+});
 
 // Time off approval handlers - show confirmation dialog
 document.querySelectorAll('.approve-timeoff-btn').forEach(function(btn) {
