@@ -2393,10 +2393,21 @@ function proceedRemoveReceipt() {
       }
       return r.json().then(d => {
         if (d.success) {
+          // Hide the confirmation modal
           bootstrap.Modal.getInstance(document.getElementById('receiptDeleteConfirmModal')).hide();
+          // Clear receipt preview immediately (remove the Remove/View buttons)
           document.getElementById('receiptPreview').innerHTML = '';
-          alert('Receipt removed successfully.');
-          location.reload();
+          // Show success message in a toast instead of alert
+          const toastEl = document.createElement('div');
+          toastEl.className = 'position-fixed bottom-0 end-0 p-3';
+          toastEl.style.zIndex = 9999;
+          toastEl.innerHTML = '<div class="toast show align-items-center text-bg-success border-0" role="alert"><div class="d-flex"><div class="toast-body"><i class="bi bi-check-circle me-2"></i>Receipt removed successfully.</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
+          document.body.appendChild(toastEl);
+          setTimeout(() => toastEl.remove(), 4000);
+          // Reload page to update action table and remove receipt icon
+          setTimeout(() => location.reload(), 2000);
+          btn.disabled = false;
+          btn.innerHTML = 'Remove Receipt';
         } else {
           alert('Failed to remove receipt: ' + (d.error || 'Unknown error'));
           btn.disabled = false;
