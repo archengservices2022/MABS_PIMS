@@ -17811,6 +17811,7 @@ def approvals():
                 days_pending = 0
         all_employee_items.append({
             'type': 'Medical',
+            'firebase_id': claim.get('firebase_id', ''),
             'employee': claim.get('employee_name', '—'),
             'date': claim.get('claim_date', ''),
             'submitted_at': claim.get('submitted_at', ''),
@@ -17842,6 +17843,7 @@ def approvals():
                 days_pending = 0
         all_employee_items.append({
             'type': 'Expense',
+            'firebase_id': exp.get('firebase_id', ''),
             'employee': emp_name,
             'date': exp.get('date', ''),
             'submitted_at': exp.get('created_at', ''),
@@ -17878,9 +17880,11 @@ def approvals():
                     days_pending = 0
             all_employee_items.append({
                 'type': 'Time Off',
+                'firebase_id': req.get('firebase_id', ''),
                 'employee': req.get('employee_name', '—'),
                 'date': req.get('start_date', ''),
                 'date_end': req.get('end_date', ''),
+                'timeoff_type': req.get('type', ''),
                 'submitted_at': req.get('requested_at', ''),
                 'sort_key': req.get('requested_at', ''),
                 'amount': r_hours if r_hours is not None else '—',
@@ -17907,6 +17911,7 @@ def approvals():
         reviewed_at_ts = sheet.get('sent_back_at') if sheet.get('status') == 'Draft' else sheet.get('approved_at', '')
         all_employee_items.append({
             'type': 'Timesheet',
+            'firebase_id': sheet.get('firebase_id', ''),
             'employee': sheet.get('employee_name', '—'),
             'date': sheet.get('week_label', '—'),
             'submitted_at': sheet.get('submitted_at', ''),
@@ -17973,6 +17978,127 @@ def api_approvals_count():
     count += sum(1 for s in all_sheets if s.get("status") == "Submitted")
 
     return jsonify({"count": count})
+
+
+@app.route("/api/approvals/time-off/<req_id>/<action>", methods=["POST"])
+@login_required
+def api_approval_time_off(req_id, action):
+    if normalize_role(session.get("user_role", "")) not in ("admin", "accountant"):
+        return jsonify({"error": "Admin access required"}), 403
+    if action not in ("approve", "reject"):
+        return jsonify({"error": "Invalid action"}), 400
+    new_status = "Approved" if action == "approve" else "Rejected"
+    fb_update(f"/time_off_requests/{req_id}", {
+        "status":      new_status,
+        "reviewed_by": session.get("user_name", ""),
+        "reviewed_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return jsonify({"success": True, "status": new_status})
+
+
+@app.route("/api/approvals/expense/<exp_id>/<action>", methods=["POST"])
+@login_required
+def api_approval_expense(exp_id, action):
+    if normalize_role(session.get("user_role", "")) not in ("admin", "accountant"):
+        return jsonify({"error": "Admin access required"}), 403
+    if action not in ("approve", "reject"):
+        return jsonify({"error": "Invalid action"}), 400
+    data = request.get_json(force=True) or {}
+    review_note = (data.get("notes") or "").strip()
+    new_status = "Approved" if action == "approve" else "Rejected"
+    now_str = datetime.now(timezone.utc).isoformat()
+    fb_update(f"/expenses/{exp_id}", {
+        "status":      new_status,
+        "reviewed_by": session.get("user_name", ""),
+        "reviewed_at": now_str,
+        "review_note": review_note,
+        "updated_at":  now_str,
+    })
+    if new_status == "Approved":
+        exp_data = fb_get(f"/expenses/{exp_id}") or {}
+        if isinstance(exp_data, dict):
+            exp_data["firebase_id"] = exp_id
+            exp_data["created_by"] = exp_data.get("submitted_by_email", "")
+            fb_update(f"/balance_sheet_expenses/{exp_id}", exp_data)
+    return jsonify({"success": True, "status": new_status})
+
+
+@app.route("/api/approvals/medical/<claim_id>/<action>", methods=["POST"])
+@login_required
+def api_approval_medical(claim_id, action):
+    if normalize_role(session.get("user_role", "")) not in ("admin", "accountant"):
+        return jsonify({"error": "Admin access required"}), 403
+    if action not in ("approve", "reject"):
+        return jsonify({"error": "Invalid action"}), 400
+    data = request.get_json(force=True) or {}
+    status = "Approved" if action == "approve" else "Rejected"
+    now_str = datetime.now(timezone.utc).isoformat()
+    try:
+        amt_approved = float(data.get("amount_approved", 0) or 0)
+    except (ValueError, TypeError):
+        amt_approved = 0.0
+    admin_notes = (data.get("admin_notes") or "").strip()
+    fb_update(f"/medical_claims/{claim_id}", {
+        "status":          status,
+        "amount_approved": amt_approved if status == "Approved" else None,
+        "admin_notes":     admin_notes,
+        "reviewed_by":     session.get("user_name", ""),
+        "reviewed_at":     now_str,
+    })
+    if status == "Approved" and amt_approved > 0:
+        claim = fb_get(f"/medical_claims/{claim_id}") or {}
+        original_exchange_rate = _safe_float(claim.get("exchange_rate", 0))
+        if original_exchange_rate > 0:
+            exchange_rate = original_exchange_rate
+        else:
+            _emp_cfg = load_settings().get("employee", {})
+            exchange_rate = _safe_float(_emp_cfg.get("bdt_exchange_rate", 110)) or 110
+        bdt_amount = amt_approved * exchange_rate
+        orig_currency = claim.get("amount_currency", "USD")
+        orig_usd = _safe_float(claim.get("amount_claimed", 0))
+        notes_parts = [f"Medical claim by {claim.get('employee_name', '')}"]
+        if orig_currency == "USD":
+            notes_parts.append(f"Original claim: ${orig_usd:,.2f} USD (at ৳{exchange_rate:.0f}/$1)")
+        if admin_notes:
+            notes_parts.append(admin_notes)
+        exp_data = {
+            "expense_type":       "Other Expenses",
+            "expense_name":       claim.get("description") or "Medical Allowance",
+            "description":        claim.get("description") or "Medical Allowance",
+            "amount":             amt_approved,
+            "amount_bdt":         bdt_amount,
+            "exchange_rate":      exchange_rate,
+            "category":           "Medical/Benefits",
+            "date":               claim.get("claim_date") or now_str[:10],
+            "vendor":             "Medical Expenses",
+            "notes":              " | ".join(notes_parts),
+            "submitted_by_name":  claim.get("employee_name", ""),
+            "submitted_by_uid":   claim.get("employee_uid", ""),
+            "submitted_by_email": "",
+            "status":             "Approved",
+            "reviewed_by":        session.get("user_name", ""),
+            "reviewed_at":        now_str,
+            "created_at":         claim.get("submitted_at", now_str),
+            "updated_at":         now_str,
+            "source":             "medical_claim",
+            "medical_claim_id":   claim_id,
+            "firebase_id":        claim_id,
+            "created_by":         claim.get("employee_name", ""),
+            "has_receipt":        bool(claim.get("has_receipt")),
+            "receipt_filename":   claim.get("receipt_filename", ""),
+        }
+        fb_update(f"/expenses/{claim_id}", exp_data)
+        fb_update(f"/balance_sheet_expenses/{claim_id}", exp_data)
+        if bool(claim.get("has_receipt")):
+            med_receipt = fb_get(f"/medical_claim_receipts/{claim_id}") or {}
+            if isinstance(med_receipt, dict) and med_receipt.get("receipt_base64"):
+                fb_update(f"/expense_receipts/{claim_id}", {
+                    "receipt_base64":    med_receipt.get("receipt_base64"),
+                    "receipt_filename":  med_receipt.get("receipt_filename", ""),
+                    "receipt_type":      med_receipt.get("receipt_type", "application/octet-stream"),
+                })
+    return jsonify({"success": True, "status": status})
+
 
 @app.route("/settings/company", methods=["POST"])
 @role_required("settings")

@@ -4,228 +4,686 @@
 
 {% block content %}
 
-<!-- Tabs Navigation -->
+{# ── Split items into pending vs history ────────────────────────────────── #}
+{% set pending_timeoff  = all_employee_items | selectattr('cat', 'equalto', 'timeoff')   | selectattr('status', 'equalto', 'Pending')   | list %}
+{% set pending_exp      = all_employee_items | selectattr('cat', 'equalto', 'expense')   | selectattr('status', 'equalto', 'Pending')   | list %}
+{% set pending_med      = all_employee_items | selectattr('cat', 'equalto', 'medical')   | selectattr('status', 'equalto', 'Pending')   | list %}
+{% set pending_ts       = all_employee_items | selectattr('cat', 'equalto', 'timesheet') | selectattr('status', 'equalto', 'Submitted') | list %}
+{% set total_pending    = pending_timeoff|length + pending_exp|length + pending_med|length + pending_ts|length %}
+{% set history_items    = all_employee_items | rejectattr('status', 'equalto', 'Pending') | rejectattr('status', 'equalto', 'Submitted') | list %}
+
+{# ── Summary cards ──────────────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card-panel text-center py-3" style="border-left:4px solid #0D9488;">
+      <div style="font-size:28px;font-weight:700;color:#0D9488;">{{ pending_timeoff|length }}</div>
+      <div style="font-size:12px;color:#64748b;margin-top:2px;"><i class="bi bi-calendar-x me-1"></i>Time Off</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card-panel text-center py-3" style="border-left:4px solid #b91c1c;">
+      <div style="font-size:28px;font-weight:700;color:#b91c1c;">{{ pending_exp|length }}</div>
+      <div style="font-size:12px;color:#64748b;margin-top:2px;"><i class="bi bi-receipt me-1"></i>Expenses</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card-panel text-center py-3" style="border-left:4px solid #7C3AED;">
+      <div style="font-size:28px;font-weight:700;color:#7C3AED;">{{ pending_med|length }}</div>
+      <div style="font-size:12px;color:#64748b;margin-top:2px;"><i class="bi bi-heart-pulse me-1"></i>Medical</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card-panel text-center py-3" style="border-left:4px solid #2563eb;">
+      <div style="font-size:28px;font-weight:700;color:#2563eb;">{{ pending_ts|length }}</div>
+      <div style="font-size:12px;color:#64748b;margin-top:2px;"><i class="bi bi-clock me-1"></i>Timesheets</div>
+    </div>
+  </div>
+</div>
+
+{# ── Tabs ───────────────────────────────────────────────────────────────── #}
 <ul class="nav nav-tabs mb-4" id="approvalsTab">
   <li class="nav-item">
-    <a class="nav-link active" data-bs-toggle="tab" href="#tab-delete">
-      <i class="bi bi-trash me-1"></i>Delete Requests
-      {% if pending_permission_requests %}<span class="badge bg-danger ms-1">{{ pending_permission_requests|length }}</span>{% endif %}
+    <a class="nav-link active" data-bs-toggle="tab" href="#tab-pending">
+      <i class="bi bi-hourglass-split me-1"></i>Pending
+      {% if total_pending > 0 %}<span class="badge bg-danger ms-1">{{ total_pending }}</span>{% endif %}
     </a>
   </li>
   <li class="nav-item">
-    <a class="nav-link" data-bs-toggle="tab" href="#tab-employee">
-      <i class="bi bi-people-fill me-1"></i>Employee
-      {% set pending_emp_count = all_employee_items | selectattr('status', 'in', ['Pending', 'Submitted']) | list | length %}
-      {% if pending_emp_count > 0 %}<span class="badge bg-danger ms-1">{{ pending_emp_count }}</span>{% endif %}
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-history">
+      <i class="bi bi-clock-history me-1"></i>History
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-delete">
+      <i class="bi bi-trash me-1"></i>Delete Requests
+      {% if pending_permission_requests %}<span class="badge bg-danger ms-1">{{ pending_permission_requests|length }}</span>{% endif %}
     </a>
   </li>
 </ul>
 
 <div class="tab-content" id="approvalsTabContent">
 
-    <!-- DELETE REQUESTS TAB -->
-    <div class="tab-pane fade show active" id="tab-delete">
-      {% if permission_requests %}
-      <div class="card-panel">
-        <h6 class="section-heading mb-3"><i class="bi bi-shield-lock me-1" style="color:#0D9488;"></i>Permission Requests</h6>
-        <div class="table-responsive">
-          <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
-            <thead class="table-light">
-              <tr>
-                <th>Requested By</th>
-                <th>Action Requested</th>
-                <th>Notes</th>
-                <th>Page</th>
-                <th>Date</th>
-                <th>Status</th>
-                <th class="text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for req in permission_requests %}
-              <tr id="permrow-{{ req.firebase_id }}">
-                <td class="fw-semibold">{{ req.get('requested_by_name','—') }}</td>
-                <td>
-                  {{ req.get('action','—') }}
-                  {% if req.get('entity_label') %}
-                  <div class="text-muted" style="font-size:11px;">{{ req.entity_label }}</div>
-                  {% endif %}
-                </td>
-                <td class="text-muted">{{ req.get('notes','—') or '—' }}</td>
-                <td>{% if req.get('page_url') %}<button type="button" class="btn btn-xs btn-outline-secondary open-page-btn" data-url="{{ req.page_url | e }}" title="Open page"><i class="bi bi-box-arrow-up-right me-1"></i>Open Page</button>{% else %}—{% endif %}</td>
-                <td class="text-muted text-nowrap">{{ (req.get('requested_at','')[:10] | format_date) if req.get('requested_at') else '—' }}</td>
-                <td>
-                  {% if req.get('status') == 'pending' %}
-                    <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
-                  {% elif req.get('status') == 'approved' %}
-                    <span class="badge bg-success">Approved</span>
-                    <div class="text-muted" style="font-size:11px;">by {{ req.get('reviewed_by','—') }}</div>
-                    {% if req.get('admin_notes') %}<div class="text-muted" style="font-size:11px;">{{ req.admin_notes }}</div>{% endif %}
-                  {% elif req.get('status') == 'completed' %}
-                    <span class="badge bg-secondary">Completed</span>
-                    <div class="text-muted" style="font-size:11px;">Deleted by {{ req.get('reviewed_by','—') }}</div>
-                  {% else %}
-                    <span class="badge bg-danger">Denied</span>
-                    {% if req.get('admin_notes') %}<div class="text-muted" style="font-size:11px;">{{ req.admin_notes }}</div>{% endif %}
-                  {% endif %}
-                </td>
-                <td class="text-center text-nowrap">
-                  {% if req.get('status') == 'pending' %}
-                  <button class="btn btn-xs btn-success me-1 approve-perm-btn" data-req-id="{{ req.firebase_id }}" data-page-url="{{ req.get('page_url','') | e }}" title="Approve — requester will be notified and can perform the delete">
-                    <i class="bi bi-check2"></i> Approve
-                  </button>
-                  <button class="btn btn-xs btn-outline-danger deny-perm-btn" data-req-id="{{ req.firebase_id }}" title="Deny">
-                    <i class="bi bi-x-lg"></i> Deny
-                  </button>
-                  {% else %}
-                  <span class="text-muted small">
-                    {% if req.get('status') == 'completed' %}Completed{% else %}Resolved{% endif %}
-                    by {{ req.get('reviewed_by','—') }}
-                  </span>
-                  {% endif %}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      {% else %}
-      <div class="card-panel">
-        <div class="text-muted text-center py-4"><i class="bi bi-shield-check" style="font-size:32px;display:block;margin-bottom:8px;opacity:.4;"></i>No permission requests yet.</div>
-      </div>
-      {% endif %}
-    </div>
+  {# ════════════════════════════════════════════════════════════════════════
+     TAB: PENDING
+  ═══════════════════════════════════════════════════════════════════════════ #}
+  <div class="tab-pane fade show active" id="tab-pending">
 
-    <!-- EMPLOYEE TAB (Like Delete Requests - unified list by date) -->
-    <div class="tab-pane fade" id="tab-employee">
-      {% if all_employee_items|length > 0 %}
-      <div class="card-panel">
-        <h6 class="section-heading mb-3"><i class="bi bi-people-fill me-1" style="color:#3b82f6;"></i>Employee Approvals</h6>
-        <div class="table-responsive">
-          <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
-            <thead class="table-light">
-              <tr>
-                <th style="min-width: 130px;">Requested By</th>
-                <th>Type</th>
-                <th>Period/Date</th>
-                <th style="min-width: 140px;">Submitted on</th>
-                <th>Amount/Hour</th>
-                <th>Notes</th>
-                <th>Page</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for item in all_employee_items %}
-              <tr>
-                <td class="fw-semibold">{{ item.employee }}</td>
-                <td>
-                  {% if item.type == 'Medical' %}
-                    <span class="badge" style="background:#7C3AED;color:white;">{{ item.type }}</span>
-                  {% elif item.type == 'Expense' %}
-                    <span class="badge" style="background:#b91c1c;color:white;">{{ item.type }}</span>
-                  {% elif item.type == 'Time Off' %}
-                    <span class="badge" style="background:#0D9488;color:white;">{{ item.type }}</span>
-                  {% elif item.type == 'Timesheet' %}
-                    <span class="badge" style="background:#2563eb;color:white;">{{ item.type }}</span>
+    {% if total_pending == 0 %}
+    <div class="card-panel">
+      <div class="text-muted text-center py-5">
+        <i class="bi bi-check-circle" style="font-size:36px;display:block;margin-bottom:10px;opacity:.35;color:#0D9488;"></i>
+        <div style="font-size:15px;font-weight:600;">All caught up!</div>
+        <div style="font-size:13px;margin-top:4px;">No pending approvals at this time.</div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Time Off ─────────────────────────────────────────────────────── #}
+    {% if pending_timeoff %}
+    <div class="card-panel mb-3">
+      <div class="d-flex align-items-center mb-3">
+        <span style="width:6px;height:22px;background:#0D9488;border-radius:3px;display:inline-block;margin-right:10px;"></span>
+        <h6 class="mb-0 fw-semibold">Time Off Requests</h6>
+        <span class="badge ms-2" style="background:#0D9488;color:white;">{{ pending_timeoff|length }}</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
+          <thead class="table-light">
+            <tr>
+              <th>Employee</th>
+              <th>Type</th>
+              <th>Dates</th>
+              <th>Hours</th>
+              <th>Reason</th>
+              <th>Waiting</th>
+              <th class="text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in pending_timeoff %}
+            <tr id="row-timeoff-{{ item.firebase_id }}">
+              <td class="fw-semibold">{{ item.employee }}</td>
+              <td>
+                <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:11px;">{{ item.timeoff_type or 'PTO' }}</span>
+              </td>
+              <td class="text-nowrap text-muted">{{ item.date | format_date }}{% if item.date_end %} → {{ item.date_end | format_date }}{% endif %}</td>
+              <td>
+                {% if item.amount != '—' and item.amount != None %}
+                  <span class="fw-semibold">{{ "{:.0f}".format(item.amount|float) }}h</span>
+                {% else %}—{% endif %}
+              </td>
+              <td class="text-muted" style="max-width:180px;">{{ item.notes or '—' }}</td>
+              <td>
+                {% if item.days_pending > 0 %}
+                  <span class="badge" style="background:#fef9c3;color:#92400e;">{{ item.days_pending }}d</span>
+                {% else %}
+                  <span class="text-muted">Today</span>
+                {% endif %}
+              </td>
+              <td class="text-center text-nowrap">
+                <button class="btn btn-xs btn-success me-1 inline-approve-btn"
+                  data-cat="timeoff" data-id="{{ item.firebase_id }}" data-action="approve">
+                  <i class="bi bi-check2"></i> Approve
+                </button>
+                <button class="btn btn-xs btn-outline-danger inline-approve-btn"
+                  data-cat="timeoff" data-id="{{ item.firebase_id }}" data-action="reject">
+                  <i class="bi bi-x-lg"></i> Reject
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Expense Claims ───────────────────────────────────────────────── #}
+    {% if pending_exp %}
+    <div class="card-panel mb-3">
+      <div class="d-flex align-items-center mb-3">
+        <span style="width:6px;height:22px;background:#b91c1c;border-radius:3px;display:inline-block;margin-right:10px;"></span>
+        <h6 class="mb-0 fw-semibold">Expense Claims</h6>
+        <span class="badge ms-2" style="background:#b91c1c;color:white;">{{ pending_exp|length }}</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
+          <thead class="table-light">
+            <tr>
+              <th>Employee</th>
+              <th>Date</th>
+              <th>Amount</th>
+              <th>Description</th>
+              <th>Waiting</th>
+              <th class="text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in pending_exp %}
+            <tr id="row-expense-{{ item.firebase_id }}">
+              <td class="fw-semibold">{{ item.employee }}</td>
+              <td class="text-muted text-nowrap">{{ item.date | format_date }}</td>
+              <td>
+                {% if item.amount %}
+                  {% set curr = item.currency %}
+                  {% set rate = item.exchange_rate or 120 %}
+                  {% if curr == 'BDT' %}
+                    <div class="fw-semibold">${{ "{:.2f}".format((item.amount|float) / rate) }}</div>
+                    <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format(item.amount|float) }}</div>
                   {% else %}
-                    <span class="badge" style="background:#64748b;color:white;">{{ item.type }}</span>
+                    <div class="fw-semibold">${{ "{:.2f}".format(item.amount|float) }}</div>
+                    <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((item.amount|float) * rate) }}</div>
                   {% endif %}
-                </td>
-                <td class="text-muted text-nowrap">
-                  {% if item.cat == 'timeoff' %}
-                    {{ item.date | format_date }} to {{ item.date_end | format_date }}
-                  {% elif item.cat == 'timesheet' %}
-                    {{ item.date }}
+                {% else %}—{% endif %}
+              </td>
+              <td class="text-muted" style="max-width:180px;">{{ item.notes or '—' }}</td>
+              <td>
+                {% if item.days_pending > 0 %}
+                  <span class="badge" style="background:#fef9c3;color:#92400e;">{{ item.days_pending }}d</span>
+                {% else %}
+                  <span class="text-muted">Today</span>
+                {% endif %}
+              </td>
+              <td class="text-center text-nowrap">
+                <button class="btn btn-xs btn-success me-1 inline-approve-btn"
+                  data-cat="expense" data-id="{{ item.firebase_id }}" data-action="approve">
+                  <i class="bi bi-check2"></i> Approve
+                </button>
+                <button class="btn btn-xs btn-outline-danger inline-approve-btn"
+                  data-cat="expense" data-id="{{ item.firebase_id }}" data-action="reject">
+                  <i class="bi bi-x-lg"></i> Reject
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Medical Allowance ────────────────────────────────────────────── #}
+    {% if pending_med %}
+    <div class="card-panel mb-3">
+      <div class="d-flex align-items-center mb-3">
+        <span style="width:6px;height:22px;background:#7C3AED;border-radius:3px;display:inline-block;margin-right:10px;"></span>
+        <h6 class="mb-0 fw-semibold">Medical Allowance</h6>
+        <span class="badge ms-2" style="background:#7C3AED;color:white;">{{ pending_med|length }}</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
+          <thead class="table-light">
+            <tr>
+              <th>Employee</th>
+              <th>Claim Date</th>
+              <th>Claimed</th>
+              <th>Description</th>
+              <th>Waiting</th>
+              <th class="text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in pending_med %}
+            <tr id="row-medical-{{ item.firebase_id }}">
+              <td class="fw-semibold">{{ item.employee }}</td>
+              <td class="text-muted text-nowrap">{{ item.date | format_date }}</td>
+              <td>
+                {% if item.amount %}
+                  {% set curr = item.currency %}
+                  {% set rate = item.exchange_rate or 120 %}
+                  {% if curr == 'BDT' %}
+                    <div class="fw-semibold">${{ "{:.2f}".format((item.amount|float) / rate) }}</div>
+                    <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format(item.amount|float) }}</div>
                   {% else %}
-                    {{ item.date | format_date }}
+                    <div class="fw-semibold">${{ "{:.2f}".format(item.amount|float) }}</div>
+                    <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((item.amount|float) * rate) }}</div>
                   {% endif %}
-                </td>
-                <td class="text-muted text-nowrap">
-                  {% if item.submitted_at %}
-                    {{ item.submitted_at | format_date }}
-                  {% else %}
-                    —
-                  {% endif %}
-                </td>
-                <td>
-                  {% if item.amount != '—' and item.amount != None %}
-                    {% if item.currency == 'h' %}
-                      {% if item.amount is number %}{{ "{:.1f}".format(item.amount|float) }}h{% else %}{{ item.amount }}h{% endif %}
-                    {% else %}
-                      {# Medical & Expense: Use stored currency type and exchange rate #}
+                {% else %}—{% endif %}
+              </td>
+              <td class="text-muted" style="max-width:180px;">{{ item.notes or '—' }}</td>
+              <td>
+                {% if item.days_pending > 0 %}
+                  <span class="badge" style="background:#fef9c3;color:#92400e;">{{ item.days_pending }}d</span>
+                {% else %}
+                  <span class="text-muted">Today</span>
+                {% endif %}
+              </td>
+              <td class="text-center text-nowrap">
+                <button class="btn btn-xs btn-success me-1 medical-approve-btn"
+                  data-id="{{ item.firebase_id }}"
+                  data-employee="{{ item.employee }}"
+                  data-amount="{{ item.amount }}"
+                  data-currency="{{ item.currency }}"
+                  data-rate="{{ item.exchange_rate or 120 }}">
+                  <i class="bi bi-check2"></i> Approve
+                </button>
+                <button class="btn btn-xs btn-outline-danger inline-approve-btn"
+                  data-cat="medical" data-id="{{ item.firebase_id }}" data-action="reject">
+                  <i class="bi bi-x-lg"></i> Reject
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Timesheets ───────────────────────────────────────────────────── #}
+    {% if pending_ts %}
+    <div class="card-panel mb-3">
+      <div class="d-flex align-items-center mb-3">
+        <span style="width:6px;height:22px;background:#2563eb;border-radius:3px;display:inline-block;margin-right:10px;"></span>
+        <h6 class="mb-0 fw-semibold">Timesheets</h6>
+        <span class="badge ms-2" style="background:#2563eb;color:white;">{{ pending_ts|length }}</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
+          <thead class="table-light">
+            <tr>
+              <th>Employee</th>
+              <th>Week</th>
+              <th>Hours</th>
+              <th>Submitted</th>
+              <th>Waiting</th>
+              <th class="text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in pending_ts %}
+            <tr id="row-timesheet-{{ item.firebase_id }}">
+              <td class="fw-semibold">{{ item.employee }}</td>
+              <td class="text-muted text-nowrap">{{ item.date }}</td>
+              <td>
+                {% if item.amount %}
+                  <span class="fw-semibold">{{ "{:.1f}".format(item.amount|float) }}h</span>
+                {% else %}—{% endif %}
+              </td>
+              <td class="text-muted text-nowrap">{{ item.submitted_at[:10] if item.submitted_at else '—' }}</td>
+              <td>
+                {% if item.days_pending > 0 %}
+                  <span class="badge" style="background:#fef9c3;color:#92400e;">{{ item.days_pending }}d</span>
+                {% else %}
+                  <span class="text-muted">Today</span>
+                {% endif %}
+              </td>
+              <td class="text-center text-nowrap">
+                <button class="btn btn-xs btn-success me-1 inline-approve-btn"
+                  data-cat="timesheet" data-id="{{ item.firebase_id }}" data-action="approve">
+                  <i class="bi bi-check2"></i> Approve
+                </button>
+                <button class="btn btn-xs btn-outline-warning me-1 ts-sendback-btn"
+                  data-id="{{ item.firebase_id }}"
+                  title="Send back for revision">
+                  <i class="bi bi-arrow-return-left"></i> Send Back
+                </button>
+                <button class="btn btn-xs btn-outline-danger inline-approve-btn"
+                  data-cat="timesheet" data-id="{{ item.firebase_id }}" data-action="reject">
+                  <i class="bi bi-x-lg"></i> Reject
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>{# /tab-pending #}
+
+  {# ════════════════════════════════════════════════════════════════════════
+     TAB: HISTORY
+  ═══════════════════════════════════════════════════════════════════════════ #}
+  <div class="tab-pane fade" id="tab-history">
+
+    {# Split history into per-type lists #}
+    {% set hist_timeoff  = history_items | selectattr('cat', 'equalto', 'timeoff')   | list %}
+    {% set hist_exp      = history_items | selectattr('cat', 'equalto', 'expense')   | list %}
+    {% set hist_med      = history_items | selectattr('cat', 'equalto', 'medical')   | list %}
+    {% set hist_ts       = history_items | selectattr('cat', 'equalto', 'timesheet') | list %}
+
+    {# History sub-tabs #}
+    <ul class="nav nav-pills mb-3" id="historySubTab" style="gap:6px;">
+      <li class="nav-item">
+        <a class="nav-link active py-1 px-3" data-bs-toggle="pill" href="#hist-timeoff" style="font-size:13px;">
+          <i class="bi bi-calendar-x me-1" style="color:#0D9488;"></i>Time Off
+          {% if hist_timeoff %}<span class="badge ms-1" style="background:#0D9488;color:white;">{{ hist_timeoff|length }}</span>{% endif %}
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link py-1 px-3" data-bs-toggle="pill" href="#hist-expense" style="font-size:13px;">
+          <i class="bi bi-receipt me-1" style="color:#b91c1c;"></i>Expenses
+          {% if hist_exp %}<span class="badge ms-1" style="background:#b91c1c;color:white;">{{ hist_exp|length }}</span>{% endif %}
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link py-1 px-3" data-bs-toggle="pill" href="#hist-medical" style="font-size:13px;">
+          <i class="bi bi-heart-pulse me-1" style="color:#7C3AED;"></i>Medical
+          {% if hist_med %}<span class="badge ms-1" style="background:#7C3AED;color:white;">{{ hist_med|length }}</span>{% endif %}
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link py-1 px-3" data-bs-toggle="pill" href="#hist-timesheet" style="font-size:13px;">
+          <i class="bi bi-clock me-1" style="color:#2563eb;"></i>Timesheets
+          {% if hist_ts %}<span class="badge ms-1" style="background:#2563eb;color:white;">{{ hist_ts|length }}</span>{% endif %}
+        </a>
+      </li>
+    </ul>
+
+    <div class="tab-content" id="historySubTabContent">
+
+      {# ── History: Time Off ────────────────────────────────────────────── #}
+      <div class="tab-pane fade show active" id="hist-timeoff">
+        {% if hist_timeoff %}
+        <div class="card-panel">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
+              <thead class="table-light">
+                <tr>
+                  <th>Employee</th>
+                  <th>Type</th>
+                  <th>Dates</th>
+                  <th>Hours</th>
+                  <th>Notes</th>
+                  <th>Status</th>
+                  <th>Reviewed By</th>
+                  <th>Reviewed At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in hist_timeoff %}
+                <tr>
+                  <td class="fw-semibold">{{ item.employee }}</td>
+                  <td><span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:11px;">{{ item.timeoff_type or 'PTO' }}</span></td>
+                  <td class="text-muted text-nowrap">{{ item.date | format_date }}{% if item.date_end %} → {{ item.date_end | format_date }}{% endif %}</td>
+                  <td>{% if item.amount != '—' and item.amount != None %}<span class="fw-semibold">{{ "{:.0f}".format(item.amount|float) }}h</span>{% else %}—{% endif %}</td>
+                  <td class="text-muted small">{{ item.notes or '—' }}</td>
+                  <td>
+                    {% if item.status == 'Approved' %}<span class="badge bg-success">Approved</span>
+                    {% else %}<span class="badge bg-danger">{{ item.status }}</span>{% endif %}
+                  </td>
+                  <td class="text-muted">{{ item.reviewed_by or '—' }}</td>
+                  <td class="text-muted text-nowrap">{{ (item.reviewed_at[:10] | format_date) if item.reviewed_at else '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% else %}
+        <div class="card-panel">
+          <div class="text-muted text-center py-4"><i class="bi bi-calendar-check" style="font-size:28px;display:block;margin-bottom:8px;opacity:.4;"></i>No time off history yet.</div>
+        </div>
+        {% endif %}
+      </div>
+
+      {# ── History: Expenses ────────────────────────────────────────────── #}
+      <div class="tab-pane fade" id="hist-expense">
+        {% if hist_exp %}
+        <div class="card-panel">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
+              <thead class="table-light">
+                <tr>
+                  <th>Employee</th>
+                  <th>Date</th>
+                  <th>Amount</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th>Reviewed By</th>
+                  <th>Reviewed At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in hist_exp %}
+                <tr>
+                  <td class="fw-semibold">{{ item.employee }}</td>
+                  <td class="text-muted text-nowrap">{{ item.date | format_date }}</td>
+                  <td>
+                    {% if item.amount %}
                       {% set curr = item.currency %}
                       {% set rate = item.exchange_rate or 120 %}
                       {% if curr == 'BDT' %}
-                        {# Old BDT entry: amount is in BDT, show USD as primary #}
-                        <div>${{ "{:.2f}".format((item.amount|float) / rate) }}</div>
+                        <div class="fw-semibold">${{ "{:.2f}".format((item.amount|float) / rate) }}</div>
                         <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format(item.amount|float) }}</div>
                       {% else %}
-                        {# USD entry: amount is in USD #}
-                        <div>${{ "{:.2f}".format(item.amount|float) }}</div>
+                        <div class="fw-semibold">${{ "{:.2f}".format(item.amount|float) }}</div>
                         <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((item.amount|float) * rate) }}</div>
                       {% endif %}
-                    {% endif %}
-                  {% else %}
-                    —
-                  {% endif %}
-                </td>
-                <td class="text-muted small">
-                  {% if item.type == 'Timesheet' %}
-                    {{ item.employee }} submitted timesheet
-                  {% else %}
-                    {{ item.notes }}
-                  {% endif %}
-                </td>
-                <td>
-                  {% if item.cat == 'medical' %}
-                    <a href="{{ url_for('employees') }}#tab-medical" class="btn btn-xs btn-outline-secondary" title="Open Medical Claims">
-                      <i class="bi bi-box-arrow-up-right me-1"></i>Open
-                    </a>
-                  {% elif item.cat == 'expense' %}
-                    <a href="{{ url_for('employees') }}#tab-emp-expenses" class="btn btn-xs btn-outline-secondary" title="Open Expenses">
-                      <i class="bi bi-box-arrow-up-right me-1"></i>Open
-                    </a>
-                  {% elif item.cat == 'timesheet' %}
-                    <a href="{{ url_for('timesheets', week=item.week_of) }}" class="btn btn-xs btn-outline-secondary" title="Open Timesheets">
-                      <i class="bi bi-box-arrow-up-right me-1"></i>Open
-                    </a>
-                  {% else %}
-                    <a href="{{ url_for('employees') }}#tab-time-off" class="btn btn-xs btn-outline-secondary" title="Open Time Off">
-                      <i class="bi bi-box-arrow-up-right me-1"></i>Open
-                    </a>
-                  {% endif %}
-                </td>
-                <td>
-                  {% if item.status == 'Pending' or item.status == 'Submitted' %}
-                    <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
-                    {% if item.days_pending > 0 %}
-                      <div class="text-muted small" style="margin-top:4px;">{{ item.days_pending }} day{{ 's' if item.days_pending != 1 else '' }} pending</div>
-                    {% endif %}
-                  {% elif item.sent_back %}
-                    <span class="badge" style="background:#f59e0b;color:white;">Sent Back</span><br><span class="text-muted small">by {{ item.reviewed_by }}<br>{% if item.reviewed_at %}{{ item.reviewed_at[:10] }}{% endif %}</span>
-                  {% elif item.status == 'Approved' %}
-                    <span class="badge bg-success">Approved</span><br><span class="text-muted small">by {{ item.reviewed_by }}<br>{% if item.reviewed_at %}{{ item.reviewed_at[:10] }}{% endif %}</span>
-                  {% else %}
-                    <span class="badge bg-danger">Denied</span><br><span class="text-muted small">by {{ item.reviewed_by }}<br>{% if item.reviewed_at %}{{ item.reviewed_at[:10] }}{% endif %}</span>
-                  {% endif %}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+                    {% else %}—{% endif %}
+                  </td>
+                  <td class="text-muted small">{{ item.notes or '—' }}</td>
+                  <td>
+                    {% if item.status == 'Approved' %}<span class="badge bg-success">Approved</span>
+                    {% else %}<span class="badge bg-danger">{{ item.status }}</span>{% endif %}
+                  </td>
+                  <td class="text-muted">{{ item.reviewed_by or '—' }}</td>
+                  <td class="text-muted text-nowrap">{{ (item.reviewed_at[:10] | format_date) if item.reviewed_at else '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% else %}
+        <div class="card-panel">
+          <div class="text-muted text-center py-4"><i class="bi bi-receipt" style="font-size:28px;display:block;margin-bottom:8px;opacity:.4;"></i>No expense history yet.</div>
+        </div>
+        {% endif %}
+      </div>
+
+      {# ── History: Medical ─────────────────────────────────────────────── #}
+      <div class="tab-pane fade" id="hist-medical">
+        {% if hist_med %}
+        <div class="card-panel">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
+              <thead class="table-light">
+                <tr>
+                  <th>Employee</th>
+                  <th>Claim Date</th>
+                  <th>Claimed</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th>Reviewed By</th>
+                  <th>Reviewed At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in hist_med %}
+                <tr>
+                  <td class="fw-semibold">{{ item.employee }}</td>
+                  <td class="text-muted text-nowrap">{{ item.date | format_date }}</td>
+                  <td>
+                    {% if item.amount %}
+                      {% set curr = item.currency %}
+                      {% set rate = item.exchange_rate or 120 %}
+                      {% if curr == 'BDT' %}
+                        <div class="fw-semibold">${{ "{:.2f}".format((item.amount|float) / rate) }}</div>
+                        <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format(item.amount|float) }}</div>
+                      {% else %}
+                        <div class="fw-semibold">${{ "{:.2f}".format(item.amount|float) }}</div>
+                        <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((item.amount|float) * rate) }}</div>
+                      {% endif %}
+                    {% else %}—{% endif %}
+                  </td>
+                  <td class="text-muted small">{{ item.notes or '—' }}</td>
+                  <td>
+                    {% if item.status == 'Approved' %}<span class="badge bg-success">Approved</span>
+                    {% else %}<span class="badge bg-danger">{{ item.status }}</span>{% endif %}
+                  </td>
+                  <td class="text-muted">{{ item.reviewed_by or '—' }}</td>
+                  <td class="text-muted text-nowrap">{{ (item.reviewed_at[:10] | format_date) if item.reviewed_at else '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% else %}
+        <div class="card-panel">
+          <div class="text-muted text-center py-4"><i class="bi bi-heart-pulse" style="font-size:28px;display:block;margin-bottom:8px;opacity:.4;"></i>No medical claim history yet.</div>
+        </div>
+        {% endif %}
+      </div>
+
+      {# ── History: Timesheets ──────────────────────────────────────────── #}
+      <div class="tab-pane fade" id="hist-timesheet">
+        {% if hist_ts %}
+        <div class="card-panel">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
+              <thead class="table-light">
+                <tr>
+                  <th>Employee</th>
+                  <th>Week</th>
+                  <th>Hours</th>
+                  <th>Status</th>
+                  <th>Reviewed By</th>
+                  <th>Reviewed At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in hist_ts %}
+                <tr>
+                  <td class="fw-semibold">{{ item.employee }}</td>
+                  <td class="text-muted text-nowrap">{{ item.date }}</td>
+                  <td>{% if item.amount %}<span class="fw-semibold">{{ "{:.1f}".format(item.amount|float) }}h</span>{% else %}—{% endif %}</td>
+                  <td>
+                    {% if item.sent_back %}<span class="badge" style="background:#f59e0b;color:white;">Sent Back</span>
+                    {% elif item.status == 'Approved' %}<span class="badge bg-success">Approved</span>
+                    {% else %}<span class="badge bg-danger">{{ item.status }}</span>{% endif %}
+                  </td>
+                  <td class="text-muted">{{ item.reviewed_by or '—' }}</td>
+                  <td class="text-muted text-nowrap">{{ (item.reviewed_at[:10] | format_date) if item.reviewed_at else '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% else %}
+        <div class="card-panel">
+          <div class="text-muted text-center py-4"><i class="bi bi-clock" style="font-size:28px;display:block;margin-bottom:8px;opacity:.4;"></i>No timesheet history yet.</div>
+        </div>
+        {% endif %}
+      </div>
+
+    </div>{# /historySubTabContent #}
+  </div>{# /tab-history #}
+
+  {# ════════════════════════════════════════════════════════════════════════
+     TAB: DELETE REQUESTS
+  ═══════════════════════════════════════════════════════════════════════════ #}
+  <div class="tab-pane fade" id="tab-delete">
+    {% if permission_requests %}
+    <div class="card-panel">
+      <h6 class="section-heading mb-3"><i class="bi bi-shield-lock me-1" style="color:#0D9488;"></i>Permission Requests</h6>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
+          <thead class="table-light">
+            <tr>
+              <th>Requested By</th>
+              <th>Action Requested</th>
+              <th>Notes</th>
+              <th>Page</th>
+              <th>Date</th>
+              <th>Status</th>
+              <th class="text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for req in permission_requests %}
+            <tr id="permrow-{{ req.firebase_id }}">
+              <td class="fw-semibold">{{ req.get('requested_by_name','—') }}</td>
+              <td>
+                {{ req.get('action','—') }}
+                {% if req.get('entity_label') %}
+                <div class="text-muted" style="font-size:11px;">{{ req.entity_label }}</div>
+                {% endif %}
+              </td>
+              <td class="text-muted">{{ req.get('notes','—') or '—' }}</td>
+              <td>{% if req.get('page_url') %}<button type="button" class="btn btn-xs btn-outline-secondary open-page-btn" data-url="{{ req.page_url | e }}" title="Open page"><i class="bi bi-box-arrow-up-right me-1"></i>Open Page</button>{% else %}—{% endif %}</td>
+              <td class="text-muted text-nowrap">{{ (req.get('requested_at','')[:10] | format_date) if req.get('requested_at') else '—' }}</td>
+              <td>
+                {% if req.get('status') == 'pending' %}
+                  <span class="badge" style="background:#fef9c3;color:#92400e;">Pending</span>
+                {% elif req.get('status') == 'approved' %}
+                  <span class="badge bg-success">Approved</span>
+                  <div class="text-muted" style="font-size:11px;">by {{ req.get('reviewed_by','—') }}</div>
+                  {% if req.get('admin_notes') %}<div class="text-muted" style="font-size:11px;">{{ req.admin_notes }}</div>{% endif %}
+                {% elif req.get('status') == 'completed' %}
+                  <span class="badge bg-secondary">Completed</span>
+                  <div class="text-muted" style="font-size:11px;">Deleted by {{ req.get('reviewed_by','—') }}</div>
+                {% else %}
+                  <span class="badge bg-danger">Denied</span>
+                  {% if req.get('admin_notes') %}<div class="text-muted" style="font-size:11px;">{{ req.admin_notes }}</div>{% endif %}
+                {% endif %}
+              </td>
+              <td class="text-center text-nowrap">
+                {% if req.get('status') == 'pending' %}
+                <button class="btn btn-xs btn-success me-1 approve-perm-btn" data-req-id="{{ req.firebase_id }}" data-page-url="{{ req.get('page_url','') | e }}" title="Approve">
+                  <i class="bi bi-check2"></i> Approve
+                </button>
+                <button class="btn btn-xs btn-outline-danger deny-perm-btn" data-req-id="{{ req.firebase_id }}" title="Deny">
+                  <i class="bi bi-x-lg"></i> Deny
+                </button>
+                {% else %}
+                <span class="text-muted small">
+                  {% if req.get('status') == 'completed' %}Completed{% else %}Resolved{% endif %}
+                  by {{ req.get('reviewed_by','—') }}
+                </span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="card-panel">
+      <div class="text-muted text-center py-4"><i class="bi bi-shield-check" style="font-size:32px;display:block;margin-bottom:8px;opacity:.4;"></i>No permission requests yet.</div>
+    </div>
+    {% endif %}
+  </div>{# /tab-delete #}
+
+</div>{# /tab-content #}
+
+{# ── Medical Approve Modal ───────────────────────────────────────────────── #}
+<div class="modal fade" id="medicalApproveModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title"><i class="bi bi-heart-pulse me-1" style="color:#7C3AED;"></i>Approve Medical Claim</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pb-2">
+        <p class="text-muted mb-3" style="font-size:12px;">
+          Employee: <strong id="med-modal-employee"></strong> &mdash; Claimed: <strong id="med-modal-claimed"></strong>
+        </p>
+        <div class="mb-3">
+          <label class="form-label fw-semibold" style="font-size:12px;">Approved Amount (USD) <span class="text-danger">*</span></label>
+          <input type="number" id="medAmountApproved" class="form-control form-control-sm" step="0.01" min="0" placeholder="0.00">
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold" style="font-size:12px;">Admin Notes <span class="text-muted fw-normal">(optional)</span></label>
+          <textarea id="medAdminNotes" class="form-control form-control-sm" rows="2" style="font-size:12px;" placeholder="Notes about the approval…"></textarea>
         </div>
       </div>
-      {% else %}
-      <div class="card-panel">
-        <div class="text-muted text-center py-4"><i class="bi bi-people-fill" style="font-size:32px;display:block;margin-bottom:8px;opacity:.4;"></i>No employee approvals.</div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-success" onclick="confirmMedicalApprove()">
+          <i class="bi bi-check-circle me-1"></i>Approve Claim
+        </button>
       </div>
-      {% endif %}
     </div>
+  </div>
 </div>
 
-<!-- Approve Modal -->
+{# ── Permission Approve Modal ─────────────────────────────────────────────── #}
 <div class="modal fade" id="approvePermissionModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -248,7 +706,7 @@
   </div>
 </div>
 
-<!-- Deny Modal -->
+{# ── Permission Deny Modal ────────────────────────────────────────────────── #}
 <div class="modal fade" id="denyPermissionModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -276,54 +734,58 @@
 
 {% block scripts %}
 <script>
-var currentPermReqId = null;
+var currentPermReqId  = null;
+var currentMedicalId  = null;
 
 document.addEventListener('DOMContentLoaded', function() {
   // Tab persistence
   const savedTab = localStorage.getItem('approvalsActiveTab');
   if (savedTab) {
-    const tabLink = document.querySelector(`[href="${savedTab}"]`);
-    if (tabLink) {
-      new bootstrap.Tab(tabLink).show();
-    }
+    const tabLink = document.querySelector('#approvalsTab [href="' + savedTab + '"]');
+    if (tabLink) new bootstrap.Tab(tabLink).show();
   }
-
   document.querySelectorAll('#approvalsTab .nav-link').forEach(function(link) {
     link.addEventListener('shown.bs.tab', function(e) {
       localStorage.setItem('approvalsActiveTab', this.getAttribute('href'));
     });
   });
 
+  // History sub-tab persistence (used after inline approvals to land on the right section)
+  const savedHistTab = localStorage.getItem('approvalsHistorySubTab');
+  if (savedHistTab) {
+    localStorage.removeItem('approvalsHistorySubTab');
+    const histLink = document.querySelector('#historySubTab [href="' + savedHistTab + '"]');
+    if (histLink) new bootstrap.Tab(histLink).show();
+  }
+  document.querySelectorAll('#historySubTab .nav-link').forEach(function(link) {
+    link.addEventListener('shown.bs.tab', function(e) {
+      localStorage.setItem('approvalsHistorySubTab', this.getAttribute('href'));
+    });
+  });
+
+  // Open-page buttons (Delete Requests tab)
   document.querySelectorAll('.open-page-btn').forEach(function(btn) {
     btn.addEventListener('click', function(e) {
       e.preventDefault();
       var storedUrl = this.getAttribute('data-url');
-      if (storedUrl) {
-        try {
-          // Extract path and hash from stored URL
-          var urlObj = new URL(storedUrl);
-          var pathWithHash = urlObj.pathname + urlObj.search + urlObj.hash;
-
-          // Apply to current domain (local or live)
-          var currentOrigin = window.location.origin;
-          var finalUrl = currentOrigin + pathWithHash;
-
-          window.open(finalUrl, '_blank');
-        } catch (err) {
-          // Fallback to stored URL if parsing fails
-          window.open(storedUrl, '_blank');
-        }
+      if (!storedUrl) return;
+      try {
+        var urlObj = new URL(storedUrl);
+        var pathWithHash = urlObj.pathname + urlObj.search + urlObj.hash;
+        window.open(window.location.origin + pathWithHash, '_blank');
+      } catch (err) {
+        window.open(storedUrl, '_blank');
       }
     });
   });
 
+  // Permission approve/deny buttons
   document.querySelectorAll('.approve-perm-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       currentPermReqId = this.dataset.reqId;
       new bootstrap.Modal(document.getElementById('approvePermissionModal')).show();
     });
   });
-
   document.querySelectorAll('.deny-perm-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       currentPermReqId = this.dataset.reqId;
@@ -331,35 +793,140 @@ document.addEventListener('DOMContentLoaded', function() {
       new bootstrap.Modal(document.getElementById('denyPermissionModal')).show();
     });
   });
+  document.getElementById('approvePermissionModal').addEventListener('hidden.bs.modal', function() { currentPermReqId = null; });
+  document.getElementById('denyPermissionModal').addEventListener('hidden.bs.modal', function() { currentPermReqId = null; });
 
-  document.getElementById('approvePermissionModal').addEventListener('hidden.bs.modal', function() {
-    currentPermReqId = null;
+  // ── Inline approve/reject (time-off, expense, timesheet, medical reject) ──
+  document.querySelectorAll('.inline-approve-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var cat    = this.dataset.cat;
+      var id     = this.dataset.id;
+      var action = this.dataset.action;
+      var typeLabel = { timeoff: 'time off', expense: 'expense', medical: 'medical claim', timesheet: 'timesheet' }[cat] || cat;
+      var label  = action === 'approve' ? 'Approve' : 'Reject';
+      if (!confirm(label + ' this ' + typeLabel + '?')) return;
+      inlineAction(cat, id, action, this);
+    });
   });
 
-  document.getElementById('denyPermissionModal').addEventListener('hidden.bs.modal', function() {
-    currentPermReqId = null;
+  // Medical approve modal trigger
+  document.querySelectorAll('.medical-approve-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      currentMedicalId = this.dataset.id;
+      document.getElementById('med-modal-employee').textContent = this.dataset.employee || '—';
+      // Show claimed amount
+      var amt = parseFloat(this.dataset.amount) || 0;
+      var curr = this.dataset.currency || 'USD';
+      var rate = parseFloat(this.dataset.rate) || 120;
+      var usd = curr === 'BDT' ? (amt / rate).toFixed(2) : amt.toFixed(2);
+      document.getElementById('med-modal-claimed').textContent = '$' + usd;
+      document.getElementById('medAmountApproved').value = usd;
+      document.getElementById('medAdminNotes').value = '';
+      new bootstrap.Modal(document.getElementById('medicalApproveModal')).show();
+    });
+  });
+
+  // Timesheet send-back buttons
+  document.querySelectorAll('.ts-sendback-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var id = this.dataset.id;
+      if (!confirm('Send this timesheet back for revision?')) return;
+      inlineAction('timesheet-sendback', id, 'sendback', this);
+    });
   });
 });
 
+function inlineAction(cat, id, action, btn) {
+  var url;
+  var body = {};
+
+  if (cat === 'timeoff') {
+    url = '/api/approvals/time-off/' + id + '/' + action;
+  } else if (cat === 'expense') {
+    url = '/api/approvals/expense/' + id + '/' + action;
+  } else if (cat === 'medical') {
+    url = '/api/approvals/medical/' + id + '/' + action;
+  } else if (cat === 'timesheet') {
+    url = '/api/timesheets/' + id + '/approve';
+    body = { action: action };
+  } else if (cat === 'timesheet-sendback') {
+    url = '/api/timesheets/' + id + '/send-back';
+  }
+
+  if (!url) return;
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  }
+
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+  .then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  })
+  .then(function(data) {
+    if (!data.success && !data.status) {
+      alert('Error: ' + (data.error || 'Unknown error'));
+      if (btn) { btn.disabled = false; btn.innerHTML = 'Retry'; }
+      return;
+    }
+    // Map cat → history sub-tab anchor so we can land there after reload
+    var histTabMap = { timeoff: 'hist-timeoff', expense: 'hist-expense', medical: 'hist-medical', timesheet: 'hist-timesheet', 'timesheet-sendback': 'hist-timesheet' };
+    var histTab = histTabMap[cat] || null;
+    if (histTab) {
+      localStorage.setItem('approvalsActiveTab', '#tab-history');
+      localStorage.setItem('approvalsHistorySubTab', '#' + histTab);
+    }
+    location.reload();
+  })
+  .catch(function(err) {
+    alert('Error: ' + err.message);
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Retry'; }
+  });
+}
+
+function confirmMedicalApprove() {
+  if (!currentMedicalId) return;
+  var amt = parseFloat(document.getElementById('medAmountApproved').value) || 0;
+  if (amt <= 0) { alert('Please enter an approved amount greater than 0.'); return; }
+  var notes = document.getElementById('medAdminNotes').value.trim();
+  bootstrap.Modal.getInstance(document.getElementById('medicalApproveModal')).hide();
+
+  fetch('/api/approvals/medical/' + currentMedicalId + '/approve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount_approved: amt, admin_notes: notes })
+  })
+  .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+  .then(function(data) {
+    if (!data.success) { alert('Error: ' + (data.error || 'Unknown')); return; }
+    currentMedicalId = null;
+    localStorage.setItem('approvalsActiveTab', '#tab-history');
+    localStorage.setItem('approvalsHistorySubTab', '#hist-medical');
+    location.reload();
+  })
+  .catch(function(err) { alert('Error: ' + err.message); });
+}
+
+// ── Permission request helpers ──────────────────────────────────────────────
 function submitPermissionRequest(action, notes) {
   if (!currentPermReqId) return;
   fetch('/api/permission-requests/' + currentPermReqId + '/resolve', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({action: action, notes: notes})
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: action, notes: notes })
   })
-  .then(r => {
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
-  })
-  .then(data => {
-    if (!data.success) {
-      alert('Error: ' + (data.error || 'Unknown'));
-      return;
-    }
+  .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+  .then(function(data) {
+    if (!data.success) { alert('Error: ' + (data.error || 'Unknown')); return; }
     location.reload();
   })
-  .catch(err => { alert('Error: ' + err.message); });
+  .catch(function(err) { alert('Error: ' + err.message); });
 }
 
 function confirmApprove() {
