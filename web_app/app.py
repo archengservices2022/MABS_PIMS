@@ -13905,52 +13905,61 @@ def migrate_missing_exchange_rates(default_rate=120):
 
     return fixed_count
 
-# ── Migration: Fix old BDT approved amounts (multiply by 100) ──
-def _migrate_fix_old_bdt_approved_amounts():
+# ── Migration: Ensure all medical claims are in USD format ──
+def _migrate_ensure_usd_format():
     """
-    Fix old BDT medical claim approved amounts that are 100x too small.
+    Ensure all medical claims use USD format for consistency.
 
-    Old approved entries show like $0.02 / ৳2 but should be $2.08 / ৳250.
-    This migration multiplies amount_approved by 100 for old BDT entries.
+    This converts any remaining old BDT format entries to USD.
+    Old entries: amount_claimed = 250 (meaning ৳250), amount_currency = "BDT"
+    New format: amount_claimed = 2.08 (USD), amount_currency = "USD"
     """
     if not FIREBASE_AVAILABLE:
-        log.warning("Firebase not available - skipping old BDT approved amount migration")
+        log.warning("Firebase not available - skipping USD format migration")
         return
 
     try:
         med_claims = fb_get("/medical_claims") or {}
-        fixed_count = 0
+        converted_count = 0
 
         for claim_id, claim_data in med_claims.items():
             if not isinstance(claim_data, dict):
                 continue
 
-            # Only fix old BDT entries that have amount_approved set
+            # Only convert old BDT entries
             if claim_data.get("amount_currency") != "BDT":
                 continue
 
+            exchange_rate = _safe_float(claim_data.get("exchange_rate", 120)) or 120
+            claimed_amt = _safe_float(claim_data.get("amount_claimed", 0))
             approved_amt = _safe_float(claim_data.get("amount_approved", 0))
 
-            # Skip if not approved, or already appears to be corrected (>= 1.0)
-            if approved_amt <= 0 or approved_amt >= 1.0:
+            if claimed_amt <= 0:
                 continue
 
-            # Multiply by 100 to correct the old underscaled value
-            corrected_amt = approved_amt * 100
+            # Convert BDT to USD
+            claimed_usd = round(claimed_amt / exchange_rate, 2)
+            approved_usd = round(approved_amt / exchange_rate, 2) if approved_amt > 0 else None
 
-            fb_update(f"/medical_claims/{claim_id}", {
-                "amount_approved": corrected_amt,
-            })
-            fixed_count += 1
-            log.debug(f"Fixed claim {claim_id}: ${approved_amt:.2f} → ${corrected_amt:.2f}")
+            update_data = {
+                "amount_claimed": claimed_usd,
+                "amount_currency": "USD",
+            }
 
-        if fixed_count > 0:
-            log.info(f"✓ Migration complete: Fixed {fixed_count} old BDT approved amounts")
+            if approved_usd and approved_usd > 0:
+                update_data["amount_approved"] = approved_usd
+
+            fb_update(f"/medical_claims/{claim_id}", update_data)
+            converted_count += 1
+            log.info(f"Converted claim {claim_id}: {claimed_amt} BDT → ${claimed_usd} USD")
+
+        if converted_count > 0:
+            log.info(f"✓ Migration complete: Converted {converted_count} BDT entries to USD")
         else:
-            log.info("✓ Migration: No old BDT approved amounts to fix")
+            log.info("✓ Migration: All medical claims already in USD format")
 
     except Exception as e:
-        log.error(f"✗ Error during old BDT approved amount migration: {e}")
+        log.error(f"✗ Error during USD format migration: {e}")
 
 @app.route("/financial/expense/new", methods=["POST"])
 @role_required("financial")
@@ -24429,10 +24438,9 @@ def api_timesheets_export():
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    # Run CO firebase_id migration on startup
+    # Run migrations on startup
     _migrate_add_co_firebase_ids()
-    # Fix old BDT approved amounts
-    _migrate_fix_old_bdt_approved_amounts()
+    _migrate_ensure_usd_format()
 
     app.run(
         debug=os.environ.get("FLASK_DEBUG", "0") == "1",
