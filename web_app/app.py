@@ -14095,6 +14095,24 @@ def expense_delete(exp_id):
                 fb_update(f"/deleted_advances/{advance_id}", archive_adv)
             fb_delete(f"/employee_advances/{advance_id}")
 
+    # If this expense is a medical claim, also delete the medical claim
+    if bs_data.get("source") == "medical_claim" or emp_data.get("source") == "medical_claim":
+        medical_claim_id = bs_data.get("medical_claim_id") or (emp_data.get("medical_claim_id") if isinstance(emp_data, dict) else None) or exp_id
+        if medical_claim_id:
+            # Archive the medical claim
+            medical_claim_data = fb_get(f"/medical_claims/{medical_claim_id}") or {}
+            if medical_claim_data:
+                archive_med = dict(medical_claim_data)
+                archive_med.update({
+                    "firebase_id": medical_claim_id,
+                    "deleted_at": datetime.now(timezone.utc).isoformat(),
+                    "deleted_by": session.get("user_name") or session.get("user_email", ""),
+                })
+                fb_update(f"/deleted_medical_claims/{medical_claim_id}", archive_med)
+            fb_delete(f"/medical_claims/{medical_claim_id}")
+            # Also delete the medical claim receipt if it exists
+            fb_delete(f"/medical_claim_receipts/{medical_claim_id}")
+
     flash("Expense deleted and archived for recovery.", "success")
     page = request.form.get('page', '1')
     return redirect(url_for("financial", tab="expenses", page=page))
@@ -14148,6 +14166,17 @@ def expense_restore(exp_id):
                                     if k not in ("deleted_at", "deleted_by", "firebase_id")}
                 fb_update(f"/employee_advances/{advance_id}", restored_advance)
                 fb_delete(f"/deleted_advances/{advance_id}")
+
+    # If this expense is a medical claim, restore the medical claim
+    if archive.get("source") == "medical_claim":
+        medical_claim_id = archive.get("medical_claim_id") or exp_id
+        deleted_medical = fb_get(f"/deleted_medical_claims/{medical_claim_id}") or {}
+        if deleted_medical:
+            # Restore medical claim (remove deleted metadata)
+            restored_medical = {k: v for k, v in deleted_medical.items()
+                                if k not in ("deleted_at", "deleted_by", "firebase_id")}
+            fb_update(f"/medical_claims/{medical_claim_id}", restored_medical)
+            fb_delete(f"/deleted_medical_claims/{medical_claim_id}")
 
     fb_delete(f"/deleted_expenses/{exp_id}")
     flash("Expense restored successfully.", "success")
@@ -16277,6 +16306,23 @@ def employee_expense_delete(exp_id):
     if role not in ("admin", "accountant") and exp_data.get("status", "Pending") != "Pending":
         flash("Only pending expenses can be deleted.", "danger")
         return redirect(url_for("employees") + "#tab-emp-expenses")
+
+    # If this expense is a medical claim, also delete the medical claim
+    if exp_data.get("source") == "medical_claim":
+        medical_claim_id = exp_data.get("medical_claim_id") or exp_id
+        # Archive the medical claim
+        medical_claim_data = fb_get(f"/medical_claims/{medical_claim_id}") or {}
+        if medical_claim_data:
+            archive_med = dict(medical_claim_data)
+            archive_med.update({
+                "firebase_id": medical_claim_id,
+                "deleted_at": datetime.now(timezone.utc).isoformat(),
+                "deleted_by": session.get("user_name") or session.get("user_email", ""),
+            })
+            fb_update(f"/deleted_medical_claims/{medical_claim_id}", archive_med)
+        fb_delete(f"/medical_claims/{medical_claim_id}")
+        # Also delete the medical claim receipt if it exists
+        fb_delete(f"/medical_claim_receipts/{medical_claim_id}")
 
     fb_delete(f"/expenses/{exp_id}")
     flash("Expense deleted.", "success")
