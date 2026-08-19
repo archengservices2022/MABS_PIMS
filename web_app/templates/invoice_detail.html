@@ -489,7 +489,7 @@
                   data-payment-amount="{{ payment.get('amount_paid', 0) }}"
                   data-project-number="{{ payment.get('project_number', '') }}"
                   data-stage-name="{{ payment.get('stage_name', 'Invoice Payment') }}"
-                  onclick="requestPaymentDeletion(this)"><i class="bi bi-trash"></i></button>
+                  onclick="handlePaymentDelete(this)"><i class="bi bi-trash"></i></button>
                 {% endif %}
               </td>
             </tr>
@@ -518,7 +518,7 @@
                   data-payment-index="{{ loop.index0 }}"
                   data-payment-amount="{{ payment.get('amount', 0) }}"
                   data-stage-name="Tax Payment"
-                  onclick="requestPaymentDeletion(this)"><i class="bi bi-trash"></i></button>
+                  onclick="handlePaymentDelete(this)"><i class="bi bi-trash"></i></button>
               </td>
             </tr>
             {% endfor %}
@@ -805,6 +805,30 @@ function checkIfFullyPaid() {
   }
 }
 
+function handlePaymentDelete(button) {
+  const type = button.dataset.paymentType;
+  const index = parseInt(button.dataset.paymentIndex);
+  const amount = button.dataset.paymentAmount;
+  const projectNumber = button.dataset.projectNumber || 'Tax';
+  const stageName = button.dataset.stageName || 'Payment';
+  const invoiceNumber = '{{ meta.get("invoice_number", "") }}';
+
+  // Store payment deletion context for later use
+  window._paymentToDelete = {
+    type: type,
+    index: index,
+    amount: amount,
+    projectNumber: projectNumber,
+    stageName: stageName
+  };
+
+  // Confirm deletion
+  if (!confirm('Delete this payment?')) return;
+
+  // Try to delete directly - if permission denied, will show request modal
+  deletePayment(type, index);
+}
+
 function requestPaymentDeletion(button) {
   const type = button.dataset.paymentType;
   const index = parseInt(button.dataset.paymentIndex);
@@ -829,8 +853,6 @@ function requestPaymentDeletion(button) {
 }
 
 function deletePayment(type, index) {
-  if (!confirm('Delete this payment?')) return;
-
   const endpoint = type === 'tax'
     ? '/invoicing/{{ invoice.firebase_id }}/tax/payment/delete/' + index
     : '/invoicing/{{ invoice.firebase_id }}/payment/delete/' + index;
@@ -850,9 +872,10 @@ function deletePayment(type, index) {
       // Permission denied - show request deletion modal
       return res.json().then(data => {
         if (data.permission_required && window._paymentToDelete) {
-          // Show the delete request modal that was triggered by requestPaymentDeletion
-          openDeleteRequestModal('payment', `{{ invoice.firebase_id }}_${window._paymentToDelete.type}_${window._paymentToDelete.index}`,
-            `Invoice {{ meta.get("invoice_number", "") }} - Project ${window._paymentToDelete.projectNumber} - ${window._paymentToDelete.stageName} - $${parseFloat(window._paymentToDelete.amount).toFixed(2)}`);
+          // Show the delete request modal
+          const invoiceNumber = '{{ meta.get("invoice_number", "") }}';
+          const paymentLabel = `Invoice ${invoiceNumber} - Project ${window._paymentToDelete.projectNumber} - ${window._paymentToDelete.stageName} - $${parseFloat(window._paymentToDelete.amount).toFixed(2)}`;
+          openDeleteRequestModal('payment', `{{ invoice.firebase_id }}_${window._paymentToDelete.type}_${window._paymentToDelete.index}`, paymentLabel);
         } else {
           alert('Error: ' + (data.error || 'Failed to delete payment'));
         }
