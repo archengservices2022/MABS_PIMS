@@ -42,7 +42,8 @@
     }
     .notif-mark-all { background: none; border: none; color: #6B7280; font-size: 12px; cursor: pointer; }
     .notif-mark-all:hover { color: #1A2B3C; text-decoration: underline; }
-    .notif-list-inner { overflow-y: auto; flex: 1; }
+    #notifList { flex: 1; overflow-y: auto; }
+    .notif-list-inner { display: contents; }
     .notif-item {
       padding: 12px 16px; border-bottom: 1px solid #F3F4F6;
       cursor: pointer; transition: background .1s;
@@ -67,7 +68,15 @@
       .notif-btn:hover { color: #e2e8f0; }
       .notif-mark-all { color: #94a3b8; }
       .notif-mark-all:hover { color: #e2e8f0; }
+      #notifList { scrollbar-color: #475569 #1e293b; }
+      #notifList::-webkit-scrollbar { width: 6px; }
+      #notifList::-webkit-scrollbar-track { background: transparent; }
+      #notifList::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
     }
+    #notifList { scrollbar-color: #d1d5db #f9fafb; }
+    #notifList::-webkit-scrollbar { width: 6px; }
+    #notifList::-webkit-scrollbar-track { background: transparent; }
+    #notifList::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
   </style>
   {% block head %}{% endblock %}
   <script>const CURRENCY_SYMBOL = "{{ currency_symbol }}";</script>
