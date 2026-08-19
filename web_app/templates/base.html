@@ -736,6 +736,15 @@ window._submitPermissionRequest = function () {
     var btn   = document.getElementById('drSubmitBtn');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending…';
+
+    console.log('Sending delete request:', {
+      action: 'Delete ' + _drLabel,
+      entity_type: _drType,
+      entity_id: _drId,
+      entity_label: _drLabel,
+      notes: notes
+    });
+
     fetch('/api/permission-request', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -748,20 +757,29 @@ window._submitPermissionRequest = function () {
         entity_label: _drLabel
       })
     })
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      bootstrap.Modal.getInstance(document.getElementById('deleteRequestModal')).hide();
-      var toastEl = document.createElement('div');
-      toastEl.className = 'position-fixed bottom-0 end-0 p-3';
-      toastEl.style.zIndex = 9999;
-      toastEl.innerHTML = '<div class="toast show align-items-center text-bg-success border-0" role="alert"><div class="d-flex"><div class="toast-body"><i class="bi bi-check-circle me-2"></i>Delete request sent to admin for approval.</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
-      document.body.appendChild(toastEl);
-      setTimeout(function(){ toastEl.remove(); }, 4000);
+    .then(function(r){
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
     })
-    .catch(function(){
+    .then(function(d){
+      console.log('Delete request response:', d);
+      if (d.success) {
+        bootstrap.Modal.getInstance(document.getElementById('deleteRequestModal')).hide();
+        var toastEl = document.createElement('div');
+        toastEl.className = 'position-fixed bottom-0 end-0 p-3';
+        toastEl.style.zIndex = 9999;
+        toastEl.innerHTML = '<div class="toast show align-items-center text-bg-success border-0" role="alert"><div class="d-flex"><div class="toast-body"><i class="bi bi-check-circle me-2"></i>Delete request sent to admin for approval.</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
+        document.body.appendChild(toastEl);
+        setTimeout(function(){ toastEl.remove(); }, 4000);
+      } else {
+        throw new Error(d.error || 'Request failed');
+      }
+    })
+    .catch(function(err){
+      console.error('Delete request error:', err);
       btn.disabled = false;
       btn.innerHTML = '<i class="bi bi-send me-1"></i>Send Request';
-      alert('Failed to send request. Please try again.');
+      alert('Failed to send request: ' + err.message);
     });
   };
 })();
