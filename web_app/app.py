@@ -22919,6 +22919,19 @@ def payment_sequential(invoice_id):
 @role_required("invoicing")
 def payment_delete(invoice_id, idx):
     """Remove a payment entry from the log - deletes only that specific stage's payment."""
+    # Check permission for payment deletion (similar to receipt deletion)
+    _uid = session.get("user_uid", "")
+    user_role = normalize_role(session.get("user_role", ""))
+    entity_id = f"{invoice_id}_invoice_{idx}"
+    has_approval = user_role in ("admin", "accountant") or _has_approved_delete_request(_uid, "payment", entity_id)
+
+    if not has_approval:
+        return jsonify({
+            "success": False,
+            "error": "You don't have permission to delete this payment",
+            "permission_required": True
+        }), 403
+
     inv_data = fb_get(f"/invoices/{invoice_id}") or {}
     payment_log = inv_data.get("payment_log", [])
     if not isinstance(payment_log, list) or idx >= len(payment_log):
@@ -23001,12 +23014,34 @@ def payment_delete(invoice_id, idx):
                     "updated_at": datetime.now(timezone.utc).isoformat()
                 })
 
+    # Mark the permission request as completed if one exists
+    entity_id = f"{invoice_id}_invoice_{idx}"
+    approved_req = _has_approved_delete_request(_uid, "payment", entity_id)
+    if approved_req:
+        fb_update(f"/permission_requests/{approved_req.get('firebase_id')}", {
+            "status": "completed",
+            "reviewed_by": session.get("user_name", "")
+        })
+
     return jsonify({"success": True}), 200
 
 @app.route("/invoicing/<invoice_id>/tax/payment/delete/<int:idx>", methods=["POST"])
 @role_required("invoicing")
 def tax_payment_delete(invoice_id, idx):
     """Remove a tax payment entry from the log."""
+    # Check permission for tax payment deletion
+    _uid = session.get("user_uid", "")
+    user_role = normalize_role(session.get("user_role", ""))
+    entity_id = f"{invoice_id}_tax_{idx}"
+    has_approval = user_role in ("admin", "accountant") or _has_approved_delete_request(_uid, "payment", entity_id)
+
+    if not has_approval:
+        return jsonify({
+            "success": False,
+            "error": "You don't have permission to delete this tax payment",
+            "permission_required": True
+        }), 403
+
     inv_data = fb_get(f"/invoices/{invoice_id}") or {}
     tax_log = inv_data.get("tax_payments", [])
     if not isinstance(tax_log, list) or idx >= len(tax_log):
@@ -23063,6 +23098,15 @@ def tax_payment_delete(invoice_id, idx):
                     "status": "Not Started",
                     "updated_at": datetime.now(timezone.utc).isoformat()
                 })
+
+    # Mark the permission request as completed if one exists
+    entity_id = f"{invoice_id}_tax_{idx}"
+    approved_req = _has_approved_delete_request(_uid, "payment", entity_id)
+    if approved_req:
+        fb_update(f"/permission_requests/{approved_req.get('firebase_id')}", {
+            "status": "completed",
+            "reviewed_by": session.get("user_name", "")
+        })
 
     return jsonify({"success": True}), 200
 

@@ -483,7 +483,13 @@
                   data-payment-reference="{{ payment.get('reference', '') }}"
                   data-payment-notes="{{ payment.get('notes', '') }}"
                   onclick="scrollToEditPaymentForm(this)"><i class="bi bi-pencil"></i></button>
-                <button type="button" class="btn btn-xs btn-outline-danger" title="Delete" onclick="deletePayment('invoice', {{ payment.get('payment_log_index', 0) }})"><i class="bi bi-trash"></i></button>
+                <button type="button" class="btn btn-xs btn-outline-danger" title="Delete"
+                  data-payment-type="invoice"
+                  data-payment-index="{{ payment.get('payment_log_index', 0) }}"
+                  data-payment-amount="{{ payment.get('amount_paid', 0) }}"
+                  data-project-number="{{ payment.get('project_number', '') }}"
+                  data-stage-name="{{ payment.get('stage_name', 'Invoice Payment') }}"
+                  onclick="requestPaymentDeletion(this)"><i class="bi bi-trash"></i></button>
                 {% endif %}
               </td>
             </tr>
@@ -507,7 +513,12 @@
                   data-payment-reference="{{ payment.get('reference', '') }}"
                   data-payment-notes="{{ payment.get('notes', '') }}"
                   onclick="scrollToEditPaymentForm(this)"><i class="bi bi-pencil"></i></button>
-                <button type="button" class="btn btn-xs btn-outline-danger" title="Delete" onclick="deletePayment('tax', {{ loop.index0 }})"><i class="bi bi-trash"></i></button>
+                <button type="button" class="btn btn-xs btn-outline-danger" title="Delete"
+                  data-payment-type="tax"
+                  data-payment-index="{{ loop.index0 }}"
+                  data-payment-amount="{{ payment.get('amount', 0) }}"
+                  data-stage-name="Tax Payment"
+                  onclick="requestPaymentDeletion(this)"><i class="bi bi-trash"></i></button>
               </td>
             </tr>
             {% endfor %}
@@ -794,6 +805,29 @@ function checkIfFullyPaid() {
   }
 }
 
+function requestPaymentDeletion(button) {
+  const type = button.dataset.paymentType;
+  const index = parseInt(button.dataset.paymentIndex);
+  const amount = button.dataset.paymentAmount;
+  const projectNumber = button.dataset.projectNumber || 'Tax';
+  const stageName = button.dataset.stageName || 'Payment';
+  const invoiceNumber = '{{ meta.get("invoice_number", "") }}';
+
+  const paymentLabel = `Invoice ${invoiceNumber} - Project ${projectNumber} - ${stageName} - $${parseFloat(amount).toFixed(2)}`;
+
+  // Store payment deletion context
+  window._paymentToDelete = {
+    type: type,
+    index: index,
+    amount: amount,
+    projectNumber: projectNumber,
+    stageName: stageName
+  };
+
+  // Request deletion via permission system
+  openDeleteRequestModal('payment', `{{ invoice.firebase_id }}_${type}_${index}`, paymentLabel);
+}
+
 function deletePayment(type, index) {
   if (!confirm('Delete this payment?')) return;
 
@@ -812,6 +846,17 @@ function deletePayment(type, index) {
       setTimeout(() => {
         window.location.reload();
       }, 100);
+    } else if (res.status === 403) {
+      // Permission denied - show request deletion modal
+      return res.json().then(data => {
+        if (data.permission_required && window._paymentToDelete) {
+          // Show the delete request modal that was triggered by requestPaymentDeletion
+          openDeleteRequestModal('payment', `{{ invoice.firebase_id }}_${window._paymentToDelete.type}_${window._paymentToDelete.index}`,
+            `Invoice {{ meta.get("invoice_number", "") }} - Project ${window._paymentToDelete.projectNumber} - ${window._paymentToDelete.stageName} - $${parseFloat(window._paymentToDelete.amount).toFixed(2)}`);
+        } else {
+          alert('Error: ' + (data.error || 'Failed to delete payment'));
+        }
+      });
     } else {
       return res.json().then(data => {
         throw new Error(data.error || 'Failed to delete payment');
