@@ -1872,7 +1872,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
             <thead>
               <tr>
                 <th style="min-width:120px;">Expense Date</th><th style="min-width:200px;">Name</th><th class="text-end">Amount</th>
-                <th>Project</th><th style="min-width:125px;">Submitted On</th><th>Status</th><th class="text-center">Receipt</th><th></th>
+                <th>Project</th><th style="min-width:125px;">Submitted On</th><th>Status</th><th style="min-width:120px;">Approved</th><th class="text-center">Receipt</th><th></th>
               </tr>
             </thead>
             <tbody id="allSubmissionsTbody">
@@ -1908,6 +1908,22 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                   {% endif %}
                 {% else %}
                   <span class="badge bg-warning text-dark">Pending</span>
+                {% endif %}
+              </td>
+              <td class="text-muted small">
+                {% set reviewed_by = e.get('reviewed_by', '') %}
+                {% set reviewed_at = e.get('reviewed_at', '') %}
+                {% if st == 'Approved' or edit_st == 'approved' %}
+                  {% if reviewed_by %}
+                  <div style="font-size:11px;"><strong>{{ reviewed_by }}</strong></div>
+                  {% if reviewed_at %}
+                  <div style="font-size:10px;">{{ reviewed_at[:10] | format_date }}</div>
+                  {% endif %}
+                  {% else %}
+                  —
+                  {% endif %}
+                {% else %}
+                  —
                 {% endif %}
               </td>
               <td class="text-center">
