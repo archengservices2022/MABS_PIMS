@@ -14334,8 +14334,9 @@ def expense_edit(exp_id):
 
                 # If this is a medical claim expense, also update medical claims
                 if existing.get("source") == "medical_claim":
-                    fb_update(f"/medical_claims/{exp_id}", {"has_receipt": False})
-                    fb_delete(f"/medical_claim_receipts/{exp_id}")
+                    medical_claim_id = existing.get("medical_claim_id") or exp_id
+                    fb_update(f"/medical_claims/{medical_claim_id}", {"has_receipt": False})
+                    fb_delete(f"/medical_claim_receipts/{medical_claim_id}")
 
                 cache_bust("financial")
                 cache_bust("expenses")
@@ -14359,16 +14360,25 @@ def expense_edit(exp_id):
                 if receipt_sync.get("receipt_base64"):
                     fb_update(f"/expense_receipts/{exp_id}", receipt_sync)
 
-        # If this expense originated from a medical claim, sync amount_approved back
+        # If this expense originated from a medical claim, sync amount_approved and receipt back
         if existing.get("source") == "medical_claim":
+            medical_claim_id = existing.get("medical_claim_id") or exp_id
             new_amt = _safe_float(data.get("amount", 0))
             now_str = datetime.now(timezone.utc).isoformat()
-            fb_update(f"/medical_claims/{exp_id}", {
+            med_claim_update = {
                 "amount_approved": new_amt,
                 "reviewed_by":     session.get("user_name", ""),
                 "reviewed_at":     now_str,
                 "updated_at":      now_str,
-            })
+            }
+            # Sync receipt changes to medical claim
+            if any(k in data for k in ("receipt_base64", "receipt_filename", "receipt_type")):
+                receipt_data = {k: v for k, v in data.items()
+                               if k in ("receipt_base64", "receipt_filename", "receipt_type")}
+                if receipt_data.get("receipt_base64"):
+                    med_claim_update["has_receipt"] = True
+                    fb_update(f"/medical_claim_receipts/{medical_claim_id}", receipt_data)
+            fb_update(f"/medical_claims/{medical_claim_id}", med_claim_update)
 
         # If this expense is linked to a salary, sync back to payroll
         salary_id = existing.get("salary_id")
@@ -16282,13 +16292,22 @@ def employee_expense_edit(exp_id):
     # Also sync to balance_sheet_expenses if it exists there
     if fb_get(f"/balance_sheet_expenses/{exp_id}"):
         fb_update(f"/balance_sheet_expenses/{exp_id}", updates)
-    # If this expense came from a medical claim, sync amount_approved back
+    # If this expense came from a medical claim, sync amount_approved and receipt back
     if exp_data.get("source") == "medical_claim":
-        fb_update(f"/medical_claims/{exp_id}", {
+        medical_claim_id = exp_data.get("medical_claim_id") or exp_id
+        med_claim_update = {
             "amount_approved": _safe_float(updates.get("amount", 0)),
             "reviewed_by":     session.get("user_name", ""),
             "reviewed_at":     datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        # Sync receipt changes to medical claim
+        if any(k in updates for k in ("receipt_base64", "receipt_filename", "receipt_type")):
+            receipt_data = {k: v for k, v in updates.items()
+                           if k in ("receipt_base64", "receipt_filename", "receipt_type")}
+            if receipt_data.get("receipt_base64"):
+                med_claim_update["has_receipt"] = True
+                fb_update(f"/medical_claim_receipts/{medical_claim_id}", receipt_data)
+        fb_update(f"/medical_claims/{medical_claim_id}", med_claim_update)
     flash("Expense updated successfully.", "success")
     return redirect(url_for("employees") + "#tab-emp-expenses")
 
