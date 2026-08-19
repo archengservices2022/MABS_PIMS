@@ -13905,6 +13905,53 @@ def migrate_missing_exchange_rates(default_rate=120):
 
     return fixed_count
 
+# ── Migration: Fix old BDT approved amounts (multiply by 100) ──
+def _migrate_fix_old_bdt_approved_amounts():
+    """
+    Fix old BDT medical claim approved amounts that are 100x too small.
+
+    Old approved entries show like $0.02 / ৳2 but should be $2.08 / ৳250.
+    This migration multiplies amount_approved by 100 for old BDT entries.
+    """
+    if not FIREBASE_AVAILABLE:
+        log.warning("Firebase not available - skipping old BDT approved amount migration")
+        return
+
+    try:
+        med_claims = fb_get("/medical_claims") or {}
+        fixed_count = 0
+
+        for claim_id, claim_data in med_claims.items():
+            if not isinstance(claim_data, dict):
+                continue
+
+            # Only fix old BDT entries that have amount_approved set
+            if claim_data.get("amount_currency") != "BDT":
+                continue
+
+            approved_amt = _safe_float(claim_data.get("amount_approved", 0))
+
+            # Skip if not approved, or already appears to be corrected (>= 1.0)
+            if approved_amt <= 0 or approved_amt >= 1.0:
+                continue
+
+            # Multiply by 100 to correct the old underscaled value
+            corrected_amt = approved_amt * 100
+
+            fb_update(f"/medical_claims/{claim_id}", {
+                "amount_approved": corrected_amt,
+            })
+            fixed_count += 1
+            log.debug(f"Fixed claim {claim_id}: ${approved_amt:.2f} → ${corrected_amt:.2f}")
+
+        if fixed_count > 0:
+            log.info(f"✓ Migration complete: Fixed {fixed_count} old BDT approved amounts")
+        else:
+            log.info("✓ Migration: No old BDT approved amounts to fix")
+
+    except Exception as e:
+        log.error(f"✗ Error during old BDT approved amount migration: {e}")
+
 @app.route("/financial/expense/new", methods=["POST"])
 @role_required("financial")
 def expense_new():
@@ -24384,6 +24431,8 @@ def api_timesheets_export():
 if __name__ == "__main__":
     # Run CO firebase_id migration on startup
     _migrate_add_co_firebase_ids()
+    # Fix old BDT approved amounts
+    _migrate_fix_old_bdt_approved_amounts()
 
     app.run(
         debug=os.environ.get("FLASK_DEBUG", "0") == "1",
