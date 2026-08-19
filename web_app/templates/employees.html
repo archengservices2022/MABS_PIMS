@@ -2746,7 +2746,7 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
     p.set('period', period);
     if (period === 'custom') { p.set('start', start||''); p.set('end', end||''); }
     else { p.delete('start'); p.delete('end'); }
-    window.location.href = '{{ url_for("employees") }}?' + p.toString() + '#team';
+    window.location.href = '{{ url_for("employees") }}?' + p.toString() + '#tab-team';
   }
   sel.addEventListener('change', function() {
     if (this.value === 'custom') { s1.style.display=''; s2.style.display=''; btn.style.display=''; }
