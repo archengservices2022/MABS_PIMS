@@ -1893,7 +1893,6 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               <td>
                 {% set st = e.get('status','Pending') %}
                 {% set edit_st = e.get('edit_status', '') %}
-                {% set reviewed_by = e.get('reviewed_by', '') %}
                 {% set reviewed_at = e.get('reviewed_at', '') %}
                 {% if edit_st == 'pending' %}
                   <span class="badge bg-info text-white">Pending Edit</span>
@@ -1901,20 +1900,14 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                 {% elif edit_st == 'approved' %}
                   <span class="badge bg-success">Edit Approved</span>
                   <div style="font-size:10px;color:#059669;margin-top:2px;">{{ e.get('edit_approved_at','')[5:7] }}-{{ e.get('edit_approved_at','')[8:10] }}-{{ e.get('edit_approved_at','')[:4] }}</div>
-                  {% if reviewed_by %}
-                  <div style="font-size:11px;margin-top:3px;"><strong>{{ reviewed_by }}</strong></div>
                   {% if reviewed_at %}
-                  <div style="font-size:10px;color:#059669;">{{ reviewed_at[:10] | format_date }}</div>
-                  {% endif %}
+                  <div style="font-size:10px;color:#059669;margin-top:3px;">{{ reviewed_at[:10] | format_date }}</div>
                   <div style="font-size:10px;color:#059669;font-weight:500;">Approved</div>
                   {% endif %}
                 {% elif st == 'Approved' %}
                   <span class="badge bg-success">Approved</span>
-                  {% if reviewed_by %}
-                  <div style="font-size:11px;margin-top:3px;"><strong>{{ reviewed_by }}</strong></div>
                   {% if reviewed_at %}
-                  <div style="font-size:10px;color:#059669;">{{ reviewed_at[:10] | format_date }}</div>
-                  {% endif %}
+                  <div style="font-size:10px;color:#059669;margin-top:3px;">{{ reviewed_at[:10] | format_date }}</div>
                   <div style="font-size:10px;color:#059669;font-weight:500;">Approved</div>
                   {% endif %}
                 {% elif st == 'Rejected' %}
@@ -1922,11 +1915,8 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
                   {% if e.get('review_note') %}
                   <div style="font-size:10px;color:#dc2626;margin-top:2px;">{{ e.review_note[:40] }}</div>
                   {% endif %}
-                  {% if reviewed_by %}
-                  <div style="font-size:11px;margin-top:3px;"><strong>{{ reviewed_by }}</strong></div>
                   {% if reviewed_at %}
-                  <div style="font-size:10px;color:#dc2626;">{{ reviewed_at[:10] | format_date }}</div>
-                  {% endif %}
+                  <div style="font-size:10px;color:#dc2626;margin-top:3px;">{{ reviewed_at[:10] | format_date }}</div>
                   <div style="font-size:10px;color:#dc2626;font-weight:500;">Denied</div>
                   {% endif %}
                 {% else %}
