@@ -337,89 +337,241 @@
      TAB: HISTORY
   ═══════════════════════════════════════════════════════════════════════════ #}
   <div class="tab-pane fade" id="tab-history">
-    {% if history_items %}
-    <div class="card-panel">
-      <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
-          <thead class="table-light">
-            <tr>
-              <th>Employee</th>
-              <th>Type</th>
-              <th>Period / Date</th>
-              <th>Amount / Hours</th>
-              <th>Status</th>
-              <th>Reviewed By</th>
-              <th>Reviewed At</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for item in history_items %}
-            <tr>
-              <td class="fw-semibold">{{ item.employee }}</td>
-              <td>
-                {% if item.type == 'Medical' %}
-                  <span class="badge" style="background:#7C3AED;color:white;">{{ item.type }}</span>
-                {% elif item.type == 'Expense' %}
-                  <span class="badge" style="background:#b91c1c;color:white;">{{ item.type }}</span>
-                {% elif item.type == 'Time Off' %}
-                  <span class="badge" style="background:#0D9488;color:white;">{{ item.type }}</span>
-                {% elif item.type == 'Timesheet' %}
-                  <span class="badge" style="background:#2563eb;color:white;">{{ item.type }}</span>
-                {% else %}
-                  <span class="badge bg-secondary">{{ item.type }}</span>
-                {% endif %}
-              </td>
-              <td class="text-muted text-nowrap">
-                {% if item.cat == 'timeoff' %}
-                  {{ item.date | format_date }}{% if item.date_end %} → {{ item.date_end | format_date }}{% endif %}
-                {% elif item.cat == 'timesheet' %}
-                  {{ item.date }}
-                {% else %}
-                  {{ item.date | format_date }}
-                {% endif %}
-              </td>
-              <td>
-                {% if item.amount != '—' and item.amount != None %}
-                  {% if item.currency == 'h' %}
-                    {% if item.amount is number %}{{ "{:.1f}".format(item.amount|float) }}h{% else %}{{ item.amount }}h{% endif %}
-                  {% else %}
-                    {% set curr = item.currency %}
-                    {% set rate = item.exchange_rate or 120 %}
-                    {% if curr == 'BDT' %}
-                      ${{ "{:.2f}".format((item.amount|float) / rate) }}
-                    {% else %}
-                      ${{ "{:.2f}".format(item.amount|float) }}
-                    {% endif %}
-                  {% endif %}
-                {% else %}—{% endif %}
-              </td>
-              <td>
-                {% if item.sent_back %}
-                  <span class="badge" style="background:#f59e0b;color:white;">Sent Back</span>
-                {% elif item.status == 'Approved' %}
-                  <span class="badge bg-success">Approved</span>
-                {% elif item.status in ['Rejected', 'Denied'] %}
-                  <span class="badge bg-danger">{{ item.status }}</span>
-                {% else %}
-                  <span class="badge bg-secondary">{{ item.status }}</span>
-                {% endif %}
-              </td>
-              <td class="text-muted">{{ item.reviewed_by or '—' }}</td>
-              <td class="text-muted text-nowrap">{{ (item.reviewed_at[:10] | format_date) if item.reviewed_at else '—' }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+
+    {# Split history into per-type lists #}
+    {% set hist_timeoff  = history_items | selectattr('cat', 'equalto', 'timeoff')   | list %}
+    {% set hist_exp      = history_items | selectattr('cat', 'equalto', 'expense')   | list %}
+    {% set hist_med      = history_items | selectattr('cat', 'equalto', 'medical')   | list %}
+    {% set hist_ts       = history_items | selectattr('cat', 'equalto', 'timesheet') | list %}
+
+    {# History sub-tabs #}
+    <ul class="nav nav-pills mb-3" id="historySubTab" style="gap:6px;">
+      <li class="nav-item">
+        <a class="nav-link active py-1 px-3" data-bs-toggle="pill" href="#hist-timeoff" style="font-size:13px;">
+          <i class="bi bi-calendar-x me-1" style="color:#0D9488;"></i>Time Off
+          {% if hist_timeoff %}<span class="badge ms-1" style="background:#0D9488;color:white;">{{ hist_timeoff|length }}</span>{% endif %}
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link py-1 px-3" data-bs-toggle="pill" href="#hist-expense" style="font-size:13px;">
+          <i class="bi bi-receipt me-1" style="color:#b91c1c;"></i>Expenses
+          {% if hist_exp %}<span class="badge ms-1" style="background:#b91c1c;color:white;">{{ hist_exp|length }}</span>{% endif %}
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link py-1 px-3" data-bs-toggle="pill" href="#hist-medical" style="font-size:13px;">
+          <i class="bi bi-heart-pulse me-1" style="color:#7C3AED;"></i>Medical
+          {% if hist_med %}<span class="badge ms-1" style="background:#7C3AED;color:white;">{{ hist_med|length }}</span>{% endif %}
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link py-1 px-3" data-bs-toggle="pill" href="#hist-timesheet" style="font-size:13px;">
+          <i class="bi bi-clock me-1" style="color:#2563eb;"></i>Timesheets
+          {% if hist_ts %}<span class="badge ms-1" style="background:#2563eb;color:white;">{{ hist_ts|length }}</span>{% endif %}
+        </a>
+      </li>
+    </ul>
+
+    <div class="tab-content" id="historySubTabContent">
+
+      {# ── History: Time Off ────────────────────────────────────────────── #}
+      <div class="tab-pane fade show active" id="hist-timeoff">
+        {% if hist_timeoff %}
+        <div class="card-panel">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
+              <thead class="table-light">
+                <tr>
+                  <th>Employee</th>
+                  <th>Type</th>
+                  <th>Dates</th>
+                  <th>Hours</th>
+                  <th>Notes</th>
+                  <th>Status</th>
+                  <th>Reviewed By</th>
+                  <th>Reviewed At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in hist_timeoff %}
+                <tr>
+                  <td class="fw-semibold">{{ item.employee }}</td>
+                  <td><span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:11px;">{{ item.timeoff_type or 'PTO' }}</span></td>
+                  <td class="text-muted text-nowrap">{{ item.date | format_date }}{% if item.date_end %} → {{ item.date_end | format_date }}{% endif %}</td>
+                  <td>{% if item.amount != '—' and item.amount != None %}<span class="fw-semibold">{{ "{:.0f}".format(item.amount|float) }}h</span>{% else %}—{% endif %}</td>
+                  <td class="text-muted small">{{ item.notes or '—' }}</td>
+                  <td>
+                    {% if item.status == 'Approved' %}<span class="badge bg-success">Approved</span>
+                    {% else %}<span class="badge bg-danger">{{ item.status }}</span>{% endif %}
+                  </td>
+                  <td class="text-muted">{{ item.reviewed_by or '—' }}</td>
+                  <td class="text-muted text-nowrap">{{ (item.reviewed_at[:10] | format_date) if item.reviewed_at else '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% else %}
+        <div class="card-panel">
+          <div class="text-muted text-center py-4"><i class="bi bi-calendar-check" style="font-size:28px;display:block;margin-bottom:8px;opacity:.4;"></i>No time off history yet.</div>
+        </div>
+        {% endif %}
       </div>
-    </div>
-    {% else %}
-    <div class="card-panel">
-      <div class="text-muted text-center py-5">
-        <i class="bi bi-clock-history" style="font-size:32px;display:block;margin-bottom:8px;opacity:.4;"></i>
-        No resolved approvals yet.
+
+      {# ── History: Expenses ────────────────────────────────────────────── #}
+      <div class="tab-pane fade" id="hist-expense">
+        {% if hist_exp %}
+        <div class="card-panel">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
+              <thead class="table-light">
+                <tr>
+                  <th>Employee</th>
+                  <th>Date</th>
+                  <th>Amount</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th>Reviewed By</th>
+                  <th>Reviewed At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in hist_exp %}
+                <tr>
+                  <td class="fw-semibold">{{ item.employee }}</td>
+                  <td class="text-muted text-nowrap">{{ item.date | format_date }}</td>
+                  <td>
+                    {% if item.amount %}
+                      {% set curr = item.currency %}
+                      {% set rate = item.exchange_rate or 120 %}
+                      {% if curr == 'BDT' %}
+                        <div class="fw-semibold">${{ "{:.2f}".format((item.amount|float) / rate) }}</div>
+                        <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format(item.amount|float) }}</div>
+                      {% else %}
+                        <div class="fw-semibold">${{ "{:.2f}".format(item.amount|float) }}</div>
+                        <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((item.amount|float) * rate) }}</div>
+                      {% endif %}
+                    {% else %}—{% endif %}
+                  </td>
+                  <td class="text-muted small">{{ item.notes or '—' }}</td>
+                  <td>
+                    {% if item.status == 'Approved' %}<span class="badge bg-success">Approved</span>
+                    {% else %}<span class="badge bg-danger">{{ item.status }}</span>{% endif %}
+                  </td>
+                  <td class="text-muted">{{ item.reviewed_by or '—' }}</td>
+                  <td class="text-muted text-nowrap">{{ (item.reviewed_at[:10] | format_date) if item.reviewed_at else '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% else %}
+        <div class="card-panel">
+          <div class="text-muted text-center py-4"><i class="bi bi-receipt" style="font-size:28px;display:block;margin-bottom:8px;opacity:.4;"></i>No expense history yet.</div>
+        </div>
+        {% endif %}
       </div>
-    </div>
-    {% endif %}
+
+      {# ── History: Medical ─────────────────────────────────────────────── #}
+      <div class="tab-pane fade" id="hist-medical">
+        {% if hist_med %}
+        <div class="card-panel">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
+              <thead class="table-light">
+                <tr>
+                  <th>Employee</th>
+                  <th>Claim Date</th>
+                  <th>Claimed</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th>Reviewed By</th>
+                  <th>Reviewed At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in hist_med %}
+                <tr>
+                  <td class="fw-semibold">{{ item.employee }}</td>
+                  <td class="text-muted text-nowrap">{{ item.date | format_date }}</td>
+                  <td>
+                    {% if item.amount %}
+                      {% set curr = item.currency %}
+                      {% set rate = item.exchange_rate or 120 %}
+                      {% if curr == 'BDT' %}
+                        <div class="fw-semibold">${{ "{:.2f}".format((item.amount|float) / rate) }}</div>
+                        <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format(item.amount|float) }}</div>
+                      {% else %}
+                        <div class="fw-semibold">${{ "{:.2f}".format(item.amount|float) }}</div>
+                        <div class="text-muted" style="font-size:11px;">৳{{ "{:,.0f}".format((item.amount|float) * rate) }}</div>
+                      {% endif %}
+                    {% else %}—{% endif %}
+                  </td>
+                  <td class="text-muted small">{{ item.notes or '—' }}</td>
+                  <td>
+                    {% if item.status == 'Approved' %}<span class="badge bg-success">Approved</span>
+                    {% else %}<span class="badge bg-danger">{{ item.status }}</span>{% endif %}
+                  </td>
+                  <td class="text-muted">{{ item.reviewed_by or '—' }}</td>
+                  <td class="text-muted text-nowrap">{{ (item.reviewed_at[:10] | format_date) if item.reviewed_at else '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% else %}
+        <div class="card-panel">
+          <div class="text-muted text-center py-4"><i class="bi bi-heart-pulse" style="font-size:28px;display:block;margin-bottom:8px;opacity:.4;"></i>No medical claim history yet.</div>
+        </div>
+        {% endif %}
+      </div>
+
+      {# ── History: Timesheets ──────────────────────────────────────────── #}
+      <div class="tab-pane fade" id="hist-timesheet">
+        {% if hist_ts %}
+        <div class="card-panel">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
+              <thead class="table-light">
+                <tr>
+                  <th>Employee</th>
+                  <th>Week</th>
+                  <th>Hours</th>
+                  <th>Status</th>
+                  <th>Reviewed By</th>
+                  <th>Reviewed At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in hist_ts %}
+                <tr>
+                  <td class="fw-semibold">{{ item.employee }}</td>
+                  <td class="text-muted text-nowrap">{{ item.date }}</td>
+                  <td>{% if item.amount %}<span class="fw-semibold">{{ "{:.1f}".format(item.amount|float) }}h</span>{% else %}—{% endif %}</td>
+                  <td>
+                    {% if item.sent_back %}<span class="badge" style="background:#f59e0b;color:white;">Sent Back</span>
+                    {% elif item.status == 'Approved' %}<span class="badge bg-success">Approved</span>
+                    {% else %}<span class="badge bg-danger">{{ item.status }}</span>{% endif %}
+                  </td>
+                  <td class="text-muted">{{ item.reviewed_by or '—' }}</td>
+                  <td class="text-muted text-nowrap">{{ (item.reviewed_at[:10] | format_date) if item.reviewed_at else '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% else %}
+        <div class="card-panel">
+          <div class="text-muted text-center py-4"><i class="bi bi-clock" style="font-size:28px;display:block;margin-bottom:8px;opacity:.4;"></i>No timesheet history yet.</div>
+        </div>
+        {% endif %}
+      </div>
+
+    </div>{# /historySubTabContent #}
   </div>{# /tab-history #}
 
   {# ════════════════════════════════════════════════════════════════════════
@@ -589,12 +741,25 @@ document.addEventListener('DOMContentLoaded', function() {
   // Tab persistence
   const savedTab = localStorage.getItem('approvalsActiveTab');
   if (savedTab) {
-    const tabLink = document.querySelector(`[href="${savedTab}"]`);
+    const tabLink = document.querySelector('#approvalsTab [href="' + savedTab + '"]');
     if (tabLink) new bootstrap.Tab(tabLink).show();
   }
   document.querySelectorAll('#approvalsTab .nav-link').forEach(function(link) {
     link.addEventListener('shown.bs.tab', function(e) {
       localStorage.setItem('approvalsActiveTab', this.getAttribute('href'));
+    });
+  });
+
+  // History sub-tab persistence (used after inline approvals to land on the right section)
+  const savedHistTab = localStorage.getItem('approvalsHistorySubTab');
+  if (savedHistTab) {
+    localStorage.removeItem('approvalsHistorySubTab');
+    const histLink = document.querySelector('#historySubTab [href="' + savedHistTab + '"]');
+    if (histLink) new bootstrap.Tab(histLink).show();
+  }
+  document.querySelectorAll('#historySubTab .nav-link').forEach(function(link) {
+    link.addEventListener('shown.bs.tab', function(e) {
+      localStorage.setItem('approvalsHistorySubTab', this.getAttribute('href'));
     });
   });
 
@@ -637,8 +802,9 @@ document.addEventListener('DOMContentLoaded', function() {
       var cat    = this.dataset.cat;
       var id     = this.dataset.id;
       var action = this.dataset.action;
+      var typeLabel = { timeoff: 'time off', expense: 'expense', medical: 'medical claim', timesheet: 'timesheet' }[cat] || cat;
       var label  = action === 'approve' ? 'Approve' : 'Reject';
-      if (!confirm(label + ' this ' + cat + '?')) return;
+      if (!confirm(label + ' this ' + typeLabel + '?')) return;
       inlineAction(cat, id, action, this);
     });
   });
@@ -709,33 +875,19 @@ function inlineAction(cat, id, action, btn) {
       if (btn) { btn.disabled = false; btn.innerHTML = 'Retry'; }
       return;
     }
-    // Find the row and fade it out
-    var rowSelectors = [
-      '#row-timeoff-' + id,
-      '#row-expense-' + id,
-      '#row-medical-' + id,
-      '#row-timesheet-' + id
-    ];
-    for (var s of rowSelectors) {
-      var row = document.querySelector(s);
-      if (row) {
-        row.style.transition = 'opacity .3s';
-        row.style.opacity = '0';
-        setTimeout(function(r) { r.remove(); checkEmptySection(); }, 350, row);
-        break;
-      }
+    // Map cat → history sub-tab anchor so we can land there after reload
+    var histTabMap = { timeoff: 'hist-timeoff', expense: 'hist-expense', medical: 'hist-medical', timesheet: 'hist-timesheet', 'timesheet-sendback': 'hist-timesheet' };
+    var histTab = histTabMap[cat] || null;
+    if (histTab) {
+      localStorage.setItem('approvalsActiveTab', '#tab-history');
+      localStorage.setItem('approvalsHistorySubTab', '#' + histTab);
     }
+    location.reload();
   })
   .catch(function(err) {
     alert('Error: ' + err.message);
     if (btn) { btn.disabled = false; btn.innerHTML = 'Retry'; }
   });
-}
-
-function checkEmptySection() {
-  // If all rows in a section are gone, reload to update summary counts
-  var allRows = document.querySelectorAll('tr[id^="row-"]');
-  if (allRows.length === 0) location.reload();
 }
 
 function confirmMedicalApprove() {
@@ -753,13 +905,10 @@ function confirmMedicalApprove() {
   .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
   .then(function(data) {
     if (!data.success) { alert('Error: ' + (data.error || 'Unknown')); return; }
-    var row = document.querySelector('#row-medical-' + currentMedicalId);
-    if (row) {
-      row.style.transition = 'opacity .3s';
-      row.style.opacity = '0';
-      setTimeout(function() { row.remove(); checkEmptySection(); }, 350);
-    }
     currentMedicalId = null;
+    localStorage.setItem('approvalsActiveTab', '#tab-history');
+    localStorage.setItem('approvalsHistorySubTab', '#hist-medical');
+    location.reload();
   })
   .catch(function(err) { alert('Error: ' + err.message); });
 }
