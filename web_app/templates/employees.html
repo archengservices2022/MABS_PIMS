@@ -1913,14 +1913,10 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
               <td class="text-muted small">
                 {% set reviewed_by = e.get('reviewed_by', '') %}
                 {% set reviewed_at = e.get('reviewed_at', '') %}
-                {% if st == 'Approved' or edit_st == 'approved' %}
-                  {% if reviewed_by %}
+                {% if (st == 'Approved' or edit_st == 'approved' or st == 'Rejected') and reviewed_by %}
                   <div style="font-size:11px;"><strong>{{ reviewed_by }}</strong></div>
                   {% if reviewed_at %}
                   <div style="font-size:10px;">{{ reviewed_at[:10] | format_date }}</div>
-                  {% endif %}
-                  {% else %}
-                  —
                   {% endif %}
                 {% else %}
                   —
