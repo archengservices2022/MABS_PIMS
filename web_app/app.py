@@ -5159,6 +5159,7 @@ def project_delete(project_id):
     fb_update(f"/deleted_projects/{project_id}", archive)
 
     fb_delete(f"/projects/{project_id}")
+    fb_delete(f"/project_commissions/{project_id}")
     cache_bust("projects_list")
 
     # If project was created from a quote, reset quote status to "Approved"
@@ -14096,27 +14097,82 @@ def expense_restore(exp_id):
     flash("Expense restored successfully.", "success")
     return redirect(url_for("financial", tab="expenses"))
 
+@app.route("/api/expense/<exp_id>/receipt/can-delete", methods=["GET"])
+@role_required("financial")
+def can_delete_receipt(exp_id):
+    """Check if user can delete a receipt (has approval or is admin/accountant)"""
+    _role = normalize_role(session.get("user_role", ""))
+    _uid = session.get("user_uid", "")
+
+    # Admins and accountants can always delete
+    if _role in ("admin", "accountant"):
+        return jsonify({"success": True, "can_delete": True})
+
+    # Check if user has approved delete request
+    _perm = _has_approved_delete_request(_uid, "receipt", exp_id)
+    if _perm:
+        return jsonify({"success": True, "can_delete": True})
+
+    # User needs approval
+    return jsonify({"success": True, "can_delete": False})
+
 @app.route("/financial/expense/<exp_id>/remove-receipt", methods=["POST"])
 @role_required("financial")
 def remove_expense_receipt(exp_id):
+    # Check if user has permission to delete (admins/accountants don't need approval)
+    _role = normalize_role(session.get("user_role", ""))
+    _uid  = session.get("user_uid", "")
+    _perm = None
+
+    if _role not in ("admin", "accountant"):
+        # Non-admin users need an approved delete request
+        _perm = _has_approved_delete_request(_uid, "receipt", exp_id)
+        if not _perm:
+            # No approved request found - return 403 and show permission request modal
+            return jsonify({"success": False, "error": "Permission denied", "permission_required": True}), 403
+
     try:
         # Remove from /balance_sheet_expenses
         fb_update(f"/balance_sheet_expenses/{exp_id}", {
             "receipt_base64": "",
             "receipt_filename": "",
-            "receipt_type": ""
+            "receipt_type": "",
+            "has_receipt": False
         })
 
         # Remove from /expense_receipts (primary storage location)
         fb_delete(f"/expense_receipts/{exp_id}")
 
+        # Remove from /medical_claim_receipts (for medical claim expenses)
+        fb_delete(f"/medical_claim_receipts/{exp_id}")
+
         # Sync removal to /expenses if it's an employee expense
-        if fb_get(f"/expenses/{exp_id}"):
+        emp_exp = fb_get(f"/expenses/{exp_id}")
+        if emp_exp:
             fb_update(f"/expenses/{exp_id}", {
                 "receipt_base64": "",
                 "receipt_filename": "",
-                "receipt_type": ""
+                "receipt_type": "",
+                "has_receipt": False
             })
+
+        # Also update the medical claim if this expense was created from one
+        balance_sheet_exp = fb_get(f"/balance_sheet_expenses/{exp_id}") or {}
+        if balance_sheet_exp.get("source") == "medical_claim":
+            medical_claim_id = balance_sheet_exp.get("medical_claim_id") or exp_id
+            fb_update(f"/medical_claims/{medical_claim_id}", {
+                "has_receipt": False,
+                "receipt_filename": "",
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            })
+
+        # Mark permission request as completed if one was used
+        if _perm:
+            fb_update(f"/permission_requests/{_perm['firebase_id']}", {"status": "completed"})
+
+        # Clear any caches to ensure fresh data on reload
+        cache_bust("financial")
+        cache_bust("expenses")
 
         return jsonify({"success": True})
     except Exception as e:
@@ -14169,6 +14225,38 @@ def expense_edit(exp_id):
                     app.logger.error(f"Receipt upload error: {e}")
         # Read existing record to detect origin before overwriting
         existing = fb_get(f"/balance_sheet_expenses/{exp_id}") or {}
+
+        # Handle deferred receipt deletion if user marked receipt for deletion and clicked Update Expense
+        if request.form.get('delete_receipt') == 'true':
+            # Call the receipt deletion endpoint
+            try:
+                # Check permission
+                _uid = session.get("user_uid", "")
+                user_role = normalize_role(session.get("user_role", ""))
+                has_approval = user_role in ("admin", "accountant") or _has_approved_delete_request(_uid, "receipt", exp_id)
+
+                if not has_approval:
+                    return jsonify({
+                        "success": False,
+                        "error": "You don't have permission to delete this receipt",
+                        "permission_required": True
+                    }), 403
+
+                # Delete receipt from all locations
+                fb_update(f"/balance_sheet_expenses/{exp_id}", {"receipt_base64": None, "receipt_filename": None, "receipt_type": None, "has_receipt": False})
+                fb_update(f"/expenses/{exp_id}", {"receipt_base64": None, "receipt_filename": None, "receipt_type": None, "has_receipt": False})
+                fb_delete(f"/expense_receipts/{exp_id}")
+
+                # If this is a medical claim expense, also update medical claims
+                if existing.get("source") == "medical_claim":
+                    fb_update(f"/medical_claims/{exp_id}", {"has_receipt": False})
+                    fb_delete(f"/medical_claim_receipts/{exp_id}")
+
+                cache_bust("financial")
+                cache_bust("expenses")
+            except Exception as e:
+                app.logger.error(f"Receipt deletion error: {e}", exc_info=True)
+                return jsonify({"success": False, "error": f"Receipt deletion error: {str(e)}"}), 500
         fb_update(f"/balance_sheet_expenses/{exp_id}", data)
 
         # If this expense originated as an employee submission, keep it in sync
@@ -14278,25 +14366,38 @@ def get_expense_receipt(exp_id):
 
     # Fallback: check /medical_claim_receipts (expenses sourced from medical claims)
     med_receipt = fb_get(f"/medical_claim_receipts/{exp_id}") or {}
-    if isinstance(med_receipt, dict) and med_receipt.get("receipt_base64"):
-        return jsonify({
-            "success": True,
-            "receipt": med_receipt.get("receipt_base64"),
-            "fileType": med_receipt.get("receipt_type", "image/jpeg"),
-            "filename": med_receipt.get("receipt_filename", "receipt"),
-        })
+    if isinstance(med_receipt, dict):
+        # Return success if receipt_base64 exists, or just if receipt_filename exists
+        if med_receipt.get("receipt_base64") or med_receipt.get("receipt_filename"):
+            return jsonify({
+                "success": True,
+                "receipt": med_receipt.get("receipt_base64"),
+                "fileType": med_receipt.get("receipt_type", "image/jpeg"),
+                "filename": med_receipt.get("receipt_filename", "receipt"),
+            })
 
-    # Fallback: check if receipt is stored in expense data (legacy entries)
+    # Fallback: check if receipt is stored in expense data (legacy entries or medical claims)
     expenses = fb_get("/balance_sheet_expenses") or {}
     if isinstance(expenses, dict) and exp_id in expenses:
         exp = expenses[exp_id]
-        if isinstance(exp, dict) and 'receipt_base64' in exp:
-            return jsonify({
-                "success": True,
-                "receipt": exp.get('receipt_base64'),
-                "fileType": exp.get('receipt_type', 'image/jpeg'),
-                "filename": exp.get('receipt_filename', 'receipt')
-            })
+        if isinstance(exp, dict):
+            # Check if receipt_base64 is stored in expense
+            if 'receipt_base64' in exp:
+                return jsonify({
+                    "success": True,
+                    "receipt": exp.get('receipt_base64'),
+                    "fileType": exp.get('receipt_type', 'image/jpeg'),
+                    "filename": exp.get('receipt_filename', 'receipt')
+                })
+            # If expense has receipt_filename but not base64 (medical claim case), still return success
+            # This allows the UI to show receipt preview even if full data isn't loaded yet
+            if exp.get('receipt_filename'):
+                return jsonify({
+                    "success": True,
+                    "receipt": None,
+                    "fileType": exp.get('receipt_type', 'image/jpeg'),
+                    "filename": exp.get('receipt_filename', 'receipt')
+                })
     return jsonify({"success": False, "error": "Receipt not found"})
 
 def _compute_balance_sheet_data(year: int) -> dict:
@@ -15720,6 +15821,16 @@ def medical_claim_review(claim_id):
         # Use claim_id as key so re-approval overwrites, not duplicates
         fb_update(f"/expenses/{claim_id}", exp_data)
         fb_update(f"/balance_sheet_expenses/{claim_id}", exp_data)
+
+        # Sync receipt from medical_claim_receipts to expense_receipts if it exists
+        if bool(claim.get("has_receipt")):
+            med_receipt = fb_get(f"/medical_claim_receipts/{claim_id}") or {}
+            if isinstance(med_receipt, dict) and med_receipt.get("receipt_base64"):
+                fb_update(f"/expense_receipts/{claim_id}", {
+                    "receipt_base64": med_receipt.get("receipt_base64"),
+                    "receipt_filename": med_receipt.get("receipt_filename", ""),
+                    "receipt_type": med_receipt.get("receipt_type", "application/octet-stream")
+                })
 
     flash(f"Claim {status.lower()} successfully.", "success")
     return redirect(url_for("employees") + "#tab-medical")
@@ -20174,10 +20285,12 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
     existing = fb_get(f"/project_commissions/{project_id}") or {}
 
     # For existing projects with "default" rate, preserve the original commission amount
-    # Only recalculate for new projects or if override has changed
+    # Only recalculate for new projects, if override has changed, or if salesperson changed
     is_new_project = not existing
     existing_override_type = existing.get("commission_override_type", "default")
     existing_override_value = _safe_float(existing.get("commission_override_value", 0))
+    existing_salesperson = (existing.get("salesperson") or "").strip()
+    salesperson_changed = existing_salesperson and existing_salesperson != sales_name
 
     if override_type == "percent" and override_value > 0:
         commission_amount = contract_value * override_value / 100
@@ -20190,12 +20303,12 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
         override_type = "default"
         commission_amount = contract_value * sp_default_rate / 100
         rate_display = f"{sp_default_rate}% (default)"
-    elif override_type == "default" and not is_new_project and existing_override_type == "default":
-        # EXISTING project with default rate that hasn't changed: preserve original commission
+    elif override_type == "default" and not is_new_project and existing_override_type == "default" and not salesperson_changed:
+        # EXISTING project with default rate, same salesperson: preserve original commission
         commission_amount = _safe_float(existing.get("commission_amount", 0))
         rate_display = existing.get("rate_display", f"{sp_default_rate}% (default)")
     else:
-        # Fallback (shouldn't normally reach here)
+        # Recalculate for: salesperson changed, override changed from non-default to default, or fallback
         override_type = "default"
         commission_amount = contract_value * sp_default_rate / 100
         rate_display = f"{sp_default_rate}% (default)"

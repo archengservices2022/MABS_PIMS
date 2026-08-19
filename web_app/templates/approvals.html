@@ -106,10 +106,10 @@
           <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px;">
             <thead class="table-light">
               <tr>
-                <th>Requested By</th>
+                <th style="min-width: 130px;">Requested By</th>
                 <th>Type</th>
                 <th>Period/Date</th>
-                <th>Submitted on</th>
+                <th style="min-width: 140px;">Submitted on</th>
                 <th>Amount/Hour</th>
                 <th>Notes</th>
                 <th>Page</th>
@@ -171,14 +171,20 @@
                     —
                   {% endif %}
                 </td>
-                <td class="text-muted small">{{ item.notes }}</td>
+                <td class="text-muted small">
+                  {% if item.type == 'Timesheet' %}
+                    {{ item.employee }} submitted timesheet
+                  {% else %}
+                    {{ item.notes }}
+                  {% endif %}
+                </td>
                 <td>
                   {% if item.cat == 'medical' %}
-                    <a href="{{ url_for('employees') }}#medical" class="btn btn-xs btn-outline-secondary" title="Open Medical Claims">
+                    <a href="{{ url_for('employees') }}#tab-medical" class="btn btn-xs btn-outline-secondary" title="Open Medical Claims">
                       <i class="bi bi-box-arrow-up-right me-1"></i>Open
                     </a>
                   {% elif item.cat == 'expense' %}
-                    <a href="{{ url_for('employees') }}#expenses" class="btn btn-xs btn-outline-secondary" title="Open Expenses">
+                    <a href="{{ url_for('employees') }}#tab-emp-expenses" class="btn btn-xs btn-outline-secondary" title="Open Expenses">
                       <i class="bi bi-box-arrow-up-right me-1"></i>Open
                     </a>
                   {% elif item.cat == 'timesheet' %}
@@ -186,7 +192,7 @@
                       <i class="bi bi-box-arrow-up-right me-1"></i>Open
                     </a>
                   {% else %}
-                    <a href="{{ url_for('employees') }}#time-off" class="btn btn-xs btn-outline-secondary" title="Open Time Off">
+                    <a href="{{ url_for('employees') }}#tab-time-off" class="btn btn-xs btn-outline-secondary" title="Open Time Off">
                       <i class="bi bi-box-arrow-up-right me-1"></i>Open
                     </a>
                   {% endif %}
