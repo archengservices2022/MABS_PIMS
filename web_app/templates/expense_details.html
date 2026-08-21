@@ -1,0 +1,2905 @@
+{% extends "base.html" %}
+{% block title %}Expense Details{% endblock %}
+{% block page_title %}{% if expense.is_group_expense %}Group Expense Details{% else %}Expense Details{% endif %}{% endblock %}
+
+{% block head %}
+<style>
+/* Finance Modal Dropdown Styles */
+.custom-dropdown {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+.custom-dropdown input {
+  width: 100%;
+  padding-right: 35px !important;
+}
+
+.custom-dropdown .dropdown-arrow {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  pointer-events: none;
+  color: #666;
+  font-size: 12px;
+}
+
+.custom-dropdown input:focus + .dropdown-arrow {
+  color: #0d9488;
+}
+
+.dropdown-list {
+  position: fixed;
+  background: white;
+  border: 1px solid #ccc;
+  max-height: 250px;
+  overflow-y: auto;
+  display: none;
+  z-index: 9999;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.dropdown-list.show {
+  display: block;
+}
+
+.dropdown-list .option {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.dropdown-list .option:hover {
+  background-color: #f0fdf4;
+  color: #0d9488;
+}
+
+.dropdown-list .option.selected {
+  background-color: #d1fae5;
+  color: #0d9488;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="row mb-4 align-items-center">
+    <div class="col-auto">
+      <button type="button" class="btn btn-secondary" onclick="backToExpenses()">
+        <i class="bi bi-arrow-left me-1"></i>Back to Expenses
+      </button>
+    </div>
+    <div class="col">
+      <h2 style="margin: 0;"><i class="bi bi-receipt me-2"></i>{{ expense.expense_name or expense.description or 'Expense' }}</h2>
+    </div>
+    <div class="col-auto">
+      <div class="d-flex gap-2 align-items-center">
+        {% if expense.receipt_filename %}
+        <div style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: #f0f9ff; border: 1px solid #bfdbfe; border-radius: 4px;">
+          <i class="bi bi-paperclip" style="color: #0ea5e9; font-size: 18px;"></i>
+          <span style="font-size: 12px; color: #0369a1; font-weight: 500; cursor: pointer;" onclick="viewExpenseReceipt('{{ expense.id }}')">
+            {{ expense.receipt_filename }}
+          </span>
+        </div>
+        {% endif %}
+        <button type="button" class="btn btn-outline-primary" onclick="handleEditExpense('{{ expense.id }}')" title="Edit">
+          <i class="bi bi-pencil me-1"></i>Edit
+        </button>
+        <button type="button" class="btn btn-outline-danger" title="Delete" onclick="handleExpenseDelete('{{ expense.id }}')">
+          <i class="bi bi-trash me-1"></i>Delete
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- EXPENSE SUMMARY -->
+  {% if expense.is_group_expense %}
+  <!-- Group Expenses Summary Cards -->
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small mb-2">EXPENSE TYPE</div>
+          <div class="h5">{{ expense.expense_type or '—' }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small mb-2">EXPENSE DATE</div>
+          <div class="h5">{{ expense.date | format_date or '—' }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small mb-2">EXPENSE ITEMS</div>
+          <div class="h5">{{ expense.child_expense_count or expense.child_expenses|length or 0 }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small mb-2">TOTAL AMOUNT</div>
+          <div class="h5 text-success">
+            ${{ "{:,.2f}".format(expense.amount or 0) }} USD
+            {% if expense.amount_bdt %} / ৳{{ "{:,.0f}".format(expense.amount_bdt) }} BDT{% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <!-- Regular Expense Summary Cards -->
+  <div class="row mb-4">
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small mb-2">EXPENSE TYPE</div>
+          <div class="h5">{{ expense.expense_type or '—' }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small mb-2">EXPENSE DATE</div>
+          <div class="h5">{{ expense.date | format_date or '—' }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small mb-2">TOTAL AMOUNT</div>
+          <div class="h5 text-success">
+            ${{ "{:,.2f}".format(expense.amount or 0) }} USD
+            {% if expense.amount_bdt %} / ৳{{ "{:,.0f}".format(expense.amount_bdt) }} BDT{% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- EXPENSE DETAILS -->
+  <div class="card mb-4">
+    <div class="card-header bg-light">
+      <h6 class="mb-0">{% if expense.is_group_expense %}Group Expense Details{% else %}Expense Details{% endif %}</h6>
+    </div>
+    <div class="card-body">
+      <div class="row">
+        <div class="col-md-6">
+          <div class="mb-3">
+            <strong>Expense Name:</strong>
+            <div class="text-muted">{{ expense.expense_name or expense.description or '—' }}</div>
+          </div>
+          <div class="mb-3">
+            <strong>Category:</strong>
+            <div class="text-muted">{{ expense.category or '—' }}</div>
+          </div>
+          <div class="mb-3">
+            <strong>Vendor:</strong>
+            <div class="text-muted">{{ expense.vendor or '—' }}</div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="mb-3">
+            <strong>Project Number:</strong>
+            <div class="text-muted">{{ expense.project_number or '—' }}</div>
+          </div>
+          <div class="mb-3">
+            <strong>Exchange Rate:</strong>
+            <div class="text-muted">{{ expense.exchange_rate or '—' }}</div>
+          </div>
+          <div class="mb-3">
+            <strong>Created By:</strong>
+            <div class="text-muted">
+              {% if expense.submitted_by_name %}
+                {{ expense.submitted_by_name }}
+              {% elif expense.created_by %}
+                {{ expense.created_by.split('@')[0].replace('.', ' ').title() if '@' in expense.created_by else expense.created_by }}
+              {% else %}
+                —
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DATES & SUBMISSION -->
+  <div class="card mb-4">
+    <div class="card-header bg-light">
+      <h6 class="mb-0">Timeline</h6>
+    </div>
+    <div class="card-body">
+      <div class="row">
+        <div class="col-md-6">
+          <div class="mb-3">
+            <strong>Created At:</strong>
+            <div class="text-muted" id="createdAtDisplay">{{ expense.created_at | format_datetime or '—' }}</div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="mb-3">
+            <strong>Updated At:</strong>
+            <div class="text-muted" id="updatedAtDisplay">{{ expense.updated_at | format_datetime or '—' }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHILD EXPENSES (for group expenses) -->
+  {% if expense.is_group_expense and expense.child_expenses %}
+  <div class="card mb-4">
+    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+      <h6 class="mb-0">Expenses</h6>
+      <button type="button" class="btn btn-sm btn-primary" onclick="openAddNewItemModal('{{ expense.id }}')">
+        <i class="bi bi-plus-lg me-1"></i>Add Expense Item
+      </button>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+          <thead style="background:#f5f5f5;">
+            <tr>
+              <th style="min-width:90px;">Date</th>
+              <th style="min-width:120px;">Category</th>
+              <th style="min-width:120px;">Expense Name</th>
+              <th style="text-align:right; min-width:100px;">Amount (USD)</th>
+              <th style="min-width:100px;">Description</th>
+              <th style="text-align:right; min-width:100px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for child in expense.child_expenses %}
+            <tr>
+              <td style="font-size:12px; white-space:nowrap;">{{ child.date | format_date or '—' }}</td>
+              <td style="font-size:12px;">{{ child.category or '—' }}</td>
+              <td style="font-size:12px;">{{ child.expense_name or '—' }}</td>
+              <td style="font-size:12px; text-align:right;">${{ "{:,.2f}".format(child.amount or 0) }}</td>
+              <td style="font-size:12px; color:#666;">{{ child.description or '—' }}</td>
+              <td style="white-space:nowrap;">
+                <div style="display:flex; justify-content:flex-end; gap:4px; align-items:center;">
+                  {% if child.receipt_filename %}
+                  <button type="button" class="btn btn-sm btn-link p-0" onclick="viewExpenseItemReceipt('{{ expense.id }}', '{{ loop.index0 }}')" title="View Receipt: {{ child.receipt_filename }}" style="color:#0ea5e9; font-size:14px;"><i class="bi bi-paperclip"></i></button>
+                  {% endif %}
+                  <button type="button" class="btn btn-sm btn-link p-0" onclick="editExpenseItemFromDetails('{{ expense.id }}', {{ loop.index0 }})" title="Edit" style="color:#0ea5e9; font-size:14px;"><i class="bi bi-pencil"></i></button>
+                  <button type="button" class="btn btn-sm btn-link p-0" onclick="deleteExpenseItem('{{ expense.id }}', {{ loop.index0 }})" title="Delete" style="color:#ef4444; font-size:14px;"><i class="bi bi-trash"></i></button>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- NOTES -->
+  {% if expense.notes %}
+  <div class="card mb-4">
+    <div class="card-header bg-light">
+      <h6 class="mb-0">Notes</h6>
+    </div>
+    <div class="card-body">
+      <p>{{ expense.notes }}</p>
+    </div>
+  </div>
+  {% endif %}
+
+
+</div>
+
+<!-- Expense Modal (Single Expense Edit/View) -->
+<div class="modal fade" id="expenseModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="expenseModalTitle"><i class="bi bi-receipt me-2"></i>Add Expense</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="expenseModalForm" method="POST">
+          <input type="hidden" id="expenseId" name="expense_id">
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Expense Type *</label>
+              <div class="custom-dropdown">
+                <input type="text" name="expense_type" id="modalExpenseType" class="form-control form-control-sm" placeholder="Select type..." required>
+                <span class="dropdown-arrow">▾</span>
+                <div class="dropdown-list" id="modalExpenseTypeDropdown"></div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Category</label>
+              <div class="custom-dropdown">
+                <input type="text" name="category" id="modalCategory" class="form-control form-control-sm" placeholder="Select category...">
+                <span class="dropdown-arrow">▾</span>
+                <div class="dropdown-list" id="modalCategoryDropdown"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Expense Name</label>
+              <div class="custom-dropdown">
+                <input type="text" name="expense_name" id="modalExpenseName" class="form-control form-control-sm" placeholder="Select or type name...">
+                <span class="dropdown-arrow">▾</span>
+                <div class="dropdown-list" id="modalExpenseNameDropdown"></div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Amount (USD) *</label>
+              <input type="number" name="amount" id="modalAmount" class="form-control form-control-sm" step="0.01" min="0" required oninput="updateModalBdtDisplay()">
+              <small class="form-text text-muted" id="modalBdtDisplay" style="color:#10b981;font-size:11px;margin-top:4px;">Conversion calculated with exchange rate</small>
+            </div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Expense Date</label>
+              <input type="date" name="date" id="modalDate" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label form-label-sm fw-600">Vendor *</label>
+              <div class="custom-dropdown">
+                <input type="text" name="vendor" id="modalVendor" class="form-control form-control-sm" placeholder="Vendor name or select..." required>
+                <span class="dropdown-arrow">▾</span>
+                <div class="dropdown-list" id="modalVendorDropdown"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label form-label-sm fw-600">Link to Project</label>
+            <select name="project_number" id="modalProject" class="form-select form-select-sm">
+              <option value="">— Optional —</option>
+              {% for p in projects %}
+              <option value="{{ p.get('project_number','') }}">{{ p.get('project_number','') }} — {{ p.get('project_name','') }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label form-label-sm fw-600">Notes</label>
+            <textarea name="notes" id="modalNotes" class="form-control form-control-sm" rows="2" placeholder="Optional notes"></textarea>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label form-label-sm fw-600">Upload Receipt (PDF/Image)</label>
+            <input type="file" id="modalReceipt" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.gif" onchange="previewReceipt()">
+            <small class="text-muted">Receipts are stored as base64 in Firebase. Supports PDF, JPG, PNG, GIF.</small>
+            <div id="receiptPreview" class="mt-2"></div>
+          </div>
+
+          <div class="form-text text-muted small">
+            <i class="bi bi-info-circle"></i> All receipt data is encrypted and stored in Firebase Realtime Database.
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="expenseModalSaveBtn" class="btn btn-teal" onclick="submitExpenseModal()">
+          <i class="bi bi-check-circle me-1"></i>Add Expense
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Group Expenses Modal -->
+<div class="modal fade" id="groupExpenseModal" tabindex="-1">
+  <div class="modal-dialog modal-xl" style="max-width:1050px;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title mb-1" id="groupExpenseModalTitle"><i class="bi bi-folder-plus me-2"></i>Add Group Expenses</h5>
+          <small class="text-muted" id="groupExpenseModalSubtitle">Create a group expense and add individual expense items</small>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" style="max-height:calc(100vh - 200px); overflow-y:auto;">
+        <form id="groupExpenseForm" method="POST">
+          <div class="row" style="gap:20px;">
+
+            <!-- LEFT COLUMN: GROUP EXPENSE DETAILS (NARROWER) -->
+            <div style="flex:0 0 30%; min-width:280px;">
+              <h6 style="color:#1f2937; font-weight:700; margin-bottom:12px; font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">
+                Group Expenses Details
+              </h6>
+
+              <!-- Expense Date -->
+              <div class="mb-2">
+                <label class="form-label form-label-sm fw-600" style="margin-bottom:4px;">Expense Date *</label>
+                <input type="date" id="groupExpenseDate0" class="form-control form-control-sm" required>
+              </div>
+
+              <!-- Expense Type (Fixed: Group Expenses) -->
+              <div class="mb-2">
+                <label class="form-label form-label-sm fw-600" style="margin-bottom:4px;">Expense Type *</label>
+                <input type="text" class="form-control form-control-sm" value="Group Expenses" disabled style="background:#f5f5f5; font-size:12px;">
+                <input type="hidden" id="groupType" value="Group Expenses">
+              </div>
+
+              <!-- Category -->
+              <div class="mb-2">
+                <label class="form-label form-label-sm fw-600" style="margin-bottom:4px;">Expense Category *</label>
+                <input type="text" id="groupExpenseCategory0" class="form-control form-control-sm" placeholder="e.g., Business Travel" required style="font-size:12px;">
+              </div>
+
+              <!-- Expense Name -->
+              <div class="mb-2">
+                <label class="form-label form-label-sm fw-600" style="margin-bottom:4px;">Expense Name *</label>
+                <input type="text" id="groupName" class="form-control form-control-sm" placeholder="e.g., Client Visit" required>
+              </div>
+
+              <!-- Vendor/Merchant -->
+              <div class="mb-2" style="position:relative;">
+                <label class="form-label form-label-sm fw-600" style="margin-bottom:4px;">Vendor/Merchant *</label>
+                <input type="text" id="groupExpenseVendor0" class="form-control form-control-sm" placeholder="Choose or type..." required style="font-size:12px;" onkeyup="filterGroupVendorDropdown(this.value)" onclick="showGroupVendorDropdown()">
+                <div class="dropdown-list" id="groupVendorDropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:white; border:1px solid #dee2e6; border-radius:4px; max-height:200px; overflow-y:auto; z-index:1000; margin-top:2px; box-shadow:0 2px 4px rgba(0,0,0,0.1);"></div>
+              </div>
+
+              <!-- Link to Project -->
+              <div class="mb-2" style="position:relative;">
+                <label class="form-label form-label-sm fw-600" style="margin-bottom:4px;">Project Number</label>
+                <input type="text" id="groupExpenseProject0" class="form-control form-control-sm" placeholder="— Optional —" style="font-size:12px;" onkeyup="filterGroupProjectDropdown(this.value)" onclick="showGroupProjectDropdown()">
+                <div class="dropdown-list" id="groupProjectDropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:white; border:1px solid #dee2e6; border-radius:4px; max-height:200px; overflow-y:auto; z-index:1000; margin-top:2px; box-shadow:0 2px 4px rgba(0,0,0,0.1);"></div>
+              </div>
+
+              <!-- Notes -->
+              <div class="mb-2">
+                <label class="form-label form-label-sm fw-600" style="margin-bottom:4px;">Notes</label>
+                <textarea id="groupNotes" class="form-control form-control-sm" rows="2" placeholder="Optional notes" style="font-size:12px;"></textarea>
+              </div>
+
+              <!-- Receipt -->
+              <div class="mb-2">
+                <label class="form-label form-label-sm fw-600" style="margin-bottom:4px;">Receipt (PDF/Image)</label>
+                <div id="currentGroupReceiptDisplay" style="display:none; background:#e0f2fe; border:1px solid #0ea5e9; border-radius:4px; padding:8px; margin-bottom:8px;">
+                  <div style="font-size:11px; color:#666; margin-bottom:4px;">Current Receipt:</div>
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span id="currentGroupReceiptName" style="font-size:12px; font-weight:600; color:#0369a1; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="viewCurrentGroupReceipt(); return false;" style="padding:3px 8px; font-size:11px;">View</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeCurrentGroupReceipt(event); return false;" style="padding:3px 8px; font-size:11px;">Remove</button>
+                  </div>
+                </div>
+                <input type="file" id="groupReceipt" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.gif">
+                <small class="text-muted d-block" style="font-size:10px; margin-top:2px;">PDF, JPG, PNG, GIF</small>
+              </div>
+            </div>
+
+            <!-- RIGHT COLUMN: EXPENSE ITEMS -->
+            <div style="flex:1; min-width:500px;">
+              <h6 style="color:#1f2937; font-weight:700; margin-bottom:12px; font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">
+                Add Expense Item
+              </h6>
+
+              <!-- Add Item Form (Compact) -->
+              <div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:4px; padding:8px; margin-bottom:15px;">
+                <!-- Row 1: Date | Category -->
+                <div class="row g-2 mb-2">
+                  <div class="col-6">
+                    <label class="form-label form-label-sm fw-600" style="margin-bottom:4px; font-size:12px;">Date *</label>
+                    <input type="date" id="newItemDate" class="form-control form-control-sm" required style="font-size:12px; padding:6px 8px;">
+                  </div>
+                  <div class="col-6" style="position:relative;">
+                    <label class="form-label form-label-sm fw-600" style="margin-bottom:4px; font-size:12px;">Category *</label>
+                    <input type="text" id="newItemCategory" class="form-control form-control-sm" placeholder="Choose or type..." required style="font-size:11px;" onkeyup="filterNewItemCategoryDropdown(this.value)" onclick="showNewItemCategoryDropdown()">
+                    <div class="dropdown-list" id="newItemCategoryDropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:white; border:1px solid #dee2e6; border-radius:4px; max-height:200px; overflow-y:auto; z-index:10000; margin-top:2px; box-shadow:0 2px 4px rgba(0,0,0,0.1);"></div>
+                  </div>
+                </div>
+
+                <!-- Row 2: Expense Name | Amount -->
+                <div class="row g-2 mb-2">
+                  <div class="col-6">
+                    <label class="form-label form-label-sm fw-600" style="margin-bottom:4px; font-size:12px;">Expense Name *</label>
+                    <input type="text" id="newItemName" class="form-control form-control-sm" placeholder="Item name" required style="font-size:12px; padding:6px 8px;">
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label form-label-sm fw-600" style="margin-bottom:4px; font-size:12px;">Amount *</label>
+                    <input type="number" id="newItemAmount" class="form-control form-control-sm" placeholder="0.00" step="0.01" required style="font-size:12px; padding:6px 8px;">
+                  </div>
+                </div>
+
+                <!-- Row 3: Description | Receipt -->
+                <div class="row g-2 mb-2">
+                  <div class="col-8">
+                    <label class="form-label form-label-sm fw-600" style="margin-bottom:4px; font-size:12px;">Description</label>
+                    <textarea id="newItemDescription" class="form-control form-control-sm" rows="1" placeholder="Optional" style="font-size:12px; padding:6px 8px;"></textarea>
+                  </div>
+                  <div class="col-4">
+                    <label class="form-label form-label-sm fw-600" style="margin-bottom:4px; font-size:12px;">
+                      <i class="bi bi-paperclip me-1" style="font-size:12px;"></i>Receipt
+                    </label>
+                    <div id="currentItemReceiptDisplay" style="display:none; background:#e0f2fe; border:1px solid #0ea5e9; border-radius:4px; padding:6px; margin-bottom:4px;">
+                      <div style="font-size:10px; color:#666; margin-bottom:2px;">Current:</div>
+                      <div style="display:flex; align-items:center; gap:4px;">
+                        <span id="currentItemReceiptName" style="font-size:11px; font-weight:600; color:#0369a1; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
+                        <button type="button" class="btn btn-sm btn-link p-0" onclick="viewCurrentItemReceipt(); return false;" style="padding:0; font-size:10px; color:#0369a1;">View</button>
+                        <button type="button" class="btn btn-sm btn-link p-0" onclick="removeCurrentItemReceipt(event); return false;" style="padding:0; font-size:10px; color:#ef4444;">Remove</button>
+                      </div>
+                    </div>
+                    <input type="file" id="newItemReceipt" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.gif" style="font-size:10px;">
+                  </div>
+                </div>
+
+                <!-- Row 4: Buttons (Right-aligned, small) -->
+                <div style="display:flex; justify-content:flex-end; gap:8px;">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearAddItemForm()" style="padding:6px 14px; font-size:11px; font-weight:600; white-space:nowrap; border-radius:20px;">
+                    <i class="bi bi-x-lg me-1"></i>Cancel
+                  </button>
+                  <button type="button" id="addItemButton" class="btn btn-sm btn-success" onclick="addExpenseToGroupTable()" style="padding:6px 16px; font-size:11px; font-weight:600; white-space:nowrap; border-radius:20px;">
+                    <i class="bi bi-plus-lg me-1"></i>Add Expense Item
+                  </button>
+                </div>
+              </div>
+
+              <!-- Expense Items Table (Hidden until first item added) -->
+              <div id="expenseItemsSection" style="display:none;">
+                <h6 style="color:#1f2937; font-weight:700; margin-bottom:10px; font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">
+                  Expense Items
+                </h6>
+                <div class="table-responsive mb-3" style="max-height:280px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px;">
+                  <table class="table table-sm mb-0" style="font-size:12px; padding:6px 8px;">
+                    <thead style="background:#f5f5f5; position:sticky; top:0;">
+                      <tr>
+                        <th style="width:12%;">Date</th>
+                        <th style="width:14%;">Category</th>
+                        <th style="width:22%;">Expense Name</th>
+                        <th style="width:12%; text-align:right;">Amount</th>
+                        <th style="width:22%;">Description</th>
+                        <th style="width:18%; text-align:right;">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="expensesTableBody">
+                      <!-- Expense rows will be added here -->
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Total -->
+                <div style="text-align:right; padding:12px; background:#f0fdf4; border:1px solid #86efac; border-radius:4px;">
+                  <div style="font-size:12px; color:#666; margin-bottom:6px; text-transform:uppercase; font-weight:600;">Total Expense</div>
+                  <div style="font-size:28px; font-weight:700; color:#0f766e;" id="groupTotalDisplay">$0.00 USD</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-teal" id="groupExpenseSaveBtn" onclick="submitGroupExpenseModal()">
+          <i class="bi bi-check-circle me-1"></i>Save Expense
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Expense Item Modal -->
+<div class="modal fade" id="editItemModal" tabindex="-1">
+  <div class="modal-dialog" style="max-width:600px;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit Expense Item</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="editItemForm">
+          <div class="mb-3">
+            <label class="form-label fw-600">Date *</label>
+            <input type="date" id="editItemDate" class="form-control" required>
+          </div>
+
+          <div class="mb-3" style="position:relative;">
+            <label class="form-label fw-600">Category *</label>
+            <input type="text" id="editItemCategory" class="form-control" placeholder="Choose or type..." required style="font-size:14px;" onkeyup="filterEditCategoryDropdown(this.value)" onclick="showEditCategoryDropdown()">
+            <div id="editCategoryDropdown" class="custom-dropdown" style="display:none; position:fixed; background:white; border:1px solid #dee2e6; border-radius:4px; max-height:250px; overflow-y:auto; z-index:10050; width:400px; box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-600">Expense Name *</label>
+            <input type="text" id="editItemName" class="form-control" placeholder="Item name" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-600">Amount (USD) *</label>
+            <input type="number" id="editItemAmount" class="form-control" step="0.01" min="0" placeholder="0.00" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-600">Description</label>
+            <textarea id="editItemDescription" class="form-control" rows="2" placeholder="Optional description"></textarea>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-600">Receipt</label>
+            <div id="currentEditItemReceipt" style="display:none; background:#e0f2fe; border:1px solid #0ea5e9; border-radius:4px; padding:8px; margin-bottom:8px;">
+              <div style="font-size:12px; color:#666; margin-bottom:4px;">Current Receipt:</div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span id="editItemReceiptName" style="font-size:12px; font-weight:600; color:#0369a1; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="viewEditItemReceipt()" style="padding:3px 8px; font-size:11px;">View</button>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeEditItemReceipt()" style="padding:3px 8px; font-size:11px;">Remove</button>
+              </div>
+            </div>
+            <input type="file" id="editItemReceipt" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.gif">
+            <small class="text-muted">PDF, JPG, PNG, GIF</small>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveEditItem()">Update Item</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let categoriesByType = {{ categories_by_type|safe }};
+let expenseNamesByCategory = {{ expense_names_by_category|safe }};
+const expenseTypesList = {{ expense_types|tojson }};
+const projectsList = {{ projects|tojson|safe }};
+let vendorList = {{ all_vendors|tojson }};
+const companyBdtExchangeRate = {{ bdt_exchange_rate|default(110) }};
+
+// Provide default categories if backend doesn't send them
+if (!categoriesByType || Object.keys(categoriesByType).length === 0) {
+  categoriesByType = {
+    "O & M (Operations & Maintenance)": [
+      "Facilities & Utilities", "Office & Admin Overhead", "Engineering Software & IT",
+      "Salaries, Labor & Related Costs", "Professional Services", "Insurance & Compliance",
+      "Travel, Site Visits & Vehicles", "Marketing & Business Development",
+      "Training, Licensure & Development", "Safety & Field Supplies", "Miscellaneous O & M"
+    ],
+    "Capital Expenses": [
+      "Computer & Office Equipment", "Field & Inspection Equipment", "Furniture & Fixtures",
+      "Vehicles", "Software (Capitalized)", "Leasehold Improvements", "Accumulated Depreciation"
+    ],
+    "Other Expenses": [
+      "Salary/Bonuses", "Tax Expenses/Tax Deductions", "Medical/Benefits",
+      "Meals & Entertainment", "Donations", "Bank Charges", "Contingency Funds", "Unexpected Costs"
+    ]
+  };
+}
+
+// Make available to dropdown functions
+window.categoriesByType = categoriesByType;
+
+// Initialize exchange rate with company default (will be overridden if editing an expense)
+currentExchangeRate = companyBdtExchangeRate;
+console.log('Initialized currentExchangeRate from company settings:', currentExchangeRate);
+
+// Provide default expense types if backend doesn't send them
+if (!expenseTypesList || expenseTypesList.length === 0) {
+  window.expenseTypesList = ["O & M (Operations & Maintenance)", "Capital Expenses", "Other Expenses"];
+} else {
+  window.expenseTypesList = expenseTypesList;
+}
+
+// Provide default expense names if backend doesn't send them
+if (!expenseNamesByCategory || Object.keys(expenseNamesByCategory).length === 0) {
+  expenseNamesByCategory = {};
+}
+
+// Make available globally
+window.expenseNamesByCategory = expenseNamesByCategory;
+
+// Provide default vendors if backend doesn't send them
+if (!vendorList || vendorList.length === 0) {
+  window.vendorList = ["UPSC", "Medical Expenses", "Employee Advances", "Hospital", "E_Expense"];
+} else {
+  window.vendorList = vendorList;
+}
+
+console.log('Page loaded - categoriesByType:', categoriesByType);
+console.log('expenseTypesList:', window.expenseTypesList);
+console.log('vendorList:', window.vendorList);
+
+// Close dropdowns only when clicking outside their complete wrapper
+document.addEventListener('click', function(e) {
+  // Ignore Add Expense Item category dropdown
+  if (
+    e.target.closest('#newItemCategory') ||
+    e.target.closest('#newItemCategoryDropdown')
+  ) {
+    return;
+  }
+
+  document.querySelectorAll('.custom-dropdown').forEach(wrapper => {
+    const dropdown = wrapper.querySelector('.dropdown-list');
+
+    if (!dropdown) return;
+
+    if (!wrapper.contains(e.target)) {
+      dropdown.classList.remove('show');
+      dropdown.style.display = '';
+    }
+  });
+
+  // Close other dropdowns that are not inside .custom-dropdown
+  document.querySelectorAll('.dropdown-list').forEach(dropdown => {
+    if (dropdown.closest('.custom-dropdown')) return;
+
+    const parent = dropdown.parentElement;
+
+    if (parent && !parent.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+});
+
+
+// View receipt for expense item in modal
+function viewExpenseItemReceipt(expId, itemIndex) {
+  fetch(`/api/expense/${expId}/item-receipt/${itemIndex}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.success && data.receipt) {
+        const dataUrl = `data:${data.fileType || 'image/jpeg'};base64,${data.receipt}`;
+        const fileType = data.fileType || 'image/jpeg';
+
+        // Create backdrop
+        const backdrop = document.createElement('div');
+        backdrop.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0,0,0,0.5);
+          z-index: 9998;
+        `;
+        backdrop.onclick = () => {
+          backdrop.remove();
+          modal.remove();
+        };
+
+        // Create modal
+        const modal = document.createElement('div');
+        modal.id = 'receiptViewerModal';
+        modal.style.cssText = `
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: white;
+          border-radius: 8px;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+          z-index: 9999;
+          display: flex;
+          flex-direction: column;
+          width: 90vw;
+          height: 85vh;
+          max-width: 1200px;
+          max-height: 800px;
+          overflow: hidden;
+        `;
+
+        // Header
+        const header = document.createElement('div');
+        header.style.cssText = `
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 15px 20px;
+          border-bottom: 1px solid #e5e7eb;
+          background: #f9fafb;
+        `;
+
+        const title = document.createElement('h5');
+        title.textContent = 'Receipt';
+        title.style.cssText = 'margin: 0; font-weight: 600; font-size: 16px;';
+
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '✕';
+        closeBtn.style.cssText = `
+          background: none;
+          border: none;
+          font-size: 24px;
+          cursor: pointer;
+          color: #666;
+          padding: 0;
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        `;
+        closeBtn.onclick = () => {
+          backdrop.remove();
+          modal.remove();
+        };
+
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+
+        // Content
+        const content = document.createElement('div');
+        content.style.cssText = `
+          flex: 1;
+          overflow: auto;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #f5f5f5;
+        `;
+
+        // Display based on file type
+        if (fileType.startsWith('image/')) {
+          const img = document.createElement('img');
+          img.src = dataUrl;
+          img.style.cssText = `
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+          `;
+          content.appendChild(img);
+        } else if (fileType === 'application/pdf') {
+          const iframe = document.createElement('iframe');
+          iframe.src = dataUrl;
+          iframe.style.cssText = `
+            width: 100%;
+            height: 100%;
+            border: none;
+          `;
+          content.appendChild(iframe);
+        } else {
+          content.innerHTML = '<p style="color: #999;">Unable to display this file type</p>';
+        }
+
+        modal.appendChild(header);
+        modal.appendChild(content);
+        document.body.appendChild(backdrop);
+        document.body.appendChild(modal);
+      } else {
+        alert('Receipt not found');
+      }
+    })
+    .catch(err => {
+      console.error('Error loading receipt:', err);
+      alert('Error loading receipt');
+    });
+}
+
+// Edit expense item from details page
+function editExpenseItemFromDetails(expId, itemIndex) {
+  fetch(`/api/expense/${expId}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data && data.success && data.expense) {
+        const expense = data.expense;
+        const childExpenses = expense.child_expenses || [];
+        if (itemIndex < childExpenses.length) {
+          const item = childExpenses[itemIndex];
+
+          // Store current editing info
+          window.editingExpenseId = expId;
+          window.editingItemIndex = itemIndex;
+          window.editingItemOriginalReceipt = item.receipt_filename || null;
+
+          // Populate form
+          document.getElementById('editItemDate').value = item.date || '';
+          document.getElementById('editItemCategory').value = item.category || '';
+          document.getElementById('editItemName').value = item.expense_name || '';
+          document.getElementById('editItemAmount').value = item.amount || '';
+          document.getElementById('editItemDescription').value = item.description || '';
+
+          // Show receipt if exists
+          const receiptDiv = document.getElementById('currentEditItemReceipt');
+          const receiptInput = document.getElementById('editItemReceipt');
+          if (item.receipt_filename) {
+            document.getElementById('editItemReceiptName').textContent = item.receipt_filename;
+            receiptDiv.style.display = 'block';
+            receiptInput.style.display = 'none';
+          } else {
+            receiptDiv.style.display = 'none';
+            receiptInput.style.display = 'block';
+          }
+          receiptInput.value = '';
+
+          // Show modal
+          const modal = new bootstrap.Modal(document.getElementById('editItemModal'));
+          modal.show();
+        } else {
+          alert('Item not found');
+        }
+      }
+    })
+    .catch(err => {
+      console.error('Error loading expense:', err);
+      alert('Error loading item for editing');
+    });
+}
+
+// Open modal to add new item
+function openAddNewItemModal(expId) {
+  window.editingExpenseId = expId;
+  window.editingItemIndex = null;  // null means adding new
+  window.editingItemOriginalReceipt = null;
+
+  // Clear form
+  document.getElementById('editItemDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('editItemCategory').value = '';
+  document.getElementById('editItemName').value = '';
+  document.getElementById('editItemAmount').value = '';
+  document.getElementById('editItemDescription').value = '';
+  document.getElementById('editItemReceipt').value = '';
+
+  // Hide receipt display
+  document.getElementById('currentEditItemReceipt').style.display = 'none';
+  document.getElementById('editItemReceipt').style.display = 'block';
+
+  // Update modal title
+  document.querySelector('#editItemModal .modal-title').textContent = 'Add Expense Item';
+  document.querySelector('#editItemModal .btn-primary').textContent = 'Add Item';
+
+  // Show modal
+  const modal = new bootstrap.Modal(document.getElementById('editItemModal'));
+  modal.show();
+}
+
+// Category dropdown functions for edit modal
+function showEditCategoryDropdown() {
+  document.getElementById('editCategoryDropdown').style.display = 'block';
+}
+
+function filterEditCategoryDropdown(value) {
+  const dropdown = document.getElementById('editCategoryDropdown');
+  const options = dropdown.querySelectorAll('.dropdown-option');
+
+  dropdown.style.display = value || options.length > 0 ? 'block' : 'none';
+
+  options.forEach(option => {
+    if (option.textContent.toLowerCase().includes(value.toLowerCase())) {
+      option.style.display = 'block';
+    } else {
+      option.style.display = 'none';
+    }
+  });
+}
+
+function selectEditCategory(value) {
+  document.getElementById('editItemCategory').value = value;
+  document.getElementById('editCategoryDropdown').style.display = 'none';
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(event) {
+  const categoryDropdown = document.getElementById('editCategoryDropdown');
+  const categoryInput = document.getElementById('editItemCategory');
+
+  if (categoryDropdown && categoryInput && !categoryDropdown.contains(event.target) && !categoryInput.contains(event.target)) {
+    categoryDropdown.style.display = 'none';
+  }
+});
+
+// View receipt in edit modal
+function viewEditItemReceipt() {
+  const expId = window.editingExpenseId;
+  const itemIndex = window.editingItemIndex;
+  fetch(`/api/expense/${expId}/item-receipt/${itemIndex}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.success && data.receipt) {
+        const modal = document.createElement('div');
+        const dataUrl = `data:${data.fileType || 'image/jpeg'};base64,${data.receipt}`;
+        modal.innerHTML = `
+          <div style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; z-index:9999;" onclick="this.remove();">
+            <div onclick="event.stopPropagation();" style="background:white; padding:20px; border-radius:8px; max-width:90%; max-height:90%; overflow:auto;">
+              ${data.fileType && data.fileType.startsWith('image/') ? `<img src="${dataUrl}" style="max-width:100%; max-height:600px;">` : `<iframe src="${dataUrl}" style="width:600px; height:600px; border:none;"></iframe>`}
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modal);
+      }
+    })
+    .catch(err => console.error('Error loading receipt:', err));
+}
+
+// Remove receipt in edit modal
+function removeEditItemReceipt() {
+  document.getElementById('editItemReceipt').value = '';
+  document.getElementById('currentEditItemReceipt').style.display = 'none';
+  document.getElementById('editItemReceipt').style.display = 'block';
+  window.editingItemOriginalReceipt = null;
+}
+
+// Save edited or new item
+function saveEditItem() {
+  const expId = window.editingExpenseId;
+  const itemIndex = window.editingItemIndex;
+
+  const date = document.getElementById('editItemDate').value;
+  const category = document.getElementById('editItemCategory').value;
+  const name = document.getElementById('editItemName').value;
+  const amount = document.getElementById('editItemAmount').value;
+  const description = document.getElementById('editItemDescription').value;
+  const receiptFile = document.getElementById('editItemReceipt').files[0];
+
+  if (!date || !category || !name || !amount) {
+    alert('Please fill in all required fields');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('date', date);
+  formData.append('category', category);
+  formData.append('expense_name', name);
+  formData.append('amount', amount);
+  formData.append('description', description);
+  if (receiptFile) {
+    formData.append('receipt', receiptFile);
+  }
+
+  // Determine if adding or editing
+  if (itemIndex === null) {
+    // Adding new item
+    fetch(`/api/expense/${expId}/item`, {
+      method: 'POST',
+      body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        showSuccessToast('Item Added', 'Expense item added successfully');
+        const modal = bootstrap.Modal.getInstance(document.getElementById('editItemModal'));
+        modal.hide();
+        setTimeout(() => location.reload(), 1500);
+      } else {
+        alert('Error adding item: ' + (data.error || 'Unknown error'));
+      }
+    })
+    .catch(err => {
+      console.error('Error:', err);
+      alert('Error adding item');
+    });
+  } else {
+    // Editing existing item
+    fetch(`/api/expense/${expId}/item/${itemIndex}`, {
+      method: 'PUT',
+      body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        showSuccessToast('Item Updated', 'Expense item updated successfully');
+        const modal = bootstrap.Modal.getInstance(document.getElementById('editItemModal'));
+        modal.hide();
+        setTimeout(() => location.reload(), 1500);
+      } else {
+        alert('Error updating item: ' + (data.error || 'Unknown error'));
+      }
+    })
+    .catch(err => {
+      console.error('Error:', err);
+      alert('Error updating item');
+    });
+  }
+}
+
+// Delete expense item from details page
+function deleteExpenseItem(expId, itemIndex) {
+  if (confirm('Are you sure you want to delete this item?')) {
+    fetch(`/api/expense/${expId}/item/${itemIndex}`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          showSuccessToast('Item Deleted', 'Expense item deleted successfully');
+          setTimeout(() => location.reload(), 1500);
+        } else {
+          alert('Error deleting item: ' + (data.error || 'Unknown error'));
+        }
+      })
+      .catch(err => {
+        console.error('Error:', err);
+        alert('Error deleting item');
+      });
+  }
+}
+
+// View main expense receipt
+function viewExpenseReceipt(expId) {
+  fetch(`/api/expense/${expId}/receipt`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.success && data.receipt) {
+        const dataUrl = `data:${data.fileType || 'image/jpeg'};base64,${data.receipt}`;
+        const fileType = data.fileType || 'image/jpeg';
+
+        // Create backdrop
+        const backdrop = document.createElement('div');
+        backdrop.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0,0,0,0.5);
+          z-index: 9998;
+        `;
+        backdrop.onclick = () => {
+          backdrop.remove();
+          modal.remove();
+        };
+
+        // Create modal
+        const modal = document.createElement('div');
+        modal.id = 'receiptViewerModal';
+        modal.style.cssText = `
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: white;
+          border-radius: 8px;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+          z-index: 9999;
+          display: flex;
+          flex-direction: column;
+          width: 90vw;
+          height: 85vh;
+          max-width: 1200px;
+          max-height: 800px;
+          overflow: hidden;
+        `;
+
+        // Header
+        const header = document.createElement('div');
+        header.style.cssText = `
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 15px 20px;
+          border-bottom: 1px solid #e5e7eb;
+          background: #f9fafb;
+        `;
+
+        const title = document.createElement('h5');
+        title.textContent = 'Receipt';
+        title.style.cssText = 'margin: 0; font-weight: 600; font-size: 16px;';
+
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '✕';
+        closeBtn.style.cssText = `
+          background: none;
+          border: none;
+          font-size: 24px;
+          cursor: pointer;
+          color: #666;
+          padding: 0;
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        `;
+        closeBtn.onclick = () => {
+          backdrop.remove();
+          modal.remove();
+        };
+
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+
+        // Content
+        const content = document.createElement('div');
+        content.style.cssText = `
+          flex: 1;
+          overflow: auto;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #f5f5f5;
+        `;
+
+        // Display based on file type
+        if (fileType.startsWith('image/')) {
+          const img = document.createElement('img');
+          img.src = dataUrl;
+          img.style.cssText = `
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+          `;
+          content.appendChild(img);
+        } else if (fileType === 'application/pdf') {
+          const iframe = document.createElement('iframe');
+          iframe.src = dataUrl;
+          iframe.style.cssText = `
+            width: 100%;
+            height: 100%;
+            border: none;
+          `;
+          content.appendChild(iframe);
+        } else {
+          content.innerHTML = '<p style="color: #999;">Unable to display this file type</p>';
+        }
+
+        modal.appendChild(header);
+        modal.appendChild(content);
+        document.body.appendChild(backdrop);
+        document.body.appendChild(modal);
+      } else {
+        alert('Receipt not found');
+      }
+    })
+    .catch(err => {
+      console.error('Error loading receipt:', err);
+      alert('Error loading receipt');
+    });
+}
+
+// Convert UTC times to local timezone
+function convertToLocalTime() {
+  // Get the raw ISO datetime values from the server
+  const createdAtText = document.getElementById('createdAtDisplay').textContent.trim();
+  const updatedAtText = document.getElementById('updatedAtDisplay').textContent.trim();
+
+  // Parse and convert to local time
+  if (createdAtText && createdAtText !== '—') {
+    const localCreatedAt = convertUTCToLocalTime(createdAtText);
+    if (localCreatedAt) {
+      document.getElementById('createdAtDisplay').textContent = localCreatedAt;
+    }
+  }
+
+  if (updatedAtText && updatedAtText !== '—') {
+    const localUpdatedAt = convertUTCToLocalTime(updatedAtText);
+    if (localUpdatedAt) {
+      document.getElementById('updatedAtDisplay').textContent = localUpdatedAt;
+    }
+  }
+}
+
+// Convert a UTC datetime string (MM-DD-YYYY T HH:MM) to local time
+function convertUTCToLocalTime(utcTimeStr) {
+  try {
+    // Parse the formatted string (MM-DD-YYYY T HH:MM)
+    const parts = utcTimeStr.match(/(\d{2})-(\d{2})-(\d{4}) T (\d{2}):(\d{2})/);
+    if (!parts) return null;
+
+    const [, month, day, year, hours, minutes] = parts;
+
+    // Create UTC date
+    const utcDate = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
+
+    // Convert to local time string
+    const localDate = new Date(utcDate);
+    const localMonth = String(localDate.getMonth() + 1).padStart(2, '0');
+    const localDay = String(localDate.getDate()).padStart(2, '0');
+    const localYear = localDate.getFullYear();
+    const localHours = String(localDate.getHours()).padStart(2, '0');
+    const localMinutes = String(localDate.getMinutes()).padStart(2, '0');
+
+    return `${localMonth}-${localDay}-${localYear} T ${localHours}:${localMinutes}`;
+  } catch (err) {
+    console.error('Error converting time:', err);
+    return null;
+  }
+}
+
+// Run conversion and initialize dropdowns when page loads
+document.addEventListener('DOMContentLoaded', function() {
+  convertToLocalTime();
+  if (document.getElementById('modalExpenseType')) {
+    initModalDropdowns();
+  }
+});
+
+function backToExpenses() {
+  const lastPage = sessionStorage.getItem('lastExpensePage');
+  if (lastPage) {
+    sessionStorage.removeItem('lastExpensePage');
+    window.location.href = `/financial?tab=expenses&page=${lastPage}`;
+  } else {
+    window.history.back();
+  }
+}
+
+function initEditExpenseDropdowns() {
+  // Expense Type (disabled, but initialize)
+  const typeInput = document.getElementById('editExpenseType');
+
+  // Category Dropdown
+  const catInput = document.getElementById('editExpenseCategory');
+  const catDropdown = document.getElementById('editCategoryDropdown');
+
+  if (catDropdown) {
+    const allCats = Object.values(categoriesByType).flat();
+    const uniqueCats = [...new Set(allCats)];
+    catDropdown.innerHTML = '';
+    uniqueCats.forEach(cat => {
+      const div = document.createElement('div');
+      div.className = 'option';
+      div.style.cssText = 'padding:8px 12px; cursor:pointer; border-bottom:1px solid #f0f0f0;';
+      div.textContent = cat;
+      div.onclick = () => {
+        catInput.value = cat;
+        catDropdown.style.display = 'none';
+        updateEditExpenseNameDropdown();
+      };
+      catDropdown.appendChild(div);
+    });
+  }
+
+  // Expense Name Dropdown
+  const nameInput = document.getElementById('editExpenseName');
+  const nameDropdown = document.getElementById('editExpenseNameDropdown');
+
+  // Vendor Dropdown
+  const vendorInput = document.getElementById('editExpenseVendor');
+  const vendorDropdown = document.getElementById('editVendorDropdown');
+
+  if (vendorDropdown) {
+    vendorDropdown.innerHTML = '';
+    window.vendorList.forEach(vendor => {
+      const div = document.createElement('div');
+      div.className = 'option';
+      div.style.cssText = 'padding:8px 12px; cursor:pointer; border-bottom:1px solid #f0f0f0;';
+      div.textContent = vendor;
+      div.onclick = () => {
+        vendorInput.value = vendor;
+        vendorDropdown.style.display = 'none';
+      };
+      vendorDropdown.appendChild(div);
+    });
+  }
+
+  // Project Dropdown
+  const projectInput = document.getElementById('editExpenseProject');
+  const projectDropdown = document.getElementById('editProjectDropdown');
+
+  if (projectDropdown) {
+    projectDropdown.innerHTML = '';
+    projectsList.forEach(proj => {
+      const projNum = proj.project_number || '';
+      const div = document.createElement('div');
+      div.className = 'option';
+      div.style.cssText = 'padding:8px 12px; cursor:pointer; border-bottom:1px solid #f0f0f0;';
+      div.textContent = projNum;
+      div.onclick = () => {
+        projectInput.value = projNum;
+        projectDropdown.style.display = 'none';
+      };
+      projectDropdown.appendChild(div);
+    });
+  }
+
+  // Close dropdowns when clicking outside
+  document.addEventListener('click', function(event) {
+    if (catInput && catDropdown && !catInput.parentElement.contains(event.target)) {
+      catDropdown.style.display = 'none';
+    }
+    if (nameInput && nameDropdown && !nameInput.parentElement.contains(event.target)) {
+      nameDropdown.style.display = 'none';
+    }
+    if (vendorInput && vendorDropdown && !vendorInput.parentElement.contains(event.target)) {
+      vendorDropdown.style.display = 'none';
+    }
+    if (projectInput && projectDropdown && !projectInput.parentElement.contains(event.target)) {
+      projectDropdown.style.display = 'none';
+    }
+  });
+}
+
+function showEditCategoryDropdown() {
+  const dropdown = document.getElementById('editCategoryDropdown');
+  const input = document.getElementById('editItemCategory');
+  if (!dropdown || !input) return;
+
+  // Get all categories
+  let allCats = [];
+  if (categoriesByType && Object.keys(categoriesByType).length > 0) {
+    allCats = Object.values(categoriesByType).flat();
+  }
+
+  // Fallback if empty
+  if (!allCats || allCats.length === 0) {
+    allCats = [
+      "Facilities & Utilities", "Office & Admin Overhead", "Engineering Software & IT",
+      "Salaries, Labor & Related Costs", "Professional Services", "Insurance & Compliance",
+      "Travel, Site Visits & Vehicles", "Marketing & Business Development",
+      "Training, Licensure & Development", "Safety & Field Supplies", "Miscellaneous O & M",
+      "Computer & Office Equipment", "Field & Inspection Equipment", "Furniture & Fixtures",
+      "Vehicles", "Software (Capitalized)", "Leasehold Improvements", "Accumulated Depreciation",
+      "Salary/Bonuses", "Tax Expenses/Tax Deductions", "Medical/Benefits",
+      "Meals & Entertainment", "Donations", "Bank Charges", "Contingency Funds", "Unexpected Costs"
+    ];
+  }
+
+  const uniqueCats = [...new Set(allCats)];
+  dropdown.innerHTML = '';
+
+  uniqueCats.forEach(cat => {
+    const div = document.createElement('div');
+    div.className = 'option';
+    div.style.cssText = 'padding:8px 12px; cursor:pointer; border-bottom:1px solid #f0f0f0; font-size:13px; background:white;';
+    div.textContent = cat;
+    div.onmouseover = () => div.style.backgroundColor = '#f0f0f0';
+    div.onmouseout = () => div.style.backgroundColor = 'white';
+    div.onclick = () => {
+      input.value = cat;
+      dropdown.style.display = 'none';
+    };
+    dropdown.appendChild(div);
+  });
+
+  // Position dropdown below the input field
+  const rect = input.getBoundingClientRect();
+  dropdown.style.position = 'fixed';
+  dropdown.style.top = (rect.bottom + 4) + 'px';
+  dropdown.style.left = rect.left + 'px';
+  dropdown.style.width = rect.width + 'px';
+  dropdown.style.minWidth = '200px';
+  dropdown.style.zIndex = '10050';
+  dropdown.style.display = 'block';
+}
+
+function filterEditCategoryDropdown(value) {
+  const dropdown = document.getElementById('editCategoryDropdown');
+  if (!dropdown) return;
+
+  const options = dropdown.querySelectorAll('.option');
+  options.forEach(option => {
+    if (option.textContent.toLowerCase().includes(value.toLowerCase())) {
+      option.style.display = 'block';
+    } else {
+      option.style.display = 'none';
+    }
+  });
+}
+
+function updateEditExpenseNameDropdown() {
+  const catInput = document.getElementById('editExpenseCategory');
+  const nameInput = document.getElementById('editExpenseName');
+  const nameDropdown = document.getElementById('editExpenseNameDropdown');
+
+  if (!nameDropdown) return;
+
+  const category = catInput.value;
+  const names = window.expenseNamesByCategory[category] || [];
+
+  nameDropdown.innerHTML = '';
+  names.forEach(name => {
+    const div = document.createElement('div');
+    div.className = 'option';
+    div.style.cssText = 'padding:8px 12px; cursor:pointer; border-bottom:1px solid #f0f0f0;';
+    div.textContent = name;
+    div.onclick = () => {
+      nameInput.value = name;
+      nameDropdown.style.display = 'none';
+    };
+    nameDropdown.appendChild(div);
+  });
+}
+
+function showEditExpenseNameDropdown() {
+  updateEditExpenseNameDropdown();
+  const dropdown = document.getElementById('editExpenseNameDropdown');
+  if (dropdown) dropdown.style.display = 'block';
+}
+
+function filterEditExpenseNameDropdown(value) {
+  const dropdown = document.getElementById('editExpenseNameDropdown');
+  if (!dropdown) return;
+
+  const options = dropdown.querySelectorAll('.option');
+  options.forEach(option => {
+    if (option.textContent.toLowerCase().includes(value.toLowerCase())) {
+      option.style.display = 'block';
+    } else {
+      option.style.display = 'none';
+    }
+  });
+}
+
+function showEditVendorDropdown() {
+  const dropdown = document.getElementById('editVendorDropdown');
+  if (dropdown) dropdown.style.display = 'block';
+}
+
+function filterEditVendorDropdown(value) {
+  const dropdown = document.getElementById('editVendorDropdown');
+  if (!dropdown) return;
+
+  const options = dropdown.querySelectorAll('.option');
+  options.forEach(option => {
+    if (option.textContent.toLowerCase().includes(value.toLowerCase())) {
+      option.style.display = 'block';
+    } else {
+      option.style.display = 'none';
+    }
+  });
+}
+
+function showEditProjectDropdown() {
+  const dropdown = document.getElementById('editProjectDropdown');
+  if (dropdown) dropdown.style.display = 'block';
+}
+
+function filterEditProjectDropdown(value) {
+  const dropdown = document.getElementById('editProjectDropdown');
+  if (!dropdown) return;
+
+  const options = dropdown.querySelectorAll('.option');
+  options.forEach(option => {
+    if (option.textContent.toLowerCase().includes(value.toLowerCase())) {
+      option.style.display = 'block';
+    } else {
+      option.style.display = 'none';
+    }
+  });
+}
+
+
+function viewCurrentReceipt(expId) {
+  fetch(`/api/expense/${expId}/receipt`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.success && data.receipt) {
+        const dataUrl = `data:${data.fileType || 'image/jpeg'};base64,${data.receipt}`;
+        const fileType = data.fileType || 'image/jpeg';
+
+        const backdrop = document.createElement('div');
+        backdrop.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0,0,0,0.5);
+          z-index: 9998;
+        `;
+        backdrop.onclick = () => {
+          backdrop.remove();
+          modal.remove();
+        };
+
+        const modal = document.createElement('div');
+        modal.id = 'receiptViewerModal';
+        modal.style.cssText = `
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: white;
+          border-radius: 8px;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+          z-index: 9999;
+          display: flex;
+          flex-direction: column;
+          width: 90vw;
+          height: 85vh;
+          max-width: 1200px;
+          max-height: 800px;
+          overflow: hidden;
+        `;
+
+        const header = document.createElement('div');
+        header.style.cssText = `
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 15px 20px;
+          border-bottom: 1px solid #e5e7eb;
+          background: #f9fafb;
+        `;
+
+        const title = document.createElement('h5');
+        title.textContent = 'Receipt';
+        title.style.cssText = 'margin: 0; font-weight: 600; font-size: 16px;';
+
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '✕';
+        closeBtn.style.cssText = `
+          background: none;
+          border: none;
+          font-size: 24px;
+          cursor: pointer;
+          color: #666;
+          padding: 0;
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        `;
+        closeBtn.onclick = () => {
+          backdrop.remove();
+          modal.remove();
+        };
+
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+
+        const content = document.createElement('div');
+        content.style.cssText = `
+          flex: 1;
+          overflow: auto;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #f5f5f5;
+        `;
+
+        if (fileType.startsWith('image/')) {
+          const img = document.createElement('img');
+          img.src = dataUrl;
+          img.style.cssText = `
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+          `;
+          content.appendChild(img);
+        } else if (fileType === 'application/pdf') {
+          const iframe = document.createElement('iframe');
+          iframe.src = dataUrl;
+          iframe.style.cssText = `
+            width: 100%;
+            height: 100%;
+            border: none;
+          `;
+          content.appendChild(iframe);
+        }
+
+        modal.appendChild(header);
+        modal.appendChild(content);
+        document.body.appendChild(backdrop);
+        document.body.appendChild(modal);
+      }
+    })
+    .catch(err => {
+      console.error('Error loading receipt:', err);
+      alert('Error loading receipt');
+    });
+}
+
+function removeCurrentReceipt() {
+  window.editingExpenseReceipt = null;
+  document.getElementById('editExpenseReceiptPreview').innerHTML = '';
+  document.getElementById('editExpenseReceipt').value = '';
+}
+
+function saveSingleExpenseEdit() {
+  const expId = document.getElementById('editExpenseId').value;
+  const receiptFile = document.getElementById('editExpenseReceipt').files[0];
+
+  // Use FormData for file upload
+  const formData = new FormData();
+  formData.append('date', document.getElementById('editExpenseDate').value);
+  formData.append('expense_name', document.getElementById('editExpenseName').value);
+  formData.append('amount', parseFloat(document.getElementById('editExpenseAmount').value));
+  formData.append('category', document.getElementById('editExpenseCategory').value);
+  formData.append('vendor', document.getElementById('editExpenseVendor').value);
+  formData.append('project_number', document.getElementById('editExpenseProject').value);
+  formData.append('notes', document.getElementById('editExpenseNotes').value);
+
+  // Handle receipt - if marked for removal, add flag
+  if (window.editingExpenseReceipt === null && document.getElementById('editExpenseReceiptPreview').innerHTML === '') {
+    formData.append('remove_receipt', 'true');
+  }
+
+  // Add new receipt if selected
+  if (receiptFile) {
+    formData.append('receipt', receiptFile);
+  }
+
+  fetch(`/api/expense/${expId}`, {
+    method: 'PUT',
+    body: formData
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      showSuccessToast('Expense Updated', 'Changes saved successfully');
+      bootstrap.Modal.getInstance(document.getElementById('editExpenseModal')).hide();
+    } else {
+      alert('Error updating expense: ' + (data.error || 'Unknown error'));
+    }
+  })
+  .catch(err => {
+    console.error('Error:', err);
+    alert('Error updating expense');
+  });
+}
+
+function showNewItemCategoryDropdown() {
+  const dropdown = document.getElementById('newItemCategoryDropdown');
+  const input = document.getElementById('newItemCategory');
+  if (!dropdown || !input) return;
+
+  // Get all categories
+  let allCats = [];
+  if (window.categoriesByType && Object.keys(window.categoriesByType).length > 0) {
+    allCats = Object.values(window.categoriesByType).flat();
+  }
+
+  // Fallback categories if empty
+  if (!allCats || allCats.length === 0) {
+    allCats = [
+      "Facilities & Utilities", "Office & Admin Overhead", "Engineering Software & IT",
+      "Salaries, Labor & Related Costs", "Professional Services", "Insurance & Compliance",
+      "Travel, Site Visits & Vehicles", "Marketing & Business Development",
+      "Training, Licensure & Development", "Safety & Field Supplies", "Miscellaneous O & M",
+      "Computer & Office Equipment", "Field & Inspection Equipment", "Furniture & Fixtures",
+      "Vehicles", "Software (Capitalized)", "Leasehold Improvements", "Accumulated Depreciation",
+      "Salary/Bonuses", "Tax Expenses/Tax Deductions", "Medical/Benefits",
+      "Meals & Entertainment", "Donations", "Bank Charges", "Contingency Funds", "Unexpected Costs"
+    ];
+  }
+
+  const uniqueCats = [...new Set(allCats)];
+  dropdown.innerHTML = '';
+
+  uniqueCats.forEach(cat => {
+    const div = document.createElement('div');
+    div.style.cssText = 'padding:8px 12px; cursor:pointer; background:white; border-bottom:1px solid #f0f0f0; font-size:12px;';
+    div.textContent = cat;
+    div.onmouseover = () => div.style.backgroundColor = '#f0fdf4';
+    div.onmouseout = () => div.style.backgroundColor = 'white';
+    div.onclick = (e) => {
+      e.stopPropagation();
+      input.value = cat;
+      dropdown.style.display = 'none';
+    };
+    dropdown.appendChild(div);
+  });
+
+  // Position dropdown below the input field using getBoundingClientRect()
+  const rect = input.getBoundingClientRect();
+  dropdown.style.position = 'fixed';
+  dropdown.style.top = (rect.bottom + 2) + 'px';
+  dropdown.style.left = rect.left + 'px';
+  dropdown.style.width = rect.width + 'px';
+  dropdown.style.zIndex = '10000';
+
+  dropdown.style.display = 'block';
+}
+
+function filterNewItemCategoryDropdown(value) {
+  const dropdown = document.getElementById('newItemCategoryDropdown');
+  if (!dropdown) return;
+
+  const options = dropdown.querySelectorAll('.option');
+  options.forEach(option => {
+    if (option.textContent.toLowerCase().includes(value.toLowerCase())) {
+      option.style.display = 'block';
+    } else {
+      option.style.display = 'none';
+    }
+  });
+}
+
+function initGroupExpenseDropdowns() {
+  // Vendor Dropdown
+  const vendorInput = document.getElementById('groupExpenseVendor0');
+  const vendorDropdown = document.getElementById('groupVendorDropdown');
+
+  if (vendorDropdown) {
+    vendorDropdown.innerHTML = '';
+    window.vendorList.forEach(vendor => {
+      const div = document.createElement('div');
+      div.className = 'option';
+      div.style.cssText = 'padding:8px 12px; cursor:pointer; border-bottom:1px solid #f0f0f0;';
+      div.textContent = vendor;
+      div.onclick = () => {
+        vendorInput.value = vendor;
+        vendorDropdown.style.display = 'none';
+      };
+      vendorDropdown.appendChild(div);
+    });
+  }
+
+  // Project Dropdown
+  const projectInput = document.getElementById('groupExpenseProject0');
+  const projectDropdown = document.getElementById('groupProjectDropdown');
+
+  if (projectDropdown) {
+    projectDropdown.innerHTML = '';
+    projectsList.forEach(proj => {
+      const projNum = proj.project_number || '';
+      const div = document.createElement('div');
+      div.className = 'option';
+      div.style.cssText = 'padding:8px 12px; cursor:pointer; border-bottom:1px solid #f0f0f0;';
+      div.textContent = projNum;
+      div.onclick = () => {
+        projectInput.value = projNum;
+        projectDropdown.style.display = 'none';
+      };
+      projectDropdown.appendChild(div);
+    });
+  }
+
+  // Close dropdowns when clicking outside
+  document.addEventListener('click', function(event) {
+    if (vendorInput && vendorDropdown && !vendorInput.parentElement.contains(event.target)) {
+      vendorDropdown.style.display = 'none';
+    }
+    if (projectInput && projectDropdown && !projectInput.parentElement.contains(event.target)) {
+      projectDropdown.style.display = 'none';
+    }
+  });
+}
+
+function showGroupVendorDropdown() {
+  const dropdown = document.getElementById('groupVendorDropdown');
+  if (dropdown) dropdown.style.display = 'block';
+}
+
+function filterGroupVendorDropdown(value) {
+  const dropdown = document.getElementById('groupVendorDropdown');
+  if (!dropdown) return;
+
+  const options = dropdown.querySelectorAll('.option');
+  options.forEach(option => {
+    if (option.textContent.toLowerCase().includes(value.toLowerCase())) {
+      option.style.display = 'block';
+    } else {
+      option.style.display = 'none';
+    }
+  });
+}
+
+function showGroupProjectDropdown() {
+  const dropdown = document.getElementById('groupProjectDropdown');
+  if (dropdown) dropdown.style.display = 'block';
+}
+
+function filterGroupProjectDropdown(value) {
+  const dropdown = document.getElementById('groupProjectDropdown');
+  if (!dropdown) return;
+
+  const options = dropdown.querySelectorAll('.option');
+  options.forEach(option => {
+    if (option.textContent.toLowerCase().includes(value.toLowerCase())) {
+      option.style.display = 'block';
+    } else {
+      option.style.display = 'none';
+    }
+  });
+}
+
+function openGroupEditModal(expense) {
+  try {
+    window.editingGroupExpenseId = expense.id || expense.firebase_id;
+
+    // Change modal title and subtitle
+    document.getElementById('groupExpenseModalTitle').innerHTML = '<i class="bi bi-folder-open me-2"></i>Edit Group Expenses';
+    document.getElementById('groupExpenseModalSubtitle').textContent = 'Edit group expense details and add/modify individual expense items';
+    document.getElementById('groupExpenseSaveBtn').textContent = 'Update Expense';
+
+    // Reset form
+    document.getElementById('groupExpenseForm').reset();
+
+    // Reset receipt display for edit
+    document.getElementById('groupReceipt').value = '';
+    window.currentGroupReceipt = null;
+
+    // Pre-fill GROUP EXPENSE DETAILS
+    document.getElementById('groupExpenseDate0').value = expense.date || '';
+    document.getElementById('groupType').value = 'Group Expenses';
+    document.getElementById('groupExpenseCategory0').value = expense.category || '';
+    document.getElementById('groupName').value = expense.expense_name || '';
+    document.getElementById('groupExpenseVendor0').value = expense.vendor || '';
+    document.getElementById('groupExpenseProject0').value = expense.project_number || '';
+    document.getElementById('groupNotes').value = expense.notes || '';
+
+    // Show current receipt if exists
+    if (expense.receipt_filename) {
+      document.getElementById('currentGroupReceiptName').textContent = expense.receipt_filename;
+      document.getElementById('currentGroupReceiptDisplay').style.display = 'block';
+      document.getElementById('groupReceipt').style.display = 'none';
+      window.currentGroupReceipt = expense.receipt_filename;
+    } else {
+      document.getElementById('currentGroupReceiptDisplay').style.display = 'none';
+      document.getElementById('groupReceipt').style.display = 'block';
+      window.currentGroupReceipt = null;
+    }
+
+    // Clear expense items table
+    document.getElementById('expensesTableBody').innerHTML = '';
+    window.expenseCounterInGroup = 0;
+
+    // Load existing child expenses into the table
+    if (!window.groupItemData) window.groupItemData = {};
+    if (expense.child_expenses && Array.isArray(expense.child_expenses)) {
+      expense.child_expenses.forEach((childExp, idx) => {
+        const index = window.expenseCounterInGroup++;
+
+        // Store in groupItemData
+        window.groupItemData[index] = {
+          date: childExp.date,
+          category: childExp.category,
+          expense_name: childExp.expense_name,
+          amount: childExp.amount,
+          description: childExp.description || '',
+          receipt_filename: childExp.receipt_filename || ''
+        };
+
+        const row = `
+          <tr class="expense-row-${index}">
+            <td style="font-size:12px; white-space:nowrap; padding:8px;">
+              ${childExp.date || '—'}
+            </td>
+            <td style="font-size:12px; padding:8px;">
+              ${childExp.category || '—'}
+            </td>
+            <td style="font-size:12px; padding:8px;">
+              ${childExp.expense_name || '—'}
+            </td>
+            <td style="font-size:12px; text-align:right; padding:8px;">
+              $${parseFloat(childExp.amount || 0).toFixed(2)}
+            </td>
+            <td style="font-size:12px; color:#666; padding:8px;">
+              ${childExp.description || '—'}
+            </td>
+            <td style="font-size:12px; padding:8px;">
+              ${childExp.receipt_filename ? `<span class="badge bg-info text-white" style="display:inline-block; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="Receipt: ${childExp.receipt_filename}">${childExp.receipt_filename.substring(0, 25)}${childExp.receipt_filename.length > 25 ? '...' : ''}</span>` : '<span style="color:#9ca3af;">—</span>'}
+            </td>
+            <td style="text-align:center; padding:8px; white-space:nowrap;">
+              <div style="display:flex; gap:4px; align-items:center;">
+                ${childExp.receipt_filename ? `<button type="button" class="btn btn-sm btn-link p-0" onclick="viewExpenseItemReceipt('{{ expense.id }}', '${idx}')" title="View Receipt: ${childExp.receipt_filename}" style="color:#0ea5e9; font-size:14px;"><i class="bi bi-paperclip"></i></button>` : ''}
+                <button type="button" class="btn btn-sm btn-link text-primary p-0" onclick="editExistingItem(${index}, '${childExp.expense_name}', '${childExp.category}', '${childExp.date}', ${childExp.amount}, '${(childExp.description || '').replace(/'/g, "\\'")}', '${childExp.receipt_filename || ''}')" title="Edit" style="color:#0ea5e9; font-size:14px;">
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-link text-danger p-0" onclick="removeExpenseFromGroup(${index})" title="Delete" style="color:#ef4444; font-size:14px;">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+        document.getElementById('expensesTableBody').insertAdjacentHTML('beforeend', row);
+      });
+
+      // Calculate total from existing items
+      let total = 0;
+      expense.child_expenses.forEach((item) => {
+        total += item.amount || 0;
+      });
+      document.getElementById('groupTotalDisplay').textContent = '$' + total.toFixed(2) + ' USD';
+
+      // Show expense items section since there are child expenses
+      document.getElementById('expenseItemsSection').style.display = 'block';
+    } else {
+      // Hide if no items
+      document.getElementById('expenseItemsSection').style.display = 'none';
+      document.getElementById('groupTotalDisplay').textContent = '$0.00 USD';
+    }
+
+
+    // Show group expense dialog
+    const modal = new bootstrap.Modal(document.getElementById('groupExpenseModal'));
+
+    // Initialize dropdowns after modal is shown
+    setTimeout(() => initGroupExpenseDropdowns(), 100);
+
+    modal.show();
+  } catch (err) {
+    console.error('Error in openGroupEditModal:', err);
+    console.error('Error message:', err.message);
+    console.error('Error stack:', err.stack);
+    alert('Error loading group expense for edit: ' + err.message);
+  }
+}
+
+
+function addExpenseToGroupTable() {
+  const date = document.getElementById('newItemDate').value;
+  const category = document.getElementById('newItemCategory').value;
+  const name = document.getElementById('newItemName').value;
+  const amount = document.getElementById('newItemAmount').value;
+  const description = document.getElementById('newItemDescription').value;
+
+  if (!date || !category || !name || !amount) {
+    alert('Please fill in all required fields');
+    return;
+  }
+
+  const index = window.expenseCounterInGroup++;
+  if (!window.groupItemData) window.groupItemData = {};
+
+  window.groupItemData[index] = {
+    date: date,
+    category: category,
+    expense_name: name,
+    amount: parseFloat(amount),
+    description: description,
+    receipt_filename: ''
+  };
+
+  const row = `
+    <tr class="expense-row-${index}">
+      <td style="font-size:12px; white-space:nowrap; padding:8px;">${date}</td>
+      <td style="font-size:12px; padding:8px;">${category}</td>
+      <td style="font-size:12px; padding:8px;">${name}</td>
+      <td style="font-size:12px; text-align:right; padding:8px;">$${parseFloat(amount).toFixed(2)}</td>
+      <td style="font-size:12px; color:#666; padding:8px;">${description || '—'}</td>
+      <td style="width:18%; text-align:right; padding:8px; white-space:nowrap;">
+        <div style="display:flex; justify-content:flex-end; gap:4px; align-items:center;">
+          <button type="button" class="btn btn-sm btn-link text-primary p-0" onclick="editExistingItem(${index}, '${name.replace(/'/g, "\\'")}', '${category.replace(/'/g, "\\'")}', '${date}', ${amount}, '${(description || '').replace(/'/g, "\\'")}', '')" title="Edit" style="color:#0ea5e9; font-size:14px;">
+            <i class="bi bi-pencil"></i>
+          </button>
+          <button type="button" class="btn btn-sm btn-link text-danger p-0" onclick="removeExpenseFromGroup(${index})" title="Delete" style="color:#ef4444; font-size:14px;">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      </td>
+    </tr>
+  `;
+
+  document.getElementById('expensesTableBody').insertAdjacentHTML('beforeend', row);
+  document.getElementById('expenseItemsSection').style.display = 'block';
+
+  clearAddItemForm();
+  updateGroupTotal();
+}
+
+function clearAddItemForm() {
+  document.getElementById('newItemDate').value = '';
+  document.getElementById('newItemCategory').value = '';
+  document.getElementById('newItemName').value = '';
+  document.getElementById('newItemAmount').value = '';
+  document.getElementById('newItemDescription').value = '';
+  document.getElementById('newItemReceipt').value = '';
+  document.getElementById('currentItemReceiptDisplay').style.display = 'none';
+  document.getElementById('newItemReceipt').style.display = 'block';
+  window.currentItemReceipt = null;
+}
+
+function viewCurrentItemReceipt() {
+  if (!window.currentItemReceipt) return;
+
+  // Store in temporary variable for viewing
+  window.tempReceiptFilename = window.currentItemReceipt;
+
+  // Try to get the receipt from the groupItemData for the current index
+  const index = window.editingItemIndex;
+  if (index !== null && window.groupItemData && window.groupItemData[index] && window.groupItemData[index].receiptName) {
+    // For existing items being edited, we'd need to fetch from server
+    // For now, just alert the user
+    alert('Click the paperclip icon in the table to view receipt');
+  }
+}
+
+function removeCurrentItemReceipt(event) {
+  if (event) event.preventDefault();
+  // Hide current receipt display and show file input
+  document.getElementById('currentItemReceiptDisplay').style.display = 'none';
+  document.getElementById('newItemReceipt').style.display = 'block';
+  document.getElementById('newItemReceipt').value = '';
+  window.currentItemReceipt = null;
+
+  // Preserve form data - make sure nothing is cleared
+  return false;
+}
+
+function viewCurrentGroupReceipt() {
+  if (!window.currentGroupReceipt) return;
+  alert('Click the View button in the receipt section to view receipt');
+}
+
+function removeCurrentGroupReceipt(event) {
+  if (event) event.preventDefault();
+  // Hide current receipt display and show file input
+  document.getElementById('currentGroupReceiptDisplay').style.display = 'none';
+  document.getElementById('groupReceipt').style.display = 'block';
+  document.getElementById('groupReceipt').value = '';
+  window.currentGroupReceipt = null;
+
+  // Preserve form data - make sure nothing is cleared
+  return false;
+}
+
+function editExistingItem(index, name, category, date, amount, description, receipt) {
+  document.getElementById('newItemDate').value = date;
+  document.getElementById('newItemCategory').value = category;
+  document.getElementById('newItemName').value = name;
+  document.getElementById('newItemAmount').value = amount;
+  document.getElementById('newItemDescription').value = description;
+
+  // Show current receipt if exists
+  const receiptDisplay = document.getElementById('currentItemReceiptDisplay');
+  const receiptInput = document.getElementById('newItemReceipt');
+  if (receipt) {
+    document.getElementById('currentItemReceiptName').textContent = receipt;
+    receiptDisplay.style.display = 'block';
+    receiptInput.style.display = 'none';
+  } else {
+    receiptDisplay.style.display = 'none';
+    receiptInput.style.display = 'block';
+  }
+
+  window.editingItemIndex = index;
+  window.currentItemReceipt = receipt || null;
+  document.getElementById('addItemButton').textContent = '💾 Update Item';
+  document.getElementById('addItemButton').onclick = () => updateExistingItem(index);
+}
+
+function updateExistingItem(index) {
+  const date = document.getElementById('newItemDate').value;
+  const category = document.getElementById('newItemCategory').value;
+  const name = document.getElementById('newItemName').value;
+  const amount = document.getElementById('newItemAmount').value;
+  const description = document.getElementById('newItemDescription').value;
+  const receiptFile = document.getElementById('newItemReceipt').files[0];
+
+  if (!date || !category || !name || !amount) {
+    alert('Please fill in all required fields');
+    return;
+  }
+
+  // Update or remove receipt
+  let receiptName = window.groupItemData[index]?.receipt_filename || '';
+  if (receiptFile) {
+    receiptName = receiptFile.name;
+    window.groupItemData[index] = {
+      date: date,
+      category: category,
+      expense_name: name,
+      amount: parseFloat(amount),
+      description: description,
+      receipt: receiptFile,
+      receipt_filename: receiptName
+    };
+  } else if (!window.currentItemReceipt) {
+    // Receipt was removed
+    receiptName = '';
+    window.groupItemData[index] = {
+      date: date,
+      category: category,
+      expense_name: name,
+      amount: parseFloat(amount),
+      description: description,
+      receipt: null,
+      receipt_filename: ''
+    };
+  } else {
+    // Keep existing receipt
+    window.groupItemData[index] = {
+      date: date,
+      category: category,
+      expense_name: name,
+      amount: parseFloat(amount),
+      description: description,
+      receipt: window.groupItemData[index]?.receipt || null,
+      receipt_filename: window.currentItemReceipt
+    };
+  }
+
+  const row = document.querySelector(`.expense-row-${index}`);
+
+  row.innerHTML = `
+    <td style="font-size:12px; white-space:nowrap; padding:8px;">${date}</td>
+    <td style="font-size:12px; padding:8px;">${category}</td>
+    <td style="font-size:12px; padding:8px;">${name}</td>
+    <td style="font-size:12px; text-align:right; padding:8px;">$${parseFloat(amount).toFixed(2)}</td>
+    <td style="font-size:12px; color:#666; padding:8px;">${description || '—'}</td>
+    <td style="width:18%; text-align:right; padding:8px; white-space:nowrap;">
+      <div style="display:flex; justify-content:flex-end; gap:4px; align-items:center;">
+        ${receiptName ? `<button type="button" class="btn btn-sm btn-link p-0" onclick="viewExpenseItemReceipt('{{ expense.id }}', '${index}')" title="View Receipt: ${receiptName}" style="color:#0ea5e9; font-size:14px;"><i class="bi bi-paperclip"></i></button>` : ''}
+        <button type="button" class="btn btn-sm btn-link text-primary p-0" onclick="editExistingItem(${index}, '${name.replace(/'/g, "\\'")}', '${category.replace(/'/g, "\\'")}', '${date}', ${amount}, '${(description || '').replace(/'/g, "\\'")}', '${receiptName.replace(/'/g, "\\'") || ''}')" title="Edit" style="color:#0ea5e9; font-size:14px;">
+          <i class="bi bi-pencil"></i>
+        </button>
+        <button type="button" class="btn btn-sm btn-link text-danger p-0" onclick="removeExpenseFromGroup(${index})" title="Delete" style="color:#ef4444; font-size:14px;">
+          <i class="bi bi-trash"></i>
+        </button>
+      </div>
+    </td>
+  `;
+
+  clearAddItemForm();
+  document.getElementById('addItemButton').innerHTML = '<i class="bi bi-plus-lg me-1"></i>Add Expense Item';
+  document.getElementById('addItemButton').onclick = () => addExpenseToGroupTable();
+  updateGroupTotal();
+}
+
+function removeExpenseFromGroup(index) {
+  if (confirm('Remove this expense item?')) {
+    const row = document.querySelector(`.expense-row-${index}`);
+    if (row) row.remove();
+    delete window.groupItemData[index];
+    updateGroupTotal();
+
+    if (Object.keys(window.groupItemData).length === 0) {
+      document.getElementById('expenseItemsSection').style.display = 'none';
+    }
+  }
+}
+
+function updateGroupTotal() {
+  let total = 0;
+  if (window.groupItemData) {
+    Object.values(window.groupItemData).forEach(item => {
+      total += item.amount || 0;
+    });
+  }
+  document.getElementById('groupTotalDisplay').textContent = '$' + total.toFixed(2) + ' USD';
+}
+
+function submitGroupExpenseModal() {
+  const expId = window.editingGroupExpenseId;
+  if (!expId) {
+    alert('Expense ID missing');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('date', document.getElementById('groupExpenseDate0').value);
+  formData.append('expense_type', 'Group Expenses');
+  formData.append('category', document.getElementById('groupExpenseCategory0').value);
+  formData.append('expense_name', document.getElementById('groupName').value);
+  formData.append('vendor', document.getElementById('groupExpenseVendor0').value);
+  formData.append('project_number', document.getElementById('groupExpenseProject0').value);
+  formData.append('notes', document.getElementById('groupNotes').value);
+  formData.append('is_group_expense', 'true');
+  formData.append('child_expenses', JSON.stringify(Object.values(window.groupItemData || {})));
+
+  fetch(`/financial/expense/${expId}/edit`, {
+    method: 'POST',
+    body: formData
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      showSuccessToast('Group Expense Updated', 'Changes saved successfully');
+      bootstrap.Modal.getInstance(document.getElementById('groupExpenseModal')).hide();
+      setTimeout(() => {
+        location.reload();
+      }, 1500);
+    } else {
+      alert('Error updating expense: ' + (data.error || 'Unknown error'));
+    }
+  })
+  .catch(err => {
+    console.error('Error:', err);
+    alert('Error updating expense');
+  });
+}
+
+// Finance Modal Functions - Single Expense Edit
+var receiptFile = null;
+var _pendingReceiptDeleteId = null;
+var _receiptToDelete = null;
+var currentExchangeRate = 110;
+
+function handleEditExpense(expId) {
+  fetch(`/api/expense/${expId}`)
+    .then(r => {
+      if (!r.ok) {
+        throw new Error(`Server error: ${r.status} ${r.statusText}`);
+      }
+      return r.json();
+    })
+    .then(data => {
+      if (data && data.success && data.expense) {
+        const expense = data.expense;
+        window.editingExpenseId = expId;
+
+        console.log('=== API Expense Data ===', expense);
+        console.log('Vendor from API:', expense.vendor);
+        console.log('Exchange Rate from API:', expense.exchange_rate);
+        console.log('All expense keys:', Object.keys(expense));
+
+        // Check if this is a group expense
+        if (expense.is_group_expense) {
+          openGroupEditModal(expense);
+          return;
+        }
+
+        document.getElementById('expenseId').value = expId;
+        document.getElementById('expenseModalTitle').innerHTML = '<i class="bi bi-pencil me-2"></i>Edit Expense';
+        document.getElementById('expenseModalSaveBtn').textContent = '✓ Update Expense';
+        document.getElementById('expenseModalSaveBtn').className = 'btn btn-warning';
+
+        // IMPORTANT: Set exchange rate BEFORE setting amount (to prevent oninput from using wrong rate)
+        currentExchangeRate = parseFloat(expense.exchange_rate) || 110;
+        console.log('Expense exchange_rate:', currentExchangeRate);
+
+        // Now set form values
+        document.getElementById('modalExpenseType').value = expense.expense_type || '';
+        document.getElementById('modalCategory').value = expense.category || '';
+        document.getElementById('modalExpenseName').value = expense.expense_name || '';
+        document.getElementById('modalAmount').value = expense.amount || '';
+        document.getElementById('modalDate').value = expense.date || '';
+        document.getElementById('modalVendor').value = expense.vendor || '';
+        document.getElementById('modalProject').value = expense.project_number || '';
+        document.getElementById('modalNotes').value = expense.notes || '';
+        receiptFile = null;
+
+        // Update BDT display with the correct exchange rate
+        updateModalBdtDisplay();
+
+        console.log('Set modalVendor to:', document.getElementById('modalVendor').value);
+
+        // Display existing receipt if it exists
+        const receiptPreviewDiv = document.getElementById('receiptPreview');
+        fetch(`/api/expense/${expId}/receipt`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.success && data.filename) {
+              receiptPreviewDiv.innerHTML = `
+                <div class="alert alert-info py-2 px-3 small">
+                  <i class="bi bi-file-earmark me-1"></i><strong>Current Receipt:</strong> ${data.filename}
+                  <button type="button" class="btn btn-xs btn-outline-danger ms-2" onclick="removeExistingReceipt('${expId}')">Remove</button>
+                  <button type="button" class="btn btn-xs btn-outline-primary ms-1" onclick="viewReceipt('${expId}')">View</button>
+                </div>
+              `;
+            } else {
+              receiptPreviewDiv.innerHTML = '';
+            }
+          })
+          .catch(err => {
+            if (expense.receipt_filename) {
+              receiptPreviewDiv.innerHTML = `
+                <div class="alert alert-info py-2 px-3 small">
+                  <i class="bi bi-file-earmark me-1"></i><strong>Current Receipt:</strong> ${expense.receipt_filename}
+                  <button type="button" class="btn btn-xs btn-outline-danger ms-2" onclick="removeExistingReceipt('${expId}')">Remove</button>
+                  <button type="button" class="btn btn-xs btn-outline-primary ms-1" onclick="viewReceipt('${expId}')">View</button>
+                </div>
+              `;
+            } else {
+              receiptPreviewDiv.innerHTML = '';
+            }
+          });
+
+        new bootstrap.Modal(document.getElementById('expenseModal')).show();
+
+        // Verify vendor value is still there after modal opens
+        setTimeout(() => {
+          const vendorField = document.getElementById('modalVendor');
+          console.log('After modal open - modalVendor value:', vendorField.value);
+          console.log('After modal open - all form values:', {
+            type: document.getElementById('modalExpenseType').value,
+            vendor: vendorField.value,
+            amount: document.getElementById('modalAmount').value
+          });
+
+          // If vendor field is empty, re-set it from expense data
+          if (!vendorField.value && expense.vendor) {
+            vendorField.value = expense.vendor;
+            console.log('Re-set vendor value to:', vendorField.value);
+          }
+        }, 150);
+      } else {
+        alert('Error loading expense');
+      }
+    })
+    .catch(err => {
+      console.error('Error fetching expense:', err);
+      alert('Error loading expense for edit:\n' + err.message);
+    });
+}
+
+function submitExpenseModal() {
+  const expenseId = window.editingExpenseId;
+  const expenseType = document.getElementById('modalExpenseType').value;
+  const vendor = document.getElementById('modalVendor').value;
+  const amount = document.getElementById('modalAmount').value;
+  const category = document.getElementById('modalCategory').value;
+  const expenseName = document.getElementById('modalExpenseName').value;
+
+  if (!expenseType || !vendor || !amount) {
+    alert('Please fill in all required fields');
+    return;
+  }
+
+  const data = new FormData();
+  data.append('expense_type', expenseType);
+  data.append('category', category);
+  data.append('expense_name', expenseName);
+  data.append('description', expenseName);
+  data.append('amount', amount);
+  data.append('date', document.getElementById('modalDate').value || '{{ today_date }}');
+  data.append('vendor', document.getElementById('modalVendor').value);
+  data.append('project_number', document.getElementById('modalProject').value);
+  data.append('notes', document.getElementById('modalNotes').value);
+
+  const receiptFileInput = document.getElementById('modalReceipt').files[0];
+  if (receiptFileInput) data.append('receipt', receiptFileInput);
+  if (_receiptToDelete) data.append('delete_receipt', 'true');
+
+  const endpoint = expenseId
+    ? `/financial/expense/${expenseId}/edit`
+    : '{{ url_for("expense_new") }}';
+
+  const btn = document.getElementById('expenseModalSaveBtn');
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  fetch(endpoint, { method: 'POST', body: data })
+    .then(r => r.json())
+    .then(res => {
+      if (res && res.success) {
+        bootstrap.Modal.getInstance(document.getElementById('expenseModal')).hide();
+        const title = expenseId ? 'Expense Updated' : 'Expense Added';
+        showSuccessToast(title, 'Your expense has been saved successfully');
+      } else {
+        alert('Error: ' + (res?.error || 'Unknown error'));
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    })
+    .catch(err => {
+      console.error('Error:', err);
+      alert('Failed to save expense: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = origText;
+    });
+}
+
+function initModalDropdowns() {
+  const typeInput = document.getElementById('modalExpenseType');
+  const typeDropdown = document.getElementById('modalExpenseTypeDropdown');
+  const typeArrow = typeInput.parentElement.querySelector('.dropdown-arrow');
+
+
+  typeDropdown.innerHTML = '';
+  (window.expenseTypesList || []).forEach(type => {
+    const div = document.createElement('div');
+    div.className = 'option';
+    div.textContent = type;
+    div.onclick = () => {
+      typeInput.value = type;
+      typeDropdown.classList.remove('show');
+      const catDropdown = document.getElementById('modalCategoryDropdown');
+      catDropdown.classList.remove('show');
+      updateModalCategoryDropdown();
+    };
+    typeDropdown.appendChild(div);
+  });
+
+
+  function showTypeDropdown() {
+    const rect = typeInput.getBoundingClientRect();
+    typeDropdown.style.top = (rect.bottom + 5) + 'px';
+    typeDropdown.style.left = rect.left + 'px';
+    typeDropdown.style.width = Math.max(rect.width, 300) + 'px';
+    typeDropdown.classList.add('show');
+  }
+
+  if (typeArrow) typeArrow.addEventListener('click', () => {
+    if (typeDropdown.classList.contains('show')) {
+      typeDropdown.classList.remove('show');
+    } else {
+      showTypeDropdown();
+    }
+  });
+
+  typeInput.addEventListener('click', () => {
+    showTypeDropdown();
+  });
+
+  typeInput.addEventListener('focus', () => {
+    showTypeDropdown();
+  });
+
+  typeInput.addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    Array.from(typeDropdown.children).forEach(option => {
+      option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
+    });
+  });
+
+  const catInput = document.getElementById('modalCategory');
+  const catDropdown = document.getElementById('modalCategoryDropdown');
+  const catArrow = catInput.parentElement.querySelector('.dropdown-arrow');
+
+  function showCatDropdown() {
+    updateModalCategoryDropdown();
+    const rect = catInput.getBoundingClientRect();
+    catDropdown.style.top = (rect.bottom + 5) + 'px';
+    catDropdown.style.left = rect.left + 'px';
+    catDropdown.style.width = Math.max(rect.width, 300) + 'px';
+    catDropdown.classList.add('show');
+  }
+
+  if (catArrow) catArrow.addEventListener('click', () => {
+    if (catDropdown.classList.contains('show')) {
+      catDropdown.classList.remove('show');
+    } else {
+      showCatDropdown();
+    }
+  });
+
+  catInput.addEventListener('click', () => {
+    showCatDropdown();
+  });
+
+  catInput.addEventListener('focus', () => {
+    showCatDropdown();
+  });
+  catInput.addEventListener('change', () => updateModalExpenseNameDropdown());
+  catInput.addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    Array.from(catDropdown.children).forEach(option => {
+      option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
+    });
+    setTimeout(() => updateModalExpenseNameDropdown(), 50);
+  });
+
+  const nameInput = document.getElementById('modalExpenseName');
+  const nameDropdown = document.getElementById('modalExpenseNameDropdown');
+  const nameArrow = nameInput.parentElement.querySelector('.dropdown-arrow');
+
+  function showNameDropdown() {
+    updateModalExpenseNameDropdown();
+    const rect = nameInput.getBoundingClientRect();
+    nameDropdown.style.top = (rect.bottom + 5) + 'px';
+    nameDropdown.style.left = rect.left + 'px';
+    nameDropdown.style.width = Math.max(rect.width, 300) + 'px';
+    nameDropdown.classList.add('show');
+  }
+
+  if (nameArrow) nameArrow.addEventListener('click', () => {
+    if (nameDropdown.classList.contains('show')) {
+      nameDropdown.classList.remove('show');
+    } else {
+      showNameDropdown();
+    }
+  });
+
+  nameInput.addEventListener('click', () => {
+    showNameDropdown();
+  });
+
+  nameInput.addEventListener('focus', () => {
+    showNameDropdown();
+  });
+  nameInput.addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    Array.from(nameDropdown.children).forEach(option => {
+      option.style.display = option.textContent.toLowerCase().includes(filter) ? '' : 'none';
+    });
+  });
+
+  // Initialize vendor dropdown
+  let vendorInput = document.getElementById('modalVendor');
+  let vendorDropdown = document.getElementById('modalVendorDropdown');
+
+  if (vendorInput && vendorDropdown) {
+    vendorDropdown.innerHTML = '';
+    (window.vendorList || []).forEach(vendor => {
+      let div = document.createElement('div');
+      div.className = 'option';
+      div.textContent = vendor;
+      div.onclick = function(e) {
+        e.stopPropagation();
+        vendorInput.value = vendor;
+        vendorDropdown.classList.remove('show');
+      };
+      vendorDropdown.appendChild(div);
+    });
+
+    function openVendorDropdown() {
+      let rect = vendorInput.getBoundingClientRect();
+      vendorDropdown.style.top = (rect.bottom + 5) + 'px';
+      vendorDropdown.style.left = rect.left + 'px';
+      vendorDropdown.style.width = rect.width + 'px';
+      vendorDropdown.classList.add('show');
+    }
+
+    vendorInput.onclick = function(e) {
+      e.stopPropagation();
+      openVendorDropdown();
+    };
+
+    vendorInput.onfocus = function() {
+      openVendorDropdown();
+    };
+
+    vendorInput.oninput = function() {
+      let filter = this.value.toLowerCase();
+      Array.from(vendorDropdown.children).forEach(option => {
+        option.style.display = option.textContent.toLowerCase().includes(filter) ? 'block' : 'none';
+      });
+      openVendorDropdown();
+    };
+
+    document.addEventListener('click', function(e) {
+      if (!vendorInput.contains(e.target) && !vendorDropdown.contains(e.target)) {
+        vendorDropdown.classList.remove('show');
+      }
+    });
+  }
+}
+
+function updateModalCategoryDropdown() {
+  const typeInput = document.getElementById('modalExpenseType');
+  const catInput = document.getElementById('modalCategory');
+  const catDropdown = document.getElementById('modalCategoryDropdown');
+  const type = typeInput.value;
+  const cats = (window.categoriesByType && window.categoriesByType[type]) || [];
+
+  catDropdown.innerHTML = '';
+  cats.forEach(cat => {
+    const div = document.createElement('div');
+    div.className = 'option';
+    div.textContent = cat;
+    div.onclick = () => {
+      catInput.value = cat;
+      catDropdown.classList.remove('show');
+      updateModalExpenseNameDropdown();
+    };
+    catDropdown.appendChild(div);
+  });
+}
+
+function updateModalExpenseNameDropdown() {
+  const catInput = document.getElementById('modalCategory');
+  const nameInput = document.getElementById('modalExpenseName');
+  const nameDropdown = document.getElementById('modalExpenseNameDropdown');
+  const category = catInput.value;
+
+  const fallbackNames = {
+    "Facilities & Utilities": ["Office rent or co-working space fees","Utilities (electricity, water, gas)","Internet service","Trash & cleaning services","Property taxes (for office, if applicable)","Office repairs & maintenance (HVAC, lights, minor repairs)"],
+    "Office & Admin Overhead": ["Office supplies (paper, pens, notebooks, printer ink)","Printer/plotter maintenance & paper","Postage & shipping (documents, contracts, samples)","Bank fees & merchant processing fees","Software: Microsoft 365 / Google Workspace","Software: PDF tools (Bluebeam, Adobe, etc.)","Software: Password manager","Software: Others","Cloud storage (Dropbox, Google Drive, OneDrive)"],
+    "Engineering Software & IT": ["Engineering software: SAP2000 / ETABS / STAAD / RAM / RISA","Engineering software: Others","CAD/BIM tools: AutoCAD, Civil 3D, Revit","License/maintenance fees for all software","IT support services","Computer maintenance & small repairs","Antivirus, backup services, security tools"],
+    "Salaries, Labor & Related Costs": ["Owner draw/salary","Employee salaries & wages","Overtime or temporary staff","Payroll taxes paid by the company","Employee benefits: Health insurance","Employee benefits: Retirement plan contributions","Employee benefits: Paid time off costs","Payments to subcontract engineers, drafters"],
+    "Professional Services": ["Accounting & bookkeeping fees","Tax preparation and consulting","Legal services (contracts, company setup)","Business consulting or coaching services","Registered agent fees (if applicable)"],
+    "Insurance & Compliance": ["Professional liability / Errors & Omissions (E&O) insurance","General liability insurance","Business owner's policy (BOP)","Workers' comp insurance","Commercial auto insurance","License renewals (PE license, SE license)","Business license renewals","Memberships"],
+    "Travel, Site Visits & Vehicles": ["Mileage (personal vehicle for business)","Fuel costs (company vehicles)","Parking fees & tolls","Vehicle maintenance","Airfare, hotels for out-of-town site visits","Rental cars or rideshare for business trips","Meals while traveling for business"],
+    "Marketing & Business Development": ["Website hosting and domain expenses","Website maintenance & updates","Graphic design (logo, templates, brochures)","Online ads (Google, LinkedIn, Facebook)","Printing of business cards, brochures, banners","Sponsorships of events","Client entertainment (dinners, coffee meetings)"],
+    "Training, Licensure & Development": ["Continuing education (PDH hours, webinars)","Training courses (technical or business)","Books, codes, and standards","Exam fees for additional licenses"],
+    "Safety & Field Supplies": ["PPE: hard hats, safety vests, glasses, gloves, boots","Field tools for inspections","Calibration of field instruments","First-aid kits and safety equipment"],
+    "Miscellaneous O & M": ["Subscriptions: LinkedIn Premium","Subscriptions: Industry journals","Project management tools","Document management tools or e-signature services"],
+    "Computer & Office Equipment": ["Laptops","Desktops","Monitors","Printers/Scanners","Servers","Networking Equipment"],
+    "Field & Inspection Equipment": ["Survey Equipment","Testing Equipment","Measurement Tools","Safety Equipment","Inspection Devices"],
+    "Furniture & Fixtures": ["Office Desks","Chairs","Filing Cabinets","Shelving Units","Conference Room Furniture"],
+    "Vehicles": ["Company Cars","Trucks","Vans","Heavy Equipment","Vehicle Accessories"],
+    "Software (Capitalized)": ["Engineering Software License","ERP System","CRM System","Database Software","Custom Software Development"],
+    "Leasehold Improvements": ["Office Renovations","Electrical Work","Plumbing Improvements","HVAC Installation","Security Systems"],
+    "Accumulated Depreciation": ["Depreciation Expense - Computers","Depreciation Expense - Office Equipment","Depreciation Expense - Vehicles","Accumulated Depreciation"],
+    "Salary/Bonuses": ["Employee Salary","Manager Salary","Executive Salary","Performance Bonus","Year-end Bonus","Commission Payments","Incentive Payments"],
+    "Tax Expenses/Tax Deductions": ["Federal Income Tax","Tax Deduction","Payroll Tax","Sales Tax","Property Tax","Business Tax"],
+    "Medical/Benefits": ["Health Insurance Premiums","Dental Insurance","Vision Insurance","Retirement Contributions","Life Insurance","Disability Insurance","Wellness Programs"],
+    "Meals & Entertainment": ["Client Meals","Business Lunches","Team Dinners","Conference Meals","Entertainment Expenses","Team Building Events"],
+    "Donations": ["Charitable Donations","Community Sponsorships","Educational Donations","Non-profit Contributions","Event Sponsorships"],
+    "Bank Charges": ["Monthly Account Fees","Transaction Fees","Wire Transfer Fees","Credit Card Processing Fees","Check Printing Fees","Overdraft Fees"],
+    "Contingency Funds": ["Emergency Funds","Reserve Funds","Project Contingency","Operational Reserve","Risk Management Fund"],
+    "Unexpected Costs": ["Emergency Repairs","Unplanned Maintenance","Price Increases","Regulatory Changes","Market Fluctuations"]
+  };
+
+  const names = (window.expenseNamesByCategory && window.expenseNamesByCategory[category] && window.expenseNamesByCategory[category].length)
+    ? window.expenseNamesByCategory[category]
+    : (fallbackNames[category] || []);
+
+  nameDropdown.innerHTML = '';
+  names.forEach(name => {
+    const div = document.createElement('div');
+    div.className = 'option';
+    div.textContent = name;
+    div.onclick = () => {
+      nameInput.value = name;
+      nameDropdown.classList.remove('show');
+    };
+    nameDropdown.appendChild(div);
+  });
+}
+
+function previewReceipt() {
+  const file = document.getElementById('modalReceipt').files[0];
+  if (!file) return;
+
+  receiptFile = file;
+  const preview = document.getElementById('receiptPreview');
+  const reader = new FileReader();
+
+  reader.onload = (e) => {
+    if (file.type.startsWith('image/')) {
+      preview.innerHTML = '<img src="' + e.target.result + '" style="max-width:100%;max-height:200px;" class="mt-2">';
+    } else if (file.type === 'application/pdf') {
+      preview.innerHTML = '<small class="text-success">✓ PDF attached: ' + file.name + '</small>';
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+function updateModalBdtDisplay() {
+  const amount = parseFloat(document.getElementById('modalAmount').value) || 0;
+  const exchangeRate = currentExchangeRate;
+  const bdt = (amount * exchangeRate).toLocaleString('en-US', {maximumFractionDigits: 0});
+  document.getElementById('modalBdtDisplay').textContent = `≈ ৳${bdt} BDT @ ${exchangeRate}`;
+}
+
+function viewReceipt(expId) {
+  fetch(`/api/expense/${expId}/receipt`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.success && data.receipt) {
+        const dataUrl = `data:${data.fileType || 'image/jpeg'};base64,${data.receipt}`;
+        const fileType = data.fileType || 'image/jpeg';
+
+        const backdrop = document.createElement('div');
+        backdrop.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0,0,0,0.5);
+          z-index: 9998;
+        `;
+        backdrop.onclick = () => {
+          backdrop.remove();
+          modal.remove();
+        };
+
+        const modal = document.createElement('div');
+        modal.id = 'receiptViewerModal';
+        modal.style.cssText = `
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: white;
+          border-radius: 8px;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+          z-index: 9999;
+          display: flex;
+          flex-direction: column;
+          width: 90vw;
+          height: 85vh;
+          max-width: 1200px;
+          max-height: 800px;
+          overflow: hidden;
+        `;
+
+        const header = document.createElement('div');
+        header.style.cssText = `
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 15px 20px;
+          border-bottom: 1px solid #e5e7eb;
+          background: #f9fafb;
+        `;
+
+        const title = document.createElement('h5');
+        title.textContent = 'Receipt';
+        title.style.cssText = 'margin: 0; font-weight: 600; font-size: 16px;';
+
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '✕';
+        closeBtn.style.cssText = `
+          background: none;
+          border: none;
+          font-size: 24px;
+          cursor: pointer;
+          color: #666;
+          padding: 0;
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        `;
+        closeBtn.onclick = () => {
+          backdrop.remove();
+          modal.remove();
+        };
+
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+
+        const content = document.createElement('div');
+        content.style.cssText = `
+          flex: 1;
+          overflow: auto;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #f5f5f5;
+        `;
+
+        if (fileType.startsWith('image/')) {
+          const img = document.createElement('img');
+          img.src = dataUrl;
+          img.style.cssText = `
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+          `;
+          content.appendChild(img);
+        } else if (fileType === 'application/pdf') {
+          const iframe = document.createElement('iframe');
+          iframe.src = dataUrl;
+          iframe.style.cssText = `
+            width: 100%;
+            height: 100%;
+            border: none;
+          `;
+          content.appendChild(iframe);
+        } else {
+          content.innerHTML = '<p style="color: #999;">Unable to display this file type</p>';
+        }
+
+        modal.appendChild(header);
+        modal.appendChild(content);
+        document.body.appendChild(backdrop);
+        document.body.appendChild(modal);
+      } else {
+        alert('Receipt not found');
+      }
+    })
+    .catch(err => {
+      console.error('Error loading receipt:', err);
+      alert('Error loading receipt');
+    });
+}
+
+function removeExistingReceipt(expId) {
+  _pendingReceiptDeleteId = expId;
+  _receiptToDelete = expId;
+  document.getElementById('receiptPreview').innerHTML = '';
+
+  const toastEl = document.createElement('div');
+  toastEl.className = 'position-fixed bottom-0 end-0 p-3';
+  toastEl.style.zIndex = 9999;
+  toastEl.innerHTML = '<div class="toast show align-items-center text-bg-info border-0" role="alert"><div class="d-flex"><div class="toast-body"><i class="bi bi-info-circle me-2"></i>Receipt marked for removal. Click Update Expense to save.</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>';
+  document.body.appendChild(toastEl);
+  setTimeout(() => toastEl.remove(), 5000);
+}
+
+// Handle expense deletion
+function handleExpenseDelete(expId) {
+  showDeleteConfirmation(
+    'Delete Expense',
+    'Are you sure you want to delete this expense? This will be archived for recovery.',
+    function() {
+      const formData = new FormData();
+      formData.append('page', '1');
+
+      console.log('Starting delete for expense:', expId);
+
+      // Create abort controller with 30 second timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      fetch(`{{ url_for('expense_delete', exp_id='') }}${expId}`, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal
+      })
+      .then(r => {
+        clearTimeout(timeoutId);
+        console.log('Delete response status:', r.status);
+        if (r.ok) {
+          showSuccessToast('Expense Deleted', 'The expense has been archived and removed from the list');
+          setTimeout(() => {
+            window.location.href = '/financial?tab=expenses&page=1';
+          }, 2000);
+        } else {
+          throw new Error(`Failed to delete: ${r.status}`);
+        }
+      })
+      .catch(err => {
+        clearTimeout(timeoutId);
+        console.error('Delete error:', err);
+        alert('Error deleting expense: ' + (err.name === 'AbortError' ? 'Request timeout - server took too long to respond' : err.message));
+      });
+    }
+  );
+}
+
+</script>
+{% endblock %}
