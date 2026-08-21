@@ -2239,6 +2239,14 @@ function submitGroupExpenseModal() {
     return;
   }
 
+  // Calculate total amount from child expenses
+  let totalAmount = 0;
+  if (window.groupItemData) {
+    Object.values(window.groupItemData).forEach(item => {
+      totalAmount += item.amount || 0;
+    });
+  }
+
   const formData = new FormData();
   formData.append('date', document.getElementById('groupExpenseDate0').value);
   formData.append('expense_type', 'Group Expenses');
@@ -2248,6 +2256,7 @@ function submitGroupExpenseModal() {
   formData.append('project_number', document.getElementById('groupExpenseProject0').value);
   formData.append('notes', document.getElementById('groupNotes').value);
   formData.append('is_group_expense', 'true');
+  formData.append('amount', totalAmount);
   formData.append('child_expenses', JSON.stringify(Object.values(window.groupItemData || {})));
 
   fetch(`/financial/expense/${expId}/edit`, {
