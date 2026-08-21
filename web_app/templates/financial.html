@@ -3508,6 +3508,7 @@ function submitGroupExpenseModal() {
 
   // Collect all child expenses from stored data
   const childExpenses = [];
+  const itemReceiptMap = []; // Map to track which items have receipts
   let totalAmount = 0;
 
   for (const idx in window.groupItemData) {
@@ -3522,6 +3523,9 @@ function submitGroupExpenseModal() {
       description: item.description || '',
       receipt_filename: item.receipt_filename || ''
     });
+
+    // Track the original index for receipt matching
+    itemReceiptMap.push({ originalIdx: idx, hasReceipt: !!item.receipt });
   }
 
   const data = new FormData();
@@ -3546,11 +3550,15 @@ function submitGroupExpenseModal() {
     window.groupReceiptMarkedForRemoval = false;
   }
 
-  // Add item receipts
-  for (const idx in window.groupItemData) {
-    const item = window.groupItemData[idx];
-    if (item.receipt) data.append(`item_receipt_${idx}`, item.receipt);
-  }
+  // Add item receipts using sequential indices matching childExpenses order
+  itemReceiptMap.forEach((mapping, newIdx) => {
+    const originalIdx = mapping.originalIdx;
+    const item = window.groupItemData[originalIdx];
+    if (item.receipt) {
+      data.append(`item_receipt_${newIdx}`, item.receipt);
+      console.log(`Appending receipt for item ${newIdx} (original index ${originalIdx}):`, item.receipt.name);
+    }
+  });
 
   const btn = event.target;
   const origText = btn.textContent;
