@@ -2263,18 +2263,39 @@ function submitGroupExpenseModal() {
   formData.append('notes', document.getElementById('groupNotes').value);
   formData.append('is_group_expense', 'true');
   formData.append('amount', totalAmount);
-  formData.append('child_expenses', JSON.stringify(Object.values(window.groupItemData || {})));
 
-  // Handle receipt removal (use same field name as backend: delete_receipt)
+  // CHILD EXPENSE DATA - separate File objects to prevent JSON loss
+  const childExpenses = Object.values(window.groupItemData || {});
+
+  const childExpensesForSave = childExpenses.map(item => ({
+    date: item.date,
+    category: item.category,
+    expense_name: item.expense_name,
+    amount: item.amount,
+    description: item.description || '',
+    receipt_filename: item.receipt_filename || ''
+  }));
+
+  formData.append('child_expenses', JSON.stringify(childExpensesForSave));
+
+  // SEND ACTUAL CHILD RECEIPT FILES SEPARATELY
+  childExpenses.forEach((item, index) => {
+    if (item.receipt instanceof File) {
+      formData.append(`item_receipt_${index}`, item.receipt, item.receipt.name);
+      console.log(`Child expense ${index} receipt file attached:`, item.receipt.name);
+    }
+  });
+
+  // Handle main group receipt removal (use same field name as backend: delete_receipt)
   const receiptFileInput = document.getElementById('groupReceipt').files[0];
   if (receiptFileInput) {
     formData.append('receipt', receiptFileInput);
-    console.log('New receipt file being uploaded');
+    console.log('New main receipt file being uploaded');
   } else if (window.groupReceiptMarkedForRemoval) {
     formData.append('delete_receipt', 'true');
-    console.log('Receipt marked for deletion - sending delete_receipt flag');
+    console.log('Main receipt marked for deletion - sending delete_receipt flag');
   } else {
-    console.log('No receipt changes');
+    console.log('Keeping existing main receipt');
   }
 
   console.log('Submitting group expense with total:', totalAmount);
