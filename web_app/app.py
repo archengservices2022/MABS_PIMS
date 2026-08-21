@@ -1075,6 +1075,29 @@ def format_date_invoice_filter(date_str):
     """Jinja filter to format dates as MM-DD-YY (invoice format)."""
     return _format_date_invoice(date_str)
 
+@app.template_filter('format_datetime')
+def format_datetime_filter(datetime_str):
+    """Jinja filter to format datetime as MM-DD-YYYY T HH:MM."""
+    if not datetime_str:
+        return '—'
+    try:
+        # Parse ISO format datetime
+        if isinstance(datetime_str, str):
+            # Handle ISO format with timezone info
+            if 'T' in datetime_str:
+                dt_part = datetime_str.split('.')[0]  # Remove microseconds
+                dt_part = dt_part.replace('+00:00', '').replace('Z', '')
+                dt = datetime.fromisoformat(dt_part)
+            else:
+                dt = datetime.fromisoformat(datetime_str)
+        else:
+            dt = datetime_str
+
+        return dt.strftime('%m-%d-%Y T %H:%M')
+    except Exception as e:
+        app.logger.error(f"Date format error: {e}")
+        return str(datetime_str)
+
 @app.template_filter('get_exchange_rate')
 def get_exchange_rate_filter(expense):
     """Return the BDT exchange rate for an expense dict.
@@ -7190,17 +7213,17 @@ def invoice_edit(invoice_id):
         if "co_number" in original_meta:
             data["meta"]["co_number"] = original_meta["co_number"]
 
-        # Preserve existing payment history when updating invoice details
-        if "payment_log" in invoice_data:
-            data["payment_log"] = invoice_data["payment_log"]
-        if "tax_payments" in invoice_data:
-            data["tax_payments"] = invoice_data["tax_payments"]
-
         # Get payment information from form
         payment_amount_str = request.form.get("payment_amount", "").strip()
         payment_date = request.form.get("payment_date", "").strip()
         payment_method = request.form.get("payment_method", "").strip()
         payment_reference = request.form.get("payment_reference", "").strip()
+
+        # Preserve existing payment history when updating invoice details
+        if "payment_log" in invoice_data:
+            data["payment_log"] = invoice_data["payment_log"]
+        if "tax_payments" in invoice_data:
+            data["tax_payments"] = invoice_data["tax_payments"]
 
 
         # When editing, calculate the difference between new and old amount_paid
@@ -7217,6 +7240,16 @@ def invoice_edit(invoice_id):
                 data["meta"]["amount_paid"] = invoice_data["meta"]["amount_paid"]
             if "tax_paid" in invoice_data.get("meta", {}):
                 data["meta"]["tax_paid"] = invoice_data["meta"]["tax_paid"]
+
+            # If amount is same but date changed, update ALL payment dates
+            if payment_date and data.get("payment_log"):
+                for payment in data["payment_log"]:
+                    if isinstance(payment, dict) and payment.get("date") != payment_date:
+                        payment["date"] = payment_date
+                        if payment_method:
+                            payment["method"] = payment_method
+                        if payment_reference:
+                            payment["reference"] = payment_reference
 
         # Update invoice in Firebase (meta and line_items, preserving payments)
         fb_update(f"/invoices/{invoice_id}", data)
@@ -12337,6 +12370,42 @@ def financial():
     rev_list = updated_rev_list
     rev_list.sort(key=lambda x: x.get("invoice_date", "") or x.get("date", ""), reverse=True)
 
+    # EXPAND: Split each revenue entry by individual payment_log entries
+    # This shows each stage/change order payment as a separate row instead of combining all into one
+    expanded_rev_list = []
+    for r in rev_list:
+        inv_id = r.get("invoice_id")
+        if inv_id and inv_id in invoices:
+            inv_data = invoices.get(inv_id, {})
+            payment_log = inv_data.get("payment_log", []) or []
+
+            # Create separate entry for each payment in payment_log
+            if payment_log and isinstance(payment_log, list):
+                for pay in payment_log:
+                    if isinstance(pay, dict):
+                        pay_entry = dict(r)  # Copy the base revenue entry
+                        pay_entry["amount_paid"] = _safe_float(pay.get("amount", 0))
+                        pay_entry["paid_amount"] = _safe_float(pay.get("amount", 0))
+                        pay_entry["date"] = pay.get("date", r.get("date", ""))
+                        pay_entry["collection_date"] = pay.get("date", r.get("date", ""))
+                        pay_entry["payment_method"] = pay.get("method", "")
+                        pay_entry["payment_reference"] = pay.get("reference", "")
+                        pay_entry["stage"] = pay.get("stage_name", "")  # Template expects "stage" field
+                        pay_entry["stage_name"] = pay.get("stage_name", "")
+                        pay_entry["stage_index"] = pay.get("stage_index", "")
+                        pay_entry["project_number"] = pay.get("project_number", r.get("project_number", ""))
+                        pay_entry["stage_amount"] = _safe_float(pay.get("amount", 0))  # Template expects "stage_amount"
+                        expanded_rev_list.append(pay_entry)
+            else:
+                # If no payment_log, keep original entry
+                expanded_rev_list.append(r)
+        else:
+            # If no invoice_id or invoice not found, keep original entry
+            expanded_rev_list.append(r)
+
+    rev_list = expanded_rev_list
+    rev_list.sort(key=lambda x: x.get("date", ""), reverse=True)
+
     # Helper to extract year from date string (handles both YYYY-MM-DD and MM-DD-YY formats)
     def _extract_year_from_date(date_str):
         """Extract year from date string"""
@@ -13008,18 +13077,11 @@ def financial():
                     })
             except Exception:
                 pass
-    # Merge multiple partial payments for the same invoice+project+stage+date into one row
-    # But keep different stages as separate rows
+    # DO NOT merge payments - each payment should be shown as a separate row
+    # This allows seeing individual payments broken down by stage/change order
     for _mk in monthly_payment_details:
-        _merged: dict = {}
-        for _row in monthly_payment_details[_mk]:
-            _key = (_row["invoice_id"], _row["project_number"], _row["stage"], _row["paid_date"])
-            if _key in _merged:
-                _merged[_key]["paid_amount"] += _row["paid_amount"]
-            else:
-                _merged[_key] = dict(_row)
         # Sort by: invoice_number first, then project_number, then paid_date, then stage_amount
-        monthly_payment_details[_mk] = sorted(_merged.values(), key=lambda x: (
+        monthly_payment_details[_mk] = sorted(monthly_payment_details[_mk], key=lambda x: (
             x.get("invoice_number", ""),
             x.get("project_number", ""),
             x.get("paid_date", ""),
@@ -13267,6 +13329,14 @@ def financial():
             "Capital Expenses",
             "Other Expenses"
         ]
+
+    # Create separate lists: one for filter (with Group Expenses), one for modals (without)
+    expense_types_for_filter = list(expense_types)
+    if "Group Expenses" not in expense_types_for_filter:
+        expense_types_for_filter.append("Group Expenses")
+
+    # Use the original list (without Group Expenses) for the expense modal
+    expense_types_for_modal = expense_types
 
     if not categories_by_type:
         categories_by_type = {
@@ -13718,6 +13788,14 @@ def financial():
     # Sort all expenses (including commissions) by created_at newest first - use proper date parsing
     exp_list_for_tab = sorted(exp_list_for_tab, key=lambda x: parse_datetime_for_sort(x.get("created_at") or x.get("date", "")), reverse=True)
 
+    # Sanitize all lists to remove non-serializable objects
+    exp_list_for_tab = [_ensure_json_serializable(e) for e in (exp_list_for_tab or [])]
+    exp_list = [_ensure_json_serializable(e) for e in (exp_list or [])]
+    exp_list_for_overview = [_ensure_json_serializable(e) for e in (exp_list_for_overview or [])]
+    rev_list = [_ensure_json_serializable(r) for r in (rev_list or [])]
+    inv_list = [_ensure_json_serializable(i) for i in (inv_list or [])]
+    project_pnl = [_ensure_json_serializable(p) for p in (project_pnl or [])]
+
     return render_template("financial.html",
         total_invoiced=total_invoiced,
         invoiced_count=invoiced_count,
@@ -13765,7 +13843,8 @@ def financial():
         salary_entries_domestic=json.dumps(salary_entries_domestic),
         salary_entries_international=json.dumps(salary_entries_international),
         available_years=available_years,
-        expense_types=expense_types,
+        expense_types=expense_types_for_modal,
+        expense_types_filter=expense_types_for_filter,
         all_categories=all_categories,
         expenses_grouped=expenses_grouped,
         expense_entries=json.dumps(expense_entries_by_name),
@@ -13961,6 +14040,264 @@ def _migrate_ensure_usd_format():
     except Exception as e:
         log.error(f"✗ Error during USD format migration: {e}")
 
+@app.route("/api/expense-groups")
+@role_required("financial")
+def get_expense_groups():
+    """API endpoint to load all expense groups"""
+    try:
+        groups_data = fb_get("/expense_groups") or {}
+        groups = []
+
+        for group_id, group_info in groups_data.items():
+            if isinstance(group_info, dict):
+                group_info_copy = dict(group_info)
+                group_info_copy['group_id'] = group_id
+                groups.append(group_info_copy)
+
+        return jsonify({"success": True, "groups": groups})
+    except Exception as e:
+        app.logger.error(f"Error loading expense groups: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/create-expense-group", methods=["POST"])
+@role_required("financial")
+def create_expense_group():
+    """API endpoint to create a new expense group"""
+    try:
+        group_name = request.form.get("group_name", "").strip()
+        group_type = request.form.get("group_type", "").strip()
+        description = request.form.get("description", "").strip()
+
+        if not group_name or not group_type:
+            return jsonify({"success": False, "error": "Group name and type are required"}), 400
+
+        group_data = {
+            "group_name": group_name,
+            "group_type": group_type,
+            "description": description,
+            "created_by": session.get("user_name", ""),
+            "created_date": datetime.now(timezone.utc).isoformat(),
+            "updated_date": datetime.now(timezone.utc).isoformat(),
+            "status": "Draft",
+            "expense_count": 0,
+            "total_amount": 0
+        }
+
+        group_id = fb_push("/expense_groups", group_data)
+        return jsonify({"success": True, "group_id": group_id})
+    except Exception as e:
+        app.logger.error(f"Error creating expense group: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/create-expense-group-with-expenses", methods=["POST"])
+@role_required("financial")
+def create_expense_group_with_expenses():
+    """API endpoint to create expense group with multiple expenses"""
+    try:
+        group_name = request.form.get("group_name", "").strip()
+        group_type = request.form.get("group_type", "").strip()
+        description = request.form.get("description", "").strip()
+        expenses_json = request.form.get("expenses", "[]")
+
+        if not group_name or not group_type:
+            return jsonify({"success": False, "error": "Group name and type are required"}), 400
+
+        # Parse expenses
+        import json
+        expenses = json.loads(expenses_json)
+
+        if not expenses:
+            return jsonify({"success": False, "error": "At least one expense is required"}), 400
+
+        # Calculate total and exchange rate
+        exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+        total_amount = sum(_safe_float(exp.get("amount", 0)) for exp in expenses)
+
+        # Create group
+        group_data = {
+            "group_name": group_name,
+            "group_type": group_type,
+            "description": description,
+            "created_by": session.get("user_name", ""),
+            "created_date": datetime.now(timezone.utc).isoformat(),
+            "updated_date": datetime.now(timezone.utc).isoformat(),
+            "status": "Draft",
+            "expense_count": len(expenses),
+            "total_amount": total_amount
+        }
+
+        group_id = fb_push("/expense_groups", group_data)
+
+        # Create expenses linked to group
+        for expense_data in expenses:
+            usd_amount = _safe_float(expense_data.get("amount", 0))
+            bdt_amount = usd_amount * exchange_rate
+
+            exp_record = {
+                "expense_type": expense_data.get("expense_type", ""),
+                "expense_name": expense_data.get("expense_name", ""),
+                "description": expense_data.get("expense_name", ""),
+                "amount": usd_amount,
+                "amount_bdt": bdt_amount,
+                "exchange_rate": exchange_rate,
+                "category": expense_data.get("category", ""),
+                "date": expense_data.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d")),
+                "vendor": expense_data.get("vendor", ""),
+                "project_number": expense_data.get("project_number", ""),
+                "notes": "",
+                "created_by": session.get("user_email", ""),
+                "submitted_by_name": session.get("user_name", ""),
+                "submitted_by_uid": session.get("user_uid", ""),
+                "status": "Approved",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "group_id": group_id
+            }
+
+            fb_push("/balance_sheet_expenses", exp_record)
+
+        return jsonify({"success": True, "group_id": group_id, "expense_count": len(expenses)})
+    except Exception as e:
+        app.logger.error(f"Error creating expense group with expenses: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/financial/expense/<exp_id>", methods=["GET"])
+@role_required("financial")
+def view_expense_details(exp_id):
+    """View individual expense details"""
+    try:
+        expense_data = fb_get(f"/balance_sheet_expenses/{exp_id}")
+        if not expense_data:
+            flash("Expense not found", "danger")
+            return redirect(url_for("financial"))
+
+        # Ensure child_expenses is properly parsed if it's a JSON string
+        if isinstance(expense_data.get("child_expenses"), str):
+            try:
+                expense_data["child_expenses"] = json.loads(expense_data["child_expenses"])
+            except json.JSONDecodeError:
+                expense_data["child_expenses"] = []
+
+        # Recursively ensure all nested values are JSON-serializable for template rendering
+        expense_data = _ensure_json_serializable(expense_data)
+
+        expense_data["id"] = exp_id
+
+        # Get all necessary data for dropdowns (same as financial page)
+        custom_categories = load_settings().get("custom_categories", {})
+        expense_types = custom_categories.get("expense_type", []) if isinstance(custom_categories.get("expense_type"), list) else []
+        categories_by_type = custom_categories.get("Categories", {}) if isinstance(custom_categories.get("Categories"), dict) else {}
+        expense_names_by_category = custom_categories.get("expense_names", {}) if isinstance(custom_categories.get("expense_names"), dict) else {}
+
+        # Provide full defaults if empty - match financial.html exactly
+        if not expense_types:
+            expense_types = ["O & M (Operations & Maintenance)", "Capital Expenses", "Other Expenses"]
+        if not categories_by_type:
+            categories_by_type = {
+                "O & M (Operations & Maintenance)": [
+                    "Facilities & Utilities", "Office & Admin Overhead", "Engineering Software & IT",
+                    "Salaries, Labor & Related Costs", "Professional Services", "Insurance & Compliance",
+                    "Travel, Site Visits & Vehicles", "Marketing & Business Development",
+                    "Training, Licensure & Development", "Safety & Field Supplies", "Miscellaneous O & M"
+                ],
+                "Capital Expenses": [
+                    "Computer & Office Equipment", "Field & Inspection Equipment", "Furniture & Fixtures",
+                    "Vehicles", "Software (Capitalized)", "Leasehold Improvements", "Accumulated Depreciation"
+                ],
+                "Other Expenses": [
+                    "Salary/Bonuses", "Tax Expenses/Tax Deductions", "Medical/Benefits",
+                    "Meals & Entertainment", "Donations", "Bank Charges", "Contingency Funds", "Unexpected Costs"
+                ]
+            }
+        if not expense_names_by_category:
+            expense_names_by_category = {}
+
+        all_expenses = fb_get("/balance_sheet_expenses") or {}
+        all_vendors = sorted(set(e.get("vendor", "") for e in all_expenses.values() if isinstance(e, dict) and e.get("vendor", "").strip()))
+        projects_list = _load_projects_list()
+
+        bdt_exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+
+        return render_template("expense_details.html",
+            expense=expense_data,
+            expense_types=expense_types,
+            categories_by_type=categories_by_type,
+            expense_names_by_category=expense_names_by_category,
+            all_vendors=all_vendors,
+            projects=projects_list,
+            bdt_exchange_rate=bdt_exchange_rate
+        )
+    except Exception as e:
+        app.logger.exception("Error viewing expense details")
+        flash(f"Error loading expense: {str(e)}", "danger")
+        return redirect(url_for("financial"))
+
+@app.route("/financial/expense-group/<group_id>", methods=["GET"])
+@role_required("financial")
+def view_expense_group(group_id):
+    """View expense group details"""
+    try:
+        group_data = fb_get(f"/expense_groups/{group_id}")
+        if not group_data:
+            flash("Group not found", "danger")
+            return redirect(url_for("financial"))
+
+        expenses = fb_get("/balance_sheet_expenses") or {}
+        group_expenses = []
+        for exp_id, exp_data in expenses.items():
+            if exp_data.get("group_id") == group_id:
+                exp_data["id"] = exp_id
+                group_expenses.append(exp_data)
+
+        group_data["id"] = group_id
+        group_data["expenses"] = group_expenses
+        group_data["expense_count"] = len(group_expenses)
+
+        # Get all necessary data for dropdowns (same as financial page)
+        custom_categories = load_settings().get("custom_categories", {})
+        expense_types = custom_categories.get("expense_type", []) if isinstance(custom_categories.get("expense_type"), list) else []
+        categories_by_type = custom_categories.get("Categories", {}) if isinstance(custom_categories.get("Categories"), dict) else {}
+        expense_names_by_category = custom_categories.get("expense_names", {}) if isinstance(custom_categories.get("expense_names"), dict) else {}
+
+        # Provide full defaults if empty - match financial.html exactly
+        if not expense_types:
+            expense_types = ["O & M (Operations & Maintenance)", "Capital Expenses", "Other Expenses"]
+        if not categories_by_type:
+            categories_by_type = {
+                "O & M (Operations & Maintenance)": [
+                    "Facilities & Utilities", "Office & Admin Overhead", "Engineering Software & IT",
+                    "Salaries, Labor & Related Costs", "Professional Services", "Insurance & Compliance",
+                    "Travel, Site Visits & Vehicles", "Marketing & Business Development",
+                    "Training, Licensure & Development", "Safety & Field Supplies", "Miscellaneous O & M"
+                ],
+                "Capital Expenses": [
+                    "Computer & Office Equipment", "Field & Inspection Equipment", "Furniture & Fixtures",
+                    "Vehicles", "Software (Capitalized)", "Leasehold Improvements", "Accumulated Depreciation"
+                ],
+                "Other Expenses": [
+                    "Salary/Bonuses", "Tax Expenses/Tax Deductions", "Medical/Benefits",
+                    "Meals & Entertainment", "Donations", "Bank Charges", "Contingency Funds", "Unexpected Costs"
+                ]
+            }
+        if not expense_names_by_category:
+            expense_names_by_category = {}
+
+        all_vendors = sorted(set(e.get("vendor", "") for e in expenses.values() if isinstance(e, dict) and e.get("vendor", "").strip()))
+        projects_list = _load_projects_list()
+
+        return render_template("expense_group_details.html",
+            group=group_data,
+            expense_types=expense_types,
+            categories_by_type=categories_by_type,
+            expense_names_by_category=expense_names_by_category,
+            all_vendors=all_vendors,
+            projects=projects_list
+        )
+    except Exception as e:
+        app.logger.error(f"Error viewing expense group: {e}")
+        flash(f"Error loading group: {str(e)}", "danger")
+        return redirect(url_for("financial"))
+
 @app.route("/financial/expense/new", methods=["POST"])
 @role_required("financial")
 def expense_new():
@@ -14003,6 +14340,18 @@ def expense_new():
     if is_commission:
         data["is_commission"] = True
 
+    # Handle group expenses
+    is_group_expense = request.form.get("is_group_expense", "false").lower() == "true"
+    if is_group_expense:
+        data["is_group_expense"] = True
+        child_expenses_json = request.form.get("child_expenses", "[]")
+        try:
+            child_expenses = json.loads(child_expenses_json)
+            data["child_expenses"] = child_expenses
+            data["child_expense_count"] = len(child_expenses)
+        except:
+            pass
+
     # Handle receipt upload (base64 encoding)
     receipt_base64 = None
     receipt_filename = None
@@ -14028,6 +14377,31 @@ def expense_new():
             "receipt_filename": receipt_filename,
             "receipt_type":     receipt_type,
         })
+
+    # Handle item receipts for group expenses
+    if is_group_expense:
+        for idx in range(len(data.get("child_expenses", []))):
+            item_receipt_key = f"item_receipt_{idx}"
+            if item_receipt_key in request.files:
+                item_file = request.files[item_receipt_key]
+                if item_file and item_file.filename:
+                    try:
+                        item_file_content = item_file.read()
+                        item_receipt_base64 = base64.b64encode(item_file_content).decode('utf-8')
+                        item_receipt_filename = item_file.filename
+                        item_receipt_type = item_file.content_type
+
+                        # Store item receipt in /expense_item_receipts
+                        fb_update(f"/expense_item_receipts/{exp_id}_{idx}", {
+                            "receipt_base64": item_receipt_base64,
+                            "receipt_filename": item_receipt_filename,
+                            "receipt_type": item_receipt_type,
+                            "parent_expense_id": exp_id,
+                            "item_index": idx
+                        })
+                    except Exception as e:
+                        app.logger.error(f"Item receipt upload error for item {idx}: {e}")
+
     return jsonify({"success": True, "expense_id": exp_id})
 
 @app.route("/financial/expense/<exp_id>/delete", methods=["POST"])
@@ -14096,7 +14470,7 @@ def expense_delete(exp_id):
             fb_delete(f"/employee_advances/{advance_id}")
 
     # If this expense is a medical claim, also delete the medical claim
-    if bs_data.get("source") == "medical_claim" or emp_data.get("source") == "medical_claim":
+    if bs_data.get("source") == "medical_claim" or (emp_data and emp_data.get("source") == "medical_claim"):
         medical_claim_id = bs_data.get("medical_claim_id") or (emp_data.get("medical_claim_id") if isinstance(emp_data, dict) else None) or exp_id
         if medical_claim_id:
             # Archive the medical claim
@@ -14113,9 +14487,7 @@ def expense_delete(exp_id):
             # Also delete the medical claim receipt if it exists
             fb_delete(f"/medical_claim_receipts/{medical_claim_id}")
 
-    flash("Expense deleted and archived for recovery.", "success")
-    page = request.form.get('page', '1')
-    return redirect(url_for("financial", tab="expenses", page=page))
+    return jsonify({"success": True, "message": "Expense deleted and archived for recovery."})
 
 @app.route("/financial/expense/<exp_id>/restore", methods=["POST"])
 @role_required("financial")
@@ -14298,6 +14670,19 @@ def expense_edit(exp_id):
             "notes":          request.form.get("notes", ""),
             "updated_at":     datetime.now(timezone.utc).isoformat(),
         }
+
+        # Handle group expenses - update child_expenses if provided
+        is_group_expense = request.form.get("is_group_expense", "false").lower() == "true"
+        if is_group_expense:
+            data["is_group_expense"] = True
+            child_expenses_json = request.form.get("child_expenses", "[]")
+            try:
+                child_expenses = json.loads(child_expenses_json)
+                data["child_expenses"] = child_expenses
+                data["child_expense_count"] = len(child_expenses)
+            except:
+                pass
+
         if 'receipt' in request.files:
             file = request.files['receipt']
             if file and file.filename:
@@ -14344,6 +14729,30 @@ def expense_edit(exp_id):
                 app.logger.error(f"Receipt deletion error: {e}", exc_info=True)
                 return jsonify({"success": False, "error": f"Receipt deletion error: {str(e)}"}), 500
         fb_update(f"/balance_sheet_expenses/{exp_id}", data)
+
+        # Handle item receipts for group expenses
+        if is_group_expense:
+            for idx in range(len(data.get("child_expenses", []))):
+                item_receipt_key = f"item_receipt_{idx}"
+                if item_receipt_key in request.files:
+                    item_file = request.files[item_receipt_key]
+                    if item_file and item_file.filename:
+                        try:
+                            item_file_content = item_file.read()
+                            item_receipt_base64 = base64.b64encode(item_file_content).decode('utf-8')
+                            item_receipt_filename = item_file.filename
+                            item_receipt_type = item_file.content_type
+
+                            # Store item receipt in /expense_item_receipts
+                            fb_update(f"/expense_item_receipts/{exp_id}_{idx}", {
+                                "receipt_base64": item_receipt_base64,
+                                "receipt_filename": item_receipt_filename,
+                                "receipt_type": item_receipt_type,
+                                "parent_expense_id": exp_id,
+                                "item_index": idx
+                            })
+                        except Exception as e:
+                            app.logger.error(f"Item receipt upload error for item {idx}: {e}")
 
         # If this expense originated as an employee submission, keep it in sync
         emp_rec = fb_get(f"/expenses/{exp_id}")
@@ -14445,6 +14854,56 @@ def expense_edit(exp_id):
         app.logger.error(f"Expense edit error: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
+def _ensure_json_serializable(obj):
+    """Recursively convert all non-JSON-serializable types to strings"""
+    if isinstance(obj, dict):
+        return {k: _ensure_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [_ensure_json_serializable(item) for item in obj]
+    elif isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+    else:
+        return str(obj)
+
+def _ensure_json_serializable(obj):
+    """Recursively convert non-serializable objects to serializable ones"""
+    if obj is None:
+        return None
+    elif isinstance(obj, dict):
+        return {k: _ensure_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_ensure_json_serializable(item) for item in obj]
+    elif isinstance(obj, (str, int, float, bool)):
+        return obj
+    else:
+        return str(obj)
+
+@app.route("/api/expense/<exp_id>", methods=["GET"])
+@role_required("financial")
+def get_expense_data(exp_id):
+    """Fetch expense data for editing"""
+    try:
+        expense = fb_get(f"/balance_sheet_expenses/{exp_id}")
+        if not expense:
+            return jsonify({"success": False, "error": "Expense not found"}), 404
+
+        expense["firebase_id"] = exp_id
+
+        # Ensure child_expenses is properly parsed if it's a JSON string
+        if isinstance(expense.get("child_expenses"), str):
+            try:
+                expense["child_expenses"] = json.loads(expense["child_expenses"])
+            except json.JSONDecodeError:
+                expense["child_expenses"] = []
+
+        # Recursively ensure all nested values are JSON-serializable
+        safe_expense = _ensure_json_serializable(expense)
+
+        return jsonify({"success": True, "expense": safe_expense})
+    except Exception as e:
+        app.logger.exception("Error fetching expense data")
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @app.route("/api/expense/<exp_id>/receipt", methods=["GET"])
 @role_required("financial")
 def get_expense_receipt(exp_id):
@@ -14494,6 +14953,202 @@ def get_expense_receipt(exp_id):
                     "filename": exp.get('receipt_filename', 'receipt')
                 })
     return jsonify({"success": False, "error": "Receipt not found"})
+
+@app.route("/api/expense/<exp_id>/item-receipt/<int:item_index>", methods=["GET"])
+@role_required("financial")
+def get_expense_item_receipt(exp_id, item_index):
+    """Retrieve receipt for a specific item in a group expense"""
+    try:
+        receipt_data = fb_get(f"/expense_item_receipts/{exp_id}_{item_index}") or {}
+        if isinstance(receipt_data, dict) and receipt_data.get('receipt_base64'):
+            return jsonify({
+                "success": True,
+                "receipt": receipt_data.get('receipt_base64'),
+                "fileType": receipt_data.get('receipt_type', 'image/jpeg'),
+                "filename": receipt_data.get('receipt_filename', 'receipt')
+            })
+        return jsonify({"success": False, "error": "Receipt not found"})
+    except Exception as e:
+        app.logger.error(f"Error retrieving item receipt: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/expense/<exp_id>/item", methods=["POST"])
+@role_required("financial")
+def add_expense_item(exp_id):
+    """Add a new item to a group expense"""
+    try:
+        expense = fb_get(f"/balance_sheet_expenses/{exp_id}")
+        if not expense:
+            return jsonify({"success": False, "error": "Expense not found"}), 404
+
+        # Parse child expenses
+        child_expenses = expense.get("child_expenses", [])
+        if isinstance(child_expenses, str):
+            child_expenses = json.loads(child_expenses)
+
+        # Create new item
+        new_item = {
+            "date": request.form.get("date", ""),
+            "category": request.form.get("category", ""),
+            "expense_name": request.form.get("expense_name", ""),
+            "amount": _safe_float(request.form.get("amount", 0)),
+            "description": request.form.get("description", ""),
+            "receipt_filename": ""
+        }
+
+        # Handle receipt
+        if 'receipt' in request.files:
+            file = request.files['receipt']
+            if file and file.filename:
+                try:
+                    file_content = file.read()
+                    receipt_base64 = base64.b64encode(file_content).decode('utf-8')
+                    receipt_filename = file.filename
+                    receipt_type = file.content_type
+
+                    new_item["receipt_filename"] = receipt_filename
+
+                    # Store receipt - use next index
+                    next_index = len(child_expenses)
+                    fb_update(f"/expense_item_receipts/{exp_id}_{next_index}", {
+                        "receipt_base64": receipt_base64,
+                        "receipt_filename": receipt_filename,
+                        "receipt_type": receipt_type,
+                        "parent_expense_id": exp_id,
+                        "item_index": next_index
+                    })
+                except Exception as e:
+                    app.logger.error(f"Receipt upload error: {e}")
+
+        # Add item to list
+        child_expenses.append(new_item)
+
+        # Recalculate parent group expense total from sum of child items
+        total_amount = sum(_safe_float(item.get("amount", 0)) for item in child_expenses)
+        exchange_rate = _safe_float(expense.get("exchange_rate", 0)) or _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 120)) or 120
+        total_amount_bdt = total_amount * exchange_rate
+
+        # Update expense with new total and child item list
+        fb_update(f"/balance_sheet_expenses/{exp_id}", {
+            "child_expenses": child_expenses,
+            "child_expense_count": len(child_expenses),
+            "amount": total_amount,
+            "amount_bdt": total_amount_bdt,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        })
+
+        cache_bust("financial")
+        return jsonify({"success": True, "message": "Item added successfully"})
+    except Exception as e:
+        app.logger.error(f"Error adding expense item: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/expense/<exp_id>/item/<int:item_index>", methods=["PUT", "DELETE"])
+@role_required("financial")
+def update_or_delete_expense_item(exp_id, item_index):
+    """Update or delete a specific item from a group expense"""
+    try:
+        expense = fb_get(f"/balance_sheet_expenses/{exp_id}")
+        if not expense:
+            return jsonify({"success": False, "error": "Expense not found"}), 404
+
+        # Parse child expenses
+        child_expenses = expense.get("child_expenses", [])
+        if isinstance(child_expenses, str):
+            child_expenses = json.loads(child_expenses)
+
+        if request.method == "PUT":
+            # Update item
+            if 0 <= item_index < len(child_expenses):
+                # Determine receipt filename - preserve existing unless explicitly removed
+                receipt_filename = child_expenses[item_index].get("receipt_filename", "")
+
+                # Handle receipt deletion
+                if request.form.get('delete_receipt') == 'true':
+                    receipt_filename = ""
+                    # Delete the receipt file from storage
+                    fb_delete(f"/expense_item_receipts/{exp_id}_{item_index}")
+                    app.logger.info(f"Deleted receipt for expense item {exp_id}_{item_index}")
+
+                child_expenses[item_index] = {
+                    "date": request.form.get("date", ""),
+                    "category": request.form.get("category", ""),
+                    "expense_name": request.form.get("expense_name", ""),
+                    "amount": _safe_float(request.form.get("amount", 0)),
+                    "description": request.form.get("description", ""),
+                    "receipt_filename": receipt_filename
+                }
+
+                # Handle new receipt upload
+                if 'receipt' in request.files:
+                    file = request.files['receipt']
+                    if file and file.filename:
+                        try:
+                            file_content = file.read()
+                            receipt_base64 = base64.b64encode(file_content).decode('utf-8')
+                            receipt_filename = file.filename
+                            receipt_type = file.content_type
+
+                            # Update receipt filename
+                            child_expenses[item_index]["receipt_filename"] = receipt_filename
+
+                            # Store receipt
+                            fb_update(f"/expense_item_receipts/{exp_id}_{item_index}", {
+                                "receipt_base64": receipt_base64,
+                                "receipt_filename": receipt_filename,
+                                "receipt_type": receipt_type,
+                                "parent_expense_id": exp_id,
+                                "item_index": item_index
+                            })
+                        except Exception as e:
+                            app.logger.error(f"Receipt upload error: {e}")
+
+                # Recalculate parent group expense total from sum of child items
+                total_amount = sum(_safe_float(item.get("amount", 0)) for item in child_expenses)
+                exchange_rate = _safe_float(expense.get("exchange_rate", 0)) or _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 120)) or 120
+                total_amount_bdt = total_amount * exchange_rate
+
+                # Update expense with new total and child item list
+                fb_update(f"/balance_sheet_expenses/{exp_id}", {
+                    "child_expenses": child_expenses,
+                    "amount": total_amount,
+                    "amount_bdt": total_amount_bdt,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
+
+                cache_bust("financial")
+                return jsonify({"success": True, "message": "Item updated successfully"})
+            else:
+                return jsonify({"success": False, "error": "Item index out of range"}), 400
+
+        else:  # DELETE
+            # Remove item at index
+            if 0 <= item_index < len(child_expenses):
+                child_expenses.pop(item_index)
+
+                # Recalculate parent group expense total from sum of child items
+                total_amount = sum(_safe_float(item.get("amount", 0)) for item in child_expenses)
+                exchange_rate = _safe_float(expense.get("exchange_rate", 0)) or _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 120)) or 120
+                total_amount_bdt = total_amount * exchange_rate
+
+                # Update expense with new total and child item list
+                fb_update(f"/balance_sheet_expenses/{exp_id}", {
+                    "child_expenses": child_expenses,
+                    "child_expense_count": len(child_expenses),
+                    "amount": total_amount,
+                    "amount_bdt": total_amount_bdt,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
+                # Also delete the item receipt if it exists
+                fb_delete(f"/expense_item_receipts/{exp_id}_{item_index}")
+
+                cache_bust("financial")
+                return jsonify({"success": True, "message": "Item deleted successfully"})
+            else:
+                return jsonify({"success": False, "error": "Item index out of range"}), 400
+    except Exception as e:
+        app.logger.error(f"Error updating/deleting expense item: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 def _compute_balance_sheet_data(year: int) -> dict:
     """Shared data computation for Balance Sheet exports (Excel/PDF/CSV)."""
@@ -18255,6 +18910,14 @@ def ai_extract_pdf():
             "Capital Expenses",
             "Other Expenses"
         ]
+
+    # Create separate lists: one for filter (with Group Expenses), one for modals (without)
+    expense_types_for_filter = list(expense_types)
+    if "Group Expenses" not in expense_types_for_filter:
+        expense_types_for_filter.append("Group Expenses")
+
+    # Use the original list (without Group Expenses) for the expense modal
+    expense_types_for_modal = expense_types
 
     if not categories_by_type:
         categories_by_type = {
@@ -24676,6 +25339,9 @@ if __name__ == "__main__":
     # Run migrations on startup
     _migrate_add_co_firebase_ids()
     _migrate_ensure_usd_format()
+    # Fill in missing exchange rates for old expenses using company's current rate
+    company_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 120)) or 120
+    migrate_missing_exchange_rates(default_rate=company_rate)
 
     app.run(
         debug=os.environ.get("FLASK_DEBUG", "0") == "1",
