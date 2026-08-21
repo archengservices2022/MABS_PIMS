@@ -257,7 +257,7 @@
               <th style="min-width:120px;">Expense Name</th>
               <th style="text-align:right; min-width:100px;">Amount (USD)</th>
               <th style="min-width:100px;">Description</th>
-              <th style="text-align:right; min-width:100px;">Actions</th>
+              <th style="text-align:left; min-width:100px;">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -269,7 +269,7 @@
               <td style="font-size:12px; text-align:right;">${{ "{:,.2f}".format(child.amount or 0) }}</td>
               <td style="font-size:12px; color:#666;">{{ child.description or '—' }}</td>
               <td style="white-space:nowrap;">
-                <div style="display:flex; justify-content:flex-end; gap:4px; align-items:center;">
+                <div style="display:flex; justify-content:flex-start; gap:4px; align-items:center;">
                   {% if child.receipt_filename %}
                   <button type="button" class="btn btn-sm btn-link p-0" onclick="viewExpenseItemReceipt('{{ expense.id }}', '{{ loop.index0 }}')" title="View Receipt: {{ child.receipt_filename }}" style="color:#0ea5e9; font-size:14px;"><i class="bi bi-paperclip"></i></button>
                   {% endif %}
@@ -562,7 +562,7 @@
                         <th style="width:22%;">Expense Name</th>
                         <th style="width:12%; text-align:right;">Amount</th>
                         <th style="width:22%;">Description</th>
-                        <th style="width:18%; text-align:right;">Action</th>
+                        <th style="width:18%; text-align:left;">Action</th>
                       </tr>
                     </thead>
                     <tbody id="expensesTableBody">
@@ -1951,11 +1951,8 @@ function openGroupEditModal(expense) {
             <td style="font-size:12px; color:#666; padding:8px;">
               ${childExp.description || '—'}
             </td>
-            <td style="font-size:12px; padding:8px;">
-              ${childExp.receipt_filename ? `<span class="badge bg-info text-white" style="display:inline-block; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="Receipt: ${childExp.receipt_filename}">${childExp.receipt_filename.substring(0, 25)}${childExp.receipt_filename.length > 25 ? '...' : ''}</span>` : '<span style="color:#9ca3af;">—</span>'}
-            </td>
-            <td style="text-align:center; padding:8px; white-space:nowrap;">
-              <div style="display:flex; gap:4px; align-items:center;">
+            <td style="width:18%; text-align:left; padding:8px; white-space:nowrap;">
+              <div style="display:flex; justify-content:flex-start; gap:4px; align-items:center;">
                 ${childExp.receipt_filename ? `<button type="button" class="btn btn-sm btn-link p-0" onclick="viewExpenseItemReceipt('{{ expense.id }}', '${idx}')" title="View Receipt: ${childExp.receipt_filename}" style="color:#0ea5e9; font-size:14px;"><i class="bi bi-paperclip"></i></button>` : ''}
                 <button type="button" class="btn btn-sm btn-link text-primary p-0" onclick="editExistingItem(${index}, '${childExp.expense_name}', '${childExp.category}', '${childExp.date}', ${childExp.amount}, '${(childExp.description || '').replace(/'/g, "\\'")}', '${childExp.receipt_filename || ''}')" title="Edit" style="color:#0ea5e9; font-size:14px;">
                   <i class="bi bi-pencil"></i>
@@ -2033,8 +2030,8 @@ function addExpenseToGroupTable() {
       <td style="font-size:12px; padding:8px;">${name}</td>
       <td style="font-size:12px; text-align:right; padding:8px;">$${parseFloat(amount).toFixed(2)}</td>
       <td style="font-size:12px; color:#666; padding:8px;">${description || '—'}</td>
-      <td style="width:18%; text-align:right; padding:8px; white-space:nowrap;">
-        <div style="display:flex; justify-content:flex-end; gap:4px; align-items:center;">
+      <td style="width:18%; text-align:left; padding:8px; white-space:nowrap;">
+        <div style="display:flex; justify-content:flex-start; gap:4px; align-items:center;">
           <button type="button" class="btn btn-sm btn-link text-primary p-0" onclick="editExistingItem(${index}, '${name.replace(/'/g, "\\'")}', '${category.replace(/'/g, "\\'")}', '${date}', ${amount}, '${(description || '').replace(/'/g, "\\'")}', '')" title="Edit" style="color:#0ea5e9; font-size:14px;">
             <i class="bi bi-pencil"></i>
           </button>
@@ -2193,8 +2190,8 @@ function updateExistingItem(index) {
     <td style="font-size:12px; padding:8px;">${name}</td>
     <td style="font-size:12px; text-align:right; padding:8px;">$${parseFloat(amount).toFixed(2)}</td>
     <td style="font-size:12px; color:#666; padding:8px;">${description || '—'}</td>
-    <td style="width:18%; text-align:right; padding:8px; white-space:nowrap;">
-      <div style="display:flex; justify-content:flex-end; gap:4px; align-items:center;">
+    <td style="width:18%; text-align:left; padding:8px; white-space:nowrap;">
+      <div style="display:flex; justify-content:flex-start; gap:4px; align-items:center;">
         ${receiptName ? `<button type="button" class="btn btn-sm btn-link p-0" onclick="viewExpenseItemReceipt('{{ expense.id }}', '${index}')" title="View Receipt: ${receiptName}" style="color:#0ea5e9; font-size:14px;"><i class="bi bi-paperclip"></i></button>` : ''}
         <button type="button" class="btn btn-sm btn-link text-primary p-0" onclick="editExistingItem(${index}, '${name.replace(/'/g, "\\'")}', '${category.replace(/'/g, "\\'")}', '${date}', ${amount}, '${(description || '').replace(/'/g, "\\'")}', '${receiptName.replace(/'/g, "\\'") || ''}')" title="Edit" style="color:#0ea5e9; font-size:14px;">
           <i class="bi bi-pencil"></i>
