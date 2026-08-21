@@ -1883,6 +1883,23 @@ function filterGroupProjectDropdown(value) {
 
 function openGroupEditModal(expense) {
   try {
+    console.log('=== openGroupEditModal DEBUG ===');
+    console.log('Expense object:', expense);
+    console.log('Child expenses:', expense.child_expenses);
+    if (expense.child_expenses) {
+      expense.child_expenses.forEach((child, idx) => {
+        console.log(`Child ${idx}:`, {
+          expense_name: child.expense_name,
+          category: child.category,
+          description: child.description,
+          receipt_filename: child.receipt_filename,
+          type_name: typeof child.expense_name,
+          type_category: typeof child.category,
+          type_desc: typeof child.description
+        });
+      });
+    }
+
     window.editingGroupExpenseId = expense.id || expense.firebase_id;
 
     // Change modal title and subtitle
@@ -1939,6 +1956,11 @@ function openGroupEditModal(expense) {
           receipt_filename: childExp.receipt_filename || ''
         };
 
+        const safeExpenseName = (childExp.expense_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const safeCategory = (childExp.category || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const safeDescription = (childExp.description || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const safeReceipt = (childExp.receipt_filename || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
         const row = `
           <tr class="expense-row-${index}">
             <td style="font-size:12px; white-space:nowrap; padding:8px;">
@@ -1958,8 +1980,8 @@ function openGroupEditModal(expense) {
             </td>
             <td style="width:18%; text-align:left; padding:8px; white-space:nowrap;">
               <div style="display:flex; justify-content:flex-start; gap:4px; align-items:center;">
-                ${childExp.receipt_filename ? `<button type="button" class="btn btn-sm btn-link p-0" onclick="viewExpenseItemReceipt('{{ expense.id }}', '${idx}')" title="View Receipt: ${childExp.receipt_filename}" style="color:#0ea5e9; font-size:14px;"><i class="bi bi-paperclip"></i></button>` : ''}
-                <button type="button" class="btn btn-sm btn-link text-primary p-0" onclick="editExistingItem(${index}, '${childExp.expense_name}', '${childExp.category}', '${childExp.date}', ${childExp.amount}, '${(childExp.description || '').replace(/'/g, "\\'")}', '${childExp.receipt_filename || ''}')" title="Edit" style="color:#0ea5e9; font-size:14px;">
+                ${childExp.receipt_filename ? `<button type="button" class="btn btn-sm btn-link p-0" onclick="viewExpenseItemReceipt('${window.editingGroupExpenseId}', '${idx}')" title="View Receipt: ${childExp.receipt_filename}" style="color:#0ea5e9; font-size:14px;"><i class="bi bi-paperclip"></i></button>` : ''}
+                <button type="button" class="btn btn-sm btn-link text-primary p-0" onclick="editExistingItem(${index}, '${safeExpenseName}', '${safeCategory}', '${childExp.date || ''}', ${childExp.amount || 0}, '${safeDescription}', '${safeReceipt}')" title="Edit" style="color:#0ea5e9; font-size:14px;">
                   <i class="bi bi-pencil"></i>
                 </button>
                 <button type="button" class="btn btn-sm btn-link text-danger p-0" onclick="removeExpenseFromGroup(${index})" title="Delete" style="color:#ef4444; font-size:14px;">
@@ -2028,6 +2050,10 @@ function addExpenseToGroupTable() {
     receipt_filename: ''
   };
 
+  const safeName = (name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  const safeCategory = (category || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  const safeDescription = (description || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
   const row = `
     <tr class="expense-row-${index}">
       <td style="font-size:12px; white-space:nowrap; padding:8px;">${date}</td>
@@ -2037,7 +2063,7 @@ function addExpenseToGroupTable() {
       <td style="font-size:12px; color:#666; padding:8px;">${description || '—'}</td>
       <td style="width:18%; text-align:left; padding:8px; white-space:nowrap;">
         <div style="display:flex; justify-content:flex-start; gap:4px; align-items:center;">
-          <button type="button" class="btn btn-sm btn-link text-primary p-0" onclick="editExistingItem(${index}, '${name.replace(/'/g, "\\'")}', '${category.replace(/'/g, "\\'")}', '${date}', ${amount}, '${(description || '').replace(/'/g, "\\'")}', '')" title="Edit" style="color:#0ea5e9; font-size:14px;">
+          <button type="button" class="btn btn-sm btn-link text-primary p-0" onclick="editExistingItem(${index}, '${safeName}', '${safeCategory}', '${date}', ${amount}, '${safeDescription}', '')" title="Edit" style="color:#0ea5e9; font-size:14px;">
             <i class="bi bi-pencil"></i>
           </button>
           <button type="button" class="btn btn-sm btn-link text-danger p-0" onclick="removeExpenseFromGroup(${index})" title="Delete" style="color:#ef4444; font-size:14px;">
@@ -2190,6 +2216,11 @@ function updateExistingItem(index) {
 
   const row = document.querySelector(`.expense-row-${index}`);
 
+  const safeName = (name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  const safeCategory = (category || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  const safeDescription = (description || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  const safeReceiptName = (receiptName || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
   row.innerHTML = `
     <td style="font-size:12px; white-space:nowrap; padding:8px;">${date}</td>
     <td style="font-size:12px; padding:8px;">${category}</td>
@@ -2198,8 +2229,8 @@ function updateExistingItem(index) {
     <td style="font-size:12px; color:#666; padding:8px;">${description || '—'}</td>
     <td style="width:18%; text-align:left; padding:8px; white-space:nowrap;">
       <div style="display:flex; justify-content:flex-start; gap:4px; align-items:center;">
-        ${receiptName ? `<button type="button" class="btn btn-sm btn-link p-0" onclick="viewExpenseItemReceipt('{{ expense.id }}', '${index}')" title="View Receipt: ${receiptName}" style="color:#0ea5e9; font-size:14px;"><i class="bi bi-paperclip"></i></button>` : ''}
-        <button type="button" class="btn btn-sm btn-link text-primary p-0" onclick="editExistingItem(${index}, '${name.replace(/'/g, "\\'")}', '${category.replace(/'/g, "\\'")}', '${date}', ${amount}, '${(description || '').replace(/'/g, "\\'")}', '${receiptName.replace(/'/g, "\\'") || ''}')" title="Edit" style="color:#0ea5e9; font-size:14px;">
+        ${receiptName ? `<button type="button" class="btn btn-sm btn-link p-0" onclick="viewExpenseItemReceipt('${window.editingGroupExpenseId}', '${index}')" title="View Receipt: ${receiptName}" style="color:#0ea5e9; font-size:14px;"><i class="bi bi-paperclip"></i></button>` : ''}
+        <button type="button" class="btn btn-sm btn-link text-primary p-0" onclick="editExistingItem(${index}, '${safeName}', '${safeCategory}', '${date}', ${amount}, '${safeDescription}', '${safeReceiptName}')" title="Edit" style="color:#0ea5e9; font-size:14px;">
           <i class="bi bi-pencil"></i>
         </button>
         <button type="button" class="btn btn-sm btn-link text-danger p-0" onclick="removeExpenseFromGroup(${index})" title="Delete" style="color:#ef4444; font-size:14px;">
