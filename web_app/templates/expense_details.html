@@ -1097,22 +1097,26 @@ function saveEditItem() {
 
 // Delete expense item from details page
 function deleteExpenseItem(expId, itemIndex) {
-  if (confirm('Are you sure you want to delete this item?')) {
-    fetch(`/api/expense/${expId}/item/${itemIndex}`, { method: 'DELETE' })
-      .then(r => r.json())
-      .then(data => {
-        if (data.success) {
-          showSuccessToast('Item Deleted', 'Expense item deleted successfully');
-          setTimeout(() => location.reload(), 1500);
-        } else {
-          alert('Error deleting item: ' + (data.error || 'Unknown error'));
-        }
-      })
-      .catch(err => {
-        console.error('Error:', err);
-        alert('Error deleting item');
-      });
-  }
+  showDeleteConfirmation(
+    'Delete Expense Item',
+    'Are you sure you want to delete this item? This will be removed and the total will be recalculated.',
+    function() {
+      fetch(`/api/expense/${expId}/item/${itemIndex}`, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) {
+            showSuccessToast('Item Deleted', 'Expense item deleted successfully');
+            setTimeout(() => location.reload(), 1500);
+          } else {
+            alert('Error deleting item: ' + (data.error || 'Unknown error'));
+          }
+        })
+        .catch(err => {
+          console.error('Error:', err);
+          alert('Error deleting item');
+        });
+    }
+  );
 }
 
 // View main expense receipt
