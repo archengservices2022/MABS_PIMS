@@ -1104,7 +1104,10 @@ function saveEditItem() {
       showSuccessToast(title, message);
       const modal = bootstrap.Modal.getInstance(document.getElementById('editItemModal'));
       modal.hide();
-      setTimeout(() => location.reload(), 1500);
+      // Force a full page reload with cache bypass
+      setTimeout(() => {
+        window.location.href = window.location.href.split('?')[0] + '?t=' + Date.now();
+      }, 1500);
     } else {
       alert('Error: ' + (data.error || 'Unknown error'));
     }
@@ -1126,7 +1129,9 @@ function deleteExpenseItem(expId, itemIndex) {
         .then(data => {
           if (data.success) {
             showSuccessToast('Item Deleted', 'Expense item deleted successfully');
-            setTimeout(() => location.reload(), 1500);
+            setTimeout(() => {
+              window.location.href = window.location.href.split('?')[0] + '?t=' + Date.now();
+            }, 1500);
           } else {
             alert('Error deleting item: ' + (data.error || 'Unknown error'));
           }
