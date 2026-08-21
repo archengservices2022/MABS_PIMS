@@ -1018,11 +1018,13 @@ function viewEditItemReceipt() {
 
 // Remove receipt in edit modal
 function removeEditItemReceipt() {
+  console.log('removeEditItemReceipt called - marking for deletion');
   document.getElementById('editItemReceipt').value = '';
   document.getElementById('currentEditItemReceipt').style.display = 'none';
   document.getElementById('editItemReceipt').style.display = 'block';
   window.editingItemOriginalReceipt = null;
   window.editItemReceiptMarkedForRemoval = true;
+  console.log('editItemReceiptMarkedForRemoval set to:', window.editItemReceiptMarkedForRemoval);
 }
 
 // Save edited or new item
@@ -1062,9 +1064,11 @@ function saveEditItem() {
   if (receiptFile) {
     formData.append('receipt', receiptFile);
     console.log('Adding receipt file:', receiptFile.name);
-  } else if (window.editItemReceiptMarkedForRemoval) {
+  }
+
+  if (window.editItemReceiptMarkedForRemoval) {
     formData.append('delete_receipt', 'true');
-    console.log('Marking receipt for deletion');
+    console.log('Adding delete_receipt flag to FormData');
     window.editItemReceiptMarkedForRemoval = false;
   }
 
@@ -1075,6 +1079,14 @@ function saveEditItem() {
   const method = isAdding ? 'POST' : 'PUT';
 
   console.log(`${isAdding ? 'Adding' : 'Updating'} item at:`, endpoint);
+  console.log('FormData contents:');
+  for (let pair of formData.entries()) {
+    if (pair[0] === 'receipt') {
+      console.log(`  ${pair[0]}: File(${pair[1].size} bytes)`);
+    } else {
+      console.log(`  ${pair[0]}: ${pair[1]}`);
+    }
+  }
 
   fetch(endpoint, {
     method: method,
