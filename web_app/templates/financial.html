@@ -2559,6 +2559,7 @@ function editGroupExpenseModal(expId, expData) {
     // Clear expense items table
     document.getElementById('expensesTableBody').innerHTML = '';
     window.expenseCounterInGroup = 0;
+    window.groupReceiptMarkedForRemoval = false;
 
     // Load existing child expenses into the table
     if (!window.groupItemData) window.groupItemData = {};
@@ -3475,6 +3476,7 @@ function viewGroupReceiptFile(expId) {
 function removeGroupReceipt() {
   document.getElementById('groupReceipt').value = '';
   document.getElementById('groupReceiptPreview').innerHTML = '';
+  window.groupReceiptMarkedForRemoval = true;
 }
 
 // View existing item receipt (for items when editing a group)
@@ -3514,11 +3516,11 @@ function submitGroupExpenseModal() {
 
     childExpenses.push({
       category: item.category,
-      expense_name: item.itemName,
+      expense_name: item.expense_name,
       amount: item.amount,
-      date: item.itemDate || new Date().toISOString().split('T')[0],
-      description: item.itemDescription || '',
-      receipt_filename: item.receiptName || ''
+      date: item.date || new Date().toISOString().split('T')[0],
+      description: item.description || '',
+      receipt_filename: item.receipt_filename || ''
     });
   }
 
@@ -3537,7 +3539,12 @@ function submitGroupExpenseModal() {
 
   // Add group-level receipt
   const receiptFile = document.getElementById('groupReceipt').files[0];
-  if (receiptFile) data.append('receipt', receiptFile);
+  if (receiptFile) {
+    data.append('receipt', receiptFile);
+  } else if (window.groupReceiptMarkedForRemoval) {
+    data.append('delete_receipt', 'true');
+    window.groupReceiptMarkedForRemoval = false;
+  }
 
   // Add item receipts
   for (const idx in window.groupItemData) {
