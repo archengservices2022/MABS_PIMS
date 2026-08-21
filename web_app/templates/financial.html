@@ -3270,6 +3270,15 @@ function addExpenseToGroupTable() {
       receipt_filename: itemReceipt?.name
     };
 
+    console.log(`Added new item at index ${index}:`, {
+      itemName: itemName,
+      hasReceipt: !!itemReceipt,
+      receiptName: itemReceipt?.name,
+      receiptSize: itemReceipt?.size,
+      receiptType: itemReceipt?.type
+    });
+    console.log(`groupItemData[${index}]:`, window.groupItemData[index]);
+
     // Format date as MM-DD-YYYY
     const dateParts = itemDate.split('-');
     const formattedDate = dateParts.length === 3 ? `${dateParts[1]}-${dateParts[2]}-${dateParts[0]}` : itemDate;
@@ -3551,12 +3560,24 @@ function submitGroupExpenseModal() {
   }
 
   // Add item receipts using sequential indices matching childExpenses order
+  console.log('Processing item receipts. itemReceiptMap:', itemReceiptMap);
+  console.log('groupItemData:', window.groupItemData);
+
   itemReceiptMap.forEach((mapping, newIdx) => {
     const originalIdx = mapping.originalIdx;
     const item = window.groupItemData[originalIdx];
+    console.log(`Item ${newIdx} (original ${originalIdx}):`, {
+      hasItem: !!item,
+      hasReceipt: item && !!item.receipt,
+      receiptName: item && item.receipt?.name,
+      receiptSize: item && item.receipt?.size
+    });
+
     if (item.receipt) {
       data.append(`item_receipt_${newIdx}`, item.receipt);
-      console.log(`Appending receipt for item ${newIdx} (original index ${originalIdx}):`, item.receipt.name);
+      console.log(`✓ Appended receipt for item ${newIdx} (original index ${originalIdx}):`, item.receipt.name);
+    } else {
+      console.log(`✗ No receipt for item ${newIdx} (original index ${originalIdx})`);
     }
   });
 
