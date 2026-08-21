@@ -2265,14 +2265,14 @@ function submitGroupExpenseModal() {
   formData.append('amount', totalAmount);
   formData.append('child_expenses', JSON.stringify(Object.values(window.groupItemData || {})));
 
-  // Handle receipt removal
+  // Handle receipt removal (use same field name as backend: delete_receipt)
   const receiptFileInput = document.getElementById('groupReceipt').files[0];
   if (receiptFileInput) {
     formData.append('receipt', receiptFileInput);
     console.log('New receipt file being uploaded');
   } else if (window.groupReceiptMarkedForRemoval) {
-    formData.append('remove_receipt', 'true');
-    console.log('Receipt marked for removal - sending remove_receipt flag');
+    formData.append('delete_receipt', 'true');
+    console.log('Receipt marked for deletion - sending delete_receipt flag');
   } else {
     console.log('No receipt changes');
   }
