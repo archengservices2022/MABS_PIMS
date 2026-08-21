@@ -3411,6 +3411,7 @@ function removeItemReceipt() {
   if (index !== null && window.groupItemData && window.groupItemData[index]) {
     window.groupItemData[index].receipt = null;
     window.groupItemData[index].receiptName = null;
+    window.groupItemData[index].receipt_filename = null;
     window.currentItemReceipt = null;
   }
 
