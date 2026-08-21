@@ -1896,6 +1896,7 @@ function openGroupEditModal(expense) {
     // Reset receipt display for edit
     document.getElementById('groupReceipt').value = '';
     window.currentGroupReceipt = null;
+    window.groupReceiptMarkedForRemoval = false;
 
     // Pre-fill GROUP EXPENSE DETAILS
     document.getElementById('groupExpenseDate0').value = expense.date || '';
@@ -2105,6 +2106,7 @@ function removeCurrentGroupReceipt(event) {
   document.getElementById('groupReceipt').style.display = 'block';
   document.getElementById('groupReceipt').value = '';
   window.currentGroupReceipt = null;
+  window.groupReceiptMarkedForRemoval = true;
 
   // Preserve form data - make sure nothing is cleared
   return false;
@@ -2262,6 +2264,14 @@ function submitGroupExpenseModal() {
   formData.append('is_group_expense', 'true');
   formData.append('amount', totalAmount);
   formData.append('child_expenses', JSON.stringify(Object.values(window.groupItemData || {})));
+
+  // Handle receipt removal
+  const receiptFileInput = document.getElementById('groupReceipt').files[0];
+  if (receiptFileInput) {
+    formData.append('receipt', receiptFileInput);
+  } else if (window.groupReceiptMarkedForRemoval) {
+    formData.append('remove_receipt', 'true');
+  }
 
   fetch(`/financial/expense/${expId}/edit`, {
     method: 'POST',
