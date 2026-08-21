@@ -1883,24 +1883,18 @@ function filterGroupProjectDropdown(value) {
 
 function openGroupEditModal(expense) {
   try {
+    if (!expense) {
+      throw new Error('Expense object is null or undefined');
+    }
+
     console.log('=== openGroupEditModal DEBUG ===');
     console.log('Expense object:', expense);
     console.log('Child expenses:', expense.child_expenses);
-    if (expense.child_expenses) {
-      expense.child_expenses.forEach((child, idx) => {
-        console.log(`Child ${idx}:`, {
-          expense_name: child.expense_name,
-          category: child.category,
-          description: child.description,
-          receipt_filename: child.receipt_filename,
-          type_name: typeof child.expense_name,
-          type_category: typeof child.category,
-          type_desc: typeof child.description
-        });
-      });
-    }
 
-    window.editingGroupExpenseId = expense.id || expense.firebase_id;
+    window.editingGroupExpenseId = expense.id || expense.firebase_id || expense.expense_id;
+    if (!window.editingGroupExpenseId) {
+      throw new Error('No valid expense ID found in expense object');
+    }
 
     // Change modal title and subtitle
     document.getElementById('groupExpenseModalTitle').innerHTML = '<i class="bi bi-folder-open me-2"></i>Edit Group Expenses';
@@ -1939,30 +1933,25 @@ function openGroupEditModal(expense) {
     // Clear expense items table
     document.getElementById('expensesTableBody').innerHTML = '';
     window.expenseCounterInGroup = 0;
+    if (!window.groupItemData) window.groupItemData = {};
 
     // Load existing child expenses into the table
-    if (!window.groupItemData) window.groupItemData = {};
     if (expense.child_expenses && Array.isArray(expense.child_expenses)) {
       expense.child_expenses.forEach((childExp, idx) => {
         const index = window.expenseCounterInGroup++;
 
-        // Store in groupItemData
+        // Store in groupItemData with safe values
         window.groupItemData[index] = {
-          date: childExp.date,
-          category: childExp.category,
-          expense_name: childExp.expense_name,
-          amount: childExp.amount,
+          date: childExp.date || '',
+          category: childExp.category || '',
+          expense_name: childExp.expense_name || '',
+          amount: parseFloat(childExp.amount) || 0,
           description: childExp.description || '',
           receipt_filename: childExp.receipt_filename || ''
         };
 
-        const safeExpenseName = (childExp.expense_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        const safeCategory = (childExp.category || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        const safeDescription = (childExp.description || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        const safeReceipt = (childExp.receipt_filename || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-
         const row = `
-          <tr class="expense-row-${index}">
+          <tr class="expense-row-${index}" data-index="${index}" data-expense-name="${String(childExp.expense_name || '').replace(/"/g, '&quot;')}" data-category="${String(childExp.category || '').replace(/"/g, '&quot;')}" data-date="${String(childExp.date || '').replace(/"/g, '&quot;')}" data-amount="${childExp.amount || 0}" data-description="${String(childExp.description || '').replace(/"/g, '&quot;')}" data-receipt="${String(childExp.receipt_filename || '').replace(/"/g, '&quot;')}">
             <td style="font-size:12px; white-space:nowrap; padding:8px;">
               ${childExp.date || '—'}
             </td>
@@ -1980,8 +1969,8 @@ function openGroupEditModal(expense) {
             </td>
             <td style="width:18%; text-align:left; padding:8px; white-space:nowrap;">
               <div style="display:flex; justify-content:flex-start; gap:4px; align-items:center;">
-                ${childExp.receipt_filename ? `<button type="button" class="btn btn-sm btn-link p-0" onclick="viewExpenseItemReceipt('${window.editingGroupExpenseId}', '${idx}')" title="View Receipt: ${childExp.receipt_filename}" style="color:#0ea5e9; font-size:14px;"><i class="bi bi-paperclip"></i></button>` : ''}
-                <button type="button" class="btn btn-sm btn-link text-primary p-0" onclick="editExistingItem(${index}, '${safeExpenseName}', '${safeCategory}', '${childExp.date || ''}', ${childExp.amount || 0}, '${safeDescription}', '${safeReceipt}')" title="Edit" style="color:#0ea5e9; font-size:14px;">
+                ${childExp.receipt_filename ? `<button type="button" class="btn btn-sm btn-link p-0" onclick="viewExpenseItemReceipt('${window.editingGroupExpenseId}', ${idx})" title="View Receipt: ${String(childExp.receipt_filename || '').replace(/"/g, '&quot;')}" style="color:#0ea5e9; font-size:14px;"><i class="bi bi-paperclip"></i></button>` : ''}
+                <button type="button" class="btn btn-sm btn-link text-primary p-0" onclick="editRowItem(this)" title="Edit" style="color:#0ea5e9; font-size:14px;">
                   <i class="bi bi-pencil"></i>
                 </button>
                 <button type="button" class="btn btn-sm btn-link text-danger p-0" onclick="removeExpenseFromGroup(${index})" title="Delete" style="color:#ef4444; font-size:14px;">
@@ -1997,7 +1986,7 @@ function openGroupEditModal(expense) {
       // Calculate total from existing items
       let total = 0;
       expense.child_expenses.forEach((item) => {
-        total += item.amount || 0;
+        total += parseFloat(item.amount) || 0;
       });
       document.getElementById('groupTotalDisplay').textContent = '$' + total.toFixed(2) + ' USD';
 
@@ -2008,7 +1997,6 @@ function openGroupEditModal(expense) {
       document.getElementById('expenseItemsSection').style.display = 'none';
       document.getElementById('groupTotalDisplay').textContent = '$0.00 USD';
     }
-
 
     // Show group expense dialog
     const modal = new bootstrap.Modal(document.getElementById('groupExpenseModal'));
@@ -2136,6 +2124,19 @@ function removeCurrentGroupReceipt(event) {
 
   // Preserve form data - make sure nothing is cleared
   return false;
+}
+
+function editRowItem(btn) {
+  const row = btn.closest('tr');
+  const index = parseInt(row.dataset.index);
+  const name = row.dataset.expenseName;
+  const category = row.dataset.category;
+  const date = row.dataset.date;
+  const amount = row.dataset.amount;
+  const description = row.dataset.description;
+  const receipt = row.dataset.receipt;
+
+  editExistingItem(index, name, category, date, amount, description, receipt);
 }
 
 function editExistingItem(index, name, category, date, amount, description, receipt) {

@@ -372,7 +372,7 @@ a[href*="filter_expense"]:hover {
         <div class="d-flex justify-content-between align-items-center mb-3">
           <div>
             <h6 class="panel-title mb-0">Revenue vs Expenses</h6>
-            <span class="text-muted" style="font-size:11px;">Monthly breakdown — all recorded data</span>
+            <span class="text-muted" style="font-size:12px; padding:6px 8px;">Monthly breakdown — all recorded data</span>
           </div>
           <div class="d-flex gap-3 align-items-center">
             <span class="d-flex align-items-center gap-1 small text-muted">
@@ -669,7 +669,7 @@ a[href*="filter_expense"]:hover {
                 {% elif pm|lower in ('card','credit card','debit card') %}
                   <span class="badge" style="background:#f3e8ff;color:#7c3aed;font-size:11px;"><i class="bi bi-credit-card me-1"></i>Card</span>
                 {% else %}
-                  <span class="badge bg-secondary" style="font-size:11px;">{{ pm }}</span>
+                  <span class="badge bg-secondary" style="font-size:12px; padding:6px 8px;">{{ pm }}</span>
                 {% endif %}
               {% else %}
                 <span class="text-muted small">—</span>
@@ -824,7 +824,7 @@ a[href*="filter_expense"]:hover {
       <input type="text" id="expenseSearch" placeholder="Search expense..." class="form-control form-control-sm" style="width:200px;" oninput="applyExpenseFilters()">
       <select id="expenseTypeFilter" class="form-select form-select-sm" style="width:200px;" onchange="applyExpenseFilters()">
         <option value="">All Types</option>
-        {% for type in expense_types %}
+        {% for type in expense_types_filter %}
         <option value="{{ type }}">{{ type }}</option>
         {% endfor %}
       </select>
@@ -861,9 +861,21 @@ a[href*="filter_expense"]:hover {
   <!-- Expense Log Header -->
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h6 class="panel-title mb-0"><i class="bi bi-receipt me-2"></i>Expense Log</h6>
-    <button type="button" class="btn btn-sm btn-teal" onclick="openAddExpenseModal()">
-      <i class="bi bi-plus-lg me-1"></i>Add Expense
-    </button>
+
+    <!-- Dropdown Button for Add Expense -->
+    <div class="dropdown">
+      <button class="btn btn-sm btn-teal dropdown-toggle" type="button" id="addExpenseDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+        <i class="bi bi-plus-lg me-1"></i>Add Expense <i class="bi bi-chevron-down" style="font-size:0.75rem;"></i>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="addExpenseDropdown">
+        <li><a class="dropdown-item" href="#" onclick="openAddExpenseModal(); return false;">
+          <i class="bi bi-receipt me-2"></i>Add New Expense
+        </a></li>
+        <li><a class="dropdown-item" href="#" onclick="openAddGroupModal(); return false;">
+          <i class="bi bi-folder-plus me-2"></i>Add Group Expenses
+        </a></li>
+      </ul>
+    </div>
   </div>
 
   <div class="card-panel" style="display:flex;flex-direction:column;min-height:600px;">
@@ -891,7 +903,8 @@ a[href*="filter_expense"]:hover {
             data-type="{{ exp.get('expense_type','') }}"
             data-vendor="{{ exp.get('vendor','') }}"
             data-date="{{ exp.get('date','') | format_date }}"
-            data-created-at="{{ exp.get('created_at','') }}">
+            data-created-at="{{ exp.get('created_at','') }}"
+            data-expense-id="{{ exp.get('firebase_id','') }}">
             <td class="text-muted small">{{ exp.get('date','—') | format_date }}</td>
             <td class="small text-muted">{{ exp.get('expense_type','—') }}</td>
             <td class="small text-muted">{{ exp.get('expense_name','—') or exp.get('description','—') }}</td>
@@ -907,7 +920,7 @@ a[href*="filter_expense"]:hover {
             <td>
               {% if exp.get('firebase_id') %}
               <div class="d-flex gap-1">
-                  <button type="button" class="btn btn-xs btn-outline-secondary" onclick='editExpenseModal("{{ exp.firebase_id }}", {{ exp|tojson }})' title="Edit">
+                  <button type="button" class="btn btn-xs btn-outline-secondary" data-exp-id="{{ exp.firebase_id }}" onclick="handleEditExpense('{{ exp.firebase_id }}')" title="Edit">
                   <i class="bi bi-pencil"></i>
                 </button>
                 {% if exp.get('receipt_filename') or exp.get('has_receipt') %}
@@ -916,13 +929,9 @@ a[href*="filter_expense"]:hover {
                 </button>
                 {% endif %}
                 {% if user_role == 'admin' %}
-                <form method="POST" action="{{ url_for('expense_delete', exp_id=exp.firebase_id) }}"
-                      onsubmit="return confirm('Delete this expense?');" style="display:inline;">
-                  <input type="hidden" name="page" class="expensePageInput" value="1">
-                  <button type="submit" class="btn btn-xs btn-outline-danger" title="Delete (Admin only)">
-                    <i class="bi bi-trash"></i>
-                  </button>
-                </form>
+                <button type="button" class="btn btn-xs btn-outline-danger" title="Delete (Admin only)" onclick="handleFinanceExpenseDelete('{{ exp.firebase_id }}')">
+                  <i class="bi bi-trash"></i>
+                </button>
                 {% endif %}
               </div>
               {% endif %}
@@ -1055,7 +1064,6 @@ a[href*="filter_expense"]:hover {
         <div class="col-md-6">
           <label class="form-label form-label-sm fw-600">Amount (USD) *</label>
           <input type="number" name="amount" id="expenseAmount" class="form-control form-control-sm" step="0.01" min="0" required oninput="updateExpenseBdtDisplay()">
-          <small class="form-text text-muted" id="expenseBdtDisplay" style="color:#10b981;font-size:11px;margin-top:4px;"></small>
         </div>
       </div>
 
@@ -1115,6 +1123,7 @@ const expenseNamesByCategory = {{ expense_names_by_category|safe }};
 const expenseTypesList = {{ expense_types|tojson }};
 const projectsList = {{ projects|tojson|safe }};
 let vendorList = {{ all_vendors|tojson }};
+const companyBdtExchangeRate = {{ bdt_exchange_rate|default(110) }};
 
 function initExpenseFormDropdowns() {
   const typeInput = document.getElementById('expenseType');
@@ -1957,11 +1966,32 @@ document.addEventListener('DOMContentLoaded', function() {
       urlParams.delete('filter_expense');
       window.history.replaceState({}, document.title, window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : ''));
     }
+
+    // Auto-open edit modal if edit_id parameter present
+    const editId = urlParams.get('edit_id');
+    if (editId) {
+      fetch(`/api/expense/${editId}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.success && data.expense) {
+            const expense = data.expense;
+            if (expense.is_group_expense) {
+              editGroupExpenseModal(editId);
+            } else {
+              editExpenseModal(editId);
+            }
+            // Remove edit_id from URL
+            urlParams.delete('edit_id');
+            window.history.replaceState({}, document.title, window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : ''));
+          }
+        })
+        .catch(err => console.error('Error auto-loading edit modal:', err));
+    }
   } catch(e) { console.error('Expense form init error:', e); }
 });
 </script>
 
-<!-- Add / Edit Expense Modal -->
+<!-- Expense Modal -->
 <div class="modal fade" id="expenseModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
@@ -2004,7 +2034,6 @@ document.addEventListener('DOMContentLoaded', function() {
             <div class="col-md-6">
               <label class="form-label form-label-sm fw-600">Amount (USD) *</label>
               <input type="number" name="amount" id="modalAmount" class="form-control form-control-sm" step="0.01" min="0" required oninput="updateModalBdtDisplay()">
-              <small class="form-text text-muted" id="modalBdtDisplay" style="color:#10b981;font-size:11px;margin-top:4px;"></small>
             </div>
           </div>
 
@@ -2028,9 +2057,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <select name="project_number" id="modalProject" class="form-select form-select-sm">
               <option value="">— Optional —</option>
               {% for p in projects %}
-              <option value="{{ p.get('project_number','') }}">
-                {{ p.get('project_number','') }} — {{ p.get('project_name','') }}
-              </option>
+              <option value="{{ p.get('project_number','') }}">{{ p.get('project_number','') }} — {{ p.get('project_name','') }}</option>
               {% endfor %}
             </select>
           </div>
@@ -2056,6 +2083,267 @@ document.addEventListener('DOMContentLoaded', function() {
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="button" id="expenseModalSaveBtn" class="btn btn-teal" onclick="submitExpenseModal()">
           <i class="bi bi-check-circle me-1"></i>Add Expense
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Group Expenses Modal -->
+<script>
+function submitExpenseModal() {
+  const expenseId = window.editingExpenseId;
+  const expenseType = document.getElementById('modalExpenseType').value;
+  const vendor = document.getElementById('modalVendor').value;
+  const amount = document.getElementById('modalAmount').value;
+  const category = document.getElementById('modalCategory').value;
+  const expenseName = document.getElementById('modalExpenseName').value;
+  const isCommission = expenseType === 'Commission';
+
+  if (!expenseType || !vendor || (!isCommission && !amount)) {
+    alert('Please fill in all required fields');
+    return;
+  }
+
+  const data = new FormData();
+  data.append('expense_type', expenseType);
+  data.append('category', category);
+  data.append('expense_name', expenseName);
+  data.append('description', expenseName);
+  data.append('amount', amount);
+  data.append('date', document.getElementById('modalDate').value || '{{ today_date }}');
+  data.append('vendor', document.getElementById('modalVendor').value);
+  data.append('project_number', document.getElementById('modalProject').value);
+  data.append('notes', document.getElementById('modalNotes').value);
+
+  const receiptFile = document.getElementById('modalReceipt').files[0];
+  if (receiptFile) data.append('receipt', receiptFile);
+
+  const endpoint = expenseId
+    ? `/financial/expense/${expenseId}/edit`
+    : '{{ url_for("expense_new") }}';
+
+  const btn = document.getElementById('expenseModalSaveBtn');
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  fetch(endpoint, { method: 'POST', body: data })
+    .then(r => r.json())
+    .then(res => {
+      if (res && res.success) {
+        bootstrap.Modal.getInstance(document.getElementById('expenseModal')).hide();
+        const title = expenseId ? 'Expense Updated' : 'Expense Added';
+        showSuccessToast(title, 'Your expense has been saved successfully');
+      } else {
+        alert('Error: ' + (res?.error || 'Unknown error'));
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    })
+    .catch(err => {
+      console.error('Error:', err);
+      alert('Failed to save expense: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = origText;
+    });
+}
+</script>
+
+<div class="modal fade" id="groupExpenseModal" tabindex="-1">
+  <div class="modal-dialog modal-xl" style="max-width:1050px;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title mb-1" id="groupExpenseModalTitle"><i class="bi bi-folder-plus me-2"></i>Add Group Expenses</h5>
+          <small class="text-muted" id="groupExpenseModalSubtitle">Create a group expense and add individual expense items</small>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" style="max-height:calc(100vh - 200px); overflow-y:auto;">
+        <form id="groupExpenseForm" method="POST">
+          <div class="row" style="gap:20px;">
+
+            <!-- LEFT COLUMN: GROUP EXPENSE DETAILS (NARROWER) -->
+            <div style="flex:0 0 30%; min-width:280px;">
+              <h6 style="color:#1f2937; font-weight:700; margin-bottom:12px; font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">
+                Group Expenses Details
+              </h6>
+
+              <!-- Expense Date -->
+              <div class="mb-2">
+                <label class="form-label form-label-sm fw-600" style="margin-bottom:4px;">Expense Date *</label>
+                <input type="date" id="groupExpenseDate0" class="form-control form-control-sm" required>
+              </div>
+
+              <!-- Expense Type (Fixed: Group Expenses) -->
+              <div class="mb-2">
+                <label class="form-label form-label-sm fw-600" style="margin-bottom:4px;">Expense Type *</label>
+                <input type="text" class="form-control form-control-sm" value="Group Expenses" disabled style="background:#f5f5f5; font-size:12px;">
+                <input type="hidden" id="groupType" value="Group Expenses">
+              </div>
+
+              <!-- Category -->
+              <div class="mb-2">
+                <label class="form-label form-label-sm fw-600" style="margin-bottom:4px;">Expense Category *</label>
+                <input type="text" id="groupExpenseCategory0" class="form-control form-control-sm" placeholder="e.g., Business Travel" required>
+              </div>
+
+              <!-- Expense Name -->
+              <div class="mb-2">
+                <label class="form-label form-label-sm fw-600" style="margin-bottom:4px;">Expense Name *</label>
+                <input type="text" id="groupName" class="form-control form-control-sm" placeholder="e.g., Client Visit" required>
+              </div>
+
+              <!-- Vendor/Merchant -->
+              <div class="mb-2" style="position:relative;">
+                <label class="form-label form-label-sm fw-600" style="margin-bottom:4px;">Vendor/Merchant *</label>
+                <input type="text" id="groupExpenseVendor0" class="form-control form-control-sm" placeholder="Choose or type..." required style="font-size:12px;" onkeyup="filterVendorDropdown(this.value)" onclick="showVendorDropdown()">
+                <div id="vendorDropdown" class="custom-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:white; border:1px solid #e5e7eb; border-radius:4px; max-height:200px; overflow-y:auto; z-index:1000; margin-top:2px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
+                  {% for vendor in all_vendors %}
+                  <div class="dropdown-option" data-value="{{ vendor }}" style="padding:6px 10px; cursor:pointer; border-bottom:1px solid #f0f0f0; font-size:11px;" onmouseover="this.style.backgroundColor='#f0f9ff'" onmouseout="this.style.backgroundColor='white'" onclick="selectVendor('{{ vendor }}')">{{ vendor }}</div>
+                  {% endfor %}
+                </div>
+              </div>
+
+              <!-- Link to Project -->
+              <div class="mb-2">
+                <label class="form-label form-label-sm fw-600" style="margin-bottom:4px;">Project Number</label>
+                <select id="groupExpenseProject0" class="form-select form-select-sm">
+                  <option value="">— Optional —</option>
+                  {% for p in projects %}
+                  <option value="{{ p.get('project_number','') }}">{{ p.get('project_number','') }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <!-- Notes -->
+              <div class="mb-2">
+                <label class="form-label form-label-sm fw-600" style="margin-bottom:4px;">Notes</label>
+                <textarea id="groupNotes" class="form-control form-control-sm" rows="2" placeholder="Optional notes" style="font-size:12px;"></textarea>
+              </div>
+
+              <!-- Receipt -->
+              <div class="mb-2">
+                <label class="form-label form-label-sm fw-600" style="margin-bottom:4px;">Receipt (PDF/Image)</label>
+                <input type="file" id="groupReceipt" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.gif">
+                <small class="text-muted d-block" style="font-size:10px; margin-top:2px;">PDF, JPG, PNG, GIF</small>
+                <div id="groupReceiptPreview" style="margin-top:8px;"></div>
+              </div>
+            </div>
+
+            <!-- RIGHT COLUMN: EXPENSE ITEMS -->
+            <div style="flex:1; min-width:500px;">
+              <h6 style="color:#1f2937; font-weight:700; margin-bottom:12px; font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">
+                Add Expense Item
+              </h6>
+
+              <!-- Add Item Form (Compact) -->
+              <div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:4px; padding:8px; margin-bottom:15px;">
+                <!-- Row 1: Date | Category -->
+                <div class="row g-2 mb-2">
+                  <div class="col-6">
+                    <label class="form-label form-label-sm fw-600" style="margin-bottom:4px; font-size:12px;">Date *</label>
+                    <input type="date" id="newItemDate" class="form-control form-control-sm" required style="font-size:12px; padding:6px 8px;">
+                  </div>
+                  <div class="col-6" style="position:relative;">
+                    <label class="form-label form-label-sm fw-600" style="margin-bottom:4px; font-size:12px;">Category *</label>
+                    <input type="text" id="newItemCategory" class="form-control form-control-sm" placeholder="Choose or type..." required style="font-size:11px;" onkeyup="filterCategoryDropdown(this.value)" onclick="showCategoryDropdown()">
+                    <div id="categoryDropdown" class="custom-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:white; border:1px solid #e5e7eb; border-radius:4px; max-height:200px; overflow-y:auto; z-index:1000; margin-top:2px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
+                      {% for cat in all_categories %}
+                      <div class="dropdown-option" data-value="{{ cat }}" style="padding:6px 10px; cursor:pointer; border-bottom:1px solid #f0f0f0; font-size:11px;" onmouseover="this.style.backgroundColor='#f0f9ff'" onmouseout="this.style.backgroundColor='white'" onclick="selectCategory('{{ cat }}')">{{ cat }}</div>
+                      {% endfor %}
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Row 2: Expense Name | Amount -->
+                <div class="row g-2 mb-2">
+                  <div class="col-6">
+                    <label class="form-label form-label-sm fw-600" style="margin-bottom:4px; font-size:12px;">Expense Name *</label>
+                    <input type="text" id="newItemName" class="form-control form-control-sm" placeholder="Item name" required style="font-size:12px; padding:6px 8px;">
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label form-label-sm fw-600" style="margin-bottom:4px; font-size:12px;">Amount *</label>
+                    <input type="number" id="newItemAmount" class="form-control form-control-sm" placeholder="0.00" step="0.01" required style="font-size:12px; padding:6px 8px;">
+                  </div>
+                </div>
+
+                <!-- Row 3: Description | Receipt -->
+                <div class="row g-2 mb-2">
+                  <div class="col-8">
+                    <label class="form-label form-label-sm fw-600" style="margin-bottom:4px; font-size:12px;">Description</label>
+                    <textarea id="newItemDescription" class="form-control form-control-sm" rows="1" placeholder="Optional" style="font-size:12px; padding:6px 8px;"></textarea>
+                  </div>
+                  <div class="col-4">
+                    <label class="form-label form-label-sm fw-600" style="margin-bottom:4px; font-size:12px;">
+                      <i class="bi bi-paperclip me-1" style="font-size:12px;"></i>Receipt
+                    </label>
+
+                    <!-- Current Receipt Display (Hidden by default) -->
+                    <div id="currentItemReceiptDisplay" style="display:none; background:#e0f2fe; border:1px solid #0ea5e9; border-radius:4px; padding:6px; margin-bottom:4px;">
+                      <div style="font-size:10px; color:#666; margin-bottom:3px;">Current Receipt:</div>
+                      <div style="display:flex; align-items:center; gap:4px;">
+                        <span id="currentItemReceiptName" style="font-size:10px; font-weight:600; color:#0369a1; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
+                        <button type="button" class="btn btn-xs btn-outline-danger" onclick="removeItemReceipt()" style="padding:2px 6px; font-size:9px; white-space:nowrap;">Remove</button>
+                        <button type="button" class="btn btn-xs btn-outline-primary" onclick="viewCurrentItemReceipt()" style="padding:2px 6px; font-size:9px; white-space:nowrap;">View</button>
+                      </div>
+                    </div>
+
+                    <!-- File Upload -->
+                    <input type="file" id="newItemReceipt" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.gif" style="font-size:10px;">
+                  </div>
+                </div>
+
+                <!-- Row 4: Buttons (Right-aligned, small) -->
+                <div style="display:flex; justify-content:flex-end; gap:8px;">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearAddItemForm()" style="padding:6px 14px; font-size:11px; font-weight:600; white-space:nowrap; border-radius:20px;">
+                    <i class="bi bi-x-lg me-1"></i>Cancel
+                  </button>
+                  <button type="button" id="addItemButton" class="btn btn-sm btn-success" onclick="addExpenseToGroupTable()" style="padding:6px 16px; font-size:11px; font-weight:600; white-space:nowrap; border-radius:20px;">
+                    <i class="bi bi-plus-lg me-1"></i>Add Expense Item
+                  </button>
+                </div>
+              </div>
+
+              <!-- Expense Items Table (Hidden until first item added) -->
+              <div id="expenseItemsSection" style="display:none;">
+                <h6 style="color:#1f2937; font-weight:700; margin-bottom:10px; font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">
+                  Expense Items
+                </h6>
+                <div class="table-responsive mb-3" style="max-height:280px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px;">
+                  <table class="table table-sm mb-0" style="font-size:12px; padding:6px 8px;">
+                    <thead style="background:#f5f5f5; position:sticky; top:0;">
+                      <tr>
+                        <th style="width:12%;">Date</th>
+                        <th style="width:15%;">Category</th>
+                        <th style="width:20%;">Expense Name</th>
+                        <th style="width:12%; text-align:right;">Amount</th>
+                        <th style="width:25%;">Description</th>
+                        <th style="width:8%; text-align:right;">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="expensesTableBody">
+                      <!-- Expense rows will be added here -->
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Total -->
+                <div style="text-align:right; padding:12px; background:#f0fdf4; border:1px solid #86efac; border-radius:4px;">
+                  <div style="font-size:12px; color:#666; margin-bottom:6px; text-transform:uppercase; font-weight:600;">Total Expense</div>
+                  <div style="font-size:28px; font-weight:700; color:#0f766e;" id="groupTotalDisplay">$0.00 USD</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-teal" id="groupExpenseSaveBtn" onclick="submitGroupExpenseModal()">
+          <i class="bi bi-check-circle me-1"></i>Save Expense
         </button>
       </div>
     </div>
@@ -2220,8 +2508,160 @@ function openAddExpenseModal() {
   new bootstrap.Modal(document.getElementById('expenseModal')).show();
 }
 
+// Handle edit button click - fetch data from server
+function handleEditExpense(expId) {
+  fetch(`/api/expense/${expId}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data && data.success && data.expense) {
+        const expense = data.expense;
+
+        // Check if it's a group expense
+        if (expense.is_group_expense) {
+          // Open group expense modal for editing
+          editGroupExpenseModal(expId, expense);
+        } else {
+          // Open regular expense modal for editing
+          editExpenseModal(expId, expense);
+        }
+      } else {
+        alert('Error loading expense');
+      }
+    })
+    .catch(err => {
+      console.error('Error fetching expense:', err);
+      alert('Error loading expense for edit');
+    });
+}
+
+// Edit group expense - open group dialog with pre-filled data
+function editGroupExpenseModal(expId, expData) {
+  try {
+    window.editingGroupExpenseId = expId;
+
+    // Change modal title and subtitle
+    document.getElementById('groupExpenseModalTitle').innerHTML = '<i class="bi bi-folder-open me-2"></i>Edit Group Expenses';
+    document.getElementById('groupExpenseModalSubtitle').textContent = 'Edit group expense details and add/modify individual expense items';
+    document.getElementById('groupExpenseSaveBtn').textContent = 'Update Expense';
+
+    // Reset form
+    document.getElementById('groupExpenseForm').reset();
+
+    // Pre-fill GROUP EXPENSE DETAILS only
+    document.getElementById('groupType').value = expData.expense_type || '';
+    document.getElementById('groupExpenseCategory0').value = expData.category || '';
+    document.getElementById('groupName').value = expData.expense_name || '';
+    document.getElementById('groupExpenseDate0').value = expData.date || '';
+    document.getElementById('groupExpenseVendor0').value = expData.vendor || '';
+    document.getElementById('groupExpenseProject0').value = expData.project_number || '';
+    document.getElementById('groupNotes').value = expData.notes || '';
+
+    // Clear expense items table
+    document.getElementById('expensesTableBody').innerHTML = '';
+    window.expenseCounterInGroup = 0;
+
+    // Load existing child expenses into the table
+    if (!window.groupItemData) window.groupItemData = {};
+    if (expData.child_expenses && Array.isArray(expData.child_expenses)) {
+      expData.child_expenses.forEach((childExp, idx) => {
+        const index = window.expenseCounterInGroup++;
+
+        // Store in groupItemData for updating later
+        window.groupItemData[index] = {
+          date: childExp.date,
+          category: childExp.category,
+          expense_name: childExp.expense_name,
+          amount: childExp.amount,
+          description: childExp.description || '',
+          receipt_filename: childExp.receipt_filename || ''
+        };
+
+        const row = `
+          <tr class="expense-row-${index}">
+            <td style="font-size:12px; white-space:nowrap; padding:8px;">
+              ${childExp.date || '—'}
+            </td>
+            <td style="font-size:12px; padding:8px;">
+              ${childExp.category || '—'}
+            </td>
+            <td style="font-size:12px; padding:8px;">
+              ${childExp.expense_name || '—'}
+            </td>
+            <td style="font-size:12px; text-align:right; padding:8px;">
+              $${parseFloat(childExp.amount || 0).toFixed(2)}
+            </td>
+            <td style="font-size:12px; color:#666; padding:8px;">
+              ${childExp.description || '—'}
+            </td>
+            <td style="padding:8px; white-space:nowrap;">
+              <div style="display:flex; justify-content:flex-end; gap:4px; align-items:center;">
+                ${childExp.receipt_filename ? `<button type="button" class="btn btn-sm btn-link p-0" onclick="viewExistingItemReceipt('${expId}', '${(childExp.receipt_filename || '').replace(/'/g, "\\'")}')" title="View Receipt" style="color:#0ea5e9; font-size:14px;"><i class="bi bi-paperclip"></i></button>` : ''}
+                <button type="button" class="btn btn-sm btn-link text-primary p-0" onclick="editExistingItem(${index}, '${(childExp.expense_name || '').replace(/'/g, "\\'")}', '${(childExp.category || '').replace(/'/g, "\\'")}', '${childExp.date || ''}', ${childExp.amount || 0}, '${(childExp.description || '').replace(/'/g, "\\'")}', '${(childExp.receipt_filename || '').replace(/'/g, "\\'")}')" title="Edit">
+                  <i class="bi bi-pencil" style="color:#0ea5e9; font-size:14px;"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-link text-danger p-0" onclick="removeExpenseFromGroup(${index})" title="Delete">
+                  <i class="bi bi-trash" style="color:#ef4444; font-size:14px;"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+        document.getElementById('expensesTableBody').insertAdjacentHTML('beforeend', row);
+      });
+
+      // Calculate total from existing items
+      let total = 0;
+      expData.child_expenses.forEach((item) => {
+        total += item.amount || 0;
+      });
+      document.getElementById('groupTotalDisplay').textContent = '$' + total.toFixed(2) + ' USD';
+
+      // Show expense items section since there are child expenses
+      document.getElementById('expenseItemsSection').style.display = 'block';
+    } else {
+      // Hide if no items
+      document.getElementById('expenseItemsSection').style.display = 'none';
+      document.getElementById('groupTotalDisplay').textContent = '$0.00 USD';
+    }
+
+    // Display group receipt if it exists
+    const groupReceiptPreview = document.getElementById('groupReceiptPreview');
+    if (expData.receipt_filename) {
+      groupReceiptPreview.innerHTML = `
+        <div style="padding:8px; background:#f0f9ff; border:1px solid #bfdbfe; border-radius:4px; font-size:12px;">
+          <div style="color:#0369a1; margin-bottom:4px;">
+            📎 <strong>${expData.receipt_filename}</strong>
+          </div>
+          <button type="button" class="btn btn-sm btn-link text-primary p-0 me-2" onclick="viewGroupReceiptFile('${expId}')" style="font-size:11px;">
+            View
+          </button>
+          <button type="button" class="btn btn-sm btn-link text-danger p-0" onclick="removeGroupReceipt()" style="font-size:11px;">
+            Remove
+          </button>
+        </div>
+      `;
+    } else {
+      groupReceiptPreview.innerHTML = '';
+    }
+
+    // Show group expense dialog
+    const modal = new bootstrap.Modal(document.getElementById('groupExpenseModal'));
+    modal.show();
+  } catch (err) {
+    console.error('Error in editGroupExpenseModal:', err);
+    alert('Error loading group expense for edit');
+  }
+}
+
 function editExpenseModal(expId, expData) {
   try {
+    // Check if this is a group expense
+    const isGroupExpense = expData.is_group_expense || false;
+    if (isGroupExpense) {
+      editGroupExpenseModal(expId, expData);
+      return;
+    }
+
     window.editingExpenseId = expId;
     const isCommission = expData.is_commission || false;
 
@@ -2233,16 +2673,22 @@ function editExpenseModal(expId, expData) {
       ? 'Update Commission'
       : 'Update Expense';
     document.getElementById('expenseModalSaveBtn').className = 'btn btn-warning';
+    // IMPORTANT: Set exchange rate FIRST before setting amount (to prevent oninput from using wrong rate)
+    currentExchangeRate = parseFloat(expData.exchange_rate) || companyBdtExchangeRate;
+    console.log('Commission/Expense exchange_rate:', currentExchangeRate);
+
     document.getElementById('modalExpenseType').value = expData.expense_type || '';
     document.getElementById('modalCategory').value = expData.category || '';
     document.getElementById('modalExpenseName').value = expData.expense_name || expData.description || '';
     document.getElementById('modalAmount').value = expData.amount || '';
-    updateModalBdtDisplay();
     document.getElementById('modalDate').value = expData.date || '';
     document.getElementById('modalVendor').value = expData.vendor || '';
     document.getElementById('modalProject').value = expData.project_number || '';
     document.getElementById('modalNotes').value = expData.notes || '';
     receiptFile = null;
+
+    // Update BDT display with correct exchange rate
+    updateModalBdtDisplay();
 
     // For commissions, disable amount field and show note
     const amountField = document.getElementById('modalAmount');
@@ -2301,6 +2747,17 @@ function editExpenseModal(expId, expData) {
       });
 
     new bootstrap.Modal(document.getElementById('expenseModal')).show();
+
+    // Verify vendor value is still there after modal opens
+    setTimeout(() => {
+      const vendorValue = document.getElementById('modalVendor').value;
+      console.log('After modal open - modalVendor value:', vendorValue);
+      console.log('After modal open - all form values:', {
+        type: document.getElementById('modalExpenseType').value,
+        vendor: vendorValue,
+        amount: document.getElementById('modalAmount').value
+      });
+    }, 100);
   } catch (err) {
     console.error('Error in editExpenseModal:', err);
     alert('Error loading expense for edit');
@@ -2341,9 +2798,8 @@ function submitCommissionExpenseModal() {
   // Note: Commission amount cannot be edited here - it's managed in Commission tab
   // We only allow editing of name, date, and notes
 
-  alert('Commission details updated.\n\nNote: To change the commission amount, edit the commission rate in the Commission tab.');
+  showSuccessToast('Commission Updated', 'Commission details have been saved successfully');
   bootstrap.Modal.getInstance(document.getElementById('commissionExpenseModal')).hide();
-  location.reload();
 }
 
 var _pendingReceiptDeleteId = null;
@@ -2607,6 +3063,522 @@ function previewReceipt() {
   reader.readAsDataURL(file);
 }
 
+// Track group expenses being added
+window.groupExpensesBeingAdded = [];
+window.expenseCounterInGroup = 0;
+
+// Open Add Group Expenses Modal
+function openAddGroupModal() {
+  // Reset modal title and button for new group expense
+  document.getElementById('groupExpenseModalTitle').innerHTML = '<i class="bi bi-folder-plus me-2"></i>Add Group Expenses';
+  document.getElementById('groupExpenseModalSubtitle').textContent = 'Create a group expense and add individual expense items';
+  document.getElementById('groupExpenseSaveBtn').textContent = 'Save Expense';
+
+  document.getElementById('groupExpenseForm').reset();
+  window.expenseCounterInGroup = 0;
+  window.groupItemData = {};
+  document.getElementById('expensesTableBody').innerHTML = '';
+  document.getElementById('groupTotalDisplay').textContent = '$0.00 USD';
+  document.getElementById('groupReceiptPreview').innerHTML = '';
+
+  // Set today's date for group expense date
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('groupExpenseDate0').value = today;
+  document.getElementById('newItemDate').value = today;
+
+  const modal = new bootstrap.Modal(document.getElementById('groupExpenseModal'));
+  modal.show();
+}
+
+// Show category dropdown
+function showCategoryDropdown() {
+  document.getElementById('categoryDropdown').style.display = 'block';
+}
+
+// Filter category dropdown options
+function filterCategoryDropdown(value) {
+  const dropdown = document.getElementById('categoryDropdown');
+  const options = dropdown.querySelectorAll('.dropdown-option');
+
+  dropdown.style.display = value || options.length > 0 ? 'block' : 'none';
+
+  options.forEach(option => {
+    if (option.textContent.toLowerCase().includes(value.toLowerCase())) {
+      option.style.display = 'block';
+    } else {
+      option.style.display = 'none';
+    }
+  });
+}
+
+// Select category from dropdown
+function selectCategory(value) {
+  document.getElementById('newItemCategory').value = value;
+  document.getElementById('categoryDropdown').style.display = 'none';
+}
+
+// Show vendor dropdown
+function showVendorDropdown() {
+  document.getElementById('vendorDropdown').style.display = 'block';
+}
+
+// Filter vendor dropdown options
+function filterVendorDropdown(value) {
+  const dropdown = document.getElementById('vendorDropdown');
+  const options = dropdown.querySelectorAll('.dropdown-option');
+
+  dropdown.style.display = value || options.length > 0 ? 'block' : 'none';
+
+  options.forEach(option => {
+    if (option.textContent.toLowerCase().includes(value.toLowerCase())) {
+      option.style.display = 'block';
+    } else {
+      option.style.display = 'none';
+    }
+  });
+}
+
+// Select vendor from dropdown
+function selectVendor(value) {
+  document.getElementById('groupExpenseVendor0').value = value;
+  document.getElementById('vendorDropdown').style.display = 'none';
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(event) {
+  const categoryDropdown = document.getElementById('categoryDropdown');
+  const categoryInput = document.getElementById('newItemCategory');
+  const vendorDropdown = document.getElementById('vendorDropdown');
+  const vendorInput = document.getElementById('groupExpenseVendor0');
+
+  if (categoryDropdown && categoryInput && !categoryDropdown.contains(event.target) && !categoryInput.contains(event.target)) {
+    categoryDropdown.style.display = 'none';
+  }
+
+  if (vendorDropdown && vendorInput && !vendorDropdown.contains(event.target) && !vendorInput.contains(event.target)) {
+    vendorDropdown.style.display = 'none';
+  }
+});
+
+// Clear add item form
+function clearAddItemForm() {
+  document.getElementById('newItemCategory').value = '';
+  document.getElementById('newItemName').value = '';
+  document.getElementById('newItemAmount').value = '';
+  document.getElementById('newItemDescription').value = '';
+  document.getElementById('newItemReceipt').value = '';
+
+  // Set today's date for new item
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('newItemDate').value = today;
+
+  // Reset editing index and button text
+  window.editingItemIndex = null;
+  const button = document.getElementById('addItemButton');
+  button.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Add Expense Item';
+
+  // Hide current receipt display and show file input
+  document.getElementById('currentItemReceiptDisplay').style.display = 'none';
+  document.getElementById('newItemReceipt').style.display = 'block';
+  window.currentItemReceipt = null;
+
+  document.getElementById('categoryDropdown').style.display = 'none';
+}
+
+// Track which item is being edited
+window.editingItemIndex = null;
+
+// Add expense item from form to table
+function addExpenseToGroupTable() {
+  const category = document.getElementById('newItemCategory').value.trim();
+  const itemName = document.getElementById('newItemName').value.trim();
+  const itemDate = document.getElementById('newItemDate').value;
+  const itemAmount = document.getElementById('newItemAmount').value.trim();
+  const itemDescription = document.getElementById('newItemDescription').value.trim();
+  const itemReceipt = document.getElementById('newItemReceipt').files[0];
+
+  if (!category || !itemName || !itemDate || !itemAmount) {
+    alert('Please fill in Category, Item Name, Date, and Amount');
+    return;
+  }
+
+  const amount = parseFloat(itemAmount);
+  if (isNaN(amount) || amount <= 0) {
+    alert('Please enter a valid amount');
+    return;
+  }
+
+  // If editing, update existing item; otherwise add new
+  if (window.editingItemIndex !== null) {
+    const index = window.editingItemIndex;
+
+    // Update item data
+    if (!window.groupItemData) window.groupItemData = {};
+    window.groupItemData[index] = {
+      date: itemDate,
+      category: category,
+      expense_name: itemName,
+      amount: amount,
+      description: itemDescription,
+      receipt: itemReceipt || window.groupItemData[index]?.receipt,
+      receipt_filename: itemReceipt?.name || window.groupItemData[index]?.receipt_filename
+    };
+
+    // Update table row
+    const dateParts = itemDate.split('-');
+    const formattedDate = dateParts.length === 3 ? `${dateParts[1]}-${dateParts[2]}-${dateParts[0]}` : itemDate;
+    const descDisplay = itemDescription ? itemDescription.substring(0, 25) + (itemDescription.length > 25 ? '...' : '') : '—';
+    const hasReceipt = window.groupItemData[index].receipt || window.groupItemData[index].receiptName ? true : false;
+
+    const row = `
+      <td style="white-space:nowrap; font-size:11px;">${formattedDate}</td>
+      <td style="font-size:12px; padding:6px 8px;">${category}</td>
+      <td style="font-size:12px; padding:6px 8px;">${itemName}</td>
+      <td style="text-align:right; font-size:11px;">$${amount.toFixed(2)}</td>
+      <td style="font-size:10px; color:#666;">${descDisplay}</td>
+      <td style="white-space:nowrap;">
+        ${hasReceipt ? `<button type="button" class="btn btn-link p-0 me-2" onclick="viewItemReceipt(${index})" title="View Receipt" style="font-size:14px; color:#0ea5e9;"><i class="bi bi-paperclip"></i></button>` : ''}
+        <button type="button" class="btn btn-link p-0 me-2" onclick="editExpenseItem(${index})" title="Edit" style="font-size:14px; color:#0ea5e9;">
+          <i class="bi bi-pencil"></i>
+        </button>
+        <button type="button" class="btn btn-link p-0" onclick="removeExpenseFromGroup(${index})" title="Delete" style="font-size:14px; color:#ef4444;">
+          <i class="bi bi-trash"></i>
+        </button>
+      </td>
+    `;
+
+    const rowElement = document.querySelector(`.expense-row-${index}`);
+    if (rowElement) {
+      rowElement.innerHTML = row;
+    }
+
+    window.editingItemIndex = null;
+  } else {
+    // Add new item
+    const index = window.expenseCounterInGroup++;
+
+    // Store item data with receipt file
+    if (!window.groupItemData) window.groupItemData = {};
+    window.groupItemData[index] = {
+      date: itemDate,
+      category: category,
+      expense_name: itemName,
+      amount: amount,
+      description: itemDescription,
+      receipt: itemReceipt,
+      receipt_filename: itemReceipt?.name
+    };
+
+    // Format date as MM-DD-YYYY
+    const dateParts = itemDate.split('-');
+    const formattedDate = dateParts.length === 3 ? `${dateParts[1]}-${dateParts[2]}-${dateParts[0]}` : itemDate;
+
+    // Add row to table
+    const descDisplay = itemDescription ? itemDescription.substring(0, 25) + (itemDescription.length > 25 ? '...' : '') : '—';
+    const hasReceipt = itemReceipt ? true : false;
+
+    const row = `
+      <tr class="expense-row-${index}">
+        <td style="white-space:nowrap; font-size:11px;">${formattedDate}</td>
+        <td style="font-size:12px; padding:6px 8px;">${category}</td>
+        <td style="font-size:12px; padding:6px 8px;">${itemName}</td>
+        <td style="text-align:right; font-size:11px;">$${amount.toFixed(2)}</td>
+        <td style="font-size:10px; color:#666;">${descDisplay}</td>
+        <td style="white-space:nowrap;">
+          ${hasReceipt ? `<button type="button" class="btn btn-link p-0 me-2" onclick="viewItemReceipt(${index})" title="View Receipt" style="font-size:14px; color:#0ea5e9;"><i class="bi bi-paperclip"></i></button>` : ''}
+          <button type="button" class="btn btn-link p-0 me-2" onclick="editExpenseItem(${index})" title="Edit" style="font-size:14px; color:#0ea5e9;">
+            <i class="bi bi-pencil"></i>
+          </button>
+          <button type="button" class="btn btn-link p-0" onclick="removeExpenseFromGroup(${index})" title="Delete" style="font-size:14px; color:#ef4444;">
+            <i class="bi bi-trash"></i>
+          </button>
+        </td>
+      </tr>
+    `;
+    document.getElementById('expensesTableBody').insertAdjacentHTML('beforeend', row);
+
+    // Show expense items section
+    document.getElementById('expenseItemsSection').style.display = 'block';
+  }
+
+  // Clear form
+  clearAddItemForm();
+
+  updateGroupTotal();
+}
+
+// Edit existing item from initial group load (when editing a group expense)
+function editExistingItem(index, expenseName, category, date, amount, description, receiptFilename) {
+  // Mark this item as being edited
+  window.editingItemIndex = index;
+
+  // Change button text to "Update Expense Item"
+  const button = document.getElementById('addItemButton');
+  button.innerHTML = '<i class="bi bi-pencil me-1"></i>Update Expense Item';
+
+  // Populate form with item data
+  document.getElementById('newItemDate').value = date;
+  document.getElementById('newItemCategory').value = category;
+  document.getElementById('newItemName').value = expenseName;
+  document.getElementById('newItemAmount').value = amount;
+  document.getElementById('newItemDescription').value = description;
+
+  // Show current receipt display if exists
+  const receiptDisplay = document.getElementById('currentItemReceiptDisplay');
+  const receiptInput = document.getElementById('newItemReceipt');
+  if (receiptFilename) {
+    document.getElementById('currentItemReceiptName').textContent = receiptFilename;
+    receiptDisplay.style.display = 'block';
+    receiptInput.style.display = 'none';
+    window.currentItemReceiptFilename = receiptFilename;
+  } else {
+    receiptDisplay.style.display = 'none';
+    receiptInput.style.display = 'block';
+  }
+
+  // Scroll to form
+  document.getElementById('newItemDate').scrollIntoView({ behavior: 'smooth' });
+}
+
+// Edit expense item
+function editExpenseItem(index) {
+  const item = window.groupItemData[index];
+  if (!item) return;
+
+  // Mark this item as being edited
+  window.editingItemIndex = index;
+
+  // Change button text to "Update Expense Item"
+  const button = document.getElementById('addItemButton');
+  button.innerHTML = '<i class="bi bi-pencil me-1"></i>Update Expense Item';
+
+  // Populate form with item data
+  document.getElementById('newItemDate').value = item.itemDate;
+  document.getElementById('newItemCategory').value = item.category;
+  document.getElementById('newItemName').value = item.itemName;
+  document.getElementById('newItemAmount').value = item.amount;
+  document.getElementById('newItemDescription').value = item.itemDescription;
+
+  // Show current receipt display if exists
+  const receiptInput = document.getElementById('newItemReceipt');
+  const receiptDisplay = document.getElementById('currentItemReceiptDisplay');
+
+  if (item.receipt) {
+    // Store current receipt in window for reference
+    window.currentItemReceipt = item.receipt;
+
+    // Show current receipt display
+    document.getElementById('currentItemReceiptName').textContent = item.receiptName || 'Receipt File';
+    receiptDisplay.style.display = 'block';
+  } else {
+    receiptDisplay.style.display = 'none';
+  }
+
+  // Scroll to form
+  document.getElementById('newItemDate').scrollIntoView({ behavior: 'smooth' });
+}
+
+// View item receipt in table
+function viewItemReceipt(index) {
+  const item = window.groupItemData[index];
+  if (!item || !item.receipt) {
+    alert('No receipt available for this item');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const blob = new Blob([e.target.result], { type: item.receipt.type });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+  };
+  reader.readAsArrayBuffer(item.receipt);
+}
+
+// Remove receipt from current item being edited
+function removeItemReceipt() {
+  const index = window.editingItemIndex;
+  if (index !== null && window.groupItemData && window.groupItemData[index]) {
+    window.groupItemData[index].receipt = null;
+    window.groupItemData[index].receiptName = null;
+    window.currentItemReceipt = null;
+  }
+
+  // Hide current receipt display and show file input
+  document.getElementById('currentItemReceiptDisplay').style.display = 'none';
+  document.getElementById('newItemReceipt').style.display = 'block';
+  document.getElementById('newItemReceipt').value = '';
+}
+
+// View receipt for current item being edited
+function viewCurrentItemReceipt() {
+  if (!window.currentItemReceipt) {
+    alert('No receipt available');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const blob = new Blob([e.target.result], { type: window.currentItemReceipt.type });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+  };
+  reader.readAsArrayBuffer(window.currentItemReceipt);
+}
+
+// Remove expense from table
+function removeExpenseFromGroup(index) {
+  document.querySelector(`.expense-row-${index}`)?.remove();
+  if (window.groupItemData) delete window.groupItemData[index];
+  updateGroupTotal();
+
+  // Hide expense items section if no items left
+  if (!window.groupItemData || Object.keys(window.groupItemData).length === 0) {
+    document.getElementById('expenseItemsSection').style.display = 'none';
+  }
+}
+
+// Update total in the display
+function updateGroupTotal() {
+  let total = 0;
+  if (window.groupItemData) {
+    for (const idx in window.groupItemData) {
+      const item = window.groupItemData[idx];
+      total += item.amount || 0;
+    }
+  }
+  document.getElementById('groupTotalDisplay').textContent = '$' + total.toFixed(2) + ' USD';
+}
+
+// View group receipt from server
+function viewGroupReceiptFile(expId) {
+  fetch(`/api/expense/${expId}/receipt`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.success && data.receipt) {
+        const modal = document.createElement('div');
+        const dataUrl = `data:${data.fileType || 'image/jpeg'};base64,${data.receipt}`;
+        modal.innerHTML = `
+          <div style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; z-index:9999;" onclick="this.remove();">
+            <div onclick="event.stopPropagation();" style="background:white; padding:20px; border-radius:8px; max-width:90%; max-height:90%; overflow:auto;">
+              ${data.fileType && data.fileType.startsWith('image/') ? `<img src="${dataUrl}" style="max-width:100%; max-height:600px;">` : `<iframe src="${dataUrl}" style="width:600px; height:600px; border:none;"></iframe>`}
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modal);
+      }
+    })
+    .catch(err => console.error('Error loading receipt:', err));
+}
+
+// Remove group receipt
+function removeGroupReceipt() {
+  document.getElementById('groupReceipt').value = '';
+  document.getElementById('groupReceiptPreview').innerHTML = '';
+}
+
+// View existing item receipt (for items when editing a group)
+function viewExistingItemReceipt(expId, receiptFilename) {
+  // For existing items, the receipt is stored in the expense_receipts or associated with the group
+  // Since we're viewing an item that's part of a group, we can try to fetch it
+  // For now, show a simple message as item receipts are stored as part of the group structure
+  alert(`Receipt: ${receiptFilename}\n\nItem receipts are managed within the group expense.`);
+}
+
+// Submit Group Expenses Form with all expenses from table
+function submitGroupExpenseModal() {
+  const expenseName = document.getElementById('groupName').value.trim();
+  const category = document.getElementById('groupExpenseCategory0').value.trim();
+  const vendor = document.getElementById('groupExpenseVendor0').value.trim();
+  const projectNumber = document.getElementById('groupExpenseProject0').value.trim();
+  const expenseDate = document.getElementById('groupExpenseDate0').value;
+  const notes = document.getElementById('groupNotes').value.trim();
+
+  if (!expenseName || !category || !vendor || !expenseDate) {
+    alert('Please fill in Expense Name, Category, Vendor, and Date');
+    return;
+  }
+
+  if (!window.groupItemData || Object.keys(window.groupItemData).length === 0) {
+    alert('Please add at least one expense item');
+    return;
+  }
+
+  // Collect all child expenses from stored data
+  const childExpenses = [];
+  let totalAmount = 0;
+
+  for (const idx in window.groupItemData) {
+    const item = window.groupItemData[idx];
+    totalAmount += item.amount;
+
+    childExpenses.push({
+      category: item.category,
+      expense_name: item.itemName,
+      amount: item.amount,
+      date: item.itemDate || new Date().toISOString().split('T')[0],
+      description: item.itemDescription || '',
+      receipt_filename: item.receiptName || ''
+    });
+  }
+
+  const data = new FormData();
+  data.append('expense_type', 'Group Expenses');
+  data.append('category', category);
+  data.append('expense_name', expenseName);
+  data.append('description', expenseName);
+  data.append('amount', totalAmount);
+  data.append('date', expenseDate || new Date().toISOString().split('T')[0]);
+  data.append('vendor', vendor);
+  data.append('project_number', projectNumber);
+  data.append('notes', notes);
+  data.append('is_group_expense', 'true');
+  data.append('child_expenses', JSON.stringify(childExpenses));
+
+  // Add group-level receipt
+  const receiptFile = document.getElementById('groupReceipt').files[0];
+  if (receiptFile) data.append('receipt', receiptFile);
+
+  // Add item receipts
+  for (const idx in window.groupItemData) {
+    const item = window.groupItemData[idx];
+    if (item.receipt) data.append(`item_receipt_${idx}`, item.receipt);
+  }
+
+  const btn = event.target;
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  const isEditing = !!window.editingGroupExpenseId;
+  const endpoint = isEditing
+    ? `/financial/expense/${window.editingGroupExpenseId}/edit`
+    : '{{ url_for("expense_new") }}';
+
+  fetch(endpoint, { method: 'POST', body: data })
+    .then(r => r.json())
+    .then(res => {
+      if (res && res.success) {
+        bootstrap.Modal.getInstance(document.getElementById('groupExpenseModal')).hide();
+        const title = isEditing ? 'Group Expense Updated' : 'Group Expense Created';
+        const itemCount = childExpenses.length;
+        const itemText = itemCount === 1 ? 'expense item' : 'expense items';
+        const message = `${itemCount} ${itemText} saved successfully`;
+        showSuccessToast(title, message);
+      } else {
+        alert('Error: ' + (res?.error || 'Unknown error'));
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    })
+    .catch(err => {
+      console.error('Error:', err);
+      alert('Failed to ' + (isEditing ? 'update' : 'create') + ' group expense: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = origText;
+    });
+}
+
 function submitExpenseModal() {
   const expenseId = window.editingExpenseId;
   const expenseType = document.getElementById('modalExpenseType').value;
@@ -2659,7 +3631,8 @@ function submitExpenseModal() {
           vendorList.sort();
         }
         bootstrap.Modal.getInstance(document.getElementById('expenseModal')).hide();
-        location.reload();
+        const title = expenseId ? 'Expense Updated' : 'Expense Added';
+        showSuccessToast(title, 'Your expense has been saved successfully');
       } else {
         alert('Error: ' + (res?.error || 'Unknown error'));
         btn.disabled = false;
@@ -2838,7 +3811,7 @@ function viewReceipt(expId) {
             <td class="text-end">
               {{ currency_symbol }}{{ "{:,.2f}".format(row.base_contract or row.contract_value) }}
               {% if row.co_total and row.co_total > 0 %}
-              <div class="text-muted" style="font-size:11px;">+{{ currency_symbol }}{{ "{:,.0f}".format(row.co_total) }} CO</div>
+              <div class="text-muted" style="font-size:12px; padding:6px 8px;">+{{ currency_symbol }}{{ "{:,.0f}".format(row.co_total) }} CO</div>
               {% endif %}
             </td>
             <td class="text-end text-teal fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format(row.invoiced) }}</td>
@@ -4240,7 +5213,7 @@ function viewReceipt(expId) {
       <h6 class="section-heading mb-0"><i class="bi bi-folder2-open me-1"></i>By Project</h6>
       <div class="d-flex gap-2 flex-wrap align-items-center">
         {% if user_role == 'admin' %}
-        <button class="btn btn-xs btn-outline-secondary" onclick="backfillCommissions(this)" title="Sync all existing projects" style="font-size:11px;">
+        <button class="btn btn-xs btn-outline-secondary" onclick="backfillCommissions(this)" title="Sync all existing projects" style="font-size:12px; padding:6px 8px;">
           <i class="bi bi-arrow-repeat me-1"></i>Sync
         </button>
         {% endif %}
@@ -4275,7 +5248,7 @@ function viewReceipt(expId) {
             <th class="text-end" style="color:#16A34A;">Adjusted</th>
             <th class="text-end" style="color:#2563EB;">Remaining Due</th>
             <th class="text-center">Status</th>
-            {% if user_role in ('admin', 'finance', 'accountant') %}<th class="text-center">Action</th>{% endif %}
+            {% if user_role in ('admin', 'finance', 'accountant') %}<th class="text-right">Action</th>{% endif %}
           </tr>
         </thead>
         <tbody>
@@ -4290,7 +5263,7 @@ function viewReceipt(expId) {
             <td>{{ pc.get('company_name','—') }}</td>
             <td>
               <div class="fw-semibold">{{ pc.get('salesperson','—') }}</div>
-              <div class="text-muted" style="font-size:11px;">{{ pc.get('salesperson_email','') }}</div>
+              <div class="text-muted" style="font-size:12px; padding:6px 8px;">{{ pc.get('salesperson_email','') }}</div>
             </td>
             <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format(pc.get('contract_value',0)|float) }}</td>
             <td class="text-center comm-rate-cell" id="rateCell-{{ pc.firebase_id }}"
@@ -4410,7 +5383,7 @@ function viewReceipt(expId) {
               <button class="btn btn-xs btn-outline-secondary"
                       disabled
                       title="Status locked: All commission covered by advance deductions. Remove adjustments to unlock."
-                      style="font-size:11px;">
+                      style="font-size:12px; padding:6px 8px;">
                 <i class="bi bi-lock-fill me-1"></i>Locked
               </button>
               {% else %}
@@ -4418,13 +5391,13 @@ function viewReceipt(expId) {
               <button class="btn btn-xs btn-outline-secondary"
                       onclick="commProjectToggle('{{ pc.firebase_id }}','unpay',this)"
                       title="Mark as Pending"
-                      style="font-size:11px;">Mark Pending</button>
+                      style="font-size:12px; padding:6px 8px;">Mark Pending</button>
               {% else %}
               <button class="btn btn-xs btn-outline-success"
                       id="markPaidBtn-{{ pc.firebase_id }}"
                       onclick="showMarkPaidDateModal('{{ pc.firebase_id }}', this)"
                       title="Mark as Paid"
-                      style="font-size:11px;">Mark Paid</button>
+                      style="font-size:12px; padding:6px 8px;">Mark Paid</button>
               {% endif %}
               {% endif %}
             </td>
@@ -5362,19 +6335,114 @@ function updateExpenseBdtDisplay() {
   }
 }
 
-// Display BDT equivalent for modal edit form
+// Display BDT equivalent for modal edit form (disabled - BDT display removed from UI)
 function updateModalBdtDisplay() {
-  const amountInput = document.getElementById('modalAmount');
-  const bdtDisplay = document.getElementById('modalBdtDisplay');
-  const exchangeRate = {{ bdt_exchange_rate }};
+  // BDT display element removed from modal, function kept for compatibility
+}
 
-  if (amountInput && amountInput.value) {
-    const usdAmount = parseFloat(amountInput.value) || 0;
-    const bdtAmount = (usdAmount * exchangeRate).toFixed(2);
-    bdtDisplay.textContent = `৳${bdtAmount.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} BDT`;
-  } else {
-    bdtDisplay.textContent = '';
-  }
+// Make expense rows clickable to open details page
+function makeExpenseRowsClickable() {
+  document.querySelectorAll('#expenseTableBody tr.expense-row').forEach(row => {
+    row.style.cursor = 'pointer';
+    row.addEventListener('click', function(e) {
+      if (e.target.tagName === 'BUTTON' || e.target.closest('button') !== null) {
+        return;
+      }
+      const expenseId = this.getAttribute('data-expense-id');
+      if (expenseId) {
+        sessionStorage.setItem('lastExpensePage', expenseCurrentPage || 1);
+        window.location.href = `/financial/expense/${expenseId}`;
+      }
+    });
+  });
+}
+
+// Load and display expense groups in the table
+function loadExpenseGroups() {
+  fetch('/api/expense-groups')
+    .then(r => r.json())
+    .then(data => {
+      if (data.success && data.groups) {
+        const tbody = document.getElementById('expenseTableBody');
+        if (!tbody) return;
+
+        data.groups.forEach(group => {
+          const row = document.createElement('tr');
+          row.className = 'group-row';
+          row.setAttribute('data-group-id', group.group_id);
+          row.style.cursor = 'pointer';
+          row.style.backgroundColor = '#f0f9ff';
+          row.onclick = function(e) {
+            if (e.target.tagName !== 'BUTTON' && e.target.closest('button') === null) {
+              sessionStorage.setItem('lastExpensePage', expenseCurrentPage || 1);
+              window.location.href = `/financial/expense-group/${group.group_id}`;
+            }
+          };
+
+          row.innerHTML = `
+            <td><i class="bi bi-folder me-2" style="color:#0ea5e9;"></i><strong>${group.group_name || 'Group'}</strong></td>
+            <td>${group.group_type || '—'}</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td style="text-align:right;"><strong>$${parseFloat(group.total_amount || 0).toFixed(2)}</strong></td>
+            <td style="text-align:center;"><span class="badge bg-info">${group.expense_count || 0} items</span></td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+          `;
+          tbody.appendChild(row);
+        });
+      }
+    })
+    .catch(err => console.error('Error loading expense groups:', err));
+}
+
+// Make rows clickable when page loads
+document.addEventListener('DOMContentLoaded', function() {
+  makeExpenseRowsClickable();
+});
+
+// Handle expense deletion from finance page
+function handleFinanceExpenseDelete(expId) {
+  showDeleteConfirmation(
+    'Delete Expense',
+    'Are you sure you want to delete this expense? This will be archived for recovery.',
+    function() {
+      const currentPage = expenseCurrentPage || 1;
+      const formData = new FormData();
+      formData.append('page', currentPage);
+
+      console.log('Starting delete for expense:', expId);
+
+      // Create abort controller with 30 second timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      fetch(`/financial/expense/${expId}/delete`, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal
+      })
+      .then(r => {
+        clearTimeout(timeoutId);
+        console.log('Delete response status:', r.status);
+        if (r.ok) {
+          showSuccessToast('Expense Deleted', 'The expense has been archived and removed from the list');
+          setTimeout(() => {
+            window.location.href = `/financial?tab=expenses&page=${currentPage}`;
+          }, 2000);
+        } else {
+          throw new Error(`Failed to delete: ${r.status}`);
+        }
+      })
+      .catch(err => {
+        clearTimeout(timeoutId);
+        console.error('Delete error:', err);
+        alert('Error deleting expense: ' + (err.name === 'AbortError' ? 'Request timeout - server took too long to respond' : err.message));
+      });
+    }
+  );
 }
 </script>
 {% endblock %}
