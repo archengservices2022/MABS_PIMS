@@ -2269,9 +2269,15 @@ function submitGroupExpenseModal() {
   const receiptFileInput = document.getElementById('groupReceipt').files[0];
   if (receiptFileInput) {
     formData.append('receipt', receiptFileInput);
+    console.log('New receipt file being uploaded');
   } else if (window.groupReceiptMarkedForRemoval) {
     formData.append('remove_receipt', 'true');
+    console.log('Receipt marked for removal - sending remove_receipt flag');
+  } else {
+    console.log('No receipt changes');
   }
+
+  console.log('Submitting group expense with total:', totalAmount);
 
   fetch(`/financial/expense/${expId}/edit`, {
     method: 'POST',
