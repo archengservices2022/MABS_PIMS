@@ -894,6 +894,7 @@ function editExpenseItemFromDetails(expId, itemIndex) {
           window.editingExpenseId = expId;
           window.editingItemIndex = itemIndex;
           window.editingItemOriginalReceipt = item.receipt_filename || null;
+          window.editItemReceiptMarkedForRemoval = false;
 
           // Populate form
           document.getElementById('editItemDate').value = item.date || '';
@@ -934,6 +935,7 @@ function openAddNewItemModal(expId) {
   window.editingExpenseId = expId;
   window.editingItemIndex = null;  // null means adding new
   window.editingItemOriginalReceipt = null;
+  window.editItemReceiptMarkedForRemoval = false;
 
   // Clear form
   document.getElementById('editItemDate').value = new Date().toISOString().split('T')[0];
@@ -1020,6 +1022,7 @@ function removeEditItemReceipt() {
   document.getElementById('currentEditItemReceipt').style.display = 'none';
   document.getElementById('editItemReceipt').style.display = 'block';
   window.editingItemOriginalReceipt = null;
+  window.editItemReceiptMarkedForRemoval = true;
 }
 
 // Save edited or new item
@@ -1047,6 +1050,9 @@ function saveEditItem() {
   formData.append('description', description);
   if (receiptFile) {
     formData.append('receipt', receiptFile);
+  } else if (window.editItemReceiptMarkedForRemoval) {
+    formData.append('delete_receipt', 'true');
+    window.editItemReceiptMarkedForRemoval = false;
   }
 
   // Determine if adding or editing
