@@ -1037,8 +1037,18 @@ function saveEditItem() {
   const description = document.getElementById('editItemDescription').value;
   const receiptFile = document.getElementById('editItemReceipt').files[0];
 
+  console.log('=== saveEditItem DEBUG ===');
+  console.log('expId:', expId);
+  console.log('itemIndex:', itemIndex);
+  console.log('date:', date);
+  console.log('category:', category);
+  console.log('name:', name);
+  console.log('amount:', amount);
+  console.log('receiptFile:', receiptFile);
+  console.log('editItemReceiptMarkedForRemoval:', window.editItemReceiptMarkedForRemoval);
+
   if (!date || !category || !name || !amount) {
-    alert('Please fill in all required fields');
+    alert('Please fill in all required fields: Date, Category, Name, Amount');
     return;
   }
 
@@ -1048,57 +1058,49 @@ function saveEditItem() {
   formData.append('expense_name', name);
   formData.append('amount', amount);
   formData.append('description', description);
+
   if (receiptFile) {
     formData.append('receipt', receiptFile);
+    console.log('Adding receipt file:', receiptFile.name);
   } else if (window.editItemReceiptMarkedForRemoval) {
     formData.append('delete_receipt', 'true');
+    console.log('Marking receipt for deletion');
     window.editItemReceiptMarkedForRemoval = false;
   }
 
-  // Determine if adding or editing
-  if (itemIndex === null) {
-    // Adding new item
-    fetch(`/api/expense/${expId}/item`, {
-      method: 'POST',
-      body: formData
-    })
-    .then(r => r.json())
-    .then(data => {
-      if (data.success) {
-        showSuccessToast('Item Added', 'Expense item added successfully');
-        const modal = bootstrap.Modal.getInstance(document.getElementById('editItemModal'));
-        modal.hide();
-        setTimeout(() => location.reload(), 1500);
-      } else {
-        alert('Error adding item: ' + (data.error || 'Unknown error'));
-      }
-    })
-    .catch(err => {
-      console.error('Error:', err);
-      alert('Error adding item');
-    });
-  } else {
-    // Editing existing item
-    fetch(`/api/expense/${expId}/item/${itemIndex}`, {
-      method: 'PUT',
-      body: formData
-    })
-    .then(r => r.json())
-    .then(data => {
-      if (data.success) {
-        showSuccessToast('Item Updated', 'Expense item updated successfully');
-        const modal = bootstrap.Modal.getInstance(document.getElementById('editItemModal'));
-        modal.hide();
-        setTimeout(() => location.reload(), 1500);
-      } else {
-        alert('Error updating item: ' + (data.error || 'Unknown error'));
-      }
-    })
-    .catch(err => {
-      console.error('Error:', err);
-      alert('Error updating item');
-    });
-  }
+  const isAdding = itemIndex === null;
+  const endpoint = isAdding
+    ? `/api/expense/${expId}/item`
+    : `/api/expense/${expId}/item/${itemIndex}`;
+  const method = isAdding ? 'POST' : 'PUT';
+
+  console.log(`${isAdding ? 'Adding' : 'Updating'} item at:`, endpoint);
+
+  fetch(endpoint, {
+    method: method,
+    body: formData
+  })
+  .then(r => {
+    console.log('Response status:', r.status);
+    return r.json();
+  })
+  .then(data => {
+    console.log('Response data:', data);
+    if (data.success) {
+      const title = isAdding ? 'Item Added' : 'Item Updated';
+      const message = isAdding ? 'Expense item added successfully' : 'Expense item updated successfully';
+      showSuccessToast(title, message);
+      const modal = bootstrap.Modal.getInstance(document.getElementById('editItemModal'));
+      modal.hide();
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      alert('Error: ' + (data.error || 'Unknown error'));
+    }
+  })
+  .catch(err => {
+    console.error('Fetch error:', err);
+    alert('Error: ' + err.message);
+  });
 }
 
 // Delete expense item from details page
