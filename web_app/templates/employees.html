@@ -1459,9 +1459,17 @@ document.getElementById('editOwnProfileModal').addEventListener('show.bs.modal',
         <tr style="background:#fafafa;">
           <td>
             <div class="d-flex align-items-center gap-2">
-              <span class="emp-avatar" style="background:#94a3b8;font-size:13px;">{{ (u.username or 'U')[0]|upper }}</span>
+              <a href="{{ url_for('employee_profile', uid=u.firebase_uid) }}" style="text-decoration:none;">
+                <span class="emp-avatar" style="background:#94a3b8;font-size:13px;">{{ (u.username or 'U')[0]|upper }}</span>
+              </a>
               <div>
-                <div class="fw-semibold text-muted">{{ u.username or '—' }}</div>
+                <a href="{{ url_for('employee_profile', uid=u.firebase_uid) }}" style="text-decoration:none;">
+                  <div class="fw-semibold text-muted" style="color:#1d4ed8;cursor:pointer;transition:all 0.2s;"
+                       onmouseover="this.style.color='#0d47a1';this.style.textDecoration='underline';"
+                       onmouseout="this.style.color='#1d4ed8';this.style.textDecoration='none';">
+                    {{ u.username or '—' }}
+                  </div>
+                </a>
                 <div class="text-muted" style="font-size:11px;">{{ u.email or '' }}</div>
               </div>
             </div>

@@ -143,7 +143,17 @@
           </div>
           <div class="col-md-2" id="paymentDateWrap" style="display:none;">
             <label class="form-label">Payment Date</label>
-            <input type="date" name="payment_date" class="form-control">
+            {% set default_payment_date = now.strftime('%Y-%m-%d') %}
+            {% if invoice and invoice.get('payment_log') and invoice.get('payment_log')|length > 0 %}
+              {% set payment_list = invoice.get('payment_log') %}
+              {% if payment_list is iterable and payment_list|length > 0 %}
+                {% set last_payment = payment_list[-1] if payment_list is sequence else none %}
+                {% if last_payment and last_payment.get('date') %}
+                  {% set default_payment_date = last_payment.get('date') %}
+                {% endif %}
+              {% endif %}
+            {% endif %}
+            <input type="date" name="payment_date" class="form-control" value="{{ default_payment_date }}" id="paymentDateInput">
           </div>
           <div class="col-md-2" id="paymentReferenceWrap" style="display:none;">
             <label class="form-label">Reference</label>
@@ -152,37 +162,6 @@
         </div>
       </div>
 
-      {% if invoice and invoice.get('payment_log') %}
-      <div class="card-panel mb-3">
-        <h6 class="section-heading mb-3">Payment History</h6>
-        <div class="table-responsive">
-          <table class="table table-sm" style="font-size:0.9rem;">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Amount</th>
-                <th>Stage</th>
-                <th>Method</th>
-                <th>Reference</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for payment in invoice.get('payment_log', []) %}
-              {% if payment and payment.get('amount') %}
-              <tr>
-                <td>{{ payment.get('date', '—') }}</td>
-                <td>${{ "{:,.2f}".format(payment.get('amount', 0)|float) }}</td>
-                <td>{{ payment.get('stage_name', '—') }}</td>
-                <td>{{ payment.get('method', '—') }}</td>
-                <td>{{ payment.get('reference', '—') }}</td>
-              </tr>
-              {% endif %}
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      {% endif %}
 
       <div class="card-panel mb-3">
         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -210,7 +189,13 @@
                 {% for item in items %}
                 <tr class="line-item-row">
                   <td><input type="text" name="item_description[]" class="form-control form-control-sm" value="{{ item.get('description','') }}" required></td>
-                  <td>{{ project_select(item.get('project_number','')) }}</td>
+                  <td>
+                    {{ project_select(item.get('project_number','')) }}
+                    <input type="hidden" name="item_stage_index[]" value="{{ item.get('payment_stage_index','') if item.get('payment_stage_index') is not none else '' }}">
+                    <input type="hidden" name="item_co_number[]" value="{{ item.get('co_number','') }}">
+                    <input type="hidden" name="item_co_firebase_id[]" value="{{ item.get('co_firebase_id','') }}">
+                    <input type="hidden" name="item_powo_number[]" value="{{ item.get('powo_number','') }}">
+                  </td>
                   <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="{{ item.get('quantity','1') }}" min="0" step="any" oninput="calcRow(this)"></td>
                   <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="{{ item.get('unit_price','0') }}" min="0" step="0.01" oninput="calcRow(this)" {% if lock_unit_price %}readonly{% endif %}></td>
                   <td><input type="text" class="form-control form-control-sm item-total bg-light" value="{{ item.get('amount','0') }}" readonly></td>
@@ -236,6 +221,9 @@
                   <td>
                     {{ project_select(item.get('project','')) }}
                     <input type="hidden" name="item_stage_index[]" value="{{ item.get('stage_index','') if item.get('stage_index') is not none else '' }}">
+                    <input type="hidden" name="item_co_number[]" value="{{ item.get('co_number','') }}">
+                    <input type="hidden" name="item_co_firebase_id[]" value="{{ item.get('co_firebase_id','') }}">
+                    <input type="hidden" name="item_powo_number[]" value="{{ item.get('powo_number','') }}">
                   </td>
                   <td><input type="number" name="item_quantity[]" class="form-control form-control-sm item-qty" value="1" min="0" step="any" oninput="calcRow(this)"></td>
                   <td><input type="number" name="item_unit_price[]" class="form-control form-control-sm item-price" value="{{ item.get('amount','0') }}" min="0" step="0.01" oninput="calcRow(this)"></td>
@@ -543,9 +531,14 @@ function togglePaymentFields() {
   document.getElementById('amountPaidWrap').style.display    = show ? '' : 'none';
   document.getElementById('paymentDateWrap').style.display   = show ? '' : 'none';
 
-  // Set payment date to today if showing and not already set
-  if (show && !document.querySelector('input[name="payment_date"]').value) {
-    document.querySelector('input[name="payment_date"]').value = TODAY_ISO;
+  // Set payment date to today only if not already set (preserve template default)
+  const paymentDateInput = document.querySelector('input[name="payment_date"]');
+  if (show && !paymentDateInput.value) {
+    paymentDateInput.value = TODAY_ISO;
+  }
+  // If payment date was set by template but is empty, set to today
+  if (show && paymentDateInput && !paymentDateInput.value) {
+    paymentDateInput.value = TODAY_ISO;
   }
 
   // For "Paid" status, auto-populate amount with total (including tax)
@@ -559,6 +552,14 @@ function togglePaymentFields() {
   } else if (status === 'Partial') {
     // Clear amount for Partial so user enters custom amount
     document.getElementById('paymentAmountField').value = '';
+  } else {
+    // Clear payment fields for non-payment statuses (Draft, Sent, Viewed, Overdue, Cancelled)
+    document.getElementById('paymentAmountField').value = '';
+    const methodSelect = document.querySelector('select[name="payment_method"]');
+    if (methodSelect) methodSelect.value = '';
+    if (paymentDateInput) paymentDateInput.value = '';
+    const referenceInput = document.querySelector('input[name="payment_reference"]');
+    if (referenceInput) referenceInput.value = '';
   }
 }
 
@@ -602,12 +603,14 @@ function applyNetTerms() {
             }
           }
           // Populate payment amount if invoice is being edited and has existing payment
-          if (data && data.meta && data.meta.amount_paid) {
+          if (data && data.meta) {
             const amountPaid = parseFloat(data.meta.amount_paid || '0');
-            if (amountPaid > 0) {
+            const taxPaid = parseFloat(data.meta.tax_paid || '0');
+            const totalPaid = amountPaid + taxPaid;
+            if (totalPaid > 0) {
               const paymentAmountField = document.getElementById('paymentAmountField');
               if (paymentAmountField) {
-                paymentAmountField.value = amountPaid.toFixed(2);
+                paymentAmountField.value = totalPaid.toFixed(2);
               }
             }
           }

@@ -1762,6 +1762,7 @@ async function quickUpdateInvoicedStage(stageIdx, invoiceId, newAmount, projectN
     const form = new FormData();
     form.append('new_amount', newAmount);
     form.append('project_number', projectNumber);
+    form.append('stage_idx', stageIdx);
 
     const resp = await fetch(`/api/invoices/${invoiceId}/update-amount`, {
       method: 'POST',

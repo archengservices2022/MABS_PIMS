@@ -283,6 +283,163 @@ class ExpensesFirebaseManager:
             _log.warning("Error loading vendors: %s", e)
             return []
 
+    # ===== GROUP EXPENSE METHODS =====
+
+    @staticmethod
+    def create_expense_group(group_name: str, group_type: str, description: str = "", created_by: str = "") -> str:
+        """Create new expense group and return group_id"""
+        if not FIREBASE_AVAILABLE:
+            _log.warning("Firebase not available - group not created")
+            return None
+
+        try:
+            ref = db.reference('/expense_groups')
+            new_group_ref = ref.push()
+            group_id = new_group_ref.key
+
+            group_data = {
+                'group_id': group_id,
+                'group_name': group_name,
+                'group_type': group_type,
+                'description': description,
+                'created_by': created_by,
+                'created_date': datetime.now(timezone.utc).isoformat(),
+                'updated_date': datetime.now(timezone.utc).isoformat(),
+                'status': 'Draft',
+                'total_amount': 0
+            }
+
+            new_group_ref.set(group_data)
+            _log.info("Expense group created with ID: %s", group_id)
+            return group_id
+
+        except Exception as e:
+            _log.warning("Error creating expense group: %s", e)
+            return None
+
+    @staticmethod
+    def load_expense_groups() -> list:
+        """Load all expense groups from Firebase"""
+        if not FIREBASE_AVAILABLE:
+            _log.warning("Firebase not available - cannot load groups")
+            return []
+
+        try:
+            ref = db.reference('/expense_groups')
+            groups_data = ref.get()
+            if groups_data:
+                groups = []
+                for group_id, group_data in groups_data.items():
+                    if group_data:
+                        group_data['group_id'] = group_id
+                        groups.append(group_data)
+                _log.info("Loaded %s expense groups from Firebase", len(groups))
+                return groups
+            _log.info("No expense groups found in Firebase")
+            return []
+        except Exception as e:
+            _log.warning("Error loading expense groups: %s", e)
+            return []
+
+    @staticmethod
+    def add_expense_to_group(expense_firebase_id: str, group_id: str) -> bool:
+        """Add/link expense to a group"""
+        if not FIREBASE_AVAILABLE:
+            _log.warning("Firebase not available - cannot add expense to group")
+            return False
+
+        try:
+            # Update expense with group_id
+            db.reference(f'/expenses/{expense_firebase_id}').update({
+                'group_id': group_id,
+                'updated_at': datetime.now(timezone.utc).isoformat()
+            })
+            _log.info("Expense %s added to group %s", expense_firebase_id, group_id)
+            return True
+        except Exception as e:
+            _log.warning("Error adding expense to group: %s", e)
+            return False
+
+    @staticmethod
+    def remove_expense_from_group(expense_firebase_id: str) -> bool:
+        """Remove expense from group (make it ungrouped)"""
+        if not FIREBASE_AVAILABLE:
+            _log.warning("Firebase not available - cannot remove expense from group")
+            return False
+
+        try:
+            db.reference(f'/expenses/{expense_firebase_id}').update({
+                'group_id': None,
+                'updated_at': datetime.now(timezone.utc).isoformat()
+            })
+            _log.info("Expense %s removed from group", expense_firebase_id)
+            return True
+        except Exception as e:
+            _log.warning("Error removing expense from group: %s", e)
+            return False
+
+    @staticmethod
+    def update_expense_group(group_id: str, updates: dict) -> bool:
+        """Update expense group details"""
+        if not FIREBASE_AVAILABLE:
+            _log.warning("Firebase not available - cannot update group")
+            return False
+
+        try:
+            updates['updated_date'] = datetime.now(timezone.utc).isoformat()
+            db.reference(f'/expense_groups/{group_id}').update(updates)
+            _log.info("Expense group %s updated", group_id)
+            return True
+        except Exception as e:
+            _log.warning("Error updating expense group: %s", e)
+            return False
+
+    @staticmethod
+    def delete_expense_group(group_id: str, keep_expenses: bool = True) -> bool:
+        """Delete expense group"""
+        if not FIREBASE_AVAILABLE:
+            _log.warning("Firebase not available - cannot delete group")
+            return False
+
+        try:
+            if keep_expenses:
+                # Remove group_id from all child expenses
+                expenses_ref = db.reference('/expenses')
+                expenses_data = expenses_ref.get() or {}
+                for exp_id, exp_data in expenses_data.items():
+                    if exp_data and exp_data.get('group_id') == group_id:
+                        db.reference(f'/expenses/{exp_id}').update({'group_id': None})
+
+            # Delete group
+            db.reference(f'/expense_groups/{group_id}').delete()
+            _log.info("Expense group %s deleted", group_id)
+            return True
+        except Exception as e:
+            _log.warning("Error deleting expense group: %s", e)
+            return False
+
+    @staticmethod
+    def get_expenses_in_group(group_id: str) -> list:
+        """Get all expenses in a specific group"""
+        if not FIREBASE_AVAILABLE:
+            return []
+
+        try:
+            expenses_ref = db.reference('/expenses')
+            expenses_data = expenses_ref.get() or {}
+            group_expenses = []
+
+            for exp_id, exp_data in expenses_data.items():
+                if exp_data and exp_data.get('group_id') == group_id:
+                    exp_data['firebase_id'] = exp_id
+                    group_expenses.append(exp_data)
+
+            _log.info("Loaded %s expenses in group %s", len(group_expenses), group_id)
+            return group_expenses
+        except Exception as e:
+            _log.warning("Error loading expenses in group: %s", e)
+            return []
+
 class AddExpenseDialog(QtWidgets.QDialog):
     """Modal dialog for adding new expenses - Simplified categories with improved UX"""
     
@@ -823,6 +980,111 @@ class AddExpenseDialog(QtWidgets.QDialog):
         self.project_combo = self.create_styled_combo_box([], "Enter or select project")
         self._populate_project_combo()
         self.add_field(form_layout, "🎯 Project:", self.project_combo)
+
+        # ===== Group Options =====
+        self.add_section_title(form_layout, "📁 Group (Optional)")
+
+        # Add to Group Checkbox
+        self.add_to_group_checkbox = QtWidgets.QCheckBox("📁 Add this expense to a group")
+        self.add_to_group_checkbox.setStyleSheet("""
+            QCheckBox {
+                font-size: 12px;
+                font-weight: bold;
+                color: #0f766e;
+                spacing: 8px;
+                padding: 8px 12px;
+                background-color: #e8f4f8;
+                border: 1px solid #0f766e;
+                border-radius: 6px;
+            }
+            QCheckBox::indicator {
+                width: 20px;
+                height: 20px;
+            }
+            QCheckBox::indicator:unchecked {
+                border: 2px solid #bdc3c7;
+                background: white;
+                border-radius: 4px;
+            }
+            QCheckBox::indicator:checked {
+                border: 2px solid #0f766e;
+                background: #0f766e;
+                border-radius: 4px;
+            }
+        """)
+        self.add_to_group_checkbox.stateChanged.connect(self.on_add_to_group_toggled)
+        form_layout.addWidget(self.add_to_group_checkbox)
+
+        # Group Selection / Creation Container
+        self.group_container = QtWidgets.QWidget()
+        group_container_layout = QtWidgets.QVBoxLayout(self.group_container)
+        group_container_layout.setContentsMargins(0, 0, 0, 0)
+        group_container_layout.setSpacing(10)
+        self.group_container.setVisible(False)
+
+        # Option: Add to existing group
+        self.group_option_layout = QtWidgets.QVBoxLayout()
+
+        self.use_existing_group_radio = QtWidgets.QRadioButton("Add to existing group")
+        self.use_existing_group_radio.setChecked(True)
+        self.use_existing_group_radio.setStyleSheet("font-size: 12px; color: #334155;")
+        self.use_existing_group_radio.toggled.connect(self.on_group_option_changed)
+        self.group_option_layout.addWidget(self.use_existing_group_radio)
+
+        # Existing group dropdown
+        existing_group_layout = QtWidgets.QHBoxLayout()
+        existing_group_layout.setContentsMargins(20, 0, 0, 0)
+        self.existing_group_combo = self.create_styled_combo_box([], "Select a group")
+        self.refresh_groups_list()
+        existing_group_layout.addWidget(self.existing_group_combo)
+        self.group_option_layout.addLayout(existing_group_layout)
+
+        # Option: Create new group
+        self.create_new_group_radio = QtWidgets.QRadioButton("Create new group and add this expense")
+        self.create_new_group_radio.setStyleSheet("font-size: 12px; color: #334155;")
+        self.create_new_group_radio.toggled.connect(self.on_group_option_changed)
+        self.group_option_layout.addWidget(self.create_new_group_radio)
+
+        # New group fields
+        new_group_layout = QtWidgets.QVBoxLayout()
+        new_group_layout.setContentsMargins(20, 0, 0, 0)
+        new_group_layout.setSpacing(10)
+
+        # Group name
+        group_name_label = QtWidgets.QLabel("Group Name:")
+        group_name_label.setStyleSheet("font-size: 11px; font-weight: 600; color: #334155;")
+        self.new_group_name_edit = QtWidgets.QLineEdit()
+        self.new_group_name_edit.setPlaceholderText("e.g., Travel to NYC, Conference 2026")
+        self.new_group_name_edit.setStyleSheet("""
+            QLineEdit {
+                padding: 8px 10px;
+                border: 1px solid #d8e2ec;
+                border-radius: 5px;
+                background: white;
+                font-size: 12px;
+            }
+            QLineEdit:focus { border-color: #0f766e; background: white; }
+        """)
+        new_group_layout.addWidget(group_name_label)
+        new_group_layout.addWidget(self.new_group_name_edit)
+
+        # Group type
+        group_type_label = QtWidgets.QLabel("Group Type:")
+        group_type_label.setStyleSheet("font-size: 11px; font-weight: 600; color: #334155;")
+        self.new_group_type_combo = self.create_styled_combo_box([
+            "Travel",
+            "Conference/Event",
+            "Project",
+            "Medical/Benefits",
+            "Training",
+            "Custom"
+        ], "Select group type")
+        new_group_layout.addWidget(group_type_label)
+        new_group_layout.addWidget(self.new_group_type_combo)
+
+        self.group_option_layout.addLayout(new_group_layout)
+        group_container_layout.addLayout(self.group_option_layout)
+        form_layout.addWidget(self.group_container)
 
         # ===== Actions Header with Balance Sheet Checkbox (same line) =====
         actions_header_layout = QtWidgets.QHBoxLayout()
@@ -1654,6 +1916,40 @@ class AddExpenseDialog(QtWidgets.QDialog):
 
         return line_edit
 
+    def refresh_groups_list(self):
+        """Load all expense groups and populate dropdown"""
+        try:
+            groups = ExpensesFirebaseManager.load_expense_groups()
+            self.existing_group_combo.clear()
+
+            if groups:
+                for group in groups:
+                    group_name = group.get('group_name', '')
+                    group_id = group.get('group_id', '')
+                    display_text = f"{group_name} ({group.get('expense_count', 0)} items)"
+                    self.existing_group_combo.addItem(display_text, group_id)
+            else:
+                self.existing_group_combo.addItem("No groups available", "")
+        except Exception as e:
+            _log.warning(f"Error loading groups: {e}")
+            self.existing_group_combo.addItem("Error loading groups", "")
+
+    def on_add_to_group_toggled(self, state):
+        """Show/hide group options based on checkbox state"""
+        is_checked = self.add_to_group_checkbox.isChecked()
+        self.group_container.setVisible(is_checked)
+        if is_checked:
+            # Refresh groups when showing
+            self.refresh_groups_list()
+
+    def on_group_option_changed(self, checked):
+        """Handle radio button changes for group options"""
+        if checked:
+            is_existing = self.use_existing_group_radio.isChecked()
+            self.existing_group_combo.setEnabled(is_existing)
+            self.new_group_name_edit.setEnabled(not is_existing)
+            self.new_group_type_combo.setEnabled(not is_existing)
+
     def get_expense_data(self):
         """Return expense data from form with validation"""
         expense_type = self.expense_type_combo.currentText().strip()
@@ -1710,6 +2006,45 @@ class AddExpenseDialog(QtWidgets.QDialog):
         if self.is_editing and self.expense_data and 'firebase_id' in self.expense_data:
             expense_data['firebase_id'] = self.expense_data['firebase_id']
 
+        # Handle group assignment if checkbox is checked
+        if self.add_to_group_checkbox.isChecked():
+            if self.use_existing_group_radio.isChecked():
+                # Add to existing group
+                group_id = self.existing_group_combo.currentData()
+                if group_id:
+                    expense_data['group_id'] = group_id
+                    _log.info(f"Expense will be added to group: {group_id}")
+            else:
+                # Create new group and add expense to it
+                group_name = self.new_group_name_edit.text().strip()
+                group_type = self.new_group_type_combo.currentText()
+
+                if not group_name:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Group Name Required",
+                        "Please enter a group name or uncheck 'Add to Group'."
+                    )
+                    return None
+
+                # Create group
+                new_group_id = ExpensesFirebaseManager.create_expense_group(
+                    group_name=group_name,
+                    group_type=group_type,
+                    description="",
+                    created_by="User"
+                )
+
+                if new_group_id:
+                    expense_data['group_id'] = new_group_id
+                    _log.info(f"New group created: {new_group_id}, expense will be added to it")
+                else:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Group Creation Failed",
+                        "Failed to create expense group. Expense will be saved without group."
+                    )
+
         return expense_data
 
     def accept(self):
@@ -1717,7 +2052,437 @@ class AddExpenseDialog(QtWidgets.QDialog):
         expense_data = self.get_expense_data()
         if expense_data is not None:
             super().accept()
-            
+
+class CreateGroupExpenseDialog(QtWidgets.QDialog):
+    """Dialog to create a new expense group"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("➕ Create Expense Group")
+        self.setModal(True)
+        self.resize(500, 300)
+        self.setStyleSheet("""
+            QDialog {
+                background: #f5f6fa;
+            }
+        """)
+        self.created_group_id = None
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
+        # Title
+        title = QtWidgets.QLabel("Create New Expense Group")
+        title.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                font-weight: 900;
+                color: #0f172a;
+                font-family: 'Inter', 'Segoe UI';
+            }
+        """)
+        layout.addWidget(title)
+
+        # Group Name
+        name_label = QtWidgets.QLabel("Group Name *")
+        name_label.setStyleSheet("font-weight: 600; color: #334155;")
+        self.name_edit = QtWidgets.QLineEdit()
+        self.name_edit.setPlaceholderText("e.g., Travel to NYC, Conference 2026")
+        self.name_edit.setStyleSheet("""
+            QLineEdit {
+                border: 1.5px solid #d8e2ec;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-size: 12px;
+                background: white;
+            }
+            QLineEdit:focus {
+                border: 1.5px solid #0f766e;
+                background: white;
+            }
+        """)
+        layout.addWidget(name_label)
+        layout.addWidget(self.name_edit)
+
+        # Group Type
+        type_label = QtWidgets.QLabel("Group Type *")
+        type_label.setStyleSheet("font-weight: 600; color: #334155;")
+        self.type_combo = QtWidgets.QComboBox()
+        self.type_combo.addItems([
+            "Travel",
+            "Conference/Event",
+            "Project",
+            "Medical/Benefits",
+            "Training",
+            "Custom"
+        ])
+        self.type_combo.setStyleSheet("""
+            QComboBox {
+                border: 1.5px solid #d8e2ec;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-size: 12px;
+                background: white;
+            }
+            QComboBox:focus {
+                border: 1.5px solid #0f766e;
+            }
+        """)
+        layout.addWidget(type_label)
+        layout.addWidget(self.type_combo)
+
+        # Description
+        desc_label = QtWidgets.QLabel("Description (Optional)")
+        desc_label.setStyleSheet("font-weight: 600; color: #334155;")
+        self.desc_edit = QtWidgets.QPlainTextEdit()
+        self.desc_edit.setPlaceholderText("Add notes about this group...")
+        self.desc_edit.setMaximumHeight(80)
+        self.desc_edit.setStyleSheet("""
+            QPlainTextEdit {
+                border: 1.5px solid #d8e2ec;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-size: 12px;
+                background: white;
+            }
+            QPlainTextEdit:focus {
+                border: 1.5px solid #0f766e;
+            }
+        """)
+        layout.addWidget(desc_label)
+        layout.addWidget(self.desc_edit)
+
+        layout.addStretch()
+
+        # Buttons
+        btn_layout = QtWidgets.QHBoxLayout()
+        btn_layout.addStretch()
+
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        cancel_btn.setFixedWidth(100)
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background: #e2e8f0;
+                color: #334155;
+                border: none;
+                border-radius: 6px;
+                font-weight: 600;
+            }
+            QPushButton:hover { background: #cbd5e1; }
+        """)
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(cancel_btn)
+
+        create_btn = QtWidgets.QPushButton("Create Group")
+        create_btn.setFixedWidth(120)
+        create_btn.setStyleSheet("""
+            QPushButton {
+                background: #0f766e;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: 600;
+            }
+            QPushButton:hover { background: #0d625c; }
+            QPushButton:pressed { background: #0a4f49; }
+        """)
+        create_btn.clicked.connect(self.create_group)
+        btn_layout.addWidget(create_btn)
+
+        layout.addLayout(btn_layout)
+
+    def create_group(self):
+        """Create the expense group"""
+        group_name = self.name_edit.text().strip()
+        group_type = self.type_combo.currentText()
+        description = self.desc_edit.toPlainText().strip()
+
+        if not group_name:
+            QtWidgets.QMessageBox.warning(self, "Required Field", "Please enter a group name.")
+            return
+
+        # Save to Firebase
+        group_id = ExpensesFirebaseManager.create_expense_group(
+            group_name=group_name,
+            group_type=group_type,
+            description=description,
+            created_by="User"  # TODO: Get current user
+        )
+
+        if group_id:
+            self.created_group_id = group_id
+            _log.info("Group created successfully: %s", group_id)
+            # Show success message
+            QtWidgets.QMessageBox.information(
+                self,
+                "Success",
+                f"Expense group '{group_name}' created successfully!\n\nYou can now add expenses to this group."
+            )
+            self.accept()
+        else:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                "Failed to create expense group. Please try again."
+            )
+
+class GroupExpenseDetailsDialog(QtWidgets.QDialog):
+    """Dialog to show all expenses in an expense group"""
+
+    def __init__(self, group, parent=None):
+        super().__init__(parent)
+        self.group = group
+        self.group_id = group.get('group_id')
+        self.setWindowTitle(f"📁 {group.get('group_name', 'Group Details')}")
+        self.setModal(True)
+        self.resize(1000, 600)
+        self.setStyleSheet("""
+            QDialog {
+                background: #f5f6fa;
+            }
+        """)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
+        # Header section with group info
+        header_frame = self.create_header_section()
+        layout.addWidget(header_frame)
+
+        # Expenses table
+        table_frame = self.create_expenses_table()
+        layout.addWidget(table_frame)
+
+        # Footer with action buttons
+        footer_frame = self.create_footer_section()
+        layout.addWidget(footer_frame)
+
+    def create_header_section(self):
+        """Create header with group details"""
+        frame = QtWidgets.QFrame()
+        frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border: 1px solid #d8e2ec;
+                border-radius: 8px;
+            }
+        """)
+        layout = QtWidgets.QVBoxLayout(frame)
+        layout.setContentsMargins(20, 15, 20, 15)
+        layout.setSpacing(10)
+
+        # Title row
+        title_layout = QtWidgets.QHBoxLayout()
+        title = QtWidgets.QLabel(f"📁 {self.group.get('group_name', 'Unnamed Group')}")
+        title.setStyleSheet("""
+            QLabel {
+                font-size: 20px;
+                font-weight: 900;
+                color: #0f172a;
+                font-family: 'Inter', 'Segoe UI';
+            }
+        """)
+        title_layout.addWidget(title)
+        title_layout.addStretch()
+
+        # Total amount on right
+        total = self.group.get('total_amount', 0)
+        amount_label = QtWidgets.QLabel(f"Total: ${total:,.2f}")
+        amount_label.setStyleSheet("""
+            QLabel {
+                font-size: 18px;
+                font-weight: 900;
+                color: #0f766e;
+                font-family: 'Inter', 'Segoe UI';
+            }
+        """)
+        title_layout.addWidget(amount_label)
+        layout.addLayout(title_layout)
+
+        # Info row
+        info_layout = QtWidgets.QHBoxLayout()
+        info_text = (
+            f"Type: {self.group.get('group_type', 'Custom')} | "
+            f"Status: {self.group.get('status', 'Draft')} | "
+            f"Items: {self.group.get('expense_count', 0)}"
+        )
+        info_label = QtWidgets.QLabel(info_text)
+        info_label.setStyleSheet("""
+            QLabel {
+                font-size: 12px;
+                color: #64748b;
+                font-family: 'Inter', 'Segoe UI';
+            }
+        """)
+        info_layout.addWidget(info_label)
+        info_layout.addStretch()
+        layout.addLayout(info_layout)
+
+        # Description if available
+        if self.group.get('description'):
+            desc_label = QtWidgets.QLabel(self.group.get('description'))
+            desc_label.setStyleSheet("""
+                QLabel {
+                    font-size: 11px;
+                    color: #475569;
+                    font-family: 'Inter', 'Segoe UI';
+                    font-style: italic;
+                }
+            """)
+            layout.addWidget(desc_label)
+
+        return frame
+
+    def create_expenses_table(self):
+        """Create table showing all expenses in the group"""
+        frame = QtWidgets.QFrame()
+        layout = QtWidgets.QVBoxLayout(frame)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Label
+        label = QtWidgets.QLabel("Expenses in this group:")
+        label.setStyleSheet("font-weight: 600; color: #334155; font-size: 12px;")
+        layout.addWidget(label)
+
+        # Table
+        self.table = QtWidgets.QTableWidget()
+        self.table.setColumnCount(7)
+        self.table.setHorizontalHeaderLabels([
+            "Date", "Expense Type", "Expense Name", "Category", "Vendor", "Amount", "Actions"
+        ])
+        self.table.setStyleSheet("""
+            QTableWidget {
+                background: white;
+                border: 1px solid #d8e2ec;
+                border-radius: 6px;
+                gridline-color: #e2e8f0;
+            }
+            QHeaderView::section {
+                background: #f8f9fa;
+                color: #334155;
+                padding: 8px;
+                border: none;
+                border-right: 1px solid #e2e8f0;
+                font-weight: 600;
+                font-size: 11px;
+            }
+        """)
+        self.table.horizontalHeader().setStretchLastSection(False)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.verticalHeader().setVisible(False)
+
+        # Set column widths
+        self.table.setColumnWidth(0, 80)
+        self.table.setColumnWidth(1, 150)
+        self.table.setColumnWidth(2, 180)
+        self.table.setColumnWidth(3, 130)
+        self.table.setColumnWidth(4, 120)
+        self.table.setColumnWidth(5, 100)
+        self.table.setColumnWidth(6, 100)
+
+        # Load and populate expenses
+        self.populate_expenses_table()
+
+        layout.addWidget(self.table)
+        return frame
+
+    def populate_expenses_table(self):
+        """Load and populate expenses in the group"""
+        expenses = ExpensesFirebaseManager.get_expenses_in_group(self.group_id)
+        self.table.setRowCount(len(expenses))
+
+        for row, expense in enumerate(expenses):
+            date = expense.get('date', '')
+            expense_type = expense.get('expense_type', '') or expense.get('type', '')
+            expense_name = expense.get('expense_name', '') or ''
+            category = expense.get('Category', expense.get('type', '')) or 'Uncategorized'
+            vendor = expense.get('vendor', '')
+            amount = expense.get('amount', 0)
+
+            items = [
+                QtWidgets.QTableWidgetItem(date),
+                QtWidgets.QTableWidgetItem(expense_type),
+                QtWidgets.QTableWidgetItem(expense_name),
+                QtWidgets.QTableWidgetItem(category),
+                QtWidgets.QTableWidgetItem(vendor),
+                QtWidgets.QTableWidgetItem(f"${float(amount):,.2f}"),
+            ]
+
+            for col, item in enumerate(items):
+                item.setFont(QtGui.QFont("Inter", 10))
+                self.table.setItem(row, col, item)
+
+            # Add action buttons
+            self.table.setCellWidget(row, 6, self.create_expense_actions(expense))
+
+        self.table.resizeRowsToContents()
+
+    def create_expense_actions(self, expense):
+        """Create View/Edit/Remove buttons for expense"""
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(widget)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(2)
+
+        view_btn = QtWidgets.QPushButton("V")
+        view_btn.setFixedSize(30, 28)
+        view_btn.setToolTip("View")
+        view_btn.setStyleSheet("""
+            QPushButton {
+                background: #f0fdf4; color: #065f46;
+                border: 1px solid #bbf7d0; border-radius: 4px;
+                font-size: 10px; font-weight: bold;
+            }
+            QPushButton:hover { background: #dcfce7; }
+        """)
+        layout.addWidget(view_btn)
+
+        remove_btn = QtWidgets.QPushButton("X")
+        remove_btn.setFixedSize(30, 28)
+        remove_btn.setToolTip("Remove from Group")
+        remove_btn.setStyleSheet("""
+            QPushButton {
+                background: #fde2e4; color: #a3161f;
+                border: 1px solid #f1919b; border-radius: 4px;
+                font-size: 10px; font-weight: bold;
+            }
+            QPushButton:hover { background: #fcbdc9; }
+        """)
+        layout.addWidget(remove_btn)
+
+        return widget
+
+    def create_footer_section(self):
+        """Create footer with action buttons"""
+        frame = QtWidgets.QFrame()
+        layout = QtWidgets.QHBoxLayout(frame)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addStretch()
+
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.setFixedWidth(100)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background: #e2e8f0;
+                color: #334155;
+                border: none;
+                border-radius: 6px;
+                font-weight: 600;
+            }
+            QPushButton:hover { background: #cbd5e1; }
+        """)
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+
+        return frame
+
 class CategoryExpenseDialog(QtWidgets.QDialog):
     """Dialog to show category-specific expenses"""
     
@@ -5123,9 +5888,9 @@ class ExpensesTab(QtWidgets.QWidget):
         main_layout.addWidget(self.cards_container, 0, 1, QtCore.Qt.AlignCenter)
 
         # -------------------------
-        # RIGHT: ADD EXPENSE BUTTON
+        # RIGHT: ADD EXPENSE DROPDOWN BUTTON
         # -------------------------
-        self.add_expense_btn = QtWidgets.QPushButton("+ Add Expense")
+        self.add_expense_btn = QtWidgets.QPushButton("+ Add Expense ▼")
         self.add_expense_btn.setFixedSize(180, 44)
         self.add_expense_btn.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
         self.add_expense_btn.setStyleSheet("""
@@ -5137,7 +5902,7 @@ class ExpensesTab(QtWidgets.QWidget):
             QPushButton:hover { background: #0d625c; }
             QPushButton:pressed { background: #0a4f49; }
         """)
-        self.add_expense_btn.clicked.connect(self.show_quick_entry)
+        self.add_expense_btn.clicked.connect(self.show_add_expense_menu)
 
         btn_container = QtWidgets.QWidget()
         btn_layout = QtWidgets.QHBoxLayout(btn_container)
@@ -5377,6 +6142,43 @@ class ExpensesTab(QtWidgets.QWidget):
 
         self.update_quick_categories("")
         return frame
+
+    def show_add_expense_menu(self):
+        """Show dropdown menu with Add New Expense and Add Group Expense options"""
+        menu = QtWidgets.QMenu()
+        menu.setStyleSheet("""
+            QMenu {
+                background: white;
+                border: 1px solid #bdc3c7;
+                border-radius: 5px;
+            }
+            QMenu::item:selected {
+                background: #e8f4f8;
+                color: #0f766e;
+            }
+        """)
+
+        # Add New Expense action
+        new_expense_action = menu.addAction("  Add New Expense")
+        new_expense_action.triggered.connect(self.show_quick_entry)
+
+        # Add Group Expense action
+        group_expense_action = menu.addAction("  Add Group Expense")
+        group_expense_action.triggered.connect(self.show_create_group_dialog)
+
+        # Show menu at button position
+        btn_pos = self.add_expense_btn.mapToGlobal(self.add_expense_btn.rect().bottomLeft())
+        menu.exec_(btn_pos)
+
+    def show_create_group_dialog(self):
+        """Show dialog to create a new expense group"""
+        dialog = CreateGroupExpenseDialog(self)
+        result = dialog.exec_()
+
+        if result == QtWidgets.QDialog.Accepted:
+            # Group created, refresh the table
+            self.load_expenses()
+            self.update_expenses_table()
 
     def show_quick_entry(self):
         self.refresh_quick_project_combo()
@@ -8026,6 +8828,14 @@ class ExpensesTab(QtWidgets.QWidget):
         return raw_project
 
     def _populate_ledger_row(self, row, expense, sno=None):
+        # Check if this is a group row
+        if expense.get('is_group'):
+            self._populate_group_row(row, expense, sno)
+        else:
+            self._populate_individual_expense_row(row, expense, sno)
+
+    def _populate_individual_expense_row(self, row, expense, sno=None):
+        """Populate a regular individual expense row"""
         category = expense.get('Category', expense.get('type', '')) or "Uncategorized"
         expense_type = expense.get('expense_type', '') or expense.get('type', '')
         expense_name = expense.get('expense_name', '') or ''
@@ -8048,6 +8858,39 @@ class ExpensesTab(QtWidgets.QWidget):
 
         self.expenses_table.setCellWidget(row, 7, self.create_enhanced_action_buttons(expense))
         self._style_ledger_row(row, expense)
+
+    def _populate_group_row(self, row, group, sno=None):
+        """Populate a group summary row"""
+        group_name = group.get('group_name', 'Unnamed Group')
+        group_type = group.get('group_type', 'Custom')
+        expense_count = group.get('expense_count', 0)
+        total_amount = group.get('total_amount', 0)
+
+        # col: 0=S.No, 1=Date, 2=Expense Type, 3=Category, 4=Expense Name, 5=Vendor, 6=Amount, 7=Actions
+        values = [
+            str(sno if sno is not None else row + 1),
+            group.get('created_date', '')[:10] if group.get('created_date') else '',  # Just the date part
+            f"📁 {group_type}",  # Show folder icon + group type
+            group.get('description', '')[:30] if group.get('description') else '',  # Show description in category column
+            f"{group_name} ({expense_count})",  # Group name + count
+            '',  # No vendor for groups
+            format_amount_no_commas(total_amount),
+        ]
+
+        for col, value in enumerate(values):
+            alignment = QtCore.Qt.AlignVCenter | QtCore.Qt.AlignCenter
+            item = self._ledger_item(value, alignment)
+            # Make group rows bold
+            font = item.font()
+            font.setBold(True)
+            item.setFont(font)
+            # Light blue background for groups
+            item.setBackground(QtGui.QColor("#e8f4f8"))
+            self.expenses_table.setItem(row, col, item)
+
+        # Create group action buttons (View, Edit, Delete)
+        self.expenses_table.setCellWidget(row, 7, self.create_group_action_buttons(group))
+        self._style_group_row(row)
 
     def on_search_text_changed(self, search_text):
         """Handle search text changes - intelligent filtering"""
@@ -8441,9 +9284,84 @@ class ExpensesTab(QtWidgets.QWidget):
 
     def update_expenses_table(self):
         """Update the professional expense ledger from current data."""
-        self._exp_all_items = list(reversed(self.expenses))
+        # Build mixed list of groups and ungrouped expenses
+        self._exp_all_items = self._build_grouped_expense_list()
         self._exp_page = 1
         self._exp_render_page()
+
+    def _build_grouped_expense_list(self) -> list:
+        """Build a list containing both groups (with totals) and ungrouped expenses"""
+        try:
+            mixed_items = []
+
+            # Load all groups
+            try:
+                groups = ExpensesFirebaseManager.load_expense_groups()
+                _log.info(f"Loaded {len(groups)} expense groups")
+            except Exception as e:
+                _log.warning(f"Error loading expense groups: {e}")
+                groups = []
+
+            # Track which expenses have been grouped
+            grouped_expense_ids = set()
+
+            # Add groups with their expenses
+            for group in groups:
+                try:
+                    group_id = group.get('group_id')
+                    group_expenses = ExpensesFirebaseManager.get_expenses_in_group(group_id)
+
+                    if group_expenses:
+                        # Calculate total for group
+                        total = sum(float(exp.get('amount', 0) or 0) for exp in group_expenses)
+
+                        # Create a group entry
+                        group_entry = {
+                            'is_group': True,
+                            'group_id': group_id,
+                            'group_name': group.get('group_name', ''),
+                            'group_type': group.get('group_type', ''),
+                            'total_amount': total,
+                            'expense_count': len(group_expenses),
+                            'description': group.get('description', ''),
+                            'status': group.get('status', 'Draft'),
+                        }
+                        mixed_items.append(group_entry)
+
+                        # Track grouped expense IDs
+                        for exp in group_expenses:
+                            if exp.get('firebase_id'):
+                                grouped_expense_ids.add(exp.get('firebase_id'))
+                except Exception as e:
+                    _log.warning(f"Error processing group {group.get('group_id')}: {e}")
+                    continue
+
+            # Add ungrouped expenses
+            for expense in self.expenses:
+                try:
+                    exp_id = expense.get('firebase_id', '')
+                    # Only add if not in a group
+                    if exp_id not in grouped_expense_ids:
+                        expense_copy = dict(expense)
+                        expense_copy['is_group'] = False
+                        mixed_items.append(expense_copy)
+                except Exception as e:
+                    _log.warning(f"Error processing expense: {e}")
+                    continue
+
+            _log.info(f"Built mixed list with {len(mixed_items)} items ({len([x for x in mixed_items if x.get('is_group')])} groups, {len([x for x in mixed_items if not x.get('is_group')])} ungrouped expenses)")
+
+            # Reverse to show newest first
+            return list(reversed(mixed_items))
+        except Exception as e:
+            _log.error(f"Error building grouped expense list: {e}")
+            # Fallback: return all expenses as ungrouped
+            result = []
+            for exp in self.expenses:
+                exp_copy = dict(exp)
+                exp_copy['is_group'] = False
+                result.append(exp_copy)
+            return list(reversed(result))
             
     def on_pie_slice_clicked(self, slice):
         self.pie_click_table.show()
@@ -8575,7 +9493,131 @@ class ExpensesTab(QtWidgets.QWidget):
 
         outer_layout.addWidget(actions_widget)
         return outer
-    
+
+    def create_group_action_buttons(self, group):
+        """Create action buttons for group rows (View, Edit, Delete)"""
+        outer = QtWidgets.QWidget()
+        outer_layout = QtWidgets.QVBoxLayout(outer)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setAlignment(QtCore.Qt.AlignCenter)
+
+        actions_widget = QtWidgets.QWidget()
+        actions_widget.setMinimumWidth(166)
+        actions_layout = QtWidgets.QHBoxLayout(actions_widget)
+        actions_layout.setContentsMargins(4, 3, 4, 3)
+        actions_layout.setSpacing(4)
+        actions_layout.setAlignment(QtCore.Qt.AlignCenter)
+
+        view_btn = QtWidgets.QPushButton("View")
+        view_btn.setToolTip("View Group Details")
+        view_btn.setFixedSize(48, 30)
+        view_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #e8f4f8;
+                color: #0f766e;
+                border: 1px solid #0f766e;
+                border-radius: 5px;
+                font-size: 11px;
+                font-weight: bold;
+                padding: 2px;
+            }
+            QPushButton:hover { background-color: #d0e8f0; border-color: #0d625c; }
+            QPushButton:pressed { background-color: #b8dce8; }
+        """)
+        view_btn.clicked.connect(lambda: self.view_group_details(group))
+
+        edit_btn = QtWidgets.QPushButton("Edit")
+        edit_btn.setToolTip("Edit Group")
+        edit_btn.setFixedSize(46, 30)
+        edit_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #e8f4f8;
+                color: #0f766e;
+                border: 1px solid #0f766e;
+                border-radius: 5px;
+                font-size: 11px;
+                font-weight: bold;
+                padding: 2px;
+            }
+            QPushButton:hover { background-color: #d0e8f0; border-color: #0d625c; }
+            QPushButton:pressed { background-color: #b8dce8; }
+        """)
+        edit_btn.clicked.connect(lambda: self.edit_group(group))
+
+        delete_btn = QtWidgets.QPushButton("Del")
+        delete_btn.setToolTip("Delete Group")
+        delete_btn.setFixedSize(42, 30)
+        delete_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #e8f4f8;
+                color: #0f766e;
+                border: 1px solid #0f766e;
+                border-radius: 5px;
+                font-size: 11px;
+                font-weight: bold;
+                padding: 2px;
+            }
+            QPushButton:hover { background-color: #fde2e4; border-color: #e74c3c; }
+            QPushButton:pressed { background-color: #fcc7cb; }
+        """)
+        delete_btn.clicked.connect(lambda: self.delete_group(group))
+
+        actions_layout.addWidget(view_btn)
+        actions_layout.addWidget(edit_btn)
+        actions_layout.addWidget(delete_btn)
+
+        outer_layout.addWidget(actions_widget)
+        return outer
+
+    def _style_group_row(self, row):
+        """Apply styling to group rows"""
+        for col in range(self.expenses_table.columnCount()):
+            item = self.expenses_table.item(row, col)
+            if item:
+                font = item.font()
+                font.setBold(True)
+                font.setPointSize(10)
+                item.setFont(font)
+                item.setBackground(QtGui.QColor("#e8f4f8"))
+                item.setForeground(QtGui.QColor("#0f766e"))
+
+    def _style_ledger_row(self, row, expense):
+        """Apply styling to individual expense rows"""
+        pass
+
+    def view_group_details(self, group):
+        """Open group details page"""
+        dialog = GroupExpenseDetailsDialog(group, self)
+        dialog.exec_()
+        self.load_expenses()
+        self.update_expenses_table()
+
+    def edit_group(self, group):
+        """Edit group details"""
+        QtWidgets.QMessageBox.information(
+            self,
+            "Edit Group",
+            f"Edit functionality for group '{group.get('group_name')}' coming soon!"
+        )
+
+    def delete_group(self, group):
+        """Delete expense group"""
+        group_name = group.get('group_name', 'Unnamed Group')
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Delete Group",
+            f"Are you sure you want to delete the group '{group_name}'?\n\nExpenses in this group will be ungrouped but not deleted.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if reply == QtWidgets.QMessageBox.Yes:
+            if ExpensesFirebaseManager.delete_expense_group(group.get('group_id'), keep_expenses=True):
+                QtWidgets.QMessageBox.information(self, "Success", f"Group '{group_name}' deleted successfully!")
+                self.load_expenses()
+                self.update_expenses_table()
+            else:
+                QtWidgets.QMessageBox.critical(self, "Error", "Failed to delete group. Please try again.")
+
     def update_filter_menus(self):
         """Update filter menus with current data"""
         # Populate category filter options

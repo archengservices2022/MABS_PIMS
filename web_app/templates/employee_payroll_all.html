@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}{{ name }} — All Payroll History{% endblock %}
+
+{% block content %}
+<style>
+.detail-header { background:#fff; border-radius:12px; padding:20px 24px; margin-bottom:20px;
+                 box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0; }
+.detail-breadcrumb { font-size:13px; color:#64748b; margin-bottom:12px; }
+.detail-breadcrumb a { color:#0D9488; text-decoration:none; }
+.detail-title { font-size:20px; font-weight:800; color:#0f172a; margin-bottom:4px; }
+.detail-sub { font-size:13px; color:#64748b; }
+.data-table { background:#fff; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.06);
+              border:1px solid #e2e8f0; overflow:hidden; }
+.data-table table { width:100%; font-size:13px; }
+.data-table thead { background:#f8fafc; border-bottom:1px solid #e2e8f0; }
+.data-table th { padding:12px 16px; font-weight:700; color:#0f172a; text-align:left; }
+.data-table td { padding:12px 16px; border-bottom:1px solid #f1f5f9; color:#475569; }
+.data-table tbody tr:hover td { background:#f8fafc; }
+.data-table tbody tr:last-child td { border-bottom:none; }
+.badge { padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; }
+.badge-paid { background:#d1fae5; color:#065f46; }
+.badge-pending { background:#fef3c7; color:#b45309; }
+.badge-salary { background:#dbeafe; color:#1e40af; }
+.badge-bonus { background:#ede9fe; color:#5b21b6; }
+.text-green { color:#16a34a; font-weight:700; }
+.empty-state { text-align:center; padding:40px 20px; color:#94a3b8; }
+.empty-state i { font-size:48px; margin-bottom:16px; opacity:0.5; }
+</style>
+
+<!-- Breadcrumb -->
+<div class="detail-breadcrumb">
+  <a href="{{ url_for('employees') }}">← Employees</a>
+  &nbsp;/&nbsp;
+  <a href="{{ url_for('employee_profile', uid=uid) }}">{{ name }}</a>
+  &nbsp;/&nbsp;
+  All Payroll History
+</div>
+
+<!-- Header -->
+<div class="detail-header">
+  <div class="detail-title"><i class="bi bi-receipt me-2" style="color:#0D9488;"></i>{{ name }} — All Payroll History</div>
+  <div class="detail-sub">Complete salary, bonus, and allowance records</div>
+</div>
+
+<!-- Stat Cards -->
+<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:16px; margin-bottom:20px;">
+  <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
+    <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Total Salary</div>
+    <div style="font-size:20px; font-weight:800; color:#0f172a;">${{ '{:,.2f}'.format(total_salary_amount) }}</div>
+    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">All records</div>
+  </div>
+  <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
+    <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Total Bonus</div>
+    <div style="font-size:20px; font-weight:800; color:#0f172a;">${{ '{:,.2f}'.format(total_bonus_amount) }}</div>
+    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">All records</div>
+  </div>
+  <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
+    <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Paid Records</div>
+    <div style="font-size:20px; font-weight:800; color:#16a34a;">{{ paid_count }}</div>
+    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">${{ '{:,.2f}'.format(paid_amount) }}</div>
+  </div>
+  <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
+    <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Pending Salary</div>
+    <div style="font-size:20px; font-weight:800; color:#b45309;">${{ '{:,.2f}'.format(pending_amount) }}</div>
+    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">{{ pending_count }} record{{ 's' if pending_count != 1 else '' }}</div>
+  </div>
+</div>
+
+<!-- Data Table -->
+<div class="data-table">
+  {% if payroll %}
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Type</th>
+          <th class="text-end">Amount (USD)</th>
+          <th class="text-end">Amount (BDT)</th>
+          <th>Status</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sal in payroll %}
+        <tr>
+          <td class="text-muted small"><strong>{{ (sal.get('date', '') or '—') | format_date }}</strong></td>
+          <td>
+            {% set stype = sal.get('salary_type', 'Salary')|lower %}
+            {% if 'bonus' in stype %}
+            <span class="badge badge-bonus">{{ sal.get('salary_type', 'Bonus') }}</span>
+            {% elif 'deduction' in stype %}
+            <span style="color:#dc2626;">{{ sal.get('salary_type', 'Deduction') }}</span>
+            {% elif 'allowance' in stype or 'benefit' in stype or 'reimburs' in stype or 'medical' in stype or 'transport' in stype %}
+            <span class="badge" style="background:#cffafe; color:#164e63;">{{ sal.get('salary_type', 'Allowance') }}</span>
+            {% else %}
+            <span class="badge badge-salary">{{ sal.get('salary_type', 'Salary') }}</span>
+            {% endif %}
+          </td>
+          <td class="text-end text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(sal.get('amount', 0)|float) }}</td>
+          <td class="text-end text-green">৳{{ '{:,.2f}'.format((sal.get('amount', 0)|float) * (sal.get('exchange_rate', 120)|float)) }}</td>
+          <td>
+            {% set status = sal.get('salary_status', 'Paid')|lower %}
+            {% if status == 'paid' or status == '' %}
+            <span class="badge badge-paid">Paid</span>
+            {% elif status == 'pending' %}
+            <span class="badge badge-pending">Pending</span>
+            {% else %}
+            <span class="badge">{{ sal.get('salary_status', 'Paid') }}</span>
+            {% endif %}
+          </td>
+          <td class="text-muted small">{{ (sal.get('notes') or '—')[:30] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <!-- Pagination with Input -->
+  {% if total_pages > 1 %}
+  <div style="padding:16px; display:flex; justify-content:center; align-items:center; gap:12px;">
+    {% if page > 1 %}
+    <a href="{{ url_for('employee_all_payroll', uid=uid, page=1) }}" class="btn btn-sm btn-outline-secondary" title="First"><</a>
+    {% else %}
+    <button class="btn btn-sm btn-outline-secondary" disabled><</button>
+    {% endif %}
+
+    <input type="number" id="pageInput_payroll" value="{{ page }}" min="1" max="{{ total_pages }}" style="width:60px; padding:6px 8px; border:1px solid #d1d5db; border-radius:6px; text-align:center; font-size:13px;" onchange="goToPage_payroll(this.value)">
+
+    <span style="font-size:13px; color:#64748b;">of <strong>{{ total_pages }}</strong></span>
+
+    {% if page < total_pages %}
+    <a href="{{ url_for('employee_all_payroll', uid=uid, page=page+1) }}" class="btn btn-sm btn-outline-secondary" title="Next">></a>
+    {% else %}
+    <button class="btn btn-sm btn-outline-secondary" disabled>></button>
+    {% endif %}
+  </div>
+  <script>
+    function goToPage_payroll(pageNum) {
+      const page = parseInt(pageNum);
+      if (page >= 1 && page <= {{ total_pages }}) {
+        window.location.href = "{{ url_for('employee_all_payroll', uid=uid, page=1) }}".replace('page=1', 'page=' + page);
+      }
+    }
+  </script>
+  {% endif %}
+  {% else %}
+  <div class="empty-state">
+    <i class="bi bi-receipt"></i>
+    <div style="font-size:14px;"><strong>No payroll records</strong></div>
+    <div style="font-size:12px; margin-top:8px;">{{ name }} has no payroll history yet.</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

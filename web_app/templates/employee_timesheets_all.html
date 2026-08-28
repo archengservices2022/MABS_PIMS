@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}{{ name }} — All Timesheets{% endblock %}
+
+{% block content %}
+<style>
+.detail-header { background:#fff; border-radius:12px; padding:20px 24px; margin-bottom:20px;
+                 box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0; }
+.detail-breadcrumb { font-size:13px; color:#64748b; margin-bottom:12px; }
+.detail-breadcrumb a { color:#0D9488; text-decoration:none; }
+.detail-title { font-size:20px; font-weight:800; color:#0f172a; margin-bottom:4px; }
+.detail-sub { font-size:13px; color:#64748b; }
+.data-table { background:#fff; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.06);
+              border:1px solid #e2e8f0; overflow:hidden; }
+.data-table table { width:100%; font-size:13px; }
+.data-table thead { background:#f8fafc; border-bottom:1px solid #e2e8f0; }
+.data-table th { padding:12px 16px; font-weight:700; color:#0f172a; text-align:left; }
+.data-table td { padding:12px 16px; border-bottom:1px solid #f1f5f9; color:#475569; }
+.data-table tbody tr:hover td { background:#f8fafc; }
+.data-table tbody tr:last-child td { border-bottom:none; }
+.badge { padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; }
+.badge-approved { background:#d1fae5; color:#065f46; }
+.badge-draft { background:#fed7aa; color:#92400e; }
+.badge-pending { background:#fef3c7; color:#b45309; }
+.badge-submitted { background:#dbeafe; color:#1e40af; }
+.badge-rejected { background:#fee2e2; color:#991b1b; }
+.empty-state { text-align:center; padding:40px 20px; color:#94a3b8; }
+.empty-state i { font-size:48px; margin-bottom:16px; opacity:0.5; }
+</style>
+
+<!-- Breadcrumb -->
+<div class="detail-breadcrumb">
+  <a href="{{ url_for('employees') }}">← Employees</a>
+  &nbsp;/&nbsp;
+  <a href="{{ url_for('employee_profile', uid=uid) }}">{{ name }}</a>
+  &nbsp;/&nbsp;
+  All Timesheets
+</div>
+
+<!-- Header -->
+<div class="detail-header">
+  <div class="detail-title"><i class="bi bi-calendar-event me-2" style="color:#7C3AED;"></i>{{ name }} — All Timesheets</div>
+  <div class="detail-sub">Complete timesheet submission history</div>
+</div>
+
+<!-- Stat Cards -->
+<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:16px; margin-bottom:20px;">
+  <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
+    <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Total Hours</div>
+    <div style="font-size:20px; font-weight:800; color:#0f172a;">{{ '{:,.1f}'.format(total_hours) }}</div>
+    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">All timesheets</div>
+  </div>
+  <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
+    <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Approved</div>
+    <div style="font-size:20px; font-weight:800; color:#16a34a;">{{ approved_count }}</div>
+    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">{{ '{:,.1f}'.format(approved_hours) }} hrs</div>
+  </div>
+  <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
+    <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Draft</div>
+    <div style="font-size:20px; font-weight:800; color:#b45309;">{{ draft_count }}</div>
+    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">Pending submission</div>
+  </div>
+  <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
+    <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Submitted</div>
+    <div style="font-size:20px; font-weight:800; color:#1e40af;">{{ submitted_count }}</div>
+    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">Under review</div>
+  </div>
+  <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
+    <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Rejected</div>
+    <div style="font-size:20px; font-weight:800; color:#dc2626;">{{ rejected_count }}</div>
+    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">Not approved</div>
+  </div>
+</div>
+
+<!-- Data Table -->
+<div class="data-table">
+  {% if timesheets %}
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Period</th>
+          <th class="text-end">Total Hours</th>
+          <th>Status</th>
+          <th>Submitted At</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ts in timesheets %}
+        {% set ws = ts.get('week_of', '') %}
+        {% if ws %}
+          {% set year = ws[:4]|int %}
+          {% set month = ws[5:7]|int %}
+          {% set day = ws[8:10]|int %}
+          {% set week_end_day = day + 6 %}
+          {% if week_end_day <= 31 %}
+            {% set we = '{:04d}-{:02d}-{:02d}'.format(year, month, week_end_day) %}
+          {% elif month == 12 %}
+            {% set we = '{:04d}-01-{:02d}'.format(year + 1, week_end_day - 31) %}
+          {% else %}
+            {% set we = '{:04d}-{:02d}-{:02d}'.format(year, month + 1, week_end_day - 31) %}
+          {% endif %}
+        {% else %}
+          {% set we = '—' %}
+        {% endif %}
+        <tr>
+          <td><strong>{{ '{:02d}-{:02d}-{:04d}'.format(month, day, year) }} — {{ '{:02d}-{:02d}-{:04d}'.format(we[5:7]|int, we[8:10]|int, we[:4]|int) if ws else we }}</strong></td>
+          <td class="text-end">{{ '{:,.1f}'.format(ts.get('total_hours', 0)|float) }} hrs</td>
+          <td>
+            {% set status = ts.get('status', 'Pending')|lower %}
+            {% if status == 'approved' %}
+            <span class="badge badge-approved">Approved</span>
+            {% elif status == 'draft' %}
+            <span class="badge badge-draft">Draft</span>
+            {% elif status == 'pending' %}
+            <span class="badge badge-pending">Pending</span>
+            {% elif status == 'submitted' %}
+            <span class="badge badge-submitted">Submitted</span>
+            {% elif status == 'rejected' %}
+            <span class="badge badge-rejected">Rejected</span>
+            {% else %}
+            <span class="badge">{{ ts.get('status', 'Pending') }}</span>
+            {% endif %}
+          </td>
+          <td class="text-muted small">{{ (ts.get('submitted_at', '') or ts.get('created_at', '')[:10] or '—') | format_date }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <!-- Pagination with Input -->
+  {% if total_pages > 1 %}
+  <div style="padding:16px; display:flex; justify-content:center; align-items:center; gap:12px;">
+    {% if page > 1 %}
+    <a href="{{ url_for('employee_all_timesheets', uid=uid, page=1) }}" class="btn btn-sm btn-outline-secondary" title="First"><</a>
+    {% else %}
+    <button class="btn btn-sm btn-outline-secondary" disabled><</button>
+    {% endif %}
+
+    <input type="number" id="pageInput_timesheets" value="{{ page }}" min="1" max="{{ total_pages }}" style="width:60px; padding:6px 8px; border:1px solid #d1d5db; border-radius:6px; text-align:center; font-size:13px;" onchange="goToPage_timesheets(this.value)">
+
+    <span style="font-size:13px; color:#64748b;">of <strong>{{ total_pages }}</strong></span>
+
+    {% if page < total_pages %}
+    <a href="{{ url_for('employee_all_timesheets', uid=uid, page=page+1) }}" class="btn btn-sm btn-outline-secondary" title="Next">></a>
+    {% else %}
+    <button class="btn btn-sm btn-outline-secondary" disabled>></button>
+    {% endif %}
+  </div>
+  <script>
+    function goToPage_timesheets(pageNum) {
+      const page = parseInt(pageNum);
+      if (page >= 1 && page <= {{ total_pages }}) {
+        window.location.href = "{{ url_for('employee_all_timesheets', uid=uid, page=1) }}".replace('page=1', 'page=' + page);
+      }
+    }
+  </script>
+  {% endif %}
+  {% else %}
+  <div class="empty-state">
+    <i class="bi bi-calendar-event"></i>
+    <div style="font-size:14px;"><strong>No timesheets submitted</strong></div>
+    <div style="font-size:12px; margin-top:8px;">{{ name }} hasn't submitted any timesheets yet.</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

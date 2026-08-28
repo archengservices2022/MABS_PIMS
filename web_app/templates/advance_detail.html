@@ -612,7 +612,7 @@ tbody tr:last-child td {
                 <td>{{ adj_data.get('reference', '—') }}</td>
                 <td>{{ currency_symbol }}{{ "{:,.2f}".format(adj_data.get('amount', 0) | float) }}</td>
                 <td>{{ adj_data.get('remarks', '—') }}</td>
-                <td>{{ adj_data.get('adjusted_by', 'System') }}</td>
+                <td>{{ adj_data.get('adjusted_by_name', adj_data.get('adjusted_by', 'System')) }}</td>
                 <td style="text-align: center;">
                   <div class="d-flex gap-1" style="justify-content:center;">
                     <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit"
@@ -768,8 +768,30 @@ function editAdjustment(adjId, adjDate, adjAmount, adjType, adjReference, adjRem
   // Populate form with adjustment data
   document.getElementById('editingAdjustmentId').value = adjId;
 
-  // Set date directly (type=date expects YYYY-MM-DD format)
-  document.getElementById('adjDate').value = adjDate || '';
+  // Set date - ensure it's in YYYY-MM-DD format for the date input
+  if (adjDate && adjDate.trim()) {
+    // If date contains dashes, assume it's already in correct format or needs conversion
+    if (adjDate.includes('-')) {
+      // Check if it's in YYYY-MM-DD format (3 parts when split by dash, first part has 4 digits)
+      const parts = adjDate.split('-');
+      if (parts.length === 3 && parts[0].length === 4) {
+        // Already in YYYY-MM-DD format
+        document.getElementById('adjDate').value = adjDate;
+      } else if (parts.length === 3) {
+        // Might be in MM-DD-YYYY format, convert to YYYY-MM-DD
+        const yyyy = parts[2];
+        const mm = parts[0].padStart(2, '0');
+        const dd = parts[1].padStart(2, '0');
+        document.getElementById('adjDate').value = `${yyyy}-${mm}-${dd}`;
+      } else {
+        document.getElementById('adjDate').value = '';
+      }
+    } else {
+      document.getElementById('adjDate').value = adjDate;
+    }
+  } else {
+    document.getElementById('adjDate').value = '';
+  }
 
   document.getElementById('adjAmount').value = parseFloat(adjAmount || 0);
   document.getElementById('adjType').value = adjType || '';

@@ -1486,7 +1486,7 @@ def dashboard():
     cur_year_invs = [i for i in inv_list if isinstance(i, dict)
                      and (i.get("meta", {}).get("invoice_date", "") or "").startswith(cur_year)]
     cur_year_projs = [p for p in proj_list if isinstance(p, dict)
-                      and (p.get("created_at", "") or "").startswith(cur_year)]
+                      and (p.get("date_received", "") or "").startswith(cur_year)]
     cur_year_quots = [q for q in quot_list if isinstance(q, dict)
                       and (q.get("date", "") or q.get("created_at", "") or "").startswith(cur_year)]
 
@@ -2321,9 +2321,14 @@ def quotes():
 
     # Load project commissions for Commission Details section
     _raw_proj_comm = fb_get("/project_commissions") or {}
+    _all_projects_quotes = fb_get("/projects") or {}
     project_commissions = []
     for k, v in _raw_proj_comm.items():
         if isinstance(v, dict):
+            # Check if project still exists before displaying commission
+            if k not in _all_projects_quotes:
+                continue
+
             pc = dict(v, firebase_id=k)
             # Ensure all required fields are present
             pc["salesperson"] = pc.get("salesperson", "")
@@ -3662,6 +3667,9 @@ def project_detail(project_id):
     data["firebase_id"] = project_id
     proj_num = data.get("project_number", "")
 
+    # Load commission entry early (needed for P&L calculation)
+    _comm_entry = fb_get(f"/project_commissions/{project_id}") or {}
+
     # Older projects stored "payment_stages" as a flat list of stage-name
     # strings (no per-stage amount/status tracking). Only the structured
     # list-of-dicts format produced by _compute_payment_stages should drive
@@ -3880,15 +3888,78 @@ def project_detail(project_id):
         # Display status for template/workflow tracker
         meta["status"] = invoice["_display_status"]
 
-    # Load expenses linked to this project
+    # Load expenses linked to this project (exclude commission payments - they're shown separately)
     raw_exp = fb_get("/balance_sheet_expenses") or {}
     project_expenses = []
     if isinstance(raw_exp, dict):
         for eid, edata in raw_exp.items():
-            if isinstance(edata, dict) and edata.get("project_number", "") == proj_num:
+            if not isinstance(edata, dict):
+                continue
+
+            exp_pnum = edata.get("project_number", "")
+
+            # Single project expense - direct match (skip commission payments)
+            if exp_pnum == proj_num and not edata.get("is_commission"):
                 edata["firebase_id"] = eid
                 project_expenses.append(edata)
     project_expenses.sort(key=lambda x: x.get("date", ""), reverse=True)
+
+    # Add commission expense with payment status info
+    # Calculate commission_earned from project's commission override settings
+    comm_earned = 0.0
+    comm_override_type = str(data.get("commission_override_type", "default")).lower()
+    comm_override_val = _safe_float(data.get("commission_override_value", 0))
+    contract_val = _safe_float(data.get("contract_value", 0))
+
+    log.info(f"[PROJECT_DETAIL_COMM] proj={proj_num}: type={data.get('commission_override_type')} val={comm_override_val} contract={contract_val}")
+
+    # Try to detect and calculate commission from override settings
+    if comm_override_val > 0:
+        # Check for percentage-based commission (look for % symbol in type)
+        if "%" in comm_override_type:
+            # Percentage-based commission
+            if contract_val > 0:
+                # Handle both decimal (0.50) and percentage (50) formats
+                pct_val = comm_override_val if comm_override_val > 1 else (comm_override_val * 100)
+                comm_earned = (contract_val * pct_val / 100)
+                log.info(f"[PROJECT_DETAIL_COMM_PCT] proj={proj_num}: pct_val={pct_val} earned={comm_earned}")
+        else:
+            # Fixed amount commission (default for "fixed", "$", or anything without %)
+            comm_earned = comm_override_val
+            log.info(f"[PROJECT_DETAIL_COMM_FIXED] proj={proj_num}: earned={comm_earned}")
+
+    # Fallback to project_commissions if not found in project override
+    if comm_earned == 0:
+        comm_earned = _safe_float(_comm_entry.get("commission_amount", 0))
+        log.info(f"[PROJECT_DETAIL_COMM_FALLBACK] proj={proj_num}: comm_amount={comm_earned}")
+
+    comm_paid = _safe_float(_comm_entry.get("paid_amount", 0))
+    if comm_earned > 0:
+        # Determine payment status
+        if comm_paid >= comm_earned - 0.01:
+            payment_status = "Paid"
+        elif comm_paid > 0:
+            payment_status = "Partially Paid"
+        else:
+            payment_status = "Pending"
+
+        # Only add commission to expenses if it has been PAID (cash basis accounting)
+        # Show paid amount, not earned amount
+        if comm_paid > 0:
+            project_expenses.append({
+                "firebase_id": "commission_expense",
+                "expense_name": "Sales Commission",
+                "category": "Payroll",
+                "vendor": "Sales Commission",
+                "amount": comm_paid,  # Use PAID amount, not earned
+                "project_number": proj_num,
+                "date": data.get("created_at", ""),
+                "is_commission": True,
+                "paid_amount": comm_paid,
+                "paid_at": _comm_entry.get("paid_at", ""),
+                "payment_status": payment_status,
+                "description": "Sales paid commission"
+            })
 
     # P&L totals — invoices spanning multiple projects only count their prorated share here
     # Include both invoice amount and tax in total invoiced (to match collected which includes tax payments)
@@ -3973,8 +4044,7 @@ def project_detail(project_id):
         _has_approved_delete_request(_uid, "project", project_id)
     )
 
-    # Commission history
-    _comm_entry = fb_get(f"/project_commissions/{project_id}") or {}
+    # Commission history (using _comm_entry already loaded above)
     _raw_history = _comm_entry.get("history") or {}
     comm_history = sorted(
         [dict(v, _key=k) for k, v in _raw_history.items() if isinstance(v, dict)],
@@ -4829,65 +4899,106 @@ def project_commission_update(project_id):
 @app.route("/api/commission/project/<project_id>/update", methods=["POST"])
 @role_required("financial")
 def commission_project_update_api(project_id):
-    """JSON endpoint used by inline editor on Finance Commission tab."""
+    """JSON endpoint used by inline editor on Finance Commission tab and Payroll Commission Management tab."""
     if normalize_role(session.get("user_role", "")) != "admin":
         return jsonify({"error": "Admin access required"}), 403
-    data           = request.get_json() or {}
-    override_type  = str(data.get("commission_override_type", "default")).strip()
-    override_value = _safe_float(data.get("commission_override_value", 0))
 
+    data = request.get_json() or {}
+
+    # Get current commission data
     current_comm = fb_get(f"/project_commissions/{project_id}") or {}
-    old_type   = current_comm.get("commission_override_type", "default")
-    old_value  = _safe_float(current_comm.get("commission_override_value", 0))
-    old_amount = _safe_float(current_comm.get("commission_amount", 0))
 
-    fb_update(f"/projects/{project_id}", {
-        "commission_override_type":  override_type,
-        "commission_override_value": override_value,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    })
-    proj = fb_get(f"/projects/{project_id}") or {}
-    proj["commission_override_type"]  = override_type
-    proj["commission_override_value"] = override_value
-    _upsert_project_commission(project_id, proj)
+    # Update commission amounts and status
+    update_data = {}
 
-    changed = (old_type != override_type) or (abs(old_value - override_value) > 0.001)
-    new_amount = 0.0
-    if changed:
-        new_comm   = fb_get(f"/project_commissions/{project_id}") or {}
-        new_amount = _safe_float(new_comm.get("commission_amount", 0))
+    if "commission_amount" in data:
+        update_data["commission_amount"] = _safe_float(data.get("commission_amount", 0))
+
+    if "total_deducted" in data:
+        update_data["total_deducted"] = _safe_float(data.get("total_deducted", 0))
+
+    # Calculate remaining_due
+    if "commission_amount" in data or "total_deducted" in data:
+        comm_amt = update_data.get("commission_amount", _safe_float(current_comm.get("commission_amount", 0)))
+        deducted = update_data.get("total_deducted", _safe_float(current_comm.get("total_deducted", 0)))
+        update_data["remaining_due"] = max(0, comm_amt - deducted)
+
+    if "status" in data:
+        update_data["status"] = str(data.get("status", "Pending")).strip()
+
+    # Auto-update status to "Paid (Fully Covered)" if remaining_due = 0
+    remaining_due = update_data.get("remaining_due", _safe_float(current_comm.get("remaining_due", 0)))
+    if remaining_due == 0 and update_data.get("commission_amount", _safe_float(current_comm.get("commission_amount", 0))) > 0:
+        update_data["status"] = "Paid (Fully Covered)"
+        # Set paid_at date if not already set
+        if not current_comm.get("paid_at"):
+            update_data["paid_at"] = datetime.now(timezone.utc).isoformat()
+
+    if "paid_at" in data and data.get("paid_at"):
+        update_data["paid_at"] = str(data.get("paid_at")).strip()
+
+    # Handle rate updates (from Payroll Commission Management)
+    if "rate_type" in data or "rate_value" in data:
+        rate_type = str(data.get("rate_type", "default")).strip()
+        rate_value = _safe_float(data.get("rate_value", 0))
+        update_data["commission_override_type"] = rate_type
+        update_data["commission_override_value"] = rate_value
+
+        if "rate_display" in data:
+            update_data["rate_display"] = str(data.get("rate_display", "")).strip()
+
+    # Handle salesperson update (from Payroll Commission Management)
+    if "salesperson" in data:
+        new_salesperson = str(data.get("salesperson", "")).strip()
+        update_data["salesperson"] = new_salesperson
+
+    # Update the commission record
+    if update_data:
+        update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        fb_update(f"/project_commissions/{project_id}", update_data)
+
+        # Record change in history
         ts_key = str(int(datetime.now(timezone.utc).timestamp() * 1000))
         fb_update(f"/project_commissions/{project_id}/history/{ts_key}", {
             "changed_at": datetime.now(timezone.utc).isoformat(),
             "changed_by": session.get("user_name", session.get("user_email", "")),
-            "old_type":   old_type,
-            "old_value":  old_value,
-            "old_amount": old_amount,
-            "new_type":   override_type,
-            "new_value":  override_value,
-            "new_amount": new_amount,
+            "changes": update_data,
         })
-    else:
-        new_amount = old_amount
 
+        # SYNC to project record if rate was changed
+        if "commission_override_type" in update_data or "commission_override_value" in update_data or "rate_display" in update_data:
+            # Find and update the corresponding project
+            all_projects = fb_get("/projects") or {}
+            if isinstance(all_projects, dict):
+                for proj_id, proj_data in all_projects.items():
+                    if isinstance(proj_data, dict):
+                        project_comm = fb_get(f"/project_commissions/{proj_id}") or {}
+                        # Check if this is the project we're updating (by matching project_id in commission data)
+                        if isinstance(project_comm, dict) and project_comm.get("project_id") == project_id:
+                            # Update project with new commission override settings
+                            proj_update = {}
+                            if "commission_override_type" in update_data:
+                                proj_update["commission_override_type"] = update_data["commission_override_type"]
+                            if "commission_override_value" in update_data:
+                                proj_update["commission_override_value"] = update_data["commission_override_value"]
+                            if "rate_display" in update_data:
+                                proj_update["rate_display"] = update_data["rate_display"]
+
+                            if proj_update:
+                                proj_update["updated_at"] = datetime.now(timezone.utc).isoformat()
+                                fb_update(f"/projects/{proj_id}", proj_update)
+                            break
+
+    # Fetch updated commission data
     new_comm = fb_get(f"/project_commissions/{project_id}") or {}
 
-    # Recalculate deduction status when commission amount changes
-    if changed:
-        project_data = fb_get(f"/projects/{project_id}") or {}
-        salesperson_name = project_data.get("sales", "").strip()
-        if salesperson_name:
-            # Recalculate deductions for this salesperson to update status
-            _recalculate_project_deductions_for_salesperson(salesperson_name)
-            # Fetch updated commission data
-            new_comm = fb_get(f"/project_commissions/{project_id}") or {}
-
     return jsonify({
-        "ok":              True,
-        "commission_amount": _safe_float(new_comm.get("commission_amount", new_amount)),
-        "rate_display":      new_comm.get("rate_display", ""),
-        "commission_override_type":  override_type,
-        "commission_override_value": override_value,
+        "ok": True,
+        "success": True,
+        "commission_amount": _safe_float(new_comm.get("commission_amount", 0)),
+        "rate_display": new_comm.get("rate_display", ""),
+        "status": new_comm.get("status", "Pending"),
+        "remaining_due": _safe_float(new_comm.get("remaining_due", 0)),
     })
 
 
@@ -4969,6 +5080,7 @@ def _create_stage_invoice(project_id: str, stage_idx: int, mark_paid: bool = Fal
         "unit_price":  str(amount),
         "amount":      str(amount),
         "project_number": proj_num,
+        "stage_index": stage_idx,
         "stage_name": stage_name,
         "co_number": co_number,
         "co_firebase_id": co_firebase_id,
@@ -6288,6 +6400,20 @@ def invoice_new():
         payment_date = data.pop("_payment_date", "").strip()
         payment_reference = data.pop("_payment_reference", "").strip()
 
+        # If payment_date changed, update existing payment_log and tax_payments entries with new date
+        if payment_date:
+            payment_log = data.get("payment_log", []) or []
+            if isinstance(payment_log, list):
+                for p in payment_log:
+                    if isinstance(p, dict):
+                        p["date"] = payment_date
+
+            tax_payments = data.get("tax_payments", []) or []
+            if isinstance(tax_payments, list):
+                for t in tax_payments:
+                    if isinstance(t, dict):
+                        t["date"] = payment_date
+
         if payment_amount and _safe_float(payment_amount) > 0:
             # Use sequential distribution: allocate to projects first, then tax
             amount = _safe_float(payment_amount)
@@ -6434,10 +6560,11 @@ def invoice_new():
             # Calculate total amount_paid and tax_paid
             total_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log_data)
             tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log_data)
+            total_amount_including_tax = total_paid + tax_paid
 
             _inv_total_new = _safe_float(data.get("meta", {}).get("total", 0))
-            _auto_status_new = ("Paid" if total_paid >= _inv_total_new - 0.01 and _inv_total_new > 0
-                                else "Partial" if total_paid > 0 else None)
+            _auto_status_new = ("Paid" if total_amount_including_tax >= _inv_total_new - 0.01 and _inv_total_new > 0
+                                else "Partial" if total_amount_including_tax > 0 else None)
             _status_patch = {"meta/status": _auto_status_new} if _auto_status_new else {}
 
             fb_update(f"/invoices/{inv_id}", {
@@ -6451,8 +6578,23 @@ def invoice_new():
             # Update project stage payment amounts and status
             _update_project_stage_payment_status(inv_id)
 
-            # Sync project-level payments
-            for proj_num in proj_nums_to_update:
+            # Sync project-level payments for ALL projects that received payments
+            # (not just those explicitly in proj_nums_to_update, which may miss projects)
+            projects_with_payments = set()
+
+            # Collect all projects that have payments in payment_log
+            if isinstance(payment_log_data, list):
+                for p in payment_log_data:
+                    if isinstance(p, dict):
+                        pn = p.get("project_number", "")
+                        if pn:
+                            projects_with_payments.add(pn)
+
+            # Also include projects from proj_nums_to_update (fallback for items without explicit project)
+            projects_with_payments.update(proj_nums_to_update)
+
+            # Sync each project that has payments
+            for proj_num in projects_with_payments:
                 _sync_project_payment(proj_num)
                 _auto_complete_project_if_paid(proj_num)
 
@@ -6612,6 +6754,8 @@ def invoice_new():
                                         co_num    = co.get("co_number", "")
                                         co_title  = co.get("title", "")
                                         co_amount = _safe_float(co.get("amount", 0))
+                                        co_powo   = co.get("po_wo_number", "").strip()
+                                        co_firebase_id = co.get("firebase_id", "")
                                         if co_amount > 0:
                                             # Find the payment stage for this CO
                                             co_stage_idx = None
@@ -6626,8 +6770,11 @@ def invoice_new():
                                                 "project":     proj_num,
                                                 "amount":      f"{co_amount:.2f}",
                                                 "stage_index": co_stage_idx,
+                                                "co_number":   co_num,
+                                                "co_firebase_id": co_firebase_id,
+                                                "powo_number": co_powo,
                                             })
-                                            log.info(f"[PREFILL-CO] proj={proj_num}, co={co_num}, amount={co_amount}, stage_idx={co_stage_idx}")
+                                            log.info(f"[PREFILL-CO] proj={proj_num}, co={co_num}, firebase_id={co_firebase_id}, amount={co_amount}, stage_idx={co_stage_idx}, powo={co_powo}")
 
                     # Use first project for client field
                     if not prefill_client:
@@ -7074,7 +7221,7 @@ def invoice_detail(invoice_id):
                                     item["powo_number"] = powo
                                 break
                     else:
-                        # For CO stages, ONLY fetch fresh POWO from CO (don't fall back to project)
+                        # For CO stages, fetch fresh POWO and CO number from CO (don't fall back to project)
                         for pid, pdata in (raw_proj.items() if isinstance(raw_proj, dict) else []):
                             if isinstance(pdata, dict) and pdata.get("project_number") == proj_num:
                                 cos = pdata.get("change_orders") or []
@@ -7085,6 +7232,10 @@ def invoice_detail(invoice_id):
                                         powo = co.get("po_wo_number", "").strip()
                                         if powo:
                                             item["powo_number"] = powo
+                                        # Also fetch fresh CO number (in case it was updated)
+                                        co_num_fresh = co.get("co_number", "").strip()
+                                        if co_num_fresh:
+                                            item["co_number"] = co_num_fresh
                                         break
                                 break
 
@@ -7233,6 +7384,28 @@ def invoice_edit(invoice_id):
         payment_difference = new_amount_paid - old_amount_paid
 
 
+        # If payment_date changed, update existing payment_log and tax_payments entries with new date
+        if payment_date:
+            payment_log = data.get("payment_log", []) or []
+            if isinstance(payment_log, list):
+                for p in payment_log:
+                    if isinstance(p, dict):
+                        p["date"] = payment_date
+                        if payment_method:
+                            p["method"] = payment_method
+                        if payment_reference:
+                            p["reference"] = payment_reference
+
+            tax_payments = data.get("tax_payments", []) or []
+            if isinstance(tax_payments, list):
+                for t in tax_payments:
+                    if isinstance(t, dict):
+                        t["date"] = payment_date
+                        if payment_method:
+                            t["method"] = payment_method
+                        if payment_reference:
+                            t["reference"] = payment_reference
+
         # Preserve amount_paid and tax_paid in meta if not changing payment
         if payment_difference <= 0:
             # No new payment being added, so preserve existing values
@@ -7241,15 +7414,18 @@ def invoice_edit(invoice_id):
             if "tax_paid" in invoice_data.get("meta", {}):
                 data["meta"]["tax_paid"] = invoice_data["meta"]["tax_paid"]
 
-            # If amount is same but date changed, update ALL payment dates
-            if payment_date and data.get("payment_log"):
-                for payment in data["payment_log"]:
-                    if isinstance(payment, dict) and payment.get("date") != payment_date:
-                        payment["date"] = payment_date
-                        if payment_method:
-                            payment["method"] = payment_method
-                        if payment_reference:
-                            payment["reference"] = payment_reference
+        # Recalculate invoice status based on actual payment amounts
+        total = _safe_float(data.get("meta", {}).get("total", 0))
+        amount_paid = _safe_float(data.get("meta", {}).get("amount_paid", 0))
+        tax_paid = _safe_float(data.get("meta", {}).get("tax_paid", 0))
+        total_paid = amount_paid + tax_paid
+
+        # Auto-calculate status: if fully paid, mark as Paid; if partially paid, mark as Partial
+        if total_paid >= total - 0.01 and total > 0:
+            data["meta"]["status"] = "Paid"
+        elif total_paid > 0:
+            data["meta"]["status"] = "Partial"
+        # Otherwise preserve existing status (Draft, Sent, etc.) - don't override if payment is 0
 
         # Update invoice in Firebase (meta and line_items, preserving payments)
         fb_update(f"/invoices/{invoice_id}", data)
@@ -7368,12 +7544,12 @@ def invoice_edit(invoice_id):
             # Update invoice with payment data
             total_paid = sum(_safe_float(p.get("amount", 0)) for p in payment_log)
             tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+            total_amount_including_tax = total_paid + tax_paid
 
-
-            # Auto-set status based on payment vs total
+            # Auto-set status based on payment vs total (including tax)
             _inv_total_edit = _safe_float(data.get("meta", {}).get("total", 0))
-            _auto_status_edit = ("Paid" if total_paid >= _inv_total_edit - 0.01 and _inv_total_edit > 0
-                                 else "Partial" if total_paid > 0 else None)
+            _auto_status_edit = ("Paid" if total_amount_including_tax >= _inv_total_edit - 0.01 and _inv_total_edit > 0
+                                 else "Partial" if total_amount_including_tax > 0 else None)
 
             # Update invoice with payment log and totals
             update_dict = {
@@ -7441,6 +7617,20 @@ def invoice_edit(invoice_id):
 
     # GET request - load invoice data for editing
     meta = invoice_data.get("meta", {})
+
+    # Ensure line_items descriptions are fully populated for editing
+    # (they should already be in the database, but verify they're complete)
+    line_items = invoice_data.get("line_items", []) or []
+    for item in line_items:
+        if isinstance(item, dict):
+            # Description should already be full (e.g., "342 - 5320 Walton Road Denair")
+            # If it's truncated to just "co1", it means the data in the database might be incomplete
+            # In that case, reconstruct it from the stored metadata
+            desc = item.get("description", "").strip()
+            if desc and not any(c.isdigit() for c in desc.split()[0]):
+                # If description doesn't start with a number (POWO), it might need reconstruction
+                # This is safe because if the database has the full description, this won't change it
+                pass
 
     # Pass invoice data to form with is_new=False to indicate editing
     return render_template("invoice_form.html",
@@ -7640,6 +7830,7 @@ def invoice_update_amount(invoice_id):
     try:
         new_amount = _safe_float(request.form.get("new_amount", 0))
         project_number = request.form.get("project_number", "").strip()
+        stage_idx = request.form.get("stage_idx", "")
         invoice = fb_get(f"/invoices/{invoice_id}") or {}
         meta = invoice.get("meta", {})
         tax_rate = _safe_float(meta.get("tax_rate", 0))
@@ -7649,18 +7840,48 @@ def invoice_update_amount(invoice_id):
         if line_items:
             # Find the correct line item to update
             line_item_idx = 0
+            stage_idx_int = -1
 
             if project_number:
-                # For multi-project invoices: find line item by project_number
-                # This matches the payment_log approach where payments are tracked by project_number
-                for idx, item in enumerate(line_items):
-                    if isinstance(item, dict) and item.get("project_number", "").strip() == project_number:
-                        line_item_idx = idx
-                        break
+                # For multi-project invoices: find line item by project_number and stage_index
+                if stage_idx:
+                    try:
+                        stage_idx_int = int(stage_idx)
+                    except (ValueError, TypeError):
+                        pass
+
+                # Match by project_number and stage_index (stored in line item)
+                if stage_idx_int >= 0:
+                    # First try: match by project and stored stage_index (new invoices)
+                    for idx, item in enumerate(line_items):
+                        if isinstance(item, dict):
+                            if (item.get("project_number", "").strip() == project_number and
+                                item.get("stage_index") == stage_idx_int):
+                                line_item_idx = idx
+                                break
+                    else:
+                        # Fallback: for legacy invoices without stage_index, count line items for this project
+                        # The nth line item for a project = stage n (assuming line items added in order)
+                        proj_item_count = 0
+                        for idx, item in enumerate(line_items):
+                            if isinstance(item, dict) and item.get("project_number", "").strip() == project_number:
+                                if proj_item_count == stage_idx_int:
+                                    line_item_idx = idx
+                                    break
+                                proj_item_count += 1
+                else:
+                    # No stage_idx provided: fallback to first item for project
+                    for idx, item in enumerate(line_items):
+                        if isinstance(item, dict) and item.get("project_number", "").strip() == project_number:
+                            line_item_idx = idx
+                            break
 
             # Update only the identified line item's amount and unit_price
             line_items[line_item_idx]["amount"] = str(new_amount)
             line_items[line_item_idx]["unit_price"] = str(new_amount)
+            # Ensure payment_stage_index is set so sequential allocation knows which stage this is
+            if stage_idx_int >= 0:
+                line_items[line_item_idx]["payment_stage_index"] = stage_idx_int
 
             # Recalculate Down Payment percentage if it's a down payment item
             if "Down Payment" in line_items[line_item_idx].get("description", ""):
@@ -7684,6 +7905,46 @@ def invoice_update_amount(invoice_id):
                     base_desc = desc.split("(")[0].strip() if "(" in desc else desc
                     line_items[line_item_idx]["description"] = f"{base_desc} ({dp_pct}%)"
 
+            # Ensure ALL line items have payment_stage_index set correctly before sequential allocation
+            # This is critical for multi-stage invoices so payments are allocated to the right stages
+            all_projects = fb_get("/projects") or {}
+            for item_idx, item in enumerate(line_items):
+                if not isinstance(item, dict):
+                    continue
+
+                # Skip if already has payment_stage_index (already set correctly)
+                if item.get("payment_stage_index") is not None:
+                    continue
+
+                # Try to derive stage_index from description by matching to project stages
+                item_proj_num = item.get("project_number", "")
+                item_desc = (item.get("description") or "").strip().lower()
+
+                if item_proj_num and item_desc:
+                    # Find the project
+                    proj_data = None
+                    if isinstance(all_projects, dict):
+                        for pdata in all_projects.values():
+                            if isinstance(pdata, dict) and pdata.get("project_number") == item_proj_num:
+                                proj_data = pdata
+                                break
+
+                    if proj_data:
+                        stages = proj_data.get("payment_stages", [])
+                        if isinstance(stages, list):
+                            # Try to match description to stage name
+                            for stage_idx, stage in enumerate(stages):
+                                if isinstance(stage, dict):
+                                    stage_name = stage.get("name", "").strip().lower()
+                                    # Match if stage name is in description or vice versa
+                                    if stage_name and (stage_name in item_desc or item_desc in stage_name):
+                                        item["payment_stage_index"] = stage_idx
+                                        break
+
+                            # Fallback: if no match found, default to stage 0
+                            if item.get("payment_stage_index") is None:
+                                item["payment_stage_index"] = 0
+
             invoice["line_items"] = line_items
 
             # Recalculate subtotal and total as sum of ALL line items (critical for multi-project!)
@@ -7696,170 +7957,74 @@ def invoice_update_amount(invoice_id):
             meta["tax_amount"] = str(new_tax_amount)
             meta["total"] = str(invoice_subtotal + new_tax_amount)
 
-            # For multi-project invoices: update linked_projects metadata to match current line items
-            # This ensures _allocate_invoice_payment_sequential knows about all projects
-            projects_in_items = set()
+            # Update linked_projects metadata to match current line items
+            # This ensures _update_project_stage_payment_status processes ALL stages for ALL projects
+            # CRITICAL: Update for ALL invoices, not just multi-project invoices
+            # Single-project invoices with multiple stages also need this
+            linked_projects_list = []
+            # Add ONE entry for EACH line item (to handle multi-stage projects correctly)
             for item in line_items:
                 if isinstance(item, dict):
-                    proj_num = item.get("project_number", "")
+                    proj_num = item.get("project_number", "").strip()
                     if proj_num:
-                        projects_in_items.add(proj_num)
-
-            # If multiple projects in line items, update linked_projects with CORRECT stage_index for each
-            if len(projects_in_items) > 1:
-                linked_projects_list = []
-                for proj_num in sorted(projects_in_items):
-                    # Find the correct stage_index for this project by matching line item descriptions
-                    detected_stage_idx = meta.get("payment_stage_index", 0)  # Default fallback
-
-                    for item in line_items:
-                        if isinstance(item, dict) and item.get("project_number", "").strip() == proj_num:
-                            # Found a line item for this project
-                            item_desc = item.get("description", "")
-                            # Look for stage name in the line item description
-                            proj_id, proj_data = _find_project_by_number(proj_num)
+                        # Use payment_stage_index if already set (from our earlier loop)
+                        stage_idx = item.get("payment_stage_index")
+                        if stage_idx is None:
+                            # Fallback: derive from description by matching stage names (with normalization)
+                            item_desc = item.get("description", "").lower()
+                            stage_idx = -1
+                            _, proj_data = _find_project_by_number(proj_num)
                             if proj_data:
                                 proj_stages = proj_data.get("payment_stages", [])
                                 for pidx, pstage in enumerate(proj_stages):
                                     if isinstance(pstage, dict):
-                                        pstage_name = pstage.get("name", "")
-                                        if pstage_name and pstage_name in item_desc:
-                                            detected_stage_idx = pidx
+                                        pstage_name = pstage.get("name", "").strip().lower()
+                                        # Normalize dashes before comparing (– and — to -)
+                                        normalized_stage_name = pstage_name.replace("–", "-").replace("—", "-")
+                                        normalized_desc = item_desc.replace("–", "-").replace("—", "-")
+                                        if normalized_stage_name and normalized_stage_name in normalized_desc:
+                                            stage_idx = pidx
                                             break
-                            break
 
-                    linked_projects_list.append({
-                        "project_number": proj_num,
-                        "payment_stage_index": detected_stage_idx
-                    })
+                        linked_projects_list.append({
+                            "project_number": proj_num,
+                            "payment_stage_index": max(stage_idx, 0)
+                        })
 
-                meta["linked_projects"] = linked_projects_list
+            meta["linked_projects"] = linked_projects_list
 
         meta["updated_at"] = datetime.now(timezone.utc).isoformat()
         invoice["meta"] = meta
         invoice["updated_at"] = datetime.now(timezone.utc).isoformat()
         fb_update(f"/invoices/{invoice_id}", invoice)
 
-        # When editing amounts, redistribute payments the SAME WAY as payment_sequential
-        # This ensures both work identically - payments distributed sequentially across projects then tax
-        # Use the locally updated invoice object (not fresh from DB) to get updated line_items and metadata
-        amount_paid = _safe_float(meta.get("amount_paid", 0))
-        tax_amount = _safe_float(meta.get("tax_amount", 0))
-        line_items = invoice.get("line_items", []) or []  # Use local updated line_items
-        main_project = meta.get("project_number", "")
-        linked_projects = meta.get("linked_projects", [])  # Use updated linked_projects from meta
-
-        # Only redistribute if there's an amount paid (otherwise no payment history to redistribute)
-        if amount_paid > 0:
-            # Clear existing payment logs and rebuild them sequentially (same as payment_sequential)
-            new_payment_log = []
-            new_tax_log = []
-            remaining_to_distribute = amount_paid
-
-            # Extract ALL projects from BOTH line_items AND linked_projects metadata
-            # This handles invoices where some projects might not have line items
-            projects_from_items = set()
-            for item in line_items:
-                if isinstance(item, dict):
-                    proj_num = item.get("project_number", "")
-                    if proj_num:
-                        projects_from_items.add(proj_num)
-
-            # Also get projects from linked_projects metadata (might have projects without line items)
-            projects_from_meta = set()
-            for proj_info in (meta.get("linked_projects") or []):
-                if isinstance(proj_info, dict):
-                    proj_num = proj_info.get("project_number", "")
-                    if proj_num:
-                        projects_from_meta.add(proj_num)
-
-            # Merge both sets - include projects from BOTH line_items AND metadata
-            all_projects = projects_from_items | projects_from_meta
-
-            # Build linked_projects from merged project list
-            if all_projects:
-                linked_projects = [
-                    {"project_number": proj_num, "payment_stage_index": meta.get("payment_stage_index", 0)}
-                    for proj_num in sorted(all_projects)
-                ]
-            elif not linked_projects and main_project:
-                linked_projects = [{"project_number": main_project, "payment_stage_index": meta.get("payment_stage_index", 0)}]
-
-            # Step 1: Distribute to projects sequentially (sorted by project number)
-            if linked_projects:
-                # Sort projects by number
-                def get_sort_key(x):
-                    proj_num = x.get("project_number", "") if isinstance(x, dict) else x
-                    if proj_num and proj_num[-3:].isdigit():
-                        return int(proj_num[-3:])
-                    return proj_num
-                sorted_projects = sorted(linked_projects, key=get_sort_key)
-
-                for proj_info in sorted_projects:
-                    if remaining_to_distribute <= 0:
-                        break
-
-                    proj_num = proj_info.get("project_number", "") if isinstance(proj_info, dict) else proj_info
-                    if not proj_num:
-                        continue
-
-                    # Get this project's line item amount
-                    proj_amount = sum(_safe_float(item.get("amount", 0)) for item in line_items
-                                    if isinstance(item, dict) and item.get("project_number", "").strip() == proj_num)
-
-                    if proj_amount > 0:
-                        # Allocate up to this project's amount
-                        distribute_to_proj = min(proj_amount, remaining_to_distribute)
-
-                        # Get stage info for payment entry
-                        _stage_name = meta.get("payment_stage", "")
-                        _stage_idx = meta.get("payment_stage_index")
-                        if _stage_idx is not None:
-                            try:
-                                _stage_idx = int(_stage_idx) if not isinstance(_stage_idx, int) else _stage_idx
-                                # Look up actual stage name from project's payment_stages
-                                all_projs = fb_get("/projects") or {}
-                                for _pid, _pdata in (all_projs.items() if isinstance(all_projs, dict) else []):
-                                    if isinstance(_pdata, dict) and _pdata.get("project_number") == proj_num:
-                                        _stages = _pdata.get("payment_stages", [])
-                                        if isinstance(_stages, list) and 0 <= _stage_idx < len(_stages):
-                                            _stage_name = (_stages[_stage_idx].get("name", "") or "").strip()
-                                        break
-                            except (ValueError, TypeError):
-                                _stage_idx = None
-
-                        if not _stage_name and _stage_idx is not None:
-                            _stage_name = f"Stage {_stage_idx + 1}"
-
-                        new_payment_log.append({
-                            "amount": str(distribute_to_proj),
-                            "date": datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
-                            "created_at": datetime.now(timezone.utc).isoformat(),
-                            "project_number": proj_num,
-                            "invoice_number": meta.get("invoice_number", ""),
-                            "stage_name": _stage_name,
-                            "stage_index": str(_stage_idx) if _stage_idx is not None else "",
-                        })
-                        remaining_to_distribute -= distribute_to_proj
-
-            # Step 2: Distribute remaining to tax
-            if remaining_to_distribute > 0 and tax_amount > 0:
-                tax_needs = min(tax_amount, remaining_to_distribute)
-                new_tax_log.append({
-                    "amount": str(tax_needs),
-                    "date": datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"),
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                })
-                remaining_to_distribute -= tax_needs
-
-            # Update Firebase with redistributed payment logs (same structure as payment_sequential)
-            fb_update(f"/invoices/{invoice_id}", {
-                "payment_log": new_payment_log,
-                "tax_payments": new_tax_log if new_tax_log else []
-            })
-
-        # Resync project stage payment status to ensure invoice_number is properly linked
+        _allocate_invoice_payment_sequential(invoice_id)
         _update_project_stage_payment_status(invoice_id)
+
+        # Sync project-level amount_paid (sum of all payments from invoices)
+        # This ensures Financial Summary shows the correct Amount Paid
+        fresh_inv = fb_get(f"/invoices/{invoice_id}") or invoice
+        fresh_meta = fresh_inv.get("meta", {}) or {}
+
+        # Collect all projects linked to this invoice
+        linked_projects_set = set()
+        main_proj = fresh_meta.get("project_number", "")
+        if main_proj:
+            linked_projects_set.add(main_proj)
+
+        linked_projs = fresh_meta.get("linked_projects", [])
+        if isinstance(linked_projs, list):
+            for lp in linked_projs:
+                if isinstance(lp, dict):
+                    proj_num = lp.get("project_number", "")
+                    if proj_num:
+                        linked_projects_set.add(proj_num)
+                elif isinstance(lp, str):
+                    linked_projects_set.add(lp)
+
+        # Sync each project's amount_paid
+        for proj_num in linked_projects_set:
+            _sync_project_payment(proj_num)
 
         return jsonify({"success": True, "message": "Invoice updated"})
     except Exception as e:
@@ -9240,8 +9405,8 @@ def client_statement(company_name):
                 meta = idata.get("meta", {})
                 # Match by client_id first (most reliable), then company_name, then client_name (legacy)
                 if (client_id and meta.get("client_id") == client_id) or \
-                   (meta.get("company_name", "") == company_name) or \
-                   (meta.get("client_name", "") == client_name):
+                   (company_name and meta.get("company_name", "") == company_name) or \
+                   (client_name and meta.get("client_name", "") == client_name):
                     idata["firebase_id"] = iid
                     inv_list.append(idata)
     inv_list.sort(key=lambda x: x.get("meta", {}).get("invoice_date", ""))
@@ -9747,6 +9912,604 @@ def _build_commission_payroll_rows():
             total_revenue += _vals["revenue"]
             total_commission += _vals["earned"]
     return rows, total_revenue, total_commission
+
+@app.route("/commission/<salesperson_name>")
+@role_required("payroll")
+def commission_detail(salesperson_name):
+    """Display commission details for a specific salesperson"""
+    # Fetch all commissions and projects
+    all_proj_comm = fb_get("/project_commissions") or {}
+    all_projects = fb_get("/projects") or {}
+    commissions = []
+
+    if isinstance(all_proj_comm, dict):
+        for comm_id, comm_data in all_proj_comm.items():
+            if not isinstance(comm_data, dict):
+                continue
+
+            # Filter: Only show commissions with matching salesperson
+            salesperson = comm_data.get("salesperson", "").strip()
+            if not salesperson or salesperson != salesperson_name.strip():
+                continue
+
+            # Get project details
+            project_number = comm_data.get("project_number", "")
+            actual_project_id = None
+            project_data = None
+
+            # Search for the project by project_number
+            if project_number and isinstance(all_projects, dict):
+                for proj_id, proj in all_projects.items():
+                    if isinstance(proj, dict) and proj.get("project_number", "").strip() == project_number.strip():
+                        actual_project_id = proj_id
+                        project_data = proj
+                        break
+
+            # Filter: Skip deleted projects
+            if not project_data or project_data.get("status") == "Deleted" or project_data.get("deleted"):
+                continue
+
+            # Filter: Only show commissions from projects WITH salespeople
+            project_salesperson = (project_data.get("sales") or project_data.get("sales_person") or "").strip()
+            if not project_salesperson:
+                continue
+
+            # Filter: Only show commissions where the salesperson matches the project's salesperson
+            if project_salesperson != salesperson:
+                continue
+
+            # Build commission entry
+            comm_data["firebase_id"] = actual_project_id
+            comm_data["commission_doc_id"] = comm_id
+            comm_data["client_name"] = project_data.get("client_name", "")
+            comm_data["contract_value"] = project_data.get("contract_value", 0)
+
+            # Calculate remaining_due: commission_amount - adjusted - paid_amount
+            commission_amount = _safe_float(comm_data.get("commission_amount", 0))
+            adjusted_amount = _safe_float(comm_data.get("total_deducted", 0))
+            paid_amount = _safe_float(comm_data.get("paid_amount", 0))
+            remaining_due = max(0, commission_amount - adjusted_amount - paid_amount)
+            comm_data["remaining_due"] = remaining_due
+
+            commissions.append(comm_data)
+
+    # Sort by project_number: descending by year-month, descending by sequence
+    # Example: MABS-202608101, MABS-202512120, MABS-202512118, MABS-202512117...
+    def sort_project_number(project_number):
+        # Extract number part after "MABS-"
+        num = project_number.replace("MABS-", "").strip()
+        if len(num) >= 6:
+            year_month = num[:6]  # YYYYMM
+            sequence = num[6:]     # remaining digits
+            # Return tuple: (-year_month for descending, -sequence for descending)
+            return (-int(year_month), -int(sequence) if sequence.isdigit() else 0)
+        return (-int(num) if num.isdigit() else 0, 0)
+
+    commissions.sort(key=lambda c: sort_project_number(c.get("project_number", "")))
+
+    return render_template(
+        "commission_detail.html",
+        salesperson_name=salesperson_name,
+        commissions=commissions,
+        currency_symbol=CURRENCY_SYMBOL,
+        now=datetime.now(),
+    )
+
+@app.route("/api/commission/pay", methods=["POST"])
+@role_required("payroll")
+def api_commission_pay():
+    """Process commission payment - allocate to oldest commissions first"""
+    data = request.get_json()
+    salesperson = data.get("salesperson", "").strip()
+    payment_amount = _safe_float(data.get("amount", 0))
+    payment_date = data.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"))
+    notes = data.get("notes", "")
+
+    if not salesperson or payment_amount <= 0:
+        return jsonify({"success": False, "message": "Invalid salesperson or amount"}), 400
+
+    # Fetch all commissions and projects to validate payment amount
+    all_proj_comm = fb_get("/project_commissions") or {}
+    all_projects = fb_get("/projects") or {}
+    commissions = []
+
+    # Collect all commissions for this salesperson (oldest first)
+    if isinstance(all_proj_comm, dict):
+        for comm_id, comm_data in all_proj_comm.items():
+            if not isinstance(comm_data, dict):
+                continue
+
+            if comm_data.get("salesperson", "").strip() != salesperson:
+                continue
+
+            # Get project details
+            project_number = comm_data.get("project_number", "")
+            project_data = None
+            actual_project_id = None
+
+            if project_number and isinstance(all_projects, dict):
+                for proj_id, proj in all_projects.items():
+                    if isinstance(proj, dict) and proj.get("project_number", "").strip() == project_number.strip():
+                        actual_project_id = proj_id
+                        project_data = proj
+                        break
+
+            # Skip deleted or invalid projects
+            if not project_data or project_data.get("status") == "Deleted" or project_data.get("deleted"):
+                continue
+
+            project_salesperson = (project_data.get("sales") or project_data.get("sales_person") or "").strip()
+            if not project_salesperson or project_salesperson != salesperson:
+                continue
+
+            comm_data["commission_doc_id"] = comm_id
+            comm_data["firebase_project_id"] = actual_project_id
+            commissions.append(comm_data)
+
+    # Sort by project_number: OLDEST FIRST for payment allocation
+    # Reverse of display order: oldest year-month first, then oldest sequence first
+    def sort_project_number(project_number):
+        # Extract number part after "MABS-"
+        num = project_number.replace("MABS-", "").strip()
+        if len(num) >= 6:
+            year_month = num[:6]  # YYYYMM
+            sequence = num[6:]     # remaining digits
+            # Return tuple: (year_month ascending, sequence ascending) for oldest first
+            return (int(year_month), int(sequence) if sequence.isdigit() else 0)
+        return (int(num) if num.isdigit() else 0, 0)
+
+    commissions.sort(key=lambda c: sort_project_number(c.get("project_number", "")))
+
+    # Calculate outstanding (remaining due) - only for commissions with remaining balance
+    outstanding_total = 0
+    commissions_needing_payment = []
+
+    for comm in commissions:
+        comm_amount = _safe_float(comm.get("commission_amount", 0))
+        current_paid = _safe_float(comm.get("paid_amount", 0))
+        adjusted_amount = _safe_float(comm.get("total_deducted", 0))
+        remaining_due = max(0, comm_amount - adjusted_amount - current_paid)
+
+        # Only include commissions that still have remaining due
+        if remaining_due > 0.01:
+            outstanding_total += remaining_due
+            commissions_needing_payment.append(comm)
+
+    # Validate payment amount doesn't exceed outstanding
+    if payment_amount > outstanding_total + 0.01:
+        return jsonify({
+            "success": False,
+            "message": f"Payment amount (${payment_amount:.2f}) exceeds outstanding (${outstanding_total:.2f}). Please enter a valid amount."
+        }), 400
+
+    # Use filtered list for payment allocation
+    commissions = commissions_needing_payment
+
+    # Allocate payment to commissions starting from oldest
+    remaining_payment = payment_amount
+    updated_commissions = []
+
+    for comm in commissions:
+        if remaining_payment <= 0:
+            break
+
+        comm_amount = _safe_float(comm.get("commission_amount", 0))
+        current_paid = _safe_float(comm.get("paid_amount", 0))
+        adjusted_amount = _safe_float(comm.get("total_deducted", 0))
+        still_owed = max(0, comm_amount - adjusted_amount - current_paid)
+
+        if still_owed <= 0:
+            continue  # Already fully paid
+
+        payment_to_this = min(remaining_payment, still_owed)
+        new_paid_amount = current_paid + payment_to_this
+        remaining_payment -= payment_to_this
+
+        # Update commission record
+        comm_id = comm.get("commission_doc_id")
+        update_data = {
+            "paid_amount": new_paid_amount,
+            "paid_at": payment_date,
+            "last_payment_date": payment_date,
+        }
+
+        fb_update(f"/project_commissions/{comm_id}", update_data)
+        updated_commissions.append({
+            "commission_id": comm_id,
+            "project_number": comm.get("project_number"),
+            "amount": payment_to_this,
+            "date": payment_date
+        })
+
+    # Create salary record and expense record in Finance
+    if updated_commissions:
+        # Collect project numbers for the records
+        project_numbers = [c.get("project_number") for c in updated_commissions if c.get("project_number")]
+        project_str = ", ".join(project_numbers) if len(project_numbers) <= 3 else f"{len(project_numbers)} projects"
+
+        # FREEZE EXCHANGE RATE from current settings
+        exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+        bdt_amount = payment_amount * exchange_rate
+
+        # Create salary/payroll record
+        salary_id = str(uuid.uuid4())
+        salary_record = {
+            "id": salary_id,
+            "employee_name": salesperson,
+            "salary_type": "Commission",
+            "amount": payment_amount,
+            "amount_bdt": bdt_amount,
+            "exchange_rate": exchange_rate,
+            "date": payment_date,
+            "salary_status": "Paid",
+            "description": f"Commission payment for {len(updated_commissions)} project(s)",
+            "project": project_str,
+            "project_numbers": project_numbers,
+            "notes": notes,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "payment_method": "Direct",
+            "created_by": session.get("user_name", "Unknown"),
+            "is_commission": True,
+            "commission_payment_details": [{"commission_id": c.get("commission_id"), "project_number": c.get("project_number"), "amount": c.get("amount")} for c in updated_commissions]
+        }
+        fb_update(f"/balance_sheet_salary/{salary_id}", salary_record)
+
+        # Create expense record in Finance with detailed payment breakdown
+        expense_id = str(uuid.uuid4())
+
+        # Store the commission payment details for accurate cascade delete/restore
+        commission_payment_details = []
+        for comm in updated_commissions:
+            commission_payment_details.append({
+                "commission_id": comm.get("commission_id"),
+                "project_number": comm.get("project_number"),
+                "amount": comm.get("amount")
+            })
+
+        expense_record = {
+            "id": expense_id,
+            "amount": payment_amount,
+            "amount_bdt": bdt_amount,
+            "exchange_rate": exchange_rate,
+            "expense_type": "Other Expenses",
+            "category": "Payroll",
+            "expense_name": f"Commission - {salesperson}",
+            "vendor": "Sales Commission",
+            "employee_name": salesperson,
+            "description": f"Commission payment for {len(updated_commissions)} project(s): {project_str}",
+            "project_number": project_str,
+            "project_numbers": project_numbers,
+            "date": payment_date,
+            "is_commission": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "notes": notes,
+            "payment_method": "Direct",
+            "status": "Paid",
+            "salary_type": "Commission",
+            "salary_id": salary_id,
+            "commission_payment_details": commission_payment_details,
+            "created_by": session.get("user_name", "Unknown")
+        }
+        fb_update(f"/balance_sheet_expenses/{expense_id}", expense_record)
+
+    return jsonify({
+        "success": True,
+        "message": f"Commission payment of {CURRENCY_SYMBOL}{payment_amount:.2f} processed",
+        "updated_commissions": updated_commissions,
+        "remaining_payment": remaining_payment
+    })
+
+@app.route("/api/commission/edit", methods=["POST"])
+@role_required("payroll")
+def api_commission_edit():
+    """Edit commission details and sync to project"""
+    data = request.get_json()
+    commission_id = data.get("commission_id", "").strip()
+    project_number = data.get("project_number", "").strip()
+    new_amount = _safe_float(data.get("amount", 0))
+    rate_type = data.get("rate_type", "").strip()
+    rate_value = _safe_float(data.get("rate_value", 0))
+    salesperson = data.get("salesperson", "").strip()
+    status = data.get("status", "").strip()
+    paid_date = data.get("paid_date", "").strip()
+
+    if not commission_id or new_amount < 0:
+        return jsonify({"success": False, "message": "Invalid commission ID or amount"}), 400
+
+    # Map display names to both display and database values
+    rate_type_mapping = {
+        "Fixed Amount ($)": {"display": "Fixed Amount ($)", "db": "fixed"},
+        "Default (salesperson rate)": {"display": "Default (salesperson rate)", "db": "default"},
+        "Custom Percentage (%)": {"display": "Custom Percentage (%)", "db": "percent"},
+        # Also handle old format if it comes from database
+        "Fixed amount": {"display": "Fixed Amount ($)", "db": "fixed"},
+        "default": {"display": "Default (salesperson rate)", "db": "default"},
+        "fixed": {"display": "Fixed Amount ($)", "db": "fixed"},
+        "percent": {"display": "Custom Percentage (%)", "db": "percent"}
+    }
+
+    rate_mapping = rate_type_mapping.get(rate_type, {"display": rate_type, "db": rate_type})
+    display_rate_type = rate_mapping["display"]
+    db_rate_type = rate_mapping["db"]
+
+    # Handle rate value based on rate type
+    stored_amount = new_amount
+    stored_type = db_rate_type
+
+    if db_rate_type == "default":
+        # Get the user's default commission rate from settings
+        all_employees = fb_get("/employees") or {}
+        default_rate = 0
+
+        if isinstance(all_employees, dict):
+            for emp_id, emp_data in all_employees.items():
+                if isinstance(emp_data, dict) and emp_data.get("name", "").strip() == salesperson.strip():
+                    default_rate = _safe_float(emp_data.get("commission_rate", 0))
+                    break
+
+        # Store as percentage type with the frozen default rate value
+        stored_type = "percent"
+        stored_amount = default_rate
+        display_rate_type = f"Default ({default_rate}%)"
+        log.info(f"Default rate for {salesperson}: {default_rate}%")
+    elif db_rate_type == "fixed":
+        # User entered a fixed amount
+        stored_amount = rate_value
+        display_rate_type = f"Fixed ${rate_value:.2f}"
+    elif db_rate_type == "percent":
+        # User entered a percentage
+        stored_amount = rate_value
+        display_rate_type = f"Custom {rate_value:.2f}%"
+
+    # Update commission record with both display and database values
+    # Calculate new status based on remaining balance or user-selected status
+    current_comm = fb_get(f"/project_commissions/{commission_id}") or {}
+    paid_amount = _safe_float(current_comm.get("paid_amount", 0))
+    adjusted_amount = _safe_float(current_comm.get("total_deducted", 0))
+    remaining_balance = new_amount - adjusted_amount - paid_amount
+
+    # Handle status change
+    new_status = status if status else ("Paid (Fully Covered)" if remaining_balance <= 0.01 else "Pending")
+    payment_amount = 0
+
+    # If user marked as "Paid", create salary and expense records
+    if status in ["Paid", "Paid (Fully Covered)"] and paid_date:
+        # Calculate payment amount (remaining balance to be paid)
+        payment_amount = max(0, remaining_balance)
+
+        if payment_amount > 0:
+            # Create salary record (type: Commission)
+            salary_id = str(uuid.uuid4())
+            salary_data = {
+                "id": salary_id,
+                "salesperson": salesperson,
+                "type": "Commission",
+                "amount": payment_amount,
+                "date": paid_date,
+                "commission_id": commission_id,
+                "project_number": project_number,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_by": session.get("username", "Unknown")
+            }
+            fb_update(f"/balance_sheet_salary/{salary_id}", salary_data)
+            log.info(f"Created salary record {salary_id} for commission payment: ${payment_amount}")
+
+            # Create expense record (category: Payroll)
+            expense_id = str(uuid.uuid4())
+            expense_data = {
+                "id": expense_id,
+                "expense_name": f"Commission - {salesperson} ({project_number})",
+                "category": "Payroll",
+                "expense_type": "Other Expenses",
+                "amount": payment_amount,
+                "date": paid_date,
+                "commission_id": commission_id,
+                "salary_id": salary_id,
+                "salesperson": salesperson,
+                "project_number": project_number,
+                "description": f"Commission payment for {salesperson} - {project_number}",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_by": session.get("username", "Unknown")
+            }
+            fb_update(f"/balance_sheet_expenses/{expense_id}", expense_data)
+            log.info(f"Created expense record {expense_id} for commission payment: ${payment_amount}")
+
+            # Update commission with paid amount and paid date
+            update_data = {
+                "commission_amount": new_amount,
+                "rate_display": display_rate_type,
+                "commission_type": stored_type,
+                "commission_type_display": display_rate_type,
+                "stored_rate_value": stored_amount,
+                "paid_amount": _safe_float(current_comm.get("paid_amount", 0)) + payment_amount,
+                "paid_at": paid_date,
+                "status": new_status,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_by": session.get("user_name", "Unknown")
+            }
+        else:
+            # Just update status
+            update_data = {
+                "commission_amount": new_amount,
+                "rate_display": display_rate_type,
+                "commission_type": stored_type,
+                "commission_type_display": display_rate_type,
+                "stored_rate_value": stored_amount,
+                "status": new_status,
+                "paid_at": paid_date,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_by": session.get("user_name", "Unknown")
+            }
+    else:
+        # Just update commission (no payment)
+        update_data = {
+            "commission_amount": new_amount,
+            "rate_display": display_rate_type,
+            "commission_type": stored_type,
+            "commission_type_display": display_rate_type,
+            "stored_rate_value": stored_amount,
+            "status": new_status,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_by": session.get("user_name", "Unknown")
+        }
+
+        # If status became "Paid (Fully Covered)", update paid_at to today
+        if new_status == "Paid (Fully Covered)":
+            update_data["paid_at"] = datetime.now(COMPANY_TZ).strftime("%m-%d-%Y")
+
+    fb_update(f"/project_commissions/{commission_id}", update_data)
+    log.info(f"Updated commission {commission_id}: amount={new_amount}, rate_type={display_rate_type} (stored: {stored_type}, value: {stored_amount})")
+
+    # Find and update project sales info - TWO-WAY SYNC
+    all_projects = fb_get("/projects") or {}
+    sync_success = False
+
+    if isinstance(all_projects, dict):
+        for proj_id, proj_data in all_projects.items():
+            if not isinstance(proj_data, dict):
+                continue
+
+            proj_num = proj_data.get("project_number", "").strip()
+            if proj_num.lower() != project_number.strip().lower():
+                continue
+
+            # Found the project - update it
+            log.info(f"Found project {proj_id} ({proj_num}) for sync")
+
+            # Update main commission fields directly on project
+            # Use BOTH field names for backwards compatibility
+            # Use stored_type and stored_amount to freeze default rates
+            project_update = {
+                # New field names
+                "commission_rate": display_rate_type,
+                "commission_type": stored_type,
+                "commission_amount": new_amount,
+                # Override field names (used by project details page)
+                "commission_override_type": stored_type,
+                "commission_override_value": stored_amount,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+
+            # Also update sales_people nested structure if it exists
+            sales_people = proj_data.get("sales_people", {})
+            if isinstance(sales_people, dict) and salesperson:
+                if salesperson not in sales_people:
+                    sales_people[salesperson] = {}
+
+                sales_people[salesperson].update({
+                    "rate_type": stored_type,
+                    "commission_rate": display_rate_type,
+                    "commission_amount": new_amount,
+                    "commission_type": stored_type,
+                    "commission_type_display": display_rate_type,
+                    "stored_rate_value": stored_amount,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
+                project_update["sales_people"] = sales_people
+
+            # Update project
+            log.info(f"Syncing commission to project {proj_id}: amount={new_amount}, type={display_rate_type}")
+            result = fb_update(f"/projects/{proj_id}", project_update)
+            sync_success = True
+            log.info(f"Sync result: {result}")
+            break
+
+    return jsonify({
+        "success": True,
+        "message": "Commission updated successfully",
+        "synced_to_project": sync_success,
+        "payment_created": payment_amount > 0
+    })
+
+@app.route("/api/commission/mark-paid", methods=["POST"])
+@role_required("payroll")
+def api_commission_mark_paid():
+    """Mark a single project commission as paid"""
+    data = request.get_json()
+    commission_id = data.get("commission_id", "").strip()
+    project_number = data.get("project_number", "").strip()
+    amount = _safe_float(data.get("amount", 0))
+    payment_date = data.get("date", datetime.now(COMPANY_TZ).strftime("%Y-%m-%d"))
+    salesperson = data.get("salesperson", "").strip()
+
+    if not commission_id or amount <= 0:
+        return jsonify({"success": False, "message": "Invalid commission ID or amount"}), 400
+
+    # Get current commission data to calculate new status
+    current_comm = fb_get(f"/project_commissions/{commission_id}") or {}
+    paid_amount = _safe_float(current_comm.get("paid_amount", 0)) + amount
+    adjusted_amount = _safe_float(current_comm.get("total_deducted", 0))
+    commission_amount = _safe_float(current_comm.get("commission_amount", 0))
+    remaining_balance = commission_amount - adjusted_amount - paid_amount
+    new_status = "Paid (Fully Covered)" if remaining_balance <= 0.01 else "Pending"
+
+    # Update the commission record
+    update_data = {
+        "paid_amount": paid_amount,
+        "paid_at": payment_date,
+        "status": new_status,
+        "last_payment_date": payment_date,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_by": session.get("user_name", "Unknown")
+    }
+
+    fb_update(f"/project_commissions/{commission_id}", update_data)
+
+    # FREEZE EXCHANGE RATE from current settings
+    exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+    bdt_amount = amount * exchange_rate
+
+    # Create salary record with commission_id for cascade delete
+    salary_id = str(uuid.uuid4())
+    salary_record = {
+        "id": salary_id,
+        "employee_name": salesperson,
+        "salary_type": "Commission",
+        "amount": amount,
+        "amount_bdt": bdt_amount,
+        "exchange_rate": exchange_rate,
+        "date": payment_date,
+        "salary_status": "Paid",
+        "description": f"Commission payment for project {project_number}",
+        "project": project_number,
+        "commission_id": commission_id,
+        "is_commission": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "payment_method": "Direct",
+        "created_by": session.get("user_name", "Unknown")
+    }
+    fb_update(f"/balance_sheet_salary/{salary_id}", salary_record)
+
+    # Create expense record with commission_id for cascade delete
+    expense_id = str(uuid.uuid4())
+    expense_record = {
+        "id": expense_id,
+        "amount": amount,
+        "amount_bdt": bdt_amount,
+        "exchange_rate": exchange_rate,
+        "expense_type": "Other Expenses",
+        "category": "Payroll",
+        "expense_name": f"Commission - {salesperson} ({project_number})",
+        "vendor": "Sales Commission",
+        "employee_name": salesperson,
+        "description": f"Commission payment for project {project_number}",
+        "project_number": project_number,
+        "date": payment_date,
+        "commission_id": commission_id,
+        "salary_id": salary_id,
+        "is_commission": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "payment_method": "Direct",
+        "status": "Paid",
+        "salary_type": "Commission",
+        "created_by": session.get("user_name", "Unknown")
+    }
+    fb_update(f"/balance_sheet_expenses/{expense_id}", expense_record)
+
+    return jsonify({
+        "success": True,
+        "message": f"Commission for {project_number} marked as paid"
+    })
 
 @app.route("/payroll/export/csv")
 @login_required
@@ -10603,6 +11366,9 @@ def financial_byproject_export(fmt):
     rows = []
     for p in projects:
         pnum = p.get("project_number", "")
+        pid = p.get("firebase_id", "")
+        # Load commission data for this project (for accrued commission expense)
+        p_comm = fb_get(f"/project_commissions/{pid}") or {}
         p_invoiced = p_collected = 0.0
         for inv_id, inv_data in invoices.items():
             if not isinstance(inv_data, dict): continue
@@ -10627,7 +11393,38 @@ def financial_byproject_export(fmt):
         p_cos = p.get("change_orders") or []
         if not isinstance(p_cos, list): p_cos = list(p_cos.values()) if isinstance(p_cos, dict) else []
         p_contract = _safe_float(p.get("contract_value", 0))
-        p_expenses = sum(_safe_float(e.get("amount", 0)) for e in exp_list if e.get("project_number", "") == pnum)
+
+        # Calculate project expenses (regular expenses only, exclude commission payments)
+        p_expenses = 0.0
+        for e in exp_list:
+            exp_pnum = e.get("project_number", "")
+            if exp_pnum == pnum and not e.get("is_commission"):
+                p_expenses += _safe_float(e.get("amount", 0))
+
+        # Add commission expense (calculate from project's commission override settings)
+        p_comm_earned = 0.0
+        p_comm_type = str(p.get("commission_override_type", "default")).lower()
+        p_comm_val = _safe_float(p.get("commission_override_value", 0))
+        p_contract = _safe_float(p.get("contract_value", 0))
+
+        # Check for fixed amount (flexible matching)
+        if p_comm_val > 0 and ("fixed" in p_comm_type or "$" in p_comm_type):
+            p_comm_earned = p_comm_val
+        elif "%" in p_comm_type and p_comm_val > 0 and p_contract > 0:
+            # Handle both decimal (0.50) and percentage (50) formats
+            pct_val = p_comm_val if p_comm_val > 1 else (p_comm_val * 100)
+            p_comm_earned = (p_contract * pct_val / 100)
+
+        # Fallback to project_commissions
+        if p_comm_earned == 0:
+            p_comm_earned = _safe_float(p_comm.get("commission_amount", 0))
+
+        # Only add PAID commission to expenses (cash basis accounting)
+        p_comm_paid = _safe_float(p_comm.get("paid_amount", 0))
+        if p_comm_paid > 0:
+            p_expenses += p_comm_paid
+        # If no paid amount, don't add commission to expenses yet
+
         p_gp = p_collected - p_expenses
         outstanding = max(0.0, p_contract - p_collected)
         margin = min(100.0, (p_collected / p_contract * 100) if p_contract > 0 else 0.0)
@@ -10932,6 +11729,27 @@ def update_salary(sal_id):
                 employee_uid = uid
                 break
 
+    # Check for commission protection before updating
+    existing_salary = fb_get(f"/balance_sheet_salary/{sal_id}") or {}
+    commission_id = existing_salary.get("commission_id")
+    is_commission = existing_salary.get("is_commission") or (existing_salary.get("salary_type") == "Commission" and commission_id)
+    salary_type = data.get("salary_type", "Salary")
+
+    if is_commission and salary_type == "Commission":
+        # Check if amount is being changed
+        old_amount = float(existing_salary.get("amount", 0))
+        new_amount = float(data.get("amount", 0))
+        amount_changed = abs(old_amount - new_amount) > 0.01
+
+        # If amount is being changed, prevent the edit
+        if amount_changed:
+            return jsonify({
+                "success": False,
+                "error": "Cannot edit amount: This is a commission payment from the commission details tab. "
+                        "You can only edit the date. To modify the payment amount, use the commission payment options.",
+                "info": "Commission payments are protected from amount editing to maintain data integrity."
+            }), 400
+
     sal_data = {
         "employee_name": employee_name,
         "employee_email": employee_email,
@@ -10942,10 +11760,44 @@ def update_salary(sal_id):
         "region":        region,
         "year":          year,
         "salary_status": data.get("salary_status", "Paid"),
-        "salary_type":   data.get("salary_type", "Salary"),
+        "salary_type":   salary_type,
         "updated_at":    datetime.now(timezone.utc).isoformat(),
     }
+
+    # PRESERVE COMMISSION FIELDS - ensure commission records stay as commissions
+    if is_commission:
+        sal_data["is_commission"] = True
+        sal_data["salary_type"] = "Commission"  # Force salary_type to Commission
+        if commission_id:
+            sal_data["commission_id"] = commission_id
+        # Preserve commission_payment_details if it exists
+        if existing_salary.get("commission_payment_details"):
+            sal_data["commission_payment_details"] = existing_salary.get("commission_payment_details")
+
     fb_update(f"/balance_sheet_salary/{sal_id}", sal_data)
+
+    # Sync date change back to commission record(s) if this is a commission payment
+    if is_commission and salary_type == "Commission":
+        old_date = existing_salary.get("date", "")
+        new_date = date_str
+        if old_date != new_date:
+            commission_update = {
+                "paid_at": new_date,
+                "last_payment_date": new_date,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_by": session.get("user_name", "Unknown")
+            }
+            # If single commission ID exists, update it directly
+            if commission_id:
+                fb_update(f"/project_commissions/{commission_id}", commission_update)
+            # If commission_payment_details exists, update all commissions in the list
+            else:
+                commission_details = existing_salary.get("commission_payment_details", [])
+                if isinstance(commission_details, list):
+                    for detail in commission_details:
+                        detail_commission_id = detail.get("commission_id") if isinstance(detail, dict) else None
+                        if detail_commission_id:
+                            fb_update(f"/project_commissions/{detail_commission_id}", commission_update)
 
     # Handle Finance expenses based on salary status
     salary_status = data.get("salary_status", "Paid")
@@ -10965,18 +11817,38 @@ def update_salary(sal_id):
                 expense_exists = True
                 if salary_status == "Paid":
                     salary_type = data.get("salary_type", "Salary")
-                    category = "Bonuses" if salary_type == "Bonus" else "Salary"
-                    expense_name = f"Employee {salary_type} - {employee_name}"
-                    description = f"Employee {salary_type} for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else "")
-                    vendor = f"Employee {salary_type}"
+
+                    # Preserve exchange rate from original entry (don't use current rate)
+                    original_exchange_rate = _safe_float(exp_data.get("exchange_rate", 0))
+                    if original_exchange_rate <= 0:
+                        original_exchange_rate = _safe_float((load_settings().get("company") or {}).get("bdt_exchange_rate", 110)) or 110
+
+                    # For commission payments, preserve category as "Payroll", not "Salary"
+                    if exp_data.get("is_commission") or salary_type == "Commission":
+                        category = "Payroll"
+                        expense_name = f"Commission - {employee_name}"
+                        vendor = "Sales Commission"
+                    else:
+                        category = "Bonuses" if salary_type == "Bonus" else "Salary"
+                        expense_name = f"Employee {salary_type} - {employee_name}"
+                        vendor = f"Employee {salary_type}"
+
+                    description = f"Commission payment for {employee_name}" if (exp_data.get("is_commission") or salary_type == "Commission") else f"Employee {salary_type} for {employee_name}" + (f" - {data.get('notes', '')}" if data.get('notes', '') else "")
                     # Build notes field: include employee name and any user notes
                     user_notes = data.get('notes', '').strip()
                     notes = f"{employee_name} - {user_notes}" if user_notes else f"{employee_name} - {salary_type}"
+
+                    # Recalculate BDT with original exchange rate
+                    usd_amount = float(data.get("amount", 0))
+                    bdt_amount = usd_amount * original_exchange_rate
+
                     # Update expense with professional fields, preserving original submitted_by_name
                     expense_update = {
                         "employee_name": employee_name,
                         "date": date_str,
-                        "amount": float(data.get("amount", 0)),
+                        "amount": usd_amount,
+                        "amount_bdt": bdt_amount,
+                        "exchange_rate": original_exchange_rate,
                         "expense_type": "Other Expenses",
                         "expense_name": expense_name,
                         "category": category,
@@ -10988,6 +11860,16 @@ def update_salary(sal_id):
                         "submitted_by_name": exp_data.get("submitted_by_name", current_user),
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
+
+                    # PRESERVE COMMISSION FIELDS - ensure commission expenses stay as commissions
+                    if exp_data.get("is_commission"):
+                        expense_update["is_commission"] = True
+                        expense_update["salary_type"] = "Commission"  # Ensure salary_type is Commission
+                    if exp_data.get("commission_id"):
+                        expense_update["commission_id"] = exp_data.get("commission_id")
+                    if exp_data.get("commission_payment_details"):
+                        expense_update["commission_payment_details"] = exp_data.get("commission_payment_details")
+
                     fb_update(f"/balance_sheet_expenses/{exp_id}", expense_update)
                 else:
                     # Delete expense if status is not "Paid"
@@ -11029,35 +11911,132 @@ def update_salary(sal_id):
 def delete_salary(sal_id):
     # Get salary data before deleting for archiving
     salary_data = fb_get(f"/balance_sheet_salary/{sal_id}") or {}
+    salary_type = salary_data.get("salary_type", "Salary")
+
+    # Get deleting user's full name
+    user_uid = session.get("user_uid", "")
+    deleted_by_name = session.get("user_name") or session.get("username", "Unknown")
+
+    if user_uid:
+        user_data = fb_get(f"/users/{user_uid}") or {}
+        # Prefer display_name, fallback to username
+        if user_data.get("display_name"):
+            deleted_by_name = user_data.get("display_name")
+        elif user_data.get("username"):
+            deleted_by_name = user_data.get("username")
 
     # Archive the salary
     archive_sal = dict(salary_data)
+    now_utc = datetime.now(timezone.utc).isoformat()
+    now_readable = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
     archive_sal.update({
         "firebase_id": sal_id,
-        "deleted_at": datetime.now(timezone.utc).isoformat(),
-        "deleted_by": session.get("username", "Unknown")
+        "deleted_at": now_utc,
+        "deleted_at_readable": now_readable,
+        "deleted_by": deleted_by_name,
+        "deleted_by_email": session.get("user_email", ""),
+        "deleted_by_uid": user_uid,
     })
+
+    log.info(f"DELETED SALARY {sal_id}: {salary_type} for {salary_data.get('employee_name', 'Unknown')} - Deleted by: {deleted_by_name} at {now_readable}")
     fb_update(f"/deleted_salaries/{sal_id}", archive_sal)
 
     # Delete the salary
     fb_delete(f"/balance_sheet_salary/{sal_id}")
 
-    # Also delete from Finance expenses and archive
+    # If this is a Commission payment, also revert the project commission records
+    if salary_type == "Commission":
+        log.info(f"===== DELETING COMMISSION PAYMENT SALARY {sal_id} =====")
+        log.info(f"Salary data: is_commission={salary_data.get('is_commission')}, commission_id={salary_data.get('commission_id')}")
+
+        reverted_count = 0
+
+        # Handle commission_payment_details for multi-project payments
+        commission_details = salary_data.get("commission_payment_details", [])
+        log.info(f"Commission details type: {type(commission_details)}, content: {commission_details}")
+
+        if commission_details and isinstance(commission_details, list) and len(commission_details) > 0:
+            log.info(f"Processing {len(commission_details)} commission details")
+            # Multi-project payment - revert specific commissions from details
+            for idx, detail in enumerate(commission_details):
+                try:
+                    log.info(f"  Detail {idx}: {detail}")
+                    if isinstance(detail, dict):
+                        commission_id = detail.get("commission_id")
+                        log.info(f"  Commission ID: {commission_id}")
+                        if commission_id:
+                            log.info(f"  Reverting commission {commission_id}")
+                            fb_update(f"/project_commissions/{commission_id}", {
+                                "paid_amount": 0,
+                                "paid_at": None,
+                                "last_payment_date": None,
+                                "status": "Pending",
+                                "updated_at": datetime.now(timezone.utc).isoformat(),
+                                "updated_by": session.get("user_name", "Unknown")
+                            })
+                            reverted_count += 1
+                            log.info(f"  ✓ Reverted commission {commission_id}")
+                except Exception as e:
+                    log.error(f"  ✗ Error reverting commission: {e}")
+        else:
+            # Single commission payment - try by commission_id
+            log.info("No commission_payment_details, trying single commission_id")
+            commission_id = salary_data.get("commission_id")
+            log.info(f"Single commission_id: {commission_id}")
+            if commission_id:
+                try:
+                    log.info(f"  Reverting single commission {commission_id}")
+                    fb_update(f"/project_commissions/{commission_id}", {
+                        "paid_amount": 0,
+                        "paid_at": None,
+                        "last_payment_date": None,
+                        "status": "Pending",
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "updated_by": session.get("user_name", "Unknown")
+                    })
+                    reverted_count += 1
+                    log.info(f"  ✓ Reverted single commission {commission_id}")
+                except Exception as e:
+                    log.error(f"  ✗ Error reverting single commission: {e}")
+
+        log.info(f"===== REVERTED {reverted_count} COMMISSIONS =====")
+
+    # Delete from Finance expenses and archive (matches by salary_type and employee_name)
     expenses = fb_get("/balance_sheet_expenses") or {}
     if isinstance(expenses, dict):
         for exp_id, exp_data in expenses.items():
-            if isinstance(exp_data, dict) and exp_data.get("salary_id") == sal_id:
-                # Archive the expense
-                archive_exp = dict(exp_data)
-                archive_exp.update({
-                    "firebase_id": exp_id,
-                    "deleted_at": datetime.now(timezone.utc).isoformat(),
-                    "deleted_by": session.get("username", "Unknown")
-                })
-                fb_update(f"/deleted_expenses/{exp_id}", archive_exp)
-                # Delete the expense
-                fb_delete(f"/balance_sheet_expenses/{exp_id}")
-                break
+            if isinstance(exp_data, dict):
+                # Match by salary_id if available
+                if exp_data.get("salary_id") == sal_id:
+                    # Archive the expense
+                    archive_exp = dict(exp_data)
+                    archive_exp.update({
+                        "firebase_id": exp_id,
+                        "deleted_at": datetime.now(timezone.utc).isoformat(),
+                        "deleted_by": session.get("username", "Unknown")
+                    })
+                    fb_update(f"/deleted_expenses/{exp_id}", archive_exp)
+                    # Delete the expense
+                    fb_delete(f"/balance_sheet_expenses/{exp_id}")
+                    break
+                # For commissions, match by employee name, date, and amount
+                elif (salary_type == "Commission" and
+                      exp_data.get("salary_type") == "Commission" and
+                      exp_data.get("employee_name") == salary_data.get("employee_name") and
+                      exp_data.get("date") == salary_data.get("date") and
+                      abs(_safe_float(exp_data.get("amount", 0)) - _safe_float(salary_data.get("amount", 0))) < 0.01):
+                    # Archive the expense
+                    archive_exp = dict(exp_data)
+                    archive_exp.update({
+                        "firebase_id": exp_id,
+                        "deleted_at": datetime.now(timezone.utc).isoformat(),
+                        "deleted_by": session.get("username", "Unknown")
+                    })
+                    fb_update(f"/deleted_expenses/{exp_id}", archive_exp)
+                    # Delete the expense
+                    fb_delete(f"/balance_sheet_expenses/{exp_id}")
+                    break
 
     # Mark permission request as completed
     _uid = session.get("user_uid", "")
@@ -11073,7 +12052,7 @@ def delete_salary(sal_id):
                 log.info(f"Marked permission request {req_id} as completed")
                 break
 
-    return jsonify({"success": True, "salary_type": salary_data.get("salary_type", "Salary")})
+    return jsonify({"success": True, "salary_type": salary_type})
 
 # ── Employee Advance Routes ──────────────────────────────────────────────────────
 
@@ -11238,6 +12217,164 @@ def salary_delete_perms():
         log.error(f"Error getting salary delete perms: {e}")
         return jsonify({"delete_perms": [], "error": str(e)}), 500
 
+@app.route("/api/payroll/commissions", methods=["GET"])
+@login_required
+def get_payroll_commissions():
+    """Get all project commissions for payroll management tab"""
+    try:
+        all_proj_comm = fb_get("/project_commissions") or {}
+        all_projects = fb_get("/projects") or {}  # Get raw projects, not filtered list
+
+        commissions = []
+
+        # Iterate over commissions - use commission data directly (has all fields we need)
+        for comm_id, comm_data in (all_proj_comm.items() if isinstance(all_proj_comm, dict) else []):
+            if not isinstance(comm_data, dict):
+                continue
+
+            # Filter: Only show commissions with a salesperson
+            salesperson = comm_data.get("salesperson", "").strip()
+            if not salesperson:
+                continue
+
+            # Find the actual project ID from the projects database
+            project_number = comm_data.get("project_number", "")
+            actual_project_id = None
+            project_is_deleted = False
+            project_has_salesperson = False
+            project_salesperson = ""
+
+            # Search for the project by project_number
+            if project_number and isinstance(all_projects, dict):
+                for proj_id, proj_data in all_projects.items():
+                    if isinstance(proj_data, dict) and proj_data.get("project_number", "").strip() == project_number.strip():
+                        # Check if project is deleted
+                        if proj_data.get("status") == "Deleted" or proj_data.get("deleted"):
+                            project_is_deleted = True
+                        else:
+                            actual_project_id = proj_id
+                            # Check if project has a salesperson assigned
+                            project_salesperson = (proj_data.get("sales") or proj_data.get("sales_person") or "").strip()
+                            if project_salesperson:
+                                project_has_salesperson = True
+                        break
+
+            # Filter: Only show commissions from active (non-deleted) projects WITH salespeople
+            if project_is_deleted or not project_has_salesperson:
+                continue
+
+            # Filter: Only show commissions where the salesperson matches the project's salesperson
+            if project_salesperson.strip() != salesperson.strip():
+                continue
+
+            # Build commission entry using fields from commission data
+            commission_amount = _safe_float(comm_data.get("commission_amount", 0))
+            total_deducted = _safe_float(comm_data.get("total_deducted", 0))
+            remaining_due = _safe_float(comm_data.get("remaining_due", 0))
+
+            # Determine status: if remaining_due = 0 and commission > 0, mark as Paid (Fully Covered)
+            status = comm_data.get("status", "Pending")
+            paid_at = comm_data.get("paid_at", "")
+
+            if remaining_due == 0 and commission_amount > 0:
+                status = "Paid (Fully Covered)"
+                # Set paid_at if not already set
+                if not paid_at:
+                    paid_at = datetime.now(timezone.utc).isoformat()
+                    try:
+                        # Update database asynchronously so it persists
+                        fb_update(f"/project_commissions/{comm_id}", {
+                            "status": status,
+                            "paid_at": paid_at,
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        })
+                    except Exception as e:
+                        log.warning(f"Could not update paid_at for {comm_id}: {e}")
+
+            commission_entry = {
+                "commission_doc_id": comm_id,
+                "project_id": comm_data.get("project_id", ""),
+                "actual_project_id": actual_project_id or "",  # The real project ID for linking
+                "project_number": project_number,
+                "client_name": comm_data.get("company_name", ""),
+                "salesperson": salesperson,
+                "salesperson_email": comm_data.get("salesperson_email", ""),
+                "contract_value": _safe_float(comm_data.get("contract_value", 0)),
+                "commission_amount": commission_amount,
+                "commission_override_type": comm_data.get("commission_override_type", "default"),
+                "commission_override_value": _safe_float(comm_data.get("commission_override_value", 0)),
+                "rate_display": comm_data.get("rate_display", "—"),
+                "total_deducted": total_deducted,
+                "remaining_due": remaining_due,
+                "status": status,
+                "paid_at": paid_at,
+                "deductions_list": comm_data.get("deductions_list", []),
+            }
+            commissions.append(commission_entry)
+
+        # Sort by status (Pending first) then by project number then salesperson
+        commissions.sort(key=lambda x: (x["status"] != "Pending", x["project_number"], x["salesperson"]))
+
+        log.info(f"Loaded {len(commissions)} commissions for payroll")
+        return jsonify({"commissions": commissions})
+    except Exception as e:
+        log.error(f"Error getting payroll commissions: {e}")
+        return jsonify({"commissions": [], "error": str(e)}), 500
+
+@app.route("/api/migrate/populate-commission-deductions", methods=["POST"])
+@role_required("financial")
+def migrate_populate_commission_deductions():
+    """Migrate existing commissions to populate deductions_list from advances"""
+    try:
+        all_commissions = fb_get("/project_commissions") or {}
+        all_advances = fb_get("/employee_advances") or {}
+        updated_count = 0
+
+        for comm_id, comm_data in (all_commissions.items() if isinstance(all_commissions, dict) else []):
+            if not isinstance(comm_data, dict):
+                continue
+
+            total_deducted = _safe_float(comm_data.get("total_deducted", 0))
+            if total_deducted <= 0:
+                continue  # Skip if no deductions
+
+            # Find advances that match this commission
+            deductions_list = []
+            commission_salesperson = (comm_data.get("salesperson") or "").strip()
+
+            for adv_id, adv_data in (all_advances.items() if isinstance(all_advances, dict) else []):
+                if not isinstance(adv_data, dict):
+                    continue
+
+                adv_salesperson = (adv_data.get("employee_name") or "").strip()
+                adv_amount = _safe_float(adv_data.get("amount", 0))
+                adv_no = adv_data.get("advance_no", "")
+
+                # Match by salesperson and approximate amount (within $1)
+                if (commission_salesperson.lower() == adv_salesperson.lower() and
+                    adv_amount > 0 and abs(adv_amount - total_deducted) < 1.0):
+                    deductions_list.append({
+                        "advance_id": adv_id,
+                        "advance_no": adv_no,
+                        "amount": adv_amount
+                    })
+
+            # Update commission if we found matching advances
+            if deductions_list and not comm_data.get("deductions_list"):
+                fb_update(f"/project_commissions/{comm_id}", {
+                    "deductions_list": deductions_list,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
+                updated_count += 1
+
+        return jsonify({
+            "success": True,
+            "message": f"Migration complete: updated {updated_count} commissions with advance data"
+        })
+    except Exception as e:
+        log.error(f"Migration error: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/add_employee_advance", methods=["POST"])
 @login_required
 def add_employee_advance():
@@ -11325,6 +12462,168 @@ def update_employee_advance():
         log.error(f"Error updating advance: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
+# ── HELPER FUNCTIONS FOR ADJUSTMENT-EXPENSE SYNC ──────────────────────────────
+def _get_project_numbers_from_commission_deduction(employee_name, deduction_amount):
+    """Extract project numbers affected by commission deduction"""
+    project_numbers = []
+    try:
+        all_projects = fb_get("/projects") or {}
+        all_proj_commissions = fb_get("/project_commissions") or {}
+
+        pending_projects = []
+        for proj_id, proj_data in all_projects.items():
+            if not isinstance(proj_data, dict):
+                continue
+            if proj_data.get("status", "").strip() == "Cancelled":
+                continue
+            if (proj_data.get("sales", "").strip() or "").lower() != employee_name.lower():
+                continue
+
+            proj_comm = all_proj_commissions.get(proj_id, {})
+            if not isinstance(proj_comm, dict):
+                continue
+            if proj_comm.get("status", "").strip() == "Paid":
+                continue
+
+            commission_amount = _safe_float(proj_comm.get("commission_amount", 0))
+            current_deductions = _safe_float(proj_comm.get("total_deducted", 0))
+
+            if commission_amount > current_deductions:
+                pending_projects.append({
+                    "project_id": proj_id,
+                    "project_number": proj_data.get("project_number", ""),
+                    "commission_amount": commission_amount,
+                    "current_deductions": current_deductions,
+                    "created_at": proj_data.get("created_at", "")
+                })
+
+        # Sort by created_at (oldest first)
+        def get_sort_key(proj):
+            try:
+                created_at = proj.get("created_at", "9999-12-31")
+                proj_num = proj.get("project_number", "")
+                num = int(proj_num.split("-")[-1]) if "-" in proj_num else (int(proj_num) if proj_num.isdigit() else 0)
+                return (created_at, num)
+            except:
+                return ("9999-12-31", 999999)
+
+        pending_projects.sort(key=get_sort_key)
+
+        # Collect projects affected by deduction
+        remaining = deduction_amount
+        for proj_info in pending_projects:
+            if remaining <= 0:
+                break
+            pending_commission = proj_info["commission_amount"] - proj_info["current_deductions"]
+            deduct_amt = min(remaining, pending_commission)
+            if deduct_amt > 0:
+                project_numbers.append(proj_info["project_number"])
+                remaining -= deduct_amt
+    except Exception as e:
+        log.error(f"Error extracting project numbers: {e}")
+
+    return project_numbers
+
+def _sync_adjustment_to_expense(adjustment_id, adjustment, advance_data, advance_id, employee_name):
+    """Create or update expense record for an adjustment"""
+    try:
+        adjustment_type = adjustment.get("type", "").strip()
+        adjustment_amount = _safe_float(adjustment.get("amount", 0))
+        adjustment_date = adjustment.get("date", "")
+        adjustment_remarks = adjustment.get("remarks", "")
+
+        # Determine expense category
+        category_map = {
+            "Commission Deduction": "Commission Deduction",
+            "Loan Deduction": "Loan Deduction",
+            "Tax Deduction": "Tax Deduction",
+            "Other Deduction": "Other"
+        }
+        expense_category = category_map.get(adjustment_type, adjustment_type)
+
+        # Get project numbers if commission deduction
+        project_numbers = []
+        if adjustment_type == "Commission Deduction":
+            project_numbers = _get_project_numbers_from_commission_deduction(employee_name, adjustment_amount)
+
+        # Check if expense already exists for this adjustment
+        existing_expense_id = adjustment.get("linked_expense_id")
+
+        # Prepare expense record data
+        expense_name = f"Adjusted - {employee_name}"
+
+        # Get the proper name of who adjusted it
+        adjusted_by_name = adjustment.get("adjusted_by_name", adjustment.get("adjusted_by", "Admin"))
+
+        expense_record = {
+            "expense_type": "Other Expenses",
+            "category": expense_category,
+            "expense_name": expense_name,
+            "description": expense_name,
+            "vendor": "Advance Adjustments",
+            "amount": adjustment_amount,
+            "date": adjustment_date,
+            "project_numbers": project_numbers,
+            "submitted_by": adjustment.get("adjusted_by", "Admin"),
+            "submitted_by_name": adjusted_by_name,
+            "adjustment_id": adjustment_id,
+            "linked_adjustment_id": adjustment_id,
+            "advance_id": advance_id,
+            "from_advance_id": advance_id,
+            "is_adjustment": True,
+            "read_only_amount": True,
+            "remarks": adjustment_remarks,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        if existing_expense_id:
+            # Update existing expense
+            fb_update(f"/balance_sheet_expenses/{existing_expense_id}", expense_record)
+            # Ensure linked_expense_id is stored in adjustment
+            fb_update(f"/employee_advances/{advance_id}/adjustments/{adjustment_id}", {"linked_expense_id": existing_expense_id})
+            log.info(f"Updated synced expense {existing_expense_id} from adjustment {adjustment_id}")
+            return existing_expense_id
+        else:
+            # Create new expense record
+            import uuid as uuid_module
+            expense_id = str(uuid_module.uuid4())
+            expense_record["id"] = expense_id
+            expense_record["created_at"] = datetime.now(timezone.utc).isoformat()
+
+            fb_update(f"/balance_sheet_expenses/{expense_id}", expense_record)
+            fb_update(f"/employee_advances/{advance_id}/adjustments/{adjustment_id}", {"linked_expense_id": expense_id})
+
+            log.info(f"Created synced expense {expense_id} from adjustment {adjustment_id}")
+            return expense_id
+    except Exception as e:
+        log.error(f"Error syncing adjustment to expense: {e}")
+        return None
+
+def _delete_linked_expense(linked_expense_id):
+    """Delete the expense linked to an adjustment"""
+    try:
+        if linked_expense_id:
+            fb_delete(f"/balance_sheet_expenses/{linked_expense_id}")
+            log.info(f"Deleted linked expense {linked_expense_id}")
+            return True
+    except Exception as e:
+        log.error(f"Error deleting linked expense: {e}")
+    return False
+
+def _update_linked_expense_date(linked_expense_id, new_date):
+    """Update date in linked expense when adjustment date changes"""
+    try:
+        if linked_expense_id:
+            fb_update(f"/balance_sheet_expenses/{linked_expense_id}", {
+                "date": new_date,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            })
+            log.info(f"Updated date for linked expense {linked_expense_id}")
+            return True
+    except Exception as e:
+        log.error(f"Error updating linked expense date: {e}")
+    return False
+
 @app.route("/add_advance_adjustment", methods=["POST"])
 @login_required
 def add_advance_adjustment():
@@ -11352,13 +12651,26 @@ def add_advance_adjustment():
         import uuid
         adjustment_id = str(uuid.uuid4())
         adjustment_amount = float(data.get("amount", 0))
+
+        # Get the proper name of the user making the adjustment
+        username = session.get("username", "Admin")
+        adjusted_by_name = username  # Default to username
+        all_users = _load_all_users()
+        for user in all_users:
+            if user.get("username", "").strip().lower() == username.lower():
+                adjusted_by_name = user.get("name", username)
+                break
+
         adjustment = {
+            "id": adjustment_id,
+            "advance_id": advance_id,
             "date": data.get("date", ""),
             "amount": adjustment_amount,
             "type": data.get("type", ""),
             "reference": data.get("reference", ""),
             "remarks": data.get("remarks", ""),
-            "adjusted_by": session.get("username", "Admin"),
+            "adjusted_by": username,
+            "adjusted_by_name": adjusted_by_name,
             "created_at": datetime.now(timezone.utc).isoformat()
         }
 
@@ -11586,6 +12898,10 @@ def add_advance_adjustment():
                 pending_commission = _calculate_employee_pending_commission(employee_name)
                 log.info(f"Commission deduction recorded for {employee_name}: ${adjustment_amount:.2f} distributed across {len(project_deductions)} projects, pending: ${pending_commission:.2f}")
 
+        # Sync adjustment to finance expenses
+        employee_name = advance_data.get("employee_name", "").strip()
+        _sync_adjustment_to_expense(adjustment_id, adjustment, advance_data, advance_id, employee_name)
+
         return jsonify({"success": True})
     except Exception as e:
         log.error(f"Error adding adjustment: {e}")
@@ -11635,13 +12951,23 @@ def update_advance_adjustment():
             }), 400
 
         # Update the adjustment
+        # Get the proper name of the user making the adjustment
+        username = session.get("username", "Admin")
+        adjusted_by_name = username  # Default to username
+        all_users = _load_all_users()
+        for user in all_users:
+            if user.get("username", "").strip().lower() == username.lower():
+                adjusted_by_name = user.get("name", username)
+                break
+
         updated_adjustment = {
             "date": data.get("date", ""),
             "amount": new_amount,
             "type": data.get("type", ""),
             "reference": data.get("reference", ""),
             "remarks": data.get("remarks", ""),
-            "adjusted_by": session.get("username", "Admin"),
+            "adjusted_by": username,
+            "adjusted_by_name": adjusted_by_name,
             "created_at": old_adjustment.get("created_at", datetime.now(timezone.utc).isoformat()),
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
@@ -11921,6 +13247,19 @@ def update_advance_adjustment():
         updated_advance = {**advance_data, **update_data}
         _sync_advance_to_finance(advance_id, updated_advance)
 
+        # Sync updated adjustment to expense
+        employee_name = advance_data.get("employee_name", "").strip()
+        updated_adjustment = {
+            "date": data.get("date", ""),
+            "amount": new_amount,
+            "type": data.get("type", ""),
+            "reference": data.get("reference", ""),
+            "remarks": data.get("remarks", ""),
+            "adjusted_by": session.get("username", "Admin"),
+            "linked_expense_id": old_adjustment.get("linked_expense_id")  # Preserve the linked expense ID
+        }
+        _sync_adjustment_to_expense(adjustment_id, updated_adjustment, advance_data, advance_id, employee_name)
+
         return jsonify({"success": True})
     except Exception as e:
         log.error(f"Error updating adjustment: {e}")
@@ -11996,9 +13335,62 @@ def delete_advance_adjustment():
         updated_advance = {**advance_data, **update_data}
         _sync_advance_to_finance(advance_id, updated_advance)
 
+        # Delete linked expense
+        linked_expense_id = adjustment_to_delete.get("linked_expense_id")
+        if linked_expense_id:
+            _delete_linked_expense(linked_expense_id)
+
         return jsonify({"success": True})
     except Exception as e:
         log.error(f"Error deleting adjustment: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/sync_adjustment_date", methods=["POST"])
+@login_required
+def sync_adjustment_date():
+    """Sync date change from expense back to adjustment"""
+    try:
+        data = request.get_json()
+        adjustment_id = data.get("adjustment_id", "")
+        advance_id = data.get("advance_id", "")
+        new_date = data.get("new_date", "")
+
+        if not adjustment_id or not new_date:
+            return jsonify({"success": False, "error": "Missing adjustment_id or new_date"}), 400
+
+        # Use provided advance_id if available, otherwise search for it
+        if advance_id:
+            # Direct lookup using advance_id
+            advance_data = fb_get(f"/employee_advances/{advance_id}") or {}
+            adjustments = advance_data.get("adjustments", {})
+            if not (isinstance(adjustments, dict) and adjustment_id in adjustments):
+                return jsonify({"success": False, "error": "Adjustment not found in advance"}), 404
+        else:
+            # Fallback: Search through all advances
+            advances_raw = fb_get("/employee_advances") or {}
+            found = False
+            if isinstance(advances_raw, dict):
+                for aid, adata in advances_raw.items():
+                    if isinstance(adata, dict):
+                        adjustments = adata.get("adjustments", {})
+                        if isinstance(adjustments, dict) and adjustment_id in adjustments:
+                            advance_id = aid
+                            found = True
+                            break
+
+            if not found:
+                return jsonify({"success": False, "error": "Adjustment not found"}), 404
+
+        # Update the adjustment date
+        fb_update(f"/employee_advances/{advance_id}/adjustments/{adjustment_id}", {
+            "date": new_date,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        })
+
+        log.info(f"Synced date to adjustment {adjustment_id}: {new_date}")
+        return jsonify({"success": True})
+    except Exception as e:
+        log.error(f"Error syncing adjustment date: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route("/delete_employee_advance", methods=["POST"])
@@ -12232,8 +13624,11 @@ def financial():
         # Also filter the grouped list for summary cards
         exp_list_filtered = [e for e in exp_list_filtered if (e.get("expense_name", "") or e.get("description", "—")).lower() == filter_expense.lower()]
 
-    # For balance sheet, use filtered list
-    exp_list = exp_list_filtered
+    # For balance sheet, use same ungrouped list as Expenses tab for consistency
+    exp_list = filter_by_year(exp_list_for_tab, selected_year)
+
+    # Calculate total expenses from the ungrouped list (includes commissions)
+    bs_total_expenses_with_commissions = sum(_safe_float(e.get("amount", 0)) for e in exp_list)
 
     # Collect all unique vendors for dropdown
     all_vendors = sorted(set(e.get("vendor", "") for e in exp_list_all if e.get("vendor", "").strip()))
@@ -12275,7 +13670,7 @@ def financial():
                     inv_meta = inv_data.get("meta", {}) or {}
                     # Get all linked projects for multi-project invoices
                     linked = _invoice_linked_projects(inv_data)
-                    rdata["linked_projects"] = linked
+                    rdata["linked_projects"] = sorted(linked)
                     # Update tax_amount and total from invoice meta
                     rdata["tax_amount"] = _safe_float(inv_meta.get("tax_amount", 0))
                     rdata["total"] = _safe_float(inv_meta.get("total", 0))
@@ -12526,7 +13921,7 @@ def financial():
                     "tax_paid": sum(_safe_float(tp.get("amount", 0)) for tp in (inv_data.get("tax_payments", []) or [])),
                     "tax_amount": _safe_float(inv_meta.get("tax_amount", 0)),
                     "status": inv_status,
-                    "linked_projects": _invoice_linked_projects(inv_data),
+                    "linked_projects": sorted(_invoice_linked_projects(inv_data)),
                     "date": inv_meta.get("invoice_date", ""),
                 }
                 rev_list.append(new_rev_entry)
@@ -12707,6 +14102,7 @@ def financial():
     project_pnl = []
     for p in projects_list:
         pnum = p.get("project_number", "")
+        pid = p.get("firebase_id", "")
 
         # Filter by project RECEIVED DATE (only include projects received in current running year)
         proj_received_date = p.get("date_received", "")
@@ -12719,6 +14115,9 @@ def financial():
         # Only include projects received in current running year
         if proj_year != stat_card_year:
             continue
+
+        # Load commission data for this project (for accrued commission expense)
+        p_comm = fb_get(f"/project_commissions/{pid}") or {}
 
         # Calculate INVOICED and COLLECTED based on line items and payment_log (not equal split!)
         p_invoiced = 0
@@ -12763,7 +14162,38 @@ def financial():
         p_base_contract = max(0.0, p_contract - p_co_total)
         p_not_invoiced = p_contract - p_invoiced
         p_outstanding = max(0.0, p_contract - p_collected)
-        p_expenses = sum(_safe_float(e.get("amount",0))                     for e in exp_list if e.get("project_number","") == pnum)
+
+        # Calculate project expenses (regular expenses only, exclude commission payments)
+        p_expenses = 0.0
+        for e in exp_list:
+            exp_pnum = e.get("project_number", "")
+            if exp_pnum == pnum and not e.get("is_commission"):
+                p_expenses += _safe_float(e.get("amount", 0))
+
+        # Add commission expense (calculate from project's commission override settings)
+        p_comm_earned = 0.0
+        p_comm_type = str(p.get("commission_override_type", "default")).lower()
+        p_comm_val = _safe_float(p.get("commission_override_value", 0))
+        p_contract = _safe_float(p.get("contract_value", 0))
+
+        # Check for fixed amount (flexible matching)
+        if p_comm_val > 0 and ("fixed" in p_comm_type or "$" in p_comm_type):
+            p_comm_earned = p_comm_val
+        elif "%" in p_comm_type and p_comm_val > 0 and p_contract > 0:
+            # Handle both decimal (0.50) and percentage (50) formats
+            pct_val = p_comm_val if p_comm_val > 1 else (p_comm_val * 100)
+            p_comm_earned = (p_contract * pct_val / 100)
+
+        # Fallback to project_commissions
+        if p_comm_earned == 0:
+            p_comm_earned = _safe_float(p_comm.get("commission_amount", 0))
+
+        # Only add PAID commission to expenses (cash basis accounting)
+        p_comm_paid = _safe_float(p_comm.get("paid_amount", 0))
+        if p_comm_paid > 0:
+            p_expenses += p_comm_paid
+        # If no paid amount, don't add commission to expenses yet
+
         p_gross_profit = p_collected - p_expenses
         p_labor_cost = labor_cost_by_project.get(pnum, 0.0)
 
@@ -12880,7 +14310,8 @@ def financial():
                     if _inv_num == "INV-202608-001":
                         log.info(f"[PAYMENT_READ] payment: proj={_proj_num}, stage_name='{_stage}', stage_index={_pay_stage_idx}")
 
-                    # Only do lookups if stage_name is NOT in payment_log
+                    # If we have stage_name from payment_log, use it as-is (it's the source of truth)
+                    # Only do additional lookups if stage_name is NOT in payment_log
                     if not _stage:
                         _stage_idx = _pay.get("stage_index")
 
@@ -12929,8 +14360,8 @@ def financial():
                         _stage = _inv_meta.get("payment_stage", "")
 
                     # FINAL VERIFICATION: Only verify stage if it wasn't directly from payment_log
-                    # payment_log stage_name is the source of truth; don't override it with linked_projects
-                    if _stage and not _stage_from_payment and _proj_num != "TAX":
+                    # payment_log stage_name is the source of truth; don't override it
+                    if not _stage_from_payment and _stage and _proj_num != "TAX":
                         _linked_projects = _inv_meta.get("linked_projects", [])
                         if isinstance(_linked_projects, list):
                             for _lp in _linked_projects:
@@ -12951,7 +14382,7 @@ def financial():
 
                     # Final fallback: infer stage from payment amount if available
                     # Only do this if stage wasn't found in payment_log or lookups
-                    if (not _stage or _stage == _inv_meta.get("payment_stage", "")) and _proj_num != "TAX":
+                    if (not _stage or (_stage == _inv_meta.get("payment_stage", "") and not _stage_from_payment)) and _proj_num != "TAX":
                         _paid_amount = _safe_float(_pay.get("amount", 0))
                         if _paid_amount > 0:
                             _proj_data = _proj_num_to_data.get(_proj_num, {})
@@ -13135,15 +14566,22 @@ def financial():
     # ── Commission paid — treated as a cost on the balance sheet ────────────
     _cp_bs_raw = fb_get("/commission_payments") or {}
     all_proj_commissions = fb_get("/project_commissions") or {}
+    all_projects = fb_get("/projects") or {}
     bs_total_commission = 0.0
     total_commission_paid = 0.0
     monthly_commission_details: Dict[str, list] = {str(m): [] for m in range(1, 13)}
     # Populate with project commissions that are PAID (status = "Paid") - display by paid_at date
     _paid_comm_count = 0
     _all_statuses = []
+    _skipped_deleted_commissions = 0
     if isinstance(all_proj_commissions, dict):
         for _pcid, _pc in all_proj_commissions.items():
             if not _pc or not isinstance(_pc, dict):
+                continue
+
+            # Check if project still exists before displaying commission
+            if _pcid not in all_projects:
+                _skipped_deleted_commissions += 1
                 continue
 
             _status = _pc.get("status", "").strip()
@@ -13184,7 +14622,7 @@ def financial():
                     "paid_date": _display_date,
                 })
 
-    log.info(f"Commission Paid: Found {_paid_comm_count} paid commissions. All statuses: {_all_statuses}. monthly_commission_details[7]={len(monthly_commission_details.get('7', []))} items")
+    log.info(f"Commission Paid: Found {_paid_comm_count} paid commissions. Skipped {_skipped_deleted_commissions} commissions for deleted projects. All statuses: {_all_statuses}. monthly_commission_details[7]={len(monthly_commission_details.get('7', []))} items")
 
     # Calculate annual commissions by month for the Annual Financial Summary table
     # Commissions are displayed separately in monthly breakdown, not included in EXPENSES row
@@ -13748,6 +15186,10 @@ def financial():
         if not isinstance(v, dict):
             continue
 
+        # Check if project still exists before displaying commission
+        if k not in all_projects:
+            continue
+
         pc = dict(v, firebase_id=k)
 
         # Use per-project deduction tracking (already calculated when deduction created)
@@ -13811,6 +15253,7 @@ def financial():
         total_revenue=total_revenue,
         bs_total_revenue=bs_total_revenue,
         bs_total_expenses=bs_total_expenses,
+        bs_total_expenses_with_commissions=bs_total_expenses_with_commissions,
         bs_total_salaries=bs_total_salaries,
         total_salaries=total_salaries,
         employee_count=employee_count,
@@ -14412,6 +15855,18 @@ def expense_delete(exp_id):
     is_emp_expense = emp_data is not None
     bs_data = fb_get(f"/balance_sheet_expenses/{exp_id}") or {}
 
+    # Get deleting user's full name
+    user_uid = session.get("user_uid", "")
+    deleted_by_name = session.get("user_name") or session.get("username", "")
+
+    if user_uid:
+        user_data = fb_get(f"/users/{user_uid}") or {}
+        # Prefer display_name, fallback to username
+        if user_data.get("display_name"):
+            deleted_by_name = user_data.get("display_name")
+        elif user_data.get("username"):
+            deleted_by_name = user_data.get("username")
+
     # Archive before deleting (merge both sources for a complete record)
     archive_exp = dict(bs_data)
     if is_emp_expense and isinstance(emp_data, dict):
@@ -14423,12 +15878,19 @@ def expense_delete(exp_id):
         if emp_name:
             archive_exp["description"] = f"Employee Salary for {emp_name}"
 
+    now_utc = datetime.now(timezone.utc).isoformat()
+    now_readable = datetime.now(COMPANY_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
     archive_exp.update({
         "firebase_id": exp_id,
-        "deleted_at": datetime.now(timezone.utc).isoformat(),
-        "deleted_by": session.get("user_name") or session.get("user_email", ""),
-        "deleted_by_uid": session.get("user_uid", ""),
+        "deleted_at": now_utc,
+        "deleted_at_readable": now_readable,
+        "deleted_by": deleted_by_name,
+        "deleted_by_email": session.get("user_email", ""),
+        "deleted_by_uid": user_uid,
     })
+
+    log.info(f"DELETED EXPENSE {exp_id}: {archive_exp.get('expense_name', 'Unknown')} - Deleted by: {deleted_by_name} at {now_readable}")
     fb_update(f"/deleted_expenses/{exp_id}", archive_exp)
 
     # Always delete from balance_sheet_expenses
@@ -14451,6 +15913,37 @@ def expense_delete(exp_id):
                 "deleted_by": session.get("user_name") or session.get("user_email", ""),
             })
             fb_update(f"/deleted_salaries/{salary_id}", archive_sal)
+
+            # If this is a commission payment salary, revert commissions
+            if salary_data.get("salary_type") == "Commission":
+                commission_details = salary_data.get("commission_payment_details", [])
+                if isinstance(commission_details, list) and commission_details:
+                    for detail in commission_details:
+                        if isinstance(detail, dict):
+                            commission_id = detail.get("commission_id")
+                            if commission_id:
+                                log.info(f"Deleting commission expense {exp_id}: reverting commission {commission_id}")
+                                fb_update(f"/project_commissions/{commission_id}", {
+                                    "paid_amount": 0,
+                                    "paid_at": None,
+                                    "last_payment_date": None,
+                                    "status": "Pending",
+                                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                                    "updated_by": session.get("user_name", "Unknown")
+                                })
+                else:
+                    commission_id = salary_data.get("commission_id")
+                    if commission_id:
+                        log.info(f"Deleting commission expense {exp_id}: reverting commission {commission_id}")
+                        fb_update(f"/project_commissions/{commission_id}", {
+                            "paid_amount": 0,
+                            "paid_at": None,
+                            "last_payment_date": None,
+                            "status": "Pending",
+                            "updated_at": datetime.now(timezone.utc).isoformat(),
+                            "updated_by": session.get("user_name", "Unknown")
+                        })
+
         fb_delete(f"/balance_sheet_salary/{salary_id}")
 
     # If this expense is an advance, also delete the corresponding advance entry
@@ -14487,7 +15980,134 @@ def expense_delete(exp_id):
             # Also delete the medical claim receipt if it exists
             fb_delete(f"/medical_claim_receipts/{medical_claim_id}")
 
-    return jsonify({"success": True, "message": "Expense deleted and archived for recovery."})
+    # If this expense is a commission payment, revert the commission's paid amount
+    if bs_data.get("expense_type") == "Other Expenses" and bs_data.get("category") == "Payroll" and bs_data.get("is_commission"):
+        log.info(f"===== DELETING COMMISSION PAYMENT EXPENSE {exp_id} =====")
+
+        # Check for detailed payment breakdown (from bulk "Add Commission Payment")
+        commission_payment_details = bs_data.get("commission_payment_details", [])
+        log.info(f"Commission payment details: {commission_payment_details}")
+
+        if commission_payment_details and isinstance(commission_payment_details, list) and len(commission_payment_details) > 0:
+            log.info(f"Processing {len(commission_payment_details)} commissions from details")
+            # Use the actual payment amounts stored for each commission
+            for detail in commission_payment_details:
+                commission_id = detail.get("commission_id")
+                payment_amount = _safe_float(detail.get("amount", 0))
+                log.info(f"  Commission {commission_id}: reverting payment of ${payment_amount:.2f}")
+
+                # Get current commission data
+                commission_data = fb_get(f"/project_commissions/{commission_id}") or {}
+                if commission_data:
+                    current_paid = _safe_float(commission_data.get("paid_amount", 0))
+                    new_paid = max(0, current_paid - payment_amount)
+                    current_status = commission_data.get("status", "Pending")
+
+                    # Update commission to revert payment
+                    commission_amount = _safe_float(commission_data.get("commission_amount", 0))
+                    new_status = "Pending" if new_paid < commission_amount else "Paid (Fully Covered)"
+
+                    update_data = {
+                        "paid_amount": new_paid,
+                        "status": new_status,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "updated_by": session.get("user_name") or session.get("user_email", "")
+                    }
+
+                    # Clear paid_at if all payments are reverted
+                    if new_paid <= 0:
+                        update_data["paid_at"] = ""
+                        log.info(f"  Clearing paid_at for commission {commission_id}")
+
+                    fb_update(f"/project_commissions/{commission_id}", update_data)
+                    log.info(f"  ✓ Reverted commission {commission_id}: paid_amount {current_paid} → {new_paid}, status {current_status} → {new_status}")
+                else:
+                    log.warning(f"  ✗ Commission {commission_id} not found")
+        else:
+            # Fallback for single commission payments (commission_id)
+            total_payment = _safe_float(bs_data.get("amount", 0))
+            commission_id = bs_data.get("commission_id")
+
+            if commission_id:
+                # Get current commission data
+                commission_data = fb_get(f"/project_commissions/{commission_id}") or {}
+                if commission_data:
+                    current_paid = _safe_float(commission_data.get("paid_amount", 0))
+                    new_paid = max(0, current_paid - total_payment)
+
+                    # Update commission to revert payment
+                    update_data = {
+                        "paid_amount": new_paid,
+                        "status": "Pending" if new_paid < _safe_float(commission_data.get("commission_amount", 0)) else "Paid (Fully Covered)",
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "updated_by": session.get("user_name") or session.get("user_email", "")
+                    }
+
+                    # Clear paid_at if all payments are reverted
+                    if new_paid <= 0:
+                        update_data["paid_at"] = ""
+
+                    fb_update(f"/project_commissions/{commission_id}", update_data)
+                    log.info(f"Reverted commission {commission_id}: paid_amount changed from {current_paid} to {new_paid}")
+
+    # If this expense is linked to an adjustment, also delete the linked adjustment
+    if bs_data.get("is_adjustment"):
+        linked_adjustment_id = bs_data.get("linked_adjustment_id")
+        if linked_adjustment_id:
+            # Find the advance containing this adjustment
+            advances_raw = fb_get("/employee_advances") or {}
+            if isinstance(advances_raw, dict):
+                for advance_id, advance_data in advances_raw.items():
+                    if isinstance(advance_data, dict):
+                        adjustments = advance_data.get("adjustments", {})
+                        if isinstance(adjustments, dict) and linked_adjustment_id in adjustments:
+                            adjustment_data = adjustments[linked_adjustment_id]
+                            deleted_amount = _safe_float(adjustment_data.get("amount", 0))
+                            adjustment_type = adjustment_data.get("type", "").strip()
+
+                            # Recalculate advance totals without this adjustment
+                            current_adjusted = _safe_float(advance_data.get("adjusted", 0))
+                            new_adjusted = current_adjusted - deleted_amount
+                            advance_amount = _safe_float(advance_data.get("amount", 0))
+                            new_balance = advance_amount - new_adjusted
+                            new_status = "Closed" if new_balance <= 0 else "Open"
+
+                            # Delete the adjustment
+                            update_data_adv = {
+                                "adjusted": new_adjusted,
+                                "status": new_status,
+                                f"adjustments/{linked_adjustment_id}": None
+                            }
+                            fb_update(f"/employee_advances/{advance_id}", update_data_adv)
+
+                            log.info(f"Deleted linked adjustment {linked_adjustment_id} when deleting expense {exp_id}")
+
+                            # If this is a Commission Deduction adjustment, also delete the commission deduction entry
+                            if adjustment_type == "Commission Deduction":
+                                employee_name = advance_data.get("employee_name", "").strip()
+
+                                # Find and delete associated commission deduction entry
+                                comm_payments = fb_get("/commission_payments") or {}
+                                if isinstance(comm_payments, dict):
+                                    for cp_id, cp_data in comm_payments.items():
+                                        if isinstance(cp_data, dict) and cp_data.get("adjustment_id") == linked_adjustment_id:
+                                            fb_delete(f"/commission_payments/{cp_id}")
+                                            log.info(f"Deleted commission deduction {cp_id} when deleting adjustment expense {exp_id}")
+                                            break
+
+                                # Recalculate project deductions for this salesperson
+                                if employee_name:
+                                    _recalculate_project_deductions_for_salesperson(employee_name)
+                                    log.info(f"Recalculated project deductions for {employee_name} after deleting commission deduction")
+
+                                # Clear cache to ensure commission details refresh
+                                cache_bust("commission")
+                                cache_bust("financial")
+
+                            break
+
+    flash("Expense deleted and archived for recovery.", "success")
+    return redirect(url_for("financial", tab="expenses"))
 
 @app.route("/financial/expense/<exp_id>/restore", methods=["POST"])
 @role_required("financial")
@@ -14518,12 +16138,39 @@ def expense_restore(exp_id):
             "employee_name": archive.get("employee_name", ""),
             "date": archive.get("date", ""),
             "amount": _safe_float(archive.get("amount", 0)),
+            "amount_bdt": archive.get("amount_bdt", 0),
+            "exchange_rate": archive.get("exchange_rate", 0),
             "notes": archive.get("description", ""),
             "region": archive.get("region", "Inside America"),
             "year": int(archive.get("date", "")[:4]) if archive.get("date") else datetime.now(COMPANY_TZ).year,
             "salary_status": "Paid",
             "created_at": archive.get("created_at", datetime.now(timezone.utc).isoformat()),
         }
+
+        # PRESERVE COMMISSION FIELDS when restoring
+        if archive.get("is_commission") or archive.get("salary_type") == "Commission":
+            salary_data["salary_type"] = "Commission"
+            salary_data["is_commission"] = True
+
+            # Preserve commission identifiers
+            if archive.get("commission_id"):
+                salary_data["commission_id"] = archive.get("commission_id")
+
+            # Preserve commission_payment_details for multi-project payments
+            if archive.get("commission_payment_details"):
+                salary_data["commission_payment_details"] = archive.get("commission_payment_details")
+
+            # Preserve project info for commissions
+            if archive.get("project"):
+                salary_data["project"] = archive.get("project")
+            if archive.get("project_numbers"):
+                salary_data["project_numbers"] = archive.get("project_numbers")
+
+            log.info(f"Restoring commission payment salary: {salary_id}, is_commission=True")
+        else:
+            salary_data["salary_type"] = archive.get("salary_type", "Salary")
+            log.info(f"Restoring regular salary: {salary_id}, salary_type={salary_data['salary_type']}")
+
         fb_update(f"/balance_sheet_salary/{salary_id}", salary_data)
 
     # If this expense is an advance, restore the corresponding advance entry
@@ -14550,6 +16197,120 @@ def expense_restore(exp_id):
             fb_update(f"/medical_claims/{medical_claim_id}", restored_medical)
             fb_delete(f"/deleted_medical_claims/{medical_claim_id}")
 
+    # If this expense is a commission payment, restore the commission's paid amount
+    if archive.get("expense_type") == "Other Expenses" and archive.get("category") == "Payroll":
+        # Check for detailed payment breakdown (from bulk "Add Commission Payment")
+        commission_payment_details = archive.get("commission_payment_details", [])
+
+        if commission_payment_details:
+            # Use the actual payment amounts stored for each commission
+            for detail in commission_payment_details:
+                commission_id = detail.get("commission_id")
+                payment_amount = _safe_float(detail.get("amount", 0))
+
+                # Get current commission data
+                commission_data = fb_get(f"/project_commissions/{commission_id}") or {}
+                if commission_data:
+                    current_paid = _safe_float(commission_data.get("paid_amount", 0))
+                    new_paid = current_paid + payment_amount
+
+                    # Update commission to restore payment
+                    remaining_balance = _safe_float(commission_data.get("commission_amount", 0)) - _safe_float(commission_data.get("total_deducted", 0)) - new_paid
+                    restore_status = "Paid (Fully Covered)" if remaining_balance <= 0.01 else "Pending"
+
+                    update_data = {
+                        "paid_amount": new_paid,
+                        "status": restore_status,
+                        "paid_at": archive.get("date", ""),
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "updated_by": session.get("user_name") or session.get("user_email", "")
+                    }
+
+                    fb_update(f"/project_commissions/{commission_id}", update_data)
+                    log.info(f"Restored commission {commission_id}: paid_amount changed from {current_paid} to {new_paid}")
+        else:
+            # Fallback for single commission payments (commission_id)
+            total_payment = _safe_float(archive.get("amount", 0))
+            commission_id = archive.get("commission_id")
+
+            if commission_id:
+                # Get current commission data
+                commission_data = fb_get(f"/project_commissions/{commission_id}") or {}
+                if commission_data:
+                    current_paid = _safe_float(commission_data.get("paid_amount", 0))
+                    new_paid = current_paid + total_payment
+
+                    # Update commission to restore payment
+                    remaining_balance = _safe_float(commission_data.get("commission_amount", 0)) - _safe_float(commission_data.get("total_deducted", 0)) - new_paid
+                    restore_status = "Paid (Fully Covered)" if remaining_balance <= 0.01 else "Pending"
+
+                    update_data = {
+                        "paid_amount": new_paid,
+                        "status": restore_status,
+                        "paid_at": archive.get("date", ""),
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "updated_by": session.get("user_name") or session.get("user_email", "")
+                    }
+
+                    fb_update(f"/project_commissions/{commission_id}", update_data)
+                    log.info(f"Restored commission {commission_id}: paid_amount changed from {current_paid} to {new_paid}")
+
+    # If this expense is linked to an adjustment, restore the linked adjustment
+    if archive.get("is_adjustment"):
+        linked_adjustment_id = archive.get("linked_adjustment_id")
+        advance_id = archive.get("advance_id") or archive.get("from_advance_id")
+
+        if linked_adjustment_id and advance_id:
+            # Get the advance to restore adjustment in
+            advance_data = fb_get(f"/employee_advances/{advance_id}") or {}
+            if advance_data:
+                adjustments = advance_data.get("adjustments", {}) or {}
+
+                # Check if adjustment needs to be restored (not already present)
+                if linked_adjustment_id not in adjustments:
+                    # Create restored adjustment from expense data
+                    adjustment_type = archive.get("category", "")
+                    restored_adjustment = {
+                        "date": archive.get("date", ""),
+                        "amount": _safe_float(archive.get("amount", 0)),
+                        "type": adjustment_type,
+                        "adjusted_by": archive.get("submitted_by", "Admin"),
+                        "remarks": archive.get("remarks", ""),
+                        "created_at": archive.get("created_at", datetime.now(timezone.utc).isoformat()),
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }
+
+                    # Restore adjustment in advance
+                    adjustment_amount = _safe_float(restored_adjustment.get("amount", 0))
+                    current_adjusted = _safe_float(advance_data.get("adjusted", 0))
+                    new_adjusted = current_adjusted + adjustment_amount
+                    advance_amount = _safe_float(advance_data.get("amount", 0))
+                    new_balance = advance_amount - new_adjusted
+                    new_status = "Closed" if new_balance <= 0 else "Open"
+
+                    # Update advance with restored adjustment
+                    update_data_adv = {
+                        "adjusted": new_adjusted,
+                        "status": new_status,
+                        f"adjustments/{linked_adjustment_id}": restored_adjustment
+                    }
+                    fb_update(f"/employee_advances/{advance_id}", update_data_adv)
+
+                    log.info(f"Restored linked adjustment {linked_adjustment_id} in advance {advance_id} when restoring expense {exp_id}")
+
+                    # If this is a Commission Deduction adjustment, restore the commission deduction entry
+                    if adjustment_type == "Commission Deduction":
+                        employee_name = advance_data.get("employee_name", "").strip()
+
+                        if employee_name:
+                            # Recalculate and restore project deductions for this salesperson
+                            _recalculate_project_deductions_for_salesperson(employee_name)
+                            log.info(f"Recalculated project deductions for {employee_name} after restoring commission deduction adjustment")
+
+                            # Clear cache to ensure commission details refresh
+                            cache_bust("commission")
+                            cache_bust("financial")
+
     fb_delete(f"/deleted_expenses/{exp_id}")
     flash("Expense restored successfully.", "success")
     return redirect(url_for("financial", tab="expenses"))
@@ -14565,8 +16326,13 @@ def can_delete_receipt(exp_id):
     if _role in ("admin", "accountant"):
         return jsonify({"success": True, "can_delete": True})
 
-    # Check if user has approved delete request
+    # Check if user has approved delete request for single receipt or group receipt
     _perm = _has_approved_delete_request(_uid, "receipt", exp_id)
+    if _perm:
+        return jsonify({"success": True, "can_delete": True})
+
+    # Also check for group_receipt approval
+    _perm = _has_approved_delete_request(_uid, "group_receipt", exp_id)
     if _perm:
         return jsonify({"success": True, "can_delete": True})
 
@@ -14583,7 +16349,10 @@ def remove_expense_receipt(exp_id):
 
     if _role not in ("admin", "accountant"):
         # Non-admin users need an approved delete request
+        # Check for both 'receipt' (single expense) and 'group_receipt' (group expense) approvals
         _perm = _has_approved_delete_request(_uid, "receipt", exp_id)
+        if not _perm:
+            _perm = _has_approved_delete_request(_uid, "group_receipt", exp_id)
         if not _perm:
             # No approved request found - return 403 and show permission request modal
             return jsonify({"success": False, "error": "Permission denied", "permission_required": True}), 403
@@ -14639,10 +16408,31 @@ def remove_expense_receipt(exp_id):
 @role_required("financial")
 def expense_edit(exp_id):
     try:
+        # Read existing record to check if this is an adjustment-linked expense
+        existing = fb_get(f"/balance_sheet_expenses/{exp_id}") or {}
+
+        # Check if this is an adjustment expense with read-only fields
+        if existing.get("is_adjustment"):
+            original_amount = _safe_float(existing.get("amount", 0))
+            new_amount = _safe_float(request.form.get("amount", 0))
+            original_category = existing.get("category", "")
+            new_category = request.form.get("category", "")
+
+            if original_amount != new_amount:
+                return jsonify({
+                    "success": False,
+                    "error": "Amount is read-only for adjustment expenses. Edit in Advance Adjustments to change the amount."
+                }), 403
+
+            if original_category != new_category:
+                return jsonify({
+                    "success": False,
+                    "error": "Category is read-only for adjustment expenses. It changes automatically based on the adjustment type."
+                }), 403
+
         usd_amount = _safe_float(request.form.get("amount", 0))
 
         # Read existing record to preserve the original exchange rate from creation date
-        existing = fb_get(f"/balance_sheet_expenses/{exp_id}") or {}
         original_exchange_rate = _safe_float(existing.get("exchange_rate", 0))
 
         # ALWAYS preserve the original exchange rate (immutable after creation)
@@ -14678,7 +16468,15 @@ def expense_edit(exp_id):
             child_expenses_json = request.form.get("child_expenses", "[]")
             try:
                 child_expenses = json.loads(child_expenses_json)
-                data["child_expenses"] = child_expenses
+                # Store original indices for receipt tracking during the update process
+                child_expenses_with_tracking = []
+                for item in child_expenses:
+                    # Keep original_index for receipt mapping, but remove it from saved data
+                    original_idx = item.pop('original_index', None)
+                    item['_original_index'] = original_idx  # Store for processing
+                    child_expenses_with_tracking.append(item)
+
+                data["child_expenses"] = child_expenses_with_tracking
                 data["child_expense_count"] = len(child_expenses)
             except:
                 pass
@@ -14703,7 +16501,9 @@ def expense_edit(exp_id):
                 # Check permission
                 _uid = session.get("user_uid", "")
                 user_role = normalize_role(session.get("user_role", ""))
-                has_approval = user_role in ("admin", "accountant") or _has_approved_delete_request(_uid, "receipt", exp_id)
+                has_approval = user_role in ("admin", "accountant")
+                if not has_approval:
+                    has_approval = _has_approved_delete_request(_uid, "receipt", exp_id) or _has_approved_delete_request(_uid, "group_receipt", exp_id)
 
                 if not has_approval:
                     return jsonify({
@@ -14732,9 +16532,43 @@ def expense_edit(exp_id):
 
         # Handle item receipts for group expenses
         if is_group_expense:
-            for idx in range(len(data.get("child_expenses", []))):
+            # Collect all indices that have receipt operations (deletion or upload)
+            import re
+            receipt_indices = set()
+
+            # Find all delete_item_receipt_* keys
+            for key in request.form.keys():
+                match = re.match(r'delete_item_receipt_(\d+)', key)
+                if match:
+                    receipt_indices.add(int(match.group(1)))
+
+            # Find all item_receipt_* keys in files
+            for key in request.files.keys():
+                match = re.match(r'item_receipt_(\d+)', key)
+                if match:
+                    receipt_indices.add(int(match.group(1)))
+
+            # Process each index that has a receipt operation
+            for idx in receipt_indices:
                 item_receipt_key = f"item_receipt_{idx}"
-                if item_receipt_key in request.files:
+                delete_receipt_key = f"delete_item_receipt_{idx}"
+
+                # Handle receipt deletion
+                if request.form.get(delete_receipt_key) == 'true':
+                    try:
+                        # Delete receipt from Firebase using the original index
+                        fb_delete(f"/expense_item_receipts/{exp_id}_{idx}")
+                        # Also remove the _original_index tracking from child expenses
+                        for child_exp in data.get("child_expenses", []):
+                            if child_exp.get("_original_index") == idx:
+                                child_exp.pop("_original_index", None)
+                                break
+                        app.logger.info(f"Deleted item receipt for expense {exp_id}, item {idx}")
+                    except Exception as e:
+                        app.logger.error(f"Item receipt deletion error for item {idx}: {e}")
+
+                # Handle receipt upload
+                elif item_receipt_key in request.files:
                     item_file = request.files[item_receipt_key]
                     if item_file and item_file.filename:
                         try:
@@ -14743,7 +16577,7 @@ def expense_edit(exp_id):
                             item_receipt_filename = item_file.filename
                             item_receipt_type = item_file.content_type
 
-                            # Store item receipt in /expense_item_receipts
+                            # Store item receipt in /expense_item_receipts using the original index
                             fb_update(f"/expense_item_receipts/{exp_id}_{idx}", {
                                 "receipt_base64": item_receipt_base64,
                                 "receipt_filename": item_receipt_filename,
@@ -14753,6 +16587,11 @@ def expense_edit(exp_id):
                             })
                         except Exception as e:
                             app.logger.error(f"Item receipt upload error for item {idx}: {e}")
+
+        # Clean up tracking fields from child_expenses before final save
+        if is_group_expense and "child_expenses" in data:
+            for child_exp in data.get("child_expenses", []):
+                child_exp.pop("_original_index", None)
 
         # If this expense originated as an employee submission, keep it in sync
         emp_rec = fb_get(f"/expenses/{exp_id}")
@@ -14798,6 +16637,60 @@ def expense_edit(exp_id):
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             fb_update(f"/balance_sheet_salary/{salary_id}", salary_update)
+
+        # Commission protection: prevent amount edits, sync date changes back to commission
+        commission_id = existing.get("commission_id")
+        is_commission = existing.get("is_commission")
+        salary_type = existing.get("salary_type", "").strip()
+        expense_category = existing.get("category", "").strip()
+
+        # Detect commission payments - must be explicitly marked or have commission_id
+        is_commission_payment = is_commission or commission_id
+
+        log.info(f"Expense {exp_id}: commission_id={commission_id}, is_commission={is_commission}, salary_type={salary_type}, category={expense_category}")
+
+        if is_commission_payment:
+            # Check if amount is being changed
+            old_amount = _safe_float(existing.get("amount", 0))
+            new_amount = _safe_float(data.get("amount", 0))
+            amount_changed = abs(old_amount - new_amount) > 0.01
+
+            # If amount is being changed, prevent the edit
+            if amount_changed:
+                return jsonify({
+                    "success": False,
+                    "error": "Cannot edit amount: This is a commission payment from the commission details tab. "
+                            "You can only edit the date. To modify the payment amount, use commission payment options.",
+                    "info": "Commission payments are protected from amount editing to maintain data integrity."
+                }), 400
+
+            # Sync date change back to commission record(s)
+            old_date = existing.get("date", "").strip() if existing.get("date") else ""
+            new_date = data.get("date", "").strip() if data.get("date") else ""
+
+            log.info(f"Commission sync check: old_date='{old_date}', new_date='{new_date}', commission_id={commission_id}")
+
+            if old_date != new_date and new_date:
+                commission_update = {
+                    "paid_at": new_date,
+                    "last_payment_date": new_date,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_by": session.get("user_name", "Unknown")
+                }
+                # If single commission ID exists, update it directly
+                if commission_id:
+                    log.info(f"Syncing date to single commission: {commission_id}")
+                    fb_update(f"/project_commissions/{commission_id}", commission_update)
+                # If commission_payment_details exists, update all commissions in the list
+                else:
+                    commission_details = existing.get("commission_payment_details", [])
+                    if isinstance(commission_details, list) and commission_details:
+                        log.info(f"Syncing date to {len(commission_details)} commissions from payment details")
+                        for detail in commission_details:
+                            detail_commission_id = detail.get("commission_id") if isinstance(detail, dict) else None
+                            if detail_commission_id:
+                                log.info(f"  Updating commission: {detail_commission_id}")
+                                fb_update(f"/project_commissions/{detail_commission_id}", commission_update)
 
         # If this expense is an advance, sync date and amount changes back to advance entry
         if existing.get("expense_type") == "Employee Advance":
@@ -16082,33 +17975,66 @@ def employee_profile(uid):
 
     # ── Expenses (reimbursements, other) ──────────────────────────────────────
     all_expenses = fb_get("/expenses") or {}
-    emp_expenses = [v for v in all_expenses.values() if isinstance(v, dict) and
-                    (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)
-                    and v.get("status") in ("approved", "Approved", "")]
+    emp_expenses = sorted(
+        [dict(v, firebase_id=k) for k, v in all_expenses.items() if isinstance(v, dict) and
+         (v.get("submitted_by_uid") == uid or (v.get("submitted_by_name") or "").strip() == name)],
+        key=lambda x: x.get("date", "") or x.get("expense_date", ""), reverse=True
+    )
+    # For YTD calculations, only count approved expenses
+    approved_expenses = [v for v in emp_expenses if v.get("status") in ("approved", "Approved", "")]
     expenses_ytd = sum(
-        _safe_float(v.get("amount", 0)) for v in emp_expenses
+        _safe_float(v.get("amount", 0)) for v in approved_expenses
         if (v.get("date") or v.get("expense_date") or "").startswith(year_str)
     )
-    other_allowances = sum(_safe_float(v.get("amount", 0)) for v in emp_expenses)
+    other_allowances = sum(_safe_float(v.get("amount", 0)) for v in approved_expenses)
 
-    # ── Time entries ──────────────────────────────────────────────────────────
-    emp_entries  = [e for e in _load_time_entries()
-                    if e.get("employee_uid") == uid and e.get("status") == "closed"]
-    total_mins   = sum(_safe_float(e.get("duration_minutes", 0)) for e in emp_entries)
-    total_hours  = round(total_mins / 60.0, 1)
-    # Split billable (has project) vs admin (no project)
-    billable_mins   = sum(_safe_float(e.get("duration_minutes", 0)) for e in emp_entries if e.get("project_number"))
-    admin_mins      = sum(_safe_float(e.get("duration_minutes", 0)) for e in emp_entries if not e.get("project_number"))
-    billable_hours  = round(billable_mins / 60.0, 1)
-    nonbillable_hrs = round(admin_mins / 60.0, 1)
+    # ── Time entries from Timesheets ──────────────────────────────────────────
+    # Load all timesheets and filter by employee and submitted/approved status
+    all_timesheets = _load_timesheets()
+    emp_timesheets = [s for s in all_timesheets
+                      if s.get("employee_uid") == uid and s.get("status") in ("Submitted", "Approved")]
 
-    projects_worked = len(set(e.get("project_number") for e in emp_entries if e.get("project_number")))
-
-    # Avg hours per week over last 8 weeks
+    total_mins = 0.0
+    billable_mins = 0.0
+    admin_mins = 0.0
+    projects_by_week = {}
     eight_weeks_ago = (now - timedelta(weeks=8)).strftime("%Y-%m-%d")
-    recent_entries  = [e for e in emp_entries if (e.get("date") or e.get("clock_in", "")[:10]) >= eight_weeks_ago]
-    recent_mins     = sum(_safe_float(e.get("duration_minutes", 0)) for e in recent_entries)
-    avg_hrs_week    = round(recent_mins / 60.0 / 8.0, 1)
+    recent_mins = 0.0
+
+    for sheet in emp_timesheets:
+        entries = sheet.get("entries", [])
+        if isinstance(entries, dict):
+            entries = list(entries.values())
+        for e in entries:
+            if not isinstance(e, dict):
+                continue
+            entry_date = e.get("date", "")
+            total_h = _safe_float(e.get("total_hours", 0))
+            if total_h <= 0:
+                total_h = _safe_float(e.get("regular_hours", 0)) + _safe_float(e.get("overtime_hours", 0))
+            if total_h <= 0:
+                continue
+
+            minutes = total_h * 60
+            total_mins += minutes
+
+            # Track billable vs admin
+            proj = e.get("project_name") or e.get("project_number")
+            if proj and proj != "General / Admin":
+                billable_mins += minutes
+                projects_by_week[proj] = True
+            else:
+                admin_mins += minutes
+
+            # Track recent entries for avg calculation
+            if entry_date >= eight_weeks_ago:
+                recent_mins += minutes
+
+    total_hours = round(total_mins / 60.0, 1)
+    billable_hours = round(billable_mins / 60.0, 1)
+    nonbillable_hrs = round(admin_mins / 60.0, 1)
+    projects_worked = len(projects_by_week)
+    avg_hrs_week = round(recent_mins / 60.0 / 8.0, 1)
 
     # ── Time off ──────────────────────────────────────────────────────────────
     all_time_off  = _load_time_off_requests()
@@ -16124,8 +18050,29 @@ def employee_profile(uid):
     # Leave taken in days
     leave_taken_days = round(leave_taken_hrs / 8.0, 1)
 
+    # ── Medical Claims ───────────────────────────────────────────────────────────
+    all_medical  = fb_get("/medical_claims") or {}
+    emp_medical  = sorted(
+        [dict(v, firebase_id=k) for k, v in all_medical.items() if isinstance(v, dict) and
+         (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)],
+        key=lambda x: x.get("claim_date", ""), reverse=True
+    )
+
+    # ── Timesheets ───────────────────────────────────────────────────────────────
+    all_timesheets = _load_timesheets()
+    emp_timesheets = sorted(
+        [s for s in all_timesheets if s.get("employee_uid") == uid],
+        key=lambda x: x.get("week_of", ""), reverse=True
+    )
+
+    # ── Time Off Requests ─────────────────────────────────────────────────────────
+    emp_time_off = sorted(
+        [t for t in all_time_off if t.get("employee_uid") == uid],
+        key=lambda x: x.get("requested_at", ""), reverse=True
+    )
+
     # ── Reviews ───────────────────────────────────────────────────────────────
-    all_reviews  = fb_get("/reviews") or {}
+    all_reviews  = fb_get("/performance_reviews") or {}
     emp_reviews  = sorted(
         [v for v in all_reviews.values() if isinstance(v, dict) and
          (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)],
@@ -16138,22 +18085,35 @@ def employee_profile(uid):
     # Recent slices for tables
     recent_payroll  = emp_sal_recs[:10]
     recent_advances = emp_advances[:5]
+    recent_timesheets = emp_timesheets[:5]
+    recent_time_off = emp_time_off[:5]
+    # Sort expenses by date (handle both "date" and "expense_date" fields), most recent first
+    recent_expenses = emp_expenses[:5]
+    recent_medical = emp_medical[:5]
 
     # Recent projects (last 5 distinct) — look up firebase_id for linking
     _proj_by_num = {p.get("project_number"): p for p in _load_projects_list() if p.get("project_number")}
     seen_proj = set()
     recent_projects = []
-    for e in emp_entries:
-        pn = e.get("project_number")
-        if pn and pn not in seen_proj:
-            seen_proj.add(pn)
-            proj_rec = _proj_by_num.get(pn, {})
-            recent_projects.append({
-                "project_number": pn,
-                "project_name":   e.get("project_name", "") or proj_rec.get("project_name", ""),
-                "firebase_id":    proj_rec.get("firebase_id", ""),
-                "status":         proj_rec.get("status", ""),
-            })
+    for sheet in emp_timesheets:
+        entries = sheet.get("entries", [])
+        if isinstance(entries, dict):
+            entries = list(entries.values())
+        for e in entries:
+            if not isinstance(e, dict):
+                continue
+            pn = e.get("project_number")
+            if pn and pn not in seen_proj and pn != "General / Admin":
+                seen_proj.add(pn)
+                proj_rec = _proj_by_num.get(pn, {})
+                recent_projects.append({
+                    "project_number": pn,
+                    "project_name":   e.get("project_name", "") or proj_rec.get("project_name", ""),
+                    "firebase_id":    proj_rec.get("firebase_id", ""),
+                    "status":         proj_rec.get("status", ""),
+                })
+            if len(recent_projects) >= 5:
+                break
         if len(recent_projects) >= 5:
             break
 
@@ -16199,9 +18159,365 @@ def employee_profile(uid):
         recent_payroll=recent_payroll,
         recent_advances=recent_advances,
         recent_projects=recent_projects,
+        recent_timesheets=recent_timesheets,
+        recent_time_off=recent_time_off,
+        recent_expenses=recent_expenses,
+        recent_medical=recent_medical,
         emp_reviews=emp_reviews,
         is_admin=is_admin,
     )
+
+
+@app.route("/employee/<uid>/timesheets")
+@login_required
+def employee_all_timesheets(uid):
+    """View all timesheets for a specific employee"""
+    _role = normalize_role(session.get("user_role", ""))
+    is_admin = _role in ("admin", "accountant")
+    if not is_admin and session.get("user_uid", "") != uid:
+        flash("Access denied.", "danger")
+        return redirect(url_for("employees"))
+
+    user = fb_get(f"/users/{uid}") or {}
+    name = (user.get("username") or user.get("name") or "").strip()
+
+    all_timesheets = _load_timesheets()
+    emp_timesheets = sorted(
+        [s for s in all_timesheets if s.get("employee_uid") == uid],
+        key=lambda x: x.get("week_of", ""), reverse=True
+    )
+
+    # Pagination
+    page = request.args.get("page", 1, type=int)
+    per_page = 15
+    total = len(emp_timesheets)
+    total_pages = (total + per_page - 1) // per_page
+    page = max(1, min(page, total_pages))
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    paginated_timesheets = emp_timesheets[start_idx:end_idx]
+
+    # Calculate stats
+    total_hours = sum([float(s.get("total_hours", 0) or 0) for s in emp_timesheets])
+    approved_count = len([s for s in emp_timesheets if s.get("status") == "Approved"])
+    approved_hours = sum([float(s.get("total_hours", 0) or 0) for s in emp_timesheets if s.get("status") == "Approved"])
+    draft_count = len([s for s in emp_timesheets if s.get("status") == "Draft"])
+    submitted_count = len([s for s in emp_timesheets if s.get("status") == "Submitted"])
+    rejected_count = len([s for s in emp_timesheets if s.get("status") == "Rejected"])
+
+    return render_template("employee_timesheets_all.html",
+        uid=uid, name=name, timesheets=paginated_timesheets, is_admin=is_admin,
+        page=page, total_pages=total_pages, total_records=total,
+        total_hours=total_hours, approved_count=approved_count, approved_hours=approved_hours,
+        draft_count=draft_count, submitted_count=submitted_count, rejected_count=rejected_count)
+
+
+@app.route("/employee/<uid>/time-off")
+@login_required
+def employee_all_time_off(uid):
+    """View all time off requests for a specific employee"""
+    _role = normalize_role(session.get("user_role", ""))
+    is_admin = _role in ("admin", "accountant")
+    if not is_admin and session.get("user_uid", "") != uid:
+        flash("Access denied.", "danger")
+        return redirect(url_for("employees"))
+
+    user = fb_get(f"/users/{uid}") or {}
+    name = (user.get("username") or user.get("name") or "").strip()
+
+    all_time_off = _load_time_off_requests()
+    emp_time_off = sorted(
+        [t for t in all_time_off if t.get("employee_uid") == uid],
+        key=lambda x: x.get("requested_at", ""), reverse=True
+    )
+
+    # Pagination
+    page = request.args.get("page", 1, type=int)
+    per_page = 15
+    total = len(emp_time_off)
+    total_pages = (total + per_page - 1) // per_page
+    page = max(1, min(page, total_pages))
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    paginated_time_off = emp_time_off[start_idx:end_idx]
+
+    # Calculate stats
+    total_days = sum([float(t.get("working_days", 0) or 0) for t in emp_time_off])
+    approved_count = len([t for t in emp_time_off if t.get("status") == "Approved"])
+    approved_days = sum([float(t.get("working_days", 0) or 0) for t in emp_time_off if t.get("status") == "Approved"])
+    rejected_count = len([t for t in emp_time_off if t.get("status") == "Rejected"])
+    pending_count = len([t for t in emp_time_off if t.get("status") == "Pending"])
+
+    return render_template("employee_time_off_all.html",
+        uid=uid, name=name, time_off=paginated_time_off, is_admin=is_admin,
+        page=page, total_pages=total_pages, total_records=total,
+        total_days=total_days, approved_count=approved_count, approved_days=approved_days,
+        rejected_count=rejected_count, pending_count=pending_count)
+
+
+@app.route("/employee/<uid>/expenses")
+@login_required
+def employee_all_expenses(uid):
+    """View all employee expenses for a specific employee"""
+    _role = normalize_role(session.get("user_role", ""))
+    is_admin = _role in ("admin", "accountant")
+    if not is_admin and session.get("user_uid", "") != uid:
+        flash("Access denied.", "danger")
+        return redirect(url_for("employees"))
+
+    user = fb_get(f"/users/{uid}") or {}
+    name = (user.get("username") or user.get("name") or "").strip()
+
+    all_expenses = fb_get("/expenses") or {}
+    emp_expenses = sorted(
+        [dict(v, firebase_id=k) for k, v in all_expenses.items() if isinstance(v, dict) and
+         (v.get("submitted_by_uid") == uid or (v.get("submitted_by_name") or "").strip() == name)],
+        key=lambda x: x.get("date", "") or x.get("expense_date", ""), reverse=True
+    )
+
+    # Pagination
+    page = request.args.get("page", 1, type=int)
+    per_page = 15
+    total = len(emp_expenses)
+    total_pages = (total + per_page - 1) // per_page
+    page = max(1, min(page, total_pages))
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    paginated_expenses = emp_expenses[start_idx:end_idx]
+
+    # Calculate stats
+    total_amount = sum([float(str(e.get("amount", 0) or 0).replace(",", "")) for e in emp_expenses])
+    approved_count = len([e for e in emp_expenses if e.get("status", "").lower() == "approved"])
+    approved_amount = sum([float(str(e.get("amount", 0) or 0).replace(",", "")) for e in emp_expenses if e.get("status", "").lower() == "approved"])
+    pending_count = len([e for e in emp_expenses if e.get("status", "").lower() == "pending"])
+    rejected_count = len([e for e in emp_expenses if e.get("status", "").lower() == "rejected"])
+
+    return render_template("employee_expenses_all.html",
+        uid=uid, name=name, expenses=paginated_expenses, is_admin=is_admin,
+        page=page, total_pages=total_pages, total_records=total,
+        total_amount=total_amount, approved_count=approved_count, approved_amount=approved_amount,
+        pending_count=pending_count, rejected_count=rejected_count)
+
+
+@app.route("/employee/<uid>/medical")
+@login_required
+def employee_all_medical(uid):
+    """View all medical claims for a specific employee"""
+    _role = normalize_role(session.get("user_role", ""))
+    is_admin = _role in ("admin", "accountant")
+    if not is_admin and session.get("user_uid", "") != uid:
+        flash("Access denied.", "danger")
+        return redirect(url_for("employees"))
+
+    user = fb_get(f"/users/{uid}") or {}
+    name = (user.get("username") or user.get("name") or "").strip()
+
+    all_medical = fb_get("/medical_claims") or {}
+    emp_medical = sorted(
+        [dict(v, firebase_id=k) for k, v in all_medical.items() if isinstance(v, dict) and
+         (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)],
+        key=lambda x: x.get("claim_date", ""), reverse=True
+    )
+
+    # Pagination
+    page = request.args.get("page", 1, type=int)
+    per_page = 15
+    total = len(emp_medical)
+    total_pages = (total + per_page - 1) // per_page
+    page = max(1, min(page, total_pages))
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    paginated_medical = emp_medical[start_idx:end_idx]
+
+    # Calculate stats
+    total_claimed = sum([float(str(m.get("amount_claimed", 0) or 0).replace(",", "")) for m in emp_medical])
+    approved_count = len([m for m in emp_medical if m.get("status", "").lower() == "approved"])
+    approved_amount = sum([float(str(m.get("amount_claimed", 0) or 0).replace(",", "")) for m in emp_medical if m.get("status", "").lower() == "approved"])
+    pending_count = len([m for m in emp_medical if m.get("status", "").lower() == "pending"])
+    rejected_count = len([m for m in emp_medical if m.get("status", "").lower() == "rejected"])
+
+    return render_template("employee_medical_all.html",
+        uid=uid, name=name, medical=paginated_medical, is_admin=is_admin,
+        page=page, total_pages=total_pages, total_records=total,
+        total_claimed=total_claimed, approved_count=approved_count, approved_amount=approved_amount,
+        pending_count=pending_count, rejected_count=rejected_count)
+
+
+@app.route("/employee/<uid>/payroll")
+@login_required
+def employee_all_payroll(uid):
+    """View all payroll history for a specific employee"""
+    _role = normalize_role(session.get("user_role", ""))
+    is_admin = _role in ("admin", "accountant")
+    if not is_admin and session.get("user_uid", "") != uid:
+        flash("Access denied.", "danger")
+        return redirect(url_for("employees"))
+
+    user = fb_get(f"/users/{uid}") or {}
+    name = (user.get("username") or user.get("name") or "").strip()
+
+    all_salaries = fb_get("/balance_sheet_salary") or {}
+    emp_payroll = sorted(
+        [dict(v, firebase_id=k) for k, v in all_salaries.items() if isinstance(v, dict) and
+         (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)],
+        key=lambda x: x.get("date", ""), reverse=True
+    )
+
+    # Pagination
+    page = request.args.get("page", 1, type=int)
+    per_page = 15
+    total = len(emp_payroll)
+    total_pages = (total + per_page - 1) // per_page
+    page = max(1, min(page, total_pages))
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    paginated_payroll = emp_payroll[start_idx:end_idx]
+
+    # Calculate stats
+    total_salary_amount = sum([float(str(p.get("amount", 0) or 0).replace(",", "")) for p in emp_payroll])
+    total_bonus_amount = 0
+    paid_count = len([p for p in emp_payroll if p.get("salary_status") == "Paid"])
+    paid_amount = sum([float(str(p.get("amount", 0) or 0).replace(",", "")) for p in emp_payroll if p.get("salary_status") == "Paid"])
+    pending_count = len([p for p in emp_payroll if p.get("salary_status") == "Pending"])
+    pending_amount = sum([float(str(p.get("amount", 0) or 0).replace(",", "")) for p in emp_payroll if p.get("salary_status") == "Pending"])
+
+    return render_template("employee_payroll_all.html",
+        uid=uid, name=name, payroll=paginated_payroll, is_admin=is_admin,
+        page=page, total_pages=total_pages, total_records=total,
+        total_salary_amount=total_salary_amount, total_bonus_amount=total_bonus_amount,
+        paid_count=paid_count, paid_amount=paid_amount,
+        pending_count=pending_count, pending_amount=pending_amount)
+
+
+@app.route("/employee/<uid>/advances")
+@login_required
+def employee_all_advances(uid):
+    """View all advances for a specific employee"""
+    _role = normalize_role(session.get("user_role", ""))
+    is_admin = _role in ("admin", "accountant")
+    if not is_admin and session.get("user_uid", "") != uid:
+        flash("Access denied.", "danger")
+        return redirect(url_for("employees"))
+
+    user = fb_get(f"/users/{uid}") or {}
+    name = (user.get("username") or user.get("name") or "").strip()
+
+    all_advances = fb_get("/employee_advances") or {}
+    emp_advances = sorted(
+        [dict(v, firebase_id=k) for k, v in all_advances.items() if isinstance(v, dict) and
+         (v.get("employee_uid") == uid or (v.get("employee_name") or "").strip() == name)],
+        key=lambda x: x.get("date", ""), reverse=True
+    )
+
+    # Pagination
+    page = request.args.get("page", 1, type=int)
+    per_page = 15
+    total = len(emp_advances)
+    total_pages = (total + per_page - 1) // per_page
+    page = max(1, min(page, total_pages))
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    paginated_advances = emp_advances[start_idx:end_idx]
+
+    # Calculate stats
+    total_advanced = sum([float(str(a.get("amount", 0) or 0).replace(",", "")) for a in emp_advances])
+    total_recovered = sum([float(str(a.get("adjusted_amount", 0) or 0).replace(",", "")) for a in emp_advances])
+    open_count = len([a for a in emp_advances if a.get("status", "").lower() == "open"])
+    closed_count = len([a for a in emp_advances if a.get("status", "").lower() == "closed"])
+
+    return render_template("employee_advances_all.html",
+        uid=uid, name=name, advances=paginated_advances, is_admin=is_admin,
+        page=page, total_pages=total_pages, total_records=total,
+        total_advanced=total_advanced, total_recovered=total_recovered,
+        open_count=open_count, closed_count=closed_count)
+
+
+@app.route("/employee/<uid>/projects")
+@login_required
+def employee_all_projects(uid):
+    """View all projects for a specific employee"""
+    _role = normalize_role(session.get("user_role", ""))
+    is_admin = _role in ("admin", "accountant")
+    if not is_admin and session.get("user_uid", "") != uid:
+        flash("Access denied.", "danger")
+        return redirect(url_for("employees"))
+
+    user = fb_get(f"/users/{uid}") or {}
+    name = (user.get("username") or user.get("name") or "").strip()
+
+    # Get all timesheets for this employee (same as employee profile now uses)
+    all_timesheets = _load_timesheets()
+    emp_timesheets = [s for s in all_timesheets
+                      if s.get("employee_uid") == uid and s.get("status") in ("Submitted", "Approved")]
+
+    # Get unique projects and their details
+    _all_projs = _load_projects_list()
+    _proj_by_num = {p.get("project_number"): p for p in _all_projs if p.get("project_number")}
+    _proj_by_name = {p.get("project_name"): p for p in _all_projs if p.get("project_name")}
+    seen_proj = {}
+    project_hours = {}
+
+    for sheet in emp_timesheets:
+        entries = sheet.get("entries", [])
+        if isinstance(entries, dict):
+            entries = list(entries.values())
+        for e in entries:
+            if not isinstance(e, dict):
+                continue
+            pn = e.get("project_number")
+            proj_name = e.get("project_name")
+            if (pn or proj_name) and (pn or proj_name) != "General / Admin":
+                key = pn or proj_name
+                if key not in seen_proj:
+                    # Try lookup by both number and name
+                    proj_rec = _proj_by_num.get(pn, {}) or _proj_by_name.get(proj_name, {})
+                    seen_proj[key] = {
+                        "project_number": pn or "",
+                        "project_name": proj_name or proj_rec.get("project_name", ""),
+                        "firebase_id": proj_rec.get("firebase_id", ""),
+                        "status": proj_rec.get("status", ""),
+                        "start_date": proj_rec.get("start_date", ""),
+                        "end_date": proj_rec.get("end_date", ""),
+                        "client": proj_rec.get("client", ""),
+                    }
+                if key not in project_hours:
+                    project_hours[key] = 0
+                total_h = _safe_float(e.get("total_hours", 0))
+                if total_h <= 0:
+                    total_h = _safe_float(e.get("regular_hours", 0)) + _safe_float(e.get("overtime_hours", 0))
+                project_hours[key] += total_h
+
+    emp_projects = sorted(seen_proj.values(), key=lambda x: project_hours.get(x["project_number"] or x["project_name"], 0), reverse=True)
+
+    # Add hours to each project
+    for proj in emp_projects:
+        key = proj["project_number"] or proj["project_name"]
+        proj["hours"] = round(project_hours.get(key, 0), 1)
+
+    # Filter to only show projects with project numbers
+    emp_projects = [p for p in emp_projects if p.get("project_number")]
+
+    # Pagination
+    page = request.args.get("page", 1, type=int)
+    per_page = 15
+    total = len(emp_projects)
+    total_pages = (total + per_page - 1) // per_page
+    page = max(1, min(page, total_pages))
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    paginated_projects = emp_projects[start_idx:end_idx]
+
+    # Calculate stats
+    total_projects_count = len(emp_projects)
+    total_hours = sum([float(p.get("hours", 0) or 0) for p in emp_projects])
+    active_projects = len([p for p in emp_projects if p.get("status", "").lower() in ("active", "on_going")])
+    completed_projects = len([p for p in emp_projects if p.get("status", "").lower() == "completed"])
+
+    return render_template("employee_projects_all.html",
+        uid=uid, name=name, projects=paginated_projects, is_admin=is_admin,
+        page=page, total_pages=total_pages, total_records=total,
+        total_projects_count=total_projects_count, total_hours=total_hours,
+        active_projects=active_projects, completed_projects=completed_projects)
 
 
 @app.route("/employees")
@@ -16707,6 +19023,8 @@ def employee_expense_submit():
     bdt_amount = usd_amount * exchange_rate
 
     data = {
+        "employee_uid":      session.get("user_uid", ""),
+        "employee_name":     session.get("user_name", ""),
         "expense_type":      request.form.get("expense_type", ""),
         "expense_name":      request.form.get("expense_name", ""),
         "description":       request.form.get("expense_name", ""),
@@ -18456,13 +20774,13 @@ def approvals():
     all_employee_items = []
     now = datetime.now(timezone.utc)
     for claim in pending_medical:
-        created_at = claim.get('created_at', '')
+        submitted_at = claim.get('submitted_at', '')
         days_pending = 0
-        if created_at and claim.get('status') == 'Pending':
+        if submitted_at and claim.get('status') == 'Pending':
             try:
-                created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-                days_pending = (now - created_dt).days
-            except:
+                submitted_dt = datetime.fromisoformat(submitted_at.replace('Z', '+00:00'))
+                days_pending = (now - submitted_dt).days
+            except (ValueError, TypeError):
                 days_pending = 0
         all_employee_items.append({
             'type': 'Medical',
@@ -18487,14 +20805,18 @@ def approvals():
             continue
 
         # Try multiple field names for employee name
-        emp_name = exp.get('employee_name') or exp.get('submitted_by_name') or exp.get('requested_by_name') or '—'
+        emp_name = exp.get('employee_name') or exp.get('submitted_by_name') or exp.get('requested_by_name') or ''
+
+        # Skip finance-added expenses (they don't have employee information)
+        if not emp_name:
+            continue
         created_at = exp.get('created_at', '')
         days_pending = 0
         if created_at and exp.get('status') == 'Pending':
             try:
                 created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
                 days_pending = (now - created_dt).days
-            except:
+            except (ValueError, TypeError):
                 days_pending = 0
         all_employee_items.append({
             'type': 'Expense',
@@ -18531,7 +20853,7 @@ def approvals():
                 try:
                     requested_dt = datetime.fromisoformat(requested_at.replace('Z', '+00:00'))
                     days_pending = (now - requested_dt).days
-                except:
+                except (ValueError, TypeError):
                     days_pending = 0
             all_employee_items.append({
                 'type': 'Time Off',
@@ -18558,7 +20880,7 @@ def approvals():
             try:
                 submitted_dt = datetime.fromisoformat(submitted_at.replace('Z', '+00:00'))
                 days_pending = (now - submitted_dt).days
-            except:
+            except (ValueError, TypeError):
                 days_pending = 0
         # Use sent_back_by if status is Draft, otherwise use approved_by
         reviewed_by = sheet.get('sent_back_by') if sheet.get('status') == 'Draft' else sheet.get('approved_by', '—')
@@ -19882,12 +22204,55 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
                         inv_payments = 0  # CRITICAL: Initialize to 0 for each stage iteration
                         if isinstance(inv_payment_log, list):
                             # Sum only payments for this project AND this specific stage
-                            inv_payments = sum(
-                                _safe_float(p.get("amount", 0))
-                                for p in inv_payment_log
-                                if (p.get("project_number") == project_number or not p.get("project_number"))
-                                    and (str(p.get("stage_index", "")) == str(stage_index) or not p.get("stage_index"))
-                            )
+                            for p in inv_payment_log:
+                                if isinstance(p, dict):
+                                    # Match project_number
+                                    proj_match = (p.get("project_number") == project_number or not p.get("project_number"))
+                                    if not proj_match:
+                                        continue
+
+                                    # Match stage_index or stage_name
+                                    p_stage_idx = p.get("stage_index")
+                                    if p_stage_idx is not None and p_stage_idx != "":
+                                        # New-style entry with explicit stage_index
+                                        if str(p_stage_idx) == str(stage_index):
+                                            inv_payments += _safe_float(p.get("amount", 0))
+                                    else:
+                                        # Legacy entry without stage_index: match by stage_name or position
+                                        should_count = False
+                                        p_stage_name = p.get("stage_name", "").strip().lower()
+
+                                        # Primary: Try to match by stage name if available
+                                        if p_stage_name:
+                                            _proj_id, proj_data = _find_project_by_number(project_number)
+                                            if proj_data:
+                                                proj_stages = proj_data.get("payment_stages", [])
+                                                # Normalize payment stage name: lowercase and remove dashes/special chars for matching
+                                                normalized_p_name = p_stage_name.replace("–", "-").replace("—", "-").lower()
+                                                # Try to find matching stage by name for THIS SPECIFIC stage_index
+                                                if 0 <= stage_index < len(proj_stages):
+                                                    stage_data = proj_stages[stage_index]
+                                                    if isinstance(stage_data, dict):
+                                                        expected_stage_name = stage_data.get("name", "").strip().lower()
+                                                        normalized_expected = expected_stage_name.replace("–", "-").replace("—", "-")
+                                                        # Match if names are equal or if either contains the other (after normalization)
+                                                        if normalized_expected and (
+                                                            normalized_p_name == normalized_expected or
+                                                            normalized_expected in normalized_p_name or
+                                                            normalized_p_name in normalized_expected
+                                                        ):
+                                                            should_count = True
+
+                                        # Fallback: if no stage_name or name doesn't match, assign to stage 0 only
+                                        if not should_count:
+                                            # For payments WITHOUT stage info (no stage_name), only assign to stage 0
+                                            # This prevents payments from being matched to multiple stages
+                                            # But skip fallback if payment HAS stage_name (it should match a specific stage)
+                                            if not p_stage_name and stage_index == 0:
+                                                should_count = True
+
+                                        if should_count:
+                                            inv_payments += _safe_float(p.get("amount", 0))
                             project_paid += inv_payments
 
                         # Track invoice_id and invoice_number if this invoice has actual payments or is the current invoice
@@ -19956,12 +22321,57 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
                         if isinstance(inv_payment_log, list):
                             # Sum only payments for this project AND this specific stage
                             # Critical: must filter by stage_index to avoid crediting all stage payments to one stage
-                            inv_payments = sum(
-                                _safe_float(p.get("amount", 0))
-                                for p in inv_payment_log
-                                if (p.get("project_number") == project_number or not p.get("project_number"))
-                                    and (str(p.get("stage_index", "")) == str(stage_index) or not p.get("stage_index"))
-                            )
+                            # For legacy invoices without stage_index, only match if it's the first/only stage
+                            inv_payments = 0
+                            for p in inv_payment_log:
+                                if isinstance(p, dict):
+                                    # Match project_number
+                                    proj_match = (p.get("project_number") == project_number or not p.get("project_number"))
+                                    if not proj_match:
+                                        continue
+
+                                    # Match stage_index or stage_name
+                                    p_stage_idx = p.get("stage_index")
+                                    if p_stage_idx is not None and p_stage_idx != "":
+                                        # New-style entry with explicit stage_index
+                                        if str(p_stage_idx) == str(stage_index):
+                                            inv_payments += _safe_float(p.get("amount", 0))
+                                    else:
+                                        # Legacy entry without stage_index: match by stage_name or position
+                                        should_count = False
+                                        p_stage_name = p.get("stage_name", "").strip().lower()
+
+                                        # Primary: Try to match by stage name if available
+                                        if p_stage_name:
+                                            _proj_id, proj_data = _find_project_by_number(project_number)
+                                            if proj_data:
+                                                proj_stages = proj_data.get("payment_stages", [])
+                                                # Normalize payment stage name: lowercase and remove dashes/special chars for matching
+                                                normalized_p_name = p_stage_name.replace("–", "-").replace("—", "-").lower()
+                                                # Try to find matching stage by name for THIS SPECIFIC stage_index
+                                                if 0 <= stage_index < len(proj_stages):
+                                                    stage_data = proj_stages[stage_index]
+                                                    if isinstance(stage_data, dict):
+                                                        expected_stage_name = stage_data.get("name", "").strip().lower()
+                                                        normalized_expected = expected_stage_name.replace("–", "-").replace("—", "-")
+                                                        # Match if names are equal or if either contains the other (after normalization)
+                                                        if normalized_expected and (
+                                                            normalized_p_name == normalized_expected or
+                                                            normalized_expected in normalized_p_name or
+                                                            normalized_p_name in normalized_expected
+                                                        ):
+                                                            should_count = True
+
+                                        # Fallback: if no stage_name or name doesn't match, assign to stage 0 only
+                                        if not should_count:
+                                            # For payments WITHOUT stage info (no stage_name), only assign to stage 0
+                                            # This prevents payments from being matched to multiple stages
+                                            # But skip fallback if payment HAS stage_name (it should match a specific stage)
+                                            if not p_stage_name and stage_index == 0:
+                                                should_count = True
+
+                                        if should_count:
+                                            inv_payments += _safe_float(p.get("amount", 0))
                             project_paid += inv_payments
                             # Track invoice_id and invoice_number if this invoice has actual payments or is the current invoice
                             # Prioritize the current invoice being updated (inv_id == invoice_id)
@@ -19983,15 +22393,9 @@ def _update_project_stage_payment_status(invoice_id: str) -> None:
 
         # Update stage status with actual paid amount for this project, and track invoice_id and invoice_number
         stage["status"] = new_status
-        # CRITICAL: For multi-project invoices, preserve the amount_paid set by sequential allocation
-        # Do NOT recalculate it - sequential allocation already set it correctly per-stage
-        if not is_multi_project:
-            stage["amount_paid"] = str(project_paid) if project_paid > 0 else "0"
-        else:
-            # Multi-project: amount_paid was already set by sequential allocation
-            # Just ensure it's a string for consistency
-            if not stage.get("amount_paid"):
-                stage["amount_paid"] = str(project_paid) if project_paid > 0 else "0"
+        # Always update amount_paid based on actual payments from payment_log
+        # This ensures quick updates correctly reflect the current payment state
+        stage["amount_paid"] = str(project_paid) if project_paid > 0 else "0"
 
         # If we have an invoice_id but amount_paid is still 0, try to use the invoice's recorded amount_paid
         # BUT NOT FOR MULTI-PROJECT INVOICES (sequential allocation may have correctly set this to 0)
@@ -21202,12 +23606,17 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
     existing_salesperson = (existing.get("salesperson") or "").strip()
     salesperson_changed = existing_salesperson and existing_salesperson != sales_name
 
-    if override_type == "percent" and override_value > 0:
-        commission_amount = contract_value * override_value / 100
-        rate_display = f"{override_value}% (custom)"
-    elif override_type == "fixed" and override_value > 0:
+    # Handle percentage-based commission (check for "percent" keyword OR "%" symbol)
+    if ("percent" in override_type or "%" in override_type) and override_value > 0:
+        # Handle both decimal (0.50) and percentage (50) formats
+        pct_val = override_value if override_value > 1 else (override_value * 100)
+        commission_amount = contract_value * pct_val / 100
+        rate_display = f"{pct_val}% (custom)"
+        override_type = "percent"  # Normalize the type
+    elif ("fixed" in override_type or "$" in override_type) and override_value > 0:
         commission_amount = override_value
         rate_display = "Fixed amount"
+        override_type = "fixed"  # Normalize the type
     elif override_type == "default" and is_new_project:
         # NEW project with default rate: use current rate from settings
         override_type = "default"
@@ -21233,6 +23642,15 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
     else:
         deduction_status = "not_covered"
 
+    # Auto-update status to "Paid (Fully Covered)" if remaining_due = 0
+    status = existing.get("status", "Pending")
+    paid_at = existing.get("paid_at", "")
+    if remaining_due == 0 and commission_amount > 0:
+        status = "Paid (Fully Covered)"
+        # Set paid_at date if not already set
+        if not paid_at:
+            paid_at = datetime.now(timezone.utc).isoformat()
+
     fb_update(f"/project_commissions/{project_id}", {
         "project_id":                project_id,
         "project_number":            project_data.get("project_number", ""),
@@ -21244,8 +23662,8 @@ def _upsert_project_commission(project_id: str, project_data: dict) -> None:
         "commission_override_value": override_value,
         "rate_display":              rate_display,
         "commission_amount":         round(commission_amount, 2),
-        "status":                    existing.get("status", "Pending"),
-        "paid_at":                   existing.get("paid_at", ""),
+        "status":                    status,
+        "paid_at":                   paid_at,
         "paid_by":                   existing.get("paid_by", ""),
         "created_at":                existing.get("created_at", datetime.now(timezone.utc).isoformat()),
         "updated_at":                datetime.now(timezone.utc).isoformat(),
@@ -21305,6 +23723,9 @@ def _parse_invoice_form(form, co_number="") -> dict:
     unit_prices     = form.getlist("item_unit_price[]")
     item_projects   = form.getlist("item_project[]")  # Form field name is "item_project[]" not "item_project_number[]"
     item_stages     = form.getlist("item_stage_index[]")  # Payment stage index for each line item
+    item_cos        = form.getlist("item_co_number[]")  # CO number for each line item (from prefilled CO items)
+    item_co_firebase_ids = form.getlist("item_co_firebase_id[]")  # CO firebase_id for each line item
+    item_powos      = form.getlist("item_powo_number[]")  # PO/WO number for each line item (from prefilled items)
     main_project    = form.get("project_number", "").strip()
 
     # Load all projects to enrich line items
@@ -21326,18 +23747,40 @@ def _parse_invoice_form(form, co_number="") -> dict:
         Examples:
         - 'MABS-123-CO-1 — 3511 W Piera Cir' -> ('MABS-123-CO-1', '3511 W Piera Cir')
         - 'MABS-123-CO-1' -> ('MABS-123-CO-1', '')
+        - '543 - 681 SE 2nd Pl Hialeah' -> ('543', '681 SE 2nd Pl Hialeah')
         - 'Regular description' -> ('', 'Regular description')
         """
         if not desc:
             return "", ""
 
-        parts = desc.split(" – ")
-        first_part = parts[0].strip() if parts else ""
-        remaining = (" – ".join(parts[1:])).strip() if len(parts) > 1 else ""
+        # Try em-dash first (— or –)
+        for sep in [" – ", " — "]:
+            if sep in desc:
+                parts = desc.split(sep, 1)
+                first_part = parts[0].strip()
+                remaining = parts[1].strip() if len(parts) > 1 else ""
 
-        # Check if first part looks like a CO number
-        if "CO" in first_part.upper() or "-CO" in first_part.upper():
-            return first_part, remaining
+                # Check if first part looks like a CO number
+                if "CO" in first_part.upper() or "-CO" in first_part.upper():
+                    return first_part, remaining
+                break
+
+        # Try regular hyphen with spaces " - "
+        if " - " in desc:
+            parts = desc.split(" - ", 1)
+            first_part = parts[0].strip()
+            remaining = parts[1].strip() if len(parts) > 1 else ""
+
+            # Check if first part looks like a CO reference (contains CO, or is numeric/alphanumeric)
+            # and remaining looks like an address (contains digits or common address words)
+            if ("CO" in first_part.upper() or "-CO" in first_part.upper()):
+                return first_part, remaining
+
+            # If first part is numeric/alphanumeric and remaining has typical address patterns
+            if first_part and (first_part[0].isdigit() or first_part[0].isalpha()):
+                # Check if remaining looks like an address (starts with digit or has street indicators)
+                if remaining and (remaining[0].isdigit() or any(x in remaining.upper() for x in ["ST", "RD", "AVE", "BLVD", "WAY", "DRIVE", "PL", "CIRCLE", "SE", "SW", "NE", "NW"])):
+                    return first_part, remaining
 
         # Not a CO, return full description as address
         return "", desc
@@ -21363,12 +23806,7 @@ def _parse_invoice_form(form, co_number="") -> dict:
         if not project_data:
             return ""
 
-        # First try project-level po_wo_number
-        project_powo = project_data.get("po_wo_number", "").strip()
-        if project_powo:
-            return project_powo
-
-        # If CO number provided, try to find it in change orders
+        # If CO number provided, try to find it in change orders FIRST
         if co_number:
             change_orders = project_data.get("change_orders") or []
             # Handle both list and dict formats
@@ -21387,6 +23825,31 @@ def _parse_invoice_form(form, co_number="") -> dict:
                             powo = co_data.get("po_wo_number", "").strip()
                             if powo:
                                 return powo
+
+            # If CO not found in this project, try all projects for multi-project invoices
+            for pid, pdata in (all_projects.items() if isinstance(all_projects, dict) else []):
+                if isinstance(pdata, dict):
+                    change_orders = pdata.get("change_orders") or []
+                    if isinstance(change_orders, dict):
+                        change_orders = list(change_orders.values())
+                    if isinstance(change_orders, list):
+                        for co_data in change_orders:
+                            if isinstance(co_data, dict):
+                                co_num = co_data.get("co_number", "").strip()
+                                co_name = co_data.get("name", "").strip()
+                                if (co_num == co_number or
+                                    co_name == co_number or
+                                    co_number in co_name or
+                                    co_name.startswith(co_number)):
+                                    powo = co_data.get("po_wo_number", "").strip()
+                                    if powo:
+                                        return powo
+
+        # Fallback: try project-level po_wo_number if no CO found
+        project_powo = project_data.get("po_wo_number", "").strip()
+        if project_powo:
+            return project_powo
+
         return ""
 
     # Helper to find CO firebase_id by CO number
@@ -21421,7 +23884,12 @@ def _parse_invoice_form(form, co_number="") -> dict:
 
             # Extract CO number and address from description (or use passed co_number)
             extracted_co, desc_address = _extract_co_and_address(desc)
-            item_co_number = extracted_co or co_number  # Use passed CO number if not in description
+            # Priority: form item_co_number > extracted CO > passed co_number parameter
+            item_co_from_form = item_cos[i].strip() if i < len(item_cos) else ""
+            item_co_number = item_co_from_form or extracted_co or co_number
+
+            # If CO was extracted from description or form, treat this as having CO info
+            has_extracted_co = bool(extracted_co or item_co_from_form)
 
             # Get payment stage name and CO firebase_id if stage index is provided
             stage_name = ""
@@ -21429,6 +23897,29 @@ def _parse_invoice_form(form, co_number="") -> dict:
             co_firebase_id_from_stage = ""
 
             log.info(f"[PARSE_INV_MULTI] Line {i}: proj={proj_number}, stage_idx_str='{stage_idx_str}', has_project_data={bool(project_data)}")
+
+            # If CO was extracted but no stage index provided, try to find the CO stage
+            if has_extracted_co and not stage_idx_str and project_data:
+                payment_stages = project_data.get("payment_stages", [])
+                if isinstance(payment_stages, list):
+                    for stage_idx, stage in enumerate(payment_stages):
+                        if isinstance(stage, dict):
+                            stage_co_firebase_id = stage.get("co_firebase_id", "")
+                            if stage_co_firebase_id:
+                                # Found a CO stage, check if it matches our extracted CO
+                                change_orders = project_data.get("change_orders") or []
+                                if isinstance(change_orders, dict):
+                                    change_orders = list(change_orders.values())
+                                for co in (change_orders if isinstance(change_orders, list) else []):
+                                    if isinstance(co, dict) and co.get("firebase_id") == stage_co_firebase_id:
+                                        co_num = co.get("co_number", "").strip()
+                                        # Check if this CO matches our extracted CO
+                                        if co_num == extracted_co or extracted_co in co.get("name", ""):
+                                            stage_idx_str = str(stage_idx)
+                                            co_firebase_id_from_stage = stage_co_firebase_id
+                                            break
+                            if co_firebase_id_from_stage:
+                                break
 
             if stage_idx_str and project_data:
                 try:
@@ -21443,31 +23934,55 @@ def _parse_invoice_form(form, co_number="") -> dict:
                     pass
 
             # Get POWO number and CO firebase_id
-            # If this is a CO stage (has co_firebase_id from stage), use CO POWO only
+            # Prioritize: co_firebase_id from form > form powo > fetched from CO/project
+            powo_from_form = item_powos[i].strip() if i < len(item_powos) else ""
+            co_firebase_id_from_form = item_co_firebase_ids[i].strip() if i < len(item_co_firebase_ids) else ""
             final_co_number = ""
             final_co_firebase_id = ""
-            if co_firebase_id_from_stage:
+
+            if co_firebase_id_from_form:
+                # CO item with firebase_id - fetch fresh PO/WO based on firebase_id
+                powo_number = _get_co_powo_by_id(project_data, co_firebase_id_from_form)
+                final_co_firebase_id = co_firebase_id_from_form
+                if item_co_from_form:
+                    final_co_number = item_co_from_form
+            elif powo_from_form:
+                # Use PO/WO from form (preserves it during edits)
+                powo_number = powo_from_form
+                # If CO number exists from form, mark as CO stage
+                if item_co_from_form:
+                    final_co_number = item_co_from_form
+            elif co_firebase_id_from_stage:
+                # CO stage - fetch fresh PO/WO from CO
                 powo_number = _get_co_powo_by_id(project_data, co_firebase_id_from_stage)
                 final_co_firebase_id = co_firebase_id_from_stage
                 final_co_number = item_co_number  # For CO stages, keep the CO number
             else:
-                # Regular payment stage - use project POWO but DON'T set co_number/co_firebase_id
-                # This prevents regular stages from being treated as CO stages when displaying
+                # Regular payment stage
                 powo_number = _get_powo(project_data, item_co_number)
-                # Don't set co_firebase_id for non-CO stages - this is the key fix
-                final_co_firebase_id = ""
-                final_co_number = ""
+                # If CO number exists from form, preserve it
+                if item_co_from_form:
+                    final_co_number = item_co_from_form
+                # Don't set co_firebase_id for non-CO stages
+
             log.info(f"[PARSE_INV] Line {i}: stage_idx_str={stage_idx_str}, project_data exists={bool(project_data)}, stage_name={stage_name}, is_co_stage={bool(co_firebase_id_from_stage)}")
 
-            # Use extracted address if description had format "CO — address", otherwise use project site_address
-            if desc_address:
+            # For CO stages, preserve the original description format
+            # Don't reconstruct the address - keep it as submitted
+            if final_co_firebase_id and desc_address:
+                # CO stage with extracted address - use the extracted address
                 display_address = desc_address
             else:
-                display_address = site_address
+                # Use extracted address if description had format "CO — address", otherwise use project site_address
+                if desc_address:
+                    display_address = desc_address
+                else:
+                    display_address = site_address
 
             # Truncate address to remove state/zip/phone (keep contact name, street and city)
             # Remove anything after state abbreviation or phone number
-            if display_address:
+            # Skip this for CO stages to preserve the exact format (including extracted CO from description)
+            if display_address and not final_co_firebase_id and not has_extracted_co:
                 # Remove phone numbers (e.g., "T: (801) 205-9365")
                 import re
                 display_address = re.sub(r'\s+T:\s+\([^)]+\)[^\s]*', '', display_address)
@@ -21485,8 +24000,11 @@ def _parse_invoice_form(form, co_number="") -> dict:
 
             log.info(f"[PARSE_INV_STORED] Line {i}: proj={proj_number}, stage_name='{stage_name}', co_number={final_co_number}, is_co={bool(final_co_firebase_id)}")
 
+            # Keep description as submitted - display will combine with powo_number and site_address
+            final_description = desc
+
             line_items.append({
-                "description":    desc,
+                "description":    final_description,
                 "quantity":       qty,
                 "unit_price":     price,
                 "amount":         str(_safe_float(qty) * _safe_float(price)),
@@ -21506,9 +24024,27 @@ def _parse_invoice_form(form, co_number="") -> dict:
     # Every distinct project referenced anywhere on this invoice (main selection +
     # any per-item overrides) — used to link this invoice on each project's detail
     # page and to prorate payments across projects when the invoice spans more than one.
-    linked_projects = sorted({p for p in
-                              ([main_project] + [li["project_number"] for li in line_items])
-                              if p})
+    # Build as list of dicts with {project_number, payment_stage_index} for proper stage matching
+    linked_projects_dict = {}  # {project_number: stage_index}
+
+    # Add main project with default stage 0
+    if main_project:
+        linked_projects_dict[main_project] = 0
+
+    # Add all line item projects with their stage indices
+    for li in line_items:
+        proj_num = li.get("project_number", "")
+        stage_idx = li.get("payment_stage_index")
+        if proj_num:
+            # If we haven't seen this project yet, or this is a different stage, add it
+            if proj_num not in linked_projects_dict or stage_idx is not None:
+                linked_projects_dict[proj_num] = stage_idx if stage_idx is not None else 0
+
+    # Convert to sorted list of dicts
+    linked_projects = sorted([{
+        "project_number": proj_num,
+        "payment_stage_index": stage_idx if isinstance(stage_idx, int) else 0
+    } for proj_num, stage_idx in linked_projects_dict.items()], key=lambda x: x["project_number"])
 
     # Get client_id from selected company_name
     # The form field is "client_name" but its value is the company_name (client key)
@@ -21948,6 +24484,26 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         plant = ""
         payment_stage = ""
 
+        # For CO items, try to fetch project number based on CO firebase_id first
+        co_firebase_id = item.get("co_firebase_id", "").strip()
+        if co_firebase_id:
+            try:
+                all_projects = fb_get("/projects") or {}
+                for pid, pdata in (all_projects.items() if isinstance(all_projects, dict) else []):
+                    if isinstance(pdata, dict):
+                        change_orders = pdata.get("change_orders") or []
+                        if isinstance(change_orders, dict):
+                            change_orders = list(change_orders.values())
+                        for co in (change_orders if isinstance(change_orders, list) else []):
+                            if isinstance(co, dict) and co.get("firebase_id") == co_firebase_id:
+                                project_number = pdata.get("project_number", "")
+                                project_name = pdata.get("project_name", "")
+                                break
+                    if project_number:
+                        break
+            except Exception:
+                pass
+
         # Try to find matching project from linked_projects using project_number from item meta
         item_project = item.get("project_number", "")
         if item_project:
@@ -21982,7 +24538,7 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                         po_wo = pdata.get("po_wo_number", "")
                         site_address = pdata.get("site_address", "")
 
-                        # Fetch fresh PO/WO from CO using line item's co_firebase_id
+                        # Fetch fresh CO number and PO/WO from CO using line item's co_firebase_id
                         co_firebase_id = item.get("co_firebase_id", "")
                         if co_firebase_id:
                             cos = pdata.get("change_orders") or []
@@ -21990,9 +24546,15 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                                 cos = list(cos.values())
                             for co in (cos if isinstance(cos, list) else []):
                                 if isinstance(co, dict) and co.get("firebase_id") == co_firebase_id:
+                                    co_fresh_num = co.get("co_number", "").strip()
                                     co_fresh_powo = co.get("po_wo_number", "").strip()
-                                    if co_fresh_powo:
-                                        co_po_wo_from_stage = co_fresh_powo
+                                    if co_fresh_num or co_fresh_powo:
+                                        # Store in meta for later use (will be picked up by display_co_number logic)
+                                        if co_fresh_num:
+                                            meta["co_number_firebase"] = co_fresh_num
+                                        if co_fresh_powo:
+                                            co_po_wo_from_stage = co_fresh_powo
+                                        log.info(f"[PDF_CO_FIREBASE] Fetched fresh CO: num={co_fresh_num}, powo={co_fresh_powo}")
                                     break
                         payment_stages = pdata.get("payment_stages", [])
                         payment_stage_index = None
@@ -22046,8 +24608,8 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         project_cell = Paragraph(project_number, center_style)
         display_co_number = ""
 
-        # First, check if invoice has a CO number in meta - this is the authoritative CO reference
-        invoice_co_num = meta.get("co_number", "").strip()
+        # First, check if we fetched fresh CO number from firebase_id, else use meta's CO number
+        invoice_co_num = meta.get("co_number_firebase", "").strip() or meta.get("co_number", "").strip()
 
         # For multi-project invoices, also check line item description for CO#
         # Description format could be "Testing2 — MABS-202608002_CO-1" or just "CO-1"
@@ -22175,14 +24737,33 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                             if display_co_number:
                                 break
 
-        # Display CO number below project number if found
+        # Display CO number below project number if found (for CO stages only, no titles)
         log.info(f"[PDF_CO_DEBUG] display_co_number={display_co_number}, invoice_co_num={invoice_co_num}")
         if display_co_number:
-            # Clean CO number - remove address part if present (e.g., "MABS-202606103-CO-1 – 3511 W Piera Cir" -> "MABS-202606103-CO-1")
+            # Clean CO number - remove address and project parts if present
+            # Format variations: "MABS-202512112 CO-1", "CO-1", "MABS-202512112-CO-1", "title (co2)"
             co_clean = display_co_number.split(' – ')[0].strip() if ' – ' in display_co_number else display_co_number
-            project_number_display = f"{project_number}<br/><font size=8>{co_clean}</font>"
+
+            # Extract just the CO# part, removing any title/name text
+            co_part = ""
+
+            # Check for format like "title (co2)" or "title (CO-1)"
+            if "(" in co_clean and ")" in co_clean:
+                # Extract from parentheses: "title (co2)" -> "co2"
+                start = co_clean.find("(") + 1
+                end = co_clean.find(")")
+                co_part = co_clean[start:end].strip()
+            elif "CO" in co_clean.upper():
+                # Find "CO" and take everything from there
+                co_idx = co_clean.upper().find("CO")
+                co_part = co_clean[co_idx:].strip()
+            else:
+                co_part = co_clean.strip()
+
+            # Show only project number and CO# (no titles or names)
+            project_number_display = f"{project_number}<br/><font size=8>{co_part}</font>"
             project_cell = Paragraph(project_number_display, left_style)
-            log.info(f"[PDF_CO_DEBUG] Setting project_cell with CO#: {co_clean}")
+            log.info(f"[PDF_CO_DEBUG] Setting project_cell - Project: {project_number}, CO: {co_part}")
 
         # Determine if this is a CO stage
         is_co_stage = bool(display_co_number or meta.get("co_number", "").strip())
@@ -22191,11 +24772,12 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
         po_to_use = ""
 
         if is_co_stage:
-            # For CO stage, always fetch latest PO/WO from the CO itself, NEVER use stored value
-            po_to_use = ""
-
-            # Try to fetch fresh CO data using co_firebase_id if available
+            # For CO stage, prioritize firebase_id for fresh CO data (both CO number and PO/WO)
             co_firebase_id = item.get("co_firebase_id", "").strip()
+            po_to_use = ""
+            log.info(f"[PDF_CO_POWO_DEBUG] Starting CO PO/WO fetch - firebase_id={co_firebase_id}")
+
+            # If firebase_id available, fetch BOTH fresh CO number and PO/WO from CO
             if co_firebase_id:
                 try:
                     all_projects = fb_get("/projects") or {}
@@ -22203,13 +24785,27 @@ def _generate_invoice_pdf_bytes(invoice_id: str):
                         if isinstance(pdata_search, dict):
                             for _co in _normalise_list(pdata_search.get("change_orders")):
                                 if isinstance(_co, dict) and _co.get("firebase_id") == co_firebase_id:
+                                    # Fetch fresh CO number and PO/WO
+                                    co_num_fresh = _co.get("co_number", "").strip()
                                     po_to_use = _co.get("po_wo_number", "").strip()
-                                    log.info(f"[PDF_POWO] CO firebase_id={co_firebase_id}: fetched fresh powo='{po_to_use}'")
+                                    if co_num_fresh:
+                                        display_co_number = co_num_fresh
+                                    log.info(f"[PDF_CO_FRESH] FOUND CO! firebase_id={co_firebase_id}: co_number='{co_num_fresh}', powo='{po_to_use}'")
                                     break
-                            if po_to_use:
+                            if po_to_use or display_co_number:
+                                log.info(f"[PDF_CO_FRESH] Breaking from project loop with po_to_use={po_to_use}")
                                 break
                 except Exception as e:
-                    log.error(f"[PDF_POWO] Error fetching fresh PO/WO for CO {co_firebase_id}: {e}")
+                    log.error(f"[PDF_CO_FRESH] Error fetching fresh CO data for firebase_id {co_firebase_id}: {e}")
+            else:
+                log.info(f"[PDF_CO_POWO_DEBUG] No firebase_id found in item")
+
+            log.info(f"[PDF_CO_POWO_DEBUG] After firebase_id lookup: po_to_use='{po_to_use}'")
+            # Fallback: use stored PO/WO if firebase_id didn't provide one
+            if not po_to_use:
+                stored_powo = item.get("powo_number", "").strip()
+                log.info(f"[PDF_CO_POWO_DEBUG] Fallback to stored powo_number: '{stored_powo}'")
+                po_to_use = stored_powo
 
             # If still empty, try CO's PO/WO from stage lookup or meta lookup
             if not po_to_use:
@@ -23370,8 +25966,15 @@ def tax_payment_add(invoice_id):
         })
 
     tax_paid = sum(_safe_float(p.get("amount", 0)) for p in tax_log)
+
+    # Update the invoice data with new tax_paid before calculating status
     fresh_inv = dict(inv_data)
     fresh_inv["tax_payments"] = tax_log
+    if "meta" not in fresh_inv:
+        fresh_inv["meta"] = {}
+    fresh_inv["meta"]["tax_paid"] = str(tax_paid)
+
+    # Now calculate status with the updated tax_paid value
     new_status = _calculate_invoice_status(fresh_inv)
 
     fb_update(f"/invoices/{invoice_id}", {
@@ -24393,18 +26996,31 @@ def update_project_stage(project_id, stage_idx):
                 project_number = project.get("project_number", "")
 
                 # For each line item, check if it's for this stage/project
+                found = False
+
+                # First try: match by project_number and stage_index (new invoices)
                 for item in line_items:
                     if isinstance(item, dict):
-                        # Check if this item is for the current project (or default project)
-                        item_proj = item.get("project_number", "").strip() or meta.get("project_number", "")
-                        stage_name = stages[stage_idx].get("name", "")
-                        item_desc = item.get("description", "")
-
-                        # Match by project number and stage name in description
-                        if item_proj == project_number and stage_name and stage_name in item_desc:
+                        if (item.get("project_number", "").strip() == project_number and
+                            item.get("stage_index") == stage_idx):
                             item["amount"] = str(new_amount)
                             item["unit_price"] = str(new_amount)
+                            found = True
                             break
+
+                # Fallback: for legacy invoices without stage_index, count line items for this project
+                if not found:
+                    proj_item_count = 0
+                    for item in line_items:
+                        if isinstance(item, dict):
+                            item_proj = item.get("project_number", "").strip() or meta.get("project_number", "")
+                            if item_proj == project_number:
+                                if proj_item_count == stage_idx:
+                                    item["amount"] = str(new_amount)
+                                    item["unit_price"] = str(new_amount)
+                                    found = True
+                                    break
+                                proj_item_count += 1
 
                 # Recalculate linked_projects from line items
                 # For multi-project invoices on the same payment plan, all projects use the same stage_idx
@@ -24441,13 +27057,6 @@ def update_project_stage(project_id, stage_idx):
         project["payment_stages"] = stages
         project["updated_at"] = datetime.now(timezone.utc).isoformat()
         fb_update(f"/projects/{project_id}", project)
-
-        # If this stage has an invoice, resync ONLY this project's stage (not all linked projects)
-        invoice_id = stages[stage_idx].get("invoice_id", "")
-        if invoice_id:
-            # Only update this specific project/stage, not all projects in the invoice
-            proj_num = project.get("project_number", "")
-            _update_single_project_stage_payment_status(invoice_id, proj_num, stage_idx)
 
         return {"success": True, "message": "Stage updated"}
     except Exception as e:

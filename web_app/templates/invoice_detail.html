@@ -239,6 +239,7 @@
               {%- endif -%}
               <td style="padding:14px 16px; color:#1E293B; font-size:0.9rem; white-space:nowrap;">
                 {%- set stage = item.get('stage_name','') -%}
+                {%- set co_num = item.get('co_number','') -%}
                 {%- if proj -%}
                   {%- if ' – ' in proj -%}
                     {%- set proj_clean = proj.split(' – ')[0].strip() -%}
@@ -252,7 +253,10 @@
                     <span style="color:#0F766E; font-weight:700;">{{ proj_clean }}</span>
                   {%- endif -%}
                   {%- set display_stage = item.get('display_stage_name', '') -%}
-                  {%- if display_stage -%}
+                  {%- if co_num -%}
+                    {%- set co_label = co_num.split(' – ')[0].strip() if ' – ' in co_num else co_num -%}
+                    <div style="color:#64748B; word-break:break-word;">{{ co_label }}</div>
+                  {%- elif display_stage -%}
                     {%- set display_stage_clean = display_stage.split(' – ')[0].strip() if ' – ' in display_stage else display_stage -%}
                     <div style="color:#64748B; word-break:break-word;">{{ display_stage_clean }}</div>
                   {%- elif stage -%}

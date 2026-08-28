@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Expense Group Details{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="row mb-4">
+    <div class="col">
+      <h2><i class="bi bi-receipt me-2"></i>{{ group.group_name or 'Expense Group' }}</h2>
+    </div>
+    <div class="col-auto">
+      <button type="button" class="btn btn-secondary" onclick="backToExpenses()">
+        <i class="bi bi-arrow-left me-1"></i>Back to Expenses
+      </button>
+    </div>
+  </div>
+
+  <!-- GROUP SUMMARY -->
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small mb-2">GROUP TYPE</div>
+          <div class="h5">{{ group.group_type }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small mb-2">EXPENSE COUNT</div>
+          <div class="h5">{{ group.expense_count }} items</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small mb-2">TOTAL AMOUNT</div>
+          <div class="h5 text-success">${{ "{:,.2f}".format(group.total_amount or 0) }} USD</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small mb-2">STATUS</div>
+          <div class="h5">
+            <span class="badge bg-success">{{ group.status or 'Active' }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GROUP DETAILS -->
+  <div class="card mb-4">
+    <div class="card-header bg-light">
+      <h6 class="mb-0">Group Information</h6>
+    </div>
+    <div class="card-body">
+      <div class="row">
+        <div class="col-md-6">
+          <div class="mb-3">
+            <strong>Category:</strong> {{ group.group_category or '—' }}
+          </div>
+          <div class="mb-3">
+            <strong>Description:</strong> {{ group.description or '—' }}
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="mb-3">
+            <strong>Created by:</strong> {{ group.created_by or '—' }}
+          </div>
+          <div class="mb-3">
+            <strong>Created at:</strong> {{ group.created_at or '—' }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EXPENSES IN GROUP -->
+  <div class="card">
+    <div class="card-header bg-light">
+      <h6 class="mb-0">Expenses in Group</h6>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+          <thead style="background:#f5f5f5;">
+            <tr>
+              <th>Category</th>
+              <th>Expense Name</th>
+              <th>Date</th>
+              <th>Vendor</th>
+              <th style="text-align:right;">Amount (USD)</th>
+              <th style="text-align:center;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if group.expenses %}
+              {% for expense in group.expenses %}
+              <tr>
+                <td>{{ expense.category or '—' }}</td>
+                <td>{{ expense.expense_name or '—' }}</td>
+                <td>{{ expense.date or '—' }}</td>
+                <td>{{ expense.vendor or '—' }}</td>
+                <td style="text-align:right;">${{ "{:,.2f}".format(expense.amount or 0) }}</td>
+                <td style="text-align:center;">
+                  <span class="badge bg-success">{{ expense.status or 'Approved' }}</span>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+            <tr>
+              <td colspan="6" class="text-center text-muted py-3">No expenses in this group</td>
+            </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if group.expenses %}
+      <div class="row mt-4">
+        <div class="col-12">
+          <div style="text-align:right; padding-top:15px; border-top:1px solid #e5e7eb;">
+            <div style="font-size:12px; color:#666; margin-bottom:8px;">TOTAL GROUP EXPENSE</div>
+            <div style="font-size:24px; font-weight:700; color:#0f766e;">
+              ${{ "{:,.2f}".format(group.total_amount or 0) }} USD
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- NOTES -->
+  {% if group.notes %}
+  <div class="card mt-4">
+    <div class="card-header bg-light">
+      <h6 class="mb-0">Notes</h6>
+    </div>
+    <div class="card-body">
+      <p>{{ group.notes }}</p>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+function backToExpenses() {
+  const lastPage = sessionStorage.getItem('lastExpensePage');
+  if (lastPage) {
+    sessionStorage.removeItem('lastExpensePage');
+    window.location.href = `/financial?tab=expenses&page=${lastPage}`;
+  } else {
+    window.history.back();
+  }
+}
+</script>
+{% endblock %}

@@ -614,7 +614,42 @@ a[href*="filter_expense"]:hover {
           </tr>
         </thead>
         <tbody id="incomeTableBody">
+          {% set grouped = {} %}
+          {% set all_project_nums = {} %}
+          {% set amount_totals = {} %}
           {% for r in rev_list %}
+            {% set inv_num = r.get('invoice_number', '') %}
+            {% if inv_num %}
+              {% if inv_num not in grouped %}
+                {% set _ = grouped.update({inv_num: r}) %}
+                {% set _ = all_project_nums.update({inv_num: {}}) %}
+                {% set _ = amount_totals.update({inv_num: {'amount': 0, 'tax': r.get('tax_paid', 0)|float}}) %}
+              {% endif %}
+              {# Sum only amount_paid (tax_paid is same on all rows for same invoice, so count it once) #}
+              {% set paid = (r.get('amount_paid', 0)|float) %}
+              {% set _ = amount_totals[inv_num].update({'amount': amount_totals[inv_num]['amount'] + paid}) %}
+              {# Collect all project numbers for this invoice #}
+              {% set linked = r.get('linked_projects', []) %}
+              {% if linked %}
+                {% for item in linked %}
+                  {% if item is mapping and item.project_number %}
+                    {% set _ = all_project_nums[inv_num].update({item.project_number: 1}) %}
+                  {% elif item is string and item %}
+                    {% set _ = all_project_nums[inv_num].update({item: 1}) %}
+                  {% endif %}
+                {% endfor %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+          {% for inv_num, r in grouped.items() %}
+            {# Update grouped entry with merged project list and total amount paid #}
+            {% if inv_num in all_project_nums %}
+              {% set _ = r.update({'_merged_projects': all_project_nums[inv_num].keys()|list}) %}
+            {% endif %}
+            {% if inv_num in amount_totals %}
+              {% set total_paid = amount_totals[inv_num]['amount'] + amount_totals[inv_num]['tax'] %}
+              {% set _ = r.update({'_total_amount_paid': total_paid}) %}
+            {% endif %}
           <tr class="inc-row"
               {%- set inv_date = r.get('invoice_date', r.get('date','')) -%}
               {%- if inv_date and inv_date|length >= 8 and inv_date[2] == '-' -%}
@@ -651,11 +686,24 @@ a[href*="filter_expense"]:hover {
             </td>
             <td>{{ r.get('company_name') or r.get('client_name','—') }}</td>
             <td class="text-muted small">
-              {% set linked = r.get('linked_projects', [r.get('project_number', '')]) %}
-              {% if linked and linked|length > 0 %}
-                {{ linked|join(', ') }}
+              {% set merged_projs = r.get('_merged_projects', []) %}
+              {% if merged_projs and merged_projs|length > 0 %}
+                {{ merged_projs|join(', ') }}
               {% else %}
-                {{ r.get('project_number','—') or '—' }}
+                {% set linked = r.get('linked_projects', []) %}
+                {% if linked and linked|length > 0 %}
+                  {% set project_nums = [] %}
+                  {% for item in linked %}
+                    {% if item is mapping and item.project_number %}
+                      {% set _ = project_nums.append(item.project_number) %}
+                    {% elif item is string and item %}
+                      {% set _ = project_nums.append(item) %}
+                    {% endif %}
+                  {% endfor %}
+                  {{ project_nums|join(', ') or r.get('project_number','—') or '—' }}
+                {% else %}
+                  {{ r.get('project_number','—') or '—' }}
+                {% endif %}
               {% endif %}
             </td>
             <td>{{ status_badge(r.get('status'), 'Paid') }}</td>
@@ -678,7 +726,7 @@ a[href*="filter_expense"]:hover {
             <td class="text-end">{{ currency_symbol }}{{ "{:,.2f}".format((r.get('total',0)|float) - (r.get('tax_amount',0)|float)) }}</td>
             <td class="text-end text-muted">{{ currency_symbol }}{{ "{:,.2f}".format(r.get('tax_amount',0)|float) }}</td>
             <td class="text-end fw-bold">{{ currency_symbol }}{{ "{:,.2f}".format(r.get('total',0)|float) }}</td>
-            <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ "{:,.2f}".format((r.get('amount_paid',0)|float) + (r.get('tax_paid',0)|float)) }}</td>
+            <td class="text-end fw-bold text-success">{{ currency_symbol }}{{ "{:,.2f}".format(r.get('_total_amount_paid', (r.get('amount_paid',0)|float) + (r.get('tax_paid',0)|float))) }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -865,7 +913,7 @@ a[href*="filter_expense"]:hover {
     <!-- Dropdown Button for Add Expense -->
     <div class="dropdown">
       <button class="btn btn-sm btn-teal dropdown-toggle" type="button" id="addExpenseDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-        <i class="bi bi-plus-lg me-1"></i>Add Expense <i class="bi bi-chevron-down" style="font-size:0.75rem;"></i>
+        <i class="bi bi-plus-lg me-1"></i>Add Expense
       </button>
       <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="addExpenseDropdown">
         <li><a class="dropdown-item" href="#" onclick="openAddExpenseModal(); return false;">
@@ -910,7 +958,20 @@ a[href*="filter_expense"]:hover {
             <td class="small text-muted">{{ exp.get('expense_name','—') or exp.get('description','—') }}</td>
             <td class="small text-muted">{{ exp.get('category','—') }}</td>
             <td class="fw-medium">{{ exp.get('vendor','—') }}</td>
-            <td class="text-muted small">{{ exp.get('project_number','—') or '—' }}</td>
+            <td class="text-muted small">
+              {% set proj_nums = exp.get('project_numbers', []) %}
+              {% if proj_nums and proj_nums|length > 0 %}
+                {% if proj_nums|length <= 3 %}
+                  {{ proj_nums|join(', ') }}
+                {% else %}
+                  <button type="button" class="btn btn-link btn-sm p-0" onclick="showProjectDetails([{{ proj_nums|map('tojson')|join(', ') }}], '{{ exp.get('firebase_id', '') }}')">
+                    {{ proj_nums|length }} projects
+                  </button>
+                {% endif %}
+              {% else %}
+                {{ exp.get('project_number','—') or '—' }}
+              {% endif %}
+            </td>
             <td class="text-end fw-semibold">{{ currency_symbol }}{{ "{:,.2f}".format((exp.get('remaining_due',0) if exp.get('expense_type') == 'Commission' else exp.get('amount',0))|float) }}</td>
             <td class="small">
               {% set _sub = exp.get('submitted_by_name','') or exp.get('created_by','') or '' %}
@@ -2033,7 +2094,8 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
             <div class="col-md-6">
               <label class="form-label form-label-sm fw-600">Amount (USD) *</label>
-              <input type="number" name="amount" id="modalAmount" class="form-control form-control-sm" step="0.01" min="0" required oninput="updateModalBdtDisplay()">
+              <input type="number" name="amount" id="modalAmount" class="form-control form-control-sm" step="0.01" min="0" required oninput="updateModalBdtDisplay()" data-is-adjustment="false">
+              <small class="text-muted d-none" id="amountReadOnlyHint">Amount is read-only for adjustments. Edit in Advance Adjustments to update.</small>
             </div>
           </div>
 
@@ -2091,6 +2153,28 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <!-- Group Expenses Modal -->
 <script>
+function syncDateToAdjustment(adjustmentId, newDate, advanceId) {
+  // Sync the updated date back to the adjustment record
+  fetch('/sync_adjustment_date', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      adjustment_id: adjustmentId,
+      advance_id: advanceId,
+      new_date: newDate
+    })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        console.log('Date synced to adjustment:', {adjustmentId, advanceId, newDate});
+      } else {
+        console.error('Failed to sync date to adjustment:', data.error);
+      }
+    })
+    .catch(err => console.error('Error syncing date:', err));
+}
+
 function submitExpenseModal() {
   const expenseId = window.editingExpenseId;
   const expenseType = document.getElementById('modalExpenseType').value;
@@ -2132,6 +2216,25 @@ function submitExpenseModal() {
     .then(r => r.json())
     .then(res => {
       if (res && res.success) {
+        // Check if this is an adjustment expense and date was changed
+        const expData = window.editingExpenseData || {};
+        const isAdjustment = expData.is_adjustment ||
+                            (expData.vendor === 'Advance Adjustments') ||
+                            expData.linked_adjustment_id ||
+                            expData.adjustment_id;
+        const originalDate = expData.date;
+        const newDate = document.getElementById('modalDate').value;
+
+        if (isAdjustment && originalDate && newDate && originalDate !== newDate) {
+          // Date was changed, need to sync back to adjustment
+          const adjustmentId = expData.linked_adjustment_id || expData.adjustment_id;
+          const advanceId = expData.advance_id || expData.from_advance_id;
+          if (adjustmentId && advanceId) {
+            syncDateToAdjustment(adjustmentId, newDate, advanceId);
+            console.log('Syncing date to adjustment:', {adjustmentId, advanceId, originalDate, newDate});
+          }
+        }
+
         bootstrap.Modal.getInstance(document.getElementById('expenseModal')).hide();
         const title = expenseId ? 'Expense Updated' : 'Expense Added';
         showSuccessToast(title, 'Your expense has been saved successfully');
@@ -2509,6 +2612,12 @@ function openAddExpenseModal() {
 }
 
 // Handle edit button click - fetch data from server
+function showProjectDetails(projectNumbers, expId) {
+  // Create a simple modal to show all project numbers
+  const projectList = projectNumbers.join('\n');
+  alert(`Projects in this expense:\n\n${projectList}`);
+}
+
 function handleEditExpense(expId) {
   fetch(`/api/expense/${expId}`)
     .then(r => r.json())
@@ -2664,6 +2773,7 @@ function editExpenseModal(expId, expData) {
     }
 
     window.editingExpenseId = expId;
+    window.editingExpenseData = expData;  // Store original expense data for date sync
     const isCommission = expData.is_commission || false;
 
     document.getElementById('expenseId').value = expId;
@@ -2691,10 +2801,27 @@ function editExpenseModal(expId, expData) {
     // Update BDT display with correct exchange rate
     updateModalBdtDisplay();
 
-    // For commissions, disable amount field and show note
+    // For commissions and adjustments, disable amount field and show note
     const amountField = document.getElementById('modalAmount');
-    const amountContainer = amountField.closest('.mb-3');
-    const existingNote = amountContainer.querySelector('.commission-note');
+    const amountContainer = amountField.closest('.col-md-6');
+    const existingNote = amountContainer.querySelector('.read-only-note');
+
+    // Check if this is an adjustment expense (multiple detection methods for reliability)
+    const isAdjustment = expData.is_adjustment ||
+                        (expData.vendor === 'Advance Adjustments') ||
+                        expData.linked_adjustment_id ||
+                        expData.adjustment_id;
+
+    console.log('Expense data for debugging:', {
+      expense_name: expData.expense_name,
+      is_adjustment: expData.is_adjustment,
+      adjustment_id: expData.adjustment_id,
+      linked_adjustment_id: expData.linked_adjustment_id,
+      is_commission: expData.is_commission,
+      vendor: expData.vendor,
+      category: expData.category,
+      detected_as_adjustment: isAdjustment
+    });
 
     if (isCommission) {
       amountField.disabled = true;
@@ -2702,17 +2829,58 @@ function editExpenseModal(expId, expData) {
       amountField.style.cursor = 'not-allowed';
       if (!existingNote) {
         const note = document.createElement('small');
-        note.className = 'text-muted commission-note';
+        note.className = 'text-muted read-only-note';
         note.textContent = 'Commission amount can be edited in the Commission tab';
         note.style.display = 'block';
         note.style.marginTop = '4px';
         amountContainer.appendChild(note);
       }
+    } else if (isAdjustment) {
+      amountField.disabled = true;
+      amountField.readOnly = true;
+      amountField.style.backgroundColor = '#f3f4f6';
+      amountField.style.cursor = 'not-allowed';
+      amountField.style.opacity = '0.7';
+      amountField.classList.add('adjustment-read-only');
+      amountField.onchange = null;
+      amountField.oninput = null;
+      if (existingNote) existingNote.remove();
     } else {
       amountField.disabled = false;
+      amountField.readOnly = false;
       amountField.style.backgroundColor = '';
       amountField.style.cursor = '';
+      amountField.style.opacity = '';
+      amountField.classList.remove('adjustment-read-only');
+      amountField.oninput = updateModalBdtDisplay;
       if (existingNote) existingNote.remove();
+    }
+
+    // For adjustments, also disable category field
+    if (isAdjustment) {
+      const categoryField = document.getElementById('modalCategory');
+
+      categoryField.disabled = true;
+      categoryField.readOnly = true;
+      categoryField.style.backgroundColor = '#f3f4f6';
+      categoryField.style.cursor = 'not-allowed';
+      categoryField.style.opacity = '0.7';
+      categoryField.classList.add('adjustment-read-only');
+      // Prevent any dropdown interaction
+      categoryField.onclick = e => e.preventDefault();
+      categoryField.onkeydown = e => e.preventDefault();
+    } else {
+      const categoryField = document.getElementById('modalCategory');
+      if (categoryField) {
+        categoryField.disabled = false;
+        categoryField.readOnly = false;
+        categoryField.style.backgroundColor = '';
+        categoryField.style.cursor = '';
+        categoryField.style.opacity = '';
+        categoryField.classList.remove('adjustment-read-only');
+        categoryField.onclick = null;
+        categoryField.onkeydown = null;
+      }
     }
 
     // Display existing receipt if it exists - fetch fresh data from backend to ensure we have latest receipt_filename
@@ -3482,11 +3650,39 @@ function viewGroupReceiptFile(expId) {
     .catch(err => console.error('Error loading receipt:', err));
 }
 
-// Remove group receipt
+// Remove group receipt with approval request if needed
 function removeGroupReceipt() {
-  document.getElementById('groupReceipt').value = '';
-  document.getElementById('groupReceiptPreview').innerHTML = '';
-  window.groupReceiptMarkedForRemoval = true;
+  const expId = window.editingGroupExpenseId;
+  if (!expId) return;
+
+  // If already marked for removal, don't check again
+  if (window.groupReceiptMarkedForRemoval) {
+    document.getElementById('groupReceipt').value = '';
+    document.getElementById('groupReceiptPreview').innerHTML = '';
+    return;
+  }
+
+  // Check if user has permission to delete group receipt
+  fetch(`/api/expense/${expId}/receipt/can-delete`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.success && data.can_delete) {
+        // User has permission - mark for removal
+        document.getElementById('groupReceipt').value = '';
+        document.getElementById('groupReceiptPreview').innerHTML = '';
+        window.groupReceiptMarkedForRemoval = true;
+      } else if (data.success && !data.can_delete) {
+        // User needs approval - show request modal and mark for removal
+        window.groupReceiptMarkedForRemoval = true;
+        openDeleteRequestModal('group_receipt', expId, 'Group Expense Receipt');
+      } else {
+        alert('Error checking permissions');
+      }
+    })
+    .catch(err => {
+      console.error('Error:', err);
+      alert('Error checking permissions');
+    });
 }
 
 // View existing item receipt (for items when editing a group)
@@ -4191,15 +4387,8 @@ function viewReceipt(expId) {
     <div class="col-6 col-xl">
       <div class="kpi-card kpi-red">
         <div class="kpi-top"><span class="kpi-label">Total Expenses</span><i class="bi bi-arrow-down-circle-fill kpi-icon-sm"></i></div>
-        <div class="kpi-value text-danger" id="bsKpiExpenses">{{ currency_symbol }}{{ "{:,.2f}".format(bs_total_expenses | default(0)) }}</div>
+        <div class="kpi-value text-danger" id="bsKpiExpenses">{{ currency_symbol }}{{ "{:,.2f}".format(bs_total_expenses_with_commissions | default(0)) }}</div>
         <div class="kpi-sub">{{ expenses_filtered | length }} entries</div>
-      </div>
-    </div>
-    <div class="col-6 col-xl">
-      <div class="kpi-card kpi-blue">
-        <div class="kpi-top"><span class="kpi-label">Total Salaries</span><i class="bi bi-people kpi-icon-sm"></i></div>
-        <div class="kpi-value" id="bsKpiSalaries" style="color:#3b82f6;">{{ currency_symbol }}{{ "{:,.2f}".format(bs_total_salaries | default(0)) }}</div>
-        <div class="kpi-sub">{{ (salaries_domestic | length) + (salaries_international | length) }} employees</div>
       </div>
     </div>
     {% if bs_total_commission > 0 %}
@@ -4212,11 +4401,11 @@ function viewReceipt(expId) {
     </div>
     {% endif %}
     <div class="col-6 col-xl">
-      {% set bs_net = (bs_total_revenue | default(0)) - (bs_total_expenses | default(0)) - (bs_total_salaries | default(0)) - (bs_total_commission | default(0)) %}
+      {% set bs_net = (bs_total_revenue | default(0)) - (bs_total_expenses_with_commissions | default(0)) %}
       <div class="kpi-card {{ 'kpi-green' if bs_net >= 0 else 'kpi-red' }}">
         <div class="kpi-top"><span class="kpi-label">Net Profit/Loss</span><i class="bi bi-graph-up-arrow kpi-icon-sm"></i></div>
         <div id="bsKpiNet" class="kpi-value {{ 'text-success' if bs_net >= 0 else 'text-danger' }}">{{ currency_symbol }}{{ "{:,.2f}".format(bs_net) }}</div>
-        <div class="kpi-sub">collected — expenses — salaries — commission</div>
+        <div class="kpi-sub">collected — expenses</div>
       </div>
     </div>
   </div>
@@ -5477,6 +5666,27 @@ function viewReceipt(expId) {
 
 {% block scripts %}
 <script>
+// Auto-dismiss "Expense not found" stale flash messages after expense deletion
+document.addEventListener('DOMContentLoaded', function() {
+  setTimeout(() => {
+    // Look for any alert containing "Expense not found" (targets both role="alert" and .alert elements)
+    const alerts = document.querySelectorAll('[role="alert"], .alert, [class*="alert"]');
+    alerts.forEach(alert => {
+      if (alert.textContent.includes('Expense not found')) {
+        const closeBtn = alert.querySelector('.btn-close, .close, [data-dismiss="alert"]');
+        if (closeBtn) {
+          closeBtn.click();
+        } else {
+          // Fade out and remove
+          alert.style.transition = 'opacity 0.3s ease';
+          alert.style.opacity = '0';
+          setTimeout(() => alert.remove(), 300);
+        }
+      }
+    });
+  }, 500);
+});
+
 // ?? Colour palettes ??????????????????????????????????????????????????????????
 const STATUS_COLORS = {
   'Draft':     '#64748B', 'Sent':    '#2563EB', 'Viewed':   '#7C3AED',

@@ -55,11 +55,24 @@
 .prof-table-wrap table { font-size:12px; width:100%; }
 .prof-table-wrap tbody tr { cursor:pointer; }
 .prof-table-wrap tbody tr:hover td { background:#f8fafc; }
+.proj-name-col { max-width:120px; overflow:hidden; text-overflow:ellipsis; }
+.proj-status-col { min-width:140px; width:140px; flex-shrink:0; }
+.prof-table-wrap table th:nth-child(2) { max-width:120px; }
+.prof-table-wrap table th:nth-child(3) { width:140px; }
 
 .text-green { color:#16a34a; }
 .text-amber { color:#b45309; }
 .text-red   { color:#be123c; }
 .text-blue  { color:#1d4ed8; }
+
+/* Status badges */
+.status-approved { background:#d1fae5; color:#065f46; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; display:inline-block; }
+.status-draft { background:#fed7aa; color:#92400e; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; display:inline-block; }
+.status-pending { background:#fef3c7; color:#b45309; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; display:inline-block; }
+.status-submitted { background:#dbeafe; color:#1e40af; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; display:inline-block; }
+.status-rejected { background:#fee2e2; color:#991b1b; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; display:inline-block; }
+.status-active { background:#d1fae5; color:#065f46; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; display:inline-block; }
+.status-completed { background:#d1fae5; color:#065f46; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; display:inline-block; }
 </style>
 
 <!-- Breadcrumb -->
@@ -297,10 +310,10 @@
 <div class="d-flex flex-wrap gap-3 mb-4">
 
   <!-- Recent Payroll History -->
-  <div class="prof-table-card flex-grow-1" style="min-width:300px;">
+  <div class="prof-table-card" style="min-width:280px;flex:1;">
     <div class="prof-table-head">
       <span class="prof-table-title"><i class="bi bi-receipt me-1" style="color:#0D9488;"></i>Recent Payroll History</span>
-      <a href="{{ url_for('payroll') }}?employee={{ name | urlencode }}" class="btn btn-xs btn-outline-secondary" style="font-size:11px;">View All</a>
+      <a href="{{ url_for('employee_all_payroll', uid=uid) }}" class="btn btn-xs btn-outline-secondary" style="font-size:11px;">View All</a>
     </div>
     <div class="prof-table-wrap">
       <table class="table table-sm table-hover mb-0 align-middle">
@@ -324,10 +337,10 @@
   </div>
 
   <!-- Recent Projects -->
-  <div class="prof-table-card" style="min-width:260px;flex:1;">
+  <div class="prof-table-card" style="min-width:280px;flex:1;">
     <div class="prof-table-head">
       <span class="prof-table-title"><i class="bi bi-folder me-1" style="color:#7C3AED;"></i>Recent Projects</span>
-      <a href="{{ url_for('projects') }}" class="btn btn-xs btn-outline-secondary" style="font-size:11px;">All Projects</a>
+      <a href="{{ url_for('employee_all_projects', uid=uid) }}" class="btn btn-xs btn-outline-secondary" style="font-size:11px;">All Projects</a>
     </div>
     <div class="prof-table-wrap">
       <table class="table table-sm table-hover mb-0 align-middle">
@@ -336,10 +349,32 @@
         </thead>
         <tbody>
         {% for p in recent_projects %}
-        <tr onclick="window.location='{% if p.firebase_id %}{{ url_for('project_detail', project_id=p.firebase_id) }}{% else %}{{ url_for('projects') }}{% endif %}'">
-          <td><span class="badge" style="background:#ede9fe;color:#5b21b6;font-size:11px;">{{ p.project_number }}</span></td>
-          <td class="text-muted small">{{ (p.project_name or '—')[:30] }}</td>
-          <td>{% if p.status %}<span class="badge status-{{ p.status|lower }}">{{ p.status }}</span>{% else %}—{% endif %}</td>
+        <tr>
+          <td>
+            {% if p.get('firebase_id') %}
+            <a href="{{ url_for('project_detail', project_id=p.get('firebase_id')) }}" class="text-decoration-none">
+              <span class="badge" style="background:#ede9fe;color:#5b21b6;font-size:11px;cursor:pointer;">{{ p.project_number }}</span>
+            </a>
+            {% else %}
+            <span class="badge" style="background:#ede9fe;color:#5b21b6;font-size:11px;">{{ p.project_number }}</span>
+            {% endif %}
+          </td>
+          <td class="text-muted small proj-name-col" title="{{ p.project_name or '—' }}">
+            {% if p.get('firebase_id') %}
+            <a href="{{ url_for('project_detail', project_id=p.get('firebase_id')) }}" class="text-decoration-none text-muted">
+              {{ (p.project_name or '—')[:30] }}
+            </a>
+            {% else %}
+            {{ (p.project_name or '—')[:30] }}
+            {% endif %}
+          </td>
+          <td class="proj-status-col">
+            {% if p.status %}
+            <span class="badge status-{{ p.status|lower|replace(' ', '-') }}">{{ p.status }}</span>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
         </tr>
         {% else %}
         <tr><td colspan="3" class="text-muted text-center py-3" style="font-size:12px;">No project time logged</td></tr>
@@ -353,7 +388,7 @@
   <div class="prof-table-card" style="min-width:280px;flex:1;">
     <div class="prof-table-head">
       <span class="prof-table-title"><i class="bi bi-wallet2 me-1" style="color:#b45309;"></i>Recent Advances</span>
-      <a href="{{ url_for('payroll') }}#advances" class="btn btn-xs btn-outline-secondary" style="font-size:11px;">View All</a>
+      <a href="{{ url_for('employee_all_advances', uid=uid) }}" class="btn btn-xs btn-outline-secondary" style="font-size:11px;">View All</a>
     </div>
     <div class="prof-table-wrap">
       <table class="table table-sm table-hover mb-0 align-middle">
@@ -376,6 +411,143 @@
         {% endfor %}
         </tbody>
       </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Employee Activity Sections -->
+<div class="row">
+  <!-- Recent Timesheets -->
+  <div class="col-lg-6 mb-4">
+    <div class="prof-table-card">
+      <div class="prof-table-head">
+        <span class="prof-table-title"><i class="bi bi-calendar-event me-1" style="color:#7C3AED;"></i>Recent Timesheets</span>
+        <a href="{{ url_for('employee_all_timesheets', uid=uid) }}" class="btn btn-xs btn-outline-secondary" style="font-size:11px;">View All</a>
+      </div>
+      <div class="prof-table-wrap">
+        <table class="table table-sm table-hover mb-0 align-middle">
+          <thead style="background:#f8fafc; font-size:11px;">
+            <tr><th>Period</th><th class="text-end">Hours</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+          {% for ts in recent_timesheets %}
+          {% set ws = ts.get('week_of', '') %}
+          {% if ws %}
+            {% set year = ws[:4]|int %}
+            {% set month = ws[5:7]|int %}
+            {% set day = ws[8:10]|int %}
+            {% set week_end_day = day + 6 %}
+            {% if week_end_day <= 31 %}
+              {% set we = '{:04d}-{:02d}-{:02d}'.format(year, month, week_end_day) %}
+            {% elif month == 12 %}
+              {% set we = '{:04d}-01-{:02d}'.format(year + 1, week_end_day - 31) %}
+            {% else %}
+              {% set we = '{:04d}-{:02d}-{:02d}'.format(year, month + 1, week_end_day - 31) %}
+            {% endif %}
+            {% set period_display = '{:02d}-{:02d}-{:04d}'.format(month, day, year) + ' — ' + '{:02d}-{:02d}-{:04d}'.format(we[5:7]|int, we[8:10]|int, we[:4]|int) %}
+          {% else %}
+            {% set period_display = '—' %}
+          {% endif %}
+          <tr onclick="window.location='{{ url_for('employee_all_timesheets', uid=uid) }}'">
+            <td class="text-muted small">{{ period_display }}</td>
+            <td class="text-end fw-600">{{ '{:,.1f}'.format(ts.get('total_hours',0)|float) }} hrs</td>
+            <td><span class="badge status-{{ (ts.get('status','pending'))|lower }}">{{ ts.get('status','Pending') }}</span></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="text-muted text-center py-3" style="font-size:12px;">No timesheets yet</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Time Off -->
+  <div class="col-lg-6 mb-4">
+    <div class="prof-table-card">
+      <div class="prof-table-head">
+        <span class="prof-table-title"><i class="bi bi-calendar-x me-1" style="color:#3b82f6;"></i>Recent Time Off Requests</span>
+        <a href="{{ url_for('employee_all_time_off', uid=uid) }}" class="btn btn-xs btn-outline-secondary" style="font-size:11px;">View All</a>
+      </div>
+      <div class="prof-table-wrap">
+        <table class="table table-sm table-hover mb-0 align-middle">
+          <thead style="background:#f8fafc; font-size:11px;">
+            <tr><th>Type</th><th>From Date</th><th>To Date</th><th class="text-end">Days</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+          {% for t in recent_time_off %}
+          <tr onclick="window.location='{{ url_for('employee_all_time_off', uid=uid) }}'">
+            <td class="text-muted small">{{ t.get('type','Leave') }}</td>
+            <td class="text-muted small">{{ (t.get('start_date', '') or '—') | format_date }}</td>
+            <td class="text-muted small">{{ (t.get('end_date', '') or '—') | format_date }}</td>
+            <td class="text-end fw-600">{{ '{:,.1f}'.format((t.get('working_days',0)|float)) }} days</td>
+            <td><span class="badge status-{{ (t.get('status','pending'))|lower }}">{{ t.get('status','Pending') }}</span></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="text-muted text-center py-3" style="font-size:12px;">No time off requests</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Employee Expenses -->
+  <div class="col-lg-6 mb-4">
+    <div class="prof-table-card">
+      <div class="prof-table-head">
+        <span class="prof-table-title"><i class="bi bi-receipt me-1" style="color:#16a34a;"></i>Recent Employee Expenses</span>
+        <a href="{{ url_for('employee_all_expenses', uid=uid) }}" class="btn btn-xs btn-outline-secondary" style="font-size:11px;">View All</a>
+      </div>
+      <div class="prof-table-wrap">
+        <table class="table table-sm table-hover mb-0 align-middle">
+          <thead style="background:#f8fafc; font-size:11px;">
+            <tr><th>Date</th><th>Category</th><th class="text-end">Amount</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+          {% for exp in recent_expenses %}
+          <tr onclick="window.location='{{ url_for('employees') }}#tab-emp-expenses'">
+            <td class="text-muted small">{{ (exp.get('date') or exp.get('expense_date') or '—') | format_date }}</td>
+            <td class="text-muted small">{{ exp.get('category','—')[:20] }}</td>
+            <td class="text-end fw-600 text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(exp.get('amount',0)|float) }}</td>
+            <td><span class="badge status-{{ (exp.get('status','pending'))|lower }}">{{ exp.get('status','Pending') }}</span></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="text-muted text-center py-3" style="font-size:12px;">No expenses submitted</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Medical Claims -->
+  <div class="col-lg-6 mb-4">
+    <div class="prof-table-card">
+      <div class="prof-table-head">
+        <span class="prof-table-title"><i class="bi bi-heart-pulse me-1" style="color:#dc2626;"></i>Recent Medical Claims</span>
+        <a href="{{ url_for('employee_all_medical', uid=uid) }}" class="btn btn-xs btn-outline-secondary" style="font-size:11px;">View All</a>
+      </div>
+      <div class="prof-table-wrap">
+        <table class="table table-sm table-hover mb-0 align-middle">
+          <thead style="background:#f8fafc; font-size:11px;">
+            <tr><th>Date</th><th>Type</th><th class="text-end">Amount</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+          {% for med in recent_medical %}
+          <tr onclick="window.location='{{ url_for('employee_all_medical', uid=uid) }}'">
+            <td class="text-muted small">{{ (med.get('claim_date') or '—') | format_date }}</td>
+            <td class="text-muted small">{{ med.get('expense_type','—')[:20] }}</td>
+            <td class="text-end fw-600 text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(med.get('amount_claimed',0)|float) }}</td>
+            <td><span class="badge status-{{ (med.get('status','pending'))|lower }}">{{ med.get('status','Pending') }}</span></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="text-muted text-center py-3" style="font-size:12px;">No medical claims submitted</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 

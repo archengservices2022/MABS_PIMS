@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}{{ name }} — All Advances{% endblock %}
+
+{% block content %}
+<style>
+.detail-header { background:#fff; border-radius:12px; padding:20px 24px; margin-bottom:20px;
+                 box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0; }
+.detail-breadcrumb { font-size:13px; color:#64748b; margin-bottom:12px; }
+.detail-breadcrumb a { color:#0D9488; text-decoration:none; }
+.detail-title { font-size:20px; font-weight:800; color:#0f172a; margin-bottom:4px; }
+.detail-sub { font-size:13px; color:#64748b; }
+.data-table { background:#fff; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.06);
+              border:1px solid #e2e8f0; overflow:hidden; }
+.data-table table { width:100%; font-size:13px; }
+.data-table thead { background:#f8fafc; border-bottom:1px solid #e2e8f0; }
+.data-table th { padding:12px 16px; font-weight:700; color:#0f172a; text-align:left; }
+.data-table td { padding:12px 16px; border-bottom:1px solid #f1f5f9; color:#475569; }
+.data-table tbody tr:hover td { background:#f8fafc; }
+.data-table tbody tr:last-child td { border-bottom:none; }
+.badge { padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; }
+.badge-open { background:#fed7aa; color:#92400e; }
+.badge-closed { background:#d1fae5; color:#065f46; }
+.text-green { color:#16a34a; font-weight:700; }
+.text-amber { color:#b45309; font-weight:700; }
+.empty-state { text-align:center; padding:40px 20px; color:#94a3b8; }
+.empty-state i { font-size:48px; margin-bottom:16px; opacity:0.5; }
+</style>
+
+<!-- Breadcrumb -->
+<div class="detail-breadcrumb">
+  <a href="{{ url_for('employees') }}">← Employees</a>
+  &nbsp;/&nbsp;
+  <a href="{{ url_for('employee_profile', uid=uid) }}">{{ name }}</a>
+  &nbsp;/&nbsp;
+  All Advances
+</div>
+
+<!-- Header -->
+<div class="detail-header">
+  <div class="detail-title"><i class="bi bi-wallet2 me-2" style="color:#b45309;"></i>{{ name }} — All Advances</div>
+  <div class="detail-sub">Complete advance loan history</div>
+</div>
+
+<!-- Stat Cards -->
+<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:16px; margin-bottom:20px;">
+  <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
+    <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Total Advances</div>
+    <div style="font-size:20px; font-weight:800; color:#0f172a;">${{ '{:,.2f}'.format(total_advanced) }}</div>
+    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">All records</div>
+  </div>
+  <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
+    <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Total Recovered</div>
+    <div style="font-size:20px; font-weight:800; color:#16a34a;">${{ '{:,.2f}'.format(total_recovered) }}</div>
+    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">Paid back</div>
+  </div>
+  <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
+    <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Open</div>
+    <div style="font-size:20px; font-weight:800; color:#b45309;">{{ open_count }}</div>
+    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">Active advances</div>
+  </div>
+  <div style="background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid #e2e8f0;">
+    <div style="font-size:11px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px;">Closed</div>
+    <div style="font-size:20px; font-weight:800; color:#16a34a;">{{ closed_count }}</div>
+    <div style="font-size:11px; color:#94a3b8; margin-top:4px;">Settled</div>
+  </div>
+</div>
+
+<!-- Data Table -->
+<div class="data-table">
+  {% if advances %}
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th class="text-end">Advance Amount</th>
+          <th class="text-end">Adjusted/Paid</th>
+          <th class="text-end">Outstanding Balance</th>
+          <th>Status</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for adv in advances %}
+        {% set balance = [adv.get('amount', 0)|float - adv.get('adjusted_amount', 0)|float, 0]|max %}
+        <tr>
+          <td class="text-muted small"><strong>{{ (adv.get('date', '') or '—') | format_date }}</strong></td>
+          <td class="text-end text-green">{{ currency_symbol }}{{ '{:,.2f}'.format(adv.get('amount', 0)|float) }}</td>
+          <td class="text-end">{{ currency_symbol }}{{ '{:,.2f}'.format(adv.get('adjusted_amount', 0)|float) }}</td>
+          <td class="text-end {% if balance > 0 %}text-amber{% else %}text-muted{% endif %}">
+            {{ currency_symbol }}{{ '{:,.2f}'.format(balance) }}
+          </td>
+          <td>
+            {% set status = adv.get('status', 'Open')|lower %}
+            {% if status == 'open' %}
+            <span class="badge badge-open">Open</span>
+            {% elif status == 'closed' %}
+            <span class="badge badge-closed">Closed</span>
+            {% else %}
+            <span class="badge">{{ adv.get('status', 'Open') }}</span>
+            {% endif %}
+          </td>
+          <td class="text-muted small">{{ (adv.get('notes') or '—')[:30] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <!-- Pagination -->
+  {% if total_pages > 1 %}
+  <div style="padding:16px; display:flex; justify-content:center; align-items:center; gap:8px;">
+    {% if page > 1 %}
+    <a href="{{ url_for('employee_all_advances', uid=uid, page=1) }}" class="btn btn-sm btn-outline-secondary" title="First">«</a>
+    <a href="{{ url_for('employee_all_advances', uid=uid, page=page-1) }}" class="btn btn-sm btn-outline-secondary" title="Previous"><</a>
+    {% else %}
+    <button class="btn btn-sm btn-outline-secondary" disabled>«</button>
+    <button class="btn btn-sm btn-outline-secondary" disabled><</button>
+    {% endif %}
+
+    <span style="min-width:120px; text-align:center; font-size:13px; color:#64748b;">
+      <strong>{{ page }}</strong> of <strong>{{ total_pages }}</strong>
+    </span>
+
+    {% if page < total_pages %}
+    <a href="{{ url_for('employee_all_advances', uid=uid, page=page+1) }}" class="btn btn-sm btn-outline-secondary" title="Next">></a>
+    <a href="{{ url_for('employee_all_advances', uid=uid, page=total_pages) }}" class="btn btn-sm btn-outline-secondary" title="Last">»</a>
+    {% else %}
+    <button class="btn btn-sm btn-outline-secondary" disabled>></button>
+    <button class="btn btn-sm btn-outline-secondary" disabled>»</button>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="empty-state">
+    <i class="bi bi-wallet2"></i>
+    <div style="font-size:14px;"><strong>No advances</strong></div>
+    <div style="font-size:12px; margin-top:8px;">{{ name }} has no advance history.</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

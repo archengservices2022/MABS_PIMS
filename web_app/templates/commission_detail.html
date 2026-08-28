@@ -1,0 +1,1215 @@
+{% extends "base.html" %}
+{% block title %}Commission Details{% endblock %}
+{% block page_title %}Commission Details — {{ salesperson_name }}{% endblock %}
+
+{% block head %}
+<style>
+.commission-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 25px;
+  padding-bottom: 15px;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.btn-add-payment {
+  background: #16a34a;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.2s;
+}
+
+.btn-add-payment:hover {
+  background: #15803d;
+}
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #e2e8f0;
+  color: #0f172a;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+
+.back-btn:hover {
+  background: #cbd5e1;
+  color: #0f172a;
+}
+
+.table-wrapper {
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+
+.commission-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.commission-table thead {
+  background: #1f2937;
+}
+
+.commission-table th {
+  padding: 14px;
+  text-align: left;
+  font-weight: 700;
+  color: white;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+.commission-table td {
+  padding: 14px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #0f172a;
+}
+
+.commission-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.commission-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 12px;
+  font-size: .68rem;
+  font-weight: 700;
+}
+
+.status-pending {
+  background: #fef9c3;
+  color: #92400e;
+}
+
+.status-paid {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.status-date {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 3px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.btn-sm {
+  padding: 6px 10px;
+  font-size: 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all .2s;
+}
+
+.btn-outline-secondary {
+  background: white;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+}
+
+.btn-outline-secondary:hover {
+  background: #f1f5f9;
+  border-color: #0f172a;
+}
+
+.btn-outline-success {
+  background: white;
+  color: #16a34a;
+  border: 1px solid #16a34a;
+}
+
+.btn-outline-success:hover {
+  background: #f0fdf4;
+  border-color: #16a34a;
+}
+
+.project-link {
+  color: #0d9488;
+  text-decoration: none;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.project-link:hover {
+  text-decoration: underline;
+}
+
+.advance-link {
+  color: #0d9488;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.advance-link:hover {
+  color: #0a7860;
+}
+
+.amount-primary {
+  font-weight: 600;
+  color: #8b5cf6;
+}
+
+.amount-success {
+  font-weight: 600;
+  color: #10b981;
+}
+
+.amount-info {
+  font-weight: 600;
+  color: #3b82f6;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #64748b;
+}
+
+.empty-state-icon {
+  font-size: 56px;
+  margin-bottom: 15px;
+}
+
+.empty-state-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 8px;
+}
+
+.filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  width: fit-content;
+}
+
+.filters-right {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: 0.4s;
+  border-radius: 24px;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.4s;
+  border-radius: 50%;
+}
+
+input:checked + .toggle-slider {
+  background-color: #3b82f6;
+}
+
+input:checked + .toggle-slider:before {
+  transform: translateX(16px);
+}
+
+.filter-toggle label {
+  margin: 0;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.row-zero-commission {
+  display: none;
+}
+
+.row-zero-commission.show {
+  display: table-row;
+}
+
+.stats-section {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.filters-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.search-box {
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #0f172a;
+  flex: 0 1 240px;
+  height: 32px;
+}
+
+.search-box::placeholder {
+  color: #94a3b8;
+}
+
+.filter-select {
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #0f172a;
+  background: white;
+  cursor: pointer;
+  flex: 0 1 140px;
+  height: 32px;
+}
+
+.filters-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.search-box {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #0f172a;
+  height: 32px;
+}
+
+.search-box::placeholder {
+  color: #94a3b8;
+}
+
+.controls-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-overlay.show {
+  display: flex;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 8px;
+  padding: 30px;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 20px 25px rgba(0, 0, 0, 0.15);
+}
+
+.modal-header {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 20px;
+}
+
+.form-group {
+  margin-bottom: 18px;
+}
+
+.form-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+
+.form-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #0f172a;
+  box-sizing: border-box;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #0d9488;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 25px;
+}
+
+.btn-cancel {
+  padding: 10px 16px;
+  background: #e2e8f0;
+  color: #0f172a;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.btn-cancel:hover {
+  background: #cbd5e1;
+}
+
+.btn-pay {
+  padding: 10px 16px;
+  background: #16a34a;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.btn-pay:hover {
+  background: #15803d;
+}
+
+.payment-info {
+  background: #f0fdf4;
+  border: 1px solid #dcfce7;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 18px;
+  font-size: 13px;
+  color: #15803d;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="commission-header">
+    <a href="/payroll?tab=commission" class="back-btn">
+      <i class="bi bi-arrow-left"></i>Back to Commissions
+    </a>
+    <button type="button" class="btn btn-sm btn-teal" onclick="openPaymentModal()">
+      <i class="bi bi-plus-lg me-1"></i>Add Commission Payment
+    </button>
+  </div>
+
+  {% if commissions %}
+    {% set total_earned = commissions | map(attribute='commission_amount') | map('float') | sum %}
+    {% set total_adjusted = commissions | map(attribute='total_deducted') | map('float') | sum %}
+    {% set total_remaining = commissions | map(attribute='remaining_due') | map('float') | sum %}
+    {% set total_paid = total_earned - total_remaining %}
+
+    <!-- Stat Cards -->
+    <div class="stats-section">
+      <div class="kpi-card kpi-purple">
+        <div class="kpi-top"><span class="kpi-label">Total Earned</span><i class="bi bi-currency-dollar kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_earned) }}</div>
+        <div class="kpi-sub">Across All Projects</div>
+      </div>
+      <div class="kpi-card kpi-blue">
+        <div class="kpi-top"><span class="kpi-label">Total Adjusted</span><i class="bi bi-pencil-square kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_adjusted) }}</div>
+        <div class="kpi-sub">Across All Adjustments</div>
+      </div>
+      <div class="kpi-card kpi-green">
+        <div class="kpi-top"><span class="kpi-label">Total Paid</span><i class="bi bi-check-circle kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_paid) }}</div>
+        <div class="kpi-sub">Across All Payments</div>
+      </div>
+      <div class="kpi-card kpi-amber">
+        <div class="kpi-top"><span class="kpi-label">Outstanding</span><i class="bi bi-exclamation-circle kpi-icon-sm"></i></div>
+        <div class="kpi-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_remaining) }}</div>
+        <div class="kpi-sub">Remaining Due</div>
+      </div>
+    </div>
+
+    <!-- Filters Bar -->
+    <div class="filters-bar">
+      <input type="text" id="searchCommissions" class="search-box" placeholder="Search project #, client..." onkeyup="filterCommissions()">
+
+      <select id="filterStatus" class="filter-select" onchange="filterCommissions()">
+        <option value="">All Status</option>
+        <option value="Pending">Pending</option>
+        <option value="Paid">Paid</option>
+        <option value="Paid (Fully Covered)">Paid (Fully Covered)</option>
+      </select>
+
+      <div class="filter-toggle">
+        <label for="showZeroCommissions">Hide $0</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="showZeroCommissions" onchange="toggleZeroRows()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+    <div class="table-wrapper">
+      <table class="commission-table">
+        <thead>
+          <tr>
+            <th>PROJECT #</th>
+            <th>CLIENT</th>
+            <th>CONTRACT VALUE</th>
+            <th>RATE / TYPE</th>
+            <th>COMMISSION</th>
+            <th>ADJUSTED</th>
+            <th>PAID AMOUNT</th>
+            <th>REMAINING DUE</th>
+            <th>STATUS</th>
+            <th>ACTIONS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for comm in commissions %}
+          {% set earned = comm.get('commission_amount', 0) | float %}
+          {% set adjusted = comm.get('total_deducted', 0) | float %}
+          {% set paid_amount = comm.get('paid_amount', 0) | float %}
+          {% set remaining = (earned - adjusted - paid_amount) | float %}
+
+          {% if earned == 0 %}
+            {% set display_status = 'Paid' %}
+          {% elif paid_amount > 0 and remaining <= 0.01 %}
+            {% set display_status = 'Paid (Fully Covered)' %}
+          {% elif adjusted >= earned %}
+            {% set display_status = 'Fully Adjusted' %}
+          {% elif adjusted > 0 and paid_amount > 0 %}
+            {% set display_status = 'Paid' %}
+          {% else %}
+            {% set display_status = 'Pending' %}
+          {% endif %}
+
+          {% set status_class = 'status-paid' if (display_status in ['Paid', 'Paid (Fully Covered)', 'Fully Adjusted']) else 'status-pending' %}
+          {% set row_class = 'row-zero-commission' if earned == 0 else '' %}
+          <tr class="{{ row_class }}">
+            <td><a href="/projects/{{ comm.get('firebase_id', '') }}" class="project-link">{{ comm.get('project_number', '—') }}</a></td>
+            <td><strong>{{ comm.get('client_name', '—') }}</strong></td>
+            <td>{{ currency_symbol }}{{ "{:,.2f}".format(comm.get('contract_value', 0) | float) }}</td>
+            <td><span style="display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;background:#e0e7ff;color:#312e81;">{{ comm.get('rate_display', '—') }}</span></td>
+            <td class="amount-primary">{{ currency_symbol }}{{ "{:,.2f}".format(earned) }}</td>
+            <td>
+              <div style="font-weight:600;margin-bottom:4px;">{{ currency_symbol }}{{ "{:,.2f}".format(adjusted) }}</div>
+              {% set deductions = comm.get('deductions_list', []) %}
+              {% if deductions %}
+                {% for deduction in deductions %}
+                  {% set adv_no = deduction.get('advance_no', '') %}
+                  {% set adv_id = deduction.get('advance_id', '') %}
+                  {% if adv_no %}
+                    <div style="font-size:11px;margin-top:3px;">
+                      {% if adv_id %}
+                        <a href="/advance/{{ adv_id }}" class="advance-link">{{ adv_no }}</a>
+                      {% else %}
+                        <span style="color:#94a3b8;">{{ adv_no }}</span>
+                      {% endif %}
+                    </div>
+                  {% endif %}
+                {% endfor %}
+              {% endif %}
+            </td>
+            <td class="amount-success">
+              <div style="font-weight:600;">{{ currency_symbol }}{{ "{:,.2f}".format(paid_amount) }}</div>
+              {% if comm.get('paid_at') and paid_amount > 0 %}
+                <div style="font-size:11px;color:#64748b;margin-top:3px;">{{ comm.get('paid_at')[0:10] }}</div>
+              {% endif %}
+            </td>
+            <td class="amount-info"><strong>{{ currency_symbol }}{{ "{:,.2f}".format(remaining) }}</strong></td>
+            <td>
+              <div>
+                <span class="status-badge {{ status_class }}">{{ display_status }}</span>
+                {% if display_status == 'Paid (Fully Covered)' or display_status == 'Paid' %}
+                  {% if comm.get('paid_at') %}
+                    {% set paid_date = comm.get('paid_at')[0:10] %}
+                    {% if paid_date[0:4].isdigit() and paid_date[0] in '0123456789' and paid_date[4] == '-' %}
+                      <!-- YYYY-MM-DD format, convert to MM-DD-YYYY -->
+                      <div class="status-date">{{ paid_date[5:7] }}-{{ paid_date[8:10] }}-{{ paid_date[0:4] }}</div>
+                    {% else %}
+                      <!-- Already MM-DD-YYYY format -->
+                      <div class="status-date">{{ paid_date }}</div>
+                    {% endif %}
+                  {% endif %}
+                {% endif %}
+              </div>
+            </td>
+            <td>
+              <div class="action-buttons">
+                {% set contract_val = comm.get('contract_value', 0) | float %}
+                {% set rate_display_str = comm.get('rate_display', '') %}
+
+                {% if 'default' in rate_display_str.lower() %}
+                  {# Default rate - extract percentage from rate_display #}
+                  {% set calculated_rate = rate_display_str.split('(')[0].replace('%', '').strip() | float %}
+                {% elif '%' in rate_display_str and contract_val > 0 %}
+                  {# Percentage rate - calculate from earned and contract #}
+                  {% set calculated_rate = (earned / contract_val * 100) | round(2) %}
+                {% else %}
+                  {# Fixed amount - use earned as the rate value #}
+                  {% set calculated_rate = comm.get('rate_value', 0) or earned %}
+                {% endif %}
+
+                <button type="button" class="btn-sm btn-outline-secondary" title="Edit Commission" onclick="openEditModal('{{ comm.get('commission_doc_id') }}', '{{ comm.get('project_number') }}', {{ earned }}, '{{ rate_display_str }}', '{{ comm.get('commission_type', 'default') }}', '{{ comm.get('paid_at', '') }}', '{{ comm.get('status', 'Pending') }}', {{ calculated_rate }})"><i class="bi bi-pencil"></i></button>
+                {% if remaining > 0.01 %}
+                  <button type="button" class="btn-sm btn-outline-success" title="Mark as Paid" onclick="markProjectPaid('{{ comm.get('commission_doc_id') }}', '{{ comm.get('project_number') }}', {{ remaining }})"><i class="bi bi-check-circle"></i></button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <!-- Pagination -->
+      <div style="display: flex; align-items: center; justify-content: center; gap: 10px; padding: 20px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
+        <button type="button" class="pagination-btn" onclick="previousPage()" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; background: white; cursor: pointer; font-size: 14px;">‹</button>
+        <div style="display: flex; align-items: center; gap: 8px; font-size: 14px;">
+          <input type="number" id="currentPage" value="1" min="1" style="width: 50px; padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; text-align: center;" onchange="goToPage(this.value)">
+          <span style="color: #94a3b8;">of</span>
+          <span id="totalPages" style="font-weight: 600; color: #0f172a;">1</span>
+        </div>
+        <button type="button" class="pagination-btn" onclick="nextPage()" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; background: white; cursor: pointer; font-size: 14px;">›</button>
+      </div>
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <div class="empty-state-icon">📋</div>
+      <div class="empty-state-title">No Commissions Found</div>
+      <p style="margin: 0;">No commission records found for {{ salesperson_name }}.</p>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Edit Commission Modal -->
+<div id="editModal" class="modal-overlay">
+  <div class="modal-content" style="max-width: 600px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <div class="modal-header" style="margin: 0;">Edit Commission</div>
+      <button type="button" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #64748b;" onclick="closeEditModal()">×</button>
+    </div>
+    <form onsubmit="submitEditCommission(event)">
+      <!-- Row 1: Project # -->
+      <div style="margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid #e2e8f0;">
+        <label class="form-label">Project #</label>
+        <input type="text" id="editProjectNumber" class="form-input" readonly style="background: #f1f5f9; cursor: not-allowed;">
+      </div>
+
+      <!-- Row 2: Salesperson | Contract Value (equal width) -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid #e2e8f0;">
+        <div>
+          <label class="form-label">Salesperson</label>
+          <input type="text" id="editSalesperson" class="form-input" readonly style="background: #f1f5f9; cursor: not-allowed;">
+        </div>
+        <div>
+          <label class="form-label">Contract Value ($)</label>
+          <input type="text" id="editContractValue" class="form-input" readonly style="background: #f1f5f9; cursor: not-allowed;">
+        </div>
+      </div>
+
+      <!-- Row 3: Rate Type | Rate Value (equal width) -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid #e2e8f0;">
+        <div>
+          <label class="form-label">Rate Type</label>
+          <select id="editRateType" class="form-input" required onchange="toggleRateValueField()">
+            <option value="Fixed Amount ($)">Fixed Amount ($)</option>
+            <option value="Default (salesperson rate)">Default (salesperson rate)</option>
+            <option value="Custom Percentage (%)">Custom Percentage (%)</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label" id="rateValueLabel">Rate Value</label>
+          <input type="number" id="editRateValue" class="form-input" min="0" step="0.01" placeholder="Enter value">
+        </div>
+      </div>
+
+      <!-- Row 4: Commission Earned | Adjusted | Remaining Due (equal width) -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid #e2e8f0;">
+        <div>
+          <label class="form-label">Commission Earned ($)</label>
+          <input type="number" id="editCommissionAmount" class="form-input" min="0" step="0.01" required>
+        </div>
+        <div>
+          <label class="form-label">Adjusted / Deducted ($)</label>
+          <input type="text" id="editAdjusted" class="form-input" readonly style="background: #f1f5f9; cursor: not-allowed;">
+        </div>
+        <div>
+          <label class="form-label">Remaining Due ($)</label>
+          <input type="text" id="editRemaining" class="form-input" readonly style="background: #f1f5f9; cursor: not-allowed;">
+        </div>
+      </div>
+
+      <div class="modal-actions" style="justify-content: flex-end;">
+        <button type="button" class="btn-cancel" onclick="closeEditModal()">Cancel</button>
+        <button type="submit" class="btn-pay">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Success Modal -->
+<div id="successModal" class="modal-overlay">
+  <div class="modal-content" style="max-width: 450px;">
+    <div style="background: #0f766e; color: white; padding: 20px; border-radius: 8px 8px 0 0; display: flex; align-items: center; gap: 12px;">
+      <i class="bi bi-check-circle-fill" style="font-size: 24px;"></i>
+      <div class="modal-header" style="margin: 0; color: white;">Payment Added Successfully</div>
+    </div>
+    <div style="padding: 24px; text-align: center;">
+      <p style="margin: 0 0 20px 0; color: #0f172a; font-size: 15px;">
+        Commission payment has been recorded successfully.
+      </p>
+    </div>
+    <div style="padding: 0 24px 24px; text-align: center;">
+      <button type="button" class="btn btn-teal" onclick="closeSuccessModal()">
+        <i class="bi bi-check me-1"></i>Close
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Payment Modal -->
+<div id="paymentModal" class="modal-overlay">
+  <div class="modal-content">
+    <div class="modal-header">Add Commission Payment</div>
+    <div class="payment-info">
+      Outstanding: <strong>{{ currency_symbol if commissions else '' }}{{ "{:,.2f}".format(total_remaining) if commissions else '0.00' }}</strong>
+    </div>
+    <form onsubmit="submitPayment(event)">
+      <div class="form-group">
+        <label class="form-label">Payment Amount <span style="color: #ef4444;">*</span></label>
+        <input type="number" id="paymentAmount" class="form-input" placeholder="Enter amount" min="0.01" step="0.01" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Payment Date <span style="color: #ef4444;">*</span></label>
+        <input type="date" id="paymentDate" class="form-input" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <input type="text" id="paymentNotes" class="form-input" placeholder="Optional payment notes">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" onclick="closePaymentModal()">Cancel</button>
+        <button type="submit" class="btn-pay">Add Payment</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function toggleZeroRows() {
+  const checkbox = document.getElementById('showZeroCommissions');
+  const rows = document.querySelectorAll('.row-zero-commission');
+
+  // Save toggle state to localStorage
+  localStorage.setItem('hideZeroCommissions', checkbox.checked);
+
+  // Toggle row visibility (inverted logic: checked = hide, unchecked = show)
+  rows.forEach(row => {
+    if (checkbox.checked) {
+      // Hide $0 rows when checkbox is ON
+      row.classList.remove('show');
+    } else {
+      // Show $0 rows when checkbox is OFF
+      row.classList.add('show');
+    }
+  });
+}
+
+// Initialize toggle state from localStorage on page load
+document.addEventListener('DOMContentLoaded', function() {
+  const checkbox = document.getElementById('showZeroCommissions');
+  const savedState = localStorage.getItem('hideZeroCommissions') === 'true';
+
+  // Set checkbox to saved state
+  checkbox.checked = savedState;
+
+  // Apply the saved state
+  toggleZeroRows();
+
+  // Initialize pagination
+  updatePagination();
+});
+
+function filterCommissions() {
+  const searchInput = document.getElementById('searchCommissions').value.toLowerCase();
+  const statusFilter = document.getElementById('filterStatus').value;
+  const rows = document.querySelectorAll('.commission-table tbody tr');
+
+  rows.forEach(row => {
+    const projectNo = row.querySelector('td:nth-child(1)').textContent.toLowerCase();
+    const client = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
+    const statusCell = row.querySelector('td:nth-child(9)').textContent;
+
+    const searchMatch = projectNo.includes(searchInput) || client.includes(searchInput);
+    const statusMatch = !statusFilter || statusCell.includes(statusFilter);
+
+    row.style.display = (searchMatch && statusMatch) ? '' : 'none';
+  });
+
+  currentPage = 1;
+  updatePagination();
+}
+
+function resetFilters() {
+  document.getElementById('searchCommissions').value = '';
+  document.getElementById('filterStatus').value = '';
+  document.getElementById('showZeroCommissions').checked = false;
+  toggleZeroRows();
+  filterCommissions();
+}
+
+const ROWS_PER_PAGE = 10;
+let currentPage = 1;
+
+function updatePagination() {
+  const rows = document.querySelectorAll('.commission-table tbody tr:not(.row-zero-commission)');
+  const visibleRows = Array.from(rows).filter(row => row.style.display !== 'none');
+  const totalPages = Math.ceil(visibleRows.length / ROWS_PER_PAGE);
+
+  document.getElementById('totalPages').textContent = Math.max(1, totalPages);
+
+  const startIndex = (currentPage - 1) * ROWS_PER_PAGE;
+  const endIndex = startIndex + ROWS_PER_PAGE;
+
+  visibleRows.forEach((row, index) => {
+    row.style.display = (index >= startIndex && index < endIndex) ? '' : 'none';
+  });
+
+  document.getElementById('currentPage').value = currentPage;
+}
+
+function previousPage() {
+  if (currentPage > 1) {
+    currentPage--;
+    updatePagination();
+  }
+}
+
+function nextPage() {
+  const totalPages = parseInt(document.getElementById('totalPages').textContent);
+  if (currentPage < totalPages) {
+    currentPage++;
+    updatePagination();
+  }
+}
+
+function goToPage(pageNum) {
+  const page = parseInt(pageNum);
+  const totalPages = parseInt(document.getElementById('totalPages').textContent);
+  if (page >= 1 && page <= totalPages) {
+    currentPage = page;
+    updatePagination();
+  } else {
+    document.getElementById('currentPage').value = currentPage;
+  }
+}
+
+function markProjectPaid(commissionId, projectNumber, remainingAmount) {
+  const today = new Date().toISOString().split('T')[0];
+
+  if (confirm(`Mark project ${projectNumber} commission as fully paid ($${remainingAmount.toFixed(2)})?`)) {
+    fetch('/api/commission/mark-paid', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        commission_id: commissionId,
+        project_number: projectNumber,
+        amount: remainingAmount,
+        date: today,
+        salesperson: '{{ salesperson_name }}'
+      })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        alert('Commission marked as paid!');
+        location.reload();
+      } else {
+        alert('Error: ' + (data.message || 'Failed to mark as paid'));
+      }
+    })
+    .catch(error => {
+      console.error('Error:', error);
+      alert('Error processing payment');
+    });
+  }
+}
+
+function openEditModal(commissionId, projectNumber, commissionAmount, rateDisplay, commissionType, paidAt, statusParam, rateValue = 0) {
+  // Find the row data
+  const rows = document.querySelectorAll('.commission-table tbody tr');
+  let rowData = null;
+
+  rows.forEach(row => {
+    if (row.querySelector('td:nth-child(1)').textContent.includes(projectNumber)) {
+      rowData = {
+        salesperson: '{{ salesperson_name }}',
+        project: row.querySelector('td:nth-child(1)').textContent.trim(),
+        client: row.querySelector('td:nth-child(2)').textContent.trim(),
+        contractValue: row.querySelector('td:nth-child(3)').textContent.trim(),
+        rateType: row.querySelector('td:nth-child(4)').textContent.trim(),
+        earned: parseFloat(row.querySelector('td:nth-child(5)').textContent.replace(/[^0-9.-]/g, '')) || 0,
+        adjusted: parseFloat(row.querySelector('td:nth-child(6)').textContent.replace(/[^0-9.-]/g, '')) || 0,
+        paid: parseFloat(row.querySelector('td:nth-child(7)').textContent.replace(/[^0-9.-]/g, '')) || 0,
+        remaining: parseFloat(row.querySelector('td:nth-child(8)').textContent.replace(/[^0-9.-]/g, '')) || 0,
+        status: statusParam || row.querySelector('td:nth-child(9)').textContent.trim()
+      };
+    }
+  });
+
+  if (!rowData) {
+    alert('Could not find commission data');
+    return;
+  }
+
+  // Populate form fields
+  document.getElementById('editProjectNumber').value = projectNumber;
+  document.getElementById('editSalesperson').value = rowData.salesperson;
+  document.getElementById('editContractValue').value = rowData.contractValue;
+  // Map rate display to rate type option
+  let rateTypeOption = 'Fixed Amount ($)';
+  let calculatedRateValue = '';
+
+  if (rateDisplay.includes('Default') || rateDisplay.includes('default')) {
+    rateTypeOption = 'Default (salesperson rate)';
+    const match = rateDisplay.match(/\((\d+\.?\d*)\%\)/);
+    calculatedRateValue = match ? match[1] : '';
+  } else if (rateDisplay.includes('Fixed')) {
+    rateTypeOption = 'Fixed Amount ($)';
+    const match = rateDisplay.match(/\$?([\d,.]+)/);
+    calculatedRateValue = match ? match[1].replace(/,/g, '') : '';
+  } else if (rateDisplay.includes('%') || rateDisplay.includes('Custom')) {
+    rateTypeOption = 'Custom Percentage (%)';
+    const match = rateDisplay.match(/([\d,.]+)%/);
+    calculatedRateValue = match ? match[1].replace(/,/g, '') : '';
+  }
+
+  // Use passed-in rateValue if available, otherwise use calculated value
+  const finalRateValue = rateValue > 0 ? rateValue : calculatedRateValue;
+
+  document.getElementById('editRateType').value = rateTypeOption;
+  document.getElementById('editRateValue').value = finalRateValue;
+  document.getElementById('editCommissionAmount').value = commissionAmount.toFixed(2);
+  document.getElementById('editAdjusted').value = rowData.adjusted.toFixed(2);
+  document.getElementById('editRemaining').value = rowData.remaining.toFixed(2);
+
+  // Store paid amount in modal dataset for calculation
+  const modal = document.getElementById('editModal');
+  modal.dataset.paidAmount = rowData.paid || 0;
+  modal.dataset.contractValue = rowData.contractValue.replace(/[^0-9.-]/g, '') || 0;
+
+  modal.classList.add('show');
+
+  // Toggle Rate Value field based on selected rate type
+  toggleRateValueField();
+
+  // Remove old event listeners and add new ones
+  const rateValueField = document.getElementById('editRateValue');
+  const rateTypeField = document.getElementById('editRateType');
+  rateValueField.removeEventListener('input', calculateCommissionEarned);
+  rateTypeField.removeEventListener('change', calculateCommissionEarned);
+  rateValueField.addEventListener('input', calculateCommissionEarned);
+  rateTypeField.addEventListener('change', calculateCommissionEarned);
+
+  // Store commission ID for submission
+  modal.dataset.commissionId = commissionId;
+}
+
+function closeEditModal() {
+  document.getElementById('editModal').classList.remove('show');
+}
+
+function toggleRateValueField() {
+  const rateType = document.getElementById('editRateType').value;
+  const rateValueField = document.getElementById('editRateValue');
+  const rateValueLabel = document.getElementById('rateValueLabel');
+
+  if (rateType === 'Default (salesperson rate)') {
+    rateValueField.readOnly = true;
+    rateValueField.style.background = '#f1f5f9';
+    rateValueField.style.cursor = 'not-allowed';
+    rateValueLabel.textContent = 'Rate Value (Read-only)';
+  } else if (rateType === 'Fixed Amount ($)') {
+    rateValueField.readOnly = false;
+    rateValueField.style.background = 'white';
+    rateValueField.style.cursor = 'auto';
+    rateValueLabel.textContent = 'Rate Value ($)';
+    rateValueField.placeholder = 'Enter amount in $';
+  } else if (rateType === 'Custom Percentage (%)') {
+    rateValueField.readOnly = false;
+    rateValueField.style.background = 'white';
+    rateValueField.style.cursor = 'auto';
+    rateValueLabel.textContent = 'Rate Value (%)';
+    rateValueField.placeholder = 'Enter percentage';
+  }
+
+  // Clear rate value when switching to Default
+  if (rateType === 'Default (salesperson rate)') {
+    rateValueField.value = '';
+  }
+
+  // Recalculate commission earned when rate type changes
+  setTimeout(() => calculateCommissionEarned(), 50);
+}
+
+function calculateCommissionEarned() {
+  const rateType = document.getElementById('editRateType').value;
+  const rateValue = parseFloat(document.getElementById('editRateValue').value) || 0;
+  const contractValue = parseFloat(document.getElementById('editContractValue').value.replace(/[^0-9.-]/g, '')) || 0;
+  const adjusted = parseFloat(document.getElementById('editAdjusted').value) || 0;
+  const modal = document.getElementById('editModal');
+  const paid = parseFloat(modal.dataset.paidAmount) || 0;
+
+  let commissionEarned = 0;
+
+  if (rateType === 'Fixed Amount ($)') {
+    commissionEarned = rateValue;
+  } else if (rateType === 'Custom Percentage (%)') {
+    commissionEarned = (contractValue * rateValue / 100);
+  } else if (rateType === 'Default (salesperson rate)') {
+    // Keep current value for default
+    commissionEarned = parseFloat(document.getElementById('editCommissionAmount').value) || 0;
+  }
+
+  // Update Commission Earned field
+  document.getElementById('editCommissionAmount').value = commissionEarned.toFixed(2);
+
+  // Calculate Remaining Due = Commission Earned - Adjusted - Paid
+  const remaining = Math.max(0, commissionEarned - adjusted - paid);
+  document.getElementById('editRemaining').value = remaining.toFixed(2);
+}
+
+function submitEditCommission(event) {
+  event.preventDefault();
+
+  const modal = document.getElementById('editModal');
+  const commissionId = modal.dataset.commissionId;
+  const projectNumber = document.getElementById('editProjectNumber').value;
+  const newAmount = parseFloat(document.getElementById('editCommissionAmount').value);
+  const rateType = document.getElementById('editRateType').value;
+  const rateValue = document.getElementById('editRateValue').value;
+  const salesperson = '{{ salesperson_name }}';
+
+  if (!newAmount || newAmount < 0) {
+    alert('Please enter a valid commission amount');
+    return;
+  }
+
+  if (rateType !== 'Default (salesperson rate)' && (!rateValue || rateValue < 0)) {
+    alert('Please enter a valid rate value');
+    return;
+  }
+
+  fetch('/api/commission/edit', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      commission_id: commissionId,
+      project_number: projectNumber,
+      amount: newAmount,
+      rate_type: rateType,
+      rate_value: parseFloat(rateValue) || 0,
+      salesperson: salesperson
+    })
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      closeEditModal();
+      openSuccessModal();
+    } else {
+      alert('Error: ' + (data.message || 'Failed to update commission'));
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    alert('Error updating commission');
+  });
+}
+
+function openPaymentModal() {
+  const modal = document.getElementById('paymentModal');
+  if (modal) {
+    modal.classList.add('show');
+    const dateInput = document.getElementById('paymentDate');
+    if (dateInput) {
+      dateInput.valueAsDate = new Date();
+    }
+  } else {
+    console.error('Payment modal not found');
+  }
+}
+
+function closePaymentModal() {
+  const modal = document.getElementById('paymentModal');
+  if (modal) {
+    modal.classList.remove('show');
+  }
+  const amountInput = document.getElementById('paymentAmount');
+  if (amountInput) {
+    amountInput.value = '';
+  }
+  const notesInput = document.getElementById('paymentNotes');
+  if (notesInput) {
+    notesInput.value = '';
+  }
+}
+
+function openSuccessModal() {
+  document.getElementById('successModal').classList.add('show');
+}
+
+function closeSuccessModal() {
+  document.getElementById('successModal').classList.remove('show');
+  setTimeout(() => {
+    location.reload();
+  }, 500);
+}
+
+function submitPayment(event) {
+  event.preventDefault();
+
+  const amount = parseFloat(document.getElementById('paymentAmount').value);
+  const date = document.getElementById('paymentDate').value;
+  const notes = document.getElementById('paymentNotes').value;
+  const salesperson = '{{ salesperson_name }}';
+
+  if (!amount || amount <= 0) {
+    alert('Please enter a valid payment amount');
+    return;
+  }
+
+  // Check if there's any remaining due
+  const rows = document.querySelectorAll('.commission-table tbody tr:not(.row-zero-commission)');
+  let totalRemaining = 0;
+  rows.forEach(row => {
+    const remaining = parseFloat(row.querySelector('td:nth-child(8)').textContent.replace(/[^0-9.-]/g, '')) || 0;
+    totalRemaining += remaining;
+  });
+
+  if (totalRemaining <= 0) {
+    alert('No outstanding commission to pay. All commissions are fully covered.');
+    return;
+  }
+
+  // Check if payment amount exceeds outstanding
+  if (amount > totalRemaining + 0.01) {
+    alert(`Payment amount ($${amount.toFixed(2)}) exceeds outstanding ($${totalRemaining.toFixed(2)}). Please enter an amount less than or equal to the outstanding.`);
+    return;
+  }
+
+  fetch('/api/commission/pay', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      salesperson: salesperson,
+      amount: amount,
+      date: date,
+      notes: notes
+    })
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      closePaymentModal();
+      openSuccessModal();
+    } else {
+      alert('Error: ' + (data.message || 'Failed to process payment'));
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    alert('Error processing payment');
+  });
+}
+</script>
+{% endblock %}

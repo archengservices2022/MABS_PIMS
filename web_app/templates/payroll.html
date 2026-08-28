@@ -113,6 +113,7 @@
 .payroll-table td { padding: 14px; border-bottom: 1px solid #e2e8f0; }
 .payroll-table tbody tr:hover { background: #f8fafc; }
 .payroll-table tbody tr:last-child td { border-bottom: none; }
+.payroll-table a { text-decoration: none !important; color: inherit; }
 
 .region-badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
 .region-usa   { background: #dbeafe; color: #1e40af; }
@@ -177,6 +178,9 @@
     <button class="payroll-tab-button" onclick="switchTab('add-salary', event)">
       <i class="bi bi-plus-circle me-2" style="font-size:16px;"></i>Add Salary/Bonus
     </button>
+    <button class="payroll-tab-button" onclick="switchTab('commission', event)">
+      <i class="bi bi-percent me-2" style="font-size:16px;"></i>Commission Management
+    </button>
     <button class="payroll-tab-button" onclick="switchTab('employee-advance', event)">
       <i class="bi bi-wallet2 me-2" style="font-size:16px;"></i>Employee Advance
     </button>
@@ -194,12 +198,6 @@
       {% set paid_salaries = salaries | selectattr('salary_status','equalto','Paid') | list %}
       {% set usa_total  = paid_salaries | selectattr('region','equalto','Inside America')  | sum(attribute='amount') %}
       {% set intl_total = paid_salaries | selectattr('region','equalto','Outside America') | sum(attribute='amount') %}
-      {% set _comm_all_flat = namespace(v=0.0) %}
-      {% for sp_periods in commission_by_period.values() %}
-        {% for earned in sp_periods.values() %}
-          {% set _comm_all_flat.v = _comm_all_flat.v + earned %}
-        {% endfor %}
-      {% endfor %}
       <div class="summary-cards" id="salaryCards">
         <div class="summary-card usa">
           <div class="summary-card-label">Inside America</div>
@@ -213,14 +211,6 @@
           <div class="summary-card-label">Total Salary</div>
           <div class="summary-card-value" id="cardTotal">{{ currency_symbol }}{{ "{:,.2f}".format((usa_total + intl_total) | float) }}</div>
         </div>
-        <div class="summary-card" style="border-top:3px solid #7C3AED;">
-          <div class="summary-card-label" style="color:#7C3AED;">Commission</div>
-          <div class="summary-card-value" style="color:#7C3AED;">{{ currency_symbol }}{{ "{:,.2f}".format(_comm_all_flat.v) }}</div>
-        </div>
-        <div class="summary-card" style="border-top:3px solid #0369a1;">
-          <div class="summary-card-label" style="color:#0369a1;">Total Compensation</div>
-          <div class="summary-card-value" style="color:#0369a1;">{{ currency_symbol }}{{ "{:,.2f}".format((usa_total + intl_total) | float + _comm_all_flat.v) }}</div>
-        </div>
       </div>
 
       <!-- Filters -->
@@ -232,6 +222,7 @@
               <option value="">All Types</option>
               <option value="Salary">Salary</option>
               <option value="Bonus">Bonus</option>
+              <option value="Commission">Commission</option>
             </select>
             <select id="filterRegion" class="form-select form-select-sm" style="width:180px;">
               <option value="">All Regions</option>
@@ -263,8 +254,6 @@
               <th>Date</th>
               <th>Period</th>
               <th>Amount</th>
-              <th>Commission</th>
-              <th>Total</th>
               <th>Status</th>
               <th>Region</th>
               <th>Notes</th>
@@ -276,40 +265,19 @@
               {% for sal in salaries %}
               {% set sal_emp  = sal.employee_name or sal.get('employee','') %}
               {% set sal_period = sal.date[:7] if sal.date and sal.date|length >= 7 else '' %}
-              {% set _sal_emp_lc = sal_emp | lower %}
-              {% set _comm_key = _sal_emp_lc + '|' + sal_period %}
-              {% set comm_paid = _comm_key in comm_paid_set %}
-              {% set _paid_comm = comm_paid_amounts.get(_comm_key) %}
-              {% set sal_comm = ((_paid_comm | float) if (comm_paid and _paid_comm is not none) else (commission_by_period.get(sal_emp, {}).get(sal_period, 0) | float)) %}
-              {% set sal_total = sal.amount | float + sal_comm %}
               {% set ss = sal.get('salary_status','Pending') %}
               {% set sal_type = sal.get('salary_type','Salary') %}
-              {% set _comm_pending_warn = ss == 'Paid' and sal_comm > 0 and not comm_paid %}
               <tr data-salary="1" data-employee="{{ sal_emp | lower }}" data-type="{{ sal_type }}" data-region="{{ sal.region }}" data-date="{{ sal.date }}" data-amount="{{ sal.amount | float }}">
                 <td><strong>{{ sal_emp or '—' }}</strong></td>
-                <td><span style="display:inline-block;padding:3px 8px;border-radius:14px;font-size:11px;font-weight:600;{% if sal_type == 'Bonus' %}background:#fcd34d;color:#78350f;{% else %}background:#dbeafe;color:#1e40af;{% endif %}">{{ sal_type }}</span></td>
+                <td><span style="display:inline-block;padding:3px 8px;border-radius:14px;font-size:11px;font-weight:600;{% if sal_type == 'Bonus' %}background:#fcd34d;color:#78350f;{% elif sal_type == 'Commission' %}background:#d1fae5;color:#065f46;{% else %}background:#dbeafe;color:#1e40af;{% endif %}">{{ sal_type }}</span></td>
                 <td>{{ sal.date[5:7] + '-' + sal.date[8:10] + '-' + sal.date[0:4] if sal.date and sal.date|length >= 10 else '—' }}</td>
                 <td style="color:#475569;font-size:.82rem;">{{ sal_period or '—' }}</td>
                 <td>{{ currency_symbol }}{{ "{:,.2f}".format(sal.amount | float) }}</td>
-                <td>
-                  {% if sal_comm > 0 %}
-                  <div style="color:#7C3AED;font-weight:700;">{{ currency_symbol }}{{ "{:,.2f}".format(sal_comm) }}</div>
-                  <div style="font-size:10px;color:#94a3b8;">
-                    {% if comm_paid %}<span style="font-size:10px;font-weight:700;color:#16a34a;">&#10003; Paid</span>{% else %}<span style="font-size:10px;color:#94a3b8;">Pending</span>{% endif %}
-                  </div>
-                  {% else %}
-                  <span class="text-muted">—</span>
-                  {% endif %}
-                </td>
-                <td style="font-weight:700;color:#0369a1;">{{ currency_symbol }}{{ "{:,.2f}".format(sal_total) }}</td>
                 <td>
                   <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;
                     {% if ss == 'Paid' %}background:#dcfce7;color:#15803d;
                     {% elif ss == 'Pending' %}background:#fef9c3;color:#92400e;
                     {% else %}background:#dbeafe;color:#1d4ed8;{% endif %}">{{ ss }}</span>
-                  {% if _comm_pending_warn %}
-                  <div style="font-size:9px;color:#b45309;margin-top:2px;">comm. pending</div>
-                  {% endif %}
                 </td>
                 <td><span class="region-badge {{ 'region-usa' if sal.region == 'Inside America' else 'region-intl' }}">{{ sal.region or '—' }}</span></td>
                 <td>{{ sal.notes or '—' }}</td>
@@ -323,7 +291,7 @@
               {% endfor %}
             {% else %}
             <tr>
-              <td colspan="10" class="empty-state">
+              <td colspan="9" class="empty-state">
                 <div class="empty-state-title">No Salary Entries</div>
                 <p style="margin:0;">Click "Add Salary" tab to create entries.</p>
               </td>
@@ -357,6 +325,7 @@
               <select id="sal_type" required>
                 <option value="Salary">Salary</option>
                 <option value="Bonus">Bonus</option>
+                <option value="Commission">Commission</option>
               </select>
             </div>
 
@@ -399,6 +368,186 @@
               <i class="bi bi-check-circle me-1"></i><span id="submitBtnText">Add Salary/Bonus</span>
             </button>
             <button type="reset" class="btn-secondary" onclick="resetSalaryForm()">Clear</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ?? Commission Management Tab ????????????????????????????? -->
+  <div id="commission" class="payroll-tab-content">
+    <div>
+      <h5 style="margin-bottom:25px;font-weight:700;color:#0f172a;">Commission Management</h5>
+
+      <!-- Summary Cards -->
+      <div class="summary-cards" id="commissionCards">
+        <div class="summary-card">
+          <div class="summary-card-label">Total Earned</div>
+          <div class="summary-card-value" id="cardCommEarned" style="color:#8b5cf6;">{{ currency_symbol }}0.00</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-card-label">Total Adjusted</div>
+          <div class="summary-card-value" id="cardCommAdjusted" style="color:#06b6d4;">{{ currency_symbol }}0.00</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-card-label">Total Paid</div>
+          <div class="summary-card-value" id="cardCommPaid" style="color:#10b981;">{{ currency_symbol }}0.00</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-card-label">Outstanding</div>
+          <div class="summary-card-value" id="cardCommOutstanding" style="color:#f59e0b;">{{ currency_symbol }}0.00</div>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div style="margin-bottom:20px;">
+        <div class="d-flex gap-2 align-items-center flex-wrap justify-content-between">
+          <div class="d-flex gap-2 align-items-center flex-wrap">
+            <input type="text" id="commSearchSalesperson" placeholder="Search salesperson..." class="form-control form-control-sm" style="width:200px;">
+            <select id="commFilterStatus" class="form-select form-select-sm" style="width:160px;">
+              <option value="">All Status</option>
+              <option value="Pending">Pending</option>
+              <option value="Paid">Paid</option>
+              <option value="Paid (Fully Covered)">Paid (Fully Covered)</option>
+            </select>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="loadCommissions()">Refresh</button>
+            <button type="button" class="btn btn-sm btn-light" onclick="clearCommissionFilters()">Clear</button>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <label for="commHideZero" style="margin:0;font-weight:500;font-size:13px;">Hide $0</label>
+            <div class="form-check form-switch" style="margin:0;">
+              <input class="form-check-input" type="checkbox" id="commHideZero" onchange="renderCommissionTable()">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Commission Table - Grouped by Project -->
+      <div class="table-wrapper">
+        <table class="payroll-table" id="commission">
+          <thead>
+            <tr>
+              <th>Project #</th>
+              <th>Client</th>
+              <th>Salesperson</th>
+              <th>Contract Value</th>
+              <th>Rate / Type</th>
+              <th>Commission</th>
+              <th>Adjusted</th>
+              <th>Remaining Due</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="commissionTableBody">
+            <tr>
+              <td colspan="10" style="text-align:center;color:#94a3b8;padding:40px;">
+                Loading commissions...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Commission Details Modal -->
+  <div class="modal fade" id="commissionDetailsModal" tabindex="-1" role="dialog" aria-hidden="true" style="--bs-modal-width: 1400px;">
+    <div class="modal-dialog modal-xl" role="document" style="max-width: 1400px;">
+      <div class="modal-content">
+        <div class="modal-header" style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
+          <h5 class="modal-title" id="commissionDetailsModalTitle">Commission Details</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="commissionDetailsModalBody" style="padding:20px;">
+          <p>Loading...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Commission Edit Modal -->
+  <div class="modal fade" id="commissionEditModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Edit Commission</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form id="commissionEditForm" onsubmit="saveCommissionEdit(event)">
+          <input type="hidden" id="commEditProjectId" value="">
+          <div class="modal-body">
+            <!-- Row 1: Project # -->
+            <div style="display:grid;grid-template-columns:1fr;gap:15px;margin-bottom:15px;">
+              <div class="form-group">
+                <label for="commEditProject">Project #</label>
+                <input type="text" id="commEditProject" class="form-control form-control-sm" readonly style="background:#f8fafc;" />
+              </div>
+            </div>
+
+            <!-- Row 2: Salesperson, Contract Value (equal widths) -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:15px;">
+              <div class="form-group">
+                <label for="commEditSalesperson">Salesperson</label>
+                <input type="text" id="commEditSalesperson" class="form-control form-control-sm" readonly style="background:#f8fafc;" />
+              </div>
+              <div class="form-group">
+                <label for="commEditContractValue">Contract Value ($)</label>
+                <input type="number" id="commEditContractValue" class="form-control form-control-sm" step="0.01" readonly style="background:#f8fafc;" />
+              </div>
+            </div>
+
+            <!-- Row 3: Rate Type, Rate Value (equal widths) -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:15px;">
+              <div class="form-group">
+                <label for="commEditRateType">Rate Type</label>
+                <select id="commEditRateType" class="form-control form-control-sm" onchange="calcCommissionEarned()">
+                  <option value="percent">Percent (%)</option>
+                  <option value="fixed">Fixed Amount ($)</option>
+                  <option value="default">Default</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="commEditRateValue">Rate Value</label>
+                <input type="number" id="commEditRateValue" class="form-control form-control-sm" step="0.01" placeholder="e.g., 5.0" oninput="calcCommissionEarned()" />
+              </div>
+            </div>
+
+            <!-- Row 4: Commission Earned, Adjusted, Remaining Due (equal widths) -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:15px;margin-bottom:15px;">
+              <div class="form-group">
+                <label for="commEditEarned">Commission Earned ($)</label>
+                <input type="number" id="commEditEarned" class="form-control form-control-sm" step="0.01" readonly style="background:#f8fafc;color:#10b981;font-weight:600;" />
+              </div>
+              <div class="form-group">
+                <label for="commEditAdjusted">Adjusted / Deducted ($)</label>
+                <input type="number" id="commEditAdjusted" class="form-control form-control-sm" step="0.01" readonly style="background:#f8fafc;color:#64748b;" />
+              </div>
+              <div class="form-group">
+                <label for="commEditRemainingDue">Remaining Due ($)</label>
+                <input type="number" id="commEditRemainingDue" class="form-control form-control-sm" step="0.01" readonly style="background:#f8fafc;color:#10b981;font-weight:600;" />
+              </div>
+            </div>
+
+            <!-- Row 5: Status, Paid Date (show paid date if status is Paid) -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:15px;">
+              <div class="form-group">
+                <label for="commEditStatus">Status</label>
+                <select id="commEditStatus" class="form-control form-control-sm" onchange="togglePaidDate()">
+                  <option value="Pending">Pending</option>
+                  <option value="Paid">Paid</option>
+                  <option value="Paid (Fully Covered)">Paid (Fully Covered)</option>
+                </select>
+              </div>
+              <div class="form-group" id="paidDateGroup" style="display:none;">
+                <label for="commEditPaidDate">Paid Date</label>
+                <input type="date" id="commEditPaidDate" class="form-control form-control-sm" />
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Changes</button>
           </div>
         </form>
       </div>
@@ -2124,5 +2273,956 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
   </div>
 </div>
+
+<!-- ?? Commission Management JavaScript ??????????????????????????? -->
+<script>
+let allCommissions = [];
+let selectedSalesperson = null;
+
+function loadCommissions() {
+  fetch('{{ url_for("get_payroll_commissions") }}')
+    .then(r => r.json())
+    .then(data => {
+      allCommissions = data.commissions || [];
+      renderCommissionTable();
+      updateCommissionSummary();
+    })
+    .catch(e => {
+      console.error('Error loading commissions:', e);
+      document.getElementById('commissionTableBody').innerHTML = '<tr><td colspan="10" style="text-align:center;color:#e74c3c;">Error loading commissions</td></tr>';
+    });
+}
+
+function updateCommissionSummary() {
+  let totalEarned = 0, totalAdjusted = 0, totalPaid = 0, totalOutstanding = 0;
+
+  allCommissions.forEach(comm => {
+    const earned = parseFloat(comm.commission_amount) || 0;
+    const adjusted = parseFloat(comm.total_deducted) || 0;
+    const remaining = parseFloat(comm.remaining_due) || 0;
+
+    totalEarned += earned;
+    totalAdjusted += adjusted;
+    totalOutstanding += remaining;
+
+    if (comm.status === 'Paid' || comm.status === 'Paid (Fully Covered)') {
+      totalPaid += earned - adjusted;
+    }
+  });
+
+  document.getElementById('cardCommEarned').textContent = CURRENCY_SYMBOL + fmt(totalEarned);
+  document.getElementById('cardCommAdjusted').textContent = CURRENCY_SYMBOL + fmt(totalAdjusted);
+  document.getElementById('cardCommPaid').textContent = CURRENCY_SYMBOL + fmt(totalPaid);
+  document.getElementById('cardCommOutstanding').textContent = CURRENCY_SYMBOL + fmt(totalOutstanding);
+}
+
+function renderCommissionTable() {
+  const tbody = document.getElementById('commissionTableBody');
+  const searchVal = document.getElementById('commSearchSalesperson').value.toLowerCase();
+  const statusVal = document.getElementById('commFilterStatus').value;
+  const hideZero = document.getElementById('commHideZero').checked;
+
+  const filtered = allCommissions.filter(comm => {
+    const salespersonMatch = (comm.salesperson || '').toLowerCase().includes(searchVal);
+    const statusMatch = !statusVal || comm.status === statusVal;
+    const commissionAmount = parseFloat(comm.commission_amount) || 0;
+    const zeroMatch = !hideZero || commissionAmount > 0;
+    return salespersonMatch && statusMatch && zeroMatch;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#94a3b8;padding:40px;">No commissions found</td></tr>';
+    return;
+  }
+
+  // Always show salesperson summary
+  renderSalespersonSummary(filtered, tbody);
+}
+
+function renderSalespersonSummary(filtered, tbody) {
+  // Update table headers for salesperson summary view
+  const thead = document.querySelector('#commission thead tr');
+  if (thead) {
+    thead.innerHTML = `
+      <th>Employee Name</th>
+      <th>Commission Earned</th>
+      <th>Adjusted Amount</th>
+      <th>Amount Paid</th>
+      <th>Remaining Balance</th>
+      <th>Status</th>
+      <th>Actions</th>
+    `;
+  }
+
+  // Group by salesperson and calculate totals
+  const byPerson = {};
+  filtered.forEach(comm => {
+    const person = comm.salesperson || 'Unknown';
+    if (!byPerson[person]) {
+      byPerson[person] = [];
+    }
+    byPerson[person].push(comm);
+  });
+
+  let html = '';
+  Object.keys(byPerson).sort().forEach(personName => {
+    const personComms = byPerson[personName];
+    const earned = personComms.reduce((sum, c) => sum + (parseFloat(c.commission_amount) || 0), 0);
+    const adjusted = personComms.reduce((sum, c) => sum + (parseFloat(c.total_deducted) || 0), 0);
+    const remaining = earned - adjusted;
+    const paid = personComms.filter(c => c.status === 'Paid' || c.status === 'Paid (Fully Covered)').reduce((sum, c) => sum + (parseFloat(c.commission_amount) || 0), 0);
+    const unpaid = paid - adjusted;
+
+    // Get status from commissions (mostly pending or paid)
+    const isPaid = personComms.every(c => c.status === 'Paid' || c.status === 'Paid (Fully Covered)');
+    const status = isPaid ? 'Paid' : 'Pending';
+    const statusBadge = status === 'Paid' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
+
+    html += `
+      <tr style="background:white;border-top:1px solid #e2e8f0;">
+        <td style="font-weight:600;color:#0d9488;cursor:pointer;" onclick="showSalespersonProjects('${personName.replace(/'/g, "&#39;")}')"><u>${personName}</u></td>
+        <td style="font-weight:600;">${CURRENCY_SYMBOL}${fmt(earned)}</td>
+        <td style="font-weight:600;">${CURRENCY_SYMBOL}${fmt(adjusted)}</td>
+        <td style="font-weight:600;color:#10b981;">${CURRENCY_SYMBOL}${fmt(paid)}</td>
+        <td style="font-weight:600;color:#ef4444;">${CURRENCY_SYMBOL}${fmt(remaining)}</td>
+        <td><span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;${statusBadge}">${status}</span></td>
+        <td>
+          <div class="d-flex gap-1" style="justify-content:center;">
+            <button type="button" class="btn btn-xs btn-outline-secondary" title="View Details" onclick="event.stopPropagation(); showSalespersonProjects('${personName.replace(/'/g, "&#39;")}')"><i class="bi bi-eye"></i></button>
+            ${remaining > 0 ? `<button type="button" class="btn btn-xs btn-outline-success" title="Mark All as Paid" onclick="event.stopPropagation(); markSalespersonCommissionsPaid('${personName.replace(/'/g, "&#39;")}', ${remaining})"><i class="bi bi-check-circle"></i></button>` : ''}
+          </div>
+        </td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html;
+}
+
+function showSalespersonProjects(personName) {
+  selectedSalesperson = personName;
+  // Navigate to commission detail page
+  window.location.href = `/commission/${encodeURIComponent(personName)}`;
+}
+
+function closeProjectDetails() {
+  selectedSalesperson = null;
+  const modal = bootstrap.Modal.getInstance(document.getElementById('commissionDetailsModal'));
+  if (modal) modal.hide();
+}
+
+function renderProjectDetailsModal(personName) {
+  const filtered = allCommissions;
+  const personComms = filtered.filter(c => c.salesperson === personName);
+
+  if (personComms.length === 0) {
+    document.getElementById('commissionDetailsModalBody').innerHTML = `<p style="color:#94a3b8;padding:20px;text-align:center;">No commissions found for ${personName}</p>`;
+    return;
+  }
+
+  // Group by project
+  const grouped = {};
+  personComms.forEach(comm => {
+    const projNum = comm.project_number || comm.project_id || "Unknown";
+    if (!grouped[projNum]) {
+      grouped[projNum] = [];
+    }
+    grouped[projNum].push(comm);
+  });
+
+  // Build table HTML
+  let html = `
+    <div class="table-wrapper">
+      <table class="payroll-table">
+        <thead>
+          <tr style="background:#1f2937;">
+            <th style="color:white;">PROJECT #</th>
+            <th style="color:white;">CLIENT</th>
+            <th style="color:white;">SALESPERSON</th>
+            <th style="color:white;">CONTRACT VALUE</th>
+            <th style="color:white;">RATE / TYPE</th>
+            <th style="color:white;">COMMISSION</th>
+            <th style="color:white;">ADJUSTED</th>
+            <th style="color:white;">REMAINING DUE</th>
+            <th style="color:white;">STATUS</th>
+            <th style="color:white;">ACTIONS</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  Object.keys(grouped).forEach(projNum => {
+    const commissions = grouped[projNum];
+    const firstComm = commissions[0];
+    const hasMultiple = commissions.length > 1;
+    const projectTotal = commissions.reduce((sum, c) => sum + (parseFloat(c.commission_amount) || 0), 0);
+    const adjustedTotal = commissions.reduce((sum, c) => sum + (parseFloat(c.total_deducted) || 0), 0);
+    const remainingTotal = commissions.reduce((sum, c) => sum + (parseFloat(c.remaining_due) || 0), 0);
+
+    const hasProjectLink = firstComm.actual_project_id && firstComm.actual_project_id.trim() !== '';
+    const projectLink = hasProjectLink ? `/projects/${firstComm.actual_project_id}` : 'javascript:void(0)';
+    const linkStyle = hasProjectLink ? 'color:#0ea5a5;text-decoration:none;cursor:pointer;font-weight:600;' : 'color:#cbd5e1;text-decoration:none;cursor:not-allowed;';
+
+    if (hasMultiple) {
+      html += `
+        <tr style="background:#f8fafc;border-top:2px solid #e2e8f0;">
+          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}">${firstComm.project_number || firstComm.project_id || '—'}</a></td>
+          <td><strong>${firstComm.client_name || '—'}</strong></td>
+          <td><strong>${firstComm.salesperson || '—'}</strong></td>
+          <td>${CURRENCY_SYMBOL}${fmt(parseFloat(firstComm.contract_value) || 0)}</td>
+          <td><span style="display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;background:#e0e7ff;color:#312e81;">Multiple</span></td>
+          <td><strong>${CURRENCY_SYMBOL}${fmt(projectTotal)}</strong></td>
+          <td><strong>${CURRENCY_SYMBOL}${fmt(adjustedTotal)}</strong></td>
+          <td><strong>${CURRENCY_SYMBOL}${fmt(remainingTotal)}</strong></td>
+          <td></td>
+          <td></td>
+        </tr>
+      `;
+
+      commissions.forEach(comm => {
+        const earned = parseFloat(comm.commission_amount) || 0;
+        const adjusted = parseFloat(comm.total_deducted) || 0;
+        const remaining = parseFloat(comm.remaining_due) || 0;
+        const displayStatus = (remaining === 0 || Math.abs(earned - adjusted) < 0.01) && adjusted > 0 ? 'Paid (Fully Covered)' : (comm.status || 'Pending');
+        const statusBadge = displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
+
+        html += `
+          <tr style="background:white;" data-commission-id="${comm.commission_doc_id}">
+            <td style="padding-left:60px;font-size:13px;color:#64748b;">—</td>
+            <td style="font-size:13px;color:#64748b;">—</td>
+            <td style="font-size:13px;color:#64748b;">${comm.salesperson || '—'}</td>
+            <td style="font-size:13px;color:#64748b;">—</td>
+            <td style="font-size:13px;color:#64748b;">${comm.rate_display || '—'}</td>
+            <td style="font-size:13px;">${CURRENCY_SYMBOL}${fmt(earned)}</td>
+            <td style="font-size:13px;">
+              ${adjusted > 0 ? `<div style="font-weight:600;margin-bottom:4px;">${CURRENCY_SYMBOL}${fmt(adjusted)}</div>` : '—'}
+              ${Array.isArray(comm.deductions_list) && comm.deductions_list.length > 0 ? (() => {
+                const uniqueDeductions = [];
+                const seenAdvNo = new Set();
+                comm.deductions_list.forEach(d => {
+                  const advNo = d.advance_no || '';
+                  if (advNo && !seenAdvNo.has(advNo)) {
+                    seenAdvNo.add(advNo);
+                    uniqueDeductions.push(d);
+                  }
+                });
+                return uniqueDeductions.map(d => {
+                  const advId = d.advance_id || '';
+                  const advNo = d.advance_no || '';
+                  const detailUrl = advId ? `/advance/${advId}` : `javascript:void(0)`;
+                  const linkStyle = advId ? 'color:#0d9488;text-decoration:underline;cursor:pointer;' : 'color:#94a3b8;cursor:not-allowed;';
+                  return `<div style="font-size:11px;margin-top:3px;${linkStyle}"><a href="${detailUrl}" style="${linkStyle}">${advNo}</a></div>`;
+                }).join('');
+              })() : ''}
+            </td>
+            <td style="font-size:13px;"><strong>${CURRENCY_SYMBOL}${fmt(remaining)}</strong></td>
+            <td>
+              <div>
+                <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;${statusBadge}">${displayStatus}</span>
+                ${(displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
+              </div>
+            </td>
+            <td>
+              <div class="d-flex gap-1" style="justify-content:center;">
+                <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit" onclick="editCommission('${comm.commission_doc_id}')"><i class="bi bi-pencil"></i></button>
+                ${(comm.status === 'Pending') ? `<button type="button" class="btn btn-xs btn-outline-success" title="Mark Paid" onclick="markCommissionPaid('${comm.commission_doc_id}')"><i class="bi bi-check-circle"></i></button>` : ''}
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+    } else {
+      const comm = firstComm;
+      const earned = parseFloat(comm.commission_amount) || 0;
+      const adjusted = parseFloat(comm.total_deducted) || 0;
+      const remaining = parseFloat(comm.remaining_due) || 0;
+      const displayStatus = (remaining === 0 || Math.abs(earned - adjusted) < 0.01) && adjusted > 0 ? 'Paid (Fully Covered)' : (comm.status || 'Pending');
+      const statusBadge = displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
+
+      html += `
+        <tr style="background:white;border-top:1px solid #e2e8f0;" data-commission-id="${comm.commission_doc_id}">
+          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}">${comm.project_number || comm.project_id || '—'}</a></td>
+          <td><strong>${comm.client_name || '—'}</strong></td>
+          <td>${comm.salesperson || '—'}</td>
+          <td>${CURRENCY_SYMBOL}${fmt(parseFloat(comm.contract_value) || 0)}</td>
+          <td><span style="display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;background:#e0e7ff;color:#312e81;">${comm.rate_display || '—'}</span></td>
+          <td>${CURRENCY_SYMBOL}${fmt(earned)}</td>
+          <td style="font-size:13px;">
+            ${adjusted > 0 ? `<div style="font-weight:600;margin-bottom:4px;">${CURRENCY_SYMBOL}${fmt(adjusted)}</div>` : '—'}
+            ${Array.isArray(comm.deductions_list) && comm.deductions_list.length > 0 ? (() => {
+              const uniqueDeductions = [];
+              const seenAdvNo = new Set();
+              comm.deductions_list.forEach(d => {
+                const advNo = d.advance_no || '';
+                if (advNo && !seenAdvNo.has(advNo)) {
+                  seenAdvNo.add(advNo);
+                  uniqueDeductions.push(d);
+                }
+              });
+              return uniqueDeductions.map(d => {
+                const advId = d.advance_id || '';
+                const advNo = d.advance_no || '';
+                const detailUrl = advId ? `/advance/${advId}` : `javascript:void(0)`;
+                const linkStyle = advId ? 'color:#0d9488;text-decoration:underline;cursor:pointer;' : 'color:#94a3b8;cursor:not-allowed;';
+                return `<div style="font-size:11px;margin-top:3px;${linkStyle}"><a href="${detailUrl}" style="${linkStyle}">${advNo}</a></div>`;
+              }).join('');
+            })() : ''}
+          </td>
+          <td><strong>${CURRENCY_SYMBOL}${fmt(remaining)}</strong></td>
+          <td>
+            <div>
+              <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;${statusBadge}">${displayStatus}</span>
+              ${(displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
+            </div>
+          </td>
+          <td>
+            <div class="d-flex gap-1" style="justify-content:center;">
+              <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit" onclick="editCommission('${comm.commission_doc_id}')"><i class="bi bi-pencil"></i></button>
+              ${(comm.status === 'Pending') ? `<button type="button" class="btn btn-xs btn-outline-success" title="Mark Paid" onclick="markCommissionPaid('${comm.commission_doc_id}')"><i class="bi bi-check-circle"></i></button>` : ''}
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+  });
+
+  html += `
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  document.getElementById('commissionDetailsModalBody').innerHTML = html;
+  document.getElementById('commissionDetailsModalTitle').textContent = `Commission Details — ${personName}`;
+}
+
+function renderProjectDetailsInContainer(personName, container) {
+  const filtered = allCommissions;
+  const personComms = filtered.filter(c => c.salesperson === personName);
+
+  if (personComms.length === 0) {
+    container.innerHTML = `<p style="color:#94a3b8;padding:20px;text-align:center;">No commissions found for ${personName}</p>`;
+    return;
+  }
+
+  // Group by project
+  const grouped = {};
+  personComms.forEach(comm => {
+    const projNum = comm.project_number || comm.project_id || "Unknown";
+    if (!grouped[projNum]) {
+      grouped[projNum] = [];
+    }
+    grouped[projNum].push(comm);
+  });
+
+  // Build HTML for details
+  let html = `
+    <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-top:20px;">
+      <div style="background:#f0fdf4;padding:16px;border-bottom:2px solid #d1fae5;display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-weight:600;color:#059669;"><i class="bi bi-briefcase me-2"></i>Commission Details — ${personName} — per-project commission tracking</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeProjectDetails()"><i class="bi bi-x me-1"></i>Close</button>
+      </div>
+      <div class="table-wrapper" style="border-radius:0;border:none;margin:0;">
+        <table class="payroll-table" style="margin-bottom:0;">
+          <thead>
+            <tr style="background:#1f2937;">
+              <th style="color:white;">PROJECT #</th>
+              <th style="color:white;">CLIENT</th>
+              <th style="color:white;">SALESPERSON</th>
+              <th style="color:white;">CONTRACT VALUE</th>
+              <th style="color:white;">RATE / TYPE</th>
+              <th style="color:white;">COMMISSION</th>
+              <th style="color:white;">ADJUSTED</th>
+              <th style="color:white;">REMAINING DUE</th>
+              <th style="color:white;">STATUS</th>
+              <th style="color:white;">ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody>
+  `;
+
+  Object.keys(grouped).forEach(projNum => {
+    const commissions = grouped[projNum];
+    const firstComm = commissions[0];
+    const hasMultiple = commissions.length > 1;
+    const projectTotal = commissions.reduce((sum, c) => sum + (parseFloat(c.commission_amount) || 0), 0);
+    const adjustedTotal = commissions.reduce((sum, c) => sum + (parseFloat(c.total_deducted) || 0), 0);
+    const remainingTotal = commissions.reduce((sum, c) => sum + (parseFloat(c.remaining_due) || 0), 0);
+
+    const hasProjectLink = firstComm.actual_project_id && firstComm.actual_project_id.trim() !== '';
+    const projectLink = hasProjectLink ? `/projects/${firstComm.actual_project_id}` : 'javascript:void(0)';
+    const linkStyle = hasProjectLink ? 'color:#0ea5a5;text-decoration:none;cursor:pointer;font-weight:600;' : 'color:#cbd5e1;text-decoration:none;cursor:not-allowed;';
+
+    if (hasMultiple) {
+      // Header row for multiple commissions
+      html += `
+        <tr style="background:#f8fafc;border-top:2px solid #e2e8f0;">
+          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}">${firstComm.project_number || firstComm.project_id || '—'}</a></td>
+          <td><strong>${firstComm.client_name || '—'}</strong></td>
+          <td><strong>${firstComm.salesperson || '—'}</strong></td>
+          <td>${CURRENCY_SYMBOL}${fmt(parseFloat(firstComm.contract_value) || 0)}</td>
+          <td><span style="display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;background:#e0e7ff;color:#312e81;">Multiple</span></td>
+          <td><strong>${CURRENCY_SYMBOL}${fmt(projectTotal)}</strong></td>
+          <td><strong>${CURRENCY_SYMBOL}${fmt(adjustedTotal)}</strong></td>
+          <td><strong>${CURRENCY_SYMBOL}${fmt(remainingTotal)}</strong></td>
+          <td></td>
+          <td></td>
+        </tr>
+      `;
+
+      // Detail rows
+      commissions.forEach(comm => {
+        const earned = parseFloat(comm.commission_amount) || 0;
+        const adjusted = parseFloat(comm.total_deducted) || 0;
+        const remaining = parseFloat(comm.remaining_due) || 0;
+        const displayStatus = (remaining === 0 || Math.abs(earned - adjusted) < 0.01) && adjusted > 0 ? 'Paid (Fully Covered)' : (comm.status || 'Pending');
+        const statusBadge = displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
+
+        html += `
+          <tr style="background:white;" data-commission-id="${comm.commission_doc_id}">
+            <td style="padding-left:60px;font-size:13px;color:#64748b;">—</td>
+            <td style="font-size:13px;color:#64748b;">—</td>
+            <td style="font-size:13px;color:#64748b;">${comm.salesperson || '—'}</td>
+            <td style="font-size:13px;color:#64748b;">—</td>
+            <td style="font-size:13px;color:#64748b;">${comm.rate_display || '—'}</td>
+            <td style="font-size:13px;">${CURRENCY_SYMBOL}${fmt(earned)}</td>
+            <td style="font-size:13px;">
+              ${adjusted > 0 ? `<div style="font-weight:600;margin-bottom:4px;">${CURRENCY_SYMBOL}${fmt(adjusted)}</div>` : '—'}
+              ${Array.isArray(comm.deductions_list) && comm.deductions_list.length > 0 ? (() => {
+                const uniqueDeductions = [];
+                const seenAdvNo = new Set();
+                comm.deductions_list.forEach(d => {
+                  const advNo = d.advance_no || '';
+                  if (advNo && !seenAdvNo.has(advNo)) {
+                    seenAdvNo.add(advNo);
+                    uniqueDeductions.push(d);
+                  }
+                });
+                return uniqueDeductions.map(d => {
+                  const advId = d.advance_id || '';
+                  const advNo = d.advance_no || '';
+                  const detailUrl = advId ? `/advance/${advId}` : `javascript:void(0)`;
+                  const linkStyle = advId ? 'color:#0d9488;text-decoration:underline;cursor:pointer;' : 'color:#94a3b8;cursor:not-allowed;';
+                  return `<div style="font-size:11px;margin-top:3px;${linkStyle}"><a href="${detailUrl}" style="${linkStyle}">${advNo}</a></div>`;
+                }).join('');
+              })() : ''}
+            </td>
+            <td style="font-size:13px;"><strong>${CURRENCY_SYMBOL}${fmt(remaining)}</strong></td>
+            <td>
+              <div>
+                <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;${statusBadge}">${displayStatus}</span>
+                ${(displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
+              </div>
+            </td>
+            <td>
+              <div class="d-flex gap-1" style="justify-content:center;">
+                <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit" onclick="editCommission('${comm.commission_doc_id}')"><i class="bi bi-pencil"></i></button>
+                ${(comm.status === 'Pending') ? `<button type="button" class="btn btn-xs btn-outline-success" title="Mark Paid" onclick="markCommissionPaid('${comm.commission_doc_id}')"><i class="bi bi-check-circle"></i></button>` : ''}
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+    } else {
+      // Single commission
+      const comm = firstComm;
+      const earned = parseFloat(comm.commission_amount) || 0;
+      const adjusted = parseFloat(comm.total_deducted) || 0;
+      const remaining = parseFloat(comm.remaining_due) || 0;
+      const displayStatus = (remaining === 0 || Math.abs(earned - adjusted) < 0.01) && adjusted > 0 ? 'Paid (Fully Covered)' : (comm.status || 'Pending');
+      const statusBadge = displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
+
+      html += `
+        <tr style="background:white;border-top:1px solid #e2e8f0;" data-commission-id="${comm.commission_doc_id}">
+          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}">${comm.project_number || comm.project_id || '—'}</a></td>
+          <td><strong>${comm.client_name || '—'}</strong></td>
+          <td>${comm.salesperson || '—'}</td>
+          <td>${CURRENCY_SYMBOL}${fmt(parseFloat(comm.contract_value) || 0)}</td>
+          <td><span style="display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;background:#e0e7ff;color:#312e81;">${comm.rate_display || '—'}</span></td>
+          <td>${CURRENCY_SYMBOL}${fmt(earned)}</td>
+          <td style="font-size:13px;">
+            ${adjusted > 0 ? `<div style="font-weight:600;margin-bottom:4px;">${CURRENCY_SYMBOL}${fmt(adjusted)}</div>` : '—'}
+            ${Array.isArray(comm.deductions_list) && comm.deductions_list.length > 0 ? (() => {
+              const uniqueDeductions = [];
+              const seenAdvNo = new Set();
+              comm.deductions_list.forEach(d => {
+                const advNo = d.advance_no || '';
+                if (advNo && !seenAdvNo.has(advNo)) {
+                  seenAdvNo.add(advNo);
+                  uniqueDeductions.push(d);
+                }
+              });
+              return uniqueDeductions.map(d => {
+                const advId = d.advance_id || '';
+                const advNo = d.advance_no || '';
+                const detailUrl = advId ? `/advance/${advId}` : `javascript:void(0)`;
+                const linkStyle = advId ? 'color:#0d9488;text-decoration:underline;cursor:pointer;' : 'color:#94a3b8;cursor:not-allowed;';
+                return `<div style="font-size:11px;margin-top:3px;${linkStyle}"><a href="${detailUrl}" style="${linkStyle}">${advNo}</a></div>`;
+              }).join('');
+            })() : ''}
+          </td>
+          <td><strong>${CURRENCY_SYMBOL}${fmt(remaining)}</strong></td>
+          <td>
+            <div>
+              <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;${statusBadge}">${displayStatus}</span>
+              ${(displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
+            </div>
+          </td>
+          <td>
+            <div class="d-flex gap-1" style="justify-content:center;">
+              <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit" onclick="editCommission('${comm.commission_doc_id}')"><i class="bi bi-pencil"></i></button>
+              ${(comm.status === 'Pending') ? `<button type="button" class="btn btn-xs btn-outline-success" title="Mark Paid" onclick="markCommissionPaid('${comm.commission_doc_id}')"><i class="bi bi-check-circle"></i></button>` : ''}
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+  });
+
+  html += `
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  container.innerHTML = html;
+  container.style.display = 'block';
+}
+
+function renderProjectDetailsByPerson(filtered, personName, tbody) {
+  // Update table headers for project detail view
+  const thead = document.querySelector('#commission thead tr');
+  if (thead) {
+    thead.innerHTML = `
+      <th>Project #</th>
+      <th>Client</th>
+      <th>Salesperson</th>
+      <th>Contract Value</th>
+      <th>Rate / Type</th>
+      <th>Commission</th>
+      <th>Adjusted</th>
+      <th>Remaining Due</th>
+      <th>Status</th>
+      <th>Actions</th>
+    `;
+  }
+
+  // Filter by selected salesperson and group by project
+  const personComms = filtered.filter(c => c.salesperson === personName);
+
+  const grouped = {};
+  personComms.forEach(comm => {
+    const projNum = comm.project_number || comm.project_id || "Unknown";
+    if (!grouped[projNum]) {
+      grouped[projNum] = [];
+    }
+    grouped[projNum].push(comm);
+  });
+
+  // Build table rows grouped by project with back button
+  let html = `
+    <tr style="background:#f0fdf4;border-bottom:2px solid #d1fae5;">
+      <td colspan="6" style="padding:12px;">
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="backToSalespersonList()"><i class="bi bi-arrow-left me-2"></i>Back to Salespeople</button>
+        <span style="margin-left:20px;font-weight:600;color:#059669;"><i class="bi bi-briefcase me-2"></i>Commission Details — ${personName} — per-project commission tracking</span>
+      </td>
+    </tr>
+  `;
+  Object.keys(grouped).forEach((projNum, index) => {
+    const commissions = grouped[projNum];
+    const firstComm = commissions[0];
+    const hasMultiple = commissions.length > 1;
+
+    const projectTotal = commissions.reduce((sum, c) => sum + (parseFloat(c.commission_amount) || 0), 0);
+    const adjustedTotal = commissions.reduce((sum, c) => sum + (parseFloat(c.total_deducted) || 0), 0);
+    const remainingTotal = commissions.reduce((sum, c) => sum + (parseFloat(c.remaining_due) || 0), 0);
+
+    if (hasMultiple) {
+      // Multiple commissions per project - show header + detail rows
+      const hasProjectLink = firstComm.actual_project_id && firstComm.actual_project_id.trim() !== '';
+      const projectLink = hasProjectLink ? `/projects/${firstComm.actual_project_id}` : 'javascript:void(0)';
+      const linkStyle = hasProjectLink ? 'color:#0ea5a5;text-decoration:none;cursor:pointer;font-weight:600;' : 'color:#cbd5e1;text-decoration:none;cursor:not-allowed;';
+
+      html += `
+        <tr style="background:#f8fafc;border-top:2px solid #e2e8f0;">
+          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}" title="${hasProjectLink ? 'View project details' : 'Project not found'}">${firstComm.project_number || firstComm.project_id || '—'}</a></td>
+          <td><strong>${firstComm.client_name || '—'}</strong></td>
+          <td><strong>${firstComm.salesperson || '—'}</strong></td>
+          <td>${CURRENCY_SYMBOL}${fmt(parseFloat(firstComm.contract_value) || 0)}</td>
+          <td><span style="display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;background:#e0e7ff;color:#312e81;">Multiple</span></td>
+          <td><strong>${CURRENCY_SYMBOL}${fmt(projectTotal)}</strong></td>
+          <td><strong>${CURRENCY_SYMBOL}${fmt(adjustedTotal)}</strong></td>
+          <td><strong>${CURRENCY_SYMBOL}${fmt(remainingTotal)}</strong></td>
+          <td><span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;background:#fef9c3;color:#92400e;">${firstComm.status || 'Pending'}</span></td>
+          <td></td>
+        </tr>
+      `;
+
+      // Detail rows for each commission
+      commissions.forEach(comm => {
+        const earned = parseFloat(comm.commission_amount) || 0;
+        const adjusted = parseFloat(comm.total_deducted) || 0;
+        const remaining = parseFloat(comm.remaining_due) || 0;
+
+        // Determine display status: if remaining is 0 or adjusted equals earned, show "Paid (Fully Covered)"
+        const displayStatus = (remaining === 0 || Math.abs(earned - adjusted) < 0.01) && adjusted > 0 ? 'Paid (Fully Covered)' : (comm.status || 'Pending');
+        const statusBadge = displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
+
+        html += `
+          <tr style="background:white;padding-left:40px;" data-commission-id="${comm.commission_doc_id}">
+            <td style="padding-left:60px;font-size:13px;color:#64748b;">—</td>
+            <td style="font-size:13px;color:#64748b;">—</td>
+            <td style="font-size:13px;color:#64748b;">${comm.salesperson || '—'}</td>
+            <td style="font-size:13px;color:#64748b;">—</td>
+            <td style="font-size:13px;color:#64748b;">${comm.rate_display || '—'}</td>
+            <td style="font-size:13px;">${CURRENCY_SYMBOL}${fmt(earned)}</td>
+            <td style="font-size:13px;">
+              ${adjusted > 0 ? `<div style="font-weight:600;margin-bottom:4px;">${CURRENCY_SYMBOL}${fmt(adjusted)}</div>` : '—'}
+              ${Array.isArray(comm.deductions_list) && comm.deductions_list.length > 0 ? (() => {
+                const uniqueDeductions = [];
+                const seenAdvNo = new Set();
+                comm.deductions_list.forEach(d => {
+                  const advNo = d.advance_no || '';
+                  if (advNo && !seenAdvNo.has(advNo)) {
+                    seenAdvNo.add(advNo);
+                    uniqueDeductions.push(d);
+                  }
+                });
+                return uniqueDeductions.map(d => {
+                  const advId = d.advance_id || '';
+                  const advNo = d.advance_no || '';
+                  const detailUrl = advId ? `/advance/${advId}` : `javascript:void(0)`;
+                  const linkStyle = advId ? 'color:#0d9488;text-decoration:underline;cursor:pointer;' : 'color:#94a3b8;cursor:not-allowed;';
+                  return `<div style="font-size:11px;margin-top:3px;${linkStyle}"><a href="${detailUrl}" style="${linkStyle}">${advNo}</a></div>`;
+                }).join('');
+              })() : ''}
+            </td>
+            <td style="font-size:13px;"><strong>${CURRENCY_SYMBOL}${fmt(remaining)}</strong></td>
+            <td>
+              <div>
+                <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;${statusBadge}">${displayStatus}</span>
+                ${(displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
+              </div>
+            </td>
+            <td>
+              <div class="d-flex gap-1" style="justify-content:center;">
+                <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit" onclick="editCommission('${comm.commission_doc_id}')"><i class="bi bi-pencil"></i></button>
+                ${(comm.status === 'Pending') ? `<button type="button" class="btn btn-xs btn-outline-success" title="Mark Paid" onclick="markCommissionPaid('${comm.commission_doc_id}')"><i class="bi bi-check-circle"></i></button>` : ''}
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+    } else {
+      // Single commission per project - show just one row
+      const comm = firstComm;
+      const earned = parseFloat(comm.commission_amount) || 0;
+      const adjusted = parseFloat(comm.total_deducted) || 0;
+      const remaining = parseFloat(comm.remaining_due) || 0;
+
+      // Determine display status: if remaining is 0 or adjusted equals earned, show "Paid (Fully Covered)"
+      const displayStatus = (remaining === 0 || Math.abs(earned - adjusted) < 0.01) && adjusted > 0 ? 'Paid (Fully Covered)' : (comm.status || 'Pending');
+      const statusBadge = displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)' ? 'background:#dcfce7;color:#15803d;' : 'background:#fef9c3;color:#92400e;';
+
+      const hasProjectLink = comm.actual_project_id && comm.actual_project_id.trim() !== '';
+      const projectLink = hasProjectLink ? `/projects/${comm.actual_project_id}` : 'javascript:void(0)';
+      const linkStyle = hasProjectLink ? 'color:#0ea5a5;text-decoration:none;cursor:pointer;font-weight:600;' : 'color:#cbd5e1;text-decoration:none;cursor:not-allowed;';
+
+      html += `
+        <tr style="background:white;border-top:1px solid #e2e8f0;" data-commission-id="${comm.commission_doc_id}">
+          <td style="font-weight:600;"><a href="${projectLink}" style="${linkStyle}" title="${hasProjectLink ? 'View project details' : 'Project not found'}">${comm.project_number || comm.project_id || '—'}</a></td>
+          <td><strong>${comm.client_name || '—'}</strong></td>
+          <td>${comm.salesperson || '—'}</td>
+          <td>${CURRENCY_SYMBOL}${fmt(parseFloat(comm.contract_value) || 0)}</td>
+          <td><span style="display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;background:#e0e7ff;color:#312e81;">${comm.rate_display || '—'}</span></td>
+          <td>${CURRENCY_SYMBOL}${fmt(earned)}</td>
+          <td style="font-size:13px;">
+            ${adjusted > 0 ? `<div style="font-weight:600;margin-bottom:4px;">${CURRENCY_SYMBOL}${fmt(adjusted)}</div>` : '—'}
+            ${Array.isArray(comm.deductions_list) && comm.deductions_list.length > 0 ? (() => {
+              const uniqueDeductions = [];
+              const seenAdvNo = new Set();
+              comm.deductions_list.forEach(d => {
+                const advNo = d.advance_no || '';
+                if (advNo && !seenAdvNo.has(advNo)) {
+                  seenAdvNo.add(advNo);
+                  uniqueDeductions.push(d);
+                }
+              });
+              return uniqueDeductions.map(d => {
+                const advId = d.advance_id || '';
+                const advNo = d.advance_no || '';
+                const detailUrl = advId ? `/advance/${advId}` : `javascript:void(0)`;
+                const linkStyle = advId ? 'color:#0d9488;text-decoration:underline;cursor:pointer;' : 'color:#94a3b8;cursor:not-allowed;';
+                return `<div style="font-size:11px;margin-top:3px;${linkStyle}"><a href="${detailUrl}" style="${linkStyle}">${advNo}</a></div>`;
+              }).join('');
+            })() : ''}
+          </td>
+          <td><strong>${CURRENCY_SYMBOL}${fmt(remaining)}</strong></td>
+          <td>
+            <div>
+              <span style="display:inline-block;padding:2px 9px;border-radius:12px;font-size:.68rem;font-weight:700;${statusBadge}">${displayStatus}</span>
+              ${(displayStatus === 'Paid' || displayStatus === 'Paid (Fully Covered)') && comm.paid_at ? `<div style="font-size:11px;color:#64748b;margin-top:3px;">${comm.paid_at.substring(0,10)}</div>` : ''}
+            </div>
+          </td>
+          <td>
+            <div class="d-flex gap-1" style="justify-content:center;">
+              <button type="button" class="btn btn-xs btn-outline-secondary" title="Edit" onclick="editCommission('${comm.commission_doc_id}')"><i class="bi bi-pencil"></i></button>
+              ${(comm.status === 'Pending') ? `<button type="button" class="btn btn-xs btn-outline-success" title="Mark Paid" onclick="markCommissionPaid('${comm.commission_doc_id}')"><i class="bi bi-check-circle"></i></button>` : ''}
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+  });
+
+  tbody.innerHTML = html;
+}
+
+function editCommission(commissionDocId) {
+  const comm = allCommissions.find(c => c.commission_doc_id === commissionDocId);
+  if (!comm) {
+    alert('Commission not found');
+    return;
+  }
+
+  document.getElementById('commEditProjectId').value = comm.commission_doc_id;
+  document.getElementById('commEditProject').value = comm.project_number || comm.project_id || '';
+  document.getElementById('commEditSalesperson').value = comm.salesperson || '';
+  document.getElementById('commEditContractValue').value = parseFloat(comm.contract_value) || 0;
+
+  // Use actual override fields from backend (not parsed from display string)
+  let rateType = comm.commission_override_type || 'default';
+  let rateValue = comm.commission_override_value || 0;
+
+  document.getElementById('commEditRateType').value = rateType;
+  document.getElementById('commEditRateValue').value = rateValue;
+  document.getElementById('commEditEarned').value = parseFloat(comm.commission_amount) || 0;
+  document.getElementById('commEditAdjusted').value = parseFloat(comm.total_deducted) || 0;
+  document.getElementById('commEditRemainingDue').value = parseFloat(comm.remaining_due) || 0;
+  document.getElementById('commEditStatus').value = comm.status || 'Pending';
+
+  // Load paid date if available
+  if (comm.paid_at) {
+    const paidDateOnly = comm.paid_at.split('T')[0];
+    document.getElementById('commEditPaidDate').value = paidDateOnly;
+  } else {
+    document.getElementById('commEditPaidDate').value = '';
+  }
+
+  // Set up the display (hide/show fields based on rate type)
+  calcCommissionEarned();
+
+  // Show/hide paid date field based on status
+  togglePaidDate();
+
+  new bootstrap.Modal(document.getElementById('commissionEditModal')).show();
+}
+
+function togglePaidDate() {
+  const status = document.getElementById('commEditStatus').value;
+  const paidDateGroup = document.getElementById('paidDateGroup');
+  const paidDateField = document.getElementById('commEditPaidDate');
+
+  if (status === 'Paid' || status === 'Paid (Fully Covered)') {
+    paidDateGroup.style.display = 'block';
+    // Auto-set date to today if not already set
+    if (!paidDateField.value) {
+      const today = new Date().toISOString().split('T')[0];
+      paidDateField.value = today;
+    }
+  } else {
+    paidDateGroup.style.display = 'none';
+  }
+}
+
+function calcCommissionEarned() {
+  const rateType = document.getElementById('commEditRateType').value;
+  const rateValue = parseFloat(document.getElementById('commEditRateValue').value) || 0;
+  const contractValue = parseFloat(document.getElementById('commEditContractValue').value) || 0;
+
+  // Hide/show rate value input based on type
+  const rateValueField = document.getElementById('commEditRateValue');
+  if (rateType === 'default') {
+    rateValueField.style.display = 'none';
+    document.querySelector('label[for="commEditRateValue"]').style.display = 'none';
+  } else {
+    rateValueField.style.display = 'block';
+    document.querySelector('label[for="commEditRateValue"]').style.display = 'block';
+  }
+
+  let earned = 0;
+
+  if (rateType === 'percent') {
+    // Percent: Commission = (Contract Value × Rate Value) / 100
+    earned = (contractValue * rateValue) / 100;
+  } else if (rateType === 'fixed') {
+    // Fixed: Commission = Rate Value
+    earned = rateValue;
+  } else {
+    // Default: Commission = 0 (or salesperson's default rate, but stored value is 0)
+    earned = 0;
+  }
+
+  document.getElementById('commEditEarned').value = Math.round(earned * 100) / 100;
+  calcRemainingDue();
+}
+
+function calcRemainingDue() {
+  const earned = parseFloat(document.getElementById('commEditEarned').value) || 0;
+  const adjusted = parseFloat(document.getElementById('commEditAdjusted').value) || 0;
+  const remaining = earned - adjusted;
+  document.getElementById('commEditRemainingDue').value = Math.round(remaining * 100) / 100;
+}
+
+function saveCommissionEdit(e) {
+  e.preventDefault();
+  const commDocId = document.getElementById('commEditProjectId').value;
+  const earnedVal = parseFloat(document.getElementById('commEditEarned').value);
+  const adjustedVal = parseFloat(document.getElementById('commEditAdjusted').value);
+  const rateType = document.getElementById('commEditRateType').value;
+  const rateValue = parseFloat(document.getElementById('commEditRateValue').value) || 0;
+  const status = document.getElementById('commEditStatus').value;
+  const paidDate = document.getElementById('commEditPaidDate').value;
+
+  if (isNaN(earnedVal)) {
+    alert('Please enter a valid commission earned amount');
+    return;
+  }
+
+  // Build rate_display string based on type
+  let rateDisplay = '0.0% (default)';
+  if (rateType === 'percent') {
+    rateDisplay = `${rateValue}% (custom)`;
+  } else if (rateType === 'fixed') {
+    rateDisplay = `Fixed amount`;
+  }
+
+  const payload = {
+    commission_amount: earnedVal,
+    total_deducted: adjustedVal || 0,
+    status: status,
+    rate_type: rateType,
+    rate_value: rateValue,
+    rate_display: rateDisplay
+  };
+
+  // Add paid_date if status is Paid
+  if ((status === 'Paid' || status === 'Paid (Fully Covered)') && paidDate) {
+    payload.paid_at = paidDate;
+  }
+
+  fetch('/api/commission/project/' + commDocId + '/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok || data.success) {
+      bootstrap.Modal.getInstance(document.getElementById('commissionEditModal')).hide();
+      loadCommissions();
+      alert('Commission updated successfully');
+    } else {
+      alert('Error: ' + (data.error || 'Failed to update'));
+    }
+  })
+  .catch(e => {
+    console.error('Error:', e);
+    alert('Error updating commission');
+  });
+}
+
+function markCommissionPaid(commDocId) {
+  if (!confirm('Mark this commission as Paid?')) return;
+
+  fetch('/api/commission/project/' + commDocId + '/mark-paid', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: commDocId })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok || data.success) {
+      loadCommissions();
+      alert('Commission marked as Paid');
+    } else {
+      alert('Error: ' + (data.error || 'Failed to mark as paid'));
+    }
+  })
+  .catch(e => {
+    console.error('Error:', e);
+    alert('Error marking commission as paid');
+  });
+}
+
+function markSalespersonCommissionsPaid(salespersonName, remainingAmount) {
+  if (!confirm(`Mark all commissions for ${salespersonName} as Paid? (Remaining: ${CURRENCY_SYMBOL}${fmt(remainingAmount)})`)) return;
+
+  // Get all pending commissions for this salesperson
+  const salespersonComms = allCommissions.filter(c => c.salesperson === salespersonName && (c.status === 'Pending'));
+
+  if (salespersonComms.length === 0) {
+    alert('No pending commissions found for this salesperson');
+    return;
+  }
+
+  // Mark all as paid
+  let completed = 0;
+  let failed = 0;
+
+  salespersonComms.forEach(comm => {
+    fetch('/api/commission/project/' + comm.commission_doc_id + '/mark-paid', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: comm.commission_doc_id })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok || data.success) {
+        completed++;
+      } else {
+        failed++;
+      }
+
+      // If all requests completed, refresh
+      if (completed + failed === salespersonComms.length) {
+        loadCommissions();
+        if (failed === 0) {
+          alert(`All ${completed} commission(s) marked as Paid`);
+        } else {
+          alert(`Marked ${completed} as Paid, ${failed} failed`);
+        }
+      }
+    })
+    .catch(e => {
+      failed++;
+      if (completed + failed === salespersonComms.length) {
+        loadCommissions();
+        alert(`Marked ${completed} as Paid, ${failed} failed`);
+      }
+    });
+  });
+}
+
+function clearCommissionFilters() {
+  document.getElementById('commSearchSalesperson').value = '';
+  document.getElementById('commFilterStatus').value = '';
+  document.getElementById('commHideZero').checked = false;
+  renderCommissionTable();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  if (document.getElementById('commission')) {
+    document.getElementById('commSearchSalesperson').addEventListener('input', renderCommissionTable);
+    document.getElementById('commFilterStatus').addEventListener('change', renderCommissionTable);
+  }
+});
+
+// Load commissions on page load
+document.addEventListener('DOMContentLoaded', function() {
+  setTimeout(() => { loadCommissions(); }, 500);
+});
+</script>
 
 {% endblock %}
